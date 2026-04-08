@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping
+from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -22,7 +23,11 @@ from ductor_bot.workspace.paths import resolve_paths
 
 _START_OPERATION = "start-worker-runtime"
 _STOP_OPERATION = "stop-worker-runtime"
-_RUNTIME_LIFECYCLE_OPERATIONS = frozenset({_START_OPERATION, _STOP_OPERATION})
+_HEARTBEAT_OPERATION = "heartbeat-worker-runtime"
+TEAM_RUNTIME_LIFECYCLE_OPERATIONS = frozenset(
+    {_START_OPERATION, _STOP_OPERATION, _HEARTBEAT_OPERATION}
+)
+_DEFAULT_KEEPALIVE_INTERVAL_SECONDS = 60.0
 
 
 def _success(operation: str, data: dict[str, Any]) -> dict[str, Any]:
@@ -56,7 +61,11 @@ class TeamRuntimeController:
         orchestrator: Any,
         team_state_root: Path | str | None = None,
         named_sessions_path: Path | str | None = None,
+        keepalive_interval_seconds: float | None = _DEFAULT_KEEPALIVE_INTERVAL_SECONDS,
     ) -> None:
+        if keepalive_interval_seconds is not None and keepalive_interval_seconds <= 0:
+            msg = "keepalive_interval_seconds must be positive when provided"
+            raise ValueError(msg)
         self._orchestrator = orchestrator
         paths = resolve_paths()
         self._team_state_root = (
@@ -67,10 +76,22 @@ class TeamRuntimeController:
             named_sessions_path = getattr(registry, "path", None)
         self._attachments = TeamRuntimeAttachmentManager(named_sessions_path=named_sessions_path)
         self._locks: dict[tuple[str, str], asyncio.Lock] = {}
+        self._keepalive_interval_seconds = keepalive_interval_seconds
+        self._keepalive_tasks: dict[tuple[str, str], asyncio.Task[None]] = {}
 
     @property
     def operations(self) -> frozenset[str]:
-        return _RUNTIME_LIFECYCLE_OPERATIONS
+        return TEAM_RUNTIME_LIFECYCLE_OPERATIONS
+
+    async def shutdown(self) -> None:
+        """Cancel any bounded keepalive tasks owned by this controller."""
+        tasks = list(self._keepalive_tasks.values())
+        self._keepalive_tasks.clear()
+        for task in tasks:
+            task.cancel()
+        for task in tasks:
+            with suppress(asyncio.CancelledError):
+                await task
 
     async def execute(  # noqa: PLR0911
         self,
@@ -86,6 +107,9 @@ class TeamRuntimeController:
             async with self._lock_for(team_name, worker):
                 if operation == _START_OPERATION:
                     return await self._start_worker_runtime(team_name, worker)
+                if operation == _HEARTBEAT_OPERATION:
+                    owner_session_id = self._require_session_id(request_data)
+                    return await self._heartbeat_worker_runtime(team_name, worker, owner_session_id)
                 return await self._stop_worker_runtime(team_name, worker)
         except FileNotFoundError as exc:
             return _error(operation, "not_found", str(exc))
@@ -107,14 +131,24 @@ class TeamRuntimeController:
     def _store(self, team_name: str) -> TeamStateStore:
         return TeamStateStore(self._team_state_root, team_name, create=False)
 
-    def _runtime(self, store: TeamStateStore, worker: str) -> TeamWorkerRuntimeState | None:
+    def _runtime(
+        self,
+        store: TeamStateStore,
+        manifest: TeamManifest,
+        worker: str,
+    ) -> TeamWorkerRuntimeState | None:
         try:
-            return store.reconcile_worker_runtime(worker)
+            return self._attachments.reconcile_runtime_owner(store, manifest, worker)
         except FileNotFoundError:
             return None
 
-    def _ensure_runtime_record(self, store: TeamStateStore, worker: str) -> TeamWorkerRuntimeState:
-        runtime = self._runtime(store, worker)
+    def _ensure_runtime_record(
+        self,
+        store: TeamStateStore,
+        manifest: TeamManifest,
+        worker: str,
+    ) -> TeamWorkerRuntimeState:
+        runtime = self._runtime(store, manifest, worker)
         if runtime is not None:
             return runtime
         return store.put_worker_runtime(TeamWorkerRuntimeState(worker=worker))
@@ -128,13 +162,14 @@ class TeamRuntimeController:
             msg = f"worker '{worker}' does not declare runtime.session_name"
             raise ValueError(msg)
 
-        runtime = self._runtime(store, worker)
+        runtime = self._runtime(store, manifest, worker)
         if runtime is not None and runtime.status == "busy":
             msg = f"worker runtime '{worker}' is already busy with '{runtime.dispatch_request_id}'"
             raise ValueError(msg)
 
         attached = self._attachments.ensure_attached_runtime(store, manifest, worker)
         if attached is not None:
+            self._ensure_keepalive_driver(team_name, worker)
             return _success(
                 _START_OPERATION,
                 {
@@ -195,6 +230,7 @@ class TeamRuntimeController:
             msg = f"worker runtime '{worker}' failed to resolve after bootstrap"
             self._record_start_failure(store, worker, runtime, msg)
             return _error(_START_OPERATION, "internal_error", msg)
+        self._ensure_keepalive_driver(team_name, worker)
         return _success(
             _START_OPERATION,
             {
@@ -211,12 +247,12 @@ class TeamRuntimeController:
             msg = f"worker '{worker}' does not declare runtime.session_name"
             raise ValueError(msg)
 
-        runtime = self._runtime(store, worker)
+        runtime = self._runtime(store, manifest, worker)
         if runtime is not None and runtime.status == "busy":
             msg = f"worker runtime '{worker}' is busy and cannot be stopped safely"
             raise ValueError(msg)
 
-        runtime = self._ensure_runtime_record(store, worker)
+        runtime = self._ensure_runtime_record(store, manifest, worker)
         was_stopped = runtime.status == "stopped"
         session_ref = runtime_ref.routable_session or manifest.leader.session
         session = self._orchestrator.named_sessions.get(session_ref.chat_id, runtime_ref.session_name)
@@ -225,6 +261,7 @@ class TeamRuntimeController:
 
         if runtime.status != "stopped":
             runtime = store.transition_worker_runtime(worker, "stopped", now=_utc_now())
+        await self._cancel_keepalive_driver(team_name, worker)
 
         return _success(
             _STOP_OPERATION,
@@ -233,6 +270,74 @@ class TeamRuntimeController:
                 "runtime": runtime.model_dump(mode="json"),
             },
         )
+
+    async def _heartbeat_worker_runtime(
+        self,
+        team_name: str,
+        worker: str,
+        owner_session_id: str,
+    ) -> dict[str, Any]:
+        store = self._store(team_name)
+        manifest = store.read_manifest()
+        runtime = self._attachments.renew_runtime_heartbeat(
+            store,
+            manifest,
+            worker,
+            owner_session_id=owner_session_id,
+        )
+        return _success(
+            _HEARTBEAT_OPERATION,
+            {
+                "action": "renewed",
+                "runtime": runtime.model_dump(mode="json"),
+            },
+        )
+
+    def _ensure_keepalive_driver(self, team_name: str, worker: str) -> None:
+        if self._keepalive_interval_seconds is None:
+            return
+        key = (team_name, worker)
+        task = self._keepalive_tasks.get(key)
+        if task is not None and not task.done():
+            return
+        self._keepalive_tasks[key] = asyncio.create_task(
+            self._run_keepalive_driver(team_name, worker),
+            name=f"team-runtime-keepalive:{team_name}:{worker}",
+        )
+
+    async def _cancel_keepalive_driver(self, team_name: str, worker: str) -> None:
+        key = (team_name, worker)
+        task = self._keepalive_tasks.pop(key, None)
+        if task is None:
+            return
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+
+    async def _run_keepalive_driver(self, team_name: str, worker: str) -> None:
+        key = (team_name, worker)
+        try:
+            while True:
+                assert self._keepalive_interval_seconds is not None
+                await asyncio.sleep(self._keepalive_interval_seconds)
+                async with self._lock_for(team_name, worker):
+                    store = self._store(team_name)
+                    manifest = store.read_manifest()
+                    runtime = self._runtime(store, manifest, worker)
+                    if runtime is None or runtime.status not in {"starting", "ready", "busy", "unhealthy"}:
+                        return
+                    owner_session_id = runtime.attachment_session_id
+                    if owner_session_id is None:
+                        return
+                    await self._heartbeat_worker_runtime(team_name, worker, owner_session_id)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            return
+        finally:
+            task = self._keepalive_tasks.get(key)
+            if task is asyncio.current_task():
+                self._keepalive_tasks.pop(key, None)
 
     def _record_start_failure(
         self,
@@ -304,3 +409,10 @@ class TeamRuntimeController:
             msg = "worker is required"
             raise TypeError(msg)
         return ensure_safe_identifier(WORKER_NAME_SAFE_PATTERN, value, "worker")
+
+    def _require_session_id(self, request: Mapping[str, object]) -> str:
+        value = request.get("session_id")
+        if not isinstance(value, str) or not value.strip():
+            msg = "session_id is required"
+            raise TypeError(msg)
+        return value.strip()

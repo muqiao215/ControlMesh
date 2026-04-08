@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING
 from aiohttp import web
 
 from ductor_bot.team.api import execute_team_api_operation, resolve_team_state_root
+from ductor_bot.team.runtime_control import TEAM_RUNTIME_LIFECYCLE_OPERATIONS
 from ductor_bot.workspace.paths import resolve_paths
 
 if TYPE_CHECKING:
@@ -491,7 +492,7 @@ class InternalAgentAPI:
                 status=400,
             )
 
-        if operation in {"start-worker-runtime", "stop-worker-runtime"}:
+        if operation in TEAM_RUNTIME_LIFECYCLE_OPERATIONS:
             if self._team_runtime_controller is None:
                 return web.json_response(
                     {

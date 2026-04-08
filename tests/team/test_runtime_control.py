@@ -1,7 +1,8 @@
-"""Tests for team worker runtime start/stop automation."""
+"""Tests for team worker runtime lifecycle automation."""
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,6 +20,7 @@ from ductor_bot.team.models import (
     TeamWorker,
     TeamWorkerRuntimeState,
 )
+from ductor_bot.team.runtime_attachment import TeamRuntimeAttachmentManager
 from ductor_bot.team.runtime_control import TeamRuntimeController
 from ductor_bot.team.state import TeamStateStore
 
@@ -131,6 +133,7 @@ async def test_start_worker_runtime_bootstraps_named_session_and_persists_ready(
     assert request.process_label == "ns:ia-worker-1"
     assert request.provider_override == "codex"
     assert request.model_override == "gpt-5"
+    await controller.shutdown()
 
 
 @pytest.mark.asyncio
@@ -160,6 +163,7 @@ async def test_start_worker_runtime_reuses_existing_attachment_without_bootstrap
     assert runtime.status == "ready"
     assert runtime.attachment_session_id == "sess-existing"
     orchestrator.cli_service.execute.assert_not_awaited()
+    await controller.shutdown()
 
 
 @pytest.mark.asyncio
@@ -285,4 +289,296 @@ async def test_stop_worker_runtime_rejects_busy_runtime(tmp_path: Path) -> None:
     assert runtime.status == "busy"
     assert session is not None
     assert session.status == "idle"
+    orchestrator.end_named_session.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_worker_runtime_renews_live_owner_lease(tmp_path: Path) -> None:
+    state_root, store = _seed_store(tmp_path)
+    named_sessions_path = tmp_path / "named_sessions.json"
+    _seed_named_session(
+        named_sessions_path,
+        name="ia-worker-1",
+        chat_id=21,
+        session_id="sess-worker-1",
+    )
+    now = datetime.now(UTC)
+    original_expiry = now + timedelta(seconds=30)
+    store.put_worker_runtime(
+        TeamWorkerRuntimeState(
+            worker="worker-1",
+            status="busy",
+            execution_id="exec-1",
+            dispatch_request_id="dispatch-1",
+            lease_id="lease-1",
+            lease_expires_at=original_expiry.isoformat(),
+            heartbeat_at=(now - timedelta(seconds=10)).isoformat(),
+            attachment_type="named_session",
+            attachment_name="ia-worker-1",
+            attachment_transport="tg",
+            attachment_chat_id=21,
+            attachment_session_id="sess-worker-1",
+            attached_at=(now - timedelta(minutes=1)).isoformat(),
+            started_at=(now - timedelta(minutes=1)).isoformat(),
+        )
+    )
+    orchestrator = _make_orchestrator(named_sessions_path)
+    controller = TeamRuntimeController(orchestrator=orchestrator, team_state_root=state_root)
+
+    result = await controller.execute(
+        "heartbeat-worker-runtime",
+        {
+            "team_name": "alpha-team",
+            "worker": "worker-1",
+            "session_id": "sess-worker-1",
+        },
+    )
+
+    runtime = store.get_worker_runtime("worker-1")
+    assert result["ok"] is True
+    assert result["operation"] == "heartbeat-worker-runtime"
+    assert result["data"]["action"] == "renewed"
+    assert runtime.status == "busy"
+    assert runtime.execution_id == "exec-1"
+    assert runtime.dispatch_request_id == "dispatch-1"
+    assert runtime.heartbeat_at is not None
+    assert runtime.heartbeat_at > (now - timedelta(seconds=10)).isoformat()
+    assert runtime.lease_expires_at is not None
+    assert runtime.lease_expires_at > original_expiry.isoformat()
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_worker_runtime_rejects_stale_owner_session_id(tmp_path: Path) -> None:
+    state_root, store = _seed_store(tmp_path)
+    named_sessions_path = tmp_path / "named_sessions.json"
+    _seed_named_session(
+        named_sessions_path,
+        name="ia-worker-1",
+        chat_id=21,
+        session_id="sess-live",
+    )
+    now = datetime.now(UTC)
+    store.put_worker_runtime(
+        TeamWorkerRuntimeState(
+            worker="worker-1",
+            status="ready",
+            lease_id="lease-1",
+            lease_expires_at=(now + timedelta(minutes=5)).isoformat(),
+            heartbeat_at=now.isoformat(),
+            attachment_type="named_session",
+            attachment_name="ia-worker-1",
+            attachment_transport="tg",
+            attachment_chat_id=21,
+            attachment_session_id="sess-live",
+            attached_at=(now - timedelta(minutes=1)).isoformat(),
+            started_at=(now - timedelta(minutes=1)).isoformat(),
+        )
+    )
+    orchestrator = _make_orchestrator(named_sessions_path)
+    controller = TeamRuntimeController(orchestrator=orchestrator, team_state_root=state_root)
+
+    result = await controller.execute(
+        "heartbeat-worker-runtime",
+        {
+            "team_name": "alpha-team",
+            "worker": "worker-1",
+            "session_id": "sess-stale",
+        },
+    )
+
+    runtime = store.get_worker_runtime("worker-1")
+    assert result["ok"] is False
+    assert result["error"]["code"] == "invalid_request"
+    assert "owned by session 'sess-live'" in result["error"]["message"]
+    assert runtime.status == "ready"
+    assert runtime.attachment_session_id == "sess-live"
+
+
+@pytest.mark.asyncio
+async def test_start_worker_runtime_arms_idle_keepalive_driver(tmp_path: Path) -> None:
+    state_root, store = _seed_store(tmp_path)
+    named_sessions_path = tmp_path / "named_sessions.json"
+    _seed_named_session(
+        named_sessions_path,
+        name="ia-worker-1",
+        chat_id=21,
+        session_id="sess-worker-1",
+    )
+    store.put_worker_runtime(TeamWorkerRuntimeState(worker="worker-1"))
+    orchestrator = _make_orchestrator(named_sessions_path)
+    controller = TeamRuntimeController(
+        orchestrator=orchestrator,
+        team_state_root=state_root,
+        keepalive_interval_seconds=0.01,
+    )
+
+    await controller.execute(
+        "start-worker-runtime",
+        {"team_name": "alpha-team", "worker": "worker-1"},
+    )
+    attached = store.get_worker_runtime("worker-1")
+    initial_heartbeat = attached.heartbeat_at
+    initial_expiry = attached.lease_expires_at
+
+    await asyncio.sleep(0.05)
+
+    renewed = store.get_worker_runtime("worker-1")
+    assert renewed.status == "ready"
+    assert renewed.heartbeat_at is not None
+    assert renewed.heartbeat_at > (initial_heartbeat or "")
+    assert renewed.lease_expires_at is not None
+    assert renewed.lease_expires_at > (initial_expiry or "")
+    await controller.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_keepalive_driver_renews_busy_runtime_after_start(tmp_path: Path) -> None:
+    state_root, store = _seed_store(tmp_path)
+    named_sessions_path = tmp_path / "named_sessions.json"
+    _seed_named_session(
+        named_sessions_path,
+        name="ia-worker-1",
+        chat_id=21,
+        session_id="sess-worker-1",
+    )
+    store.put_worker_runtime(TeamWorkerRuntimeState(worker="worker-1"))
+    orchestrator = _make_orchestrator(named_sessions_path)
+    controller = TeamRuntimeController(
+        orchestrator=orchestrator,
+        team_state_root=state_root,
+        keepalive_interval_seconds=0.01,
+    )
+
+    await controller.execute(
+        "start-worker-runtime",
+        {"team_name": "alpha-team", "worker": "worker-1"},
+    )
+    ready = store.get_worker_runtime("worker-1")
+    busy = store.transition_worker_runtime(
+        "worker-1",
+        "busy",
+        updates={
+            "execution_id": "exec-1",
+            "dispatch_request_id": "dispatch-1",
+        },
+    )
+
+    await asyncio.sleep(0.05)
+
+    renewed = store.get_worker_runtime("worker-1")
+    assert ready.status == "ready"
+    assert busy.status == "busy"
+    assert renewed.status == "busy"
+    assert renewed.execution_id == "exec-1"
+    assert renewed.dispatch_request_id == "dispatch-1"
+    assert renewed.heartbeat_at is not None
+    assert renewed.heartbeat_at > (busy.heartbeat_at or "")
+    assert renewed.lease_expires_at is not None
+    assert renewed.lease_expires_at > (busy.lease_expires_at or "")
+    await controller.shutdown()
+
+
+def test_reconcile_runtime_marks_owner_session_id_change_lost(tmp_path: Path) -> None:
+    _, store = _seed_store(tmp_path)
+    named_sessions_path = tmp_path / "named_sessions.json"
+    _seed_named_session(
+        named_sessions_path,
+        name="ia-worker-1",
+        chat_id=21,
+        session_id="sess-new",
+    )
+    now = datetime.now(UTC)
+    store.put_worker_runtime(
+        TeamWorkerRuntimeState(
+            worker="worker-1",
+            status="busy",
+            execution_id="exec-1",
+            dispatch_request_id="dispatch-1",
+            lease_id="lease-1",
+            lease_expires_at=(now + timedelta(minutes=5)).isoformat(),
+            heartbeat_at=now.isoformat(),
+            attachment_type="named_session",
+            attachment_name="ia-worker-1",
+            attachment_transport="tg",
+            attachment_chat_id=21,
+            attachment_session_id="sess-old",
+            attached_at=(now - timedelta(seconds=5)).isoformat(),
+            started_at=(now - timedelta(seconds=5)).isoformat(),
+        )
+    )
+    manager = TeamRuntimeAttachmentManager(named_sessions_path=named_sessions_path)
+
+    runtime = manager.reconcile_runtime_owner(store, store.read_manifest(), "worker-1", now=now)
+
+    assert runtime.status == "lost"
+    assert runtime.execution_id == "exec-1"
+    assert runtime.dispatch_request_id is None
+    assert runtime.health_reason == "runtime owner changed"
+
+
+def test_reconcile_runtime_marks_missing_owner_lost(tmp_path: Path) -> None:
+    _, store = _seed_store(tmp_path)
+    named_sessions_path = tmp_path / "named_sessions.json"
+    now = datetime.now(UTC)
+    store.put_worker_runtime(
+        TeamWorkerRuntimeState(
+            worker="worker-1",
+            status="ready",
+            lease_id="lease-1",
+            lease_expires_at=(now + timedelta(minutes=5)).isoformat(),
+            heartbeat_at=now.isoformat(),
+            attachment_type="named_session",
+            attachment_name="ia-worker-1",
+            attachment_transport="tg",
+            attachment_chat_id=21,
+            attachment_session_id="sess-worker-1",
+            attached_at=(now - timedelta(seconds=5)).isoformat(),
+            started_at=(now - timedelta(seconds=5)).isoformat(),
+        )
+    )
+    manager = TeamRuntimeAttachmentManager(named_sessions_path=named_sessions_path)
+
+    runtime = manager.reconcile_runtime_owner(store, store.read_manifest(), "worker-1", now=now)
+
+    assert runtime.status == "lost"
+    assert runtime.health_reason == "runtime owner missing"
+
+
+@pytest.mark.asyncio
+async def test_stop_worker_runtime_allows_stale_busy_owner_to_downgrade_then_stop(
+    tmp_path: Path,
+) -> None:
+    state_root, store = _seed_store(tmp_path)
+    named_sessions_path = tmp_path / "named_sessions.json"
+    now = datetime.now(UTC)
+    store.put_worker_runtime(
+        TeamWorkerRuntimeState(
+            worker="worker-1",
+            status="busy",
+            execution_id="exec-1",
+            dispatch_request_id="dispatch-1",
+            lease_id="lease-1",
+            lease_expires_at=(now + timedelta(minutes=5)).isoformat(),
+            heartbeat_at=now.isoformat(),
+            attachment_type="named_session",
+            attachment_name="ia-worker-1",
+            attachment_transport="tg",
+            attachment_chat_id=21,
+            attachment_session_id="sess-stale",
+            attached_at=(now - timedelta(seconds=5)).isoformat(),
+            started_at=(now - timedelta(seconds=5)).isoformat(),
+        )
+    )
+    orchestrator = _make_orchestrator(named_sessions_path)
+    controller = TeamRuntimeController(orchestrator=orchestrator, team_state_root=state_root)
+
+    result = await controller.execute(
+        "stop-worker-runtime",
+        {"team_name": "alpha-team", "worker": "worker-1"},
+    )
+
+    runtime = store.get_worker_runtime("worker-1")
+
+    assert result["ok"] is True
+    assert runtime.status == "stopped"
     orchestrator.end_named_session.assert_not_awaited()

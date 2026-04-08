@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import secrets
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -102,6 +103,13 @@ class TeamRuntimeAttachmentManager:
         *,
         now: datetime | None = None,
     ) -> TeamDispatchExecutionClaim | None:
+        with suppress(FileNotFoundError):
+            self.reconcile_runtime_owner(
+                store,
+                manifest,
+                request.to_worker,
+                now=now,
+            )
         attachment = self.resolve_attachment(manifest, request.to_worker)
         if attachment is None:
             return None
@@ -163,6 +171,29 @@ class TeamRuntimeAttachmentManager:
             now=_utc_now(now),
         )
 
+    def reconcile_runtime_owner(
+        self,
+        store: TeamStateStore,
+        manifest: TeamManifest,
+        worker: str,
+        *,
+        now: datetime | None = None,
+    ) -> TeamWorkerRuntimeState:
+        """Reconcile persisted runtime state against the live named-session owner."""
+        runtime = store.reconcile_worker_runtime(worker, now=now)
+        reason = self._owner_binding_failure(runtime)
+        if reason is None:
+            return runtime
+        return store.transition_worker_runtime(
+            worker,
+            "lost",
+            updates={
+                "health_reason": reason,
+                "dispatch_request_id": None,
+            },
+            now=_utc_now(now),
+        )
+
     def release_dispatch(
         self,
         store: TeamStateStore,
@@ -174,7 +205,12 @@ class TeamRuntimeAttachmentManager:
         if request.execution_id is None or request.runtime_lease_id is None:
             return None
         try:
-            runtime = store.reconcile_worker_runtime(request.to_worker, now=now)
+            runtime = self.reconcile_runtime_owner(
+                store,
+                manifest,
+                request.to_worker,
+                now=now,
+            )
         except FileNotFoundError:
             return None
         if runtime.status != "busy" or runtime.dispatch_request_id != request.request_id:
@@ -208,6 +244,41 @@ class TeamRuntimeAttachmentManager:
             now=at,
         )
 
+    def renew_runtime_heartbeat(
+        self,
+        store: TeamStateStore,
+        manifest: TeamManifest,
+        worker: str,
+        *,
+        owner_session_id: str,
+        now: datetime | None = None,
+    ) -> TeamWorkerRuntimeState:
+        """Renew heartbeat/lease facts only for the current live runtime owner."""
+        at = _utc_now(now)
+        runtime = self.reconcile_runtime_owner(store, manifest, worker, now=at)
+        if runtime.status not in {"starting", "ready", "busy", "unhealthy"}:
+            msg = f"worker runtime '{worker}' is not live while {runtime.status}"
+            raise ValueError(msg)
+        attachment = self.resolve_attachment(manifest, worker)
+        if attachment is None:
+            msg = f"worker runtime '{worker}' attachment is not available"
+            raise ValueError(msg)
+        if attachment.session_id != owner_session_id:
+            msg = (
+                f"worker runtime '{worker}' is owned by session "
+                f"'{attachment.session_id}' not '{owner_session_id}'"
+            )
+            raise ValueError(msg)
+        if runtime.lease_id is None:
+            msg = f"worker runtime '{worker}' is missing lease ownership"
+            raise ValueError(msg)
+        return store.record_worker_runtime_heartbeat(
+            worker,
+            lease_id=runtime.lease_id,
+            heartbeat_at=at.isoformat(),
+            lease_expires_at=_lease_expires_at(at),
+        )
+
     def _ensure_worker_ready(
         self,
         store: TeamStateStore,
@@ -218,7 +289,7 @@ class TeamRuntimeAttachmentManager:
         now: datetime,
     ) -> TeamWorkerRuntimeState:
         runtime = self._get_or_create_runtime(store, worker)
-        runtime = store.reconcile_worker_runtime(worker, now=now)
+        runtime = self.reconcile_runtime_owner(store, manifest, worker, now=now)
 
         if runtime.status in {"ready", "busy"} and self._matches_attachment(runtime, attachment):
             return runtime
@@ -309,3 +380,29 @@ class TeamRuntimeAttachmentManager:
 
     def _new_lease_id(self) -> str:
         return f"lease-{secrets.token_hex(6)}"
+
+    def _owner_binding_failure(self, runtime: TeamWorkerRuntimeState) -> str | None:
+        if runtime.status in {"created", "stopped", "lost"}:
+            return None
+        if runtime.attachment_type != "named_session":
+            return None
+        if runtime.attachment_chat_id is None or runtime.attachment_name is None:
+            failure = "runtime owner facts missing"
+        else:
+            session = NamedSessionRegistry(self._named_sessions_path).get(
+                runtime.attachment_chat_id,
+                runtime.attachment_name,
+            )
+            if session is None:
+                failure = "runtime owner missing"
+            elif session.status == "ended":
+                failure = "runtime owner ended"
+            elif session.transport != runtime.attachment_transport:
+                failure = "runtime owner changed"
+            elif not session.session_id:
+                failure = "runtime owner missing session id"
+            elif runtime.attachment_session_id != session.session_id:
+                failure = "runtime owner changed"
+            else:
+                failure = None
+        return failure

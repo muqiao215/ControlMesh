@@ -409,6 +409,7 @@ class TestTeamOperate:
         self, client: TestClient[Any, Any], api: InternalAgentAPI
     ) -> None:
         controller: Any = SimpleNamespace(
+            operations=frozenset({"start-worker-runtime", "heartbeat-worker-runtime"}),
             execute=AsyncMock(
                 return_value={
                     "schema_version": 1,
@@ -436,6 +437,46 @@ class TestTeamOperate:
             {"team_name": "alpha-team", "worker": "worker-1"},
         )
 
+    async def test_heartbeat_worker_runtime_routes_to_runtime_controller(
+        self, client: TestClient[Any, Any], api: InternalAgentAPI
+    ) -> None:
+        controller: Any = SimpleNamespace(
+            operations=frozenset({"heartbeat-worker-runtime"}),
+            execute=AsyncMock(
+                return_value={
+                    "schema_version": 1,
+                    "ok": True,
+                    "operation": "heartbeat-worker-runtime",
+                    "data": {"runtime": {"worker": "worker-1", "status": "busy"}},
+                }
+            ),
+        )
+        api.set_team_runtime_controller(controller)
+
+        resp = await client.post(
+            "/teams/operate",
+            json={
+                "operation": "heartbeat-worker-runtime",
+                "request": {
+                    "team_name": "alpha-team",
+                    "worker": "worker-1",
+                    "session_id": "sess-worker-1",
+                },
+            },
+        )
+
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["ok"] is True
+        controller.execute.assert_awaited_once_with(
+            "heartbeat-worker-runtime",
+            {
+                "team_name": "alpha-team",
+                "worker": "worker-1",
+                "session_id": "sess-worker-1",
+            },
+        )
+
     async def test_start_worker_runtime_requires_runtime_controller(
         self, client: TestClient[Any, Any]
     ) -> None:
@@ -444,6 +485,26 @@ class TestTeamOperate:
             json={
                 "operation": "start-worker-runtime",
                 "request": {"team_name": "alpha-team", "worker": "worker-1"},
+            },
+        )
+
+        assert resp.status == 503
+        data = await resp.json()
+        assert data["ok"] is False
+        assert data["error"]["code"] == "operation_not_allowed"
+
+    async def test_heartbeat_worker_runtime_requires_runtime_controller(
+        self, client: TestClient[Any, Any]
+    ) -> None:
+        resp = await client.post(
+            "/teams/operate",
+            json={
+                "operation": "heartbeat-worker-runtime",
+                "request": {
+                    "team_name": "alpha-team",
+                    "worker": "worker-1",
+                    "session_id": "sess-worker-1",
+                },
             },
         )
 

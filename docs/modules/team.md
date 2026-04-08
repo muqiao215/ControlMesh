@@ -24,7 +24,7 @@ It still does **not** add a supervisor daemon, tmux fleet management, or a secon
 - separate persisted worker runtime state for live execution facts:
   - strict lifecycle: `created`, `starting`, `ready`, `busy`, `unhealthy`, `stopped`, `lost`
   - explicit runtime execution facts: attachment identity, `execution_id`, `lease_id`, `lease_expires_at`, `heartbeat_at`, `health_reason`
-  - deterministic reconcile from persisted lease facts without starting or probing processes
+  - deterministic reconcile from persisted lease facts plus current named-session owner identity without starting or probing processes
 - file-backed state primitives under a dedicated team state root
   - canonical runtime/CLI root: `DuctorPaths.team_state_dir` -> `workspace/team-state`
 - team JSON envelope API:
@@ -39,11 +39,12 @@ It still does **not** add a supervisor daemon, tmux fleet management, or a secon
   - attached workers are claimed for a single active execution transaction at a time
   - delivered dispatch requests can later accept an explicit worker-reported result writeback via the existing team state layer
   - mailbox messages can emit leader-visible unicast notifications
-  - narrow runtime lifecycle automation:
-    - `start-worker-runtime`
-    - `stop-worker-runtime`
-    - both run through the internal localhost `/teams/operate` endpoint
-    - both reuse the existing named-session contract instead of introducing tmux or a new worker transport
+- narrow runtime lifecycle automation:
+  - `start-worker-runtime`
+  - `stop-worker-runtime`
+  - `heartbeat-worker-runtime`
+  - both run through the internal localhost `/teams/operate` endpoint
+  - all three reuse the existing named-session contract instead of introducing tmux or a new worker transport
 - phase transition machine:
   - `plan`
   - `approve`
@@ -60,7 +61,6 @@ It still does **not** add a supervisor daemon, tmux fleet management, or a secon
 - write-capable external API operations
 - generalized worker pool management or multi-worker scheduling
 - end-to-end delivery acknowledgements beyond successful bus submission
-- heartbeat-owner binding beyond persisted lease/heartbeat timestamps
 - force-stop or execution-aware interruption while a worker is `busy`
 
 ## Live Bridge
@@ -73,6 +73,12 @@ The current live path is intentionally narrow:
   - required facts: session exists, is not ended, and has a resumable `session_id`
 - runtime start automation now creates that exact named session with a real bootstrap turn and persists the returned `session_id`
 - runtime stop automation ends that exact named session through the existing orchestrator/process label path
+- runtime owner validation now rejects `ready` / `busy` state when the current named-session `session_id` no longer matches the persisted attachment owner
+- runtime heartbeat renewal now accepts lease refresh only from the current live named-session owner and extends `heartbeat_at` / `lease_expires_at` together
+- the minimum non-daemon heartbeat driver now lives in the runtime lifecycle controller:
+  - `start-worker-runtime` and runtime reattach arm a bounded in-process keepalive loop for that worker
+  - the loop renews the same owner-validated heartbeat/lease while runtime state remains live
+  - the loop exits on `stopped`, `lost`, or owner-validation failure
 - when a verified attached worker also owns a routable session, the existing `MessageBus` injects directly into that worker session
 - when a worker is not directly routable, dispatch requests deterministically fall back to `TeamManifest.leader.session`
 - when a manifest advertises worker routing metadata but no real attachment can be verified, the team layer falls back to the leader route instead of trusting stale metadata
@@ -155,13 +161,22 @@ The team layer can now:
 - release `busy -> ready` on explicit result writeback
 - reconcile stale lease ownership to `lost`
 - refuse to trust stale busy ownership after lease expiry by clearing `dispatch_request_id` during reconcile
+- refuse to trust `ready` / `busy` ownership when the owning named session is missing or its `session_id` changed
+- refresh `heartbeat_at` and extend `lease_expires_at` only when the live named-session owner proves the current `session_id`
 
 The start/stop path is intentionally narrow:
 
 - start uses the manifest's `worker.runtime.session_name`
 - start runs one real bootstrap turn to create a resumable named session
 - stop refuses to kill a `busy` runtime in this cut
-- recovery still trusts only persisted named-session facts plus persisted lease/heartbeat facts
+- owner reconcile now checks the live named-session owner identity against persisted attachment facts
+- heartbeat renewal now requires the caller to present the current owner `session_id`
+- heartbeat renewal only refreshes persisted lease facts; it does not supervise a daemon or create its own loop
+- the current driver is a controller-owned bounded task, not a separate process:
+  - it is armed when the runtime is explicitly started or reattached
+  - it keeps renewing through both `ready` and `busy`
+  - it is cancelled on `stop-worker-runtime`
+  - it is not yet re-armed automatically after a Ductor process restart unless lifecycle code touches that runtime again
 
 If a named session is still missing, ended, or lacks a resumable `session_id`, dispatch falls back to the leader route and no fake worker execution claim is created.
 
@@ -221,10 +236,11 @@ Runtime/CLI callers now also have a minimal honest call path without inventing a
   - `record-dispatch-result`
   - `start-worker-runtime`
   - `stop-worker-runtime`
+  - `heartbeat-worker-runtime`
 
-The write surface remains intentionally narrow. The lifecycle additions are only enough to start or stop the named-session-backed runtime unit. The control plane is still not a broad mutable CRUD API.
+The write surface remains intentionally narrow. The lifecycle additions are only enough to start, stop, or renew the lease/heartbeat for the named-session-backed runtime unit. The control plane is still not a broad mutable CRUD API.
 
-This still does **not** mean Ductor owns full worker execution. The team layer can now start/stop the named-session-backed worker unit and lease one active execution slot, but it does not supervise a daemon, does not bind heartbeats to a live owner process, and does not add a new transport.
+This still does **not** mean Ductor owns full worker execution. The team layer can now start/stop the named-session-backed worker unit, bind runtime validity to the current named-session owner identity, renew heartbeat/lease facts when that owner proves its identity, and keep those renewals alive through a bounded controller-owned task, but it does not supervise a daemon, does not run a separate always-on manager, and does not add a new transport.
 
 The manifest now persists nested `session` and `runtime` records, but still accepts the earlier flattened fields on input:
 
