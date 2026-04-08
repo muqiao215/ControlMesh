@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -82,19 +84,39 @@ def acquire_dream_lock(
 ) -> DreamingLock | None:
     """Acquire the dreaming lock or return ``None`` if it is still held."""
     current_time = now or datetime.now(UTC)
-    raw = load_json(paths.dreaming_lock_path)
-    if isinstance(raw, dict):
-        active = DreamingLock.model_validate(raw)
-        if datetime.fromisoformat(active.expires_at) > current_time:
-            return None
-
     lock = DreamingLock(
         owner=owner,
         acquired_at=current_time.isoformat(),
         expires_at=(current_time + timedelta(seconds=ttl_seconds)).isoformat(),
     )
-    atomic_json_save(paths.dreaming_lock_path, lock.model_dump(mode="json"))
-    return lock
+    payload = json.dumps(lock.model_dump(mode="json"), ensure_ascii=False, indent=2)
+
+    while True:
+        try:
+            fd = os.open(
+                paths.dreaming_lock_path,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                0o600,
+            )
+        except FileExistsError:
+            raw = load_json(paths.dreaming_lock_path)
+            if not isinstance(raw, dict):
+                paths.dreaming_lock_path.unlink(missing_ok=True)
+                continue
+            active = DreamingLock.model_validate(raw)
+            if datetime.fromisoformat(active.expires_at) > current_time:
+                return None
+            with suppress(FileNotFoundError):
+                paths.dreaming_lock_path.unlink()
+            continue
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(payload)
+                handle.write("\n")
+        except Exception:
+            paths.dreaming_lock_path.unlink(missing_ok=True)
+            raise
+        return lock
 
 
 def release_dream_lock(paths: DuctorPaths, *, owner: str) -> bool:
@@ -384,8 +406,7 @@ def _update_sweep_state(
     state.last_selected_count = result.selected_count
     state.last_applied_count = result.applied_count
     state.last_error = None
-    if result.promoted_candidate_keys:
-        state.promoted_candidate_keys = result.promoted_candidate_keys
+    state.promoted_candidate_keys = list(result.promoted_candidate_keys)
     save_sweep_state(paths, state)
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
 from ductor_bot.team.contracts import (
@@ -33,15 +34,22 @@ from ductor_bot.team.state.mailbox import (
 )
 from ductor_bot.team.state.manifest import read_manifest, write_manifest
 from ductor_bot.team.state.phase import read_phase, write_phase
-from ductor_bot.team.state.tasks import claim_task, get_task, list_tasks, release_task_claim, upsert_task
+from ductor_bot.team.state.tasks import (
+    claim_task,
+    get_task,
+    list_tasks,
+    release_task_claim,
+    upsert_task,
+)
 
 
 class TeamStateStore:
     """File-backed state store for additive team coordination."""
 
-    def __init__(self, state_root: Path | str, team_name: str) -> None:
+    def __init__(self, state_root: Path | str, team_name: str, *, create: bool = True) -> None:
         self.paths = TeamStatePaths(state_root=Path(state_root), team_name=team_name)
-        self.paths.team_dir.mkdir(parents=True, exist_ok=True)
+        if create:
+            self.paths.team_dir.mkdir(parents=True, exist_ok=True)
 
     def write_manifest(self, manifest: TeamManifest) -> TeamManifest:
         return write_manifest(self.paths, manifest)
@@ -58,7 +66,13 @@ class TeamStateStore:
     def get_task(self, task_id: str) -> TeamTask:
         return get_task(self.paths, task_id)
 
-    def claim_task(self, task_id: str, claim: TeamTaskClaim, *, now=None) -> TeamTask:  # type: ignore[no-untyped-def]
+    def claim_task(
+        self,
+        task_id: str,
+        claim: TeamTaskClaim,
+        *,
+        now: datetime | None = None,
+    ) -> TeamTask:
         return claim_task(self.paths, task_id, claim, now=now)
 
     def release_task_claim(self, task_id: str) -> TeamTask:
@@ -121,15 +135,15 @@ class TeamStateStore:
         mailbox = self.list_mailbox_messages()
         events = self.read_events()
 
-        task_counts = {status: 0 for status in TEAM_TASK_STATUSES}
+        task_counts = dict.fromkeys(TEAM_TASK_STATUSES, 0)
         for task in tasks:
             task_counts[task.status] += 1
 
-        dispatch_counts = {status: 0 for status in TEAM_DISPATCH_REQUEST_STATUSES}
+        dispatch_counts = dict.fromkeys(TEAM_DISPATCH_REQUEST_STATUSES, 0)
         for request in dispatch:
             dispatch_counts[request.status] += 1
 
-        mailbox_counts = {status: 0 for status in TEAM_MAILBOX_MESSAGE_STATUSES}
+        mailbox_counts = dict.fromkeys(TEAM_MAILBOX_MESSAGE_STATUSES, 0)
         for message in mailbox:
             mailbox_counts[message.status] += 1
 

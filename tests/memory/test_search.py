@@ -105,3 +105,12 @@ def test_sync_memory_index_updates_by_content_hash_and_prunes_deleted_files(tmp_
     assert updated.unchanged_count == 2
     assert [hit.source_path for hit in result.hits] == ["memory/2026-04-08.md"]
 
+
+def test_search_memory_index_returns_empty_hits_for_invalid_fts_query(tmp_path: Path) -> None:
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+
+    for query in ['"', "(", "foo OR"]:
+        result = search_memory_index(paths, query, refresh=False)
+        assert result.query == query
+        assert result.hits == []

@@ -109,32 +109,35 @@ def search_memory_index(
     if refresh:
         sync_memory_index(paths)
 
-    with sqlite3.connect(paths.memory_search_index_path) as connection:
-        _initialize_schema(connection)
-        rows = connection.execute(
-            """
-            SELECT
-                docs.source_path,
-                docs.kind,
-                docs.source_date,
-                snippet(memory_documents_fts, 0, '[', ']', '...', ?) AS snippet,
-                bm25(memory_documents_fts, 10.0) AS rank
-            FROM memory_documents_fts
-            JOIN memory_documents AS docs ON docs.id = memory_documents_fts.rowid
-            WHERE memory_documents_fts MATCH ?
-            ORDER BY
-                rank ASC,
-                CASE docs.kind
-                    WHEN 'authority' THEN 0
-                    WHEN 'dream-diary' THEN 1
-                    ELSE 2
-                END ASC,
-                docs.source_date DESC,
-                docs.source_path ASC
-            LIMIT ?
-            """,
-            (_SEARCH_SNIPPET_TOKENS, query, limit),
-        ).fetchall()
+    try:
+        with sqlite3.connect(paths.memory_search_index_path) as connection:
+            _initialize_schema(connection)
+            rows = connection.execute(
+                """
+                SELECT
+                    docs.source_path,
+                    docs.kind,
+                    docs.source_date,
+                    snippet(memory_documents_fts, 0, '[', ']', '...', ?) AS snippet,
+                    bm25(memory_documents_fts, 10.0) AS rank
+                FROM memory_documents_fts
+                JOIN memory_documents AS docs ON docs.id = memory_documents_fts.rowid
+                WHERE memory_documents_fts MATCH ?
+                ORDER BY
+                    rank ASC,
+                    CASE docs.kind
+                        WHEN 'authority' THEN 0
+                        WHEN 'dream-diary' THEN 1
+                        ELSE 2
+                    END ASC,
+                    docs.source_date DESC,
+                    docs.source_path ASC
+                LIMIT ?
+                """,
+                (_SEARCH_SNIPPET_TOKENS, query, limit),
+            ).fetchall()
+    except sqlite3.OperationalError:
+        return MemorySearchResult(query=query, hits=[])
 
     hits = [
         MemorySearchHit(

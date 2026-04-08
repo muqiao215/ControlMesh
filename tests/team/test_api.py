@@ -192,3 +192,17 @@ def test_unknown_operation_returns_structured_error(tmp_path: Path) -> None:
     assert result["ok"] is False
     assert result["operation"] == "unknown"
     assert result["error"]["code"] == "unknown_operation"
+
+
+def test_read_only_api_does_not_create_team_dir_for_missing_team(tmp_path: Path) -> None:
+    state_root = tmp_path / "team-state"
+
+    result = execute_team_api_operation(
+        "read-manifest",
+        {"team_name": "missing-team"},
+        state_root=state_root,
+    )
+
+    assert result["ok"] is False
+    assert result["error"]["code"] == "not_found"
+    assert (state_root / "missing-team").exists() is False

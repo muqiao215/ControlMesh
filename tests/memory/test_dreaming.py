@@ -191,4 +191,5 @@ def test_apply_dreaming_sweep_applies_new_candidates_and_skips_unchanged_notes(t
     assert second.skipped_unchanged_notes == 2
     assert second.applied_count == 0
     assert state.status == "completed"
-    assert state.promoted_candidate_keys == first.promoted_candidate_keys
+    assert second.promoted_candidate_keys == []
+    assert state.promoted_candidate_keys == []
