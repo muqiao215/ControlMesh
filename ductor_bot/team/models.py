@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from pydantic import (
@@ -28,6 +29,7 @@ from ductor_bot.team.contracts import (
     TEAM_STATE_SCHEMA_VERSION,
     TEAM_TASK_STATUSES,
     TEAM_TERMINAL_PHASES,
+    TEAM_WORKER_RUNTIME_STATUSES,
     WORKER_NAME_SAFE_PATTERN,
     ensure_safe_identifier,
 )
@@ -41,6 +43,19 @@ def _normalize_optional_text(value: str | None, *, label: str) -> str | None:
     if not normalized:
         msg = f"{label} must not be blank"
         raise ValueError(msg)
+    return normalized
+
+
+def _normalize_optional_timestamp(value: str | None, *, label: str) -> str | None:
+    """Normalize optional ISO-8601 timestamp fields."""
+    normalized = _normalize_optional_text(value, label=label)
+    if normalized is None:
+        return None
+    try:
+        datetime.fromisoformat(normalized)
+    except ValueError as exc:
+        msg = f"{label} must be a valid ISO-8601 timestamp"
+        raise ValueError(msg) from exc
     return normalized
 
 
@@ -233,6 +248,102 @@ class TeamWorkerRuntimeRef(BaseModel):
         if self.routable_session is None:
             return None
         return self.routable_session.session_key
+
+
+class TeamWorkerRuntimeState(BaseModel):
+    """Persisted live-runtime state kept separate from the static manifest."""
+
+    worker: str
+    status: str = "created"
+    execution_id: str | None = None
+    lease_id: str | None = None
+    lease_expires_at: str | None = None
+    heartbeat_at: str | None = None
+    health_reason: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+    started_at: str | None = None
+    stopped_at: str | None = None
+
+    @field_validator("worker")
+    @classmethod
+    def _validate_worker(cls, value: str) -> str:
+        return ensure_safe_identifier(WORKER_NAME_SAFE_PATTERN, value, "worker")
+
+    @field_validator("status")
+    @classmethod
+    def _validate_status(cls, value: str) -> str:
+        normalized = value.strip()
+        if normalized not in TEAM_WORKER_RUNTIME_STATUSES:
+            msg = f"status must be one of: {', '.join(TEAM_WORKER_RUNTIME_STATUSES)}"
+            raise ValueError(msg)
+        return normalized
+
+    @field_validator("execution_id", "lease_id", "health_reason")
+    @classmethod
+    def _validate_optional_text_fields(cls, value: str | None, info: ValidationInfo) -> str | None:
+        return _normalize_optional_text(value, label=info.field_name or "field")
+
+    @field_validator(
+        "lease_expires_at",
+        "heartbeat_at",
+        "created_at",
+        "updated_at",
+        "started_at",
+        "stopped_at",
+    )
+    @classmethod
+    def _validate_optional_timestamps(cls, value: str | None, info: ValidationInfo) -> str | None:
+        return _normalize_optional_timestamp(value, label=info.field_name or "field")
+
+    @model_validator(mode="after")
+    def _validate_runtime_facts(self) -> TeamWorkerRuntimeState:
+        self._validate_live_runtime()
+        self._validate_created_runtime()
+        self._validate_stopped_runtime()
+        return self
+
+    def _validate_live_runtime(self) -> None:
+        live_statuses = {"starting", "ready", "busy", "unhealthy"}
+        if self.status not in live_statuses:
+            if self.status == "lost" and self.health_reason is None:
+                raise ValueError("health_reason is required for unhealthy and lost runtimes")
+            return
+        if self.execution_id is None:
+            raise ValueError("execution_id is required once a worker runtime starts")
+        if self.lease_id is None or self.lease_expires_at is None:
+            raise ValueError("lease_id and lease_expires_at are required for live worker runtimes")
+        if self.started_at is None:
+            raise ValueError("started_at is required for live worker runtimes")
+        if self.status in {"ready", "busy", "unhealthy"} and self.heartbeat_at is None:
+            raise ValueError("heartbeat_at is required for ready, busy, and unhealthy runtimes")
+        if self.status == "unhealthy" and self.health_reason is None:
+            raise ValueError("health_reason is required for unhealthy and lost runtimes")
+
+    def _validate_created_runtime(self) -> None:
+        if self.status == "created" and any(
+            value is not None
+            for value in (
+                self.execution_id,
+                self.lease_id,
+                self.lease_expires_at,
+                self.heartbeat_at,
+                self.health_reason,
+                self.started_at,
+                self.stopped_at,
+            )
+        ):
+            raise ValueError("created worker runtimes cannot carry execution, lease, or health facts")
+
+    def _validate_stopped_runtime(self) -> None:
+        if self.status == "stopped":
+            if self.stopped_at is None:
+                raise ValueError("stopped_at is required for stopped runtimes")
+            if self.lease_id is not None or self.lease_expires_at is not None:
+                raise ValueError("stopped runtimes cannot retain an active lease")
+            return
+        if self.stopped_at is not None:
+            raise ValueError("stopped_at is only valid when status is stopped")
 
 
 class TeamManifest(BaseModel):

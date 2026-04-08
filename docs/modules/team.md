@@ -15,6 +15,10 @@ It now includes a narrow leader-session live bridge, but it still does **not** s
   - mailbox messages
   - events
   - phase state
+- separate persisted worker runtime state for live execution facts:
+  - strict lifecycle: `created`, `starting`, `ready`, `busy`, `unhealthy`, `stopped`, `lost`
+  - explicit runtime execution facts: `execution_id`, `lease_id`, `lease_expires_at`, `heartbeat_at`, `health_reason`
+  - deterministic reconcile from persisted lease facts without starting or probing processes
 - file-backed state primitives under a dedicated team state root
   - canonical runtime/CLI root: `DuctorPaths.team_state_dir` -> `workspace/team-state`
 - team JSON envelope API:
@@ -38,6 +42,7 @@ It now includes a narrow leader-session live bridge, but it still does **not** s
 ## Not Included Yet
 
 - worker process lifecycle
+- real worker process start/stop/attachment
 - tmux/team runtime management
 - gateway dispatch wiring
 - write-capable external API operations
@@ -88,6 +93,35 @@ The read-only summary now exposes both:
 
 - `workers`: the persisted manifest entries
 - `worker_runtimes`: explicit flattened ownership records derived from those workers
+- `worker_runtime_states`: persisted dynamic runtime truth for currently known worker runtime units
+- `worker_runtime_counts`: lifecycle counts across persisted dynamic runtime records
+
+## Worker Runtime State
+
+Dynamic runtime truth now lives outside the manifest in `worker-runtimes.json`.
+
+This split is intentional:
+
+- manifest entries still define static worker identity and any pre-known routing handles
+- runtime state records define live execution facts that can expire or be recovered independently
+- recovery can classify state from persisted timestamps without inventing process supervision
+
+Each runtime record is keyed by worker name and carries only live facts:
+
+- `status`
+- `execution_id`
+- `lease_id`
+- `lease_expires_at`
+- `heartbeat_at`
+- `health_reason`
+- `started_at` / `stopped_at`
+
+The first cut does not start or attach a real process. It does establish the runtime contract the next cut can bind to a real worker unit:
+
+- create a runtime record
+- transition it through strict lifecycle boundaries
+- renew heartbeat/lease metadata
+- reconcile it to `lost` when persisted lease ownership expires
 
 Dispatch envelopes now also record the effective live route in envelope metadata and emitted events:
 

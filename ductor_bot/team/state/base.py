@@ -31,6 +31,10 @@ class TeamStatePaths:
         return self.team_dir / "dispatch.json"
 
     @property
+    def worker_runtimes_path(self) -> Path:
+        return self.team_dir / "worker-runtimes.json"
+
+    @property
     def mailbox_path(self) -> Path:
         return self.team_dir / "mailbox.json"
 

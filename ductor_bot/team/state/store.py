@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 
@@ -9,6 +10,7 @@ from ductor_bot.team.contracts import (
     TEAM_DISPATCH_REQUEST_STATUSES,
     TEAM_MAILBOX_MESSAGE_STATUSES,
     TEAM_TASK_STATUSES,
+    TEAM_WORKER_RUNTIME_STATUSES,
 )
 from ductor_bot.team.models import (
     TeamDispatchRequest,
@@ -19,6 +21,7 @@ from ductor_bot.team.models import (
     TeamPhaseState,
     TeamTask,
     TeamTaskClaim,
+    TeamWorkerRuntimeState,
 )
 from ductor_bot.team.state.base import TeamStatePaths
 from ductor_bot.team.state.dispatch import (
@@ -38,6 +41,15 @@ from ductor_bot.team.state.mailbox import (
 )
 from ductor_bot.team.state.manifest import read_manifest, write_manifest
 from ductor_bot.team.state.phase import read_phase, write_phase
+from ductor_bot.team.state.runtime import (
+    get_worker_runtime,
+    list_worker_runtimes,
+    put_worker_runtime,
+    reconcile_worker_runtime,
+    reconcile_worker_runtimes,
+    record_worker_runtime_heartbeat,
+    transition_worker_runtime,
+)
 from ductor_bot.team.state.tasks import (
     claim_task,
     get_task,
@@ -70,6 +82,63 @@ class TeamStateStore:
 
     def get_task(self, task_id: str) -> TeamTask:
         return get_task(self.paths, task_id)
+
+    def put_worker_runtime(self, runtime: TeamWorkerRuntimeState) -> TeamWorkerRuntimeState:
+        self.read_manifest().get_worker(runtime.worker)
+        return put_worker_runtime(self.paths, runtime)
+
+    def get_worker_runtime(self, worker: str) -> TeamWorkerRuntimeState:
+        return get_worker_runtime(self.paths, worker)
+
+    def list_worker_runtimes(self, *, status: str | None = None) -> list[TeamWorkerRuntimeState]:
+        return list_worker_runtimes(self.paths, status=status)
+
+    def transition_worker_runtime(
+        self,
+        worker: str,
+        to_status: str,
+        *,
+        updates: Mapping[str, str | None | object] | None = None,
+        now: datetime | None = None,
+    ) -> TeamWorkerRuntimeState:
+        self.read_manifest().get_worker(worker)
+        return transition_worker_runtime(
+            self.paths,
+            worker,
+            to_status,
+            updates=updates,
+            now=now,
+        )
+
+    def record_worker_runtime_heartbeat(
+        self,
+        worker: str,
+        *,
+        lease_id: str,
+        heartbeat_at: str,
+        lease_expires_at: str | None = None,
+    ) -> TeamWorkerRuntimeState:
+        self.read_manifest().get_worker(worker)
+        return record_worker_runtime_heartbeat(
+            self.paths,
+            worker,
+            lease_id=lease_id,
+            heartbeat_at=heartbeat_at,
+            lease_expires_at=lease_expires_at,
+        )
+
+    def reconcile_worker_runtime(
+        self,
+        worker: str,
+        *,
+        now: datetime | None = None,
+    ) -> TeamWorkerRuntimeState:
+        self.read_manifest().get_worker(worker)
+        return reconcile_worker_runtime(self.paths, worker, now=now)
+
+    def reconcile_worker_runtimes(self, *, now: datetime | None = None) -> list[TeamWorkerRuntimeState]:
+        self.read_manifest()
+        return reconcile_worker_runtimes(self.paths, now=now)
 
     def claim_task(
         self,
@@ -170,6 +239,7 @@ class TeamStateStore:
         dispatch = self.list_dispatch_requests()
         mailbox = self.list_mailbox_messages()
         events = self.read_events()
+        runtimes = self.list_worker_runtimes()
 
         task_counts = dict.fromkeys(TEAM_TASK_STATUSES, 0)
         for task in tasks:
@@ -183,6 +253,10 @@ class TeamStateStore:
         for message in mailbox:
             mailbox_counts[message.status] += 1
 
+        runtime_counts = dict.fromkeys(TEAM_WORKER_RUNTIME_STATUSES, 0)
+        for runtime in runtimes:
+            runtime_counts[runtime.status] += 1
+
         return {
             "team_name": manifest.team_name,
             "task_description": manifest.task_description,
@@ -190,6 +264,8 @@ class TeamStateStore:
             "active": phase.active,
             "workers": [worker.model_dump(mode="json") for worker in manifest.workers],
             "worker_runtimes": [worker.runtime_ref.model_dump(mode="json") for worker in manifest.workers],
+            "worker_runtime_states": [runtime.model_dump(mode="json") for runtime in runtimes],
+            "worker_runtime_counts": runtime_counts,
             "task_counts": task_counts,
             "dispatch_counts": dispatch_counts,
             "mailbox_counts": mailbox_counts,

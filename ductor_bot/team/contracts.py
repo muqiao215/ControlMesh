@@ -44,6 +44,15 @@ TEAM_DISPATCH_RESULT_OUTCOMES: tuple[str, ...] = (
     "failed",
     "needs_repair",
 )
+TEAM_WORKER_RUNTIME_STATUSES: tuple[str, ...] = (
+    "created",
+    "starting",
+    "ready",
+    "busy",
+    "unhealthy",
+    "stopped",
+    "lost",
+)
 TEAM_MAILBOX_MESSAGE_STATUSES: tuple[str, ...] = ("pending", "notified", "delivered")
 TEAM_EVENT_TYPES: tuple[str, ...] = (
     "task_claimed",
