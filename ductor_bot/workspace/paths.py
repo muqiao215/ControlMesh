@@ -110,6 +110,11 @@ class DuctorPaths:
         return self.workspace / "tasks"
 
     @property
+    def team_state_dir(self) -> Path:
+        """Canonical additive team state root under the workspace."""
+        return self.workspace / "team-state"
+
+    @property
     def tasks_registry_path(self) -> Path:
         """Task registry persistence."""
         return self.ductor_home / "tasks.json"

@@ -45,6 +45,15 @@ def test_logs_dir() -> None:
     assert paths.logs_dir == Path("/home/test/.ductor/logs")
 
 
+def test_team_state_dir() -> None:
+    paths = DuctorPaths(
+        ductor_home=Path("/home/test/.ductor"),
+        home_defaults=Path("/opt/ductor/workspace"),
+        framework_root=Path("/opt/ductor"),
+    )
+    assert paths.team_state_dir == Path("/home/test/.ductor/workspace/team-state")
+
+
 def test_home_defaults() -> None:
     paths = DuctorPaths(
         ductor_home=Path("/x"),

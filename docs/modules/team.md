@@ -16,11 +16,13 @@ It now includes a narrow leader-session live bridge, but it still does **not** s
   - events
   - phase state
 - file-backed state primitives under a dedicated team state root
-- read-only JSON envelope API:
+  - canonical runtime/CLI root: `DuctorPaths.team_state_dir` -> `workspace/team-state`
+- team JSON envelope API:
   - `read-manifest`
   - `list-tasks`
   - `get-summary`
   - `read-events`
+  - internal write-gated: `record-dispatch-result`
 - limited live delivery bridge:
   - dispatch requests can inject a coordination prompt into a worker routable session when one is persisted, with deterministic leader-session fallback via `MessageBus`
   - delivered dispatch requests can later accept an explicit worker-reported result writeback via the existing team state layer
@@ -122,6 +124,21 @@ This keeps three facts separate:
 - the linked task status optionally changed because of that outcome
 
 `TeamLiveDispatcher.record_dispatch_result(...)` is the narrow writeback entry point for future runtime/orchestration code. It records the latest result, emits a `dispatch_result_recorded` event, and emits `task_status_changed` when the linked task status changes.
+
+Runtime/CLI callers now also have a minimal honest call path without inventing a new transport:
+
+- internal localhost endpoint: `POST /teams/operate`
+- request shape:
+  - `operation`: one of the team API operations
+  - `request`: JSON object passed through to `ductor_bot.team.api.execute_team_api_operation(...)`
+- exposed operations through this endpoint:
+  - `read-manifest`
+  - `list-tasks`
+  - `get-summary`
+  - `read-events`
+  - `record-dispatch-result`
+
+The write surface remains intentionally narrow. `record-dispatch-result` is the only internal write-capable operation in this cut, and it still routes through the existing team API envelope rather than exposing a broad mutable CRUD control plane.
 
 This still does **not** mean Ductor owns worker execution. The team layer only persists worker-reported outcomes after dispatch delivery; it does not start, supervise, or verify worker runtime/process execution.
 

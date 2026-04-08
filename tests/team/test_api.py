@@ -4,15 +4,18 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 from ductor_bot.team.api import execute_team_api_operation
 from ductor_bot.team.models import (
     TeamDispatchRequest,
+    TeamDispatchResult,
     TeamEvent,
     TeamLeader,
     TeamMailboxMessage,
     TeamManifest,
     TeamPhaseState,
+    TeamPhaseTransition,
     TeamRuntimeContext,
     TeamSessionRef,
     TeamTask,
@@ -20,6 +23,7 @@ from ductor_bot.team.models import (
     TeamWorker,
 )
 from ductor_bot.team.state import TeamStateStore
+from ductor_bot.workspace.paths import DuctorPaths
 
 
 def _seed_store(tmp_path: Path) -> TeamStateStore:
@@ -55,12 +59,12 @@ def _seed_store(tmp_path: Path) -> TeamStateStore:
             current_repair_attempt=1,
             max_repair_attempts=3,
             transitions=[
-                {
-                    "from_phase": "plan",
-                    "to_phase": "approve",
-                    "at": datetime.now(UTC).isoformat(),
-                    "reason": "approved",
-                }
+                TeamPhaseTransition(
+                    from_phase="plan",
+                    to_phase="approve",
+                    at=datetime.now(UTC).isoformat(),
+                    reason="approved",
+                )
             ],
         )
     )
@@ -220,3 +224,93 @@ def test_read_only_api_does_not_create_team_dir_for_missing_team(tmp_path: Path)
     assert result["ok"] is False
     assert result["error"]["code"] == "not_found"
     assert (state_root / "missing-team").exists() is False
+
+
+def test_record_dispatch_result_requires_internal_write_access(tmp_path: Path) -> None:
+    store = _seed_store(tmp_path)
+    store.transition_dispatch_request(
+        "dispatch-1",
+        "notified",
+        route=("worker_session", "tg:9:3"),
+    )
+    store.transition_dispatch_request(
+        "dispatch-1",
+        "delivered",
+        route=("worker_session", "tg:9:3"),
+    )
+
+    result = execute_team_api_operation(
+        "record-dispatch-result",
+        {
+            "team_name": "alpha-team",
+            "request_id": "dispatch-1",
+            "result": {"outcome": "completed", "reported_by": "worker-1"},
+        },
+        state_root=tmp_path / "team-state",
+    )
+
+    assert result["ok"] is False
+    assert result["operation"] == "record-dispatch-result"
+    assert result["error"]["code"] == "operation_not_allowed"
+
+
+def test_record_dispatch_result_updates_dispatch_task_and_events(tmp_path: Path) -> None:
+    store = _seed_store(tmp_path)
+    store.transition_dispatch_request(
+        "dispatch-1",
+        "notified",
+        route=("worker_session", "tg:9:3"),
+    )
+    store.transition_dispatch_request(
+        "dispatch-1",
+        "delivered",
+        route=("worker_session", "tg:9:3"),
+    )
+
+    result = execute_team_api_operation(
+        "record-dispatch-result",
+        {
+            "team_name": "alpha-team",
+            "request_id": "dispatch-1",
+            "result": TeamDispatchResult(
+                outcome="completed",
+                summary="Implementation landed",
+                reported_by="worker-1",
+                task_status="completed",
+            ).model_dump(mode="json"),
+        },
+        state_root=tmp_path / "team-state",
+        allow_writes=True,
+    )
+
+    assert result["ok"] is True
+    dispatch_request = result["data"]["dispatch_request"]
+    assert dispatch_request["request_id"] == "dispatch-1"
+    assert dispatch_request["result"]["outcome"] == "completed"
+    assert dispatch_request["result"]["task_status"] == "completed"
+    assert dispatch_request["live_route"] == "worker_session"
+
+    task = store.get_task("task-1")
+    assert task.status == "completed"
+
+    new_events = store.read_events(after_event_id="evt-2")
+    assert [event.event_type for event in new_events] == [
+        "dispatch_result_recorded",
+        "task_status_changed",
+    ]
+    assert new_events[0].payload["outcome"] == "completed"
+    assert new_events[1].payload["status"] == "completed"
+
+
+def test_api_defaults_to_canonical_resolved_team_state_root(tmp_path: Path) -> None:
+    paths = DuctorPaths(ductor_home=tmp_path)
+    _seed_store(paths.workspace)
+
+    with patch("ductor_bot.team.api.resolve_paths", return_value=paths):
+        result = execute_team_api_operation(
+            "read-manifest",
+            {"team_name": "alpha-team"},
+        )
+
+    assert result["ok"] is True
+    assert result["data"]["manifest"]["team_name"] == "alpha-team"

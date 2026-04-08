@@ -8,6 +8,8 @@ from pydantic import ValidationError
 from ductor_bot.session.key import SessionKey
 from ductor_bot.team.contracts import (
     TEAM_API_OPERATIONS,
+    TEAM_API_READ_OPERATIONS,
+    TEAM_API_WRITE_OPERATIONS,
     TEAM_DISPATCH_REQUEST_STATUSES,
     TEAM_PHASES,
     TEAM_TASK_STATUSES,
@@ -23,12 +25,14 @@ from ductor_bot.team.models import (
 
 
 def test_contract_sets_include_expected_values() -> None:
-    assert TEAM_API_OPERATIONS == (
+    assert TEAM_API_READ_OPERATIONS == (
         "read-manifest",
         "list-tasks",
         "get-summary",
         "read-events",
     )
+    assert TEAM_API_WRITE_OPERATIONS == ("record-dispatch-result",)
+    assert TEAM_API_OPERATIONS == TEAM_API_READ_OPERATIONS + TEAM_API_WRITE_OPERATIONS
     assert TEAM_TASK_STATUSES == (
         "pending",
         "blocked",

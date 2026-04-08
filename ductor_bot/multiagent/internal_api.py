@@ -14,9 +14,13 @@ from __future__ import annotations
 
 import logging
 from dataclasses import asdict
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from aiohttp import web
+
+from ductor_bot.team.api import execute_team_api_operation, resolve_team_state_root
+from ductor_bot.workspace.paths import resolve_paths
 
 if TYPE_CHECKING:
     from ductor_bot.multiagent.bus import InterAgentBus
@@ -46,12 +50,17 @@ class InternalAgentAPI:
         port: int = _DEFAULT_PORT,
         *,
         docker_mode: bool = False,
+        team_state_root: Path | str | None = None,
     ) -> None:
         self._bus = bus
         self._port = port
         self._bind_host = _BIND_ALL_HOST if docker_mode else "127.0.0.1"
         self._health_ref: dict[str, AgentHealth] | None = None
         self._task_hub: TaskHub | None = None
+        self._team_state_root = resolve_team_state_root(
+            team_state_root,
+            paths=resolve_paths(),
+        )
         self._app = web.Application()
 
         # Inter-agent routes (only when bus is available)
@@ -68,6 +77,7 @@ class InternalAgentAPI:
         self._app.router.add_get("/tasks/list", self._handle_task_list)
         self._app.router.add_post("/tasks/cancel", self._handle_task_cancel)
         self._app.router.add_post("/tasks/delete", self._handle_task_delete)
+        self._app.router.add_post("/teams/operate", self._handle_team_operate)
 
         self._runner: web.AppRunner | None = None
 
@@ -451,3 +461,45 @@ class InternalAgentAPI:
                 status=409,
             )
         return web.json_response({"success": True})
+
+    async def _handle_team_operate(self, request: web.Request) -> web.Response:
+        """POST /teams/operate — execute a narrow internal team state operation."""
+        try:
+            data = await request.json()
+        except Exception:
+            return web.json_response(
+                {"success": False, "error": "Invalid JSON body"},
+                status=400,
+            )
+
+        operation = data.get("operation", "")
+        request_data = data.get("request", {})
+        if not isinstance(operation, str) or not operation:
+            return web.json_response(
+                {"success": False, "error": "Missing 'operation' field"},
+                status=400,
+            )
+        if not isinstance(request_data, dict):
+            return web.json_response(
+                {"success": False, "error": "Field 'request' must be an object when provided"},
+                status=400,
+            )
+
+        result = execute_team_api_operation(
+            operation,
+            request_data,
+            state_root=self._team_state_root,
+            allow_writes=True,
+        )
+        if result["ok"]:
+            return web.json_response(result)
+
+        error_code = result["error"]["code"]
+        status = {
+            "unknown_operation": 400,
+            "invalid_request": 400,
+            "operation_not_allowed": 403,
+            "not_found": 404,
+            "internal_error": 500,
+        }.get(error_code, 500)
+        return web.json_response(result, status=status)

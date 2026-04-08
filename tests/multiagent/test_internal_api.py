@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -10,6 +14,81 @@ from aiohttp.test_utils import TestClient
 from ductor_bot.multiagent.bus import InterAgentBus
 from ductor_bot.multiagent.health import AgentHealth
 from ductor_bot.multiagent.internal_api import InternalAgentAPI
+from ductor_bot.team.models import (
+    TeamDispatchRequest,
+    TeamLeader,
+    TeamManifest,
+    TeamPhaseState,
+    TeamRuntimeContext,
+    TeamSessionRef,
+    TeamTask,
+    TeamTaskClaim,
+    TeamWorker,
+)
+from ductor_bot.team.state import TeamStateStore
+
+
+def _seed_team_store(state_root: Path) -> TeamStateStore:
+    store = TeamStateStore(state_root, "alpha-team")
+    store.write_manifest(
+        TeamManifest(
+            team_name="alpha-team",
+            task_description="Coordinate Cut 3-5",
+            leader=TeamLeader(
+                agent_name="main",
+                session=TeamSessionRef(transport="tg", chat_id=7),
+                runtime=TeamRuntimeContext(cwd="/repo"),
+            ),
+            workers=[
+                TeamWorker(
+                    name="worker-1",
+                    role="executor",
+                    provider="codex",
+                    runtime=TeamRuntimeContext(
+                        provider_session_id="codex-sess-1",
+                        session_name="ia-worker-1",
+                        routable_session=TeamSessionRef(transport="tg", chat_id=9, topic_id=3),
+                    ),
+                )
+            ],
+        )
+    )
+    store.write_phase(TeamPhaseState(current_phase="execute", active=True))
+    store.upsert_task(
+        TeamTask(
+            task_id="task-1",
+            subject="Implement state store",
+            status="in_progress",
+            owner="worker-1",
+            claim=TeamTaskClaim(
+                worker="worker-1",
+                token="lease-1",
+                claimed_at=datetime.now(UTC).isoformat(),
+                lease_expires_at=(datetime.now(UTC) + timedelta(minutes=5)).isoformat(),
+            ),
+        )
+    )
+    store.create_dispatch_request(
+        TeamDispatchRequest(
+            request_id="dispatch-1",
+            team_name="alpha-team",
+            task_id="task-1",
+            to_worker="worker-1",
+            kind="task",
+            status="pending",
+        )
+    )
+    store.transition_dispatch_request(
+        "dispatch-1",
+        "notified",
+        route=("worker_session", "tg:9:3"),
+    )
+    store.transition_dispatch_request(
+        "dispatch-1",
+        "delivered",
+        route=("worker_session", "tg:9:3"),
+    )
+    return store
 
 
 @pytest.fixture
@@ -18,12 +97,12 @@ def bus() -> InterAgentBus:
 
 
 @pytest.fixture
-def api(bus: InterAgentBus) -> InternalAgentAPI:
-    return InternalAgentAPI(bus, port=0)
+def api(bus: InterAgentBus, tmp_path: Path) -> InternalAgentAPI:
+    return InternalAgentAPI(bus, port=0, team_state_root=tmp_path / "team-state")
 
 
 @pytest.fixture
-async def client(api: InternalAgentAPI) -> TestClient:
+async def client(api: InternalAgentAPI) -> AsyncGenerator[TestClient[Any, Any], None]:
     """Create aiohttp test client for the internal API."""
     from aiohttp.test_utils import TestServer
 
@@ -37,7 +116,7 @@ async def client(api: InternalAgentAPI) -> TestClient:
 class TestHandleSend:
     """Test POST /interagent/send."""
 
-    async def test_send_success(self, client: TestClient, bus: InterAgentBus) -> None:
+    async def test_send_success(self, client: TestClient[Any, Any], bus: InterAgentBus) -> None:
         stack = MagicMock()
         stack.bot.orchestrator = MagicMock()
         stack.bot.orchestrator.handle_interagent_message = AsyncMock(
@@ -54,7 +133,7 @@ class TestHandleSend:
         assert data["success"] is True
         assert data["text"] == "OK"
 
-    async def test_send_missing_fields(self, client: TestClient) -> None:
+    async def test_send_missing_fields(self, client: TestClient[Any, Any]) -> None:
         resp = await client.post(
             "/interagent/send",
             json={"from": "sender"},
@@ -64,7 +143,7 @@ class TestHandleSend:
         assert data["success"] is False
         assert "Missing" in data["error"]
 
-    async def test_send_invalid_json(self, client: TestClient) -> None:
+    async def test_send_invalid_json(self, client: TestClient[Any, Any]) -> None:
         resp = await client.post(
             "/interagent/send",
             data=b"not json",
@@ -72,7 +151,7 @@ class TestHandleSend:
         )
         assert resp.status == 400
 
-    async def test_send_unknown_recipient(self, client: TestClient) -> None:
+    async def test_send_unknown_recipient(self, client: TestClient[Any, Any]) -> None:
         resp = await client.post(
             "/interagent/send",
             json={"from": "sender", "to": "nonexistent", "message": "Hello"},
@@ -85,7 +164,9 @@ class TestHandleSend:
 class TestHandleSendAsync:
     """Test POST /interagent/send_async."""
 
-    async def test_send_async_success(self, client: TestClient, bus: InterAgentBus) -> None:
+    async def test_send_async_success(
+        self, client: TestClient[Any, Any], bus: InterAgentBus
+    ) -> None:
         stack = MagicMock()
         stack.bot.orchestrator = MagicMock()
         stack.bot.orchestrator.handle_interagent_message = AsyncMock(
@@ -102,7 +183,7 @@ class TestHandleSendAsync:
         assert data["success"] is True
         assert "task_id" in data
 
-    async def test_send_async_unknown_recipient(self, client: TestClient) -> None:
+    async def test_send_async_unknown_recipient(self, client: TestClient[Any, Any]) -> None:
         resp = await client.post(
             "/interagent/send_async",
             json={"from": "sender", "to": "nonexistent", "message": "Hello"},
@@ -111,7 +192,7 @@ class TestHandleSendAsync:
         assert data["success"] is False
         assert "not found" in data["error"]
 
-    async def test_send_async_missing_fields(self, client: TestClient) -> None:
+    async def test_send_async_missing_fields(self, client: TestClient[Any, Any]) -> None:
         resp = await client.post(
             "/interagent/send_async",
             json={"from": "sender"},
@@ -123,7 +204,7 @@ class TestNewSessionFlag:
     """Test new_session flag in /interagent/send and /interagent/send_async."""
 
     async def test_send_passes_new_session_true(
-        self, client: TestClient, bus: InterAgentBus
+        self, client: TestClient[Any, Any], bus: InterAgentBus
     ) -> None:
         stack = MagicMock()
         stack.bot.orchestrator = MagicMock()
@@ -149,7 +230,7 @@ class TestNewSessionFlag:
         )
 
     async def test_send_defaults_new_session_false(
-        self, client: TestClient, bus: InterAgentBus
+        self, client: TestClient[Any, Any], bus: InterAgentBus
     ) -> None:
         stack = MagicMock()
         stack.bot.orchestrator = MagicMock()
@@ -170,7 +251,7 @@ class TestNewSessionFlag:
         )
 
     async def test_send_async_passes_new_session(
-        self, client: TestClient, bus: InterAgentBus
+        self, client: TestClient[Any, Any], bus: InterAgentBus
     ) -> None:
         stack = MagicMock()
         stack.bot.orchestrator = MagicMock()
@@ -196,13 +277,15 @@ class TestNewSessionFlag:
 class TestHandleList:
     """Test GET /interagent/agents."""
 
-    async def test_list_empty(self, client: TestClient) -> None:
+    async def test_list_empty(self, client: TestClient[Any, Any]) -> None:
         resp = await client.get("/interagent/agents")
         assert resp.status == 200
         data = await resp.json()
         assert data["agents"] == []
 
-    async def test_list_with_agents(self, client: TestClient, bus: InterAgentBus) -> None:
+    async def test_list_with_agents(
+        self, client: TestClient[Any, Any], bus: InterAgentBus
+    ) -> None:
         bus.register("main", MagicMock())
         bus.register("sub1", MagicMock())
 
@@ -214,12 +297,14 @@ class TestHandleList:
 class TestHandleHealth:
     """Test GET /interagent/health."""
 
-    async def test_health_no_ref(self, client: TestClient) -> None:
+    async def test_health_no_ref(self, client: TestClient[Any, Any]) -> None:
         resp = await client.get("/interagent/health")
         data = await resp.json()
         assert data["agents"] == {}
 
-    async def test_health_with_agents(self, client: TestClient, api: InternalAgentAPI) -> None:
+    async def test_health_with_agents(
+        self, client: TestClient[Any, Any], api: InternalAgentAPI
+    ) -> None:
         h = AgentHealth(name="main")
         h.mark_running()
         api.set_health_ref({"main": h})
@@ -230,7 +315,9 @@ class TestHandleHealth:
         assert data["agents"]["main"]["status"] == "running"
         assert data["agents"]["main"]["restart_count"] == 0
 
-    async def test_health_crashed_agent(self, client: TestClient, api: InternalAgentAPI) -> None:
+    async def test_health_crashed_agent(
+        self, client: TestClient[Any, Any], api: InternalAgentAPI
+    ) -> None:
         h = AgentHealth(name="sub1")
         h.mark_crashed("OOM")
         api.set_health_ref({"sub1": h})
@@ -256,3 +343,63 @@ class TestLifecycle:
             started = await api.start()
 
         assert started is False
+
+
+class TestTeamOperate:
+    async def test_read_manifest(self, client: TestClient[Any, Any], tmp_path: Path) -> None:
+        _seed_team_store(tmp_path / "team-state")
+
+        resp = await client.post(
+            "/teams/operate",
+            json={"operation": "read-manifest", "request": {"team_name": "alpha-team"}},
+        )
+
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["ok"] is True
+        assert data["operation"] == "read-manifest"
+        assert data["data"]["manifest"]["team_name"] == "alpha-team"
+
+    async def test_record_dispatch_result(
+        self, client: TestClient[Any, Any], tmp_path: Path
+    ) -> None:
+        store = _seed_team_store(tmp_path / "team-state")
+
+        resp = await client.post(
+            "/teams/operate",
+            json={
+                "operation": "record-dispatch-result",
+                "request": {
+                    "team_name": "alpha-team",
+                    "request_id": "dispatch-1",
+                    "result": {
+                        "outcome": "completed",
+                        "summary": "Done",
+                        "reported_by": "worker-1",
+                        "task_status": "completed",
+                    },
+                },
+            },
+        )
+
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["ok"] is True
+        assert data["data"]["dispatch_request"]["result"]["outcome"] == "completed"
+        assert store.get_task("task-1").status == "completed"
+
+    async def test_missing_operation_field(self, client: TestClient[Any, Any]) -> None:
+        resp = await client.post("/teams/operate", json={"request": {"team_name": "alpha-team"}})
+
+        assert resp.status == 400
+        data = await resp.json()
+        assert data["success"] is False
+
+    async def test_invalid_json(self, client: TestClient[Any, Any]) -> None:
+        resp = await client.post(
+            "/teams/operate",
+            data=b"not json",
+            headers={"Content-Type": "application/json"},
+        )
+
+        assert resp.status == 400

@@ -11,12 +11,14 @@ WORKER_NAME_SAFE_PATTERN = TEAM_NAME_SAFE_PATTERN
 TASK_ID_SAFE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 EVENT_ID_SAFE_PATTERN = TASK_ID_SAFE_PATTERN
 
-TEAM_API_OPERATIONS: tuple[str, ...] = (
+TEAM_API_READ_OPERATIONS: tuple[str, ...] = (
     "read-manifest",
     "list-tasks",
     "get-summary",
     "read-events",
 )
+TEAM_API_WRITE_OPERATIONS: tuple[str, ...] = ("record-dispatch-result",)
+TEAM_API_OPERATIONS: tuple[str, ...] = TEAM_API_READ_OPERATIONS + TEAM_API_WRITE_OPERATIONS
 
 TEAM_TASK_STATUSES: tuple[str, ...] = (
     "pending",
