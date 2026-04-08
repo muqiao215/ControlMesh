@@ -2,7 +2,13 @@
 
 The additive `ductor_bot/team/` package is the first state-led slice of the OMX migration.
 
-It now includes a narrow real worker attachment path for already-started named sessions, but it still does **not** start workers, manage tmux, or replace Ductor's existing task/session stack.
+It now includes a narrow real worker runtime path backed by Ductor named sessions:
+
+- attach to an existing named session when one is already resumable
+- start a worker by bootstrapping the exact named session declared in the manifest
+- stop that named session and persist `stopped` runtime truth
+
+It still does **not** add a supervisor daemon, tmux fleet management, or a second transport.
 
 ## Included in This Cut
 
@@ -28,11 +34,16 @@ It now includes a narrow real worker attachment path for already-started named s
   - `read-events`
   - internal write-gated: `record-dispatch-result`
 - limited live delivery bridge:
-  - dispatch requests can attach a worker to a real named-session runtime unit when one already exists in `named_sessions.json`
+  - dispatch requests can attach a worker to a real named-session runtime unit
   - verified attached workers can inject a coordination prompt into a worker routable session, with deterministic leader-session fallback via `MessageBus`
   - attached workers are claimed for a single active execution transaction at a time
   - delivered dispatch requests can later accept an explicit worker-reported result writeback via the existing team state layer
   - mailbox messages can emit leader-visible unicast notifications
+  - narrow runtime lifecycle automation:
+    - `start-worker-runtime`
+    - `stop-worker-runtime`
+    - both run through the internal localhost `/teams/operate` endpoint
+    - both reuse the existing named-session contract instead of introducing tmux or a new worker transport
 - phase transition machine:
   - `plan`
   - `approve`
@@ -44,22 +55,24 @@ It now includes a narrow real worker attachment path for already-started named s
 ## Not Included Yet
 
 - worker process lifecycle
-- real worker process start/stop automation
 - tmux/team runtime management
 - gateway dispatch wiring
 - write-capable external API operations
 - generalized worker pool management or multi-worker scheduling
 - end-to-end delivery acknowledgements beyond successful bus submission
-- worker runtime/process execution control
+- heartbeat-owner binding beyond persisted lease/heartbeat timestamps
+- force-stop or execution-aware interruption while a worker is `busy`
 
 ## Live Bridge
 
 The current live path is intentionally narrow:
 
 - dispatch requests first verify whether the target worker is attached to a real runtime unit
-- the first real attachment implementation is a persisted Ductor named session:
+- the first real runtime unit is a persisted Ductor named session:
   - source of truth: `DuctorPaths.named_sessions_path`
   - required facts: session exists, is not ended, and has a resumable `session_id`
+- runtime start automation now creates that exact named session with a real bootstrap turn and persists the returned `session_id`
+- runtime stop automation ends that exact named session through the existing orchestrator/process label path
 - when a verified attached worker also owns a routable session, the existing `MessageBus` injects directly into that worker session
 - when a worker is not directly routable, dispatch requests deterministically fall back to `TeamManifest.leader.session`
 - when a manifest advertises worker routing metadata but no real attachment can be verified, the team layer falls back to the leader route instead of trusting stale metadata
@@ -129,11 +142,13 @@ Each runtime record is keyed by worker name and carries only live facts:
 - `health_reason`
 - `started_at` / `stopped_at`
 
-This cut now binds that contract to one narrow real runtime unit: an already-started named session.
+This cut now binds that contract to one narrow real runtime unit: a Ductor named session with a real bootstrap/stop path.
 
 The team layer can now:
 
-- create a runtime record when a real named-session attachment is verified
+- create or re-establish a runtime record when a real named session is verified
+- start that named session through a real bootstrap turn and persist the returned attachment facts
+- stop that named session and persist `stopped`
 - transition `created -> starting -> ready -> busy`
 - claim a single active execution on `ready`
 - persist the execution claim onto both the runtime record and the dispatch request
@@ -141,7 +156,14 @@ The team layer can now:
 - reconcile stale lease ownership to `lost`
 - refuse to trust stale busy ownership after lease expiry by clearing `dispatch_request_id` during reconcile
 
-This cut still does **not** start the named session for you. If the named session is missing, ended, or lacks a resumable `session_id`, dispatch falls back to the leader route and no fake worker execution claim is created.
+The start/stop path is intentionally narrow:
+
+- start uses the manifest's `worker.runtime.session_name`
+- start runs one real bootstrap turn to create a resumable named session
+- stop refuses to kill a `busy` runtime in this cut
+- recovery still trusts only persisted named-session facts plus persisted lease/heartbeat facts
+
+If a named session is still missing, ended, or lacks a resumable `session_id`, dispatch falls back to the leader route and no fake worker execution claim is created.
 
 Dispatch envelopes now also record the effective live route in envelope metadata and emitted events:
 
@@ -197,10 +219,12 @@ Runtime/CLI callers now also have a minimal honest call path without inventing a
   - `get-summary`
   - `read-events`
   - `record-dispatch-result`
+  - `start-worker-runtime`
+  - `stop-worker-runtime`
 
-The write surface remains intentionally narrow. `record-dispatch-result` is still the only internal write-capable operation in this cut, and it still routes through the existing team API envelope rather than exposing a broad mutable CRUD control plane.
+The write surface remains intentionally narrow. The lifecycle additions are only enough to start or stop the named-session-backed runtime unit. The control plane is still not a broad mutable CRUD API.
 
-This still does **not** mean Ductor owns worker execution. The team layer can now attach to a pre-existing named session and lease one active execution slot, but it does not start the worker, supervise a daemon, or add a new transport.
+This still does **not** mean Ductor owns full worker execution. The team layer can now start/stop the named-session-backed worker unit and lease one active execution slot, but it does not supervise a daemon, does not bind heartbeats to a live owner process, and does not add a new transport.
 
 The manifest now persists nested `session` and `runtime` records, but still accepts the earlier flattened fields on input:
 

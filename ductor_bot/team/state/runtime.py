@@ -10,7 +10,7 @@ from ductor_bot.team.models import TeamWorkerRuntimeState
 from ductor_bot.team.state.base import TeamStatePaths, utc_now
 
 _ALLOWED_RUNTIME_TRANSITIONS: dict[str, frozenset[str]] = {
-    "created": frozenset({"starting", "stopped"}),
+    "created": frozenset({"starting", "stopped", "lost"}),
     "starting": frozenset({"ready", "unhealthy", "stopped", "lost"}),
     "ready": frozenset({"busy", "unhealthy", "stopped", "lost"}),
     "busy": frozenset({"ready", "unhealthy", "stopped", "lost"}),

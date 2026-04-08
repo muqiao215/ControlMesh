@@ -5,6 +5,8 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+import pytest
+
 from ductor_bot.session.named import NamedSessionRegistry
 
 
@@ -39,6 +41,62 @@ class TestLastPrompt:
     def test_mark_running_nonexistent_is_noop(self, tmp_path: Path) -> None:
         reg = _make_registry(tmp_path)
         reg.mark_running(1, "nonexistent", "prompt")  # should not raise
+
+    def test_create_explicit_uses_requested_name(self, tmp_path: Path) -> None:
+        reg = _make_registry(tmp_path)
+
+        ns = reg.create_explicit(
+            chat_id=1,
+            name="ia-worker-1",
+            provider="codex",
+            model="gpt-5",
+            prompt_preview="bootstrap",
+        )
+
+        assert ns.name == "ia-worker-1"
+        assert ns.status == "running"
+        assert reg.get(1, "ia-worker-1") is not None
+
+    def test_create_explicit_rejects_active_duplicate(self, tmp_path: Path) -> None:
+        reg = _make_registry(tmp_path)
+        reg.create_explicit(
+            chat_id=1,
+            name="ia-worker-1",
+            provider="codex",
+            model="gpt-5",
+            prompt_preview="bootstrap",
+        )
+
+        with pytest.raises(ValueError, match="already exists"):
+            reg.create_explicit(
+                chat_id=1,
+                name="ia-worker-1",
+                provider="codex",
+                model="gpt-5",
+                prompt_preview="bootstrap again",
+            )
+
+    def test_create_explicit_reuses_ended_name(self, tmp_path: Path) -> None:
+        reg = _make_registry(tmp_path)
+        reg.create_explicit(
+            chat_id=1,
+            name="ia-worker-1",
+            provider="codex",
+            model="gpt-5",
+            prompt_preview="bootstrap",
+        )
+        assert reg.end_session(1, "ia-worker-1") is True
+
+        ns = reg.create_explicit(
+            chat_id=1,
+            name="ia-worker-1",
+            provider="codex",
+            model="gpt-5",
+            prompt_preview="restart",
+        )
+
+        assert ns.name == "ia-worker-1"
+        assert ns.status == "running"
 
 
 class TestRecoveredRunning:

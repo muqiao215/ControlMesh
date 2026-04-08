@@ -177,6 +177,11 @@ class NamedSessionRegistry:
         self._recovered_running: dict[tuple[int, str], NamedSession] = {}
         self._load()
 
+    @property
+    def path(self) -> Path:
+        """Expose the registry path for other runtime components."""
+        return self._path
+
     def _load(self) -> None:
         """Load sessions from JSON on disk."""
         raw = load_json(self._path)
@@ -239,6 +244,53 @@ class NamedSessionRegistry:
         logger.info(
             "Named session created name=%s chat=%d provider=%s",
             name,
+            chat_id,
+            provider,
+        )
+        return session
+
+    def create_explicit(  # noqa: PLR0913
+        self,
+        chat_id: int,
+        name: str,
+        provider: str,
+        model: str,
+        prompt_preview: str,
+        *,
+        transport: str = "tg",
+    ) -> NamedSession:
+        """Create a new named session with a caller-provided name."""
+        normalized = name.strip()
+        if not normalized:
+            msg = "Session name must not be blank"
+            raise ValueError(msg)
+
+        existing = self._sessions.get((chat_id, normalized))
+        if existing is not None and existing.status != "ended":
+            msg = f"Session '{normalized}' already exists"
+            raise ValueError(msg)
+
+        active = self.active_names(chat_id)
+        if len(active) >= MAX_SESSIONS_PER_CHAT:
+            msg = f"Too many sessions ({MAX_SESSIONS_PER_CHAT} max)"
+            raise ValueError(msg)
+
+        session = NamedSession(
+            name=normalized,
+            chat_id=chat_id,
+            provider=provider,
+            model=model,
+            session_id="",
+            prompt_preview=prompt_preview[:60],
+            status="running",
+            created_at=time.time(),
+            transport=transport,
+        )
+        self._sessions[(chat_id, normalized)] = session
+        self._persist()
+        logger.info(
+            "Named session created explicitly name=%s chat=%d provider=%s",
+            normalized,
             chat_id,
             provider,
         )

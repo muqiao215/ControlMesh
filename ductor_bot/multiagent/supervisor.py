@@ -360,6 +360,15 @@ class AgentSupervisor:
                 return
             orch.supervisor = supervisor
             if stack.is_main:
+                if supervisor._internal_api is not None:
+                    from ductor_bot.team.runtime_control import TeamRuntimeController
+
+                    supervisor._internal_api.set_team_runtime_controller(
+                        TeamRuntimeController(
+                            orchestrator=orch,
+                            team_state_root=orch.paths.team_state_dir,
+                        )
+                    )
                 orch.register_multiagent_commands()
                 stack.bot.set_abort_all_callback(supervisor.abort_all_agents)
                 supervisor._main_ready.set()

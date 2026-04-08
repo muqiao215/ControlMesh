@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -81,12 +82,12 @@ def _seed_team_store(state_root: Path) -> TeamStateStore:
     store.transition_dispatch_request(
         "dispatch-1",
         "notified",
-        route=("worker_session", "tg:9:3"),
+        metadata={"live_route": "worker_session", "live_target_session": "tg:9:3"},
     )
     store.transition_dispatch_request(
         "dispatch-1",
         "delivered",
-        route=("worker_session", "tg:9:3"),
+        metadata={"live_route": "worker_session", "live_target_session": "tg:9:3"},
     )
     return store
 
@@ -403,3 +404,50 @@ class TestTeamOperate:
         )
 
         assert resp.status == 400
+
+    async def test_start_worker_runtime_routes_to_runtime_controller(
+        self, client: TestClient[Any, Any], api: InternalAgentAPI
+    ) -> None:
+        controller: Any = SimpleNamespace(
+            execute=AsyncMock(
+                return_value={
+                    "schema_version": 1,
+                    "ok": True,
+                    "operation": "start-worker-runtime",
+                    "data": {"runtime": {"worker": "worker-1", "status": "ready"}},
+                }
+            )
+        )
+        api.set_team_runtime_controller(controller)
+
+        resp = await client.post(
+            "/teams/operate",
+            json={
+                "operation": "start-worker-runtime",
+                "request": {"team_name": "alpha-team", "worker": "worker-1"},
+            },
+        )
+
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["ok"] is True
+        controller.execute.assert_awaited_once_with(
+            "start-worker-runtime",
+            {"team_name": "alpha-team", "worker": "worker-1"},
+        )
+
+    async def test_start_worker_runtime_requires_runtime_controller(
+        self, client: TestClient[Any, Any]
+    ) -> None:
+        resp = await client.post(
+            "/teams/operate",
+            json={
+                "operation": "start-worker-runtime",
+                "request": {"team_name": "alpha-team", "worker": "worker-1"},
+            },
+        )
+
+        assert resp.status == 503
+        data = await resp.json()
+        assert data["ok"] is False
+        assert data["error"]["code"] == "operation_not_allowed"

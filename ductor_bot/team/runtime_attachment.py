@@ -143,6 +143,26 @@ class TeamRuntimeAttachmentManager:
             attachment=attachment,
         )
 
+    def ensure_attached_runtime(
+        self,
+        store: TeamStateStore,
+        manifest: TeamManifest,
+        worker: str,
+        *,
+        now: datetime | None = None,
+    ) -> TeamWorkerRuntimeState | None:
+        """Resolve the worker attachment and persist the matching runtime state."""
+        attachment = self.resolve_attachment(manifest, worker)
+        if attachment is None:
+            return None
+        return self._ensure_worker_ready(
+            store,
+            manifest,
+            worker,
+            attachment,
+            now=_utc_now(now),
+        )
+
     def release_dispatch(
         self,
         store: TeamStateStore,

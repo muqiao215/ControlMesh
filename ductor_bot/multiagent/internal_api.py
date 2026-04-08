@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from ductor_bot.multiagent.bus import InterAgentBus
     from ductor_bot.multiagent.health import AgentHealth
     from ductor_bot.tasks.hub import TaskHub
+    from ductor_bot.team.runtime_control import TeamRuntimeController
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +58,7 @@ class InternalAgentAPI:
         self._bind_host = _BIND_ALL_HOST if docker_mode else "127.0.0.1"
         self._health_ref: dict[str, AgentHealth] | None = None
         self._task_hub: TaskHub | None = None
+        self._team_runtime_controller: TeamRuntimeController | None = None
         self._team_state_root = resolve_team_state_root(
             team_state_root,
             paths=resolve_paths(),
@@ -88,6 +90,10 @@ class InternalAgentAPI:
     def set_task_hub(self, hub: TaskHub) -> None:
         """Set the TaskHub for handling /tasks/* endpoints."""
         self._task_hub = hub
+
+    def set_team_runtime_controller(self, controller: TeamRuntimeController) -> None:
+        """Set the team runtime lifecycle controller for start/stop operations."""
+        self._team_runtime_controller = controller
 
     @property
     def port(self) -> int:
@@ -462,7 +468,7 @@ class InternalAgentAPI:
             )
         return web.json_response({"success": True})
 
-    async def _handle_team_operate(self, request: web.Request) -> web.Response:
+    async def _handle_team_operate(self, request: web.Request) -> web.Response:  # noqa: PLR0911
         """POST /teams/operate — execute a narrow internal team state operation."""
         try:
             data = await request.json()
@@ -484,6 +490,33 @@ class InternalAgentAPI:
                 {"success": False, "error": "Field 'request' must be an object when provided"},
                 status=400,
             )
+
+        if operation in {"start-worker-runtime", "stop-worker-runtime"}:
+            if self._team_runtime_controller is None:
+                return web.json_response(
+                    {
+                        "schema_version": 1,
+                        "ok": False,
+                        "operation": operation,
+                        "error": {
+                            "code": "operation_not_allowed",
+                            "message": "team runtime lifecycle controller is not available",
+                        },
+                    },
+                    status=503,
+                )
+            result = await self._team_runtime_controller.execute(operation, request_data)
+            if result["ok"]:
+                return web.json_response(result)
+            error_code = result["error"]["code"]
+            status = {
+                "unknown_operation": 400,
+                "invalid_request": 400,
+                "operation_not_allowed": 403,
+                "not_found": 404,
+                "internal_error": 500,
+            }.get(error_code, 500)
+            return web.json_response(result, status=status)
 
         result = execute_team_api_operation(
             operation,
