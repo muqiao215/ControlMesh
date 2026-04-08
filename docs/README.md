@@ -20,10 +20,11 @@ ductor routes chat input to official provider CLIs (`claude`, `codex`, `gemini`)
 14. `docs/modules/cli.md` -- provider wrappers, stream parsing, process control.
 15. `docs/modules/codex-hooks.md` -- Codex-native lifecycle capability matrix and fallback ownership.
 16. `docs/modules/gateways.md` -- transport-neutral gateway config skeleton for future external dispatch.
-17. `docs/modules/cli_commands.md` -- CLI command split from `__main__.py`.
-18. `docs/modules/workspace.md` -- `~/.ductor` seeding, rules sync, skill sync.
-19. `docs/modules/multiagent.md` -- supervisor, bus bridge, sub-agent runtime.
-20. Remaining module docs (`background`, `cron`, `webhook`, `heartbeat`, `cleanup`, `infra`, `supervisor`, `security`, `logging`, `files`, `text`, `skill_system`).
+17. `docs/modules/team.md` -- additive team state layer, read-only API envelope, and phase machine.
+18. `docs/modules/cli_commands.md` -- CLI command split from `__main__.py`.
+19. `docs/modules/workspace.md` -- `~/.ductor` seeding, rules sync, skill sync.
+20. `docs/modules/multiagent.md` -- supervisor, bus bridge, sub-agent runtime.
+21. Remaining module docs (`background`, `cron`, `webhook`, `heartbeat`, `cleanup`, `infra`, `supervisor`, `security`, `logging`, `files`, `text`, `skill_system`).
 
 ## System in 60 Seconds
 
@@ -78,6 +79,7 @@ Runtime behavior notes:
   - [cli](modules/cli.md)
   - [codex-hooks](modules/codex-hooks.md)
   - [gateways](modules/gateways.md)
+  - [team](modules/team.md)
   - [orchestrator](modules/orchestrator.md)
   - [workspace](modules/workspace.md)
   - [skill_system](modules/skill_system.md)
