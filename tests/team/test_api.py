@@ -231,12 +231,12 @@ def test_record_dispatch_result_requires_internal_write_access(tmp_path: Path) -
     store.transition_dispatch_request(
         "dispatch-1",
         "notified",
-        route=("worker_session", "tg:9:3"),
+        metadata={"live_route": "worker_session", "live_target_session": "tg:9:3"},
     )
     store.transition_dispatch_request(
         "dispatch-1",
         "delivered",
-        route=("worker_session", "tg:9:3"),
+        metadata={"live_route": "worker_session", "live_target_session": "tg:9:3"},
     )
 
     result = execute_team_api_operation(
@@ -259,12 +259,12 @@ def test_record_dispatch_result_updates_dispatch_task_and_events(tmp_path: Path)
     store.transition_dispatch_request(
         "dispatch-1",
         "notified",
-        route=("worker_session", "tg:9:3"),
+        metadata={"live_route": "worker_session", "live_target_session": "tg:9:3"},
     )
     store.transition_dispatch_request(
         "dispatch-1",
         "delivered",
-        route=("worker_session", "tg:9:3"),
+        metadata={"live_route": "worker_session", "live_target_session": "tg:9:3"},
     )
 
     result = execute_team_api_operation(

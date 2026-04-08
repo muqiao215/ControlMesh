@@ -255,7 +255,14 @@ class TeamWorkerRuntimeState(BaseModel):
 
     worker: str
     status: str = "created"
+    attachment_type: str | None = None
+    attachment_name: str | None = None
+    attachment_transport: str | None = None
+    attachment_chat_id: int | None = None
+    attachment_session_id: str | None = None
+    attached_at: str | None = None
     execution_id: str | None = None
+    dispatch_request_id: str | None = None
     lease_id: str | None = None
     lease_expires_at: str | None = None
     heartbeat_at: str | None = None
@@ -279,12 +286,22 @@ class TeamWorkerRuntimeState(BaseModel):
             raise ValueError(msg)
         return normalized
 
-    @field_validator("execution_id", "lease_id", "health_reason")
+    @field_validator(
+        "attachment_type",
+        "attachment_name",
+        "attachment_transport",
+        "attachment_session_id",
+        "execution_id",
+        "dispatch_request_id",
+        "lease_id",
+        "health_reason",
+    )
     @classmethod
     def _validate_optional_text_fields(cls, value: str | None, info: ValidationInfo) -> str | None:
         return _normalize_optional_text(value, label=info.field_name or "field")
 
     @field_validator(
+        "attached_at",
         "lease_expires_at",
         "heartbeat_at",
         "created_at",
@@ -309,38 +326,88 @@ class TeamWorkerRuntimeState(BaseModel):
             if self.status == "lost" and self.health_reason is None:
                 raise ValueError("health_reason is required for unhealthy and lost runtimes")
             return
-        if self.execution_id is None:
-            raise ValueError("execution_id is required once a worker runtime starts")
+        self._validate_live_attachment_facts()
+        self._validate_live_lease_facts()
+        self._validate_busy_runtime()
+        if self.status == "unhealthy" and self.health_reason is None:
+            raise ValueError("health_reason is required for unhealthy and lost runtimes")
+
+    def _validate_live_attachment_facts(self) -> None:
+        if all(
+            value is not None
+            for value in (
+                self.attachment_type,
+                self.attachment_name,
+                self.attachment_transport,
+                self.attachment_chat_id,
+                self.attachment_session_id,
+                self.attached_at,
+            )
+        ):
+            return
+        raise ValueError("live worker runtimes require persisted attachment facts")
+
+    def _validate_live_lease_facts(self) -> None:
         if self.lease_id is None or self.lease_expires_at is None:
             raise ValueError("lease_id and lease_expires_at are required for live worker runtimes")
         if self.started_at is None:
             raise ValueError("started_at is required for live worker runtimes")
         if self.status in {"ready", "busy", "unhealthy"} and self.heartbeat_at is None:
             raise ValueError("heartbeat_at is required for ready, busy, and unhealthy runtimes")
-        if self.status == "unhealthy" and self.health_reason is None:
-            raise ValueError("health_reason is required for unhealthy and lost runtimes")
+
+    def _validate_busy_runtime(self) -> None:
+        if self.status == "busy":
+            if self.execution_id is None:
+                raise ValueError("execution_id is required for busy worker runtimes")
+            if self.dispatch_request_id is None:
+                raise ValueError("dispatch_request_id is required for busy worker runtimes")
+            return
+        if self.dispatch_request_id is not None:
+            raise ValueError("dispatch_request_id is only valid while a worker runtime is busy")
 
     def _validate_created_runtime(self) -> None:
         if self.status == "created" and any(
             value is not None
             for value in (
                 self.execution_id,
+                self.dispatch_request_id,
                 self.lease_id,
                 self.lease_expires_at,
                 self.heartbeat_at,
                 self.health_reason,
+                self.attachment_type,
+                self.attachment_name,
+                self.attachment_transport,
+                self.attachment_chat_id,
+                self.attachment_session_id,
+                self.attached_at,
                 self.started_at,
                 self.stopped_at,
             )
         ):
-            raise ValueError("created worker runtimes cannot carry execution, lease, or health facts")
+            raise ValueError("created worker runtimes cannot carry execution, lease, health, or attachment facts")
 
     def _validate_stopped_runtime(self) -> None:
         if self.status == "stopped":
             if self.stopped_at is None:
                 raise ValueError("stopped_at is required for stopped runtimes")
-            if self.lease_id is not None or self.lease_expires_at is not None:
-                raise ValueError("stopped runtimes cannot retain an active lease")
+            if any(
+                value is not None
+                for value in (
+                    self.execution_id,
+                    self.dispatch_request_id,
+                    self.lease_id,
+                    self.lease_expires_at,
+                    self.heartbeat_at,
+                    self.attachment_type,
+                    self.attachment_name,
+                    self.attachment_transport,
+                    self.attachment_chat_id,
+                    self.attachment_session_id,
+                    self.attached_at,
+                )
+            ):
+                raise ValueError("stopped runtimes cannot retain execution, lease, heartbeat, or attachment facts")
             return
         if self.stopped_at is not None:
             raise ValueError("stopped_at is only valid when status is stopped")
@@ -518,6 +585,11 @@ class TeamDispatchRequest(BaseModel):
     delivered_at: str | None = None
     failed_at: str | None = None
     last_error: str | None = None
+    execution_id: str | None = None
+    runtime_lease_id: str | None = None
+    runtime_lease_expires_at: str | None = None
+    runtime_attachment_type: str | None = None
+    runtime_attachment_name: str | None = None
     live_route: str | None = None
     live_target_session: str | None = None
     result: TeamDispatchResult | None = None
@@ -562,10 +634,22 @@ class TeamDispatchRequest(BaseModel):
             raise ValueError(msg)
         return normalized
 
-    @field_validator("live_route", "live_target_session")
+    @field_validator(
+        "execution_id",
+        "runtime_lease_id",
+        "runtime_attachment_type",
+        "runtime_attachment_name",
+        "live_route",
+        "live_target_session",
+    )
     @classmethod
     def _validate_optional_route_fields(cls, value: str | None, info: ValidationInfo) -> str | None:
         return _normalize_optional_text(value, label=info.field_name or "field")
+
+    @field_validator("runtime_lease_expires_at")
+    @classmethod
+    def _validate_optional_runtime_timestamp(cls, value: str | None) -> str | None:
+        return _normalize_optional_timestamp(value, label="runtime_lease_expires_at")
 
 
 class TeamMailboxMessage(BaseModel):

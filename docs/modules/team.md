@@ -2,7 +2,7 @@
 
 The additive `ductor_bot/team/` package is the first state-led slice of the OMX migration.
 
-It now includes a narrow leader-session live bridge, but it still does **not** start workers, manage tmux, or replace Ductor's existing task/session stack.
+It now includes a narrow real worker attachment path for already-started named sessions, but it still does **not** start workers, manage tmux, or replace Ductor's existing task/session stack.
 
 ## Included in This Cut
 
@@ -17,7 +17,7 @@ It now includes a narrow leader-session live bridge, but it still does **not** s
   - phase state
 - separate persisted worker runtime state for live execution facts:
   - strict lifecycle: `created`, `starting`, `ready`, `busy`, `unhealthy`, `stopped`, `lost`
-  - explicit runtime execution facts: `execution_id`, `lease_id`, `lease_expires_at`, `heartbeat_at`, `health_reason`
+  - explicit runtime execution facts: attachment identity, `execution_id`, `lease_id`, `lease_expires_at`, `heartbeat_at`, `health_reason`
   - deterministic reconcile from persisted lease facts without starting or probing processes
 - file-backed state primitives under a dedicated team state root
   - canonical runtime/CLI root: `DuctorPaths.team_state_dir` -> `workspace/team-state`
@@ -28,7 +28,9 @@ It now includes a narrow leader-session live bridge, but it still does **not** s
   - `read-events`
   - internal write-gated: `record-dispatch-result`
 - limited live delivery bridge:
-  - dispatch requests can inject a coordination prompt into a worker routable session when one is persisted, with deterministic leader-session fallback via `MessageBus`
+  - dispatch requests can attach a worker to a real named-session runtime unit when one already exists in `named_sessions.json`
+  - verified attached workers can inject a coordination prompt into a worker routable session, with deterministic leader-session fallback via `MessageBus`
+  - attached workers are claimed for a single active execution transaction at a time
   - delivered dispatch requests can later accept an explicit worker-reported result writeback via the existing team state layer
   - mailbox messages can emit leader-visible unicast notifications
 - phase transition machine:
@@ -42,11 +44,11 @@ It now includes a narrow leader-session live bridge, but it still does **not** s
 ## Not Included Yet
 
 - worker process lifecycle
-- real worker process start/stop/attachment
+- real worker process start/stop automation
 - tmux/team runtime management
 - gateway dispatch wiring
 - write-capable external API operations
-- true worker-session delivery or per-worker runtime execution
+- generalized worker pool management or multi-worker scheduling
 - end-to-end delivery acknowledgements beyond successful bus submission
 - worker runtime/process execution control
 
@@ -54,9 +56,13 @@ It now includes a narrow leader-session live bridge, but it still does **not** s
 
 The current live path is intentionally narrow:
 
-- dispatch requests first check `TeamManifest.worker_runtime_ref(...).routable_session`
-- when a worker runtime already owns a routable session, the existing `MessageBus` injects directly into that worker session
+- dispatch requests first verify whether the target worker is attached to a real runtime unit
+- the first real attachment implementation is a persisted Ductor named session:
+  - source of truth: `DuctorPaths.named_sessions_path`
+  - required facts: session exists, is not ended, and has a resumable `session_id`
+- when a verified attached worker also owns a routable session, the existing `MessageBus` injects directly into that worker session
 - when a worker is not directly routable, dispatch requests deterministically fall back to `TeamManifest.leader.session`
+- when a manifest advertises worker routing metadata but no real attachment can be verified, the team layer falls back to the leader route instead of trusting stale metadata
 - mailbox messages still use a leader-visible unicast notification without injection
 - worker targets remain team-state semantics, not independently managed live runtimes
 
@@ -108,20 +114,34 @@ This split is intentional:
 
 Each runtime record is keyed by worker name and carries only live facts:
 
+- `attachment_type`
+- `attachment_name`
+- `attachment_transport`
+- `attachment_chat_id`
+- `attachment_session_id`
+- `attached_at`
 - `status`
 - `execution_id`
+- `dispatch_request_id`
 - `lease_id`
 - `lease_expires_at`
 - `heartbeat_at`
 - `health_reason`
 - `started_at` / `stopped_at`
 
-The first cut does not start or attach a real process. It does establish the runtime contract the next cut can bind to a real worker unit:
+This cut now binds that contract to one narrow real runtime unit: an already-started named session.
 
-- create a runtime record
-- transition it through strict lifecycle boundaries
-- renew heartbeat/lease metadata
-- reconcile it to `lost` when persisted lease ownership expires
+The team layer can now:
+
+- create a runtime record when a real named-session attachment is verified
+- transition `created -> starting -> ready -> busy`
+- claim a single active execution on `ready`
+- persist the execution claim onto both the runtime record and the dispatch request
+- release `busy -> ready` on explicit result writeback
+- reconcile stale lease ownership to `lost`
+- refuse to trust stale busy ownership after lease expiry by clearing `dispatch_request_id` during reconcile
+
+This cut still does **not** start the named session for you. If the named session is missing, ended, or lacks a resumable `session_id`, dispatch falls back to the leader route and no fake worker execution claim is created.
 
 Dispatch envelopes now also record the effective live route in envelope metadata and emitted events:
 
@@ -150,6 +170,12 @@ Execution/result writeback is now intentionally narrow and explicit:
 - route provenance is now persisted on the dispatch request itself:
   - `live_route`
   - `live_target_session`
+- attached execution provenance is also persisted on the dispatch request when a real worker runtime was claimed:
+  - `execution_id`
+  - `runtime_lease_id`
+  - `runtime_lease_expires_at`
+  - `runtime_attachment_type`
+  - `runtime_attachment_name`
 
 This keeps three facts separate:
 
@@ -172,9 +198,9 @@ Runtime/CLI callers now also have a minimal honest call path without inventing a
   - `read-events`
   - `record-dispatch-result`
 
-The write surface remains intentionally narrow. `record-dispatch-result` is the only internal write-capable operation in this cut, and it still routes through the existing team API envelope rather than exposing a broad mutable CRUD control plane.
+The write surface remains intentionally narrow. `record-dispatch-result` is still the only internal write-capable operation in this cut, and it still routes through the existing team API envelope rather than exposing a broad mutable CRUD control plane.
 
-This still does **not** mean Ductor owns worker execution. The team layer only persists worker-reported outcomes after dispatch delivery; it does not start, supervise, or verify worker runtime/process execution.
+This still does **not** mean Ductor owns worker execution. The team layer can now attach to a pre-existing named session and lease one active execution slot, but it does not start the worker, supervise a daemon, or add a new transport.
 
 The manifest now persists nested `session` and `runtime` records, but still accepts the earlier flattened fields on input:
 

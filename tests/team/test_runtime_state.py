@@ -62,9 +62,14 @@ def test_worker_runtime_persists_execution_lease_and_heartbeat(store: TeamStateS
         "worker-1",
         "starting",
         updates={
-            "execution_id": "exec-1",
+            "attachment_type": "named_session",
+            "attachment_name": "ia-worker-1",
+            "attachment_transport": "tg",
+            "attachment_chat_id": 7,
+            "attachment_session_id": "sess-worker-1",
             "lease_id": "lease-1",
             "lease_expires_at": _iso(lease_expires_at),
+            "attached_at": _iso(now),
         },
     )
     store.record_worker_runtime_heartbeat(
@@ -74,15 +79,28 @@ def test_worker_runtime_persists_execution_lease_and_heartbeat(store: TeamStateS
         lease_expires_at=_iso(lease_expires_at + timedelta(minutes=1)),
     )
     ready = store.transition_worker_runtime("worker-1", "ready")
+    busy = store.transition_worker_runtime(
+        "worker-1",
+        "busy",
+        updates={
+            "execution_id": "exec-1",
+            "dispatch_request_id": "dispatch-1",
+        },
+    )
 
     persisted = store.get_worker_runtime("worker-1")
 
     assert starting.status == "starting"
     assert ready.status == "ready"
+    assert busy.status == "busy"
     assert persisted.execution_id == "exec-1"
+    assert persisted.dispatch_request_id == "dispatch-1"
     assert persisted.lease_id == "lease-1"
     assert persisted.heartbeat_at == _iso(heartbeat_at)
     assert persisted.lease_expires_at == _iso(lease_expires_at + timedelta(minutes=1))
+    assert persisted.attachment_type == "named_session"
+    assert persisted.attachment_name == "ia-worker-1"
+    assert persisted.attachment_session_id == "sess-worker-1"
 
 
 def test_reconcile_worker_runtime_marks_expired_lease_lost(store: TeamStateStore) -> None:
@@ -91,11 +109,18 @@ def test_reconcile_worker_runtime_marks_expired_lease_lost(store: TeamStateStore
     store.put_worker_runtime(
         TeamWorkerRuntimeState(
             worker="worker-1",
-            status="ready",
+            status="busy",
             execution_id="exec-1",
+            dispatch_request_id="dispatch-1",
             lease_id="lease-1",
             lease_expires_at=_iso(expired_at),
             heartbeat_at=_iso(expired_at - timedelta(seconds=10)),
+            attachment_type="named_session",
+            attachment_name="ia-worker-1",
+            attachment_transport="tg",
+            attachment_chat_id=7,
+            attachment_session_id="sess-worker-1",
+            attached_at=_iso(expired_at - timedelta(minutes=3)),
             started_at=_iso(expired_at - timedelta(minutes=2)),
         )
     )
@@ -105,6 +130,7 @@ def test_reconcile_worker_runtime_marks_expired_lease_lost(store: TeamStateStore
     assert reconciled.status == "lost"
     assert reconciled.execution_id == "exec-1"
     assert reconciled.lease_id == "lease-1"
+    assert reconciled.dispatch_request_id is None
     assert reconciled.health_reason == "runtime lease expired"
 
 
@@ -115,19 +141,28 @@ def test_worker_runtime_summary_exposes_dynamic_runtime_truth(store: TeamStateSt
             worker="worker-1",
             status="busy",
             execution_id="exec-9",
+            dispatch_request_id="dispatch-9",
             lease_id="lease-9",
             lease_expires_at=_iso(now + timedelta(minutes=2)),
             heartbeat_at=_iso(now),
+            attachment_type="named_session",
+            attachment_name="ia-worker-1",
+            attachment_transport="tg",
+            attachment_chat_id=7,
+            attachment_session_id="sess-worker-1",
+            attached_at=_iso(now - timedelta(minutes=1)),
             started_at=_iso(now - timedelta(minutes=1)),
         )
     )
 
     summary = store.build_summary()
-    runtime_counts = cast(dict[str, int], summary["worker_runtime_counts"])
-    runtime_states = cast(list[dict[str, Any]], summary["worker_runtime_states"])
+    runtime_counts = cast("dict[str, int]", summary["worker_runtime_counts"])
+    runtime_states = cast("list[dict[str, Any]]", summary["worker_runtime_states"])
 
     assert runtime_counts["busy"] == 1
     assert runtime_counts["created"] == 0
     assert runtime_states[0]["worker"] == "worker-1"
     assert runtime_states[0]["status"] == "busy"
     assert runtime_states[0]["execution_id"] == "exec-9"
+    assert runtime_states[0]["dispatch_request_id"] == "dispatch-9"
+    assert runtime_states[0]["attachment_type"] == "named_session"

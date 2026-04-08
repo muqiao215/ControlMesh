@@ -66,11 +66,10 @@ def transition_dispatch_request(
     to_status: str,
     *,
     error: str | None = None,
-    route: tuple[str | None, str | None] | None = None,
+    metadata: dict[str, str | None] | None = None,
 ) -> TeamDispatchRequest:
     """Advance a dispatch request through its state-only lifecycle."""
     requests = _load(paths)
-    live_route, live_target_session = route or (None, None)
     for index, item in enumerate(requests):
         if item.request_id != request_id:
             continue
@@ -79,10 +78,8 @@ def transition_dispatch_request(
             raise ValueError(msg)
         now = utc_now()
         update: dict[str, str | None] = {"status": to_status, "updated_at": now}
-        if live_route is not None:
-            update["live_route"] = live_route
-        if live_target_session is not None:
-            update["live_target_session"] = live_target_session
+        if metadata is not None:
+            update.update(metadata)
         if to_status == "notified":
             update["notified_at"] = now
         if to_status == "delivered":

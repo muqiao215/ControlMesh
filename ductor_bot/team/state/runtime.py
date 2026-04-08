@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import UTC, datetime
-from typing import cast
 
 from ductor_bot.infra.json_store import atomic_json_save, load_json
 from ductor_bot.team.models import TeamWorkerRuntimeState
@@ -88,7 +87,7 @@ def transition_worker_runtime(
     worker: str,
     to_status: str,
     *,
-    updates: Mapping[str, str | None | object] | None = None,
+    updates: Mapping[str, object] | None = None,
     now: datetime | None = None,
 ) -> TeamWorkerRuntimeState:
     """Advance a worker runtime through the strict lifecycle."""
@@ -150,6 +149,7 @@ def classify_worker_runtime(
             update={
                 "status": "lost",
                 "health_reason": "runtime lease missing",
+                "dispatch_request_id": None,
             }
         )
     at = now.astimezone(UTC) if now is not None else datetime.now(UTC)
@@ -158,6 +158,7 @@ def classify_worker_runtime(
             update={
                 "status": "lost",
                 "health_reason": "runtime lease expired",
+                "dispatch_request_id": None,
             }
         )
     return runtime
@@ -218,14 +219,14 @@ def _build_transition_update(
     runtime: TeamWorkerRuntimeState,
     to_status: str,
     *,
-    updates: Mapping[str, str | None | object] | None,
+    updates: Mapping[str, object] | None,
     now_iso: str,
-) -> dict[str, str | None]:
-    update: dict[str, str | None] = {
+) -> dict[str, object]:
+    update: dict[str, object] = {
         "status": to_status,
         "updated_at": now_iso,
         **{
-            field_name: cast(str | None, value)
+            field_name: value
             for field_name, value in (updates or {}).items()
             if value is not UNSET_RUNTIME_FIELD
         },
@@ -235,8 +236,21 @@ def _build_transition_update(
         update["stopped_at"] = None
     if to_status in _HEALTHY_RUNTIME_STATUSES:
         update["health_reason"] = None
+    if to_status == "ready":
+        update["execution_id"] = None
+        update["dispatch_request_id"] = None
     if to_status == "stopped":
+        update["attachment_type"] = None
+        update["attachment_name"] = None
+        update["attachment_transport"] = None
+        update["attachment_chat_id"] = None
+        update["attachment_session_id"] = None
+        update["attached_at"] = None
+        update["execution_id"] = None
+        update["dispatch_request_id"] = None
         update["lease_id"] = None
         update["lease_expires_at"] = None
+        update["heartbeat_at"] = None
+        update["health_reason"] = None
         update["stopped_at"] = now_iso
     return update

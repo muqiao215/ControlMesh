@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from ductor_bot.team.contracts import (
     TEAM_DISPATCH_REQUEST_STATUSES,
@@ -98,7 +99,7 @@ class TeamStateStore:
         worker: str,
         to_status: str,
         *,
-        updates: Mapping[str, str | None | object] | None = None,
+        updates: Mapping[str, Any] | None = None,
         now: datetime | None = None,
     ) -> TeamWorkerRuntimeState:
         self.read_manifest().get_worker(worker)
@@ -164,14 +165,14 @@ class TeamStateStore:
         to_status: str,
         *,
         error: str | None = None,
-        route: tuple[str | None, str | None] | None = None,
+        metadata: dict[str, str | None] | None = None,
     ) -> TeamDispatchRequest:
         return transition_dispatch_request(
             self.paths,
             request_id,
             to_status,
             error=error,
-            route=route,
+            metadata=metadata,
         )
 
     def list_dispatch_requests(self, *, status: str | None = None) -> list[TeamDispatchRequest]:

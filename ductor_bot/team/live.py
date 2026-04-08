@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import secrets
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Protocol
 
 from ductor_bot.bus.envelope import DeliveryMode, Envelope, LockMode, Origin
@@ -15,6 +16,11 @@ from ductor_bot.team.models import (
     TeamManifest,
     TeamSessionRef,
     TeamWorkerRuntimeRef,
+)
+from ductor_bot.team.runtime_attachment import (
+    TeamDispatchExecutionClaim,
+    TeamNamedSessionAttachment,
+    TeamRuntimeAttachmentManager,
 )
 from ductor_bot.team.state import TeamStateStore
 
@@ -45,21 +51,6 @@ def _require_live_session(session: TeamSessionRef, *, label: str) -> TeamSession
         raise ValueError(msg)
     return session
 
-
-def _resolve_dispatch_live_route(
-    manifest: TeamManifest,
-    request: TeamDispatchRequest,
-) -> tuple[TeamLiveRoute, TeamWorkerRuntimeRef]:
-    runtime_ref = manifest.worker_runtime_ref(request.to_worker)
-    worker_session = runtime_ref.routable_session
-    if worker_session is not None and worker_session.chat_id != 0:
-        return TeamLiveRoute(route="worker_session", session=worker_session), runtime_ref
-    return TeamLiveRoute(
-        route="leader_session",
-        session=_require_live_session(manifest.leader.session, label="team leader session"),
-    ), runtime_ref
-
-
 def _resolve_mailbox_live_route(manifest: TeamManifest) -> TeamLiveRoute:
     return TeamLiveRoute(
         route="leader_session",
@@ -67,10 +58,41 @@ def _resolve_mailbox_live_route(manifest: TeamManifest) -> TeamLiveRoute:
     )
 
 
-def build_dispatch_envelope(manifest: TeamManifest, request: TeamDispatchRequest) -> Envelope:
+def _dispatch_metadata(
+    *,
+    route: str | None,
+    target_session: str | None,
+    claim: TeamDispatchExecutionClaim | None,
+) -> dict[str, str | None] | None:
+    metadata: dict[str, str | None] = {}
+    if route is not None:
+        metadata["live_route"] = route
+    if target_session is not None:
+        metadata["live_target_session"] = target_session
+    if claim is not None:
+        metadata.update(claim.dispatch_claim)
+    return metadata or None
+
+
+def build_dispatch_envelope(
+    manifest: TeamManifest,
+    request: TeamDispatchRequest,
+    *,
+    attachment: TeamNamedSessionAttachment | None = None,
+    execution_id: str | None = None,
+) -> Envelope:
     """Build a live injection envelope for a team dispatch request."""
-    route, runtime_ref = _resolve_dispatch_live_route(manifest, request)
-    prompt = _render_dispatch_prompt(manifest, request)
+    route, runtime_ref = _resolve_dispatch_live_route_with_attachment(
+        manifest,
+        request,
+        attachment=attachment,
+    )
+    prompt = _render_dispatch_prompt(
+        manifest,
+        request,
+        attachment=attachment,
+        execution_id=execution_id,
+    )
     metadata: dict[str, str] = {
         "team_name": manifest.team_name,
         "request_id": request.request_id,
@@ -88,6 +110,12 @@ def build_dispatch_envelope(manifest: TeamManifest, request: TeamDispatchRequest
         metadata["worker_provider_session_id"] = runtime_ref.provider_session_id
     if runtime_ref.routable_session is not None:
         metadata["worker_routable_session"] = runtime_ref.routable_session.storage_key
+    if attachment is not None:
+        metadata["worker_attachment_type"] = attachment.attachment_type
+        metadata["worker_attachment_name"] = attachment.name
+        metadata["worker_attachment_session_id"] = attachment.session_id
+    if execution_id is not None:
+        metadata["execution_id"] = execution_id
 
     return Envelope(
         origin=Origin.INTERAGENT,
@@ -130,15 +158,32 @@ def build_mailbox_envelope(manifest: TeamManifest, message: TeamMailboxMessage) 
 class TeamLiveDispatcher:
     """Bridge team state transitions into the shared live delivery bus."""
 
-    def __init__(self, store: TeamStateStore, bus: TeamBus) -> None:
+    def __init__(
+        self,
+        store: TeamStateStore,
+        bus: TeamBus,
+        *,
+        named_sessions_path: Path | str | None = None,
+    ) -> None:
         self._store = store
         self._bus = bus
+        self._attachments = TeamRuntimeAttachmentManager(named_sessions_path=named_sessions_path)
 
     async def dispatch_request(self, request_id: str) -> TeamDispatchRequest:
         """Execute a live dispatch request through the leader session."""
         manifest = self._store.read_manifest()
         request = self._store.get_dispatch_request(request_id)
-        envelope = build_dispatch_envelope(manifest, request)
+        try:
+            claim = self._attachments.claim_dispatch(self._store, manifest, request)
+        except RuntimeError as exc:
+            return self._mark_dispatch_failed(request, error=str(exc))
+
+        envelope = build_dispatch_envelope(
+            manifest,
+            request,
+            attachment=claim.attachment if claim is not None else None,
+            execution_id=claim.execution_id if claim is not None else None,
+        )
         route = envelope.metadata.get("live_route")
         target_session = envelope.metadata.get("live_target_session")
 
@@ -150,6 +195,7 @@ class TeamLiveDispatcher:
                 error=str(exc),
                 route=route,
                 target_session=target_session,
+                claim=claim,
             )
 
         if envelope.is_error:
@@ -159,12 +205,17 @@ class TeamLiveDispatcher:
                 error=error_text,
                 route=route,
                 target_session=target_session,
+                claim=claim,
             )
 
         notified = self._store.transition_dispatch_request(
             request.request_id,
             "notified",
-            route=(route, target_session),
+            metadata=_dispatch_metadata(
+                route=route,
+                target_session=target_session,
+                claim=claim,
+            ),
         )
         self._append_event(
             self._new_event(
@@ -184,7 +235,11 @@ class TeamLiveDispatcher:
         delivered = self._store.transition_dispatch_request(
             request.request_id,
             "delivered",
-            route=(route, target_session),
+            metadata=_dispatch_metadata(
+                route=route,
+                target_session=target_session,
+                claim=claim,
+            ),
         )
         self._append_event(
             self._new_event(
@@ -206,6 +261,7 @@ class TeamLiveDispatcher:
 
     def record_dispatch_result(self, request_id: str, result: TeamDispatchResult) -> TeamDispatchRequest:
         """Record a worker-reported result for a delivered dispatch."""
+        manifest = self._store.read_manifest()
         previous = self._store.get_dispatch_request(request_id)
         previous_task = None
         if previous.task_id is not None and result.task_status is not None:
@@ -257,6 +313,7 @@ class TeamLiveDispatcher:
                     )
                 )
 
+        self._attachments.release_dispatch(self._store, manifest, updated)
         return updated
 
     async def deliver_mailbox_message(self, message_id: str) -> TeamMailboxMessage:
@@ -285,13 +342,21 @@ class TeamLiveDispatcher:
         error: str,
         route: str | None = None,
         target_session: str | None = None,
+        claim: TeamDispatchExecutionClaim | None = None,
     ) -> TeamDispatchRequest:
         failed = self._store.transition_dispatch_request(
             request.request_id,
             "failed",
             error=error,
-            route=(route, target_session),
+            metadata=_dispatch_metadata(
+                route=route,
+                target_session=target_session,
+                claim=claim,
+            ),
         )
+        if claim is not None:
+            manifest = self._store.read_manifest()
+            self._attachments.release_dispatch(self._store, manifest, failed)
         self._append_event(
             self._new_event(
                 event_type="dispatch_failed",
@@ -334,7 +399,29 @@ class TeamLiveDispatcher:
         )
 
 
-def _render_dispatch_prompt(manifest: TeamManifest, request: TeamDispatchRequest) -> str:
+def _resolve_dispatch_live_route_with_attachment(
+    manifest: TeamManifest,
+    request: TeamDispatchRequest,
+    *,
+    attachment: TeamNamedSessionAttachment | None,
+) -> tuple[TeamLiveRoute, TeamWorkerRuntimeRef]:
+    runtime_ref = manifest.worker_runtime_ref(request.to_worker)
+    worker_session = runtime_ref.routable_session
+    if attachment is not None and worker_session is not None and worker_session.chat_id != 0:
+        return TeamLiveRoute(route="worker_session", session=worker_session), runtime_ref
+    return TeamLiveRoute(
+        route="leader_session",
+        session=_require_live_session(manifest.leader.session, label="team leader session"),
+    ), runtime_ref
+
+
+def _render_dispatch_prompt(
+    manifest: TeamManifest,
+    request: TeamDispatchRequest,
+    *,
+    attachment: TeamNamedSessionAttachment | None,
+    execution_id: str | None,
+) -> str:
     runtime_ref = manifest.worker_runtime_ref(request.to_worker)
     lines = [
         "[TEAM LIVE DISPATCH]",
@@ -354,6 +441,11 @@ def _render_dispatch_prompt(manifest: TeamManifest, request: TeamDispatchRequest
         lines.append(f"Worker Provider Session ID: {runtime_ref.provider_session_id}")
     if runtime_ref.routable_session is not None:
         lines.append(f"Worker Routable Session: {runtime_ref.routable_session.storage_key}")
+    if attachment is not None:
+        lines.append(f"Worker Attachment: {attachment.attachment_type}:{attachment.name}")
+        lines.append(f"Worker Attachment Session ID: {attachment.session_id}")
+    if execution_id is not None:
+        lines.append(f"Execution ID: {execution_id}")
     lines.extend(
         [
             "",
