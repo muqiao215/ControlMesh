@@ -176,6 +176,14 @@ class DuctorPaths:
         return self.memory_v2_machine_state_dir / "promotion_log.json"
 
     @property
+    def memory_search_index_path(self) -> Path:
+        return self.memory_v2_machine_state_dir / "search.sqlite3"
+
+    @property
+    def dreaming_sweep_log_path(self) -> Path:
+        return self.memory_v2_machine_state_dir / "sweep_log.jsonl"
+
+    @property
     def join_notification_path(self) -> Path:
         return self.workspace / "JOIN_NOTIFICATION.md"
 

@@ -8,10 +8,10 @@ Additive memory-v2 primitives inspired by OpenClaw's mature split between:
 - machine-managed dreaming state (`memory/.dreams/`)
 
 This cut does **not** replace Ductor's existing `memory_system/MAINMEMORY.md`.
-It creates a parallel, explicit, file-backed substrate that future search and
-dreaming work can build on.
+It creates a parallel, explicit, file-backed substrate that local search and
+deterministic dreaming work can build on without becoming the source of truth.
 
-## What Exists in Cut 1
+## What Exists in Cut 2
 
 ### File layout
 
@@ -30,6 +30,10 @@ dreaming work can build on.
   - exclusive sweep lock ownership with expiry
 - `workspace/memory/.dreams/promotion_log.json`
   - deterministic de-duplication ledger for already promoted items
+- `workspace/memory/.dreams/search.sqlite3`
+  - workspace-local SQLite FTS5 index for memory-v2 artifacts
+- `workspace/memory/.dreams/sweep_log.jsonl`
+  - append-only run log for preview/apply dreaming sweeps
 
 ### Deterministic promotion flow
 
@@ -57,21 +61,67 @@ Preview/apply helpers live in `ductor_bot.memory.commands`:
 Both helpers are internal utilities for now. They are not wired into the
 runtime command surface yet.
 
-### Dreaming machine state
+### Local FTS5 search
+
+`ductor_bot.memory.search` adds a workspace-local search backend using
+SQLite FTS5 only.
+
+Indexed sources:
+
+- `MEMORY.md`
+- `DREAMS.md`
+- `memory/YYYY-MM-DD.md`
+
+The index stays deterministic:
+
+- the canonical authority remains the markdown files, not SQLite
+- each indexed document stores a SHA-256 content hash
+- sync updates rows only when the content hash changes
+- deleted source files are removed from the index
+- queries return source path, kind, optional note date, snippet, and rank
+
+Primary helpers:
+
+- `sync_memory_index(...)`
+- `search_memory_index(...)`
+
+Thin wrappers also exist in `ductor_bot.memory.commands`:
+
+- `sync_memory_search(...)`
+- `search_memory(...)`
+
+### Dreaming machine state and sweep runner
 
 `ductor_bot.memory.dreaming` stores only concrete operational state:
 
 - sweep status
+- last run mode
 - last processed day
+- last changed/selected/applied counters
 - promoted candidate keys
 - daily note checkpoints
 - exclusive sweep lock ownership + expiry
+- append-only sweep run log
 
-There is no autonomous scheduler or background dreaming job in this cut.
+The first dreaming sweep runner is intentionally narrow and deterministic:
+
+- it scans daily notes in date order
+- it hashes each note and skips unchanged notes with matching checkpoints
+- it reuses the cut1 explicit promotion parser and apply helpers
+- `preview` mode reports what would be promoted without touching checkpoints
+- `apply` mode updates `MEMORY.md`, checkpoints, promotion log, sweep state, and
+  appends a reviewable entry to `DREAMS.md`
+
+Primary helpers:
+
+- `preview_dreaming_sweep(...)`
+- `apply_dreaming_sweep(...)`
+
+There is still no autonomous scheduler or background dreaming job in this cut.
 
 ## What Is Deliberately Deferred
 
-- semantic search / vector store
+- embeddings / vector search
 - automated cross-note ranking or clustering
 - cron wiring or service startup integration
 - replacing `/memory` or `MAINMEMORY.md`
@@ -85,6 +135,7 @@ daily memory, search, and dreaming. Ductor needs the same split, but with
 its own constraints:
 
 - file-backed authority stays canonical
+- local SQLite is an index, never the authority
 - operations must be reviewable and deterministic
 - no cloud dependency is introduced
 - future search can be added behind this file/state boundary instead of

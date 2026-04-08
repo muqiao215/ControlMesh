@@ -61,6 +61,8 @@ def initialize_memory_v2(paths: DuctorPaths) -> None:
         from ductor_bot.infra.json_store import atomic_json_save
 
         atomic_json_save(paths.memory_promotion_log_path, {})
+    if not paths.dreaming_sweep_log_path.exists():
+        atomic_text_save(paths.dreaming_sweep_log_path, "")
 
 
 def ensure_daily_note(paths: DuctorPaths, note_date: date) -> Path:

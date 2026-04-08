@@ -30,3 +30,9 @@ def test_memory_v2_paths() -> None:
     assert paths.memory_promotion_log_path == Path(
         "/home/test/.ductor/workspace/memory/.dreams/promotion_log.json"
     )
+    assert paths.memory_search_index_path == Path(
+        "/home/test/.ductor/workspace/memory/.dreams/search.sqlite3"
+    )
+    assert paths.dreaming_sweep_log_path == Path(
+        "/home/test/.ductor/workspace/memory/.dreams/sweep_log.jsonl"
+    )
