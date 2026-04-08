@@ -49,6 +49,15 @@ def create_mailbox_message(paths: TeamStatePaths, message: TeamMailboxMessage) -
     return persisted
 
 
+def get_mailbox_message(paths: TeamStatePaths, message_id: str) -> TeamMailboxMessage:
+    """Read a mailbox message by ID."""
+    for message in _load(paths):
+        if message.message_id == message_id:
+            return message
+    msg = f"mailbox message '{message_id}' not found"
+    raise FileNotFoundError(msg)
+
+
 def _transition(paths: TeamStatePaths, message_id: str, to_status: str) -> TeamMailboxMessage:
     messages = _load(paths)
     for index, message in enumerate(messages):

@@ -51,6 +51,15 @@ def create_dispatch_request(paths: TeamStatePaths, request: TeamDispatchRequest)
     return persisted
 
 
+def get_dispatch_request(paths: TeamStatePaths, request_id: str) -> TeamDispatchRequest:
+    """Read a dispatch request by ID."""
+    for item in _load(paths):
+        if item.request_id == request_id:
+            return item
+    msg = f"dispatch request '{request_id}' not found"
+    raise FileNotFoundError(msg)
+
+
 def transition_dispatch_request(
     paths: TeamStatePaths,
     request_id: str,

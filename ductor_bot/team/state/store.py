@@ -22,12 +22,14 @@ from ductor_bot.team.models import (
 from ductor_bot.team.state.base import TeamStatePaths
 from ductor_bot.team.state.dispatch import (
     create_dispatch_request,
+    get_dispatch_request,
     list_dispatch_requests,
     transition_dispatch_request,
 )
 from ductor_bot.team.state.events import append_event, read_events
 from ductor_bot.team.state.mailbox import (
     create_mailbox_message,
+    get_mailbox_message,
     list_mailbox_messages,
     mark_mailbox_message_delivered,
     mark_mailbox_message_notified,
@@ -81,6 +83,9 @@ class TeamStateStore:
     def create_dispatch_request(self, request: TeamDispatchRequest) -> TeamDispatchRequest:
         return create_dispatch_request(self.paths, request)
 
+    def get_dispatch_request(self, request_id: str) -> TeamDispatchRequest:
+        return get_dispatch_request(self.paths, request_id)
+
     def transition_dispatch_request(self, request_id: str, to_status: str, *, error: str | None = None) -> TeamDispatchRequest:
         return transition_dispatch_request(self.paths, request_id, to_status, error=error)
 
@@ -89,6 +94,9 @@ class TeamStateStore:
 
     def create_mailbox_message(self, message: TeamMailboxMessage) -> TeamMailboxMessage:
         return create_mailbox_message(self.paths, message)
+
+    def get_mailbox_message(self, message_id: str) -> TeamMailboxMessage:
+        return get_mailbox_message(self.paths, message_id)
 
     def mark_mailbox_message_notified(self, message_id: str) -> TeamMailboxMessage:
         return mark_mailbox_message_notified(self.paths, message_id)
