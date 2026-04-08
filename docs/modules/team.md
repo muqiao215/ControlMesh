@@ -60,12 +60,32 @@ This keeps the cut additive to Ductor's existing bus/session stack and avoids in
 - `TeamLeader.session_key` materializes the existing `SessionKey`
 - `TeamLeader.runtime.cwd` owns the leader workspace/runtime cwd
 - `TeamWorker.runtime.provider_session_id` stores provider-local runtime session ids
+- `TeamWorker.runtime.session_name` stores the Ductor-side runtime/session handle when one exists
+- `TeamWorker.runtime.routable_session` stores an optional future-routable `TeamSessionRef` without replacing `SessionKey`
+- `TeamWorker.runtime_ref` flattens worker ownership into a narrow runtime/session reference for orchestration code
+
+## Worker Runtime Ownership
+
+Worker runtime ownership is still manifest-backed and additive:
+
+- team-local ownership remains `TeamWorker.name`
+- provider/runtime-local ownership is captured in `runtime.provider_session_id`
+- optional Ductor runtime handle is captured in `runtime.session_name`
+- optional future live route is captured in `runtime.routable_session`
+
+The read-only summary now exposes both:
+
+- `workers`: the persisted manifest entries
+- `worker_runtimes`: explicit flattened ownership records derived from those workers
+
+The live bridge still routes only through `TeamManifest.leader.session`, but dispatch envelopes now carry worker runtime metadata when known so later worker delivery/orchestration work can reuse the same persisted ownership model.
 
 The manifest now persists nested `session` and `runtime` records, but still accepts the earlier flattened fields on input:
 
 - leader `session_transport` / `session_chat_id` / `session_topic_id`
 - manifest-level `cwd`
 - worker `session_id`
+- worker `session_name`
 
 ## Files
 

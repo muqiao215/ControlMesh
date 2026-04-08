@@ -38,7 +38,16 @@ def store(tmp_path: Path) -> TeamStateStore:
                 runtime=TeamRuntimeContext(cwd="/repo"),
             ),
             workers=[
-                TeamWorker(name="worker-1", role="executor", provider="codex"),
+                TeamWorker(
+                    name="worker-1",
+                    role="executor",
+                    provider="codex",
+                    runtime=TeamRuntimeContext(
+                        provider_session_id="codex-sess-1",
+                        session_name="ia-worker-1",
+                        routable_session=TeamSessionRef(transport="tg", chat_id=21, topic_id=4),
+                    ),
+                ),
                 TeamWorker(name="worker-2", role="verifier"),
             ],
         )
@@ -68,8 +77,14 @@ def test_build_dispatch_envelope_targets_leader_session(store: TeamStateStore) -
     assert envelope.metadata["team_name"] == "alpha-team"
     assert envelope.metadata["request_id"] == "dispatch-1"
     assert envelope.metadata["recipient"] == "worker-1"
+    assert envelope.metadata["worker_provider"] == "codex"
+    assert envelope.metadata["worker_session_name"] == "ia-worker-1"
+    assert envelope.metadata["worker_provider_session_id"] == "codex-sess-1"
+    assert envelope.metadata["worker_routable_session"] == "tg:21:4"
     assert "worker-1" in envelope.prompt
     assert "task-1" in envelope.prompt
+    assert "ia-worker-1" in envelope.prompt
+    assert "tg:21:4" in envelope.prompt
 
 
 def test_build_mailbox_envelope_targets_leader_session_without_injection(

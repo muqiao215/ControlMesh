@@ -9,9 +9,14 @@ import pytest
 
 from ductor_bot.team.models import (
     TeamDispatchRequest,
+    TeamLeader,
     TeamMailboxMessage,
+    TeamManifest,
+    TeamRuntimeContext,
+    TeamSessionRef,
     TeamTask,
     TeamTaskClaim,
+    TeamWorker,
 )
 from ductor_bot.team.state import TeamStateStore
 
@@ -119,3 +124,35 @@ def test_mailbox_message_lifecycle_records_timestamps(store: TeamStateStore) -> 
     delivered = store.mark_mailbox_message_delivered("msg-1")
     assert delivered.delivered_at is not None
 
+
+def test_manifest_persists_worker_runtime_ownership_fields(store: TeamStateStore) -> None:
+    store.write_manifest(
+        TeamManifest(
+            team_name="alpha-team",
+            task_description="Coordinate implementation",
+            leader=TeamLeader(
+                agent_name="main",
+                session=TeamSessionRef(transport="tg", chat_id=7),
+            ),
+            workers=[
+                TeamWorker(
+                    name="worker-1",
+                    role="executor",
+                    provider="codex",
+                    runtime=TeamRuntimeContext(
+                        provider_session_id="sess-1",
+                        session_name="ia-worker-1",
+                        routable_session=TeamSessionRef(transport="tg", chat_id=9, topic_id=5),
+                    ),
+                )
+            ],
+        )
+    )
+
+    manifest = store.read_manifest()
+    runtime = manifest.worker_runtime_ref("worker-1")
+
+    assert runtime.provider_session_id == "sess-1"
+    assert runtime.session_name == "ia-worker-1"
+    assert runtime.routable_session is not None
+    assert runtime.routable_session.storage_key == "tg:9:5"

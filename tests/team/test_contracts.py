@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
+from ductor_bot.session.key import SessionKey
 from ductor_bot.team.contracts import (
     TEAM_API_OPERATIONS,
     TEAM_DISPATCH_REQUEST_STATUSES,
@@ -12,8 +13,13 @@ from ductor_bot.team.contracts import (
     TEAM_TASK_STATUSES,
     TEAM_TERMINAL_PHASES,
 )
-from ductor_bot.session.key import SessionKey
-from ductor_bot.team.models import TeamLeader, TeamManifest, TeamSessionRef, TeamWorker
+from ductor_bot.team.models import (
+    TeamLeader,
+    TeamManifest,
+    TeamRuntimeContext,
+    TeamSessionRef,
+    TeamWorker,
+)
 
 
 def test_contract_sets_include_expected_values() -> None:
@@ -98,3 +104,38 @@ def test_manifest_normalizes_legacy_flat_identity_fields() -> None:
     assert manifest.leader.runtime.cwd == "/repo"
     assert manifest.workers[0].runtime.provider_session_id == "sess-1"
     assert manifest.workers[0].session_id == "sess-1"
+
+
+def test_worker_runtime_ref_exposes_explicit_owner_and_optional_route() -> None:
+    worker = TeamWorker(
+        name="worker-1",
+        role="executor",
+        provider="codex",
+        runtime=TeamRuntimeContext(
+            provider_session_id="sess-1",
+            session_name="ia-worker-1",
+            routable_session=TeamSessionRef(transport="tg", chat_id=7, topic_id=23),
+        ),
+    )
+
+    runtime_ref = worker.runtime_ref
+
+    assert runtime_ref.worker == "worker-1"
+    assert runtime_ref.role == "executor"
+    assert runtime_ref.provider == "codex"
+    assert runtime_ref.provider_session_id == "sess-1"
+    assert runtime_ref.session_name == "ia-worker-1"
+    assert runtime_ref.routable_session is not None
+    assert runtime_ref.session_key == SessionKey.telegram(chat_id=7, topic_id=23)
+
+
+def test_manifest_worker_runtime_ref_raises_for_unknown_worker() -> None:
+    manifest = TeamManifest(
+        team_name="alpha-team",
+        task_description="Coordinate implementation",
+        leader=TeamLeader(agent_name="main"),
+        workers=[TeamWorker(name="worker-1", role="executor")],
+    )
+
+    with pytest.raises(ValueError, match="unknown worker"):
+        manifest.worker_runtime_ref("worker-2")

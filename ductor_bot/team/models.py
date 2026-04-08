@@ -4,10 +4,18 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
+from ductor_bot.session.key import SessionKey
 from ductor_bot.team.contracts import (
-    CLAIMABLE_TEAM_TASK_STATUSES,
     EVENT_ID_SAFE_PATTERN,
     TASK_ID_SAFE_PATTERN,
     TEAM_DISPATCH_REQUEST_KINDS,
@@ -22,7 +30,6 @@ from ductor_bot.team.contracts import (
     WORKER_NAME_SAFE_PATTERN,
     ensure_safe_identifier,
 )
-from ductor_bot.session.key import SessionKey
 
 
 def _normalize_optional_text(value: str | None, *, label: str) -> str | None:
@@ -70,20 +77,34 @@ class TeamRuntimeContext(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     cwd: str | None = None
+    session_name: str | None = None
     provider_session_id: str | None = Field(
         default=None,
         validation_alias=AliasChoices("provider_session_id", "session_id"),
     )
+    routable_session: TeamSessionRef | None = None
 
     @field_validator("cwd")
     @classmethod
     def _validate_cwd(cls, value: str | None) -> str | None:
         return _normalize_optional_text(value, label="cwd")
 
+    @field_validator("session_name")
+    @classmethod
+    def _validate_session_name(cls, value: str | None) -> str | None:
+        return _normalize_optional_text(value, label="session_name")
+
     @field_validator("provider_session_id")
     @classmethod
     def _validate_provider_session_id(cls, value: str | None) -> str | None:
         return _normalize_optional_text(value, label="provider_session_id")
+
+    @property
+    def routable_session_key(self) -> SessionKey | None:
+        """Expose the chat/session key when this runtime is already routable."""
+        if self.routable_session is None:
+            return None
+        return self.routable_session.session_key
 
 
 class TeamLeader(BaseModel):
@@ -149,9 +170,10 @@ class TeamWorker(BaseModel):
         if not isinstance(data, dict):
             return data
         payload = dict(data)
-        if "runtime" not in payload and any(field in payload for field in ("session_id", "cwd")):
+        if "runtime" not in payload and any(field in payload for field in ("session_id", "session_name", "cwd")):
             payload["runtime"] = {
                 "provider_session_id": payload.pop("session_id", None),
+                "session_name": payload.pop("session_name", None),
                 "cwd": payload.pop("cwd", None),
             }
         return payload
@@ -164,12 +186,52 @@ class TeamWorker(BaseModel):
     @field_validator("role", "provider")
     @classmethod
     def _validate_optional_text_fields(cls, value: str | None, info: ValidationInfo) -> str | None:
-        return _normalize_optional_text(value, label=info.field_name)
+        return _normalize_optional_text(value, label=info.field_name or "field")
 
     @property
     def session_id(self) -> str | None:
         """Backward-compatible access to the provider-local runtime session id."""
         return self.runtime.provider_session_id
+
+    @property
+    def runtime_ref(self) -> TeamWorkerRuntimeRef:
+        """Flatten worker ownership into a narrow runtime/session reference."""
+        return TeamWorkerRuntimeRef(
+            worker=self.name,
+            role=self.role,
+            provider=self.provider,
+            session_name=self.runtime.session_name,
+            provider_session_id=self.runtime.provider_session_id,
+            routable_session=self.runtime.routable_session,
+        )
+
+
+class TeamWorkerRuntimeRef(BaseModel):
+    """Explicit worker runtime/session reference for orchestration and routing."""
+
+    worker: str
+    role: str
+    provider: str | None = None
+    session_name: str | None = None
+    provider_session_id: str | None = None
+    routable_session: TeamSessionRef | None = None
+
+    @field_validator("worker")
+    @classmethod
+    def _validate_worker(cls, value: str) -> str:
+        return ensure_safe_identifier(WORKER_NAME_SAFE_PATTERN, value, "worker")
+
+    @field_validator("role", "provider", "session_name", "provider_session_id")
+    @classmethod
+    def _validate_optional_text_fields(cls, value: str | None, info: ValidationInfo) -> str | None:
+        return _normalize_optional_text(value, label=info.field_name or "field")
+
+    @property
+    def session_key(self) -> SessionKey | None:
+        """Return the routable session key when this worker has one."""
+        if self.routable_session is None:
+            return None
+        return self.routable_session.session_key
 
 
 class TeamManifest(BaseModel):
@@ -221,6 +283,19 @@ class TeamManifest(BaseModel):
     def cwd(self) -> str | None:
         """Backward-compatible manifest-level cwd access."""
         return self.leader.runtime.cwd
+
+    def get_worker(self, worker_name: str) -> TeamWorker:
+        """Return a worker by team-local identity."""
+        normalized = ensure_safe_identifier(WORKER_NAME_SAFE_PATTERN, worker_name, "worker")
+        for worker in self.workers:
+            if worker.name == normalized:
+                return worker
+        msg = f"unknown worker '{worker_name}'"
+        raise ValueError(msg)
+
+    def worker_runtime_ref(self, worker_name: str) -> TeamWorkerRuntimeRef:
+        """Return the explicit runtime/session reference for a worker."""
+        return self.get_worker(worker_name).runtime_ref
 
 
 class TeamTaskClaim(BaseModel):

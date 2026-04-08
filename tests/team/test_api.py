@@ -38,7 +38,11 @@ def _seed_store(tmp_path: Path) -> TeamStateStore:
                     name="worker-1",
                     role="executor",
                     provider="codex",
-                    runtime=TeamRuntimeContext(provider_session_id="codex-sess-1"),
+                    runtime=TeamRuntimeContext(
+                        provider_session_id="codex-sess-1",
+                        session_name="ia-worker-1",
+                        routable_session=TeamSessionRef(transport="tg", chat_id=9, topic_id=3),
+                    ),
                 ),
                 TeamWorker(name="worker-2", role="verifier"),
             ],
@@ -132,6 +136,12 @@ def test_read_manifest_returns_success_envelope(tmp_path: Path) -> None:
     assert result["data"]["manifest"]["leader"]["session"]["transport"] == "tg"
     assert result["data"]["manifest"]["leader"]["runtime"]["cwd"] == "/repo"
     assert result["data"]["manifest"]["workers"][0]["runtime"]["provider_session_id"] == "codex-sess-1"
+    assert result["data"]["manifest"]["workers"][0]["runtime"]["session_name"] == "ia-worker-1"
+    assert result["data"]["manifest"]["workers"][0]["runtime"]["routable_session"] == {
+        "transport": "tg",
+        "chat_id": 9,
+        "topic_id": 3,
+    }
 
 
 def test_list_tasks_supports_status_filter(tmp_path: Path) -> None:
@@ -165,6 +175,10 @@ def test_get_summary_aggregates_team_state(tmp_path: Path) -> None:
     assert summary["dispatch_counts"]["pending"] == 1
     assert summary["mailbox_counts"]["pending"] == 1
     assert summary["latest_event_id"] == "evt-2"
+    assert summary["worker_runtimes"][0]["worker"] == "worker-1"
+    assert summary["worker_runtimes"][0]["provider_session_id"] == "codex-sess-1"
+    assert summary["worker_runtimes"][0]["session_name"] == "ia-worker-1"
+    assert summary["worker_runtimes"][0]["routable_session"]["chat_id"] == 9
 
 
 def test_read_events_filters_after_event_id_and_worker(tmp_path: Path) -> None:

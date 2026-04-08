@@ -161,6 +161,7 @@ class TeamStateStore:
             "phase": phase.current_phase,
             "active": phase.active,
             "workers": [worker.model_dump(mode="json") for worker in manifest.workers],
+            "worker_runtimes": [worker.runtime_ref.model_dump(mode="json") for worker in manifest.workers],
             "task_counts": task_counts,
             "dispatch_counts": dispatch_counts,
             "mailbox_counts": mailbox_counts,

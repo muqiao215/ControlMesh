@@ -32,7 +32,24 @@ def _require_routable_leader(manifest: TeamManifest) -> None:
 def build_dispatch_envelope(manifest: TeamManifest, request: TeamDispatchRequest) -> Envelope:
     """Build a leader-session injection envelope for a team dispatch request."""
     _require_routable_leader(manifest)
+    runtime_ref = manifest.worker_runtime_ref(request.to_worker)
     prompt = _render_dispatch_prompt(manifest, request)
+    metadata: dict[str, str] = {
+        "team_name": manifest.team_name,
+        "request_id": request.request_id,
+        "task_id": request.task_id or "",
+        "recipient": request.to_worker,
+        "kind": request.kind,
+    }
+    if runtime_ref.provider:
+        metadata["worker_provider"] = runtime_ref.provider
+    if runtime_ref.session_name:
+        metadata["worker_session_name"] = runtime_ref.session_name
+    if runtime_ref.provider_session_id:
+        metadata["worker_provider_session_id"] = runtime_ref.provider_session_id
+    if runtime_ref.routable_session is not None:
+        metadata["worker_routable_session"] = runtime_ref.routable_session.storage_key
+
     return Envelope(
         origin=Origin.INTERAGENT,
         chat_id=manifest.leader.session.chat_id,
@@ -43,13 +60,7 @@ def build_dispatch_envelope(manifest: TeamManifest, request: TeamDispatchRequest
         delivery=DeliveryMode.UNICAST,
         lock_mode=LockMode.REQUIRED,
         needs_injection=True,
-        metadata={
-            "team_name": manifest.team_name,
-            "request_id": request.request_id,
-            "task_id": request.task_id,
-            "recipient": request.to_worker,
-            "kind": request.kind,
-        },
+        metadata=metadata,
     )
 
 
@@ -191,6 +202,7 @@ class TeamLiveDispatcher:
 
 
 def _render_dispatch_prompt(manifest: TeamManifest, request: TeamDispatchRequest) -> str:
+    runtime_ref = manifest.worker_runtime_ref(request.to_worker)
     lines = [
         "[TEAM LIVE DISPATCH]",
         f"Team: {manifest.team_name}",
@@ -201,6 +213,14 @@ def _render_dispatch_prompt(manifest: TeamManifest, request: TeamDispatchRequest
     ]
     if request.task_id:
         lines.append(f"Task ID: {request.task_id}")
+    if runtime_ref.provider:
+        lines.append(f"Worker Provider: {runtime_ref.provider}")
+    if runtime_ref.session_name:
+        lines.append(f"Worker Runtime Session: {runtime_ref.session_name}")
+    if runtime_ref.provider_session_id:
+        lines.append(f"Worker Provider Session ID: {runtime_ref.provider_session_id}")
+    if runtime_ref.routable_session is not None:
+        lines.append(f"Worker Routable Session: {runtime_ref.routable_session.storage_key}")
     lines.extend(
         [
             "",
