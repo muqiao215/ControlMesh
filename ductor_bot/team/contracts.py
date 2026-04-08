@@ -37,6 +37,11 @@ TEAM_DISPATCH_REQUEST_STATUSES: tuple[str, ...] = (
     "failed",
     "cancelled",
 )
+TEAM_DISPATCH_RESULT_OUTCOMES: tuple[str, ...] = (
+    "completed",
+    "failed",
+    "needs_repair",
+)
 TEAM_MAILBOX_MESSAGE_STATUSES: tuple[str, ...] = ("pending", "notified", "delivered")
 TEAM_EVENT_TYPES: tuple[str, ...] = (
     "task_claimed",
@@ -46,6 +51,7 @@ TEAM_EVENT_TYPES: tuple[str, ...] = (
     "dispatch_notified",
     "dispatch_delivered",
     "dispatch_failed",
+    "dispatch_result_recorded",
     "mailbox_message_created",
     "mailbox_message_notified",
     "mailbox_message_delivered",
@@ -64,4 +70,3 @@ def ensure_safe_identifier(pattern: re.Pattern[str], value: str, label: str) -> 
         msg = f"{label} must match the safe team identifier pattern"
         raise ValueError(msg)
     return normalized
-

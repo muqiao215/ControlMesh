@@ -20,6 +20,7 @@ from ductor_bot.team.contracts import (
     TASK_ID_SAFE_PATTERN,
     TEAM_DISPATCH_REQUEST_KINDS,
     TEAM_DISPATCH_REQUEST_STATUSES,
+    TEAM_DISPATCH_RESULT_OUTCOMES,
     TEAM_EVENT_TYPES,
     TEAM_MAILBOX_MESSAGE_STATUSES,
     TEAM_NAME_SAFE_PATTERN,
@@ -348,6 +349,49 @@ class TeamTask(BaseModel):
         return ensure_safe_identifier(WORKER_NAME_SAFE_PATTERN, value, "owner")
 
 
+class TeamDispatchResult(BaseModel):
+    """Worker-reported execution outcome for a delivered dispatch."""
+
+    outcome: str
+    summary: str | None = None
+    details: str | None = None
+    reported_by: str | None = None
+    reported_at: str | None = None
+    task_status: str | None = None
+
+    @field_validator("outcome")
+    @classmethod
+    def _validate_outcome(cls, value: str) -> str:
+        normalized = value.strip()
+        if normalized not in TEAM_DISPATCH_RESULT_OUTCOMES:
+            msg = f"outcome must be one of: {', '.join(TEAM_DISPATCH_RESULT_OUTCOMES)}"
+            raise ValueError(msg)
+        return normalized
+
+    @field_validator("summary", "details", "reported_at")
+    @classmethod
+    def _validate_optional_text_fields(cls, value: str | None, info: ValidationInfo) -> str | None:
+        return _normalize_optional_text(value, label=info.field_name or "field")
+
+    @field_validator("reported_by")
+    @classmethod
+    def _validate_reported_by(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        return ensure_safe_identifier(WORKER_NAME_SAFE_PATTERN, value, "reported_by")
+
+    @field_validator("task_status")
+    @classmethod
+    def _validate_task_status(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        normalized = value.strip()
+        if normalized not in TEAM_TASK_STATUSES:
+            msg = f"task_status must be one of: {', '.join(TEAM_TASK_STATUSES)}"
+            raise ValueError(msg)
+        return normalized
+
+
 class TeamDispatchRequest(BaseModel):
     """State-only dispatch request lifecycle."""
 
@@ -363,6 +407,9 @@ class TeamDispatchRequest(BaseModel):
     delivered_at: str | None = None
     failed_at: str | None = None
     last_error: str | None = None
+    live_route: str | None = None
+    live_target_session: str | None = None
+    result: TeamDispatchResult | None = None
 
     @field_validator("request_id")
     @classmethod
@@ -403,6 +450,11 @@ class TeamDispatchRequest(BaseModel):
             msg = f"status must be one of: {', '.join(TEAM_DISPATCH_REQUEST_STATUSES)}"
             raise ValueError(msg)
         return normalized
+
+    @field_validator("live_route", "live_target_session")
+    @classmethod
+    def _validate_optional_route_fields(cls, value: str | None, info: ValidationInfo) -> str | None:
+        return _normalize_optional_text(value, label=info.field_name or "field")
 
 
 class TeamMailboxMessage(BaseModel):

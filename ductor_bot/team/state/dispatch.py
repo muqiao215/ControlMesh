@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from ductor_bot.infra.json_store import atomic_json_save, load_json
-from ductor_bot.team.models import TeamDispatchRequest
+from ductor_bot.team.models import TeamDispatchRequest, TeamDispatchResult
 from ductor_bot.team.state.base import TeamStatePaths, utc_now
 
 _ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
@@ -66,9 +66,11 @@ def transition_dispatch_request(
     to_status: str,
     *,
     error: str | None = None,
+    route: tuple[str | None, str | None] | None = None,
 ) -> TeamDispatchRequest:
     """Advance a dispatch request through its state-only lifecycle."""
     requests = _load(paths)
+    live_route, live_target_session = route or (None, None)
     for index, item in enumerate(requests):
         if item.request_id != request_id:
             continue
@@ -77,6 +79,10 @@ def transition_dispatch_request(
             raise ValueError(msg)
         now = utc_now()
         update: dict[str, str | None] = {"status": to_status, "updated_at": now}
+        if live_route is not None:
+            update["live_route"] = live_route
+        if live_target_session is not None:
+            update["live_target_session"] = live_target_session
         if to_status == "notified":
             update["notified_at"] = now
         if to_status == "delivered":
@@ -86,6 +92,28 @@ def transition_dispatch_request(
             update["failed_at"] = now
             update["last_error"] = error
         requests[index] = item.model_copy(update=update)
+        _save(paths, requests)
+        return requests[index]
+    msg = f"dispatch request '{request_id}' not found"
+    raise FileNotFoundError(msg)
+
+
+def record_dispatch_result(
+    paths: TeamStatePaths,
+    request_id: str,
+    result: TeamDispatchResult,
+) -> TeamDispatchRequest:
+    """Record the latest worker-reported result for a delivered dispatch."""
+    requests = _load(paths)
+    for index, item in enumerate(requests):
+        if item.request_id != request_id:
+            continue
+        if item.status != "delivered":
+            msg = f"dispatch request '{request_id}' must be delivered before recording a result"
+            raise ValueError(msg)
+        now = utc_now()
+        persisted_result = result.model_copy(update={"reported_at": result.reported_at or now})
+        requests[index] = item.model_copy(update={"result": persisted_result, "updated_at": now})
         _save(paths, requests)
         return requests[index]
     msg = f"dispatch request '{request_id}' not found"

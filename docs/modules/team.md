@@ -22,7 +22,8 @@ It now includes a narrow leader-session live bridge, but it still does **not** s
   - `get-summary`
   - `read-events`
 - limited live delivery bridge:
-  - dispatch requests can inject a coordination prompt into the leader session via `MessageBus`
+  - dispatch requests can inject a coordination prompt into a worker routable session when one is persisted, with deterministic leader-session fallback via `MessageBus`
+  - delivered dispatch requests can later accept an explicit worker-reported result writeback via the existing team state layer
   - mailbox messages can emit leader-visible unicast notifications
 - phase transition machine:
   - `plan`
@@ -40,17 +41,25 @@ It now includes a narrow leader-session live bridge, but it still does **not** s
 - write-capable external API operations
 - true worker-session delivery or per-worker runtime execution
 - end-to-end delivery acknowledgements beyond successful bus submission
+- worker runtime/process execution control
 
 ## Live Bridge
 
 The current live path is intentionally narrow:
 
-- `TeamManifest.leader.session` is the only routable live target
-- dispatch requests use `MessageBus` injection into that leader session
-- mailbox messages use a leader-visible unicast notification without injection
-- worker targets remain team-state semantics, not separate live runtimes
+- dispatch requests first check `TeamManifest.worker_runtime_ref(...).routable_session`
+- when a worker runtime already owns a routable session, the existing `MessageBus` injects directly into that worker session
+- when a worker is not directly routable, dispatch requests deterministically fall back to `TeamManifest.leader.session`
+- mailbox messages still use a leader-visible unicast notification without injection
+- worker targets remain team-state semantics, not independently managed live runtimes
 
 This keeps the cut additive to Ductor's existing bus/session stack and avoids inventing a second delivery mechanism before worker runtime management exists.
+
+Direct worker routing in this cut is intentionally limited to dispatch requests:
+
+- the team layer already has persisted worker runtime ownership for dispatch targeting
+- mailbox state is still leader-visible coordination state, not a proven per-worker inbox transport
+- mailbox delivery therefore stays honest: leader-visible only, with no fake worker-delivered acknowledgement path
 
 ## Identity Model
 
@@ -78,7 +87,43 @@ The read-only summary now exposes both:
 - `workers`: the persisted manifest entries
 - `worker_runtimes`: explicit flattened ownership records derived from those workers
 
-The live bridge still routes only through `TeamManifest.leader.session`, but dispatch envelopes now carry worker runtime metadata when known so later worker delivery/orchestration work can reuse the same persisted ownership model.
+Dispatch envelopes now also record the effective live route in envelope metadata and emitted events:
+
+- `live_route`: `worker_session` or `leader_session`
+- `live_target_session`: the serialized `SessionKey` storage key for the actual bus target
+
+This makes direct-worker vs. leader-fallback behavior inspectable without adding a second transport or widening the external API.
+
+## Result Writeback
+
+Execution/result writeback is now intentionally narrow and explicit:
+
+- `TeamDispatchRequest.status` still only tracks transport-side lifecycle:
+  - `pending`
+  - `notified`
+  - `delivered`
+  - `failed`
+  - `cancelled`
+- a separate `TeamDispatchResult` record can be attached only after a dispatch is `delivered`
+- the latest persisted result records:
+  - `outcome`: `completed`, `failed`, or `needs_repair`
+  - optional `summary` / `details`
+  - `reported_by`
+  - `reported_at`
+  - optional linked `task_status`
+- route provenance is now persisted on the dispatch request itself:
+  - `live_route`
+  - `live_target_session`
+
+This keeps three facts separate:
+
+- the bus delivered a dispatch to a live route
+- a worker later reported an execution/result outcome
+- the linked task status optionally changed because of that outcome
+
+`TeamLiveDispatcher.record_dispatch_result(...)` is the narrow writeback entry point for future runtime/orchestration code. It records the latest result, emits a `dispatch_result_recorded` event, and emits `task_status_changed` when the linked task status changes.
+
+This still does **not** mean Ductor owns worker execution. The team layer only persists worker-reported outcomes after dispatch delivery; it does not start, supervise, or verify worker runtime/process execution.
 
 The manifest now persists nested `session` and `runtime` records, but still accepts the earlier flattened fields on input:
 

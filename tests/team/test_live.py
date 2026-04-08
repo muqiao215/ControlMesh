@@ -15,11 +15,13 @@ from ductor_bot.team.live import (
 )
 from ductor_bot.team.models import (
     TeamDispatchRequest,
+    TeamDispatchResult,
     TeamLeader,
     TeamMailboxMessage,
     TeamManifest,
     TeamRuntimeContext,
     TeamSessionRef,
+    TeamTask,
     TeamWorker,
 )
 from ductor_bot.team.state import TeamStateStore
@@ -55,7 +57,7 @@ def store(tmp_path: Path) -> TeamStateStore:
     return store
 
 
-def test_build_dispatch_envelope_targets_leader_session(store: TeamStateStore) -> None:
+def test_build_dispatch_envelope_targets_worker_routable_session(store: TeamStateStore) -> None:
     request = store.create_dispatch_request(
         TeamDispatchRequest(
             request_id="dispatch-1",
@@ -69,14 +71,16 @@ def test_build_dispatch_envelope_targets_leader_session(store: TeamStateStore) -
     envelope = build_dispatch_envelope(store.read_manifest(), request)
 
     assert envelope.origin == Origin.INTERAGENT
-    assert envelope.chat_id == 7
-    assert envelope.topic_id == 12
+    assert envelope.chat_id == 21
+    assert envelope.topic_id == 4
     assert envelope.transport == "tg"
     assert envelope.lock_mode == LockMode.REQUIRED
     assert envelope.needs_injection is True
     assert envelope.metadata["team_name"] == "alpha-team"
     assert envelope.metadata["request_id"] == "dispatch-1"
     assert envelope.metadata["recipient"] == "worker-1"
+    assert envelope.metadata["live_route"] == "worker_session"
+    assert envelope.metadata["live_target_session"] == "tg:21:4"
     assert envelope.metadata["worker_provider"] == "codex"
     assert envelope.metadata["worker_session_name"] == "ia-worker-1"
     assert envelope.metadata["worker_provider_session_id"] == "codex-sess-1"
@@ -85,6 +89,30 @@ def test_build_dispatch_envelope_targets_leader_session(store: TeamStateStore) -
     assert "task-1" in envelope.prompt
     assert "ia-worker-1" in envelope.prompt
     assert "tg:21:4" in envelope.prompt
+
+
+def test_build_dispatch_envelope_falls_back_to_leader_when_worker_is_not_routable(
+    store: TeamStateStore,
+) -> None:
+    request = store.create_dispatch_request(
+        TeamDispatchRequest(
+            request_id="dispatch-2",
+            team_name="alpha-team",
+            task_id="task-2",
+            to_worker="worker-2",
+            kind="task",
+        )
+    )
+
+    envelope = build_dispatch_envelope(store.read_manifest(), request)
+
+    assert envelope.chat_id == 7
+    assert envelope.topic_id == 12
+    assert envelope.transport == "tg"
+    assert envelope.metadata["live_route"] == "leader_session"
+    assert envelope.metadata["live_target_session"] == "tg:7:12"
+    assert "worker-2" in envelope.prompt
+    assert "worker-1" not in envelope.prompt
 
 
 def test_build_mailbox_envelope_targets_leader_session_without_injection(
@@ -109,6 +137,8 @@ def test_build_mailbox_envelope_targets_leader_session_without_injection(
     assert envelope.transport == "tg"
     assert envelope.needs_injection is False
     assert envelope.lock_mode == LockMode.NONE
+    assert envelope.metadata["live_route"] == "leader_session"
+    assert envelope.metadata["live_target_session"] == "tg:7:12"
     assert "Need verification" in envelope.result_text
     assert "worker-1" in envelope.result_text
     assert "worker-2" in envelope.result_text
@@ -141,11 +171,113 @@ async def test_dispatch_request_success_marks_delivered_and_appends_events(
     assert delivered.status == "delivered"
     assert delivered.notified_at is not None
     assert delivered.delivered_at is not None
+    assert delivered.live_route == "worker_session"
+    assert delivered.live_target_session == "tg:21:4"
     assert [event.event_type for event in events] == [
         "dispatch_notified",
         "dispatch_delivered",
     ]
     assert events[-1].dispatch_request_id == "dispatch-1"
+    assert events[0].payload["live_route"] == "worker_session"
+    assert events[0].payload["live_target_session"] == "tg:21:4"
+    assert events[1].payload["live_route"] == "worker_session"
+    assert events[1].payload["live_target_session"] == "tg:21:4"
+
+
+async def test_record_dispatch_result_marks_direct_route_task_completed_and_appends_events(
+    store: TeamStateStore,
+) -> None:
+    store.upsert_task(TeamTask(task_id="task-1", subject="Implement feature", status="in_progress"))
+    store.create_dispatch_request(
+        TeamDispatchRequest(
+            request_id="dispatch-1",
+            team_name="alpha-team",
+            task_id="task-1",
+            to_worker="worker-1",
+            kind="task",
+        )
+    )
+    bus = AsyncMock()
+
+    async def _submit(envelope):  # type: ignore[no-untyped-def]
+        envelope.result_text = "worker-1 acknowledged"
+
+    bus.submit.side_effect = _submit
+    dispatcher = TeamLiveDispatcher(store, bus)
+
+    await dispatcher.dispatch_request("dispatch-1")
+    recorded = dispatcher.record_dispatch_result(
+        "dispatch-1",
+        TeamDispatchResult(
+            outcome="completed",
+            summary="implementation complete",
+            reported_by="worker-1",
+            task_status="completed",
+        ),
+    )
+    task = store.get_task("task-1")
+    events = store.read_events()
+
+    assert recorded.result is not None
+    assert recorded.result.outcome == "completed"
+    assert recorded.result.summary == "implementation complete"
+    assert task.status == "completed"
+    assert [event.event_type for event in events] == [
+        "dispatch_notified",
+        "dispatch_delivered",
+        "dispatch_result_recorded",
+        "task_status_changed",
+    ]
+    assert events[2].payload["outcome"] == "completed"
+    assert events[2].payload["live_route"] == "worker_session"
+    assert events[2].payload["live_target_session"] == "tg:21:4"
+    assert events[3].payload["status"] == "completed"
+
+
+async def test_record_dispatch_result_marks_leader_route_task_needing_repair(
+    store: TeamStateStore,
+) -> None:
+    store.upsert_task(TeamTask(task_id="task-2", subject="Verify feature", status="in_progress"))
+    store.create_dispatch_request(
+        TeamDispatchRequest(
+            request_id="dispatch-2",
+            team_name="alpha-team",
+            task_id="task-2",
+            to_worker="worker-2",
+            kind="task",
+        )
+    )
+    bus = AsyncMock()
+
+    async def _submit(envelope):  # type: ignore[no-untyped-def]
+        envelope.result_text = "worker-2 acknowledged"
+
+    bus.submit.side_effect = _submit
+    dispatcher = TeamLiveDispatcher(store, bus)
+
+    await dispatcher.dispatch_request("dispatch-2")
+    recorded = dispatcher.record_dispatch_result(
+        "dispatch-2",
+        TeamDispatchResult(
+            outcome="needs_repair",
+            summary="verification found a regression",
+            reported_by="worker-2",
+            task_status="blocked",
+        ),
+    )
+    task = store.get_task("task-2")
+    events = store.read_events()
+
+    assert recorded.result is not None
+    assert recorded.result.outcome == "needs_repair"
+    assert recorded.live_route == "leader_session"
+    assert recorded.live_target_session == "tg:7:12"
+    assert task.status == "blocked"
+    assert task.completed_at is None
+    assert events[2].payload["outcome"] == "needs_repair"
+    assert events[2].payload["live_route"] == "leader_session"
+    assert events[2].payload["live_target_session"] == "tg:7:12"
+    assert events[3].payload["status"] == "blocked"
 
 
 async def test_dispatch_request_injection_error_marks_failed_and_appends_event(

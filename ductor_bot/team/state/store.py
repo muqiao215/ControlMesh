@@ -12,6 +12,7 @@ from ductor_bot.team.contracts import (
 )
 from ductor_bot.team.models import (
     TeamDispatchRequest,
+    TeamDispatchResult,
     TeamEvent,
     TeamMailboxMessage,
     TeamManifest,
@@ -24,6 +25,7 @@ from ductor_bot.team.state.dispatch import (
     create_dispatch_request,
     get_dispatch_request,
     list_dispatch_requests,
+    record_dispatch_result,
     transition_dispatch_request,
 )
 from ductor_bot.team.state.events import append_event, read_events
@@ -41,6 +43,7 @@ from ductor_bot.team.state.tasks import (
     get_task,
     list_tasks,
     release_task_claim,
+    update_task_status,
     upsert_task,
 )
 
@@ -86,11 +89,36 @@ class TeamStateStore:
     def get_dispatch_request(self, request_id: str) -> TeamDispatchRequest:
         return get_dispatch_request(self.paths, request_id)
 
-    def transition_dispatch_request(self, request_id: str, to_status: str, *, error: str | None = None) -> TeamDispatchRequest:
-        return transition_dispatch_request(self.paths, request_id, to_status, error=error)
+    def transition_dispatch_request(
+        self,
+        request_id: str,
+        to_status: str,
+        *,
+        error: str | None = None,
+        route: tuple[str | None, str | None] | None = None,
+    ) -> TeamDispatchRequest:
+        return transition_dispatch_request(
+            self.paths,
+            request_id,
+            to_status,
+            error=error,
+            route=route,
+        )
 
     def list_dispatch_requests(self, *, status: str | None = None) -> list[TeamDispatchRequest]:
         return list_dispatch_requests(self.paths, status=status)
+
+    def record_dispatch_result(self, request_id: str, result: TeamDispatchResult) -> TeamDispatchRequest:
+        request = get_dispatch_request(self.paths, request_id)
+        if request.status != "delivered":
+            msg = f"dispatch request '{request_id}' must be delivered before recording a result"
+            raise ValueError(msg)
+        if result.task_status is not None:
+            if request.task_id is None:
+                msg = f"dispatch request '{request_id}' is not linked to a task"
+                raise ValueError(msg)
+            update_task_status(self.paths, request.task_id, result.task_status)
+        return record_dispatch_result(self.paths, request_id, result)
 
     def create_mailbox_message(self, message: TeamMailboxMessage) -> TeamMailboxMessage:
         return create_mailbox_message(self.paths, message)

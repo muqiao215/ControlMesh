@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import secrets
+from dataclasses import dataclass
 from typing import Protocol
 
 from ductor_bot.bus.envelope import DeliveryMode, Envelope, LockMode, Origin
 from ductor_bot.team.models import (
     TeamDispatchRequest,
+    TeamDispatchResult,
     TeamEvent,
     TeamMailboxMessage,
     TeamManifest,
+    TeamSessionRef,
+    TeamWorkerRuntimeRef,
 )
 from ductor_bot.team.state import TeamStateStore
 
@@ -23,16 +27,49 @@ class TeamBus(Protocol):
         ...
 
 
-def _require_routable_leader(manifest: TeamManifest) -> None:
-    if manifest.leader.session.chat_id == 0:
-        msg = "team leader session must resolve to a live chat before dispatch"
+@dataclass(frozen=True, slots=True)
+class TeamLiveRoute:
+    """Resolved live bus target for a team dispatch or notification."""
+
+    route: str
+    session: TeamSessionRef
+
+    @property
+    def storage_key(self) -> str:
+        return self.session.storage_key
+
+
+def _require_live_session(session: TeamSessionRef, *, label: str) -> TeamSessionRef:
+    if session.chat_id == 0:
+        msg = f"{label} must resolve to a live chat before dispatch"
         raise ValueError(msg)
+    return session
+
+
+def _resolve_dispatch_live_route(
+    manifest: TeamManifest,
+    request: TeamDispatchRequest,
+) -> tuple[TeamLiveRoute, TeamWorkerRuntimeRef]:
+    runtime_ref = manifest.worker_runtime_ref(request.to_worker)
+    worker_session = runtime_ref.routable_session
+    if worker_session is not None and worker_session.chat_id != 0:
+        return TeamLiveRoute(route="worker_session", session=worker_session), runtime_ref
+    return TeamLiveRoute(
+        route="leader_session",
+        session=_require_live_session(manifest.leader.session, label="team leader session"),
+    ), runtime_ref
+
+
+def _resolve_mailbox_live_route(manifest: TeamManifest) -> TeamLiveRoute:
+    return TeamLiveRoute(
+        route="leader_session",
+        session=_require_live_session(manifest.leader.session, label="team leader session"),
+    )
 
 
 def build_dispatch_envelope(manifest: TeamManifest, request: TeamDispatchRequest) -> Envelope:
-    """Build a leader-session injection envelope for a team dispatch request."""
-    _require_routable_leader(manifest)
-    runtime_ref = manifest.worker_runtime_ref(request.to_worker)
+    """Build a live injection envelope for a team dispatch request."""
+    route, runtime_ref = _resolve_dispatch_live_route(manifest, request)
     prompt = _render_dispatch_prompt(manifest, request)
     metadata: dict[str, str] = {
         "team_name": manifest.team_name,
@@ -40,6 +77,8 @@ def build_dispatch_envelope(manifest: TeamManifest, request: TeamDispatchRequest
         "task_id": request.task_id or "",
         "recipient": request.to_worker,
         "kind": request.kind,
+        "live_route": route.route,
+        "live_target_session": route.storage_key,
     }
     if runtime_ref.provider:
         metadata["worker_provider"] = runtime_ref.provider
@@ -52,9 +91,9 @@ def build_dispatch_envelope(manifest: TeamManifest, request: TeamDispatchRequest
 
     return Envelope(
         origin=Origin.INTERAGENT,
-        chat_id=manifest.leader.session.chat_id,
-        topic_id=manifest.leader.session.topic_id,
-        transport=manifest.leader.session.transport,
+        chat_id=route.session.chat_id,
+        topic_id=route.session.topic_id,
+        transport=route.session.transport,
         prompt=prompt,
         prompt_preview=f"team dispatch {request.request_id} -> {request.to_worker}",
         delivery=DeliveryMode.UNICAST,
@@ -66,12 +105,12 @@ def build_dispatch_envelope(manifest: TeamManifest, request: TeamDispatchRequest
 
 def build_mailbox_envelope(manifest: TeamManifest, message: TeamMailboxMessage) -> Envelope:
     """Build a leader-visible live mailbox notification envelope."""
-    _require_routable_leader(manifest)
+    route = _resolve_mailbox_live_route(manifest)
     return Envelope(
         origin=Origin.INTERAGENT,
-        chat_id=manifest.leader.session.chat_id,
-        topic_id=manifest.leader.session.topic_id,
-        transport=manifest.leader.session.transport,
+        chat_id=route.session.chat_id,
+        topic_id=route.session.topic_id,
+        transport=route.session.transport,
         result_text=_render_mailbox_message(manifest, message),
         status="success",
         delivery=DeliveryMode.UNICAST,
@@ -82,6 +121,8 @@ def build_mailbox_envelope(manifest: TeamManifest, message: TeamMailboxMessage) 
             "message_id": message.message_id,
             "recipient": message.to_worker,
             "sender": message.from_worker or "",
+            "live_route": route.route,
+            "live_target_session": route.storage_key,
         },
     )
 
@@ -98,21 +139,41 @@ class TeamLiveDispatcher:
         manifest = self._store.read_manifest()
         request = self._store.get_dispatch_request(request_id)
         envelope = build_dispatch_envelope(manifest, request)
+        route = envelope.metadata.get("live_route")
+        target_session = envelope.metadata.get("live_target_session")
 
         try:
             await self._bus.submit(envelope)
         except Exception as exc:
-            return self._mark_dispatch_failed(request, error=str(exc))
+            return self._mark_dispatch_failed(
+                request,
+                error=str(exc),
+                route=route,
+                target_session=target_session,
+            )
 
         if envelope.is_error:
             error_text = envelope.result_text or "team dispatch injection failed"
-            return self._mark_dispatch_failed(request, error=error_text)
+            return self._mark_dispatch_failed(
+                request,
+                error=error_text,
+                route=route,
+                target_session=target_session,
+            )
 
-        notified = self._store.transition_dispatch_request(request.request_id, "notified")
+        notified = self._store.transition_dispatch_request(
+            request.request_id,
+            "notified",
+            route=(route, target_session),
+        )
         self._append_event(
             self._new_event(
                 event_type="dispatch_notified",
-                payload={"kind": request.kind},
+                payload={
+                    "kind": request.kind,
+                    "live_route": route,
+                    "live_target_session": target_session,
+                },
                 refs={
                     "dispatch_request_id": request.request_id,
                     "worker": request.to_worker,
@@ -120,11 +181,20 @@ class TeamLiveDispatcher:
                 },
             )
         )
-        delivered = self._store.transition_dispatch_request(request.request_id, "delivered")
+        delivered = self._store.transition_dispatch_request(
+            request.request_id,
+            "delivered",
+            route=(route, target_session),
+        )
         self._append_event(
             self._new_event(
                 event_type="dispatch_delivered",
-                payload={"kind": request.kind, "response_preview": envelope.result_text[:200]},
+                payload={
+                    "kind": request.kind,
+                    "response_preview": (envelope.result_text or "")[:200],
+                    "live_route": route,
+                    "live_target_session": target_session,
+                },
                 refs={
                     "dispatch_request_id": request.request_id,
                     "worker": request.to_worker,
@@ -133,6 +203,61 @@ class TeamLiveDispatcher:
             )
         )
         return delivered.model_copy(update={"notified_at": notified.notified_at})
+
+    def record_dispatch_result(self, request_id: str, result: TeamDispatchResult) -> TeamDispatchRequest:
+        """Record a worker-reported result for a delivered dispatch."""
+        previous = self._store.get_dispatch_request(request_id)
+        previous_task = None
+        if previous.task_id is not None and result.task_status is not None:
+            previous_task = self._store.get_task(previous.task_id)
+
+        updated = self._store.record_dispatch_result(request_id, result)
+        recorded = updated.result
+        if recorded is None:  # pragma: no cover - defensive store contract
+            msg = f"dispatch request '{request_id}' did not persist a result"
+            raise RuntimeError(msg)
+
+        self._append_event(
+            self._new_event(
+                event_type="dispatch_result_recorded",
+                payload={
+                    "outcome": recorded.outcome,
+                    "summary": recorded.summary,
+                    "reported_by": recorded.reported_by,
+                    "reported_at": recorded.reported_at,
+                    "task_status": recorded.task_status,
+                    "live_route": updated.live_route,
+                    "live_target_session": updated.live_target_session,
+                },
+                refs={
+                    "dispatch_request_id": updated.request_id,
+                    "worker": updated.to_worker,
+                    "task_id": updated.task_id,
+                },
+            )
+        )
+
+        if updated.task_id is not None and result.task_status is not None:
+            task = self._store.get_task(updated.task_id)
+            previous_status = previous_task.status if previous_task is not None else None
+            if previous_status != task.status:
+                self._append_event(
+                    self._new_event(
+                        event_type="task_status_changed",
+                        payload={
+                            "status": task.status,
+                            "previous_status": previous_status,
+                            "dispatch_outcome": recorded.outcome,
+                        },
+                        refs={
+                            "dispatch_request_id": updated.request_id,
+                            "worker": task.owner or updated.to_worker,
+                            "task_id": updated.task_id,
+                        },
+                    )
+                )
+
+        return updated
 
     async def deliver_mailbox_message(self, message_id: str) -> TeamMailboxMessage:
         """Send a live mailbox notification to the leader session."""
@@ -158,16 +283,24 @@ class TeamLiveDispatcher:
         request: TeamDispatchRequest,
         *,
         error: str,
+        route: str | None = None,
+        target_session: str | None = None,
     ) -> TeamDispatchRequest:
         failed = self._store.transition_dispatch_request(
             request.request_id,
             "failed",
             error=error,
+            route=(route, target_session),
         )
         self._append_event(
             self._new_event(
                 event_type="dispatch_failed",
-                payload={"kind": request.kind, "error": error},
+                payload={
+                    "kind": request.kind,
+                    "error": error,
+                    "live_route": route,
+                    "live_target_session": target_session,
+                },
                 refs={
                     "dispatch_request_id": request.request_id,
                     "worker": request.to_worker,

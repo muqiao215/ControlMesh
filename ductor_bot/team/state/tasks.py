@@ -43,11 +43,16 @@ def list_tasks(
 def upsert_task(paths: TeamStatePaths, task: TeamTask) -> TeamTask:
     """Insert or replace a task."""
     now = utc_now()
+    completed_at = task.completed_at
+    if task.status == "completed" and completed_at is None:
+        completed_at = now
+    if task.status != "completed":
+        completed_at = None
     persisted = task.model_copy(
         update={
             "created_at": task.created_at or now,
             "updated_at": now,
-            "completed_at": now if task.status == "completed" and task.completed_at is None else task.completed_at,
+            "completed_at": completed_at,
         }
     )
     tasks = _load(paths)
@@ -110,3 +115,10 @@ def release_task_claim(paths: TeamStatePaths, task_id: str) -> TeamTask:
     task = get_task(paths, task_id)
     released = task.model_copy(update={"claim": None, "updated_at": utc_now()})
     return upsert_task(paths, released)
+
+
+def update_task_status(paths: TeamStatePaths, task_id: str, status: str) -> TeamTask:
+    """Persist a status change for an existing task."""
+    task = get_task(paths, task_id)
+    updated = task.model_copy(update={"status": status})
+    return upsert_task(paths, updated)

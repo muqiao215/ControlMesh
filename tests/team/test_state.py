@@ -9,6 +9,7 @@ import pytest
 
 from ductor_bot.team.models import (
     TeamDispatchRequest,
+    TeamDispatchResult,
     TeamLeader,
     TeamMailboxMessage,
     TeamManifest,
@@ -103,6 +104,64 @@ def test_dispatch_request_lifecycle_records_timestamps(store: TeamStateStore) ->
 
     delivered = store.transition_dispatch_request("dispatch-1", "delivered")
     assert delivered.delivered_at is not None
+
+
+def test_record_dispatch_result_requires_delivered_dispatch(store: TeamStateStore) -> None:
+    store.create_dispatch_request(
+        TeamDispatchRequest(
+            request_id="dispatch-1",
+            team_name="alpha-team",
+            task_id="task-1",
+            to_worker="worker-1",
+            kind="task",
+        )
+    )
+
+    with pytest.raises(ValueError, match="must be delivered before recording a result"):
+        store.record_dispatch_result(
+            "dispatch-1",
+            TeamDispatchResult(
+                outcome="completed",
+                summary="done",
+                reported_by="worker-1",
+                task_status="completed",
+            ),
+        )
+
+
+def test_record_dispatch_result_persists_latest_outcome_and_updates_task(store: TeamStateStore) -> None:
+    store.upsert_task(TeamTask(task_id="task-1", subject="Implement feature", status="in_progress"))
+    store.create_dispatch_request(
+        TeamDispatchRequest(
+            request_id="dispatch-1",
+            team_name="alpha-team",
+            task_id="task-1",
+            to_worker="worker-1",
+            kind="task",
+        )
+    )
+    store.transition_dispatch_request("dispatch-1", "delivered")
+
+    updated = store.record_dispatch_result(
+        "dispatch-1",
+        TeamDispatchResult(
+            outcome="completed",
+            summary="feature shipped",
+            reported_by="worker-1",
+            task_status="completed",
+        ),
+    )
+    task = store.get_task("task-1")
+
+    assert updated.status == "delivered"
+    assert updated.result is not None
+    assert updated.result.outcome == "completed"
+    assert updated.result.summary == "feature shipped"
+    assert updated.result.reported_by == "worker-1"
+    assert updated.result.reported_at is not None
+    assert updated.result.task_status == "completed"
+    assert task.status == "completed"
+    assert task.completed_at is not None
 
 
 def test_mailbox_message_lifecycle_records_timestamps(store: TeamStateStore) -> None:
