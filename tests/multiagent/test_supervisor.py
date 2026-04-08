@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -266,12 +267,11 @@ class TestOnAgentsChanged:
             call_order.append("exit")
             return result
 
-        supervisor._registry.load = slow_load
-
-        await asyncio.gather(
-            supervisor._on_agents_changed(),
-            supervisor._on_agents_changed(),
-        )
+        with patch.object(supervisor._registry, "load", side_effect=slow_load):
+            await asyncio.gather(
+                supervisor._on_agents_changed(),
+                supervisor._on_agents_changed(),
+            )
 
         # With lock: enter-exit-enter-exit (serialized)
         # Without lock: could be enter-enter-exit-exit
@@ -319,9 +319,12 @@ class TestStopAll:
         }
 
         # Create tasks that are already done
+        async def _done() -> int:
+            return 0
+
         supervisor._tasks = {
-            "main": asyncio.create_task(asyncio.sleep(999)),
-            "sub1": asyncio.create_task(asyncio.sleep(999)),
+            "main": asyncio.create_task(_done()),
+            "sub1": asyncio.create_task(_done()),
         }
 
         from ductor_bot.multiagent.bus import InterAgentBus
@@ -365,6 +368,11 @@ class TestStopAll:
                 "ductor_bot.multiagent.supervisor.AgentStack.create",
                 new_callable=AsyncMock,
                 return_value=main_stack,
+            ),
+            patch(
+                "ductor_bot.multiagent.internal_api.InternalAgentAPI.start",
+                new_callable=AsyncMock,
+                return_value=True,
             ),
             patch(
                 "ductor_bot.multiagent.shared_knowledge.SharedKnowledgeSync",
@@ -503,6 +511,40 @@ class TestHandleRestartExit:
         assert call_order == ["shutdown", "rebuild"]
 
 
+class TestSupervisorStartupHook:
+    async def test_main_startup_recovers_team_runtimes(self, supervisor: AgentSupervisor) -> None:
+        captured_hooks: list[Callable[[], Awaitable[None]]] = []
+        orch = MagicMock()
+        orch.paths.team_state_dir = Path("/tmp/team-state")
+        stack = MagicMock()
+        stack.is_main = True
+        stack.bot = MagicMock()
+        stack.bot.orchestrator = orch
+        stack.bot.register_startup_hook.side_effect = captured_hooks.append
+
+        supervisor._internal_api = MagicMock()
+        fake_controller = MagicMock()
+        fake_controller.recover_live_runtimes = AsyncMock()
+
+        with patch(
+            "ductor_bot.team.runtime_control.TeamRuntimeController",
+            return_value=fake_controller,
+        ) as mock_controller_cls:
+            supervisor._inject_supervisor_hook(stack)
+            assert len(captured_hooks) == 1
+            await captured_hooks[0]()
+
+        mock_controller_cls.assert_called_once_with(
+            orchestrator=orch,
+            team_state_root=orch.paths.team_state_dir,
+        )
+        supervisor._internal_api.set_team_runtime_controller.assert_called_once_with(fake_controller)
+        fake_controller.recover_live_runtimes.assert_awaited_once_with()
+        orch.register_multiagent_commands.assert_called_once_with()
+        stack.bot.set_abort_all_callback.assert_called_once_with(supervisor.abort_all_agents)
+        assert supervisor._main_ready.is_set()
+
+
 class TestAbortAllAgents:
     """Test abort_all_agents() kills processes on every stack."""
 
@@ -559,8 +601,11 @@ class TestAbortAllAgents:
         from ductor_bot.multiagent.bus import InterAgentBus
 
         supervisor._bus = InterAgentBus()
-        supervisor._bus.cancel_all_async = AsyncMock(return_value=2)
-
-        killed = await supervisor.abort_all_agents()
+        with patch.object(
+            supervisor._bus,
+            "cancel_all_async",
+            AsyncMock(return_value=2),
+        ) as mock_cancel:
+            killed = await supervisor.abort_all_agents()
         assert killed == 2
-        supervisor._bus.cancel_all_async.assert_called_once()
+        mock_cancel.assert_called_once()

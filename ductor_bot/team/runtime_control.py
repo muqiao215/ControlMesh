@@ -28,6 +28,7 @@ TEAM_RUNTIME_LIFECYCLE_OPERATIONS = frozenset(
     {_START_OPERATION, _STOP_OPERATION, _HEARTBEAT_OPERATION}
 )
 _DEFAULT_KEEPALIVE_INTERVAL_SECONDS = 60.0
+_LIVE_RUNTIME_STATUSES = frozenset({"starting", "ready", "busy", "unhealthy"})
 
 
 def _success(operation: str, data: dict[str, Any]) -> dict[str, Any]:
@@ -93,6 +94,25 @@ class TeamRuntimeController:
             with suppress(asyncio.CancelledError):
                 await task
 
+    async def recover_live_runtimes(self) -> list[TeamWorkerRuntimeState]:
+        """Recover still-live named-session runtimes from canonical persisted team state."""
+        recovered: list[TeamWorkerRuntimeState] = []
+        for team_name in self._team_names():
+            store = TeamStateStore(self._team_state_root, team_name, create=False)
+            manifest = store.read_manifest()
+            for runtime in store.list_worker_runtimes():
+                if runtime.status not in _LIVE_RUNTIME_STATUSES:
+                    continue
+                recovered_runtime = self._recover_runtime(
+                    store,
+                    manifest,
+                    runtime.worker,
+                    team_name=team_name,
+                )
+                if recovered_runtime is not None:
+                    recovered.append(recovered_runtime)
+        return recovered
+
     async def execute(  # noqa: PLR0911
         self,
         operation: str,
@@ -131,6 +151,15 @@ class TeamRuntimeController:
     def _store(self, team_name: str) -> TeamStateStore:
         return TeamStateStore(self._team_state_root, team_name, create=False)
 
+    def _team_names(self) -> list[str]:
+        if not self._team_state_root.exists():
+            return []
+        return sorted(
+            path.name
+            for path in self._team_state_root.iterdir()
+            if path.is_dir() and (path / "manifest.json").exists()
+        )
+
     def _runtime(
         self,
         store: TeamStateStore,
@@ -152,6 +181,32 @@ class TeamRuntimeController:
         if runtime is not None:
             return runtime
         return store.put_worker_runtime(TeamWorkerRuntimeState(worker=worker))
+
+    def _recover_runtime(
+        self,
+        store: TeamStateStore,
+        manifest: TeamManifest,
+        worker: str,
+        *,
+        team_name: str,
+    ) -> TeamWorkerRuntimeState | None:
+        runtime = self._runtime(store, manifest, worker)
+        if runtime is None or runtime.status not in _LIVE_RUNTIME_STATUSES:
+            return None
+        owner_session_id = runtime.attachment_session_id
+        if owner_session_id is None:
+            return None
+        try:
+            recovered = self._attachments.renew_runtime_heartbeat(
+                store,
+                manifest,
+                worker,
+                owner_session_id=owner_session_id,
+            )
+        except (FileNotFoundError, ValueError):
+            return None
+        self._ensure_keepalive_driver(team_name, worker)
+        return recovered
 
     async def _start_worker_runtime(self, team_name: str, worker: str) -> dict[str, Any]:
         store = self._store(team_name)
@@ -324,7 +379,7 @@ class TeamRuntimeController:
                     store = self._store(team_name)
                     manifest = store.read_manifest()
                     runtime = self._runtime(store, manifest, worker)
-                    if runtime is None or runtime.status not in {"starting", "ready", "busy", "unhealthy"}:
+                    if runtime is None or runtime.status not in _LIVE_RUNTIME_STATUSES:
                         return
                     owner_session_id = runtime.attachment_session_id
                     if owner_session_id is None:

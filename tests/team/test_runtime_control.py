@@ -478,6 +478,112 @@ async def test_keepalive_driver_renews_busy_runtime_after_start(tmp_path: Path) 
     await controller.shutdown()
 
 
+@pytest.mark.asyncio
+async def test_recover_live_runtimes_rearms_valid_runtime_and_is_idempotent(
+    tmp_path: Path,
+) -> None:
+    state_root, store = _seed_store(tmp_path)
+    named_sessions_path = tmp_path / "named_sessions.json"
+    _seed_named_session(
+        named_sessions_path,
+        name="ia-worker-1",
+        chat_id=21,
+        session_id="sess-worker-1",
+    )
+    now = datetime.now(UTC)
+    original_expiry = now + timedelta(seconds=30)
+    store.put_worker_runtime(
+        TeamWorkerRuntimeState(
+            worker="worker-1",
+            status="ready",
+            lease_id="lease-1",
+            lease_expires_at=original_expiry.isoformat(),
+            heartbeat_at=(now - timedelta(seconds=10)).isoformat(),
+            attachment_type="named_session",
+            attachment_name="ia-worker-1",
+            attachment_transport="tg",
+            attachment_chat_id=21,
+            attachment_session_id="sess-worker-1",
+            attached_at=(now - timedelta(minutes=1)).isoformat(),
+            started_at=(now - timedelta(minutes=1)).isoformat(),
+        )
+    )
+    orchestrator = _make_orchestrator(named_sessions_path)
+    controller = TeamRuntimeController(
+        orchestrator=orchestrator,
+        team_state_root=state_root,
+        keepalive_interval_seconds=0.01,
+    )
+
+    recovered = await controller.recover_live_runtimes()
+    runtime = store.get_worker_runtime("worker-1")
+    keepalive_key = ("alpha-team", "worker-1")
+    keepalive_task = controller._keepalive_tasks[keepalive_key]
+
+    assert recovered == [runtime]
+    assert runtime.status == "ready"
+    assert runtime.lease_expires_at is not None
+    assert runtime.lease_expires_at > original_expiry.isoformat()
+
+    await controller.recover_live_runtimes()
+    assert controller._keepalive_tasks[keepalive_key] is keepalive_task
+
+    await asyncio.sleep(0.05)
+
+    renewed = store.get_worker_runtime("worker-1")
+    assert renewed.heartbeat_at is not None
+    assert renewed.heartbeat_at > (runtime.heartbeat_at or "")
+    await controller.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_recover_live_runtimes_invalidates_stale_owner_without_keepalive(
+    tmp_path: Path,
+) -> None:
+    state_root, store = _seed_store(tmp_path)
+    named_sessions_path = tmp_path / "named_sessions.json"
+    _seed_named_session(
+        named_sessions_path,
+        name="ia-worker-1",
+        chat_id=21,
+        session_id="sess-live",
+    )
+    now = datetime.now(UTC)
+    store.put_worker_runtime(
+        TeamWorkerRuntimeState(
+            worker="worker-1",
+            status="busy",
+            execution_id="exec-1",
+            dispatch_request_id="dispatch-1",
+            lease_id="lease-1",
+            lease_expires_at=(now + timedelta(minutes=5)).isoformat(),
+            heartbeat_at=now.isoformat(),
+            attachment_type="named_session",
+            attachment_name="ia-worker-1",
+            attachment_transport="tg",
+            attachment_chat_id=21,
+            attachment_session_id="sess-stale",
+            attached_at=(now - timedelta(minutes=1)).isoformat(),
+            started_at=(now - timedelta(minutes=1)).isoformat(),
+        )
+    )
+    orchestrator = _make_orchestrator(named_sessions_path)
+    controller = TeamRuntimeController(
+        orchestrator=orchestrator,
+        team_state_root=state_root,
+        keepalive_interval_seconds=0.01,
+    )
+
+    recovered = await controller.recover_live_runtimes()
+    runtime = store.get_worker_runtime("worker-1")
+
+    assert recovered == []
+    assert runtime.status == "lost"
+    assert runtime.health_reason == "runtime owner changed"
+    assert controller._keepalive_tasks == {}
+    await controller.shutdown()
+
+
 def test_reconcile_runtime_marks_owner_session_id_change_lost(tmp_path: Path) -> None:
     _, store = _seed_store(tmp_path)
     named_sessions_path = tmp_path / "named_sessions.json"

@@ -79,6 +79,10 @@ The current live path is intentionally narrow:
   - `start-worker-runtime` and runtime reattach arm a bounded in-process keepalive loop for that worker
   - the loop renews the same owner-validated heartbeat/lease while runtime state remains live
   - the loop exits on `stopped`, `lost`, or owner-validation failure
+  - leader startup now scans canonical team state and recovers still-live runtimes:
+    - valid persisted live runtimes are renewed immediately and have keepalive re-armed automatically
+    - stale persisted live runtimes converge to `lost` instead of being trusted after restart
+    - repeated recovery runs are idempotent and do not arm duplicate keepalive tasks
 - when a verified attached worker also owns a routable session, the existing `MessageBus` injects directly into that worker session
 - when a worker is not directly routable, dispatch requests deterministically fall back to `TeamManifest.leader.session`
 - when a manifest advertises worker routing metadata but no real attachment can be verified, the team layer falls back to the leader route instead of trusting stale metadata
@@ -176,7 +180,8 @@ The start/stop path is intentionally narrow:
   - it is armed when the runtime is explicitly started or reattached
   - it keeps renewing through both `ready` and `busy`
   - it is cancelled on `stop-worker-runtime`
-  - it is not yet re-armed automatically after a Ductor process restart unless lifecycle code touches that runtime again
+  - leader startup now re-arms it automatically for persisted runtimes that still validate against the live named-session owner
+  - it still is not a separate daemon and does not supervise worker processes beyond that bounded recovery
 
 If a named session is still missing, ended, or lacks a resumable `session_id`, dispatch falls back to the leader route and no fake worker execution claim is created.
 
@@ -240,7 +245,7 @@ Runtime/CLI callers now also have a minimal honest call path without inventing a
 
 The write surface remains intentionally narrow. The lifecycle additions are only enough to start, stop, or renew the lease/heartbeat for the named-session-backed runtime unit. The control plane is still not a broad mutable CRUD API.
 
-This still does **not** mean Ductor owns full worker execution. The team layer can now start/stop the named-session-backed worker unit, bind runtime validity to the current named-session owner identity, renew heartbeat/lease facts when that owner proves its identity, and keep those renewals alive through a bounded controller-owned task, but it does not supervise a daemon, does not run a separate always-on manager, and does not add a new transport.
+This still does **not** mean Ductor owns full worker execution. The team layer can now start/stop the named-session-backed worker unit, bind runtime validity to the current named-session owner identity, renew heartbeat/lease facts when that owner proves its identity, recover that responsibility after leader restart for still-valid persisted runtimes, and keep those renewals alive through a bounded controller-owned task, but it does not supervise a daemon, does not run a separate always-on manager, and does not add a new transport.
 
 The manifest now persists nested `session` and `runtime` records, but still accepts the earlier flattened fields on input:
 
