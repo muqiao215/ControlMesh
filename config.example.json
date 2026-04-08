@@ -145,6 +145,52 @@
         "technical_footer": false
     },
 
+    "codex_hooks": {
+        "enabled": false,
+        "prefer_native": true,
+        "config_file": ".codex/config.toml",
+        "hooks_file": ".codex/hooks.json",
+        "manage_project_hooks": false
+    },
+
+    "gateways": {
+        "enabled": false,
+        "precedence": "explicit-first",
+        "default_timeout_ms": 5000,
+        "gateways": {
+            "local-command": {
+                "enabled": true,
+                "type": "command",
+                "timeout_ms": 120000,
+                "command": "~/.local/bin/my-gateway --event {{event}} --text {{instruction}}"
+            },
+            "local-webhook": {
+                "enabled": false,
+                "type": "webhook",
+                "timeout_ms": 5000,
+                "url": "http://127.0.0.1:18789/hooks/agent",
+                "method": "POST",
+                "headers": {
+                    "Authorization": "Bearer ${HOOKS_TOKEN}"
+                }
+            }
+        },
+        "events": {
+            "session-end": {
+                "enabled": true,
+                "gateway": "local-command",
+                "instruction": "Session ended for {{session_id}}",
+                "fallback_allowed": true
+            },
+            "ask-user-question": {
+                "enabled": true,
+                "gateway": "local-webhook",
+                "instruction": "Need user input: {{question}}",
+                "fallback_allowed": true
+            }
+        }
+    },
+
     "timeouts": {
         "normal": 600.0,
         "background": 1800.0,

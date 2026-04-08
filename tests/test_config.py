@@ -7,11 +7,17 @@ from pydantic import ValidationError
 
 from ductor_bot.config import (
     AgentConfig,
+    CodexHooksConfig,
     DockerConfig,
     ModelRegistry,
     StreamingConfig,
     deep_merge_config,
     reset_gemini_models,
+)
+from ductor_bot.gateways.config import (
+    GatewayDispatchConfig,
+    GatewayEventRuleConfig,
+    GatewayTargetConfig,
 )
 
 # -- AgentConfig defaults --
@@ -33,6 +39,8 @@ def test_agent_config_defaults() -> None:
     assert cfg.gemini_api_key is None
     assert cfg.telegram_token == ""
     assert cfg.allowed_user_ids == []
+    assert cfg.codex_hooks == CodexHooksConfig()
+    assert cfg.gateways == GatewayDispatchConfig()
 
 
 def test_agent_config_normalizes_nullish_gemini_api_key() -> None:
@@ -178,3 +186,79 @@ def test_transports_default_is_telegram() -> None:
     cfg = AgentConfig()
     assert cfg.transports == ["telegram"]
     assert cfg.is_multi_transport is False
+
+
+def test_gateway_target_command_requires_command() -> None:
+    with pytest.raises(ValidationError, match="command gateways require a non-empty command"):
+        GatewayTargetConfig(type="command")
+
+
+def test_gateway_target_webhook_requires_url() -> None:
+    with pytest.raises(ValidationError, match="webhook gateways require a non-empty url"):
+        GatewayTargetConfig(type="webhook")
+
+
+def test_gateway_target_command_accepts_command() -> None:
+    cfg = GatewayTargetConfig(type="command", command="echo ok")
+    assert cfg.command == "echo ok"
+
+
+def test_gateway_target_webhook_method_is_normalized() -> None:
+    cfg = GatewayTargetConfig(type="webhook", url="http://localhost", method=" post ")
+    assert cfg.method == "POST"
+
+
+def test_gateway_event_rule_requires_gateway_when_enabled() -> None:
+    with pytest.raises(ValidationError, match="enabled gateway event rules require a non-empty gateway"):
+        GatewayEventRuleConfig(instruction="send")
+
+
+def test_gateway_event_rule_requires_instruction_when_enabled() -> None:
+    with pytest.raises(ValidationError, match="enabled gateway event rules require a non-empty instruction"):
+        GatewayEventRuleConfig(gateway="local")
+
+
+def test_gateway_dispatch_enabled_names() -> None:
+    cfg = GatewayDispatchConfig(
+        enabled=True,
+        gateways={
+            "a": GatewayTargetConfig(type="command", command="echo a"),
+            "b": GatewayTargetConfig(type="command", command="echo b", enabled=False),
+        },
+        events={
+            "session-end": GatewayEventRuleConfig(gateway="a", instruction="done"),
+        },
+    )
+    assert cfg.enabled_gateway_names() == ("a",)
+
+
+def test_gateway_dispatch_enabled_event_names() -> None:
+    cfg = GatewayDispatchConfig(
+        enabled=True,
+        gateways={
+            "a": GatewayTargetConfig(type="command", command="echo a"),
+        },
+        events={
+            "session-end": GatewayEventRuleConfig(gateway="a", instruction="done"),
+            "idle": GatewayEventRuleConfig(enabled=False),
+        },
+    )
+    assert cfg.enabled_event_names() == ("session-end",)
+
+
+def test_gateway_dispatch_rejects_unknown_gateway_reference() -> None:
+    with pytest.raises(ValidationError, match="references unknown gateway 'missing'"):
+        GatewayDispatchConfig(
+            enabled=True,
+            gateways={"a": GatewayTargetConfig(type="command", command="echo a")},
+            events={"session-end": GatewayEventRuleConfig(gateway="missing", instruction="done")},
+        )
+
+
+def test_gateway_dispatch_rejects_disabled_gateway_reference() -> None:
+    with pytest.raises(ValidationError, match="references disabled gateway 'a'"):
+        GatewayDispatchConfig(
+            enabled=True,
+            gateways={"a": GatewayTargetConfig(type="command", command="echo a", enabled=False)},
+            events={"session-end": GatewayEventRuleConfig(gateway="a", instruction="done")},
+        )

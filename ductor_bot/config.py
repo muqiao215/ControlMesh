@@ -9,6 +9,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from ductor_bot.gateways.config import GatewayDispatchConfig
+
 logger = logging.getLogger(__name__)
 NULLISH_TEXT_VALUES: frozenset[str] = frozenset({"null", "none"})
 DEFAULT_EMPTY_GEMINI_API_KEY: str = "null"
@@ -209,6 +211,16 @@ class SceneConfig(BaseModel):
     technical_footer: bool = False
 
 
+class CodexHooksConfig(BaseModel):
+    """Settings for Codex native hook awareness."""
+
+    enabled: bool = False
+    prefer_native: bool = True
+    config_file: str = ".codex/config.toml"
+    hooks_file: str = ".codex/hooks.json"
+    manage_project_hooks: bool = False
+
+
 class ApiConfig(BaseModel):
     """Settings for the direct WebSocket API server.
 
@@ -303,6 +315,8 @@ class AgentConfig(BaseModel):
     timeouts: TimeoutConfig = Field(default_factory=TimeoutConfig)
     tasks: TasksConfig = Field(default_factory=TasksConfig)
     scene: SceneConfig = Field(default_factory=SceneConfig)
+    codex_hooks: CodexHooksConfig = Field(default_factory=CodexHooksConfig)
+    gateways: GatewayDispatchConfig = Field(default_factory=GatewayDispatchConfig)
     user_timezone: str = ""
     language: str = "en"
     update_check: bool = True
