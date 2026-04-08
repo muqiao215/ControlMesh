@@ -13,6 +13,8 @@ from ductor_bot.team.models import (
     TeamMailboxMessage,
     TeamManifest,
     TeamPhaseState,
+    TeamRuntimeContext,
+    TeamSessionRef,
     TeamTask,
     TeamTaskClaim,
     TeamWorker,
@@ -26,12 +28,20 @@ def _seed_store(tmp_path: Path) -> TeamStateStore:
         TeamManifest(
             team_name="alpha-team",
             task_description="Coordinate Cut 3-5",
-            leader=TeamLeader(agent_name="main", session_transport="tg", session_chat_id=7),
+            leader=TeamLeader(
+                agent_name="main",
+                session=TeamSessionRef(transport="tg", chat_id=7),
+                runtime=TeamRuntimeContext(cwd="/repo"),
+            ),
             workers=[
-                TeamWorker(name="worker-1", role="executor"),
+                TeamWorker(
+                    name="worker-1",
+                    role="executor",
+                    provider="codex",
+                    runtime=TeamRuntimeContext(provider_session_id="codex-sess-1"),
+                ),
                 TeamWorker(name="worker-2", role="verifier"),
             ],
-            cwd="/repo",
         )
     )
     store.write_phase(
@@ -119,6 +129,9 @@ def test_read_manifest_returns_success_envelope(tmp_path: Path) -> None:
     assert result["ok"] is True
     assert result["operation"] == "read-manifest"
     assert result["data"]["manifest"]["team_name"] == "alpha-team"
+    assert result["data"]["manifest"]["leader"]["session"]["transport"] == "tg"
+    assert result["data"]["manifest"]["leader"]["runtime"]["cwd"] == "/repo"
+    assert result["data"]["manifest"]["workers"][0]["runtime"]["provider_session_id"] == "codex-sess-1"
 
 
 def test_list_tasks_supports_status_filter(tmp_path: Path) -> None:
@@ -179,4 +192,3 @@ def test_unknown_operation_returns_structured_error(tmp_path: Path) -> None:
     assert result["ok"] is False
     assert result["operation"] == "unknown"
     assert result["error"]["code"] == "unknown_operation"
-

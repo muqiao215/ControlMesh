@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
 from ductor_bot.team.contracts import (
     CLAIMABLE_TEAM_TASK_STATUSES,
@@ -22,20 +22,117 @@ from ductor_bot.team.contracts import (
     WORKER_NAME_SAFE_PATTERN,
     ensure_safe_identifier,
 )
+from ductor_bot.session.key import SessionKey
+
+
+def _normalize_optional_text(value: str | None, *, label: str) -> str | None:
+    """Normalize optional text values while rejecting blank strings."""
+    if value is None:
+        return None
+    normalized = value.strip()
+    if not normalized:
+        msg = f"{label} must not be blank"
+        raise ValueError(msg)
+    return normalized
+
+
+class TeamSessionRef(BaseModel):
+    """Team-side wrapper that composes with Ductor's SessionKey."""
+
+    transport: str = "tg"
+    chat_id: int = 0
+    topic_id: int | None = None
+
+    @field_validator("transport")
+    @classmethod
+    def _validate_transport(cls, value: str) -> str:
+        return ensure_safe_identifier(TEAM_NAME_SAFE_PATTERN, value, "transport")
+
+    @property
+    def session_key(self) -> SessionKey:
+        """Materialize the underlying chat/session identity."""
+        return SessionKey.for_transport(self.transport, self.chat_id, self.topic_id)
+
+    @property
+    def storage_key(self) -> str:
+        """Serialized session-key form shared with the session layer."""
+        return self.session_key.storage_key
+
+    @classmethod
+    def from_session_key(cls, key: SessionKey) -> TeamSessionRef:
+        """Wrap an existing SessionKey without overloading it."""
+        return cls(transport=key.transport, chat_id=key.chat_id, topic_id=key.topic_id)
+
+
+class TeamRuntimeContext(BaseModel):
+    """Runtime ownership details scoped to the enclosing team identity."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    cwd: str | None = None
+    provider_session_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("provider_session_id", "session_id"),
+    )
+
+    @field_validator("cwd")
+    @classmethod
+    def _validate_cwd(cls, value: str | None) -> str | None:
+        return _normalize_optional_text(value, label="cwd")
+
+    @field_validator("provider_session_id")
+    @classmethod
+    def _validate_provider_session_id(cls, value: str | None) -> str | None:
+        return _normalize_optional_text(value, label="provider_session_id")
 
 
 class TeamLeader(BaseModel):
     """Leader identity composed with Ductor session coordinates."""
 
     agent_name: str
-    session_transport: str = "tg"
-    session_chat_id: int = 0
-    session_topic_id: int | None = None
+    session: TeamSessionRef = Field(default_factory=TeamSessionRef)
+    runtime: TeamRuntimeContext = Field(default_factory=TeamRuntimeContext)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_legacy_session_fields(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        payload = dict(data)
+        if "session" not in payload and any(
+            field in payload for field in ("session_transport", "session_chat_id", "session_topic_id")
+        ):
+            payload["session"] = {
+                "transport": payload.pop("session_transport", "tg"),
+                "chat_id": payload.pop("session_chat_id", 0),
+                "topic_id": payload.pop("session_topic_id", None),
+            }
+        return payload
 
     @field_validator("agent_name")
     @classmethod
     def _validate_agent_name(cls, value: str) -> str:
         return ensure_safe_identifier(TEAM_NAME_SAFE_PATTERN, value, "agent_name")
+
+    @property
+    def session_key(self) -> SessionKey:
+        """Convenience bridge back to the session layer."""
+        return self.session.session_key
+
+    @property
+    def session_transport(self) -> str:
+        """Backward-compatible access to the underlying session transport."""
+        return self.session.transport
+
+    @property
+    def session_chat_id(self) -> int:
+        """Backward-compatible access to the underlying session chat id."""
+        return self.session.chat_id
+
+    @property
+    def session_topic_id(self) -> int | None:
+        """Backward-compatible access to the underlying session topic id."""
+        return self.session.topic_id
 
 
 class TeamWorker(BaseModel):
@@ -44,12 +141,35 @@ class TeamWorker(BaseModel):
     name: str
     role: str
     provider: str | None = None
-    session_id: str | None = None
+    runtime: TeamRuntimeContext = Field(default_factory=TeamRuntimeContext)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_legacy_runtime_fields(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        payload = dict(data)
+        if "runtime" not in payload and any(field in payload for field in ("session_id", "cwd")):
+            payload["runtime"] = {
+                "provider_session_id": payload.pop("session_id", None),
+                "cwd": payload.pop("cwd", None),
+            }
+        return payload
 
     @field_validator("name")
     @classmethod
     def _validate_name(cls, value: str) -> str:
         return ensure_safe_identifier(WORKER_NAME_SAFE_PATTERN, value, "worker name")
+
+    @field_validator("role", "provider")
+    @classmethod
+    def _validate_optional_text_fields(cls, value: str | None, info: ValidationInfo) -> str | None:
+        return _normalize_optional_text(value, label=info.field_name)
+
+    @property
+    def session_id(self) -> str | None:
+        """Backward-compatible access to the provider-local runtime session id."""
+        return self.runtime.provider_session_id
 
 
 class TeamManifest(BaseModel):
@@ -60,10 +180,29 @@ class TeamManifest(BaseModel):
     task_description: str
     leader: TeamLeader
     workers: list[TeamWorker] = Field(default_factory=list)
-    cwd: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
     max_repair_attempts: int = 3
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_legacy_manifest_fields(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        payload = dict(data)
+        cwd = payload.pop("cwd", None)
+        if cwd is None:
+            return payload
+        leader = payload.get("leader")
+        if not isinstance(leader, dict):
+            return payload
+        leader_payload = dict(leader)
+        runtime = leader_payload.get("runtime")
+        runtime_payload = dict(runtime) if isinstance(runtime, dict) else {}
+        runtime_payload.setdefault("cwd", cwd)
+        leader_payload["runtime"] = runtime_payload
+        payload["leader"] = leader_payload
+        return payload
 
     @field_validator("team_name")
     @classmethod
@@ -77,6 +216,11 @@ class TeamManifest(BaseModel):
             msg = "worker names must be unique"
             raise ValueError(msg)
         return self
+
+    @property
+    def cwd(self) -> str | None:
+        """Backward-compatible manifest-level cwd access."""
+        return self.leader.runtime.cwd
 
 
 class TeamTaskClaim(BaseModel):

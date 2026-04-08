@@ -12,7 +12,8 @@ from ductor_bot.team.contracts import (
     TEAM_TASK_STATUSES,
     TEAM_TERMINAL_PHASES,
 )
-from ductor_bot.team.models import TeamLeader, TeamManifest, TeamWorker
+from ductor_bot.session.key import SessionKey
+from ductor_bot.team.models import TeamLeader, TeamManifest, TeamSessionRef, TeamWorker
 
 
 def test_contract_sets_include_expected_values() -> None:
@@ -58,3 +59,42 @@ def test_worker_name_must_match_safe_pattern() -> None:
     with pytest.raises(ValidationError, match="safe team identifier"):
         TeamWorker(name="worker 1", role="executor")
 
+
+def test_leader_session_identity_composes_with_session_key() -> None:
+    leader = TeamLeader(
+        agent_name="main",
+        session=TeamSessionRef.from_session_key(SessionKey.matrix(chat_id=999)),
+    )
+
+    assert leader.session_key == SessionKey.matrix(chat_id=999)
+    assert leader.session.storage_key == "mx:999"
+
+
+def test_manifest_normalizes_legacy_flat_identity_fields() -> None:
+    manifest = TeamManifest.model_validate(
+        {
+            "team_name": "alpha-team",
+            "task_description": "Coordinate implementation",
+            "leader": {
+                "agent_name": "main",
+                "session_transport": "tg",
+                "session_chat_id": 7,
+                "session_topic_id": 12,
+            },
+            "workers": [
+                {
+                    "name": "worker-1",
+                    "role": "executor",
+                    "provider": "codex",
+                    "session_id": "sess-1",
+                }
+            ],
+            "cwd": "/repo",
+        }
+    )
+
+    assert manifest.leader.session_key == SessionKey.telegram(chat_id=7, topic_id=12)
+    assert manifest.cwd == "/repo"
+    assert manifest.leader.runtime.cwd == "/repo"
+    assert manifest.workers[0].runtime.provider_session_id == "sess-1"
+    assert manifest.workers[0].session_id == "sess-1"
