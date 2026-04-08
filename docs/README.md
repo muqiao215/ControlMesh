@@ -23,8 +23,9 @@ ductor routes chat input to official provider CLIs (`claude`, `codex`, `gemini`)
 17. `docs/modules/team.md` -- additive team state layer, read-only API envelope, and phase machine.
 18. `docs/modules/cli_commands.md` -- CLI command split from `__main__.py`.
 19. `docs/modules/workspace.md` -- `~/.ductor` seeding, rules sync, skill sync.
-20. `docs/modules/multiagent.md` -- supervisor, bus bridge, sub-agent runtime.
-21. Remaining module docs (`background`, `cron`, `webhook`, `heartbeat`, `cleanup`, `infra`, `supervisor`, `security`, `logging`, `files`, `text`, `skill_system`).
+20. `docs/modules/memory_v2.md` -- additive `MEMORY.md` / daily memory / dreaming-state substrate.
+21. `docs/modules/multiagent.md` -- supervisor, bus bridge, sub-agent runtime.
+22. Remaining module docs (`background`, `cron`, `webhook`, `heartbeat`, `cleanup`, `infra`, `supervisor`, `security`, `logging`, `files`, `text`, `skill_system`).
 
 ## System in 60 Seconds
 
@@ -82,6 +83,7 @@ Runtime behavior notes:
   - [team](modules/team.md)
   - [orchestrator](modules/orchestrator.md)
   - [workspace](modules/workspace.md)
+  - [memory_v2](modules/memory_v2.md)
   - [skill_system](modules/skill_system.md)
   - [cron](modules/cron.md)
   - [webhook](modules/webhook.md)

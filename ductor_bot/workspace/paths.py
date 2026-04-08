@@ -140,6 +140,42 @@ class DuctorPaths:
         return self.memory_system_dir / "MAINMEMORY.md"
 
     @property
+    def authority_memory_path(self) -> Path:
+        """Canonical long-term memory authority for the additive memory-v2 layer."""
+        return self.workspace / "MEMORY.md"
+
+    @property
+    def dream_diary_path(self) -> Path:
+        """Dream diary markdown for cross-day synthesis output."""
+        return self.workspace / "DREAMS.md"
+
+    @property
+    def memory_v2_daily_dir(self) -> Path:
+        """Per-day memory notes used by memory-v2."""
+        return self.workspace / "memory"
+
+    @property
+    def memory_v2_machine_state_dir(self) -> Path:
+        """Machine-managed dreaming state under ``memory/.dreams``."""
+        return self.memory_v2_daily_dir / ".dreams"
+
+    @property
+    def dreaming_sweep_state_path(self) -> Path:
+        return self.memory_v2_machine_state_dir / "sweep_state.json"
+
+    @property
+    def dreaming_checkpoints_path(self) -> Path:
+        return self.memory_v2_machine_state_dir / "checkpoints.json"
+
+    @property
+    def dreaming_lock_path(self) -> Path:
+        return self.memory_v2_machine_state_dir / "dreaming.lock.json"
+
+    @property
+    def memory_promotion_log_path(self) -> Path:
+        return self.memory_v2_machine_state_dir / "promotion_log.json"
+
+    @property
     def join_notification_path(self) -> Path:
         return self.workspace / "JOIN_NOTIFICATION.md"
 
