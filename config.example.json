@@ -53,6 +53,20 @@
         "store_path": "matrix_store"
     },
 
+    "feishu": {
+        "mode": "bot_only",
+        "brand": "feishu",
+        "app_id": "cli_xxxxxxxxxxxx",
+        "app_secret": "sec_xxxxxxxxxxxx",
+        "domain": "https://open.feishu.cn",
+        "allow_from": [
+            "ou_xxxxxxxxxxxx"
+        ],
+        "group_reply_all": false,
+        "thread_isolation": false,
+        "reply_to_trigger": true
+    },
+
     "streaming": {
         "enabled": true,
         "min_chars": 200,

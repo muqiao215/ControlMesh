@@ -93,9 +93,22 @@ def _is_configured_matrix(data: dict[str, object]) -> bool:
     return bool(mx.get("homeserver")) and bool(mx.get("user_id"))
 
 
+def _is_configured_feishu(data: dict[str, object]) -> bool:
+    fs = data.get("feishu", {})
+    if not isinstance(fs, dict):
+        return False
+    return (
+        fs.get("mode", "bot_only") == "bot_only"
+        and fs.get("brand", "feishu") == "feishu"
+        and bool(fs.get("app_id"))
+        and bool(fs.get("app_secret"))
+    )
+
+
 _IS_CONFIGURED_CHECKS: dict[str, Callable[[dict[str, object]], bool]] = {
     "telegram": _is_configured_telegram,
     "matrix": _is_configured_matrix,
+    "feishu": _is_configured_feishu,
 }
 
 
@@ -247,9 +260,27 @@ def _validate_matrix_config(config: AgentConfig) -> None:
         sys.exit(1)
 
 
+def _validate_feishu_config(config: AgentConfig) -> None:
+    """Validate Feishu bot-only transport requirements."""
+    fs = config.feishu
+    if fs.mode != "bot_only":
+        _console.print("Feishu cut 1 supports only feishu.mode='bot_only'.")
+        sys.exit(1)
+    if fs.brand != "feishu":
+        _console.print("Feishu cut 1 supports only feishu.brand='feishu'.")
+        sys.exit(1)
+    if not fs.app_id:
+        _console.print("Feishu transport requires feishu.app_id.")
+        sys.exit(1)
+    if not fs.app_secret:
+        _console.print("Feishu transport requires feishu.app_secret.")
+        sys.exit(1)
+
+
 _TRANSPORT_VALIDATORS: dict[str, Callable[[AgentConfig], None]] = {
     "telegram": _validate_telegram_config,
     "matrix": _validate_matrix_config,
+    "feishu": _validate_feishu_config,
 }
 
 

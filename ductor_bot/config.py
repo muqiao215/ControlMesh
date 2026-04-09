@@ -173,6 +173,30 @@ class MatrixConfig(BaseModel):
     store_path: str = "matrix_store"  # relative to ductor_home
 
 
+class FeishuConfig(BaseModel):
+    """Feishu bot-only transport settings."""
+
+    mode: str = "bot_only"
+    brand: str = "feishu"
+    app_id: str = ""
+    app_secret: str = ""
+    domain: str = "https://open.feishu.cn"
+    allow_from: list[str] = Field(default_factory=list)
+    group_reply_all: bool = False
+    thread_isolation: bool = False
+    reply_to_trigger: bool = True
+
+    @model_validator(mode="after")
+    def _validate_cut1_shape(self) -> FeishuConfig:
+        if self.mode != "bot_only":
+            msg = "Feishu cut 1 supports only mode='bot_only'"
+            raise ValueError(msg)
+        if self.brand != "feishu":
+            msg = "Feishu cut 1 supports only brand='feishu'"
+            raise ValueError(msg)
+        return self
+
+
 class TasksConfig(BaseModel):
     """Settings for background task delegation."""
 
@@ -328,6 +352,7 @@ class AgentConfig(BaseModel):
     allowed_user_ids: list[int] = Field(default_factory=list)
     allowed_group_ids: list[int] = Field(default_factory=list)
     matrix: MatrixConfig = Field(default_factory=MatrixConfig)
+    feishu: FeishuConfig = Field(default_factory=FeishuConfig)
 
     @field_validator("gemini_api_key", mode="before")
     @classmethod

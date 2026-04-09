@@ -81,13 +81,14 @@ Changes take effect on the next CLI invocation (mtime-based cache invalidation, 
 | `reasoning_effort` | `str` | `"medium"` | Default Codex reasoning level |
 | `file_access` | `str` | `"all"` | File access scope (`all`, `home`, `workspace`) for file sends and API `GET /files`; unknown values fall back to workspace-only |
 | `gemini_api_key` | `str \| None` | `None` | Config fallback key injected for Gemini API-key mode |
-| `transport` | `str` | `"telegram"` | Messaging transport: `"telegram"` or `"matrix"` |
+| `transport` | `str` | `"telegram"` | Messaging transport: `"telegram"`, `"matrix"`, or `"feishu"` |
 | `transports` | `list[str]` | `[]` | List of transports to run in parallel (e.g. `["telegram", "matrix"]`). When empty, falls back to single `transport` value. |
 | `telegram_token` | `str` | `""` | Telegram bot token (required when `transport=telegram`) |
 | `allowed_user_ids` | `list[int]` | `[]` | Telegram user allowlist (applies in both private and group chats) |
 | `allowed_group_ids` | `list[int]` | `[]` | Telegram group allowlist (which groups the bot can operate in; default `[]` = no groups, fail-closed). In groups, both the group and the user must be allowlisted |
 | `group_mention_only` | `bool` | `false` | Mention/reply gating in group rooms. Telegram: filter only (no auth bypass). Matrix: in non-DM rooms this bypasses `allowed_users` and uses room + mention/reply as gate |
 | `matrix` | `MatrixConfig` | see below | Matrix homeserver connection (required when `transport=matrix`) |
+| `feishu` | `FeishuConfig` | see below | Feishu domestic bot-only transport skeleton (required when `transport=feishu`) |
 | `streaming` | `StreamingConfig` | see below | Streaming tuning |
 | `docker` | `DockerConfig` | see below | Docker sidecar config |
 | `heartbeat` | `HeartbeatConfig` | see below | Background heartbeat config |
@@ -130,6 +131,27 @@ Notes:
 - when `access_token` and `device_id` are explicitly present in `config.json`, runtime restores from them and also mirrors them into the credentials store
 - The bot supports end-to-end encrypted rooms via `matrix-nio[e2e]`.
 - `allowed_rooms` and `allowed_users` together form the Matrix auth model.
+
+## `FeishuConfig`
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `mode` | `str` | `"bot_only"` | Cut 1 only supports `bot_only` |
+| `brand` | `str` | `"feishu"` | Cut 1 only supports domestic Feishu, not Lark webhook mode |
+| `app_id` | `str` | `""` | Feishu app ID |
+| `app_secret` | `str` | `""` | Feishu app secret |
+| `domain` | `str` | `"https://open.feishu.cn"` | Runtime API base URL |
+| `allow_from` | `list[str]` | `[]` | Optional sender allowlist (Feishu user IDs such as `open_id`) |
+| `group_reply_all` | `bool` | `false` | Reserved bot-only group behavior knob for later cuts |
+| `thread_isolation` | `bool` | `false` | When enabled, inbound thread/root IDs get separate Ductor session keys |
+| `reply_to_trigger` | `bool` | `true` | Reply to the triggering Feishu message when possible |
+
+Current implementation status:
+
+- domestic Feishu shape only
+- bot-only mode only
+- plain-text inbound/outbound plumbing only
+- no user OAuth, QR setup, webhook mode, or Feishu tool suite yet
 
 ## `CLIParametersConfig`
 

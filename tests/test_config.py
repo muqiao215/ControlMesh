@@ -158,6 +158,14 @@ def test_transport_matrix_backward_compat() -> None:
     assert cfg.transport == "matrix"
 
 
+def test_transport_feishu_backward_compat() -> None:
+    """transport='feishu' with empty transports normalizes correctly."""
+    cfg = AgentConfig(transport="feishu")
+    assert cfg.transports == ["feishu"]
+    assert cfg.transport == "feishu"
+    assert cfg.feishu.mode == "bot_only"
+
+
 def test_transports_multi_sets_primary_transport() -> None:
     """Explicit multi-transport sets ``transport`` to first entry."""
     cfg = AgentConfig(transports=["telegram", "matrix"])

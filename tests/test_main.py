@@ -153,6 +153,56 @@ class TestIsConfigured:
             mock_paths.return_value = paths
             assert _is_configured() is True
 
+    def test_configured_with_valid_feishu_bot_only(self, tmp_path: Path) -> None:
+        from ductor_bot.__main__ import _is_configured
+
+        home = tmp_path / "home"
+        config_dir = home / "config"
+        config_dir.mkdir(parents=True)
+        cfg = {
+            "transport": "feishu",
+            "feishu": {
+                "mode": "bot_only",
+                "app_id": "cli_123",
+                "app_secret": "sec_456",
+            },
+        }
+        (config_dir / "config.json").write_text(json.dumps(cfg))
+
+        with patch("ductor_bot.__main__.resolve_paths") as mock_paths:
+            paths = DuctorPaths(
+                ductor_home=home,
+                home_defaults=tmp_path / "fw" / "workspace",
+                framework_root=tmp_path / "fw",
+            )
+            mock_paths.return_value = paths
+            assert _is_configured() is True
+
+    def test_unconfigured_with_missing_feishu_secret(self, tmp_path: Path) -> None:
+        from ductor_bot.__main__ import _is_configured
+
+        home = tmp_path / "home"
+        config_dir = home / "config"
+        config_dir.mkdir(parents=True)
+        cfg = {
+            "transport": "feishu",
+            "feishu": {
+                "mode": "bot_only",
+                "app_id": "cli_123",
+                "app_secret": "",
+            },
+        }
+        (config_dir / "config.json").write_text(json.dumps(cfg))
+
+        with patch("ductor_bot.__main__.resolve_paths") as mock_paths:
+            paths = DuctorPaths(
+                ductor_home=home,
+                home_defaults=tmp_path / "fw" / "workspace",
+                framework_root=tmp_path / "fw",
+            )
+            mock_paths.return_value = paths
+            assert _is_configured() is False
+
 
 class TestRunTelegram:
     async def test_exits_on_missing_token(self, tmp_path: Path) -> None:
