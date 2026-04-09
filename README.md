@@ -1,17 +1,15 @@
-<p align="center">
-  <img src="https://raw.githubusercontent.com/PleasePrompto/ductor/main/ductor_bot/messenger/telegram/ductor_images/logo_text.png" alt="ductor" width="100%" />
-</p>
+# ControlMesh
 
-<p align="center">
-  <strong>Claude Code, Codex CLI, and Gemini CLI as your coding assistant — on Telegram.</strong><br>
-  Uses only official CLIs. Nothing spoofed, nothing proxied. Matrix and more via plugin system.
-</p>
+**Harness-driven execution system** for running official coding CLIs through chat transports, background tasks, and isolated agent workspaces.
 
-<p align="center">
-  <a href="https://pypi.org/project/ductor/"><img src="https://img.shields.io/pypi/v/ductor?color=blue" alt="PyPI" /></a>
-  <a href="https://pypi.org/project/ductor/"><img src="https://img.shields.io/pypi/pyversions/ductor?v=1" alt="Python" /></a>
-  <a href="https://github.com/PleasePrompto/ductor/blob/main/LICENSE"><img src="https://img.shields.io/github/license/PleasePrompto/ductor" alt="License" /></a>
-</p>
+ControlMesh is the private product line built on top of the current Ductor runtime. The codebase still exposes `ductor` commands, paths, and package names while the broader harness-led system is being shaped. The intent of this repository is to evolve that runtime into a more general execution fabric without losing the current working surfaces.
+
+What is true today:
+
+- Official CLI execution only: `claude`, `codex`, `gemini`
+- Multi-transport runtime: Telegram, Matrix, and an early Feishu bot-only surface
+- Sessions, background tasks, cron jobs, webhooks, and sub-agents
+- File-backed operational state under `~/.ductor/`
 
 <p align="center">
   <a href="#quick-start">Quick start</a> &middot;
@@ -23,13 +21,13 @@
 
 ---
 
-If you want to control Claude Code, Google's Gemini CLI, or OpenAI's Codex CLI via Telegram, build automations, or manage multiple agents easily — ductor is the right tool for you. Additional messengers (Matrix, and more to come) are supported via a modular plugin system.
+If you want to control Claude Code, Google's Gemini CLI, or OpenAI's Codex CLI via chat, build automations, or manage multiple agents with a shared execution harness, ControlMesh is the current working repository for that direction.
 
-ductor runs on your machine and sends simple console commands as if you were typing them yourself, so you can use your active subscriptions (Claude Max, etc.) directly. No API proxying, no SDK patching, no spoofed headers. Just the official CLIs, executed as subprocesses, with all state kept in plain JSON and Markdown under `~/.ductor/`.
+The runtime still executes on your own machine and sends simple console commands as if you were typing them yourself, so you can use your active subscriptions (Claude Max, etc.) directly. No API proxying, no SDK patching, no spoofed headers. Just the official CLIs, executed as subprocesses, with operational state kept in plain JSON and Markdown under `~/.ductor/`.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/PleasePrompto/ductor/main/docs/images/ductor-start.jpeg" alt="ductor /start screen" width="49%" />
-  <img src="https://raw.githubusercontent.com/PleasePrompto/ductor/main/docs/images/ductor-quick-actions.jpeg" alt="ductor quick action buttons" width="49%" />
+  <img src="docs/images/ductor-start.jpeg" alt="ControlMesh start screen" width="49%" />
+  <img src="docs/images/ductor-quick-actions.jpeg" alt="ControlMesh quick action buttons" width="49%" />
 </p>
 
 ## Quick start
@@ -38,6 +36,8 @@ ductor runs on your machine and sends simple console commands as if you were typ
 pipx install ductor
 ductor
 ```
+
+The runtime package is still named `ductor`, so install and CLI entrypoints remain `ductor` for now.
 
 The onboarding wizard handles CLI checks, transport setup (Telegram or Matrix), timezone, optional Docker, and optional background service install.
 
@@ -192,6 +192,7 @@ Main chat:  "Ask codex-agent to write tests for the API"
 ## Features
 
 - **Multi-transport** — run Telegram and Matrix simultaneously, or pick one
+- **Feishu early path** — bot-only transport skeleton now exists for the next integration line
 - **Multi-language** — UI in English, Deutsch, Nederlands, Français, Русский, Español, Português
 - **Real-time streaming** — live message edits (Telegram) or segment-based output (Matrix)
 - **Provider switching** — `/model` to change provider/model (never blocks, even during active processes)
@@ -213,6 +214,7 @@ Telegram is the primary transport — full feature set, battle-tested, zero extr
 |---|---|---|---|---|
 | **Telegram** | primary | Live message edits | Inline keyboards | `pip install ductor` |
 | **Matrix** | supported | Segment-based (new messages) | Emoji reactions | `ductor install matrix` |
+| **Feishu** | experimental | Text reply path | none yet | built-in skeleton |
 
 Both transports can run **in parallel** on the same agent:
 
@@ -400,9 +402,9 @@ Full config reference: [`docs/config.md`](docs/config.md) — full example with 
 | [Service Management](docs/modules/service_management.md) | systemd, launchd, Task Scheduler backends |
 | [Module docs](docs/modules/) | Per-module deep dives |
 
-## Why ductor?
+## Why ControlMesh?
 
-Other projects manipulate SDKs or patch CLIs and risk violating provider terms of service. ductor simply runs the official CLI binaries as subprocesses — nothing more.
+Other projects manipulate SDKs or patch CLIs and risk violating provider terms of service. ControlMesh keeps the same core stance as Ductor: run the official CLI binaries as subprocesses and build the execution harness around them, not inside them.
 
 - Official CLIs only (`claude`, `codex`, `gemini`)
 - Rule files are plain Markdown (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`)
