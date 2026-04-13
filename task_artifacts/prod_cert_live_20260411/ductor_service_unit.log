@@ -1,0 +1,23 @@
+[Unit]
+Description=ductor - Telegram bot powered by AI CLIs
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/root/.local/bin/ductor
+Restart=on-failure
+RestartSec=5
+Environment=PATH=/root/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=HOME=/root
+Environment=IS_SANDBOX=1
+Environment=DUCTOR_SUPERVISOR=1
+
+[Install]
+WantedBy=default.target
+
+--- dropins ---
+### /root/.config/systemd/user/ductor.service.d/20-restart-always.conf
+[Service]
+Restart=always
+RestartSec=5

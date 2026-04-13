@@ -1,0 +1,543 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+rootdir: /root/.ductor/analysis/ductor-src
+configfile: pyproject.toml
+plugins: cov-7.1.0, asyncio-1.3.0, aiohttp-1.1.0, time-machine-3.2.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 312 items
+
+tests/infra/test_atomic_io.py ..........                                 [  3%]
+tests/infra/test_boot_id.py ........                                     [  5%]
+tests/infra/test_docker.py ...FF.....F....F..FF                          [ 12%]
+tests/infra/test_docker_extras.py ...................................... [ 24%]
+.                                                                        [ 24%]
+tests/infra/test_docker_mounts.py .........FFFFF...............          [ 33%]
+tests/infra/test_env_secrets.py .............                            [ 38%]
+tests/infra/test_inflight.py ..............                              [ 42%]
+tests/infra/test_install.py ..........                                   [ 45%]
+tests/infra/test_pidlock.py .............                                [ 50%]
+tests/infra/test_recovery.py ............                                [ 53%]
+tests/infra/test_restart.py .........                                    [ 56%]
+tests/infra/test_service.py ....                                         [ 58%]
+tests/infra/test_service_linux.py .................                      [ 63%]
+tests/infra/test_service_logs.py ..                                      [ 64%]
+tests/infra/test_service_macos.py .............................          [ 73%]
+tests/infra/test_service_windows.py ................................     [ 83%]
+tests/infra/test_startup_state.py ...........                            [ 87%]
+tests/infra/test_updater.py ................                             [ 92%]
+tests/infra/test_version.py ........................                     [100%]
+
+=================================== FAILURES ===================================
+________ TestDockerManager.test_setup_returns_container_name_on_success ________
+
+self = <tests.infra.test_docker.TestDockerManager object at 0x7f3c70d86c30>
+docker_config = DockerConfig(enabled=True, image_name='test-img', container_name='test-ctr', auto_build=True, mount_host_cache=False, mounts=[], extras=[])
+docker_paths = DuctorPaths(ductor_home=PosixPath('/tmp/pytest-of-root/pytest-380/test_setup_returns_container_n0/.ductor'), home_defa...work/workspace'), framework_root=PosixPath('/tmp/pytest-of-root/pytest-380/test_setup_returns_container_n0/framework'))
+
+    async def test_setup_returns_container_name_on_success(
+        self, docker_config: DockerConfig, docker_paths: DuctorPaths
+    ) -> None:
+        from ductor_bot.infra.docker import DockerManager
+    
+        mgr = DockerManager(docker_config, docker_paths)
+    
+        async def mock_exec(*args: str, **_kwargs: object) -> tuple[int, str]:
+            cmd = " ".join(args)
+            if "docker info" in cmd:
+                return 0, "ok"
+            if "image inspect" in cmd:
+                return 0, "ok"
+            if "container inspect" in cmd:
+                return 1, ""  # Not running -> start fresh
+            if "rm -f" in cmd:
+                return 0, ""
+            if "docker run" in cmd:
+                return 0, "container_id"
+            return 0, ""
+    
+        with (
+            patch("shutil.which", return_value="/usr/bin/docker"),
+            patch.object(mgr, "_exec", side_effect=mock_exec),
+        ):
+            result = await mgr.setup()
+>       assert result == "test-ctr"
+E       AssertionError: assert None == 'test-ctr'
+
+tests/infra/test_docker.py:97: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  ductor_bot.infra.docker:docker.py:146 Docker binary not found, falling back to host execution
+__________ TestDockerManager.test_setup_builds_image_when_auto_build ___________
+
+self = <tests.infra.test_docker.TestDockerManager object at 0x7f3c70d87110>
+docker_config = DockerConfig(enabled=True, image_name='test-img', container_name='test-ctr', auto_build=True, mount_host_cache=False, mounts=[], extras=[])
+docker_paths = DuctorPaths(ductor_home=PosixPath('/tmp/pytest-of-root/pytest-380/test_setup_builds_image_when_a0/.ductor'), home_defa...work/workspace'), framework_root=PosixPath('/tmp/pytest-of-root/pytest-380/test_setup_builds_image_when_a0/framework'))
+
+    async def test_setup_builds_image_when_auto_build(
+        self, docker_config: DockerConfig, docker_paths: DuctorPaths
+    ) -> None:
+        from ductor_bot.infra.docker import DockerManager
+    
+        docker_config.auto_build = True
+        # Create Dockerfile.sandbox
+        (docker_paths.framework_root / "Dockerfile.sandbox").write_text("FROM ubuntu")
+        mgr = DockerManager(docker_config, docker_paths)
+        build_called = False
+    
+        async def mock_exec(*args: str, **_kwargs: object) -> tuple[int, str]:
+            nonlocal build_called
+            cmd = " ".join(args)
+            if "docker info" in cmd:
+                return 0, "ok"
+            if "image inspect" in cmd:
+                return 1, ""  # Image missing
+            if "docker build" in cmd:
+                build_called = True
+                return 0, "built"
+            if "container inspect" in cmd:
+                return 1, ""
+            if "rm -f" in cmd:
+                return 0, ""
+            if "docker run" in cmd:
+                return 0, "cid"
+            return 0, ""
+    
+        with (
+            patch("shutil.which", return_value="/usr/bin/docker"),
+            patch.object(mgr, "_exec", side_effect=mock_exec),
+            patch.object(mgr, "_exec_stream", side_effect=mock_exec),
+        ):
+            result = await mgr.setup()
+>       assert build_called
+E       assert False
+
+tests/infra/test_docker.py:134: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  ductor_bot.infra.docker:docker.py:146 Docker binary not found, falling back to host execution
+________________ TestDockerManager.test_mounts_full_ductor_home ________________
+
+self = <tests.infra.test_docker.TestDockerManager object at 0x7f3c70d87f50>
+docker_config = DockerConfig(enabled=True, image_name='test-img', container_name='test-ctr', auto_build=True, mount_host_cache=False, mounts=[], extras=[])
+docker_paths = DuctorPaths(ductor_home=PosixPath('/tmp/pytest-of-root/pytest-380/test_mounts_full_ductor_home0/.ductor'), home_defaul...mework/workspace'), framework_root=PosixPath('/tmp/pytest-of-root/pytest-380/test_mounts_full_ductor_home0/framework'))
+
+    async def test_mounts_full_ductor_home(
+        self, docker_config: DockerConfig, docker_paths: DuctorPaths
+    ) -> None:
+        """Verify run command mounts entire ~/.ductor, not just workspace."""
+        from ductor_bot.infra.docker import DockerManager
+    
+        mgr = DockerManager(docker_config, docker_paths)
+        run_args: list[str] = []
+    
+        async def mock_exec(*args: str, **_kwargs: object) -> tuple[int, str]:
+            cmd = " ".join(args)
+            if "docker info" in cmd:
+                return 0, "ok"
+            if "image inspect" in cmd:
+                return 0, "ok"
+            if "container inspect" in cmd:
+                return 1, ""
+            if "rm -f" in cmd:
+                return 0, ""
+            if "docker run" in cmd:
+                run_args.extend(args)
+                return 0, "cid"
+            return 0, ""
+    
+        with (
+            patch("shutil.which", return_value="/usr/bin/docker"),
+            patch.object(mgr, "_exec", side_effect=mock_exec),
+        ):
+            await mgr.setup()
+    
+        run_str = " ".join(run_args)
+        # Full ductor_home mounted at /ductor
+>       assert f"{docker_paths.ductor_home}:/ductor" in run_str
+E       AssertionError: assert '/tmp/pytest-of-root/pytest-380/test_mounts_full_ductor_home0/.ductor:/ductor' in ''
+
+tests/infra/test_docker.py:242: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  ductor_bot.infra.docker:docker.py:146 Docker binary not found, falling back to host execution
+_________________ TestDockerManager.test_uid_mapping_on_linux __________________
+
+self = <tests.infra.test_docker.TestDockerManager object at 0x7f3c70d98f20>
+docker_config = DockerConfig(enabled=True, image_name='test-img', container_name='test-ctr', auto_build=True, mount_host_cache=False, mounts=[], extras=[])
+docker_paths = DuctorPaths(ductor_home=PosixPath('/tmp/pytest-of-root/pytest-380/test_uid_mapping_on_linux0/.ductor'), home_defaults=...framework/workspace'), framework_root=PosixPath('/tmp/pytest-of-root/pytest-380/test_uid_mapping_on_linux0/framework'))
+
+    async def test_uid_mapping_on_linux(
+        self, docker_config: DockerConfig, docker_paths: DuctorPaths
+    ) -> None:
+        """Verify --user flag is added on Linux."""
+        from ductor_bot.infra.docker import DockerManager
+    
+        mgr = DockerManager(docker_config, docker_paths)
+        run_args: list[str] = []
+    
+        async def mock_exec(*args: str, **_kwargs: object) -> tuple[int, str]:
+            cmd = " ".join(args)
+            if "docker info" in cmd:
+                return 0, "ok"
+            if "image inspect" in cmd:
+                return 0, "ok"
+            if "container inspect" in cmd:
+                return 1, ""
+            if "rm -f" in cmd:
+                return 0, ""
+            if "docker run" in cmd:
+                run_args.extend(args)
+                return 0, "cid"
+            return 0, ""
+    
+        with (
+            patch("shutil.which", return_value="/usr/bin/docker"),
+            patch.object(mgr, "_exec", side_effect=mock_exec),
+            patch("ductor_bot.infra.docker._needs_uid_mapping", return_value=True),
+            patch("os.getuid", return_value=1000),
+            patch("os.getgid", return_value=1000),
+        ):
+            await mgr.setup()
+    
+        run_str = " ".join(run_args)
+>       assert "--user 1000:1000" in run_str
+E       AssertionError: assert '--user 1000:1000' in ''
+
+tests/infra/test_docker.py:339: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  ductor_bot.infra.docker:docker.py:146 Docker binary not found, falling back to host execution
+___________ TestDockerManager.test_sub_agent_mounts_root_ductor_home ___________
+
+self = <tests.infra.test_docker.TestDockerManager object at 0x7f3c70d99d90>
+docker_config = DockerConfig(enabled=True, image_name='test-img', container_name='test-ctr', auto_build=True, mount_host_cache=False, mounts=[], extras=[])
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-380/test_sub_agent_mounts_root_duc0')
+
+    async def test_sub_agent_mounts_root_ductor_home(
+        self, docker_config: DockerConfig, tmp_path: Path
+    ) -> None:
+        """Sub-agent container mounts ~/.ductor (root), not ~/.ductor/agents/test."""
+        from ductor_bot.infra.docker import DockerManager
+    
+        root_home = tmp_path / ".ductor"
+        agent_home = root_home / "agents" / "test"
+        agent_ws = agent_home / "workspace"
+        for d in (root_home, agent_home, agent_ws, agent_ws / "tools"):
+            d.mkdir(parents=True, exist_ok=True)
+        fw = tmp_path / "framework"
+        fw.mkdir()
+        paths = DuctorPaths(
+            ductor_home=agent_home, home_defaults=fw / "workspace", framework_root=fw
+        )
+        mgr = DockerManager(docker_config, paths)
+        run_args: list[str] = []
+    
+        async def mock_exec(*args: str, **_kwargs: object) -> tuple[int, str]:
+            cmd = " ".join(args)
+            if "docker info" in cmd:
+                return 0, "ok"
+            if "image inspect" in cmd:
+                return 0, "ok"
+            if "container inspect" in cmd:
+                return 1, ""
+            if "rm -f" in cmd:
+                return 0, ""
+            if "docker run" in cmd:
+                run_args.extend(args)
+                return 0, "cid"
+            return 0, ""
+    
+        with (
+            patch("shutil.which", return_value="/usr/bin/docker"),
+            patch.object(mgr, "_exec", side_effect=mock_exec),
+            patch("ductor_bot.infra.docker._needs_uid_mapping", return_value=False),
+        ):
+            await mgr.setup()
+    
+        run_str = " ".join(run_args)
+        # Must mount root home, not sub-agent home
+>       assert f"{root_home}:/ductor" in run_str
+E       AssertionError: assert '/tmp/pytest-of-root/pytest-380/test_sub_agent_mounts_root_duc0/.ductor:/ductor' in ''
+
+tests/infra/test_docker.py:428: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  ductor_bot.infra.docker:docker.py:146 Docker binary not found, falling back to host execution
+________ TestDockerManager.test_setup_lock_serialises_concurrent_calls _________
+
+self = <tests.infra.test_docker.TestDockerManager object at 0x7f3c70d9a270>
+docker_config = DockerConfig(enabled=True, image_name='test-img', container_name='test-ctr', auto_build=True, mount_host_cache=False, mounts=[], extras=[])
+docker_paths = DuctorPaths(ductor_home=PosixPath('/tmp/pytest-of-root/pytest-380/test_setup_lock_serialises_con0/.ductor'), home_defa...work/workspace'), framework_root=PosixPath('/tmp/pytest-of-root/pytest-380/test_setup_lock_serialises_con0/framework'))
+
+    async def test_setup_lock_serialises_concurrent_calls(
+        self, docker_config: DockerConfig, docker_paths: DuctorPaths
+    ) -> None:
+        """Second concurrent setup() reuses the container created by the first."""
+        import asyncio
+    
+        from ductor_bot.infra.docker import DockerManager
+    
+        mgr1 = DockerManager(docker_config, docker_paths)
+        mgr2 = DockerManager(docker_config, docker_paths)
+        container_created = False
+    
+        async def mock_exec(*args: str, **_kwargs: object) -> tuple[int, str]:
+            nonlocal container_created
+            cmd = " ".join(args)
+            if "docker info" in cmd:
+                return 0, "ok"
+            if "image inspect" in cmd:
+                return 0, "ok"
+            if "container inspect" in cmd:
+                # After first setup creates it, second sees it running
+                return (0, "true") if container_created else (1, "")
+            if "rm -f" in cmd:
+                return 0, ""
+            if "docker run" in cmd:
+                container_created = True
+                return 0, "cid"
+            return 0, ""
+    
+        with (
+            patch("shutil.which", return_value="/usr/bin/docker"),
+            patch.object(DockerManager, "_exec", side_effect=mock_exec),
+        ):
+            r1, r2 = await asyncio.gather(mgr1.setup(), mgr2.setup())
+    
+>       assert r1 == "test-ctr"
+E       AssertionError: assert None == 'test-ctr'
+
+tests/infra/test_docker.py:466: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  ductor_bot.infra.docker:docker.py:146 Docker binary not found, falling back to host execution
+WARNING  ductor_bot.infra.docker:docker.py:146 Docker binary not found, falling back to host execution
+_____________ TestDockerManagerMounts.test_single_mount_in_run_cmd _____________
+
+self = <tests.infra.test_docker_mounts.TestDockerManagerMounts object at 0x7f3c70de2ab0>
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-380/test_single_mount_in_run_cmd0')
+docker_paths = DuctorPaths(ductor_home=PosixPath('/tmp/pytest-of-root/pytest-380/test_single_mount_in_run_cmd0/.ductor'), home_defaul...mework/workspace'), framework_root=PosixPath('/tmp/pytest-of-root/pytest-380/test_single_mount_in_run_cmd0/framework'))
+
+    async def test_single_mount_in_run_cmd(self, tmp_path: Path, docker_paths: DuctorPaths) -> None:
+        proj = tmp_path / "myapp"
+        proj.mkdir()
+    
+        config = DockerConfig(enabled=True, mounts=[str(proj)])
+        from ductor_bot.infra.docker import DockerManager
+    
+        mgr = DockerManager(config, docker_paths)
+        run_args: list[str] = []
+    
+        async def mock_exec(*args: str, **_kwargs: object) -> tuple[int, str]:
+            cmd = " ".join(args)
+            if "docker info" in cmd:
+                return 0, "ok"
+            if "image inspect" in cmd:
+                return 0, "ok"
+            if "container inspect" in cmd:
+                return 1, ""
+            if "rm -f" in cmd:
+                return 0, ""
+            if "docker run" in cmd:
+                run_args.extend(args)
+                return 0, "cid"
+            return 0, ""
+    
+        with (
+            patch("shutil.which", return_value="/usr/bin/docker"),
+            patch.object(mgr, "_exec", side_effect=mock_exec),
+        ):
+            await mgr.setup()
+    
+        run_str = " ".join(run_args)
+>       assert f"{proj}:/mnt/myapp:rw" in run_str
+E       AssertionError: assert '/tmp/pytest-of-root/pytest-380/test_single_mount_in_run_cmd0/myapp:/mnt/myapp:rw' in ''
+
+tests/infra/test_docker_mounts.py:168: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  ductor_bot.infra.docker:docker.py:146 Docker binary not found, falling back to host execution
+___________ TestDockerManagerMounts.test_multiple_mounts_in_run_cmd ____________
+
+self = <tests.infra.test_docker_mounts.TestDockerManagerMounts object at 0x7f3c70de3050>
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-380/test_multiple_mounts_in_run_cm0')
+docker_paths = DuctorPaths(ductor_home=PosixPath('/tmp/pytest-of-root/pytest-380/test_multiple_mounts_in_run_cm0/.ductor'), home_defa...work/workspace'), framework_root=PosixPath('/tmp/pytest-of-root/pytest-380/test_multiple_mounts_in_run_cm0/framework'))
+
+    async def test_multiple_mounts_in_run_cmd(
+        self, tmp_path: Path, docker_paths: DuctorPaths
+    ) -> None:
+        proj_a = tmp_path / "alpha"
+        proj_a.mkdir()
+        proj_b = tmp_path / "beta"
+        proj_b.mkdir()
+    
+        config = DockerConfig(enabled=True, mounts=[str(proj_a), str(proj_b)])
+        from ductor_bot.infra.docker import DockerManager
+    
+        mgr = DockerManager(config, docker_paths)
+        run_args: list[str] = []
+    
+        async def mock_exec(*args: str, **_kwargs: object) -> tuple[int, str]:
+            cmd = " ".join(args)
+            if "docker info" in cmd:
+                return 0, "ok"
+            if "image inspect" in cmd:
+                return 0, "ok"
+            if "container inspect" in cmd:
+                return 1, ""
+            if "rm -f" in cmd:
+                return 0, ""
+            if "docker run" in cmd:
+                run_args.extend(args)
+                return 0, "cid"
+            return 0, ""
+    
+        with (
+            patch("shutil.which", return_value="/usr/bin/docker"),
+            patch.object(mgr, "_exec", side_effect=mock_exec),
+        ):
+            await mgr.setup()
+    
+        run_str = " ".join(run_args)
+>       assert f"{proj_a}:/mnt/alpha:rw" in run_str
+E       AssertionError: assert '/tmp/pytest-of-root/pytest-380/test_multiple_mounts_in_run_cm0/alpha:/mnt/alpha:rw' in ''
+
+tests/infra/test_docker_mounts.py:206: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  ductor_bot.infra.docker:docker.py:146 Docker binary not found, falling back to host execution
+_________ TestDockerManagerMounts.test_duplicate_basenames_get_suffix __________
+
+self = <tests.infra.test_docker_mounts.TestDockerManagerMounts object at 0x7f3c70de3500>
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-380/test_duplicate_basenames_get_s0')
+docker_paths = DuctorPaths(ductor_home=PosixPath('/tmp/pytest-of-root/pytest-380/test_duplicate_basenames_get_s0/.ductor'), home_defa...work/workspace'), framework_root=PosixPath('/tmp/pytest-of-root/pytest-380/test_duplicate_basenames_get_s0/framework'))
+
+    async def test_duplicate_basenames_get_suffix(
+        self, tmp_path: Path, docker_paths: DuctorPaths
+    ) -> None:
+        a = tmp_path / "x" / "proj"
+        a.mkdir(parents=True)
+        b = tmp_path / "y" / "proj"
+        b.mkdir(parents=True)
+    
+        config = DockerConfig(enabled=True, mounts=[str(a), str(b)])
+        from ductor_bot.infra.docker import DockerManager
+    
+        mgr = DockerManager(config, docker_paths)
+        run_args: list[str] = []
+    
+        async def mock_exec(*args: str, **_kwargs: object) -> tuple[int, str]:
+            cmd = " ".join(args)
+            if "docker info" in cmd:
+                return 0, "ok"
+            if "image inspect" in cmd:
+                return 0, "ok"
+            if "container inspect" in cmd:
+                return 1, ""
+            if "rm -f" in cmd:
+                return 0, ""
+            if "docker run" in cmd:
+                run_args.extend(args)
+                return 0, "cid"
+            return 0, ""
+    
+        with (
+            patch("shutil.which", return_value="/usr/bin/docker"),
+            patch.object(mgr, "_exec", side_effect=mock_exec),
+        ):
+            await mgr.setup()
+    
+        run_str = " ".join(run_args)
+>       assert f"{a}:/mnt/proj:rw" in run_str
+E       AssertionError: assert '/tmp/pytest-of-root/pytest-380/test_duplicate_basenames_get_s0/x/proj:/mnt/proj:rw' in ''
+
+tests/infra/test_docker_mounts.py:245: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  ductor_bot.infra.docker:docker.py:146 Docker binary not found, falling back to host execution
+_______ TestDockerManagerMounts.test_nonexistent_mount_silently_skipped ________
+
+self = <tests.infra.test_docker_mounts.TestDockerManagerMounts object at 0x7f3c70d98230>
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-380/test_nonexistent_mount_silentl0')
+docker_paths = DuctorPaths(ductor_home=PosixPath('/tmp/pytest-of-root/pytest-380/test_nonexistent_mount_silentl0/.ductor'), home_defa...work/workspace'), framework_root=PosixPath('/tmp/pytest-of-root/pytest-380/test_nonexistent_mount_silentl0/framework'))
+
+    async def test_nonexistent_mount_silently_skipped(
+        self, tmp_path: Path, docker_paths: DuctorPaths
+    ) -> None:
+        config = DockerConfig(enabled=True, mounts=["/does/not/exist"])
+        from ductor_bot.infra.docker import DockerManager
+    
+        mgr = DockerManager(config, docker_paths)
+        run_args: list[str] = []
+    
+        async def mock_exec(*args: str, **_kwargs: object) -> tuple[int, str]:
+            cmd = " ".join(args)
+            if "docker info" in cmd:
+                return 0, "ok"
+            if "image inspect" in cmd:
+                return 0, "ok"
+            if "container inspect" in cmd:
+                return 1, ""
+            if "rm -f" in cmd:
+                return 0, ""
+            if "docker run" in cmd:
+                run_args.extend(args)
+                return 0, "cid"
+            return 0, ""
+    
+        with (
+            patch("shutil.which", return_value="/usr/bin/docker"),
+            patch.object(mgr, "_exec", side_effect=mock_exec),
+        ):
+            result = await mgr.setup()
+    
+>       assert result is not None  # Container still starts.
+        ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       assert None is not None
+
+tests/infra/test_docker_mounts.py:278: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  ductor_bot.infra.docker:docker.py:146 Docker binary not found, falling back to host execution
+________________ TestDockerManagerMounts.test_empty_mounts_list ________________
+
+self = <tests.infra.test_docker_mounts.TestDockerManagerMounts object at 0x7f3c70dc1bb0>
+docker_paths = DuctorPaths(ductor_home=PosixPath('/tmp/pytest-of-root/pytest-380/test_empty_mounts_list0/.ductor'), home_defaults=Pos...t0/framework/workspace'), framework_root=PosixPath('/tmp/pytest-of-root/pytest-380/test_empty_mounts_list0/framework'))
+
+    async def test_empty_mounts_list(self, docker_paths: DuctorPaths) -> None:
+        config = DockerConfig(enabled=True, mounts=[])
+        from ductor_bot.infra.docker import DockerManager
+    
+        mgr = DockerManager(config, docker_paths)
+        run_args: list[str] = []
+    
+        async def mock_exec(*args: str, **_kwargs: object) -> tuple[int, str]:
+            cmd = " ".join(args)
+            if "docker info" in cmd:
+                return 0, "ok"
+            if "image inspect" in cmd:
+                return 0, "ok"
+            if "container inspect" in cmd:
+                return 1, ""
+            if "rm -f" in cmd:
+                return 0, ""
+            if "docker run" in cmd:
+                run_args.extend(args)
+                return 0, "cid"
+            return 0, ""
+    
+        with (
+            patch("shutil.which", return_value="/usr/bin/docker"),
+            patch.object(mgr, "_exec", side_effect=mock_exec),
+        ):
+            result = await mgr.setup()
+    
+>       assert result is not None
+E       assert None is not None
+
+tests/infra/test_docker_mounts.py:310: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  ductor_bot.infra.docker:docker.py:146 Docker binary not found, falling back to host execution
+=========================== short test summary info ============================
+FAILED tests/infra/test_docker.py::TestDockerManager::test_setup_returns_container_name_on_success
+FAILED tests/infra/test_docker.py::TestDockerManager::test_setup_builds_image_when_auto_build
+FAILED tests/infra/test_docker.py::TestDockerManager::test_mounts_full_ductor_home
+FAILED tests/infra/test_docker.py::TestDockerManager::test_uid_mapping_on_linux
+FAILED tests/infra/test_docker.py::TestDockerManager::test_sub_agent_mounts_root_ductor_home
+FAILED tests/infra/test_docker.py::TestDockerManager::test_setup_lock_serialises_concurrent_calls
+FAILED tests/infra/test_docker_mounts.py::TestDockerManagerMounts::test_single_mount_in_run_cmd
+FAILED tests/infra/test_docker_mounts.py::TestDockerManagerMounts::test_multiple_mounts_in_run_cmd
+FAILED tests/infra/test_docker_mounts.py::TestDockerManagerMounts::test_duplicate_basenames_get_suffix
+FAILED tests/infra/test_docker_mounts.py::TestDockerManagerMounts::test_nonexistent_mount_silently_skipped
+FAILED tests/infra/test_docker_mounts.py::TestDockerManagerMounts::test_empty_mounts_list
+======================== 11 failed, 301 passed in 5.65s ========================

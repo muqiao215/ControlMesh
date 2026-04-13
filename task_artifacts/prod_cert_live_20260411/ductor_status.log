@@ -1,0 +1,17 @@
+
+╭─────────────────────────────── Status — main ────────────────────────────────╮
+│                                                                              │
+│  Running  pid=503798  uptime: 0h 20m                                         │
+│  Provider:  codex (gpt-5.4)                                                  │
+│  Docker:    disabled                                                         │
+│  Errors:    0                                                                │
+│                                                                              │
+│  Paths:                                                                      │
+│    Home:       /root/.ductor                                                 │
+│    Config:     /root/.ductor/config/config.json                              │
+│    Workspace:  /root/.ductor/workspace                                       │
+│    Logs:       /root/.ductor/logs                                            │
+│    Sessions:   /root/.ductor/sessions.json                                   │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+

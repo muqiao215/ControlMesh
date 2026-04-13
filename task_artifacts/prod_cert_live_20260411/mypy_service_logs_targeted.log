@@ -1,0 +1,2 @@
+pyproject.toml: note: unused section(s): module = ['PIL.*', 'aiogram.*', 'cronsim.*', 'ductor_bot._home_defaults.*', 'filetype.*', 'nacl.*', 'nio.*', 'questionary.*', 'yaml.*']
+Success: no issues found in 2 source files

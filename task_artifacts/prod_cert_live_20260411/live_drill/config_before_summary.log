@@ -1,0 +1,5 @@
+api_enabled=False
+api_port=8741
+api_token_present=True
+transport=telegram
+transports=['telegram']

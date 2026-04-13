@@ -24,6 +24,7 @@ from ductor_bot.infra.service_base import (
     print_stopped,
 )
 from ductor_bot.infra.service_logs import print_journal_service_logs
+from ductor_bot.workspace.paths import resolve_paths
 
 if TYPE_CHECKING:
     from rich.console import Console
@@ -240,8 +241,10 @@ def print_service_status(console: Console | None = None) -> None:
 def print_service_logs(console: Console | None = None) -> None:
     """Show live journal logs for the service."""
     console = ensure_console(console)
+    paths = resolve_paths()
     print_journal_service_logs(
         console,
         installed=is_service_installed(),
         service_name=_SERVICE_NAME,
+        fallback_logs_dir=paths.logs_dir,
     )

@@ -1,0 +1,200 @@
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.gemini/skills/theme-factory -> /root/.ductor/workspace/skills/theme-factory
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.claude/skills/tia-portal-scl-lad-workflow -> /root/.ductor/workspace/skills/tia-portal-scl-lad-workflow
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.codex/skills/tia-portal-scl-lad-workflow -> /root/.ductor/workspace/skills/tia-portal-scl-lad-workflow
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.gemini/skills/tia-portal-scl-lad-workflow -> /root/.ductor/workspace/skills/tia-portal-scl-lad-workflow
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.claude/skills/trend-researcher -> /root/.ductor/workspace/skills/trend-researcher
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.codex/skills/trend-researcher -> /root/.ductor/workspace/skills/trend-researcher
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.gemini/skills/trend-researcher -> /root/.ductor/workspace/skills/trend-researcher
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.claude/skills/ui-designer -> /root/.ductor/workspace/skills/ui-designer
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.codex/skills/ui-designer -> /root/.ductor/workspace/skills/ui-designer
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.gemini/skills/ui-designer -> /root/.ductor/workspace/skills/ui-designer
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.claude/skills/unfreeze -> /root/.ductor/workspace/skills/unfreeze
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.codex/skills/unfreeze -> /root/.ductor/workspace/skills/unfreeze
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.gemini/skills/unfreeze -> /root/.ductor/workspace/skills/unfreeze
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.claude/skills/using-git-worktrees -> /root/.ductor/workspace/skills/using-git-worktrees
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.codex/skills/using-git-worktrees -> /root/.ductor/workspace/skills/using-git-worktrees
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.gemini/skills/using-git-worktrees -> /root/.ductor/workspace/skills/using-git-worktrees
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.claude/skills/using-superpowers -> /root/.ductor/workspace/skills/using-superpowers
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.codex/skills/using-superpowers -> /root/.ductor/workspace/skills/using-superpowers
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.gemini/skills/using-superpowers -> /root/.ductor/workspace/skills/using-superpowers
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.claude/skills/ux-architect -> /root/.ductor/workspace/skills/ux-architect
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.codex/skills/ux-architect -> /root/.ductor/workspace/skills/ux-architect
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.gemini/skills/ux-architect -> /root/.ductor/workspace/skills/ux-architect
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.claude/skills/ux-audit -> /root/.ductor/workspace/skills/ux-audit
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.codex/skills/ux-audit -> /root/.ductor/workspace/skills/ux-audit
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.gemini/skills/ux-audit -> /root/.ductor/workspace/skills/ux-audit
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.claude/skills/ux-researcher -> /root/.ductor/workspace/skills/ux-researcher
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.codex/skills/ux-researcher -> /root/.ductor/workspace/skills/ux-researcher
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.gemini/skills/ux-researcher -> /root/.ductor/workspace/skills/ux-researcher
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.claude/skills/vercel -> /root/.ductor/workspace/skills/vercel
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.codex/skills/vercel -> /root/.ductor/workspace/skills/vercel
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.gemini/skills/vercel -> /root/.ductor/workspace/skills/vercel
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.claude/skills/vercel-cli-with-tokens -> /root/.ductor/workspace/skills/vercel-cli-with-tokens
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.codex/skills/vercel-cli-with-tokens -> /root/.ductor/workspace/skills/vercel-cli-with-tokens
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.gemini/skills/vercel-cli-with-tokens -> /root/.ductor/workspace/skills/vercel-cli-with-tokens
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.claude/skills/vercel-composition-patterns -> /root/.ductor/workspace/skills/vercel-composition-patterns
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.codex/skills/vercel-composition-patterns -> /root/.ductor/workspace/skills/vercel-composition-patterns
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.gemini/skills/vercel-composition-patterns -> /root/.ductor/workspace/skills/vercel-composition-patterns
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.claude/skills/vercel-deploy-claimable -> /root/.ductor/workspace/skills/vercel-deploy-claimable
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.codex/skills/vercel-deploy-claimable -> /root/.ductor/workspace/skills/vercel-deploy-claimable
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.gemini/skills/vercel-deploy-claimable -> /root/.ductor/workspace/skills/vercel-deploy-claimable
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.claude/skills/vercel-react-best-practices -> /root/.ductor/workspace/skills/vercel-react-best-practices
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.codex/skills/vercel-react-best-practices -> /root/.ductor/workspace/skills/vercel-react-best-practices
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.gemini/skills/vercel-react-best-practices -> /root/.ductor/workspace/skills/vercel-react-best-practices
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.claude/skills/verification-before-completion -> /root/.ductor/workspace/skills/verification-before-completion
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.codex/skills/verification-before-completion -> /root/.ductor/workspace/skills/verification-before-completion
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.gemini/skills/verification-before-completion -> /root/.ductor/workspace/skills/verification-before-completion
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.claude/skills/video-skills -> /root/.ductor/workspace/skills/video-skills
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.codex/skills/video-skills -> /root/.ductor/workspace/skills/video-skills
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.gemini/skills/video-skills -> /root/.ductor/workspace/skills/video-skills
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.claude/skills/visual-storyteller -> /root/.ductor/workspace/skills/visual-storyteller
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.codex/skills/visual-storyteller -> /root/.ductor/workspace/skills/visual-storyteller
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.gemini/skills/visual-storyteller -> /root/.ductor/workspace/skills/visual-storyteller
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.claude/skills/web-artifacts-builder -> /root/.ductor/workspace/skills/web-artifacts-builder
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.codex/skills/web-artifacts-builder -> /root/.ductor/workspace/skills/web-artifacts-builder
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.gemini/skills/web-artifacts-builder -> /root/.ductor/workspace/skills/web-artifacts-builder
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.claude/skills/web-design-guidelines -> /root/.ductor/workspace/skills/web-design-guidelines
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.codex/skills/web-design-guidelines -> /root/.ductor/workspace/skills/web-design-guidelines
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.gemini/skills/web-design-guidelines -> /root/.ductor/workspace/skills/web-design-guidelines
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.claude/skills/wechat-miniprogram-auth-smoke -> /root/.ductor/workspace/skills/wechat-miniprogram-auth-smoke
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.codex/skills/wechat-miniprogram-auth-smoke -> /root/.ductor/workspace/skills/wechat-miniprogram-auth-smoke
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.gemini/skills/wechat-miniprogram-auth-smoke -> /root/.ductor/workspace/skills/wechat-miniprogram-auth-smoke
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.claude/skills/wechat-miniprogram-devtools-smoke -> /root/.ductor/workspace/skills/wechat-miniprogram-devtools-smoke
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.codex/skills/wechat-miniprogram-devtools-smoke -> /root/.ductor/workspace/skills/wechat-miniprogram-devtools-smoke
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.gemini/skills/wechat-miniprogram-devtools-smoke -> /root/.ductor/workspace/skills/wechat-miniprogram-devtools-smoke
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.claude/skills/wechat-miniprogram-release-preflight -> /root/.ductor/workspace/skills/wechat-miniprogram-release-preflight
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.codex/skills/wechat-miniprogram-release-preflight -> /root/.ductor/workspace/skills/wechat-miniprogram-release-preflight
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.gemini/skills/wechat-miniprogram-release-preflight -> /root/.ductor/workspace/skills/wechat-miniprogram-release-preflight
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.claude/skills/wechat-official-account-manager -> /root/.ductor/workspace/skills/wechat-official-account-manager
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.codex/skills/wechat-official-account-manager -> /root/.ductor/workspace/skills/wechat-official-account-manager
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.gemini/skills/wechat-official-account-manager -> /root/.ductor/workspace/skills/wechat-official-account-manager
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.claude/skills/wechat-writer -> /root/.ductor/workspace/skills/wechat-writer
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.codex/skills/wechat-writer -> /root/.ductor/workspace/skills/wechat-writer
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.gemini/skills/wechat-writer -> /root/.ductor/workspace/skills/wechat-writer
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.claude/skills/whimsy-injector -> /root/.ductor/workspace/skills/whimsy-injector
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.codex/skills/whimsy-injector -> /root/.ductor/workspace/skills/whimsy-injector
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.gemini/skills/whimsy-injector -> /root/.ductor/workspace/skills/whimsy-injector
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.claude/skills/win-codex-cli -> /root/.ductor/workspace/skills/win-codex-cli
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.codex/skills/win-codex-cli -> /root/.ductor/workspace/skills/win-codex-cli
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.gemini/skills/win-codex-cli -> /root/.ductor/workspace/skills/win-codex-cli
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.claude/skills/winapp-cli -> /root/.ductor/workspace/skills/winapp-cli
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.codex/skills/winapp-cli -> /root/.ductor/workspace/skills/winapp-cli
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.gemini/skills/winapp-cli -> /root/.ductor/workspace/skills/winapp-cli
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.claude/skills/windows-proxy-session-injector -> /root/.ductor/workspace/skills/windows-proxy-session-injector
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.codex/skills/windows-proxy-session-injector -> /root/.ductor/workspace/skills/windows-proxy-session-injector
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.gemini/skills/windows-proxy-session-injector -> /root/.ductor/workspace/skills/windows-proxy-session-injector
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.claude/skills/windows-shell-folders-repair -> /root/.ductor/workspace/skills/windows-shell-folders-repair
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.codex/skills/windows-shell-folders-repair -> /root/.ductor/workspace/skills/windows-shell-folders-repair
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.gemini/skills/windows-shell-folders-repair -> /root/.ductor/workspace/skills/windows-shell-folders-repair
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.claude/skills/wokwi-simulator -> /root/.ductor/workspace/skills/wokwi-simulator
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.codex/skills/wokwi-simulator -> /root/.ductor/workspace/skills/wokwi-simulator
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.gemini/skills/wokwi-simulator -> /root/.ductor/workspace/skills/wokwi-simulator
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.claude/skills/workflow-optimizer -> /root/.ductor/workspace/skills/workflow-optimizer
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.codex/skills/workflow-optimizer -> /root/.ductor/workspace/skills/workflow-optimizer
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.gemini/skills/workflow-optimizer -> /root/.ductor/workspace/skills/workflow-optimizer
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.claude/skills/workflow-spine -> /root/.ductor/workspace/skills/workflow-spine
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.codex/skills/workflow-spine -> /root/.ductor/workspace/skills/workflow-spine
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.gemini/skills/workflow-spine -> /root/.ductor/workspace/skills/workflow-spine
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.claude/skills/worktrunk -> /root/.ductor/workspace/skills/worktrunk
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.codex/skills/worktrunk -> /root/.ductor/workspace/skills/worktrunk
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.gemini/skills/worktrunk -> /root/.ductor/workspace/skills/worktrunk
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.claude/skills/writing-plans -> /root/.ductor/workspace/skills/writing-plans
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.codex/skills/writing-plans -> /root/.ductor/workspace/skills/writing-plans
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.gemini/skills/writing-plans -> /root/.ductor/workspace/skills/writing-plans
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.claude/skills/wsl-codex-cli -> /root/.ductor/workspace/skills/wsl-codex-cli
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.codex/skills/wsl-codex-cli -> /root/.ductor/workspace/skills/wsl-codex-cli
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.gemini/skills/wsl-codex-cli -> /root/.ductor/workspace/skills/wsl-codex-cli
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.claude/skills/wsl-proxy-bridge -> /root/.ductor/workspace/skills/wsl-proxy-bridge
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.codex/skills/wsl-proxy-bridge -> /root/.ductor/workspace/skills/wsl-proxy-bridge
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.gemini/skills/wsl-proxy-bridge -> /root/.ductor/workspace/skills/wsl-proxy-bridge
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.claude/skills/xiaohongshu-specialist -> /root/.ductor/workspace/skills/xiaohongshu-specialist
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.codex/skills/xiaohongshu-specialist -> /root/.ductor/workspace/skills/xiaohongshu-specialist
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.gemini/skills/xiaohongshu-specialist -> /root/.ductor/workspace/skills/xiaohongshu-specialist
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.claude/skills/youtube-watcher-1.0.0 -> /root/.ductor/workspace/skills/youtube-watcher-1.0.0
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.codex/skills/youtube-watcher-1.0.0 -> /root/.ductor/workspace/skills/youtube-watcher-1.0.0
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.skill_sync:skill_sync.py:287: Skill link created: /root/.gemini/skills/youtube-watcher-1.0.0 -> /root/.ductor/workspace/skills/youtube-watcher-1.0.0
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.init:init.py:306: Workspace init completed
+2026-04-11 04:40:59 [WARNING] ductor_bot.i18n:__init__.py:41: Unknown language 'zh', falling back to 'en'
+2026-04-11 04:40:59 [INFO] ductor_bot.i18n:__init__.py:43: i18n initialized: language=en
+2026-04-11 04:40:59 [INFO] ductor_bot.infra.pidlock:pidlock.py:128: PID lock acquired (pid=503798)
+2026-04-11 04:40:59 [INFO] ductor_bot.multiagent.internal_api:internal_api.py:107: Internal agent API listening on 127.0.0.1:8799
+2026-04-11 04:40:59 [INFO] ductor_bot.multiagent.supervisor:supervisor.py:122: InterAgentBus and internal API started
+2026-04-11 04:40:59 [INFO] ductor_bot.multiagent.supervisor:supervisor.py:140: TaskHub initialized (max_parallel=5)
+2026-04-11 04:40:59 [INFO] ductor_bot.workspace.init:init.py:288: Workspace init started home=/root/.ductor
+2026-04-11 04:41:02 [INFO] ductor_bot.workspace.rules_selector:rules_selector.py:145: Deploying rule files (variant: all-clis, claude=True, codex=True, gemini=False)
+2026-04-11 04:41:02 [INFO] ductor_bot.workspace.rules_selector:rules_selector.py:199: Deployed 32 rule files (Claude=True, Codex=True, Gemini=False)
+2026-04-11 04:41:07 [INFO] ductor_bot.workspace.init:init.py:306: Workspace init completed
+2026-04-11 04:41:11 [INFO] ductor_bot.multiagent.stack:stack.py:55: AgentStack created: name=main home=/root/.ductor main=True transport=telegram
+2026-04-11 04:41:11 [INFO] ductor_bot.multiagent.supervisor:supervisor.py:306: [main] Agent 'main' running
+2026-04-11 04:41:11 [INFO] ductor_bot.messenger.telegram.app:app.py:1494: [main] Starting Telegram bot (aiogram, long-polling)...
+2026-04-11 04:41:12 [INFO] ductor_bot.messenger.telegram.app:app.py:1505: [main] Polling allowed_updates=callback_query,message,my_chat_member
+2026-04-11 04:41:12 [INFO] ductor_bot.workspace.init:init.py:523: [main] Runtime environment injected: host agent=main transport=telegram
+2026-04-11 04:41:14 [INFO] ductor_bot.orchestrator.providers:providers.py:93: [main] Provider [claude]: authenticated
+2026-04-11 04:41:14 [INFO] ductor_bot.orchestrator.providers:providers.py:93: [main] Provider [codex]: authenticated
+2026-04-11 04:41:14 [INFO] ductor_bot.orchestrator.providers:providers.py:97: [main] Provider [gemini]: not found
+2026-04-11 04:41:14 [INFO] ductor_bot.orchestrator.lifecycle:lifecycle.py:90: [main] Available providers: claude, codex
+2026-04-11 04:41:14 [INFO] ductor_bot.cli.model_cache:model_cache.py:217: [main] GeminiCacheObserver starting, cache_path=/root/.ductor/config/gemini_models.json
+2026-04-11 04:41:14 [INFO] ductor_bot.cli.model_cache:model_cache.py:84: [main] Gemini cache refresh forced
+2026-04-11 04:41:15 [INFO] ductor_bot.cli.model_cache:model_cache.py:124: [main] Discovered 0 Gemini models
+2026-04-11 04:41:15 [WARNING] ductor_bot.cli.model_cache:model_cache.py:157: [main] Using hardcoded Gemini fallback models (not persisted)
+2026-04-11 04:41:15 [INFO] ductor_bot.cli.model_cache:model_cache.py:220: [main] Gemini cache loaded: 3 models, last_updated=2026-04-11T04:41:15.150977+00:00
+2026-04-11 04:41:15 [INFO] ductor_bot.cli.model_cache:model_cache.py:217: [main] CodexCacheObserver starting, cache_path=/root/.ductor/config/codex_models.json
+2026-04-11 04:41:15 [INFO] ductor_bot.cli.model_cache:model_cache.py:84: [main] Codex cache refresh forced
+2026-04-11 04:41:15 [INFO] ductor_bot.cli.codex_discovery:codex_discovery.py:106: [main] Codex discovery found 6 models
+2026-04-11 04:41:15 [INFO] ductor_bot.cli.model_cache:model_cache.py:124: [main] Discovered 6 Codex models
+2026-04-11 04:41:15 [INFO] ductor_bot.cli.model_cache:model_cache.py:220: [main] Codex cache loaded: 6 models, last_updated=2026-04-11T04:41:15.908877+00:00
+2026-04-11 04:41:15 [INFO] ductor_bot.cron.observer:observer.py:85: [main] CronObserver started (6 jobs scheduled)
+2026-04-11 04:41:15 [INFO] ductor_bot.heartbeat.observer:observer.py:80: [main] Heartbeat disabled in config
+2026-04-11 04:41:15 [INFO] ductor_bot.webhook.observer:observer.py:74: [main] Webhooks disabled in config
+2026-04-11 04:41:15 [INFO] ductor_bot.cleanup.observer:observer.py:78: [main] File cleanup started (media: 30d, output: 30d, api: 30d, hour: 3:00)
+2026-04-11 04:41:15 [INFO] ductor_bot.orchestrator.observers:observers.py:122: [main] Rule file watcher started (CLAUDE.md <-> AGENTS.md <-> GEMINI.md)
+2026-04-11 04:41:15 [INFO] ductor_bot.orchestrator.observers:observers.py:127: [main] Skill sync watcher started
+2026-04-11 04:41:15 [INFO] ductor_bot.config_reload:config_reload.py:151: [main] Config reloader started watching /root/.ductor/config/config.json
+2026-04-11 04:41:16 [INFO] ductor_bot.messenger.telegram.startup:startup.py:138: [main] Bot online: @V_YueBot (id=8515961362)
+2026-04-11 04:41:16 [INFO] ductor_bot.orchestrator.core:core.py:408: [main] Multi-agent commands registered
+2026-04-11 04:41:16 [INFO] aiogram.dispatcher:dispatcher.py:596: [main] Start polling
+2026-04-11 04:41:16 [INFO] ductor_bot.multiagent.shared_knowledge:shared_knowledge.py:107: SharedKnowledgeSync watching /root/.ductor/SHAREDMEMORY.md
+2026-04-11 04:41:16 [INFO] aiogram.dispatcher:dispatcher.py:378: [main] Run polling for bot @V_YueBot id=8515961362 - '月神'
+2026-04-11 04:41:21 [INFO] ductor_bot.multiagent.shared_knowledge:shared_knowledge.py:114: SHAREDMEMORY.md changed, syncing to all agents
+2026-04-11 04:54:08 [INFO] ductor_bot.messenger.telegram.message_dispatch:message_dispatch.py:102: [main:msg:6588911719] Streaming flow started
+2026-04-11 04:54:08 [INFO] ductor_bot.orchestrator.core:core.py:302: [main:msg:6588911719] Message received text=返回了吗
+2026-04-11 04:54:08 [INFO] ductor_bot.orchestrator.flows:flows.py:389: [main:msg:6588911719] Streaming flow starting
+2026-04-11 04:54:08 [INFO] ductor_bot.orchestrator.flows:flows.py:86: [main:msg:6588911719:019d7248] Session resolved sid=019d7248 new=False msgs=70
+2026-04-11 04:54:08 [INFO] ductor_bot.cli.codex_provider:codex_provider.py:66: [main:msg:6588911719:019d7248] Codex CLI wrapper: cwd=/root/.ductor/workspace, model=gpt-5.4
+2026-04-11 04:54:08 [INFO] ductor_bot.cli.service:service.py:180: [main:msg:6588911719:019d7248] CLI streaming starting label=main model=gpt-5.4
+2026-04-11 04:54:08 [INFO] ductor_bot.cli.codex_provider:codex_provider.py:293: [main:msg:6588911719:019d7248] Codex stream cmd: /usr/bin/codex exec resume --json --dangerously-bypass-approvals-and-sandbox -- 019d7248-5fb7-7993-867b-9de51c2c97ca 返回了吗
+2026-04-11 04:54:08 [INFO] ductor_bot.infra.env_secrets:env_secrets.py:100: [main:msg:6588911719:019d7248] Loaded 9 secret(s) from /root/.ductor/.env
+2026-04-11 04:54:08 [INFO] ductor_bot.cli.executor:executor.py:154: [main:msg:6588911719:019d7248] Codex subprocess starting pid=503942
+2026-04-11 04:54:28 [INFO] ductor_bot.tasks.registry:registry.py:132: Task created id=c1296fd4 name='ControlMesh Prod Certification and Live Deployment Evidence' provider=
+2026-04-11 04:54:28 [INFO] ductor_bot.tasks.hub:hub.py:161: Task submitted id=c1296fd4 name='ControlMesh Prod Certification and Live Deployment Evidence' parent=main provider=(parent default)
+2026-04-11 04:54:28 [INFO] ductor_bot.cli.codex_provider:codex_provider.py:66: Codex CLI wrapper: cwd=/root/.ductor/workspace, model=gpt-5.4
+2026-04-11 04:54:28 [INFO] ductor_bot.cli.service:service.py:151: CLI execute starting label=task:c1296fd4 model=gpt-5.4
+2026-04-11 04:54:28 [INFO] ductor_bot.cli.codex_provider:codex_provider.py:293: Codex cmd: /usr/bin/codex exec --json --color never --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check --model gpt-5.4 -c model_reasoning_effort=high -- Work ONLY in /root/.ductor/analysis/ductor-src.
+
+This is a new scope after the c...
+2026-04-11 04:54:28 [INFO] ductor_bot.cli.executor:executor.py:293: Codex subprocess starting pid=504047
+2026-04-11 04:54:39 [INFO] ductor_bot.cli.service:service.py:232: [main:msg:6588911719:019d7248] CLI streaming completed label=main fallback=False timed_out=False
+2026-04-11 04:54:39 [INFO] ductor_bot.orchestrator.flows:flows.py:435: [main:msg:6588911719:019d7248] Streaming flow completed
+2026-04-11 04:54:39 [INFO] ductor_bot.messenger.telegram.message_dispatch:message_dispatch.py:159: [main:msg:6588911719:019d7248] Streaming flow completed fallback=False content=True
+2026-04-11 04:54:39 [INFO] aiogram.event:dispatcher.py:178: [main:msg:6588911719:019d7248] Update id=381302673 is handled. Duration 31425 ms by bot id=8515961362
+2026-04-11 04:56:54 [INFO] ductor_bot.tasks.hub:hub.py:244: Task c1296fd4 forwarding question to 'main': To complete prod certification, I need operator approval for a controlled live d
+2026-04-11 04:56:54 [INFO] ductor_bot.cli.codex_provider:codex_provider.py:66: [task:6588911719] Codex CLI wrapper: cwd=/root/.ductor/workspace, model=gpt-5.4
+2026-04-11 04:56:54 [INFO] ductor_bot.cli.service:service.py:151: [task:6588911719] CLI execute starting label=task_question:62906b4d02cf model=gpt-5.4
+2026-04-11 04:56:54 [INFO] ductor_bot.cli.codex_provider:codex_provider.py:293: [task:6588911719] Codex cmd: /usr/bin/codex exec resume --json --dangerously-bypass-approvals-and-sandbox -- 019d7248-5fb7-7993-867b-9de51c2c97ca To complete prod certification, I need operator approval for a controlled live d...
+2026-04-11 04:56:54 [INFO] ductor_bot.cli.executor:executor.py:293: [task:6588911719] Codex subprocess starting pid=504381
+2026-04-11 04:57:06 [WARNING] ductor_bot.cli.codex_provider:codex_provider.py:228: [task:6588911719] Codex stderr (exit=0): 2026-04-11T04:56:56.307932Z ERROR codex_core::codex: failed to load skill /root/.ductor/workspace/skills/brand-guidelines/SKILL.md: invalid YAML: mapping values are not allowed in this context at line 2 column 263
+
+2026-04-11 04:57:06 [INFO] ductor_bot.cli.codex_provider:codex_provider.py:249: [task:6588911719] Codex done session=019d7248 tokens=75701080
+2026-04-11 04:57:06 [INFO] ductor_bot.cli.service:service.py:335: [task:6588911719] CLI task_question:62906b4d02cf [ok] cost=$0.0000 tokens=75701080 duration_ms=11604
+2026-04-11 04:58:54 [INFO] ductor_bot.messenger.telegram.message_dispatch:message_dispatch.py:102: [main:msg:6588911719] Streaming flow started
+2026-04-11 04:58:54 [INFO] ductor_bot.orchestrator.core:core.py:302: [main:msg:6588911719] Message received text=可以
+2026-04-11 04:58:54 [INFO] ductor_bot.orchestrator.flows:flows.py:389: [main:msg:6588911719] Streaming flow starting
+2026-04-11 04:58:54 [INFO] ductor_bot.orchestrator.flows:flows.py:86: [main:msg:6588911719:019d7248] Session resolved sid=019d7248 new=False msgs=72
+2026-04-11 04:58:54 [INFO] ductor_bot.cli.codex_provider:codex_provider.py:66: [main:msg:6588911719:019d7248] Codex CLI wrapper: cwd=/root/.ductor/workspace, model=gpt-5.4
+2026-04-11 04:58:54 [INFO] ductor_bot.cli.service:service.py:180: [main:msg:6588911719:019d7248] CLI streaming starting label=main model=gpt-5.4
+2026-04-11 04:58:54 [INFO] ductor_bot.cli.codex_provider:codex_provider.py:293: [main:msg:6588911719:019d7248] Codex stream cmd: /usr/bin/codex exec resume --json --dangerously-bypass-approvals-and-sandbox -- 019d7248-5fb7-7993-867b-9de51c2c97ca 可以
+2026-04-11 04:58:54 [INFO] ductor_bot.cli.executor:executor.py:154: [main:msg:6588911719:019d7248] Codex subprocess starting pid=504654
+2026-04-11 04:59:30 [INFO] ductor_bot.cli.service:service.py:232: [main:msg:6588911719:019d7248] CLI streaming completed label=main fallback=False timed_out=False
+2026-04-11 04:59:30 [INFO] ductor_bot.orchestrator.flows:flows.py:435: [main:msg:6588911719:019d7248] Streaming flow completed
+2026-04-11 04:59:31 [INFO] ductor_bot.messenger.telegram.message_dispatch:message_dispatch.py:159: [main:msg:6588911719:019d7248] Streaming flow completed fallback=False content=True
+2026-04-11 04:59:31 [INFO] aiogram.event:dispatcher.py:178: [main:msg:6588911719:019d7248] Update id=381302674 is handled. Duration 36653 ms by bot id=8515961362

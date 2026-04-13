@@ -1,0 +1,10 @@
+env_exists=True
+FIRECRAWL_API_KEY_present=True
+CONTEXT7_API_KEY_present=True
+OPENROUTER_API_KEY_present=True
+DEEPSEEK_API_KEY_present=True
+FIRECRAWL_API_KEY_ALT_1_present=True
+FIRECRAWL_API_KEY_ALT_2_present=True
+FIRECRAWL_API_KEY_ALT_3_present=True
+GITHUB_TOKEN_present=True
+GITHUB_ACCOUNT_NOTE_present=True

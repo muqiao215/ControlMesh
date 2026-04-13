@@ -10,6 +10,7 @@ from ductor_bot.infra.service_linux import (
     _generate_service_unit,
     is_service_available,
     is_service_running,
+    print_service_logs,
     print_service_status,
     start_service,
     stop_service,
@@ -161,3 +162,29 @@ class TestPrintServiceStatus:
         console = MagicMock()
         print_service_status(console)
         console.print.assert_called_with("active running")
+
+
+class TestPrintServiceLogs:
+    @patch("ductor_bot.infra.service_linux.resolve_paths")
+    @patch("ductor_bot.infra.service_linux.print_journal_service_logs")
+    @patch("ductor_bot.infra.service_linux.is_service_installed", return_value=True)
+    def test_passes_logs_dir_for_fallback(
+        self,
+        _installed: MagicMock,
+        mock_print_logs: MagicMock,
+        mock_paths: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        paths_obj = MagicMock()
+        paths_obj.logs_dir = tmp_path / "logs"
+        mock_paths.return_value = paths_obj
+
+        console = MagicMock()
+        print_service_logs(console)
+
+        mock_print_logs.assert_called_once_with(
+            console,
+            installed=True,
+            service_name=_SERVICE_NAME,
+            fallback_logs_dir=paths_obj.logs_dir,
+        )

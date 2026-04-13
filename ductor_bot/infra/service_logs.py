@@ -65,6 +65,7 @@ def print_journal_service_logs(
     *,
     installed: bool,
     service_name: str,
+    fallback_logs_dir: Path | None = None,
 ) -> None:
     """Follow journalctl service logs when service is installed."""
     if not installed:
@@ -73,11 +74,28 @@ def print_journal_service_logs(
 
     console.print(t_rich("service.logs.streaming") + "\n")
     try:
+        if fallback_logs_dir is not None:
+            probe = subprocess.run(
+                ["journalctl", "--user", "-u", service_name, "-n", "1", "--no-hostname"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            combined = f"{probe.stdout}\n{probe.stderr}"
+            if probe.returncode != 0 or "No journal files were found." in combined:
+                console.print("[dim]No user journal available; showing recent file logs instead.[/dim]\n")
+                print_recent_logs(console, fallback_logs_dir)
+                return
+
         subprocess.run(
             ["journalctl", "--user", "-u", service_name, "-f", "--no-hostname"],
             check=False,
         )
     except FileNotFoundError:
-        console.print(t_rich("service.logs.no_journalctl"))
+        if fallback_logs_dir is not None:
+            console.print("[dim]journalctl not found; showing recent file logs instead.[/dim]\n")
+            print_recent_logs(console, fallback_logs_dir)
+        else:
+            console.print(t_rich("service.logs.no_journalctl"))
     except KeyboardInterrupt:
         pass

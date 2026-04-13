@@ -1,0 +1,16 @@
+● ductor.service - ductor - Telegram bot powered by AI CLIs
+     Loaded: loaded (/root/.config/systemd/user/ductor.service; enabled; vendor preset: enabled)
+    Drop-In: /root/.config/systemd/user/ductor.service.d
+             └─20-restart-always.conf
+     Active: active (running) since Sat 2026-04-11 08:28:14 UTC; 3s ago
+   Main PID: 507548 (ductor)
+      Tasks: 13 (limit: 4575)
+     Memory: 181.6M
+        CPU: 3.166s
+     CGroup: /user.slice/user-0.slice/user@0.service/app.slice/ductor.service
+             ├─507548 /root/.local/share/uv/tools/ductor/bin/python /root/.local/bin/ductor
+             └─507553 node /usr/bin/claude auth status
+
+Apr 11 08:28:14 dbyqhnca.colocrossing.cloud systemd[12257]: Started ductor - Telegram bot powered by AI CLIs.
+Apr 11 08:28:14 dbyqhnca.colocrossing.cloud ductor[507548]: 08:28:14 INFO     ductor_bot.logging_config: Logging initialized (level=INFO)
+Apr 11 08:28:14 dbyqhnca.colocrossing.cloud ductor[507548]: 08:28:14 INFO     ductor_bot.workspace.init: Workspace init started home=/root/.ductor

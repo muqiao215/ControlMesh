@@ -1,0 +1,12 @@
+Restart=always
+RestartUSec=5s
+Result=success
+NRestarts=3
+ExecMainPID=503798
+ExecStart={ path=/root/.local/bin/ductor ; argv[]=/root/.local/bin/ductor ; ignore_errors=no ; start_time=[Sat 2026-04-11 04:40:52 UTC] ; stop_time=[n/a] ; pid=503798 ; code=(null) ; status=0/0 }
+Environment=PATH=/root/.local/bin:/usr/local/bin:/usr/bin:/bin HOME=/root IS_SANDBOX=1 DUCTOR_SUPERVISOR=1
+ActiveState=active
+SubState=running
+FragmentPath=/root/.config/systemd/user/ductor.service
+DropInPaths=/root/.config/systemd/user/ductor.service.d/20-restart-always.conf
+ActiveEnterTimestamp=Sat 2026-04-11 04:40:52 UTC

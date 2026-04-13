@@ -1,0 +1,14 @@
+config_exists=True
+transport= telegram
+transports= ['telegram']
+api_enabled= False
+api_port= 8741
+api_token_present= True
+telegram_bot_token_present= False
+matrix_password_present= False
+matrix_access_token_present= False
+feishu_app_secret_present= False
+gemini_api_key_present= True
+claude_model= None
+codex_model= None
+gemini_model= None
