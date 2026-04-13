@@ -12,7 +12,7 @@ from ductor_bot.messenger.feishu.auth.device_flow import (
     poll_device_token,
     request_device_authorization,
 )
-from ductor_bot.messenger.feishu.auth.errors import DeviceAccessDeniedError
+from ductor_bot.messenger.feishu.auth.errors import DeviceAccessDeniedError, DeviceCodeExpiredError
 
 
 @dataclass
@@ -138,3 +138,65 @@ async def test_poll_device_token_raises_on_access_denied() -> None:
             expires_in=60,
             sleep=_sleep,
         )
+
+
+@pytest.mark.asyncio
+async def test_poll_device_token_slows_down_before_retrying() -> None:
+    session = _FakeSession(
+        [
+            _FakeResponse(200, {"error": "slow_down"}),
+            _FakeResponse(
+                200,
+                {
+                    "access_token": "access",
+                    "refresh_token": "refresh",
+                    "expires_in": 7200,
+                    "refresh_token_expires_in": 86400,
+                    "scope": "offline_access docs:read",
+                },
+            ),
+        ]
+    )
+    sleeps: list[float] = []
+
+    async def _sleep(delay: float) -> None:
+        sleeps.append(delay)
+
+    token = await poll_device_token(
+        session,
+        app_id="cli_app",
+        app_secret="sec_app",
+        brand="feishu",
+        device_code="dc",
+        interval=2,
+        expires_in=60,
+        sleep=_sleep,
+    )
+
+    assert token.access_token == "access"
+    assert sleeps == [2, 7]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error_code", ["expired_token", "invalid_grant"])
+async def test_poll_device_token_raises_when_device_code_is_no_longer_valid(
+    error_code: str,
+) -> None:
+    session = _FakeSession([_FakeResponse(200, {"error": error_code})])
+
+    async def _sleep(_delay: float) -> None:
+        return None
+
+    with pytest.raises(DeviceCodeExpiredError) as exc_info:
+        await poll_device_token(
+            session,
+            app_id="cli_app",
+            app_secret="sec_app",
+            brand="feishu",
+            device_code="dc",
+            interval=1,
+            expires_in=60,
+            sleep=_sleep,
+        )
+
+    assert exc_info.value.code == error_code

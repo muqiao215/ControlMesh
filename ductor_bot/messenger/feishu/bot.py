@@ -19,11 +19,13 @@ from ductor_bot.bus.lock_pool import LockPool
 from ductor_bot.config import AgentConfig
 from ductor_bot.files.allowed_roots import resolve_allowed_roots
 from ductor_bot.log_context import set_log_context
+from ductor_bot.messenger.feishu.auth.runtime_auth import resolve_feishu_auth
 from ductor_bot.messenger.notifications import NotificationService
 from ductor_bot.session.key import SessionKey
 
 if TYPE_CHECKING:
     from ductor_bot.messenger.feishu.inbound import FeishuInboundServer
+    from ductor_bot.messenger.feishu.long_connection import FeishuLongConnectionClient
     from ductor_bot.multiagent.bus import AsyncInterAgentResult
     from ductor_bot.orchestrator.core import Orchestrator
     from ductor_bot.tasks.models import TaskResult
@@ -89,6 +91,7 @@ class FeishuBot:
 
         self._id_map = FeishuIdMap(store_path)
         self._inbound_server: FeishuInboundServer | None = None
+        self._long_connection: FeishuLongConnectionClient | None = None
         self._notification_service: NotificationService = FeishuNotificationService(self)
         self._bus.register_transport(FeishuTransport(self))
 
@@ -127,6 +130,16 @@ class FeishuBot:
             self._inbound_server = FeishuInboundServer(self._config.feishu, self.handle_incoming_event)
         await self._inbound_server.start()
 
+    async def start_long_connection(self) -> bool:
+        if self._long_connection is None:
+            from ductor_bot.messenger.feishu.long_connection import FeishuLongConnectionClient
+
+            self._long_connection = FeishuLongConnectionClient(
+                self._config.feishu,
+                self.handle_incoming_event,
+            )
+        return await self._long_connection.start()
+
     async def run(self) -> int:
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession()
@@ -148,6 +161,9 @@ class FeishuBot:
         if self._shutdown_started:
             return
         self._shutdown_started = True
+
+        if self._long_connection is not None:
+            await self._long_connection.stop()
 
         if self._inbound_server is not None:
             await self._inbound_server.stop()
@@ -246,6 +262,18 @@ class FeishuBot:
         if self._tenant_access_token and now < self._tenant_access_token_expiry:
             return self._tenant_access_token
 
+        resolved_auth = resolve_feishu_auth(config=self._config, now_ms=int(now * 1000))
+        app_id = self._config.feishu.app_id
+        app_secret = self._config.feishu.app_secret
+        if resolved_auth.auth_mode == "bot_only":
+            app_id = resolved_auth.app_id
+            app_secret = resolved_auth.app_secret
+        elif resolved_auth.auth_mode == "device_flow":
+            logger.info(
+                "Feishu runtime auth resolved to device_flow, but tenant-level sends still use "
+                "app_id/app_secret to mint a tenant access token"
+            )
+
         session = await self._ensure_session()
         url = (
             f"{self._config.feishu.domain.rstrip('/')}"
@@ -254,8 +282,8 @@ class FeishuBot:
         async with session.post(
             url,
             json={
-                "app_id": self._config.feishu.app_id,
-                "app_secret": self._config.feishu.app_secret,
+                "app_id": app_id,
+                "app_secret": app_secret,
             },
         ) as response:
             data = await response.json(content_type=None)

@@ -6,9 +6,11 @@ import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Self
 from unittest.mock import AsyncMock
 
 import aiohttp
+import pytest
 
 from ductor_bot.config import AgentConfig
 from ductor_bot.messenger.feishu.bot import FeishuBot, FeishuIncomingText
@@ -257,3 +259,79 @@ class TestFeishuInboundListener:
         await bot.shutdown()
 
         bot._inbound_server.stop.assert_awaited_once()
+
+    async def test_shutdown_stops_long_connection_runtime(self, tmp_path: Path) -> None:
+        bot = _make_bot(tmp_path)
+        bot._long_connection = SimpleNamespace(stop=AsyncMock())
+
+        await bot.shutdown()
+
+        bot._long_connection.stop.assert_awaited_once()
+
+
+@dataclass
+class _FakeResponse:
+    status: int
+    payload: dict[str, object]
+
+    async def text(self) -> str:
+        return str(self.payload)
+
+    async def json(self, content_type: object | None = None) -> dict[str, object]:
+        return self.payload
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
+        return None
+
+
+class _FakeSession:
+    def __init__(self, response: _FakeResponse) -> None:
+        self.response = response
+        self.calls: list[dict[str, object]] = []
+        self.closed = False
+
+    def post(self, url: str, **kwargs: object) -> _FakeResponse:
+        self.calls.append({"url": url, **kwargs})
+        return self.response
+
+
+@pytest.mark.asyncio
+async def test_get_tenant_access_token_consumes_runtime_resolver_and_keeps_bot_fallback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import ductor_bot.messenger.feishu.bot as bot_mod
+
+    bot = _make_bot(tmp_path)
+    fake_session = _FakeSession(_FakeResponse(200, {"tenant_access_token": "tenant-token", "expire": 7200}))
+    bot._session = fake_session  # type: ignore[assignment]
+    resolver_calls: list[dict[str, object]] = []
+
+    def _fake_resolve_feishu_auth(**kwargs: object) -> SimpleNamespace:
+        resolver_calls.append(dict(kwargs))
+        return SimpleNamespace(
+            auth_mode="device_flow",
+            token_source="device_flow",
+            access_token="user-access-token",
+            refresh_token="user-refresh-token",
+            app_id="cli_123",
+            app_secret="",
+        )
+
+    monkeypatch.setattr(bot_mod, "resolve_feishu_auth", _fake_resolve_feishu_auth, raising=False)
+
+    token = await bot._get_tenant_access_token()
+
+    assert token == "tenant-token"
+    assert len(resolver_calls) == 1
+    assert resolver_calls[0]["config"] is bot.config
+    assert fake_session.calls[0]["url"] == (
+        "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
+    )
+    assert fake_session.calls[0]["json"] == {
+        "app_id": "cli_123",
+        "app_secret": "sec_456",
+    }
