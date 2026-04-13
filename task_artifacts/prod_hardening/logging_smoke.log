@@ -1,0 +1,9 @@
+04:24:18 INFO     ductor_bot.logging_config: Logging initialized (level=INFO)
+04:24:18 ERROR    prod.hardening.smoke: catalog smoke error line
+log_path=task_artifacts/prod_hardening/fresh_home_clean2/logs/agent.log
+log_exists=True
+last_lines=
+2026-04-11 04:24:07 [INFO] ductor_bot.logging_config:logging_config.py:137: Logging initialized (level=INFO)
+2026-04-11 04:24:07 [ERROR] prod.hardening.smoke:<stdin>:8: catalog smoke error line
+2026-04-11 04:24:18 [INFO] ductor_bot.logging_config:logging_config.py:137: Logging initialized (level=INFO)
+2026-04-11 04:24:18 [ERROR] prod.hardening.smoke:<stdin>:9: catalog smoke error line

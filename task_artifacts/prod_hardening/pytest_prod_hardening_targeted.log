@@ -1,0 +1,15 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+rootdir: /root/.ductor/analysis/ductor-src
+configfile: pyproject.toml
+plugins: cov-7.1.0, asyncio-1.3.0, aiohttp-1.1.0, time-machine-3.2.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 88 items
+
+tests/test_config.py .................................                   [ 37%]
+tests/api/test_admin_catalog.py .................                        [ 56%]
+tests/team/test_api.py .................                                 [ 76%]
+tests/team/test_snapshot.py .........                                    [ 86%]
+tests/team/test_snapshot_recovery.py ............                        [100%]
+
+============================== 88 passed in 3.04s ==============================

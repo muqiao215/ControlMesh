@@ -1,0 +1,13 @@
+Obtaining file:///root/.ductor/analysis/ductor-src
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'done'
+  Checking if build backend supports build_editable: started
+  Checking if build backend supports build_editable: finished with status 'done'
+  Getting requirements to build editable: started
+  Getting requirements to build editable: finished with status 'done'
+  Installing backend dependencies: started
+  Installing backend dependencies: finished with status 'done'
+  Preparing editable metadata (pyproject.toml): started
+  Preparing editable metadata (pyproject.toml): finished with status 'done'
+INFO: pip is looking at multiple versions of ductor to determine which version is compatible with other requirements. This could take a while.
+ERROR: Package 'ductor' requires a different Python: 3.10.12 not in '>=3.11'

@@ -1,0 +1,13 @@
+
+╭───────────────────────────── API Server (beta) ──────────────────────────────╮
+│                                                                              │
+│  API server enabled.                                                         │
+│                                                                              │
+│    Host:   0.0.0.0                                                           │
+│    Port:   8741                                                              │
+│    Token:  [REDACTED_GENERATED_TOKEN]                                      │
+│                                                                              │
+│  Restart the bot to start the API server.                                    │
+│  Designed for use with Tailscale or other private networks.                  │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯

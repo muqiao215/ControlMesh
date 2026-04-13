@@ -137,7 +137,7 @@
         "enabled": false,
         "host": "0.0.0.0",
         "port": 8741,
-        "token": "YOUR_API_TOKEN",
+        "token": "",
         "chat_id": 123456789,
         "allow_public": false
     },
@@ -197,7 +197,7 @@
                 "fallback_allowed": true
             },
             "ask-user-question": {
-                "enabled": true,
+                "enabled": false,
                 "gateway": "local-webhook",
                 "instruction": "Need user input: {{question}}",
                 "fallback_allowed": true

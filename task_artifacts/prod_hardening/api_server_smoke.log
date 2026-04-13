@@ -1,0 +1,132 @@
+{
+  "base": "http://127.0.0.1:35197",
+  "health": {
+    "status": 200,
+    "body": {
+      "status": "ok",
+      "connections": 0
+    }
+  },
+  "unauthorized": {
+    "status": 401,
+    "body": {
+      "error": "unauthorized"
+    }
+  },
+  "sessions": {
+    "status": 200,
+    "body": {
+      "items": [
+        {
+          "session_key": "tg:101",
+          "transport": "tg",
+          "chat_id": 101,
+          "topic_id": null,
+          "transcript": {
+            "count": 1,
+            "last_seen": "2026-04-11T10:00:00+00:00"
+          },
+          "runtime": {
+            "count": 1,
+            "last_seen": "2026-04-11T10:05:00+00:00"
+          },
+          "last_seen": "2026-04-11T10:05:00+00:00"
+        }
+      ],
+      "limit": 5,
+      "total": 1
+    }
+  },
+  "tasks": {
+    "status": 200,
+    "body": {
+      "items": [
+        {
+          "task_id": "2912f65e",
+          "source_kind": "task_registry",
+          "chat_id": 11,
+          "thread_id": null,
+          "parent_agent": "main",
+          "name": "First Task",
+          "provider": "codex",
+          "model": "gpt-5.2",
+          "status": "done",
+          "session_id": "ia-main",
+          "created_at": 1775881356.6111355,
+          "completed_at": 0.0,
+          "elapsed_seconds": 0.0,
+          "result_preview": "done preview",
+          "last_question": "",
+          "prompt_preview": "first task prompt"
+        }
+      ],
+      "limit": 50,
+      "total": 1
+    }
+  },
+  "teams": {
+    "status": 200,
+    "body": {
+      "items": [
+        {
+          "team_name": "alpha-team",
+          "source_kind": "team_state",
+          "entity_counts": {
+            "manifest": 1,
+            "phase": 1,
+            "task": 1
+          },
+          "status_counts": {
+            "execute": 1,
+            "pending": 1
+          },
+          "owner_ids": [
+            "worker-1"
+          ],
+          "worker_ids": [],
+          "last_seen": "2026-04-11T04:22:36.616396+00:00"
+        }
+      ],
+      "limit": 50,
+      "total": 1
+    }
+  },
+  "invalid_limit": {
+    "status": 400,
+    "body": {
+      "error": "invalid 'limit' query parameter"
+    }
+  },
+  "concurrent": [
+    {
+      "status": 200,
+      "total": 1,
+      "items": 1
+    },
+    {
+      "status": 200,
+      "total": 1,
+      "items": 1
+    },
+    {
+      "status": 200,
+      "total": 1,
+      "items": 1
+    },
+    {
+      "status": 200,
+      "total": 1,
+      "items": 1
+    },
+    {
+      "status": 200,
+      "total": 1,
+      "items": 1
+    },
+    {
+      "status": 200,
+      "total": 1,
+      "items": 1
+    }
+  ]
+}

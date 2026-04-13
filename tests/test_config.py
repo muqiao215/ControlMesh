@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
@@ -41,6 +44,13 @@ def test_agent_config_defaults() -> None:
     assert cfg.allowed_user_ids == []
     assert cfg.codex_hooks == CodexHooksConfig()
     assert cfg.gateways == GatewayDispatchConfig()
+
+
+def test_config_example_validates_against_agent_config() -> None:
+    payload = json.loads(Path("config.example.json").read_text(encoding="utf-8"))
+    cfg = AgentConfig.model_validate(payload)
+    assert cfg.api.token == ""
+    assert cfg.gateways.events["ask-user-question"].enabled is False
 
 
 def test_agent_config_normalizes_nullish_gemini_api_key() -> None:

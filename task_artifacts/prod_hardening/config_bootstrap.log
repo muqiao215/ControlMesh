@@ -1,0 +1,12 @@
+Traceback (most recent call last):
+  File "<stdin>", line 3, in <module>
+  File "/root/.ductor/analysis/ductor-src/ductor_bot/__main__.py", line 167, in load_config
+    return AgentConfig.model_validate(merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/.ductor/analysis/ductor-src/task_artifacts/prod_hardening/.venv312/lib/python3.12/site-packages/pydantic/main.py", line 716, in model_validate
+    return cls.__pydantic_validator__.validate_python(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pydantic_core._pydantic_core.ValidationError: 1 validation error for AgentConfig
+gateways
+  Value error, event 'ask-user-question' references disabled gateway 'local-webhook' [type=value_error, input_value={'enabled': False, 'prece...llback_allowed': True}}}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error

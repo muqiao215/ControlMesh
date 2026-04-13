@@ -1,0 +1,91 @@
+{
+  "history_index": {
+    "path": "task_artifacts/prod_hardening/api_runtime_home/workspace/.history/index.sqlite3",
+    "pre_exists": false,
+    "post_exists": true,
+    "sessions_total": 1
+  },
+  "snapshot_missing": {
+    "schema_version": 1,
+    "ok": false,
+    "operation": "read-snapshot",
+    "error": {
+      "code": "not_found",
+      "message": "team control snapshot not found for 'alpha-team'"
+    }
+  },
+  "snapshot_refresh": {
+    "schema_version": 1,
+    "ok": true,
+    "operation": "read-snapshot",
+    "data": {
+      "snapshot": {
+        "schema_version": 1,
+        "generated_at": "2026-04-11T04:23:23.767568+00:00",
+        "team_name": "alpha-team",
+        "manifest": {
+          "task_description": "alpha-team manifest",
+          "leader_agent_name": "main",
+          "leader_session_key": "tg:77",
+          "worker_count": 1,
+          "worker_ids": [
+            "worker-1"
+          ]
+        },
+        "phase": {
+          "current_phase": "execute",
+          "active": true,
+          "current_repair_attempt": 0,
+          "max_repair_attempts": 3
+        },
+        "tasks": {
+          "counts": {
+            "pending": 1,
+            "blocked": 0,
+            "in_progress": 0,
+            "completed": 0,
+            "failed": 0,
+            "cancelled": 0
+          },
+          "active_task_ids": [
+            "alpha-task"
+          ]
+        },
+        "runtimes": {
+          "counts": {
+            "created": 0,
+            "starting": 0,
+            "ready": 0,
+            "busy": 0,
+            "unhealthy": 0,
+            "stopped": 0,
+            "lost": 0
+          },
+          "busy_workers": [],
+          "lost_workers": []
+        },
+        "dispatch": {
+          "counts": {
+            "pending": 0,
+            "notified": 0,
+            "delivered": 0,
+            "failed": 0,
+            "cancelled": 0
+          },
+          "active_request_ids": [],
+          "pending_request_ids": []
+        },
+        "mailbox": {
+          "counts": {
+            "pending": 0,
+            "notified": 0,
+            "delivered": 0
+          },
+          "pending_message_ids": []
+        },
+        "latest_event_id": null
+      },
+      "stale": false
+    }
+  }
+}

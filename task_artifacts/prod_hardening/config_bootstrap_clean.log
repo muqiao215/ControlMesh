@@ -1,0 +1,7 @@
+config_path=/root/.ductor/analysis/ductor-src/task_artifacts/prod_hardening/fresh_home_clean2/config/config.json
+workspace_exists=True
+logs_dir=/root/.ductor/analysis/ductor-src/task_artifacts/prod_hardening/fresh_home_clean2/logs
+api_enabled=False
+api_token_empty=True
+transports=['telegram']
+gateways_ask_user_enabled=False
