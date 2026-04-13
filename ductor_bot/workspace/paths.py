@@ -120,6 +120,26 @@ class DuctorPaths:
         return self.ductor_home / "tasks.json"
 
     @property
+    def transcripts_dir(self) -> Path:
+        """Frontstage-visible transcript storage root."""
+        return self.ductor_home / "transcripts"
+
+    @property
+    def runtime_events_dir(self) -> Path:
+        """Dedicated backstage runtime-event storage root."""
+        return self.ductor_home / "runtime-events"
+
+    @property
+    def history_index_path(self) -> Path:
+        """Derived SQLite history index (never authoritative)."""
+        return self.workspace / ".history" / "index.sqlite3"
+
+    @property
+    def team_control_snapshots_dir(self) -> Path:
+        """Derived compact control-plane snapshots (never authoritative)."""
+        return self.workspace / ".team-snapshots"
+
+    @property
     def chat_activity_path(self) -> Path:
         return self.ductor_home / "chat_activity.json"
 

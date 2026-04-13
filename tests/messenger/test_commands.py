@@ -31,6 +31,9 @@ class TestClassifyCommand:
         assert classify_command("") == "unknown"
         assert classify_command("foobar") == "unknown"
 
+    def test_history_is_orchestrator_command(self) -> None:
+        assert classify_command("history") == "orchestrator"
+
 
 class TestCommandSetIntegrity:
     """Tests for structural invariants of the command sets."""

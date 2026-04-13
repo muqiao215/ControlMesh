@@ -30,6 +30,15 @@ Options:
 **Important**: Include ALL context in the prompt. The task agent does NOT see
 the conversation — give it everything it needs.
 
+When using a file-driven harness, prompt the task as a bounded execution worker:
+
+- not the controller
+- no scope expansion
+- no canonical-state edits
+- no human confirmation requests
+- no ask-parent adjudication requests
+- task-local evidence outputs only
+
 ## Listing tasks
 
 ```bash
@@ -81,3 +90,7 @@ python3 tools/task_tools/ask_parent.py "your question"
 This forwards your question and returns immediately. The parent agent
 will resume your task with the answer. After calling this, finish your
 current work and update TASKMEMORY.md — you will be resumed.
+
+In pure automatic harness mode, do not use `ask_parent.py` for scope, policy,
+acceptance, or exception decisions. Record the blocking condition instead and
+let the controller adjudicate from evidence.

@@ -25,6 +25,9 @@ HTTP endpoints
 - ``GET /health``              -- health check
 - ``GET /files?path=<abs>``    -- download a file (Bearer token auth)
 - ``POST /upload``             -- upload a file (Bearer token auth, multipart)
+- ``GET /catalog/sessions``    -- derived session catalog (Bearer token auth)
+- ``GET /catalog/tasks``       -- derived task catalog (Bearer token auth)
+- ``GET /catalog/teams``       -- derived team catalog (Bearer token auth)
 """
 
 from __future__ import annotations
@@ -41,6 +44,8 @@ from typing import TYPE_CHECKING, Any
 import aiohttp
 from aiohttp import BodyPartReader, WSMsgType, web
 
+from ductor_bot.api.admin_read import AdminHistoryCatalogReader
+from ductor_bot.api.catalog_http import CatalogHttpHandlers
 from ductor_bot.api.crypto import E2ESession
 from ductor_bot.bus.lock_pool import LockPool
 from ductor_bot.files.image_processor import process_image
@@ -192,6 +197,7 @@ class ApiServer:
         self._workspace: Path | None = None
         self._provider_info: list[dict[str, object]] = []
         self._active_state_getter: Callable[[], tuple[str, str]] | None = None
+        self._catalog_http = CatalogHttpHandlers(token=config.token)
 
     # -- Handler wiring --------------------------------------------------------
 
@@ -223,6 +229,10 @@ class ApiServer:
         """Set a callback that returns (active_provider, active_model)."""
         self._active_state_getter = getter
 
+    def set_admin_catalog_reader(self, reader: AdminHistoryCatalogReader) -> None:
+        """Set the derived read-only admin catalog reader."""
+        self._catalog_http.set_reader(reader)
+
     # -- Lifecycle -------------------------------------------------------------
 
     async def start(self) -> None:
@@ -242,6 +252,9 @@ class ApiServer:
         app.router.add_get("/ws", self._handle_websocket)
         app.router.add_get("/files", self._handle_file_download)
         app.router.add_post("/upload", self._handle_file_upload)
+        app.router.add_get("/catalog/sessions", self._handle_catalog_sessions)
+        app.router.add_get("/catalog/tasks", self._handle_catalog_tasks)
+        app.router.add_get("/catalog/teams", self._handle_catalog_teams)
 
         self._runner = web.AppRunner(app, access_log=None)
         await self._runner.setup()
@@ -373,6 +386,18 @@ class ApiServer:
                 "prompt": prompt,
             }
         )
+
+    async def _handle_catalog_sessions(self, request: web.Request) -> web.Response:
+        """Return derived read-only session catalog summaries."""
+        return await self._catalog_http.handle_sessions(request)
+
+    async def _handle_catalog_tasks(self, request: web.Request) -> web.Response:
+        """Return derived read-only task catalog rows."""
+        return await self._catalog_http.handle_tasks(request)
+
+    async def _handle_catalog_teams(self, request: web.Request) -> web.Response:
+        """Return derived read-only team catalog summaries."""
+        return await self._catalog_http.handle_teams(request)
 
     # -- WebSocket handlers ----------------------------------------------------
 

@@ -16,6 +16,7 @@ from ductor_bot.team.contracts import (
 from ductor_bot.team.live import TeamLiveDispatcher
 from ductor_bot.team.models import TeamDispatchResult
 from ductor_bot.team.state import TeamStateStore
+from ductor_bot.team.state.snapshot import TeamControlSnapshotManager
 from ductor_bot.workspace.paths import DuctorPaths, resolve_paths
 
 
@@ -103,6 +104,16 @@ def _validated_dispatch_result(request: dict[str, object]) -> TeamDispatchResult
     return TeamDispatchResult.model_validate(result)
 
 
+def _optional_bool(request: dict[str, object], field_name: str) -> bool | None:
+    value = request.get(field_name)
+    if value is None:
+        return None
+    if not isinstance(value, bool):
+        msg = f"{field_name} must be a boolean when provided"
+        raise TypeError(msg)
+    return value
+
+
 def resolve_team_state_root(
     state_root: Path | str | None = None,
     *,
@@ -136,6 +147,36 @@ def _list_tasks_response(store: TeamStateStore, request: dict[str, object]) -> d
 
 def _get_summary_response(store: TeamStateStore) -> dict[str, Any]:
     return _success("get-summary", {"summary": store.build_summary()})
+
+
+def _read_snapshot_response(
+    request: dict[str, object],
+    *,
+    team_name: str,
+    state_root: Path | str | None = None,
+    paths: DuctorPaths | None = None,
+) -> dict[str, Any]:
+    resolved_paths = paths or resolve_paths()
+    refresh = _optional_bool(request, "refresh") or False
+    max_age_seconds = _int_or_none(request.get("max_age_seconds"), "max_age_seconds")
+    manager = TeamControlSnapshotManager(
+        resolved_paths,
+        state_root=resolve_team_state_root(state_root, paths=resolved_paths),
+    )
+    if max_age_seconds is None:
+        snapshot = manager.write(team_name) if refresh else manager.read(team_name)
+        return _success("read-snapshot", {"snapshot": snapshot.model_dump(mode="json")})
+
+    if refresh:
+        manager.write(team_name)
+    status = manager.read_status(team_name, max_age_seconds=max_age_seconds)
+    return _success(
+        "read-snapshot",
+        {
+            "snapshot": status.snapshot.model_dump(mode="json"),
+            "stale": status.stale,
+        },
+    )
 
 
 def _read_events_response(store: TeamStateStore, request: dict[str, object]) -> dict[str, Any]:
@@ -189,6 +230,12 @@ def _execute_known_team_api_operation(
         "read-manifest": lambda: _read_manifest_response(store),
         "list-tasks": lambda: _list_tasks_response(store, request_data),
         "get-summary": lambda: _get_summary_response(store),
+        "read-snapshot": lambda: _read_snapshot_response(
+            request_data,
+            team_name=team_name,
+            state_root=state_root,
+            paths=paths,
+        ),
         "read-events": lambda: _read_events_response(store, request_data),
         "record-dispatch-result": lambda: _record_dispatch_result_response(store, request_data),
     }

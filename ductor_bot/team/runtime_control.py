@@ -19,6 +19,11 @@ from ductor_bot.team.contracts import (
 from ductor_bot.team.models import TeamManifest, TeamRuntimeContext, TeamWorkerRuntimeState
 from ductor_bot.team.runtime_attachment import TeamRuntimeAttachmentManager
 from ductor_bot.team.state import TeamStateStore
+from ductor_bot.team.state.recovery import (
+    TeamControlSnapshotRecoveryAdvice,
+    TeamControlSnapshotRecoveryAdvisor,
+    default_runtime_recovery_snapshot_max_age_seconds,
+)
 from ductor_bot.workspace.paths import resolve_paths
 
 _START_OPERATION = "start-worker-runtime"
@@ -53,6 +58,18 @@ def _utc_now() -> datetime:
     return datetime.now(UTC)
 
 
+def _should_skip_runtime_recovery_from_snapshot(
+    advice: TeamControlSnapshotRecoveryAdvice,
+) -> bool:
+    if advice.status != "usable" or advice.snapshot is None:
+        return False
+    live_runtime_count = sum(
+        advice.snapshot.runtimes.counts.get(status, 0)
+        for status in _LIVE_RUNTIME_STATUSES
+    )
+    return live_runtime_count == 0
+
+
 class TeamRuntimeController:
     """Attach lifecycle operations to the real named-session runtime unit."""
 
@@ -71,6 +88,10 @@ class TeamRuntimeController:
         paths = resolve_paths()
         self._team_state_root = (
             Path(team_state_root) if team_state_root is not None else paths.team_state_dir
+        )
+        self._snapshot_recovery_advisor = TeamControlSnapshotRecoveryAdvisor(
+            paths,
+            state_root=self._team_state_root,
         )
         if named_sessions_path is None:
             registry = getattr(orchestrator, "named_sessions", None)
@@ -97,7 +118,15 @@ class TeamRuntimeController:
     async def recover_live_runtimes(self) -> list[TeamWorkerRuntimeState]:
         """Recover still-live named-session runtimes from canonical persisted team state."""
         recovered: list[TeamWorkerRuntimeState] = []
+        recovery_now = _utc_now()
         for team_name in self._team_names():
+            advice = self._snapshot_recovery_advisor.refresh_and_evaluate(
+                team_name,
+                max_age_seconds=default_runtime_recovery_snapshot_max_age_seconds(),
+                now=recovery_now,
+            )
+            if _should_skip_runtime_recovery_from_snapshot(advice):
+                continue
             store = TeamStateStore(self._team_state_root, team_name, create=False)
             manifest = store.read_manifest()
             for runtime in store.list_worker_runtimes():

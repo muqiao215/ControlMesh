@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 
 from ductor_bot.infra.json_store import atomic_json_save, load_json
 from ductor_bot.team.contracts import CLAIMABLE_TEAM_TASK_STATUSES
@@ -10,7 +11,15 @@ from ductor_bot.team.models import TeamTask, TeamTaskClaim
 from ductor_bot.team.state.base import TeamStatePaths, utc_now
 
 
-def _load(paths: TeamStatePaths) -> list[TeamTask]:
+def _tasks_dir(paths: TeamStatePaths) -> Path:
+    return paths.team_dir / "tasks"
+
+
+def _task_entity_path(paths: TeamStatePaths, task_id: str) -> Path:
+    return _tasks_dir(paths) / f"{task_id}.json"
+
+
+def _load_aggregate(paths: TeamStatePaths) -> list[TeamTask]:
     raw = load_json(paths.tasks_path) or {"tasks": []}
     tasks = raw.get("tasks", [])
     if not isinstance(tasks, list):
@@ -18,11 +27,44 @@ def _load(paths: TeamStatePaths) -> list[TeamTask]:
     return [TeamTask.model_validate(item) for item in tasks]
 
 
-def _save(paths: TeamStatePaths, tasks: list[TeamTask]) -> None:
+def _load_entities(paths: TeamStatePaths) -> list[TeamTask]:
+    entity_dir = _tasks_dir(paths)
+    if not entity_dir.exists():
+        return []
+    tasks: list[TeamTask] = []
+    for path in sorted(entity_dir.glob("*.json")):
+        raw = load_json(path)
+        if raw is None:
+            continue
+        tasks.append(TeamTask.model_validate(raw))
+    return tasks
+
+
+def _load(paths: TeamStatePaths) -> list[TeamTask]:
+    merged: dict[str, TeamTask] = {task.task_id: task for task in _load_aggregate(paths)}
+    for task in _load_entities(paths):
+        merged[task.task_id] = task
+    return list(merged.values())
+
+
+def _save_snapshot(paths: TeamStatePaths, tasks: list[TeamTask]) -> None:
     atomic_json_save(
         paths.tasks_path,
         {"tasks": [task.model_dump(mode="json") for task in tasks]},
     )
+
+
+def _save_entity(paths: TeamStatePaths, task: TeamTask) -> None:
+    entity_dir = _tasks_dir(paths)
+    entity_dir.mkdir(parents=True, exist_ok=True)
+    atomic_json_save(_task_entity_path(paths, task.task_id), task.model_dump(mode="json"))
+
+
+def _parse_timestamp(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def list_tasks(
@@ -41,7 +83,17 @@ def list_tasks(
 
 
 def upsert_task(paths: TeamStatePaths, task: TeamTask) -> TeamTask:
-    """Insert or replace a task."""
+    """Insert or replace a task using per-task entity files plus a compatibility snapshot."""
+    existing = next((item for item in _load(paths) if item.task_id == task.task_id), None)
+    if (
+        existing is not None
+        and task.updated_at is not None
+        and existing.updated_at is not None
+        and _parse_timestamp(task.updated_at) < _parse_timestamp(existing.updated_at)
+    ):
+        msg = f"stale task update for '{task.task_id}'"
+        raise ValueError(msg)
+
     now = utc_now()
     completed_at = task.completed_at
     if task.status == "completed" and completed_at is None:
@@ -55,6 +107,9 @@ def upsert_task(paths: TeamStatePaths, task: TeamTask) -> TeamTask:
             "completed_at": completed_at,
         }
     )
+    if existing is not None:
+        persisted = persisted.model_copy(update={"created_at": existing.created_at or persisted.created_at})
+
     tasks = _load(paths)
     replaced = False
     for index, existing in enumerate(tasks):
@@ -64,7 +119,8 @@ def upsert_task(paths: TeamStatePaths, task: TeamTask) -> TeamTask:
             break
     if not replaced:
         tasks.append(persisted)
-    _save(paths, tasks)
+    _save_entity(paths, persisted)
+    _save_snapshot(paths, tasks)
     return persisted
 
 

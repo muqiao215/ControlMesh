@@ -6,15 +6,24 @@ import json
 from unittest.mock import AsyncMock, patch
 
 from ductor_bot.cli.auth import AuthResult, AuthStatus
+from ductor_bot.history import TranscriptAttachment, TranscriptTurn
 from ductor_bot.orchestrator.commands import (
+    HistoryRequestKind,
     cmd_cron,
     cmd_diagnose,
+    cmd_history,
     cmd_memory,
     cmd_model,
     cmd_status,
+    parse_history_request,
 )
 from ductor_bot.orchestrator.core import Orchestrator
+from ductor_bot.runtime import RuntimeEvent
 from ductor_bot.session.key import SessionKey
+from ductor_bot.tasks.models import TaskSubmit
+from ductor_bot.tasks.registry import TaskRegistry
+from ductor_bot.team.models import TeamLeader, TeamManifest, TeamSessionRef, TeamTask
+from ductor_bot.team.state import TeamStateStore
 
 # -- cmd_model (wizard + direct switch) --
 
@@ -119,6 +128,271 @@ async def test_memory_empty(orch: Orchestrator) -> None:
     orch.paths.mainmemory_path.write_text("")
     result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory")
     assert "empty" in result.text.lower()
+
+
+# -- cmd_history --
+
+
+async def test_history_shows_recent_visible_turns(orch: Orchestrator) -> None:
+    key = SessionKey.telegram(1)
+    orch._transcripts.append_turn(
+        TranscriptTurn(
+            session_key=key.storage_key,
+            surface_session_id=key.storage_key,
+            role="user",
+            visible_content="first question",
+            source="normal_chat",
+            transport=key.transport,
+            chat_id=key.chat_id,
+            topic_id=key.topic_id,
+        )
+    )
+    orch._transcripts.append_turn(
+        TranscriptTurn(
+            session_key=key.storage_key,
+            surface_session_id=key.storage_key,
+            role="assistant",
+            visible_content="first answer",
+            source="normal_chat",
+            transport=key.transport,
+            chat_id=key.chat_id,
+            topic_id=key.topic_id,
+        )
+    )
+    orch._transcripts.append_turn(
+        TranscriptTurn(
+            session_key=key.storage_key,
+            surface_session_id=key.storage_key,
+            role="user",
+            visible_content="second question",
+            source="normal_chat",
+            transport=key.transport,
+            chat_id=key.chat_id,
+            topic_id=key.topic_id,
+        )
+    )
+
+    result = await cmd_history(orch, key, "/history 2")
+
+    assert "Recent Visible History" in result.text
+    assert "1. [assistant] first answer" in result.text
+    assert "2. [user] second question" in result.text
+    assert "first question" not in result.text
+
+
+async def test_history_rejects_invalid_limit(orch: Orchestrator) -> None:
+    result = await cmd_history(orch, SessionKey.telegram(1), "/history nope")
+    assert "Usage: /history [n]" in result.text
+
+
+async def test_history_reports_empty_session(orch: Orchestrator) -> None:
+    result = await cmd_history(orch, SessionKey.telegram(1), "/history")
+    assert "No visible history yet." in result.text
+
+
+async def test_history_shows_attachment_labels(orch: Orchestrator) -> None:
+    key = SessionKey.telegram(1)
+    orch._transcripts.append_turn(
+        TranscriptTurn(
+            session_key=key.storage_key,
+            surface_session_id=key.storage_key,
+            role="assistant",
+            visible_content="Generated report",
+            attachments=[
+                TranscriptAttachment(
+                    kind="document",
+                    label="report.txt",
+                    path="/tmp/report.txt",
+                )
+            ],
+            source="foreground_task_result",
+            transport=key.transport,
+            chat_id=key.chat_id,
+            topic_id=key.topic_id,
+        )
+    )
+
+    result = await cmd_history(orch, key, "/history")
+
+    assert "Generated report" in result.text
+    assert "report.txt" in result.text
+
+
+def test_history_parses_indexed_forms() -> None:
+    assert parse_history_request("/history search outage").kind == HistoryRequestKind.SEARCH
+    assert parse_history_request("/history task abc123").kind == HistoryRequestKind.TASK
+    assert parse_history_request("/history session tg:42:root").kind == HistoryRequestKind.SESSION
+    assert parse_history_request("/history 3").kind == HistoryRequestKind.TAIL
+
+
+async def test_history_search_formats_bounded_separated_index_results(orch: Orchestrator) -> None:
+    key = SessionKey.telegram(42)
+    orch._transcripts.append_turn(
+        TranscriptTurn(
+            turn_id="turn-needle",
+            session_key=key.storage_key,
+            surface_session_id=key.storage_key,
+            role="assistant",
+            visible_content="needle visible answer",
+            source="normal_chat",
+            transport=key.transport,
+            chat_id=key.chat_id,
+            topic_id=key.topic_id,
+        )
+    )
+    runtime_path = orch.paths.runtime_events_dir / key.transport / str(key.chat_id) / "root.jsonl"
+    runtime_path.parent.mkdir(parents=True, exist_ok=True)
+    runtime_path.write_text(
+        RuntimeEvent(
+            event_id="runtime-needle",
+            session_key=key.storage_key,
+            event_type="worker.note",
+            payload={"note": "needle runtime payload"},
+            transport=key.transport,
+            chat_id=key.chat_id,
+            topic_id=key.topic_id,
+        ).model_dump_json()
+        + "\n",
+        encoding="utf-8",
+    )
+    registry = TaskRegistry(orch.paths.tasks_registry_path, orch.paths.tasks_dir)
+    task = registry.create(
+        TaskSubmit(
+            chat_id=42,
+            prompt="needle task prompt",
+            message_id=1,
+            thread_id=None,
+            parent_agent="main",
+            name="Needle Task",
+        ),
+        "codex",
+        "gpt-5.2",
+    )
+    registry.update_status(task.task_id, "done", result_preview="needle task result")
+    team_store = TeamStateStore(orch.paths.team_state_dir, "alpha-team")
+    team_store.write_manifest(
+        TeamManifest(
+            team_name="alpha-team",
+            task_description="needle team run",
+            leader=TeamLeader(agent_name="main", session=TeamSessionRef(transport="tg", chat_id=7)),
+        )
+    )
+    team_store.upsert_task(TeamTask(task_id="team-needle", subject="needle team task"))
+
+    result = await cmd_history(orch, key, "/history search needle")
+
+    assert "Indexed History Search" in result.text
+    assert "Frontstage Transcript" in result.text
+    assert "Runtime Events" in result.text
+    assert "Task Catalog" in result.text
+    assert "Team State" in result.text
+    assert "needle visible answer" in result.text
+    assert "worker.note" in result.text
+    assert "Needle Task" in result.text
+    assert "team-needle" in result.text
+
+
+async def test_history_search_bounds_results(orch: Orchestrator) -> None:
+    key = SessionKey.telegram(43)
+    for idx in range(8):
+        orch._transcripts.append_turn(
+            TranscriptTurn(
+                turn_id=f"turn-{idx}",
+                session_key=key.storage_key,
+                surface_session_id=key.storage_key,
+                role="assistant",
+                visible_content=f"needle visible answer {idx}",
+                source="normal_chat",
+                transport=key.transport,
+                chat_id=key.chat_id,
+                topic_id=key.topic_id,
+            )
+        )
+
+    result = await cmd_history(orch, key, "/history search needle")
+
+    assert "showing 5 of 8" in result.text
+    assert "needle visible answer 0" in result.text
+    assert "needle visible answer 4" in result.text
+    assert "needle visible answer 5" not in result.text
+
+
+async def test_history_task_formats_task_and_team_sections(orch: Orchestrator) -> None:
+    registry = TaskRegistry(orch.paths.tasks_registry_path, orch.paths.tasks_dir)
+    entry = registry.create(
+        TaskSubmit(
+            chat_id=42,
+            prompt="investigate task",
+            message_id=1,
+            thread_id=None,
+            parent_agent="main",
+            name="Indexed Task",
+        ),
+        "codex",
+        "gpt-5.2",
+    )
+    registry.update_status(entry.task_id, "done", result_preview="task result")
+    team_store = TeamStateStore(orch.paths.team_state_dir, "alpha-team")
+    team_store.write_manifest(
+        TeamManifest(
+            team_name="alpha-team",
+            task_description="Coordinate implementation",
+            leader=TeamLeader(agent_name="main", session=TeamSessionRef(transport="tg", chat_id=7)),
+        )
+    )
+    team_store.upsert_task(TeamTask(task_id=entry.task_id, subject="Team copy", owner="worker-1"))
+
+    result = await cmd_history(orch, SessionKey.telegram(42), f"/history task {entry.task_id}")
+
+    assert "Indexed Task History" in result.text
+    assert "Task Catalog" in result.text
+    assert "Team State" in result.text
+    assert "Frontstage Transcript" in result.text
+    assert entry.task_id in result.text
+    assert "Indexed Task" in result.text
+    assert "Team copy" in result.text
+
+
+async def test_history_session_formats_transcript_and_runtime_sections(orch: Orchestrator) -> None:
+    key = SessionKey.telegram(44, 9)
+    orch._transcripts.append_turn(
+        TranscriptTurn(
+            turn_id="session-turn",
+            session_key=key.storage_key,
+            surface_session_id=key.storage_key,
+            role="user",
+            visible_content="session visible question",
+            source="normal_chat",
+            transport=key.transport,
+            chat_id=key.chat_id,
+            topic_id=key.topic_id,
+        )
+    )
+    runtime_path = orch.paths.runtime_events_dir / key.transport / str(key.chat_id) / "9.jsonl"
+    runtime_path.parent.mkdir(parents=True, exist_ok=True)
+    runtime_path.write_text(
+        RuntimeEvent(
+            event_id="session-runtime",
+            session_key=key.storage_key,
+            event_type="worker.started",
+            payload={"task": "session runtime"},
+            transport=key.transport,
+            chat_id=key.chat_id,
+            topic_id=key.topic_id,
+        ).model_dump_json()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_history(orch, key, f"/history session {key.storage_key}")
+
+    assert "Indexed Session History" in result.text
+    assert "Frontstage Transcript" in result.text
+    assert "Runtime Events" in result.text
+    assert "Task Catalog" in result.text
+    assert "Team State" in result.text
+    assert "session visible question" in result.text
+    assert "worker.started" in result.text
 
 
 # -- cmd_cron --

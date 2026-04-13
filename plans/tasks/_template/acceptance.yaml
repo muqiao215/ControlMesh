@@ -1,0 +1,29 @@
+task_mode: implementation
+scope: replace_me
+
+hard_gates:
+  - evidence_complete
+  - schema_valid
+  - no_canonical_write_breach
+  - no_scope_breach
+
+soft_scores:
+  correctness: 0
+  boundary_discipline: 0
+  evidence_quality: 0
+  diagnosability: 0
+  trajectory_hygiene: 0
+
+required_verification:
+  - focused_tests
+  - bounded_live_if_required
+
+allowed_outcomes:
+  - pass
+  - pass_with_notes
+  - return_for_hardening
+  - blocked_by_environment
+  - blocked_by_operator_safety
+  - stopline
+  - split_into_new_scope
+  - deferred_with_reason

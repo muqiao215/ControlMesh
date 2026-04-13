@@ -12,6 +12,11 @@ from ductor_bot.team.contracts import (
     TEAM_MAILBOX_MESSAGE_STATUSES,
     TEAM_TASK_STATUSES,
     TEAM_WORKER_RUNTIME_STATUSES,
+    normalize_dispatch_request,
+    normalize_mailbox_message,
+    normalize_team_task,
+    normalize_worker_runtime_state,
+    validate_dispatch_result_recording,
 )
 from ductor_bot.team.models import (
     TeamDispatchRequest,
@@ -27,24 +32,38 @@ from ductor_bot.team.models import (
 from ductor_bot.team.state.base import TeamStatePaths
 from ductor_bot.team.state.dispatch import (
     create_dispatch_request,
-    get_dispatch_request,
-    list_dispatch_requests,
-    record_dispatch_result,
     transition_dispatch_request,
+)
+from ductor_bot.team.state.dispatch import (
+    get_dispatch_request as load_dispatch_request,
+)
+from ductor_bot.team.state.dispatch import (
+    list_dispatch_requests as load_dispatch_requests,
+)
+from ductor_bot.team.state.dispatch import (
+    record_dispatch_result as write_dispatch_result,
 )
 from ductor_bot.team.state.events import append_event, read_events
 from ductor_bot.team.state.mailbox import (
     create_mailbox_message,
-    get_mailbox_message,
-    list_mailbox_messages,
     mark_mailbox_message_delivered,
     mark_mailbox_message_notified,
+)
+from ductor_bot.team.state.mailbox import (
+    get_mailbox_message as load_mailbox_message,
+)
+from ductor_bot.team.state.mailbox import (
+    list_mailbox_messages as load_mailbox_messages,
 )
 from ductor_bot.team.state.manifest import read_manifest, write_manifest
 from ductor_bot.team.state.phase import read_phase, write_phase
 from ductor_bot.team.state.runtime import (
-    get_worker_runtime,
-    list_worker_runtimes,
+    get_worker_runtime as load_worker_runtime,
+)
+from ductor_bot.team.state.runtime import (
+    list_worker_runtimes as load_worker_runtimes,
+)
+from ductor_bot.team.state.runtime import (
     put_worker_runtime,
     reconcile_worker_runtime,
     reconcile_worker_runtimes,
@@ -53,11 +72,15 @@ from ductor_bot.team.state.runtime import (
 )
 from ductor_bot.team.state.tasks import (
     claim_task,
-    get_task,
-    list_tasks,
     release_task_claim,
     update_task_status,
     upsert_task,
+)
+from ductor_bot.team.state.tasks import (
+    get_task as load_task,
+)
+from ductor_bot.team.state.tasks import (
+    list_tasks as load_tasks,
 )
 
 
@@ -79,20 +102,28 @@ class TeamStateStore:
         return upsert_task(self.paths, task)
 
     def list_tasks(self, *, status: str | None = None, owner: str | None = None) -> list[TeamTask]:
-        return list_tasks(self.paths, status=status, owner=owner)
+        items = [normalize_team_task(task) for task in load_tasks(self.paths)]
+        if status is not None:
+            items = [task for task in items if task.status == status]
+        if owner is not None:
+            items = [task for task in items if task.owner == owner]
+        return items
 
     def get_task(self, task_id: str) -> TeamTask:
-        return get_task(self.paths, task_id)
+        return normalize_team_task(load_task(self.paths, task_id))
 
     def put_worker_runtime(self, runtime: TeamWorkerRuntimeState) -> TeamWorkerRuntimeState:
         self.read_manifest().get_worker(runtime.worker)
         return put_worker_runtime(self.paths, runtime)
 
     def get_worker_runtime(self, worker: str) -> TeamWorkerRuntimeState:
-        return get_worker_runtime(self.paths, worker)
+        return normalize_worker_runtime_state(load_worker_runtime(self.paths, worker))
 
     def list_worker_runtimes(self, *, status: str | None = None) -> list[TeamWorkerRuntimeState]:
-        return list_worker_runtimes(self.paths, status=status)
+        items = [normalize_worker_runtime_state(runtime) for runtime in load_worker_runtimes(self.paths)]
+        if status is not None:
+            items = [runtime for runtime in items if runtime.status == status]
+        return items
 
     def transition_worker_runtime(
         self,
@@ -157,7 +188,7 @@ class TeamStateStore:
         return create_dispatch_request(self.paths, request)
 
     def get_dispatch_request(self, request_id: str) -> TeamDispatchRequest:
-        return get_dispatch_request(self.paths, request_id)
+        return normalize_dispatch_request(load_dispatch_request(self.paths, request_id))
 
     def transition_dispatch_request(
         self,
@@ -176,25 +207,33 @@ class TeamStateStore:
         )
 
     def list_dispatch_requests(self, *, status: str | None = None) -> list[TeamDispatchRequest]:
-        return list_dispatch_requests(self.paths, status=status)
+        items = [normalize_dispatch_request(request) for request in load_dispatch_requests(self.paths)]
+        if status is not None:
+            items = [request for request in items if request.status == status]
+        return items
 
     def record_dispatch_result(self, request_id: str, result: TeamDispatchResult) -> TeamDispatchRequest:
-        request = get_dispatch_request(self.paths, request_id)
+        request = load_dispatch_request(self.paths, request_id)
         if request.status != "delivered":
             msg = f"dispatch request '{request_id}' must be delivered before recording a result"
             raise ValueError(msg)
+        validate_dispatch_result_recording(request, result)
         if result.task_status is not None:
-            if request.task_id is None:
+            if request.task_id is None:  # pragma: no cover - guarded by contract validation
                 msg = f"dispatch request '{request_id}' is not linked to a task"
                 raise ValueError(msg)
             update_task_status(self.paths, request.task_id, result.task_status)
-        return record_dispatch_result(self.paths, request_id, result)
+        return normalize_dispatch_request(write_dispatch_result(self.paths, request_id, result))
 
     def create_mailbox_message(self, message: TeamMailboxMessage) -> TeamMailboxMessage:
+        manifest = self.read_manifest()
+        manifest.get_worker(message.to_worker)
+        if message.from_worker is not None and message.from_worker != manifest.leader.agent_name:
+            manifest.get_worker(message.from_worker)
         return create_mailbox_message(self.paths, message)
 
     def get_mailbox_message(self, message_id: str) -> TeamMailboxMessage:
-        return get_mailbox_message(self.paths, message_id)
+        return normalize_mailbox_message(load_mailbox_message(self.paths, message_id))
 
     def mark_mailbox_message_notified(self, message_id: str) -> TeamMailboxMessage:
         return mark_mailbox_message_notified(self.paths, message_id)
@@ -203,7 +242,10 @@ class TeamStateStore:
         return mark_mailbox_message_delivered(self.paths, message_id)
 
     def list_mailbox_messages(self, *, status: str | None = None) -> list[TeamMailboxMessage]:
-        return list_mailbox_messages(self.paths, status=status)
+        items = [normalize_mailbox_message(message) for message in load_mailbox_messages(self.paths)]
+        if status is not None:
+            items = [message for message in items if message.status == status]
+        return items
 
     def append_event(self, event: TeamEvent) -> TeamEvent:
         return append_event(self.paths, event)

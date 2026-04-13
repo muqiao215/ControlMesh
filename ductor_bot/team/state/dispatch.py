@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from ductor_bot.infra.json_store import atomic_json_save, load_json
+from ductor_bot.team.contracts import (
+    validate_dispatch_request_creation,
+    validate_dispatch_transition_metadata,
+)
 from ductor_bot.team.models import TeamDispatchRequest, TeamDispatchResult
 from ductor_bot.team.state.base import TeamStatePaths, utc_now
 
@@ -40,6 +44,7 @@ def list_dispatch_requests(paths: TeamStatePaths, *, status: str | None = None) 
 
 def create_dispatch_request(paths: TeamStatePaths, request: TeamDispatchRequest) -> TeamDispatchRequest:
     """Create a new dispatch request."""
+    validate_dispatch_request_creation(request)
     requests = _load(paths)
     if any(existing.request_id == request.request_id for existing in requests):
         msg = f"dispatch request '{request.request_id}' already exists"
@@ -69,6 +74,7 @@ def transition_dispatch_request(
     metadata: dict[str, str | None] | None = None,
 ) -> TeamDispatchRequest:
     """Advance a dispatch request through its state-only lifecycle."""
+    validate_dispatch_transition_metadata(metadata)
     requests = _load(paths)
     for index, item in enumerate(requests):
         if item.request_id != request_id:

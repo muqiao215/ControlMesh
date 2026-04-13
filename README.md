@@ -10,6 +10,7 @@ What is true today:
 - Multi-transport runtime: Telegram, Matrix, and an early Feishu bot-only surface
 - Sessions, background tasks, cron jobs, webhooks, and sub-agents
 - File-backed operational state under `~/.ductor/`
+- A new file-backed harness control plane is being staged under [`plans/`](plans/README.md)
 
 <p align="center">
   <a href="#quick-start">Quick start</a> &middot;
@@ -49,6 +50,18 @@ The onboarding wizard handles CLI checks, transport setup (Telegram or Matrix), 
 For Matrix support: `ductor install matrix` — see [Matrix setup guide](docs/matrix-setup.md).
 
 Detailed setup: [`docs/installation.md`](docs/installation.md)
+
+## Harness Control Plane
+
+ControlMesh is being shaped toward a file-driven project state machine rather than a chat-only workflow.
+
+The initial harness skeleton now lives under [`plans/`](plans/README.md):
+
+- [`plans/_program/`](plans/_program/) for canonical program truth
+- [`plans/tasks/`](plans/tasks/) for task-local evidence and proposals
+- [`plans/eval/`](plans/eval/) for exception triggers, scorecards, and review outcomes
+
+Design reference: [`docs/modules/harness.md`](docs/modules/harness.md)
 
 ## How chats work
 

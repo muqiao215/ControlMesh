@@ -148,9 +148,12 @@ async def start_api_server(
     default_chat_id = config.api.chat_id or (
         config.allowed_user_ids[0] if config.allowed_user_ids else 1
     )
+    from ductor_bot.api.admin_read import AdminHistoryCatalogReader
+
     server = ApiServer(config.api, default_chat_id=default_chat_id)
     server.set_message_handler(orch.handle_message_streaming)
     server.set_abort_handler(orch.abort)
+    server.set_admin_catalog_reader(AdminHistoryCatalogReader(paths))
     server.set_file_context(
         allowed_roots=resolve_allowed_roots(config.file_access, paths.workspace),
         upload_dir=paths.api_files_dir,

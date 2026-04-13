@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from pathlib import Path
 
 from ductor_bot.infra.json_store import atomic_json_save, load_json
 from ductor_bot.team.models import TeamWorkerRuntimeState
@@ -23,7 +24,15 @@ _HEALTHY_RUNTIME_STATUSES = frozenset({"starting", "ready", "busy"})
 UNSET_RUNTIME_FIELD: object = object()
 
 
-def _load(paths: TeamStatePaths) -> list[TeamWorkerRuntimeState]:
+def _runtimes_dir(paths: TeamStatePaths) -> Path:
+    return paths.team_dir / "worker-runtimes"
+
+
+def _runtime_entity_path(paths: TeamStatePaths, worker: str) -> Path:
+    return _runtimes_dir(paths) / f"{worker}.json"
+
+
+def _load_aggregate(paths: TeamStatePaths) -> list[TeamWorkerRuntimeState]:
     raw = load_json(paths.worker_runtimes_path) or {"worker_runtimes": []}
     items = raw.get("worker_runtimes", [])
     if not isinstance(items, list):
@@ -31,11 +40,43 @@ def _load(paths: TeamStatePaths) -> list[TeamWorkerRuntimeState]:
     return [TeamWorkerRuntimeState.model_validate(item) for item in items]
 
 
-def _save(paths: TeamStatePaths, runtimes: list[TeamWorkerRuntimeState]) -> None:
+def _load_entities(paths: TeamStatePaths) -> list[TeamWorkerRuntimeState]:
+    entity_dir = _runtimes_dir(paths)
+    if not entity_dir.exists():
+        return []
+    runtimes: list[TeamWorkerRuntimeState] = []
+    for path in sorted(entity_dir.glob("*.json")):
+        raw = load_json(path)
+        if raw is None:
+            continue
+        runtimes.append(TeamWorkerRuntimeState.model_validate(raw))
+    return runtimes
+
+
+def _load(paths: TeamStatePaths) -> list[TeamWorkerRuntimeState]:
+    merged: dict[str, TeamWorkerRuntimeState] = {runtime.worker: runtime for runtime in _load_aggregate(paths)}
+    for runtime in _load_entities(paths):
+        merged[runtime.worker] = runtime
+    return list(merged.values())
+
+
+def _save_snapshot(paths: TeamStatePaths, runtimes: list[TeamWorkerRuntimeState]) -> None:
     atomic_json_save(
         paths.worker_runtimes_path,
         {"worker_runtimes": [runtime.model_dump(mode="json") for runtime in runtimes]},
     )
+
+
+def _save_entity(paths: TeamStatePaths, runtime: TeamWorkerRuntimeState) -> None:
+    entity_dir = _runtimes_dir(paths)
+    entity_dir.mkdir(parents=True, exist_ok=True)
+    atomic_json_save(_runtime_entity_path(paths, runtime.worker), runtime.model_dump(mode="json"))
+
+
+def _save(paths: TeamStatePaths, runtimes: list[TeamWorkerRuntimeState]) -> None:
+    for runtime in runtimes:
+        _save_entity(paths, runtime)
+    _save_snapshot(paths, runtimes)
 
 
 def _parse_timestamp(value: str) -> datetime:
@@ -67,7 +108,17 @@ def get_worker_runtime(paths: TeamStatePaths, worker: str) -> TeamWorkerRuntimeS
 
 
 def put_worker_runtime(paths: TeamStatePaths, runtime: TeamWorkerRuntimeState) -> TeamWorkerRuntimeState:
-    """Insert or replace a worker runtime state record."""
+    """Insert or replace a worker runtime using per-worker entity files plus a compatibility snapshot."""
+    existing = next((item for item in _load(paths) if item.worker == runtime.worker), None)
+    if (
+        existing is not None
+        and runtime.updated_at is not None
+        and existing.updated_at is not None
+        and _parse_timestamp(runtime.updated_at) < _parse_timestamp(existing.updated_at)
+    ):
+        msg = f"stale worker runtime update for '{runtime.worker}'"
+        raise ValueError(msg)
+
     now = utc_now()
     persisted = runtime.model_copy(update={"created_at": runtime.created_at or now, "updated_at": now})
     runtimes = _load(paths)

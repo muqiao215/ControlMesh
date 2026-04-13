@@ -1,0 +1,22 @@
+deliverables:
+  - type: file
+    path: result.md
+    required: true
+  - type: file
+    path: evidence.yaml
+    required: true
+  - type: directory
+    path: logs
+    required: false
+  - type: directory
+    path: artifacts
+    required: false
+  - type: file
+    path: proposed_progress_update.md
+    required: false
+  - type: file
+    path: proposed_findings_update.md
+    required: false
+  - type: file
+    path: proposed_plan_delta.md
+    required: false

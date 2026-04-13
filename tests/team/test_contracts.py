@@ -29,6 +29,7 @@ def test_contract_sets_include_expected_values() -> None:
         "read-manifest",
         "list-tasks",
         "get-summary",
+        "read-snapshot",
         "read-events",
     )
     assert TEAM_API_WRITE_OPERATIONS == ("record-dispatch-result",)

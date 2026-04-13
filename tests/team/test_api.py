@@ -23,6 +23,7 @@ from ductor_bot.team.models import (
     TeamWorker,
 )
 from ductor_bot.team.state import TeamStateStore
+from ductor_bot.team.state.snapshot import TeamControlSnapshotManager
 from ductor_bot.workspace.paths import DuctorPaths
 
 
@@ -198,6 +199,172 @@ def test_read_events_filters_after_event_id_and_worker(tmp_path: Path) -> None:
     assert result["data"]["count"] == 1
     assert result["data"]["cursor"] == "evt-2"
     assert result["data"]["events"][0]["event_id"] == "evt-2"
+
+
+def test_read_snapshot_returns_existing_derived_snapshot(tmp_path: Path) -> None:
+    paths = DuctorPaths(ductor_home=tmp_path)
+    _seed_store(paths.workspace)
+    manager = TeamControlSnapshotManager(paths, state_root=paths.team_state_dir)
+    manager.write("alpha-team", generated_at="2026-04-10T00:00:00+00:00")
+
+    result = execute_team_api_operation(
+        "read-snapshot",
+        {"team_name": "alpha-team"},
+        paths=paths,
+    )
+
+    assert result["ok"] is True
+    assert result["operation"] == "read-snapshot"
+    snapshot = result["data"]["snapshot"]
+    assert snapshot["generated_at"] == "2026-04-10T00:00:00+00:00"
+    assert snapshot["team_name"] == "alpha-team"
+    assert snapshot["tasks"]["counts"]["in_progress"] == 1
+    assert "stale" not in result["data"]
+
+
+def test_read_snapshot_with_max_age_seconds_reports_fresh_status(tmp_path: Path) -> None:
+    paths = DuctorPaths(ductor_home=tmp_path)
+    _seed_store(paths.workspace)
+    manager = TeamControlSnapshotManager(paths, state_root=paths.team_state_dir)
+    manager.write("alpha-team", generated_at="2026-04-10T00:00:00+00:00")
+
+    with patch(
+        "ductor_bot.team.state.snapshot._resolve_status_check_time",
+        return_value=datetime(2026, 4, 10, 0, 4, 59, tzinfo=UTC),
+    ):
+        result = execute_team_api_operation(
+            "read-snapshot",
+            {"team_name": "alpha-team", "max_age_seconds": 300},
+            paths=paths,
+        )
+
+    assert result["ok"] is True
+    assert result["operation"] == "read-snapshot"
+    assert result["data"]["stale"] is False
+    assert result["data"]["snapshot"]["generated_at"] == "2026-04-10T00:00:00+00:00"
+
+
+def test_read_snapshot_with_max_age_seconds_reports_stale_status(tmp_path: Path) -> None:
+    paths = DuctorPaths(ductor_home=tmp_path)
+    _seed_store(paths.workspace)
+    manager = TeamControlSnapshotManager(paths, state_root=paths.team_state_dir)
+    manager.write("alpha-team", generated_at="2026-04-10T00:00:00+00:00")
+
+    with patch(
+        "ductor_bot.team.state.snapshot._resolve_status_check_time",
+        return_value=datetime(2026, 4, 10, 0, 5, 1, tzinfo=UTC),
+    ):
+        result = execute_team_api_operation(
+            "read-snapshot",
+            {"team_name": "alpha-team", "max_age_seconds": 300},
+            paths=paths,
+        )
+
+    assert result["ok"] is True
+    assert result["operation"] == "read-snapshot"
+    assert result["data"]["stale"] is True
+
+
+def test_read_snapshot_refresh_rebuilds_from_canonical_state(tmp_path: Path) -> None:
+    paths = DuctorPaths(ductor_home=tmp_path)
+    store = _seed_store(paths.workspace)
+    manager = TeamControlSnapshotManager(paths, state_root=paths.team_state_dir)
+    manager.write("alpha-team", generated_at="2026-04-10T00:00:00+00:00")
+    store.upsert_task(TeamTask(task_id="task-2", subject="Verify behavior", status="completed"))
+
+    stale = execute_team_api_operation(
+        "read-snapshot",
+        {"team_name": "alpha-team"},
+        paths=paths,
+    )
+    refreshed = execute_team_api_operation(
+        "read-snapshot",
+        {"team_name": "alpha-team", "refresh": True},
+        paths=paths,
+    )
+
+    assert stale["ok"] is True
+    assert stale["data"]["snapshot"]["tasks"]["counts"]["pending"] == 1
+    assert stale["data"]["snapshot"]["tasks"]["counts"]["completed"] == 0
+
+    assert refreshed["ok"] is True
+    assert refreshed["data"]["snapshot"]["tasks"]["counts"]["pending"] == 0
+    assert refreshed["data"]["snapshot"]["tasks"]["counts"]["completed"] == 1
+
+    persisted = manager.read("alpha-team")
+    assert persisted.tasks.counts["completed"] == 1
+
+
+def test_read_snapshot_refresh_with_max_age_seconds_evaluates_refreshed_snapshot(tmp_path: Path) -> None:
+    paths = DuctorPaths(ductor_home=tmp_path)
+    store = _seed_store(paths.workspace)
+    manager = TeamControlSnapshotManager(paths, state_root=paths.team_state_dir)
+    manager.write("alpha-team", generated_at="2026-04-10T00:00:00+00:00")
+    store.upsert_task(TeamTask(task_id="task-2", subject="Verify behavior", status="completed"))
+
+    with (
+        patch(
+            "ductor_bot.team.state.snapshot.utc_now",
+            return_value="2026-04-10T00:10:00+00:00",
+        ),
+        patch(
+            "ductor_bot.team.state.snapshot._resolve_status_check_time",
+            return_value=datetime(2026, 4, 10, 0, 10, 1, tzinfo=UTC),
+        ),
+    ):
+        refreshed = execute_team_api_operation(
+            "read-snapshot",
+            {"team_name": "alpha-team", "refresh": True, "max_age_seconds": 60},
+            paths=paths,
+        )
+
+    assert refreshed["ok"] is True
+    assert refreshed["data"]["stale"] is False
+    assert refreshed["data"]["snapshot"]["generated_at"] == "2026-04-10T00:10:00+00:00"
+    assert refreshed["data"]["snapshot"]["tasks"]["counts"]["completed"] == 1
+
+
+def test_read_snapshot_requires_boolean_refresh_when_provided(tmp_path: Path) -> None:
+    _seed_store(tmp_path)
+
+    result = execute_team_api_operation(
+        "read-snapshot",
+        {"team_name": "alpha-team", "refresh": "yes"},
+        state_root=tmp_path / "team-state",
+    )
+
+    assert result["ok"] is False
+    assert result["operation"] == "read-snapshot"
+    assert result["error"]["code"] == "invalid_request"
+
+
+def test_read_snapshot_rejects_invalid_max_age_seconds(tmp_path: Path) -> None:
+    _seed_store(tmp_path)
+
+    result = execute_team_api_operation(
+        "read-snapshot",
+        {"team_name": "alpha-team", "max_age_seconds": -1},
+        state_root=tmp_path / "team-state",
+    )
+
+    assert result["ok"] is False
+    assert result["operation"] == "read-snapshot"
+    assert result["error"]["code"] == "invalid_request"
+
+
+def test_read_snapshot_missing_file_returns_not_found_without_refresh(tmp_path: Path) -> None:
+    paths = DuctorPaths(ductor_home=tmp_path)
+    _seed_store(paths.workspace)
+
+    result = execute_team_api_operation(
+        "read-snapshot",
+        {"team_name": "alpha-team"},
+        paths=paths,
+    )
+
+    assert result["ok"] is False
+    assert result["operation"] == "read-snapshot"
+    assert result["error"]["code"] == "not_found"
 
 
 def test_unknown_operation_returns_structured_error(tmp_path: Path) -> None:

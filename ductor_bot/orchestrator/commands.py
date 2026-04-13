@@ -4,10 +4,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ductor_bot.cli.auth import check_all_auth
+from ductor_bot.history.catalog import (
+    HistoryCatalog,
+    render_search_result,
+    render_session_result,
+    render_task_result,
+)
 from ductor_bot.i18n import t
 from ductor_bot.infra.version import check_pypi, get_current_version
 from ductor_bot.orchestrator.registry import OrchestratorResult
@@ -24,6 +32,27 @@ if TYPE_CHECKING:
     from ductor_bot.session.key import SessionKey
 
 logger = logging.getLogger(__name__)
+
+_DEFAULT_HISTORY_LIMIT = 6
+_MAX_HISTORY_LIMIT = 20
+
+
+class HistoryRequestKind(StrEnum):
+    """Explicit /history request variants."""
+
+    TAIL = "tail"
+    SEARCH = "search"
+    TASK = "task"
+    SESSION = "session"
+
+
+@dataclass(frozen=True)
+class HistoryRequest:
+    """Parsed /history command request."""
+
+    kind: HistoryRequestKind
+    limit: int | None = None
+    value: str = ""
 
 
 # -- Command wrappers (registered by Orchestrator._register_commands) --
@@ -78,6 +107,21 @@ async def cmd_memory(orch: Orchestrator, _key: SessionKey, _text: str) -> Orches
             t("memory.filled_tip"),
         ),
     )
+
+
+async def cmd_history(orch: Orchestrator, key: SessionKey, text: str) -> OrchestratorResult:
+    """Handle /history [n|search <query>|task <task_id>|session <session_key>]."""
+    logger.info("History requested")
+    request = parse_history_request(text)
+    if request is None:
+        return OrchestratorResult(text=_history_usage_text())
+
+    if request.kind == HistoryRequestKind.TAIL:
+        rendered = await _render_history_tail(orch, key, request.limit or _DEFAULT_HISTORY_LIMIT)
+        return OrchestratorResult(text=rendered)
+
+    rendered = await _render_indexed_history(orch, request)
+    return OrchestratorResult(text=rendered)
 
 
 async def cmd_sessions(orch: Orchestrator, key: SessionKey, _text: str) -> OrchestratorResult:
@@ -253,6 +297,107 @@ async def cmd_diagnose(orch: Orchestrator, _key: SessionKey, _text: str) -> Orch
 
 
 # -- Helpers ------------------------------------------------------------------
+
+
+def _parse_history_limit(text: str) -> int | None:
+    """Parse the optional /history limit."""
+    request = parse_history_request(text)
+    if request is None or request.kind != HistoryRequestKind.TAIL:
+        return None
+    return request.limit or _DEFAULT_HISTORY_LIMIT
+
+
+def parse_history_request(text: str) -> HistoryRequest | None:
+    """Parse explicit /history read variants."""
+    parts = text.strip().split(None, 1)
+    if len(parts) < 2 or not parts[1].strip():
+        return HistoryRequest(kind=HistoryRequestKind.TAIL, limit=_DEFAULT_HISTORY_LIMIT)
+
+    arg = parts[1].strip()
+    head, _, tail = arg.partition(" ")
+    subcommand = head.lower()
+    indexed_request = _parse_indexed_history_request(subcommand, tail.strip())
+    if indexed_request is not None:
+        return indexed_request
+    if subcommand in {
+        HistoryRequestKind.SEARCH,
+        HistoryRequestKind.TASK,
+        HistoryRequestKind.SESSION,
+    }:
+        return None
+
+    try:
+        limit = int(arg)
+    except ValueError:
+        return None
+    if limit < 1 or limit > _MAX_HISTORY_LIMIT:
+        return None
+    return HistoryRequest(kind=HistoryRequestKind.TAIL, limit=limit)
+
+
+def _history_usage_text() -> str:
+    return (
+        "Usage: /history [n]\n"
+        "       /history search <query>\n"
+        "       /history task <task_id>\n"
+        "       /history session <session_key>\n"
+        "Choose a number from 1 to 20."
+    )
+
+
+async def _render_history_tail(orch: Orchestrator, key: SessionKey, limit: int) -> str:
+    turns = await orch.read_frontstage_history(key, limit=limit)
+    if not turns:
+        return "No visible history yet."
+
+    body = "\n".join(
+        f"{idx}. [{turn.role}] {_history_preview(turn.visible_content) or '(attachment only)'}"
+        f"{_history_attachment_suffix(turn)}"
+        for idx, turn in enumerate(turns, start=1)
+    )
+    header = f"**Recent Visible History** ({len(turns)} turns)"
+    return fmt(header, SEP, body)
+
+
+async def _render_indexed_history(orch: Orchestrator, request: HistoryRequest) -> str:
+    catalog = HistoryCatalog(orch.history_index)
+    try:
+        if request.kind == HistoryRequestKind.SEARCH:
+            return await asyncio.to_thread(render_search_result, catalog.search(request.value))
+        if request.kind == HistoryRequestKind.TASK:
+            return await asyncio.to_thread(render_task_result, catalog.task(request.value))
+        return await asyncio.to_thread(render_session_result, catalog.session(request.value))
+    except ValueError:
+        return _history_usage_text()
+
+
+def _parse_indexed_history_request(subcommand: str, value: str) -> HistoryRequest | None:
+    if not value:
+        return None
+    if subcommand == HistoryRequestKind.SEARCH:
+        return HistoryRequest(kind=HistoryRequestKind.SEARCH, value=value)
+    if subcommand == HistoryRequestKind.TASK:
+        return HistoryRequest(kind=HistoryRequestKind.TASK, value=value)
+    if subcommand == HistoryRequestKind.SESSION:
+        return HistoryRequest(kind=HistoryRequestKind.SESSION, value=value)
+    return None
+
+
+def _history_preview(text: str, *, limit: int = 160) -> str:
+    """Collapse one visible turn into a bounded single-line preview."""
+    compact = " ".join(text.split())
+    if len(compact) <= limit:
+        return compact
+    return compact[: limit - 3].rstrip() + "..."
+
+
+def _history_attachment_suffix(turn: object) -> str:
+    """Return a compact attachment suffix for one transcript turn."""
+    attachments = getattr(turn, "attachments", [])
+    if not attachments:
+        return ""
+    labels = [attachment.label or attachment.path or attachment.kind for attachment in attachments]
+    return f" [attachments: {', '.join(labels)}]"
 
 
 def _build_agent_health_block(orch: Orchestrator) -> str:

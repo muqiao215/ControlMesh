@@ -6,7 +6,7 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -23,6 +23,8 @@ from ductor_bot.team.models import (
 from ductor_bot.team.runtime_attachment import TeamRuntimeAttachmentManager
 from ductor_bot.team.runtime_control import TeamRuntimeController
 from ductor_bot.team.state import TeamStateStore
+from ductor_bot.team.state.snapshot import TeamControlSnapshotManager
+from ductor_bot.workspace.paths import DuctorPaths
 
 
 def _seed_store(tmp_path: Path) -> tuple[Path, TeamStateStore]:
@@ -69,6 +71,14 @@ def _make_orchestrator(path: Path) -> SimpleNamespace:
 
     orchestrator.end_named_session = AsyncMock(side_effect=_end_named_session)
     return orchestrator
+
+
+def _paths(tmp_path: Path) -> DuctorPaths:
+    return DuctorPaths(
+        ductor_home=tmp_path / ".ductor",
+        home_defaults=Path("/opt/ductor/workspace"),
+        framework_root=Path("/opt/ductor"),
+    )
 
 
 def _seed_named_session(
@@ -581,6 +591,175 @@ async def test_recover_live_runtimes_invalidates_stale_owner_without_keepalive(
     assert runtime.status == "lost"
     assert runtime.health_reason == "runtime owner changed"
     assert controller._keepalive_tasks == {}
+    await controller.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_recover_live_runtimes_skips_team_with_fresh_snapshot_and_no_live_runtimes(
+    tmp_path: Path,
+) -> None:
+    state_root, _store = _seed_store(tmp_path)
+    paths = _paths(tmp_path)
+    named_sessions_path = tmp_path / "named_sessions.json"
+    TeamControlSnapshotManager(paths, state_root=state_root).write(
+        "alpha-team",
+        generated_at="2026-04-10T00:00:00+00:00",
+    )
+    orchestrator = _make_orchestrator(named_sessions_path)
+
+    with (
+        patch("ductor_bot.team.runtime_control.resolve_paths", return_value=paths),
+        patch(
+            "ductor_bot.team.runtime_control._utc_now",
+            return_value=datetime(2026, 4, 10, 0, 0, 30, tzinfo=UTC),
+        ),
+        patch(
+            "ductor_bot.team.runtime_control.default_runtime_recovery_snapshot_max_age_seconds",
+            return_value=300,
+        ),
+        patch.object(
+            TeamStateStore,
+            "read_manifest",
+            side_effect=AssertionError("canonical recovery path should be skipped"),
+        ),
+    ):
+        controller = TeamRuntimeController(
+            orchestrator=orchestrator,
+            team_state_root=state_root,
+            keepalive_interval_seconds=0.01,
+        )
+        with patch.object(
+            controller._snapshot_recovery_advisor,
+            "refresh_and_evaluate",
+            wraps=controller._snapshot_recovery_advisor.refresh_and_evaluate,
+        ) as advice_mock:
+            recovered = await controller.recover_live_runtimes()
+
+    assert recovered == []
+    assert advice_mock.call_args.kwargs["max_age_seconds"] == 300
+    await controller.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_recover_live_runtimes_missing_snapshot_refreshes_then_recovers_live_runtime(
+    tmp_path: Path,
+) -> None:
+    state_root, store = _seed_store(tmp_path)
+    paths = _paths(tmp_path)
+    named_sessions_path = tmp_path / "named_sessions.json"
+    _seed_named_session(
+        named_sessions_path,
+        name="ia-worker-1",
+        chat_id=21,
+        session_id="sess-worker-1",
+    )
+    now = datetime.now(UTC)
+    store.put_worker_runtime(
+        TeamWorkerRuntimeState(
+            worker="worker-1",
+            status="ready",
+            lease_id="lease-1",
+            lease_expires_at=(now + timedelta(seconds=30)).isoformat(),
+            heartbeat_at=(now - timedelta(seconds=10)).isoformat(),
+            attachment_type="named_session",
+            attachment_name="ia-worker-1",
+            attachment_transport="tg",
+            attachment_chat_id=21,
+            attachment_session_id="sess-worker-1",
+            attached_at=(now - timedelta(minutes=1)).isoformat(),
+            started_at=(now - timedelta(minutes=1)).isoformat(),
+        )
+    )
+    orchestrator = _make_orchestrator(named_sessions_path)
+
+    with (
+        patch("ductor_bot.team.runtime_control.resolve_paths", return_value=paths),
+        patch(
+            "ductor_bot.team.runtime_control._utc_now",
+            return_value=datetime(2026, 4, 10, 0, 1, 30, tzinfo=UTC),
+        ),
+        patch(
+            "ductor_bot.team.state.snapshot.utc_now",
+            return_value="2026-04-10T00:01:00+00:00",
+        ),
+    ):
+        controller = TeamRuntimeController(
+            orchestrator=orchestrator,
+            team_state_root=state_root,
+            keepalive_interval_seconds=0.01,
+        )
+        with patch.object(controller, "_recover_runtime", wraps=controller._recover_runtime) as recover_mock:
+            recovered = await controller.recover_live_runtimes()
+
+    runtime = store.get_worker_runtime("worker-1")
+    snapshot = TeamControlSnapshotManager(paths, state_root=state_root).read("alpha-team")
+
+    assert recovered == [runtime]
+    assert recover_mock.call_count == 1
+    assert snapshot.runtimes.counts["ready"] == 1
+    await controller.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_recover_live_runtimes_stale_snapshot_refreshes_before_canonical_recovery(
+    tmp_path: Path,
+) -> None:
+    state_root, store = _seed_store(tmp_path)
+    paths = _paths(tmp_path)
+    named_sessions_path = tmp_path / "named_sessions.json"
+    manager = TeamControlSnapshotManager(paths, state_root=state_root)
+    manager.write("alpha-team", generated_at="2026-04-10T00:00:00+00:00")
+    _seed_named_session(
+        named_sessions_path,
+        name="ia-worker-1",
+        chat_id=21,
+        session_id="sess-worker-1",
+    )
+    now = datetime.now(UTC)
+    store.put_worker_runtime(
+        TeamWorkerRuntimeState(
+            worker="worker-1",
+            status="ready",
+            lease_id="lease-1",
+            lease_expires_at=(now + timedelta(seconds=30)).isoformat(),
+            heartbeat_at=(now - timedelta(seconds=10)).isoformat(),
+            attachment_type="named_session",
+            attachment_name="ia-worker-1",
+            attachment_transport="tg",
+            attachment_chat_id=21,
+            attachment_session_id="sess-worker-1",
+            attached_at=(now - timedelta(minutes=1)).isoformat(),
+            started_at=(now - timedelta(minutes=1)).isoformat(),
+        )
+    )
+    orchestrator = _make_orchestrator(named_sessions_path)
+
+    with (
+        patch("ductor_bot.team.runtime_control.resolve_paths", return_value=paths),
+        patch(
+            "ductor_bot.team.runtime_control._utc_now",
+            return_value=datetime(2026, 4, 10, 0, 10, 30, tzinfo=UTC),
+        ),
+        patch(
+            "ductor_bot.team.state.snapshot.utc_now",
+            return_value="2026-04-10T00:10:00+00:00",
+        ),
+    ):
+        controller = TeamRuntimeController(
+            orchestrator=orchestrator,
+            team_state_root=state_root,
+            keepalive_interval_seconds=0.01,
+        )
+        with patch.object(controller, "_recover_runtime", wraps=controller._recover_runtime) as recover_mock:
+            recovered = await controller.recover_live_runtimes()
+
+    runtime = store.get_worker_runtime("worker-1")
+    snapshot = manager.read("alpha-team")
+
+    assert recovered == [runtime]
+    assert recover_mock.call_count == 1
+    assert snapshot.generated_at == "2026-04-10T00:10:30+00:00"
+    assert snapshot.runtimes.counts["ready"] == 1
     await controller.shutdown()
 
 

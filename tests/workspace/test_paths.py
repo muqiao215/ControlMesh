@@ -36,6 +36,43 @@ def test_sessions_path() -> None:
     assert paths.sessions_path == Path("/home/test/.ductor/sessions.json")
 
 
+def test_transcripts_dir() -> None:
+    paths = DuctorPaths(
+        ductor_home=Path("/home/test/.ductor"),
+        home_defaults=Path("/opt/ductor/workspace"),
+        framework_root=Path("/opt/ductor"),
+    )
+    assert paths.transcripts_dir == Path("/home/test/.ductor/transcripts")
+
+
+def test_runtime_events_dir() -> None:
+    paths = DuctorPaths(
+        ductor_home=Path("/home/test/.ductor"),
+        home_defaults=Path("/opt/ductor/workspace"),
+        framework_root=Path("/opt/ductor"),
+    )
+    assert paths.runtime_events_dir == Path("/home/test/.ductor/runtime-events")
+    assert paths.runtime_events_dir != paths.transcripts_dir
+
+
+def test_history_index_path() -> None:
+    paths = DuctorPaths(
+        ductor_home=Path("/home/test/.ductor"),
+        home_defaults=Path("/opt/ductor/workspace"),
+        framework_root=Path("/opt/ductor"),
+    )
+    assert paths.history_index_path == Path("/home/test/.ductor/workspace/.history/index.sqlite3")
+
+
+def test_team_control_snapshots_dir() -> None:
+    paths = DuctorPaths(
+        ductor_home=Path("/home/test/.ductor"),
+        home_defaults=Path("/opt/ductor/workspace"),
+        framework_root=Path("/opt/ductor"),
+    )
+    assert paths.team_control_snapshots_dir == Path("/home/test/.ductor/workspace/.team-snapshots")
+
+
 def test_logs_dir() -> None:
     paths = DuctorPaths(
         ductor_home=Path("/home/test/.ductor"),

@@ -1,0 +1,22 @@
+task_id: replace_me
+mode: implementation
+scope: replace_me
+status: candidate_complete
+
+evidence:
+  - type: test_output
+    file: logs/replace_me.log
+
+findings:
+  summary: replace with short factual summary
+  probable_cause: null
+  reproducibility: "1/1"
+
+proposed_outcome: pass_with_notes
+
+soft_scores:
+  correctness: 8
+  boundary_discipline: 9
+  evidence_quality: 8
+  diagnosability: 8
+  trajectory_hygiene: 9

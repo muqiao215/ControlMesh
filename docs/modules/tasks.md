@@ -14,6 +14,14 @@ Delegated background task system (`TaskHub`) for long-running autonomous work.
 
 Run long work asynchronously while keeping parent chat responsive.
 
+In ControlMesh mode, task agents are execution workers, not judges.
+They should be prompted with the pure automatic worker contract in:
+
+- `plans/tasks/_template/worker_prompt.md`
+
+They may produce task-local evidence and `proposed_*`, but they do not decide final outcomes or mutate canonical state.
+They also do not ask the parent agent for policy or adjudication decisions in pure automatic mode.
+
 High-level flow:
 
 1. create (`/tasks/create`)

@@ -12,6 +12,7 @@ from ductor_bot.background import (
     BackgroundSubmit,
     BackgroundTask,
 )
+from ductor_bot.bus.envelope import Envelope, Origin
 from ductor_bot.cli.process_registry import ProcessRegistry
 from ductor_bot.cli.service import CLIService, CLIServiceConfig
 from ductor_bot.config import AgentConfig
@@ -24,11 +25,21 @@ from ductor_bot.errors import (
     WebhookError,
     WorkspaceError,
 )
+from ductor_bot.files.tags import (
+    FILE_PATH_RE,
+    classify_mime,
+    extract_file_paths,
+    guess_mime,
+    path_from_file_tag,
+)
+from ductor_bot.history import TranscriptAttachment, TranscriptStore, TranscriptTurn
+from ductor_bot.history.index import HistoryIndex
 from ductor_bot.infra.docker import DockerManager
 from ductor_bot.infra.inflight import InflightTracker
 from ductor_bot.orchestrator.commands import (
     cmd_cron,
     cmd_diagnose,
+    cmd_history,
     cmd_memory,
     cmd_model,
     cmd_reset,
@@ -127,6 +138,8 @@ class Orchestrator:
         self._providers = ProviderManager(config)
         self._sessions = SessionManager(paths.sessions_path, config)
         self._named_sessions = NamedSessionRegistry(paths.named_sessions_path)
+        self._transcripts = TranscriptStore(paths)
+        self._history_index = HistoryIndex(paths)
         self._process_registry = ProcessRegistry()
         self._cli_service = CLIService(
             config=CLIServiceConfig(
@@ -206,6 +219,11 @@ class Orchestrator:
     def named_sessions(self) -> NamedSessionRegistry:
         """Public access to the named session registry."""
         return self._named_sessions
+
+    @property
+    def history_index(self) -> HistoryIndex:
+        """Public access to the derived history index."""
+        return self._history_index
 
     @property
     def available_providers(self) -> frozenset[str]:
@@ -301,20 +319,112 @@ class Orchestrator:
         self._process_registry.clear_abort(dispatch.key.chat_id)
         logger.info("Message received text=%s", dispatch.cmd[:80])
 
+        should_record_history = not Orchestrator._is_history_read_command(dispatch.cmd)
+        if should_record_history:
+            await self._record_frontstage_user_turn(dispatch.key, dispatch.text)
+
         patterns = detect_suspicious_patterns(dispatch.text)
         if patterns:
             logger.warning("Suspicious input patterns: %s", ", ".join(patterns))
 
         try:
-            return await self._route_message(dispatch)
+            result = await self._route_message(dispatch)
         except asyncio.CancelledError:
             raise
         except (CLIError, StreamError, SessionError, CronError, WebhookError, WorkspaceError):
             logger.exception("Domain error in handle_message")
-            return OrchestratorResult(text="An internal error occurred. Please try again.")
+            result = OrchestratorResult(text="An internal error occurred. Please try again.")
         except (OSError, RuntimeError, ValueError, TypeError, KeyError):
             logger.exception("Unexpected error in handle_message")
-            return OrchestratorResult(text="An internal error occurred. Please try again.")
+            result = OrchestratorResult(text="An internal error occurred. Please try again.")
+
+        if should_record_history:
+            await self._record_frontstage_assistant_turn(dispatch.key, result)
+        return result
+
+    @staticmethod
+    def _is_history_read_command(cmd: str) -> bool:
+        """Return True when *cmd* is the transcript read surface."""
+        normalized = cmd.strip().lower()
+        if not normalized:
+            return False
+        head, *tail = normalized.split(None, 1)
+        head = head.split("@", 1)[0]
+        rebuilt = head if not tail else f"{head} {tail[0]}"
+        return rebuilt == "/history" or rebuilt.startswith("/history ")
+
+    async def _record_frontstage_user_turn(self, key: SessionKey, text: str) -> None:
+        """Persist the user's visible frontstage turn."""
+        if not text.strip():
+            return
+        turn = TranscriptTurn(
+            session_key=key.storage_key,
+            surface_session_id=key.storage_key,
+            role="user",
+            visible_content=text,
+            source="normal_chat",
+            transport=key.transport,
+            chat_id=key.chat_id,
+            topic_id=key.topic_id,
+        )
+        await asyncio.to_thread(self._transcripts.append_turn, turn)
+
+    async def _record_frontstage_assistant_turn(
+        self, key: SessionKey, result: OrchestratorResult
+    ) -> None:
+        """Persist the final visible frontstage result turn."""
+        content, attachments = self._normalize_transcript_content(result.text)
+        if not content and not attachments:
+            return
+        turn = TranscriptTurn(
+            session_key=key.storage_key,
+            surface_session_id=key.storage_key,
+            role="assistant",
+            visible_content=content,
+            attachments=attachments,
+            source="normal_chat",
+            transport=key.transport,
+            chat_id=key.chat_id,
+            topic_id=key.topic_id,
+        )
+        await asyncio.to_thread(self._transcripts.append_turn, turn)
+
+    async def record_frontstage_delivery(self, envelope: Envelope) -> None:
+        """Persist visible non-command deliveries that belong in frontstage history."""
+        source = self._frontstage_delivery_source(envelope.origin)
+        if source is None:
+            return
+
+        content, attachments = self._normalize_transcript_content(envelope.result_text)
+        if not content and not attachments:
+            return
+
+        key = SessionKey(
+            transport=envelope.transport,
+            chat_id=envelope.chat_id,
+            topic_id=envelope.topic_id,
+        )
+        turn = TranscriptTurn(
+            session_key=key.storage_key,
+            surface_session_id=key.storage_key,
+            role="assistant",
+            visible_content=content,
+            attachments=attachments,
+            source=source,
+            transport=key.transport,
+            chat_id=key.chat_id,
+            topic_id=key.topic_id,
+        )
+        await asyncio.to_thread(self._transcripts.append_turn, turn)
+
+    async def read_frontstage_history(
+        self,
+        key: SessionKey,
+        *,
+        limit: int = 20,
+    ) -> list[TranscriptTurn]:
+        """Read recent visible transcript turns for a frontstage session."""
+        return await asyncio.to_thread(self._transcripts.read_recent, key, limit=limit)
 
     async def _route_message(self, dispatch: _MessageDispatch) -> OrchestratorResult:
         result = await self._command_registry.dispatch(
@@ -379,6 +489,8 @@ class Orchestrator:
         reg.register_async("/model", cmd_model)
         reg.register_async("/model ", cmd_model)
         reg.register_async("/memory", cmd_memory)
+        reg.register_async("/history", cmd_history)
+        reg.register_async("/history ", cmd_history)
         reg.register_async("/cron", cmd_cron)
         reg.register_async("/diagnose", cmd_diagnose)
         reg.register_async("/upgrade", cmd_upgrade)
@@ -463,6 +575,41 @@ class Orchestrator:
         """Wire all observer result callbacks to the message bus."""
         self._observers.wire_to_bus(bus, wake_handler=wake_handler)
         bus.set_injector(self)
+        bus.set_pre_deliver_hook(self.record_frontstage_delivery)
+
+    @staticmethod
+    def _frontstage_delivery_source(origin: Origin) -> str | None:
+        """Map bus origins to transcript-worthy assistant delivery sources."""
+        return {
+            Origin.BACKGROUND: "background_session_result",
+            Origin.INTERAGENT: "foreground_interagent_result",
+            Origin.TASK_RESULT: "foreground_task_result",
+        }.get(origin)
+
+    @staticmethod
+    def _normalize_transcript_content(
+        text: str,
+    ) -> tuple[str, list[TranscriptAttachment]]:
+        """Split visible text from attached file metadata for transcript storage."""
+        attachments = [
+            Orchestrator._attachment_from_tag(file_tag) for file_tag in extract_file_paths(text)
+        ]
+        content = FILE_PATH_RE.sub("", text).strip()
+        return content, attachments
+
+    @staticmethod
+    def _attachment_from_tag(file_tag: str) -> TranscriptAttachment:
+        """Convert one ``<file:...>`` tag into normalized transcript metadata."""
+        path = path_from_file_tag(file_tag)
+        try:
+            mime = guess_mime(path)
+        except OSError:
+            mime = "application/octet-stream"
+        return TranscriptAttachment(
+            kind=classify_mime(mime),
+            label=path.name,
+            path=str(path),
+        )
 
     async def handle_heartbeat(
         self,

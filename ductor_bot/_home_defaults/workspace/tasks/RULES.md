@@ -15,3 +15,7 @@ Use the tools in `tools/task_tools/`:
 - **Resume**: `python3 tools/task_tools/resume_task.py TASK_ID "follow-up"`
 
 See `tools/task_tools/CLAUDE/GEMINI/AGENTS.md` for full documentation.
+
+In a file-driven harness, each task is an execution worker, not a controller.
+Workers should write only task-local evidence and optional `proposed_*` files.
+In pure automatic mode, workers should not ask the parent agent for adjudication.

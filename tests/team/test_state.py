@@ -24,7 +24,16 @@ from ductor_bot.team.state import TeamStateStore
 
 @pytest.fixture
 def store(tmp_path: Path) -> TeamStateStore:
-    return TeamStateStore(tmp_path / "team-state", "alpha-team")
+    store = TeamStateStore(tmp_path / "team-state", "alpha-team")
+    store.write_manifest(
+        TeamManifest(
+            team_name="alpha-team",
+            task_description="Coordinate state primitives",
+            leader=TeamLeader(agent_name="main"),
+            workers=[TeamWorker(name="worker-1", role="executor")],
+        )
+    )
+    return store
 
 
 def _iso(dt: datetime) -> str:

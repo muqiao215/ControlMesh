@@ -9,6 +9,8 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
+from ductor_bot.runtime import RuntimeEvent, RuntimeEventStore
+from ductor_bot.session import SessionKey
 from ductor_bot.tasks.models import TaskEntry, TaskInFlight, TaskResult, TaskSubmit
 
 if TYPE_CHECKING:
@@ -83,6 +85,7 @@ class TaskHub:
         self._question_handlers: dict[str, QuestionHandler] = {}
         self._agent_chat_ids: dict[str, int] = {}
         self._maintenance_task: asyncio.Task[None] | None = None
+        self._runtime_events = RuntimeEventStore(paths)
 
     def start_maintenance(self) -> None:
         """Start periodic orphan cleanup (call once after bot startup)."""
@@ -151,6 +154,7 @@ class TaskHub:
         entry = self._registry.create(
             submit, provider, model, thinking=thinking, tasks_dir=agent_tasks_dir
         )
+        self._append_runtime_lifecycle_event(entry, "task.lifecycle.created")
 
         # Build prompt with mandatory suffix
         taskmemory = self._registry.taskmemory_path(entry.task_id)
@@ -194,6 +198,9 @@ class TaskHub:
             result_preview="",
             last_question="",
         )
+        refreshed = self._registry.get(task_id)
+        if refreshed is not None:
+            self._append_runtime_lifecycle_event(refreshed, "task.lifecycle.resumed")
 
         # Append a short system reminder so the task agent remembers how to
         # communicate (ask_parent, TASKMEMORY, no direct user access).
@@ -254,6 +261,13 @@ class TaskHub:
             question_count=entry.question_count + 1,
             last_question=question[:200],
         )
+        refreshed = self._registry.get(task_id)
+        if refreshed is not None:
+            self._append_runtime_lifecycle_event(
+                refreshed,
+                "task.lifecycle.waiting",
+                status="waiting",
+            )
 
         # Mark in-flight task so _run() uses "waiting" instead of "done"
         inflight = self._in_flight.get(task_id)
@@ -376,6 +390,7 @@ class TaskHub:
         t0 = time.monotonic()
         try:
             timeout = self._config.timeout_seconds
+            self._append_runtime_lifecycle_event(entry, "task.lifecycle.started")
 
             request = AgentRequest(
                 prompt=prompt,
@@ -399,24 +414,14 @@ class TaskHub:
             response = await cli.execute(request)
 
             elapsed = time.monotonic() - t0
-            if response.timed_out:
-                status = "failed"
-                error = f"Timeout after {timeout:.0f}s"
-            elif response.is_error:
-                status = "failed"
-                error = response.result or "CLI error"
-            else:
-                # If the task asked a question during this run, mark as waiting
-                inflight = self._in_flight.get(entry.task_id)
-                status = "waiting" if inflight and inflight.has_pending_question else "done"
-                error = ""
+            status, error = self._response_status(entry, response, timeout=timeout)
 
             # Accumulate turns (resume adds to previous count)
             total_turns = entry.num_turns + response.num_turns
 
-            self._registry.update_status(
+            self._update_task_status(
                 entry.task_id,
-                status,
+                status=status,
                 session_id=response.session_id or "",
                 completed_at=time.time(),
                 elapsed_seconds=elapsed,
@@ -462,9 +467,9 @@ class TaskHub:
 
         except asyncio.CancelledError:
             elapsed = time.monotonic() - t0
-            self._registry.update_status(
+            self._update_task_status(
                 entry.task_id,
-                "cancelled",
+                status="cancelled",
                 completed_at=time.time(),
                 elapsed_seconds=elapsed,
             )
@@ -491,9 +496,9 @@ class TaskHub:
             logger.exception("Task failed id=%s name='%s'", entry.task_id, entry.name)
             elapsed = time.monotonic() - t0
             error_msg = "Internal error (check logs)"
-            self._registry.update_status(
+            self._update_task_status(
                 entry.task_id,
-                "failed",
+                status="failed",
                 completed_at=time.time(),
                 elapsed_seconds=elapsed,
                 error=error_msg,
@@ -535,6 +540,52 @@ class TaskHub:
                 result.task_id,
                 result.parent_agent,
             )
+
+    def _append_runtime_lifecycle_event(
+        self,
+        entry: TaskEntry,
+        event_type: str,
+        *,
+        status: str | None = None,
+    ) -> None:
+        """Write the bounded task lifecycle events into the runtime event substrate."""
+        key = SessionKey.telegram(entry.chat_id, entry.thread_id)
+        payload: dict[str, str] = {"task_id": entry.task_id}
+        if status is not None:
+            payload["status"] = status
+        self._runtime_events.append_event(
+            RuntimeEvent(
+                session_key=key.storage_key,
+                event_type=event_type,
+                payload=payload,
+                transport=key.transport,
+                chat_id=key.chat_id,
+                topic_id=key.topic_id,
+            )
+        )
+
+    def _response_status(self, entry: TaskEntry, response: object, *, timeout: float) -> tuple[str, str]:
+        if response.timed_out:
+            return "failed", f"Timeout after {timeout:.0f}s"
+        if response.is_error:
+            return "failed", response.result or "CLI error"
+
+        # If the task asked a question during this run, mark as waiting.
+        inflight = self._in_flight.get(entry.task_id)
+        if inflight and inflight.has_pending_question:
+            return "waiting", ""
+        return "done", ""
+
+    def _update_task_status(self, task_id: str, *, status: str, **kwargs: object) -> None:
+        self._registry.update_status(task_id, status, **kwargs)
+        if status in _FINISHED:
+            entry = self._registry.get(task_id)
+            if entry is not None:
+                self._append_runtime_lifecycle_event(
+                    entry,
+                    "task.lifecycle.terminal",
+                    status=status,
+                )
 
 
 _RESULT_PREVIEW_LEN = 200

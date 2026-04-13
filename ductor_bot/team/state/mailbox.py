@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ductor_bot.infra.json_store import atomic_json_save, load_json
+from ductor_bot.team.contracts import validate_mailbox_message_creation
 from ductor_bot.team.models import TeamMailboxMessage
 from ductor_bot.team.state.base import TeamStatePaths, utc_now
 
@@ -38,6 +39,7 @@ def list_mailbox_messages(paths: TeamStatePaths, *, status: str | None = None) -
 
 def create_mailbox_message(paths: TeamStatePaths, message: TeamMailboxMessage) -> TeamMailboxMessage:
     """Create a new mailbox message."""
+    validate_mailbox_message_creation(message)
     messages = _load(paths)
     if any(existing.message_id == message.message_id for existing in messages):
         msg = f"mailbox message '{message.message_id}' already exists"
