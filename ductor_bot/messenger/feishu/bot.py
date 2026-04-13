@@ -23,6 +23,7 @@ from ductor_bot.messenger.notifications import NotificationService
 from ductor_bot.session.key import SessionKey
 
 if TYPE_CHECKING:
+    from ductor_bot.messenger.feishu.inbound import FeishuInboundServer
     from ductor_bot.multiagent.bus import AsyncInterAgentResult
     from ductor_bot.orchestrator.core import Orchestrator
     from ductor_bot.tasks.models import TaskResult
@@ -87,6 +88,7 @@ class FeishuBot:
         from ductor_bot.messenger.feishu.transport import FeishuTransport
 
         self._id_map = FeishuIdMap(store_path)
+        self._inbound_server: FeishuInboundServer | None = None
         self._notification_service: NotificationService = FeishuNotificationService(self)
         self._bus.register_transport(FeishuTransport(self))
 
@@ -118,6 +120,13 @@ class FeishuBot:
     def file_roots(self, paths: DuctorPaths) -> list[Path] | None:
         return resolve_allowed_roots(self._config.file_access, paths.workspace)
 
+    async def start_inbound_listener(self) -> None:
+        if self._inbound_server is None:
+            from ductor_bot.messenger.feishu.inbound import FeishuInboundServer
+
+            self._inbound_server = FeishuInboundServer(self._config.feishu, self.handle_incoming_event)
+        await self._inbound_server.start()
+
     async def run(self) -> int:
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession()
@@ -140,11 +149,16 @@ class FeishuBot:
             return
         self._shutdown_started = True
 
+        if self._inbound_server is not None:
+            await self._inbound_server.stop()
+
         if self._session is not None and not self._session.closed:
             await self._session.close()
 
         if self._orchestrator is not None:
-            await self._orchestrator.shutdown()
+            shutdown = getattr(self._orchestrator, "shutdown", None)
+            if shutdown is not None:
+                await shutdown()
 
     async def handle_incoming_event(self, payload: dict[str, Any]) -> None:
         message = self._parse_incoming_text(payload)

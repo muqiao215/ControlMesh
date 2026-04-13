@@ -19,6 +19,8 @@ async def run_feishu_startup(bot: FeishuBot) -> None:
         bot._orchestrator = await Orchestrator.create(bot._config, agent_name=bot._agent_name)
         bot._orchestrator.wire_observers_to_bus(bot._bus)
 
+    await bot.start_inbound_listener()
+
     logger.info("Feishu bot online: app_id=%s", bot._config.feishu.app_id)
 
     for hook in bot._startup_hooks:

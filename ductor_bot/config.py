@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 
 from ductor_bot.gateways.config import GatewayDispatchConfig
 
@@ -181,10 +181,50 @@ class FeishuConfig(BaseModel):
     app_id: str = ""
     app_secret: str = ""
     domain: str = "https://open.feishu.cn"
+    listener_host: str = Field(
+        default="127.0.0.1",
+        validation_alias=AliasChoices("listener_host", "callback_host"),
+    )
+    listener_port: int = Field(
+        default=8765,
+        validation_alias=AliasChoices("listener_port", "callback_port"),
+    )
+    listener_path: str = Field(
+        default="/feishu/events",
+        validation_alias=AliasChoices("listener_path", "callback_path"),
+    )
+    listener_max_body_bytes: int = Field(
+        default=262144,
+        validation_alias=AliasChoices("listener_max_body_bytes", "callback_max_body_bytes"),
+    )
     allow_from: list[str] = Field(default_factory=list)
     group_reply_all: bool = False
     thread_isolation: bool = False
     reply_to_trigger: bool = True
+
+    @field_validator("listener_path")
+    @classmethod
+    def _validate_listener_path(cls, value: str) -> str:
+        if not value.startswith("/"):
+            msg = "Feishu listener_path must start with '/'"
+            raise ValueError(msg)
+        return value
+
+    @property
+    def callback_host(self) -> str:
+        return self.listener_host
+
+    @property
+    def callback_port(self) -> int:
+        return self.listener_port
+
+    @property
+    def callback_path(self) -> str:
+        return self.listener_path
+
+    @property
+    def callback_max_body_bytes(self) -> int:
+        return self.listener_max_body_bytes
 
     @model_validator(mode="after")
     def _validate_cut1_shape(self) -> FeishuConfig:

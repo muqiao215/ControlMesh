@@ -14,6 +14,7 @@ class TestFeishuStartup:
         bot._config = MagicMock()
         bot._agent_name = "main"
         bot._bus = MagicMock()
+        bot.start_inbound_listener = AsyncMock()
         bot._startup_hooks = [AsyncMock()]
 
         orch = MagicMock()
@@ -27,6 +28,7 @@ class TestFeishuStartup:
 
         assert bot._orchestrator is orch
         orch.wire_observers_to_bus.assert_called_once_with(bot._bus)
+        bot.start_inbound_listener.assert_awaited_once()
         bot._startup_hooks[0].assert_awaited_once()
 
     async def test_secondary_startup_skips_orchestrator_creation(self) -> None:
@@ -35,6 +37,7 @@ class TestFeishuStartup:
         bot._config = MagicMock()
         bot._agent_name = "secondary"
         bot._bus = MagicMock()
+        bot.start_inbound_listener = AsyncMock()
         bot._startup_hooks = [AsyncMock()]
 
         with patch(
@@ -44,4 +47,5 @@ class TestFeishuStartup:
             await run_feishu_startup(bot)
 
         create.assert_not_awaited()
+        bot.start_inbound_listener.assert_awaited_once()
         bot._startup_hooks[0].assert_awaited_once()
