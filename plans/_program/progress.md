@@ -5,7 +5,7 @@ Harness skeleton, doctrine docs, history cut 1 text-only transcript substrate, h
 prod-ready
 
 # Next Action
-Open a separate `ControlMesh Release Operations` line for post-release observation, rollback discipline, and change control. Do not extend the certification closure in place.
+Execute the newly opened `ControlMesh Release Operations` line for post-release observation, rollback discipline, and change control. Do not extend the certification closure in place.
 
 # Latest Checkpoint
 checkpoint-prod-cert-live-20260413-prod-ready
@@ -15,3 +15,4 @@ Tasks `9e1e4062` and `0e137494` were both cancelled after leaving no task-local 
 Task `870c1a85` passed with notes after controller-side verification succeeded: bounded `ruff` passed and focused `pytest` passed at `2 passed`, while the task-local result/evidence files used a non-canonical outcome token plus a slightly drifted findings shape.
 The live certification closure is now the canonical release fact: `task_artifacts/prod_cert_live_20260413_foreground/CHECKPOINT.md` concludes `prod-ready`, and the same evidence directory is the release anchor for the current production-ready state.
 The current certification scope is frozen. Any further deployment, monitoring, rollback rehearsal, or operating feedback work must open a new release-operations line instead of reusing this closure scope.
+`plans/release-operations/` is now the active post-release line.

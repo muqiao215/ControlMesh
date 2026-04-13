@@ -20,6 +20,7 @@
 - The current autonomous round now has no active ready queue across canonical product lines.
 - The 2026-04-13 live certification closure reached a `prod-ready` conclusion under external takeover, controlled restart drill, bounded API enable/smoke/rollback, and live binary deployment-consistency evidence.
 - The canonical release evidence for the current production-ready state is anchored under `task_artifacts/prod_cert_live_20260413_foreground/`.
+- `ControlMesh Release Operations` is now the active post-release line for operating the released state without reopening certification scope.
 
 # Blockers
 - None in the current release-closing scope.
@@ -56,3 +57,4 @@
 - 2026-04-09: Close the current autonomous round at `stopline` because history is sealed, runtime is sealed, and the remaining lines are explicitly deferred.
 - 2026-04-13: Promote the live certification closure into canonical program truth: ControlMesh current state is `prod-ready`.
 - 2026-04-13: Freeze the completed certification scope and require any further deployment, monitoring, rollback, or change-management work to open a separate `ControlMesh Release Operations` line.
+- 2026-04-13: Open `plans/release-operations/` as the active post-release operations line.

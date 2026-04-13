@@ -16,7 +16,7 @@ prod-ready
 
 # Ready Queue
 1. No auto-dispatch remains in the closed certification scope
-2. Open a separate `ControlMesh Release Operations` line before doing post-release deployment observation, monitoring, rollback, or change-management work
+2. Execute `plans/release-operations/` before doing post-release deployment observation, monitoring, rollback, or change-management work
 
 # Non-goals
 - runtime/event panel implementation
