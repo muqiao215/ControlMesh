@@ -1,0 +1,22 @@
+● ductor.service - ductor - Telegram bot powered by AI CLIs
+     Loaded: loaded (/root/.config/systemd/user/ductor.service; enabled; vendor preset: enabled)
+    Drop-In: /root/.config/systemd/user/ductor.service.d
+             └─20-restart-always.conf
+     Active: active (running) since Mon 2026-04-13 15:18:40 UTC; 1min 15s ago
+   Main PID: 545767 (ductor)
+      Tasks: 5 (limit: 4575)
+     Memory: 112.9M
+        CPU: 32.182s
+     CGroup: /user.slice/user-0.slice/user@0.service/app.slice/ductor.service
+             └─545767 /root/.local/share/uv/tools/ductor/bin/python /root/.local/bin/ductor
+
+Apr 13 15:19:03 dbyqhnca.colocrossing.cloud ductor[545767]: 15:19:03 INFO     ductor_bot.cleanup.observer: [main] File cleanup started (media: 30d, output: 30d, api: 30d, hour: 3:00)
+Apr 13 15:19:03 dbyqhnca.colocrossing.cloud ductor[545767]: 15:19:03 INFO     ductor_bot.orchestrator.observers: [main] Rule file watcher started (CLAUDE.md <-> AGENTS.md <-> GEMINI.md)
+Apr 13 15:19:03 dbyqhnca.colocrossing.cloud ductor[545767]: 15:19:03 INFO     ductor_bot.orchestrator.observers: [main] Skill sync watcher started
+Apr 13 15:19:03 dbyqhnca.colocrossing.cloud ductor[545767]: 15:19:03 INFO     ductor_bot.config_reload: [main] Config reloader started watching /root/.ductor/config/config.json
+Apr 13 15:19:03 dbyqhnca.colocrossing.cloud ductor[545767]: 15:19:03 INFO     ductor_bot.messenger.telegram.startup: [main] Bot online: @V_YueBot (id=8515961362)
+Apr 13 15:19:04 dbyqhnca.colocrossing.cloud ductor[545767]: 15:19:04 INFO     ductor_bot.orchestrator.core: [main] Multi-agent commands registered
+Apr 13 15:19:04 dbyqhnca.colocrossing.cloud ductor[545767]: 15:19:04 INFO     aiogram.dispatcher: [main] Start polling
+Apr 13 15:19:04 dbyqhnca.colocrossing.cloud ductor[545767]: 15:19:04 INFO     ductor_bot.multiagent.shared_knowledge: SharedKnowledgeSync watching /root/.ductor/SHAREDMEMORY.md
+Apr 13 15:19:04 dbyqhnca.colocrossing.cloud ductor[545767]: 15:19:04 INFO     aiogram.dispatcher: [main] Run polling for bot @V_YueBot id=8515961362 - '月神'
+Apr 13 15:19:09 dbyqhnca.colocrossing.cloud ductor[545767]: 15:19:09 INFO     ductor_bot.multiagent.shared_knowledge: SHAREDMEMORY.md changed, syncing to all agents

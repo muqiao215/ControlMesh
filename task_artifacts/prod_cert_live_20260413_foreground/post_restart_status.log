@@ -1,0 +1,23 @@
+● ductor.service - ductor - Telegram bot powered by AI CLIs
+     Loaded: loaded (/root/.config/systemd/user/ductor.service; enabled; vendor preset: enabled)
+    Drop-In: /root/.config/systemd/user/ductor.service.d
+             └─20-restart-always.conf
+     Active: active (running) since Mon 2026-04-13 15:19:58 UTC; 8s ago
+   Main PID: 546069 (ductor)
+      Tasks: 10 (limit: 4575)
+     Memory: 125.6M
+        CPU: 8.017s
+     CGroup: /user.slice/user-0.slice/user@0.service/app.slice/ductor.service
+             ├─546069 /root/.local/share/uv/tools/ductor/bin/python /root/.local/bin/ductor
+             └─546103 node /usr/bin/claude auth status
+
+Apr 13 15:20:05 dbyqhnca.colocrossing.cloud ductor[546069]: 15:20:05 INFO     ductor_bot.workspace.skill_sync: Skill link created: /root/.codex/skills/youtube-watcher-1.0.0 -> /root/.ductor/workspace/skills/youtube-watcher-1.0.0
+Apr 13 15:20:05 dbyqhnca.colocrossing.cloud ductor[546069]: 15:20:05 INFO     ductor_bot.workspace.skill_sync: Skill link created: /root/.gemini/skills/youtube-watcher-1.0.0 -> /root/.ductor/workspace/skills/youtube-watcher-1.0.0
+Apr 13 15:20:05 dbyqhnca.colocrossing.cloud ductor[546069]: 15:20:05 INFO     ductor_bot.workspace.init: Workspace init completed
+Apr 13 15:20:05 dbyqhnca.colocrossing.cloud ductor[546069]: 15:20:05 WARNING  ductor_bot.i18n: Unknown language 'zh', falling back to 'en'
+Apr 13 15:20:05 dbyqhnca.colocrossing.cloud ductor[546069]: 15:20:05 INFO     ductor_bot.i18n: i18n initialized: language=en
+Apr 13 15:20:05 dbyqhnca.colocrossing.cloud ductor[546069]: 15:20:05 INFO     ductor_bot.infra.pidlock: PID lock acquired (pid=546069)
+Apr 13 15:20:05 dbyqhnca.colocrossing.cloud ductor[546069]: 15:20:05 INFO     ductor_bot.multiagent.internal_api: Internal agent API listening on 127.0.0.1:8799
+Apr 13 15:20:05 dbyqhnca.colocrossing.cloud ductor[546069]: 15:20:05 INFO     ductor_bot.multiagent.supervisor: InterAgentBus and internal API started
+Apr 13 15:20:05 dbyqhnca.colocrossing.cloud ductor[546069]: 15:20:05 INFO     ductor_bot.multiagent.supervisor: TaskHub initialized (max_parallel=5)
+Apr 13 15:20:05 dbyqhnca.colocrossing.cloud ductor[546069]: 15:20:05 INFO     ductor_bot.workspace.init: Workspace init started home=/root/.ductor

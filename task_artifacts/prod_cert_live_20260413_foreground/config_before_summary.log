@@ -1,0 +1,1 @@
+{'api': {'enabled': False, 'host': '127.0.0.1', 'port': 8741, 'token': 'disabled', 'chat_id': 6588911719, 'allow_public': False}, 'interagent_port': 8799, 'transport': 'telegram', 'transports': ['telegram']}

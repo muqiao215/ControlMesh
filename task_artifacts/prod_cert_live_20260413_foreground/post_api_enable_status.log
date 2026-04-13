@@ -1,0 +1,22 @@
+● ductor.service - ductor - Telegram bot powered by AI CLIs
+     Loaded: loaded (/root/.config/systemd/user/ductor.service; enabled; vendor preset: enabled)
+    Drop-In: /root/.config/systemd/user/ductor.service.d
+             └─20-restart-always.conf
+     Active: active (running) since Mon 2026-04-13 15:20:12 UTC; 24s ago
+   Main PID: 546126 (ductor)
+      Tasks: 4 (limit: 4575)
+     Memory: 113.0M
+        CPU: 23.676s
+     CGroup: /user.slice/user-0.slice/user@0.service/app.slice/ductor.service
+             └─546126 /root/.local/share/uv/tools/ductor/bin/python /root/.local/bin/ductor
+
+Apr 13 15:20:35 dbyqhnca.colocrossing.cloud ductor[546126]: 15:20:35 INFO     ductor_bot.cron.observer: [main] CronObserver started (6 jobs scheduled)
+Apr 13 15:20:35 dbyqhnca.colocrossing.cloud ductor[546126]: 15:20:35 INFO     ductor_bot.heartbeat.observer: [main] Heartbeat disabled in config
+Apr 13 15:20:35 dbyqhnca.colocrossing.cloud ductor[546126]: 15:20:35 INFO     ductor_bot.webhook.observer: [main] Webhooks disabled in config
+Apr 13 15:20:35 dbyqhnca.colocrossing.cloud ductor[546126]: 15:20:35 INFO     ductor_bot.cleanup.observer: [main] File cleanup started (media: 30d, output: 30d, api: 30d, hour: 3:00)
+Apr 13 15:20:35 dbyqhnca.colocrossing.cloud ductor[546126]: 15:20:35 INFO     ductor_bot.orchestrator.observers: [main] Rule file watcher started (CLAUDE.md <-> AGENTS.md <-> GEMINI.md)
+Apr 13 15:20:35 dbyqhnca.colocrossing.cloud ductor[546126]: 15:20:35 INFO     ductor_bot.orchestrator.observers: [main] Skill sync watcher started
+Apr 13 15:20:36 dbyqhnca.colocrossing.cloud ductor[546126]: 15:20:36 WARNING  ductor_bot.api.server: [main] API server: Tailscale NOT detected. Your API may be exposed to the public internet on 127.0.0.1:8741. Install Tailscale for secure private networking, or set api.allow_public=true in config to acknowledge this risk.
+Apr 13 15:20:36 dbyqhnca.colocrossing.cloud ductor[546126]: 15:20:36 INFO     ductor_bot.api.server: [main] API server listening on 127.0.0.1:8741
+Apr 13 15:20:36 dbyqhnca.colocrossing.cloud ductor[546126]: 15:20:36 INFO     ductor_bot.config_reload: [main] Config reloader started watching /root/.ductor/config/config.json
+Apr 13 15:20:36 dbyqhnca.colocrossing.cloud ductor[546126]: 15:20:36 INFO     ductor_bot.messenger.telegram.startup: [main] Bot online: @V_YueBot (id=8515961362)

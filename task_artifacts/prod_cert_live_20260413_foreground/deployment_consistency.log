@@ -1,0 +1,8 @@
+ductor_bot_path=/root/.ductor/analysis/ductor-src/ductor_bot/__init__.py
+ductor_bot_sha256=e18a5bd8ec4efb95c650562ccb8c5df534d3117ad62e559de620fa4c5e6d1a99
+cli_service_path=/root/.ductor/analysis/ductor-src/ductor_bot/cli/service.py
+cli_service_sha256=0ef70f26c1a72badda3ceefca3b0e2f3a1f288fed599f08269395f66bf5b4b76
+service_logs_path=/root/.ductor/analysis/ductor-src/ductor_bot/infra/service_logs.py
+service_logs_sha256=46c8bf6ea58591f0abee45c9e3eb822c6dceeabded20b20737fd14f569d21cd3
+service_linux_path=/root/.ductor/analysis/ductor-src/ductor_bot/infra/service_linux.py
+service_linux_sha256=ebb13de48247e5119fd5fb10b4b7a9ad33159da5efe954979e6065507fd91c84

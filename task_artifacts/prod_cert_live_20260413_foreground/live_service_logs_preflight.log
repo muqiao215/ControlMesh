@@ -1,0 +1,116 @@
+
+Showing logs (Ctrl+C to stop)...
+
+No user journal available; showing recent file logs instead.
+
+Showing last 50 lines from agent.log
+
+2026-04-13 13:53:28 [INFO] ductor_bot.orchestrator.providers:providers.py:97:  
+Provider : not found
+2026-04-13 13:53:28 [INFO] ductor_bot.orchestrator.lifecycle:lifecycle.py:90:  
+Available providers: claude, codex
+2026-04-13 13:53:28 [INFO] ductor_bot.cli.model_cache:model_cache.py:217:  
+GeminiCacheObserver starting, cache_path=/root/.ductor/config/gemini_models.json
+2026-04-13 13:53:28 [INFO] ductor_bot.cli.model_cache:model_cache.py:84:  Gemini
+cache refresh forced
+2026-04-13 13:53:28 [INFO] ductor_bot.cli.model_cache:model_cache.py:124:  
+Discovered 0 Gemini models
+2026-04-13 13:53:28 [WARNING] ductor_bot.cli.model_cache:model_cache.py:157:  
+Using hardcoded Gemini fallback models (not persisted)
+2026-04-13 13:53:28 [INFO] ductor_bot.cli.model_cache:model_cache.py:220:  
+Gemini cache loaded: 3 models, last_updated=2026-04-13T13:53:28.711636+00:00
+2026-04-13 13:53:28 [INFO] ductor_bot.cli.model_cache:model_cache.py:217:  
+CodexCacheObserver starting, cache_path=/root/.ductor/config/codex_models.json
+2026-04-13 13:53:28 [INFO] ductor_bot.cli.model_cache:model_cache.py:84:  Codex 
+cache refresh forced
+2026-04-13 13:53:29 [INFO] 
+ductor_bot.cli.codex_discovery:codex_discovery.py:106:  Codex discovery found 6 
+models
+2026-04-13 13:53:29 [INFO] ductor_bot.cli.model_cache:model_cache.py:124:  
+Discovered 6 Codex models
+2026-04-13 13:53:29 [INFO] ductor_bot.cli.model_cache:model_cache.py:220:  Codex
+cache loaded: 6 models, last_updated=2026-04-13T13:53:29.320001+00:00
+2026-04-13 13:53:29 [INFO] ductor_bot.cron.observer:observer.py:85:  
+CronObserver started (6 jobs scheduled)
+2026-04-13 13:53:29 [INFO] ductor_bot.heartbeat.observer:observer.py:80:  
+Heartbeat disabled in config
+2026-04-13 13:53:29 [INFO] ductor_bot.webhook.observer:observer.py:74:  Webhooks
+disabled in config
+2026-04-13 13:53:29 [INFO] ductor_bot.cleanup.observer:observer.py:78:  File 
+cleanup started (media: 30d, output: 30d, api: 30d, hour: 3:00)
+2026-04-13 13:53:29 [INFO] ductor_bot.orchestrator.observers:observers.py:122:  
+Rule file watcher started (CLAUDE.md <-> AGENTS.md <-> GEMINI.md)
+2026-04-13 13:53:29 [INFO] ductor_bot.orchestrator.observers:observers.py:127:  
+Skill sync watcher started
+2026-04-13 13:53:29 [INFO] ductor_bot.config_reload:config_reload.py:151:  
+Config reloader started watching /root/.ductor/config/config.json
+2026-04-13 13:53:29 [INFO] ductor_bot.messenger.telegram.startup:startup.py:138:
+Bot online: @V_YueBot (id=8515961362)
+2026-04-13 13:53:30 [INFO] ductor_bot.orchestrator.core:core.py:520:  
+Multi-agent commands registered
+2026-04-13 13:53:30 [INFO] aiogram.dispatcher:dispatcher.py:596:  Start polling
+2026-04-13 13:53:30 [INFO] 
+ductor_bot.multiagent.shared_knowledge:shared_knowledge.py:107: 
+SharedKnowledgeSync watching /root/.ductor/SHAREDMEMORY.md
+2026-04-13 13:53:30 [INFO] aiogram.dispatcher:dispatcher.py:378:  Run polling 
+for bot @V_YueBot id=8515961362 - '月神'
+2026-04-13 13:53:35 [INFO] 
+ductor_bot.multiagent.shared_knowledge:shared_knowledge.py:114: SHAREDMEMORY.md 
+changed, syncing to all agents
+2026-04-13 13:55:10 [INFO] 
+ductor_bot.messenger.telegram.message_dispatch:message_dispatch.py:102:  
+Streaming flow started
+2026-04-13 13:55:10 [INFO] ductor_bot.orchestrator.core:core.py:320:  Message 
+received text=你再执行吗？
+2026-04-13 13:55:10 [INFO] ductor_bot.orchestrator.flows:flows.py:389:  
+Streaming flow starting
+2026-04-13 13:55:11 [INFO] ductor_bot.orchestrator.flows:flows.py:86:  Session 
+resolved sid=019d8194 new=False msgs=22
+2026-04-13 13:55:11 [INFO] ductor_bot.cli.codex_provider:codex_provider.py:66:  
+Codex CLI wrapper: cwd=/root/.ductor/workspace, model=gpt-5.4
+2026-04-13 13:55:11 [INFO] ductor_bot.cli.service:service.py:180:  CLI streaming
+starting label=main model=gpt-5.4
+2026-04-13 13:55:11 [INFO] ductor_bot.cli.codex_provider:codex_provider.py:293: 
+Codex stream cmd: /usr/bin/codex exec resume --json 
+--dangerously-bypass-approvals-and-sandbox -- 
+019d8194-2e4a-7632-ba62-1281c2f8cf65 你再执行吗？
+2026-04-13 13:55:11 [INFO] ductor_bot.infra.env_secrets:env_secrets.py:100:  
+Loaded 9 secret(s) from /root/.ductor/.env
+2026-04-13 13:55:11 [INFO] ductor_bot.cli.executor:executor.py:154:  Codex 
+subprocess starting pid=541559
+2026-04-13 13:55:53 [INFO] ductor_bot.cli.service:service.py:232:  CLI streaming
+completed label=main fallback=False timed_out=False
+2026-04-13 13:55:53 [INFO] ductor_bot.orchestrator.flows:flows.py:435:  
+Streaming flow completed
+2026-04-13 13:55:53 [INFO] 
+ductor_bot.messenger.telegram.message_dispatch:message_dispatch.py:159:  
+Streaming flow completed fallback=False content=True
+2026-04-13 13:55:53 [INFO] aiogram.event:dispatcher.py:178:  Update id=381302697
+is handled. Duration 42961 ms by bot id=8515961362
+2026-04-13 13:56:14 [INFO] 
+ductor_bot.messenger.telegram.message_dispatch:message_dispatch.py:102:  
+Streaming flow started
+2026-04-13 13:56:14 [INFO] ductor_bot.orchestrator.core:core.py:320:  Message 
+received text=可以
+2026-04-13 13:56:14 [INFO] ductor_bot.orchestrator.flows:flows.py:389:  
+Streaming flow starting
+2026-04-13 13:56:14 [INFO] ductor_bot.orchestrator.flows:flows.py:86:  Session 
+resolved sid=019d8194 new=False msgs=23
+2026-04-13 13:56:14 [INFO] ductor_bot.orchestrator.hooks:hooks.py:48:  Hook 
+fired: mainmemory_reminder msgs=23
+2026-04-13 13:56:14 [INFO] ductor_bot.cli.codex_provider:codex_provider.py:66:  
+Codex CLI wrapper: cwd=/root/.ductor/workspace, model=gpt-5.4
+2026-04-13 13:56:14 [INFO] ductor_bot.cli.service:service.py:180:  CLI streaming
+starting label=main model=gpt-5.4
+2026-04-13 13:56:14 [INFO] ductor_bot.cli.codex_provider:codex_provider.py:293: 
+Codex stream cmd: /usr/bin/codex exec resume --json 
+--dangerously-bypass-approvals-and-sandbox -- 
+019d8194-2e4a-7632-ba62-1281c2f8cf65 可以
+
+## MEMORY CHECK
+Silently review: memory_system/MAINMEMORY.md, user_tools/, c...
+2026-04-13 13:56:14 [INFO] ductor_bot.cli.executor:executor.py:154:  Codex 
+subprocess starting pid=541679
+
+Full log: /root/.ductor/logs/agent.log
+

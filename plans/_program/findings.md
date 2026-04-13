@@ -18,9 +18,11 @@
 - Runtime cut 2 red contract is now accepted and checkpointed.
 - Runtime cut 2 green is now independently verified and accepted; TaskHub writes the bounded lifecycle sequence into the dedicated runtime event substrate without touching transcript storage.
 - The current autonomous round now has no active ready queue across canonical product lines.
+- The 2026-04-13 live certification closure reached a `prod-ready` conclusion under external takeover, controlled restart drill, bounded API enable/smoke/rollback, and live binary deployment-consistency evidence.
+- The canonical release evidence for the current production-ready state is anchored under `task_artifacts/prod_cert_live_20260413_foreground/`.
 
 # Blockers
-- None in the current autonomous round.
+- None in the current release-closing scope.
 
 # Risks
 - Transcript and runtime concerns may get re-coupled if the read surface is placed too low.
@@ -29,12 +31,14 @@
 - Repeated evidence-lane failure can stall a product line even when code-level verification looks good.
 - If runtime events are added ad hoc, they may leak back into frontstage history or command surfaces.
 - Worker result/evidence files can still drift from canonical outcome or schema conventions; controller verification remains the final promotion gate.
+- Post-release work can blur the closure boundary if deployment observation, rollback rehearsal, or new product changes are written back into the completed certification line instead of being opened as a new scope.
 
 # Deferred
 - broader UI/history browser work
 - richer event analytics
 - wider command/control-plane expansion
 - broader runtime producers beyond the current TaskHub lifecycle slice
+- separate `ControlMesh Release Operations` line for post-release observation, rollback discipline, change management, and operating feedback capture
 
 # Decision Records
 - 2026-04-09: Adopt `plans/` as the harness control-plane skeleton.
@@ -50,3 +54,5 @@
 - 2026-04-09: Accept runtime cut 2 red contract as `pass_with_notes` and advance immediately to the bounded TaskHub lifecycle green cut.
 - 2026-04-09: Accept runtime cut 2 green as `pass_with_notes`; focused controller verification passed, with only task-local outcome/schema drift left as a note.
 - 2026-04-09: Close the current autonomous round at `stopline` because history is sealed, runtime is sealed, and the remaining lines are explicitly deferred.
+- 2026-04-13: Promote the live certification closure into canonical program truth: ControlMesh current state is `prod-ready`.
+- 2026-04-13: Freeze the completed certification scope and require any further deployment, monitoring, rollback, or change-management work to open a separate `ControlMesh Release Operations` line.
