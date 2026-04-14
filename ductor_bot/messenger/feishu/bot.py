@@ -20,6 +20,11 @@ from ductor_bot.bus.lock_pool import LockPool
 from ductor_bot.config import AgentConfig
 from ductor_bot.files.allowed_roots import resolve_allowed_roots
 from ductor_bot.log_context import set_log_context
+from ductor_bot.messenger.feishu.auth.card_auth_runner import FeishuCardAuthRunner
+from ductor_bot.messenger.feishu.auth.feishu_card_sender import (
+    BotFeishuCardSender,
+    FeishuCardHandle,
+)
 from ductor_bot.messenger.feishu.auth.runtime_auth import resolve_feishu_auth
 from ductor_bot.messenger.notifications import NotificationService
 from ductor_bot.messenger.telegram.dedup import DedupeCache
@@ -168,6 +173,7 @@ class FeishuBot:
         self._id_map = FeishuIdMap(store_path)
         self._inbound_server: FeishuInboundServer | None = None
         self._long_connection: FeishuLongConnectionClient | None = None
+        self._card_auth_runner: FeishuCardAuthRunner | None = None
         self._notification_service: NotificationService = FeishuNotificationService(self)
         self._bus.register_transport(FeishuTransport(self))
 
@@ -241,6 +247,9 @@ class FeishuBot:
         if self._long_connection is not None:
             await self._long_connection.stop()
 
+        if self._card_auth_runner is not None:
+            await self._card_auth_runner.shutdown()
+
         if self._inbound_server is not None:
             await self._inbound_server.stop()
 
@@ -272,6 +281,9 @@ class FeishuBot:
             return
         if self._orchestrator is None:
             logger.warning("Ignoring Feishu message before startup")
+            return
+
+        if await self._ensure_card_auth_runner().handle_message(message):
             return
 
         chat_id = self._id_map.chat_to_int(message.chat_id)
@@ -322,13 +334,42 @@ class FeishuBot:
     ) -> None:
         if not text:
             return
+        await self._send_message_to_chat_ref(
+            chat_ref,
+            msg_type="text",
+            content={"text": text},
+            reply_to_message_id=reply_to_message_id,
+        )
+
+    async def _send_interactive_card_to_chat_ref(
+        self,
+        chat_ref: str,
+        card: dict[str, Any],
+        *,
+        reply_to_message_id: str | None = None,
+    ) -> str | None:
+        return await self._send_message_to_chat_ref(
+            chat_ref,
+            msg_type="interactive",
+            content=card,
+            reply_to_message_id=reply_to_message_id,
+        )
+
+    async def _send_message_to_chat_ref(
+        self,
+        chat_ref: str,
+        *,
+        msg_type: str,
+        content: dict[str, Any],
+        reply_to_message_id: str | None = None,
+    ) -> str | None:
         session = await self._ensure_session()
         token = await self._get_tenant_access_token()
         url = f"{self._config.feishu.domain.rstrip('/')}/open-apis/im/v1/messages"
         payload: dict[str, object] = {
             "receive_id": chat_ref,
-            "msg_type": "text",
-            "content": json.dumps({"text": text}, ensure_ascii=False),
+            "msg_type": msg_type,
+            "content": json.dumps(content, ensure_ascii=False),
         }
         if reply_to_message_id:
             payload["reply_to_message_id"] = reply_to_message_id
@@ -346,11 +387,81 @@ class FeishuBot:
                     response.status,
                     body[:500],
                 )
+                return None
+            data = await response.json(content_type=None)
+            raw = data.get("data", {}) if isinstance(data, dict) else {}
+            if isinstance(raw, dict):
+                message_id = raw.get("message_id")
+                if isinstance(message_id, str) and message_id:
+                    return message_id
+            return None
+
+    async def _update_interactive_card(
+        self,
+        handle: FeishuCardHandle,
+        card: dict[str, Any],
+    ) -> None:
+        session = await self._ensure_session()
+        token = await self._get_tenant_access_token()
+        url = (
+            f"{self._config.feishu.domain.rstrip('/')}"
+            f"/open-apis/im/v1/messages/{handle.message_id}"
+        )
+        headers = {"Authorization": f"Bearer {token}"}
+        payload = {
+            "content": json.dumps(card, ensure_ascii=False),
+            "msg_type": "interactive",
+        }
+        async with session.patch(url, json=payload, headers=headers) as response:
+            if response.status >= 400:
+                body = await response.text()
+                logger.warning(
+                    "Feishu card update failed: status=%s body=%s",
+                    response.status,
+                    body[:500],
+                )
 
     async def _ensure_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession()
         return self._session
+
+    def _ensure_card_auth_runner(self) -> FeishuCardAuthRunner:
+        if self._card_auth_runner is None:
+            sender = BotFeishuCardSender(
+                send_card_func=self._send_auth_card_from_context,
+                update_card_func=self._update_interactive_card,
+            )
+            self._card_auth_runner = FeishuCardAuthRunner(
+                self._config,
+                session_factory=self._ensure_session,
+                sender=sender,
+                text_reply=self._reply_card_auth_text,
+            )
+        return self._card_auth_runner
+
+    async def _reply_card_auth_text(
+        self,
+        chat_ref: str,
+        text: str,
+        reply_to_message_id: str | None,
+    ) -> None:
+        await self._send_text_to_chat_ref(
+            chat_ref,
+            text,
+            reply_to_message_id=reply_to_message_id,
+        )
+
+    async def _send_auth_card_from_context(
+        self,
+        context: Any,
+        card: dict[str, Any],
+    ) -> str | None:
+        return await self._send_interactive_card_to_chat_ref(
+            context.chat_id,
+            card,
+            reply_to_message_id=context.trigger_message_id if self._config.feishu.reply_to_trigger else None,
+        )
 
     async def _get_tenant_access_token(self) -> str:
         now = time.time()
