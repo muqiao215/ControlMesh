@@ -119,7 +119,12 @@ def _is_configured_weixin(data: dict[str, object]) -> bool:
     raw_home = data.get("ductor_home", "~/.ductor")
     ductor_home = Path(str(raw_home)).expanduser()
     relative_path = str(wx.get("credentials_path", "weixin_store/credentials.json"))
-    return (ductor_home / relative_path).is_file()
+    from ductor_bot.messenger.weixin.auth_store import WeixinCredentialStore
+
+    return (
+        WeixinCredentialStore(ductor_home, relative_path=relative_path).load_credentials()
+        is not None
+    )
 
 
 _IS_CONFIGURED_CHECKS: dict[str, Callable[[dict[str, object]], bool]] = {

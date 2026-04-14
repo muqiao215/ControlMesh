@@ -6,7 +6,7 @@ import base64
 import json
 import os
 from typing import Any, cast
-from urllib.parse import urljoin
+from urllib.parse import quote, urljoin
 from uuid import uuid4
 
 import aiohttp
@@ -98,6 +98,18 @@ class WeixinIlinkHttpClient:
         return {"channel_version": self._config.channel_version}
 
 
+async def fetch_qr_code(base_url: str) -> dict[str, Any]:
+    return await _get(base_url, "/ilink/bot/get_bot_qrcode?bot_type=3")
+
+
+async def poll_qr_status(base_url: str, qrcode: str) -> dict[str, Any]:
+    return await _get(
+        base_url,
+        f"/ilink/bot/get_qrcode_status?qrcode={quote(qrcode, safe='')}",
+        headers={"iLink-App-ClientVersion": "1"},
+    )
+
+
 def build_text_message(
     user_id: str,
     context_token: str,
@@ -148,6 +160,20 @@ async def _parse_json_response(response: aiohttp.ClientResponse, label: str) -> 
             code=_coerce_int(payload.get("errcode", ret)),
         )
     return payload
+
+
+async def _get(
+    base_url: str,
+    path: str,
+    *,
+    headers: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    url = urljoin(f"{base_url.rstrip('/')}/", path.lstrip("/"))
+    async with aiohttp.ClientSession() as session, session.get(
+        url,
+        headers=headers or {},
+    ) as response:
+        return await _parse_json_response(response, path)
 
 
 def _random_wechat_uin() -> str:
