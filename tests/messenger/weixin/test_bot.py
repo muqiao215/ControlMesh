@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from ductor_bot.config import AgentConfig
+from ductor_bot.messenger.weixin.auth_state import WeixinAuthStateStore
 from ductor_bot.messenger.weixin.auth_store import StoredWeixinCredentials
 from ductor_bot.messenger.weixin.bot import WeixinBot
 from ductor_bot.messenger.weixin.runtime import (
@@ -57,6 +58,7 @@ class TestWeixinBotResilience:
         await bot._poll_loop()
 
         assert bot._credential_store.load_credentials() is None
+        assert WeixinAuthStateStore(tmp_path).load_state() == "reauth_required"
         assert bot._runtime is None
         assert bot._stop_event.is_set() is True
 

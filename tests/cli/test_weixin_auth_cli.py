@@ -6,14 +6,14 @@ import importlib
 import sys
 from pathlib import Path
 from types import ModuleType
-from typing import TYPE_CHECKING, Any
+from typing import Any
+
+import pytest
 
 from ductor_bot.config import AgentConfig
+from ductor_bot.messenger.weixin.auth_state import WeixinAuthStateStore
 from ductor_bot.messenger.weixin.auth_store import StoredWeixinCredentials, WeixinCredentialStore
 from ductor_bot.messenger.weixin.runtime_state import WeixinRuntimeState, WeixinRuntimeStateStore
-
-if TYPE_CHECKING:
-    import pytest
 
 
 def _import_auth_cli_module() -> ModuleType:
@@ -32,6 +32,19 @@ def _weixin_config(tmp_path: Path) -> AgentConfig:
         weixin={
             "mode": "ilink",
             "enabled": True,
+            "credentials_path": "weixin_store/credentials.json",
+        },
+    )
+
+
+def _disabled_weixin_config(tmp_path: Path) -> AgentConfig:
+    return AgentConfig(
+        ductor_home=str(tmp_path),
+        transport="weixin",
+        transports=["weixin"],
+        weixin={
+            "mode": "ilink",
+            "enabled": False,
             "credentials_path": "weixin_store/credentials.json",
         },
     )
@@ -207,9 +220,36 @@ def test_cmd_auth_weixin_status_reports_logged_in_credentials(
     module.cmd_auth(["weixin", "auth", "status"])
 
     rendered = "\n".join(console_lines)
+    assert "configured: true" in rendered
     assert "logged_in" in rendered
+    assert "context_token_unavailable" in rendered
     assert "bot-account" in rendered
     assert "wx-user" in rendered
+
+
+def test_cmd_auth_weixin_status_reports_reauth_required_as_degraded(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _import_auth_cli_module()
+    config = _weixin_config(tmp_path)
+    console_lines: list[str] = []
+    WeixinAuthStateStore(config.ductor_home).mark_reauth_required()
+
+    class _FakeConsole:
+        def print(self, *args: object, **kwargs: object) -> None:
+            del kwargs
+            console_lines.append(" ".join(str(arg) for arg in args))
+
+    monkeypatch.setattr(module, "_console", _FakeConsole(), raising=False)
+    monkeypatch.setattr(module, "load_config", lambda: config, raising=False)
+
+    module.cmd_auth(["weixin", "auth", "status"])
+
+    rendered = "\n".join(console_lines)
+    assert "configured: true" in rendered
+    assert "reauth_required" in rendered
+    assert "runtime state: degraded" in rendered
 
 
 def test_cmd_auth_weixin_status_reports_logged_out_when_credentials_missing(
@@ -231,6 +271,7 @@ def test_cmd_auth_weixin_status_reports_logged_out_when_credentials_missing(
     module.cmd_auth(["weixin", "auth", "status"])
 
     rendered = "\n".join(console_lines)
+    assert "configured: true" in rendered
     assert "logged_out" in rendered
 
 
@@ -260,3 +301,86 @@ def test_cmd_auth_weixin_status_treats_corrupt_credentials_as_logged_out(
 
     rendered = "\n".join(console_lines)
     assert "logged_out" in rendered
+
+
+def test_cmd_auth_weixin_logout_clears_credentials_runtime_state_and_reauth_marker(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _import_auth_cli_module()
+    config = _weixin_config(tmp_path)
+    console_lines: list[str] = []
+    credentials = StoredWeixinCredentials(
+        token="bot-token",
+        base_url="https://ilinkai.weixin.qq.com",
+        account_id="bot-account",
+        user_id="wx-user",
+    )
+    WeixinCredentialStore(
+        config.ductor_home,
+        relative_path=config.weixin.credentials_path,
+    ).save_credentials(credentials)
+    WeixinRuntimeStateStore(config.ductor_home).save_state(
+        credentials,
+        WeixinRuntimeState(cursor="cursor-2", context_tokens=(("user-1", "ctx-1"),)),
+    )
+    WeixinAuthStateStore(config.ductor_home).mark_reauth_required()
+
+    class _FakeConsole:
+        def print(self, *args: object, **kwargs: object) -> None:
+            del kwargs
+            console_lines.append(" ".join(str(arg) for arg in args))
+
+    monkeypatch.setattr(module, "_console", _FakeConsole(), raising=False)
+    monkeypatch.setattr(module, "load_config", lambda: config, raising=False)
+
+    module.cmd_auth(["weixin", "auth", "logout"])
+
+    assert WeixinCredentialStore(
+        config.ductor_home,
+        relative_path=config.weixin.credentials_path,
+    ).load_credentials() is None
+    assert WeixinRuntimeStateStore(config.ductor_home).path.exists() is False
+    assert WeixinAuthStateStore(config.ductor_home).load_state() is None
+    rendered = "\n".join(console_lines)
+    assert "logged_out" in rendered
+
+
+def test_cmd_auth_weixin_reauth_reuses_login_entry_when_reauth_required(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _import_auth_cli_module()
+    config = _weixin_config(tmp_path)
+    called: list[str] = []
+    WeixinAuthStateStore(config.ductor_home).mark_reauth_required()
+
+    async def _fake_weixin_login() -> None:
+        called.append("login")
+
+    monkeypatch.setattr(module, "load_config", lambda: config, raising=False)
+    monkeypatch.setattr(module, "_cmd_weixin_login", _fake_weixin_login, raising=False)
+
+    module.cmd_auth(["weixin", "auth", "reauth"])
+
+    assert called == ["login"]
+
+
+def test_cmd_auth_weixin_reauth_stays_bounded_when_transport_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _import_auth_cli_module()
+    config = _disabled_weixin_config(tmp_path)
+    called: list[str] = []
+
+    async def _fake_weixin_login() -> None:
+        called.append("login")
+
+    monkeypatch.setattr(module, "load_config", lambda: config, raising=False)
+    monkeypatch.setattr(module, "_cmd_weixin_login", _fake_weixin_login, raising=False)
+
+    with pytest.raises(SystemExit, match="1"):
+        module.cmd_auth(["weixin", "auth", "reauth"])
+
+    assert called == []
