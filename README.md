@@ -227,7 +227,7 @@ Telegram is the primary transport — full feature set, battle-tested, zero extr
 |---|---|---|---|---|
 | **Telegram** | primary | Live message edits | Inline keyboards | `pip install ductor` |
 | **Matrix** | supported | Segment-based (new messages) | Emoji reactions | `ductor install matrix` |
-| **Feishu** | experimental | Text reply path | none yet | built-in skeleton |
+| **Feishu** | experimental | Text by default, optional single-card preview mode | Interactive card preview only | built-in skeleton |
 
 Both transports can run **in parallel** on the same agent:
 

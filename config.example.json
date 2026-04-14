@@ -64,7 +64,8 @@
         ],
         "group_reply_all": false,
         "thread_isolation": false,
-        "reply_to_trigger": true
+        "reply_to_trigger": true,
+        "progress_mode": "text"
     },
 
     "weixin": {

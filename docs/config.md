@@ -145,12 +145,14 @@ Notes:
 | `group_reply_all` | `bool` | `false` | Reserved bot-only group behavior knob for later cuts |
 | `thread_isolation` | `bool` | `false` | When enabled, inbound thread/root IDs get separate Ductor session keys |
 | `reply_to_trigger` | `bool` | `true` | Reply to the triggering Feishu message when possible |
+| `progress_mode` | `"text" \| "card_preview"` | `"text"` | Progress rendering mode. `text` keeps text progress updates such as `[TOOL: Shell]`; `card_preview` reuses one Feishu interactive card and patches it through running/tool/final states |
 
 Current implementation status:
 
 - domestic Feishu shape only
 - bot-only mode only
-- plain-text inbound/outbound plumbing only
+- plain-text inbound/outbound plumbing by default
+- optional `card_preview` mode can reuse a single interactive card for progress/final updates
 - no user OAuth, QR setup, webhook mode, or Feishu tool suite yet
 
 ## `CLIParametersConfig`
