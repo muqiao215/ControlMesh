@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
@@ -201,6 +202,7 @@ class FeishuConfig(BaseModel):
     group_reply_all: bool = False
     thread_isolation: bool = False
     reply_to_trigger: bool = True
+    progress_mode: Literal["text", "card_preview"] = "text"
 
     @field_validator("listener_path")
     @classmethod

@@ -249,6 +249,139 @@ class TestFeishuBotRouting:
 
         bot._card_auth_runner.shutdown.assert_awaited_once()
 
+    async def test_handle_incoming_text_card_preview_mode_reuses_single_message(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path, progress_mode="card_preview")
+        bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+        bot._send_card_to_chat_ref = AsyncMock(return_value="om_preview")  # type: ignore[attr-defined]
+        bot._patch_message = AsyncMock()  # type: ignore[attr-defined]
+
+        async def _fake_stream(
+            _key: object,
+            _text: str,
+            *,
+            on_tool_activity: AsyncMock | None = None,
+            on_system_status: AsyncMock | None = None,
+            **_kwargs: object,
+        ) -> SimpleNamespace:
+            assert on_system_status is not None
+            assert on_tool_activity is not None
+            await on_system_status("thinking")
+            await on_tool_activity("Shell")
+            return SimpleNamespace(text="pong")
+
+        bot._orchestrator = SimpleNamespace(
+            handle_message_streaming=AsyncMock(side_effect=_fake_stream)
+        )
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="ping",
+            )
+        )
+
+        bot._send_card_to_chat_ref.assert_awaited_once()
+        send_kwargs = bot._send_card_to_chat_ref.await_args.kwargs
+        assert send_kwargs["reply_to_message_id"] == "om_1"
+        bot._patch_message.assert_awaited()
+        for call in bot._patch_message.await_args_list:
+            assert call.args[0] == "om_preview"
+        final_content = bot._patch_message.await_args_list[-1].kwargs["content"]
+        assert isinstance(final_content, dict)
+        assert "pong" in str(final_content)
+        bot._send_text_to_chat_ref.assert_not_awaited()
+
+    async def test_handle_incoming_text_card_preview_mode_finalizes_failure_on_same_message(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path, progress_mode="card_preview")
+        bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+        bot._send_card_to_chat_ref = AsyncMock(return_value="om_preview")  # type: ignore[attr-defined]
+        bot._patch_message = AsyncMock()  # type: ignore[attr-defined]
+
+        async def _failing_stream(
+            _key: object,
+            _text: str,
+            *,
+            _on_tool_activity: AsyncMock | None = None,
+            on_system_status: AsyncMock | None = None,
+            **_kwargs: object,
+        ) -> SimpleNamespace:
+            assert on_system_status is not None
+            await on_system_status("thinking")
+            raise RuntimeError("boom")
+
+        bot._orchestrator = SimpleNamespace(
+            handle_message_streaming=AsyncMock(side_effect=_failing_stream)
+        )
+
+        with pytest.raises(RuntimeError, match="boom"):
+            await bot.handle_incoming_text(
+                FeishuIncomingText(
+                    sender_id="ou_sender",
+                    chat_id="oc_chat_1",
+                    message_id="om_1",
+                    text="ping",
+                )
+            )
+
+        bot._send_card_to_chat_ref.assert_awaited_once()
+        bot._patch_message.assert_awaited()
+        final_content = bot._patch_message.await_args.kwargs["content"]
+        assert isinstance(final_content, dict)
+        assert "boom" in str(final_content)
+        bot._send_text_to_chat_ref.assert_not_awaited()
+
+    async def test_handle_incoming_text_card_preview_mode_does_not_resend_preview_when_initial_send_has_no_message_id(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path, progress_mode="card_preview")
+        bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+        bot._send_card_to_chat_ref = AsyncMock(return_value=None)  # type: ignore[attr-defined]
+        bot._patch_message = AsyncMock()  # type: ignore[attr-defined]
+
+        async def _fake_stream(
+            _key: object,
+            _text: str,
+            *,
+            on_tool_activity: AsyncMock | None = None,
+            on_system_status: AsyncMock | None = None,
+            **_kwargs: object,
+        ) -> SimpleNamespace:
+            assert on_system_status is not None
+            assert on_tool_activity is not None
+            await on_system_status("thinking")
+            await on_tool_activity("Shell")
+            return SimpleNamespace(text="pong")
+
+        bot._orchestrator = SimpleNamespace(
+            handle_message_streaming=AsyncMock(side_effect=_fake_stream)
+        )
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="ping",
+            )
+        )
+
+        bot._send_card_to_chat_ref.assert_awaited_once()
+        bot._patch_message.assert_not_awaited()
+        bot._send_text_to_chat_ref.assert_awaited_once_with(
+            "oc_chat_1",
+            "pong",
+            reply_to_message_id="om_1",
+        )
+
     async def test_on_task_result_routes_to_fs_and_delivers(self, tmp_path: Path) -> None:
         bot = _make_bot(tmp_path)
 
