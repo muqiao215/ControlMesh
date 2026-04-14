@@ -6,10 +6,13 @@ from dataclasses import dataclass
 
 import pytest
 
+from ductor_bot.messenger.weixin.api import WeixinIlinkApiError
 from ductor_bot.messenger.weixin.auth_store import StoredWeixinCredentials
 from ductor_bot.messenger.weixin.runtime import (
+    WeixinContextTokenRequiredError,
     WeixinIncomingText,
     WeixinLongPollRuntime,
+    WeixinReauthRequiredError,
     WeixinUpdateBatch,
 )
 
@@ -17,6 +20,7 @@ from ductor_bot.messenger.weixin.runtime import (
 @dataclass
 class _FakeClient:
     updates: list[WeixinUpdateBatch]
+    get_updates_error: Exception | None = None
 
     def __post_init__(self) -> None:
         self.get_updates_calls: list[tuple[StoredWeixinCredentials, str]] = []
@@ -28,6 +32,8 @@ class _FakeClient:
         cursor: str,
     ) -> WeixinUpdateBatch:
         self.get_updates_calls.append((credentials, cursor))
+        if self.get_updates_error is not None:
+            raise self.get_updates_error
         return self.updates.pop(0)
 
     async def send_text(
@@ -133,5 +139,39 @@ class TestWeixinLongPollRuntime:
             on_text=lambda _message: None,
         )
 
-        with pytest.raises(RuntimeError, match="No cached context token for user user-1"):
+        with pytest.raises(WeixinContextTokenRequiredError, match="No cached context token for user user-1"):
+            await runtime.send_text("user-1", "pong")
+
+    async def test_session_expiry_marks_reauth_required_and_clears_context_tokens(self) -> None:
+        expired: list[StoredWeixinCredentials] = []
+        client = _FakeClient(
+            updates=[],
+            get_updates_error=WeixinIlinkApiError("expired", status=200, code=-14),
+        )
+        runtime = WeixinLongPollRuntime(
+            credentials=_credentials(),
+            client=client,
+            on_text=lambda _message: None,
+            on_auth_expired=expired.append,
+        )
+        runtime.remember_context("user-1", "ctx-1")
+
+        with pytest.raises(WeixinReauthRequiredError, match="Weixin iLink session expired"):
+            await runtime.poll_once()
+
+        assert runtime.auth_state == "reauth_required"
+        assert runtime.context_token_for("user-1") is None
+        assert expired == [_credentials()]
+
+    async def test_send_text_after_reauth_required_fails_explicitly(self) -> None:
+        client = _FakeClient(updates=[])
+        runtime = WeixinLongPollRuntime(
+            credentials=_credentials(),
+            client=client,
+            on_text=lambda _message: None,
+        )
+        runtime.remember_context("user-1", "ctx-1")
+        runtime.mark_reauth_required()
+
+        with pytest.raises(WeixinReauthRequiredError, match="Weixin iLink session requires QR re-auth"):
             await runtime.send_text("user-1", "pong")

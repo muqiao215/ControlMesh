@@ -266,6 +266,35 @@ class TestIsConfigured:
             mock_paths.return_value = paths
             assert _is_configured() is True
 
+    def test_unconfigured_with_enabled_weixin_and_corrupt_credentials(self, tmp_path: Path) -> None:
+        from ductor_bot.__main__ import _is_configured
+
+        home = tmp_path / "home"
+        config_dir = home / "config"
+        config_dir.mkdir(parents=True)
+        credentials_path = home / "weixin_store" / "credentials.json"
+        credentials_path.parent.mkdir(parents=True)
+        credentials_path.write_text('{"token":"bot-token","account_id":1}', encoding="utf-8")
+        cfg = {
+            "transport": "weixin",
+            "ductor_home": str(home),
+            "weixin": {
+                "mode": "ilink",
+                "enabled": True,
+                "credentials_path": "weixin_store/credentials.json",
+            },
+        }
+        (config_dir / "config.json").write_text(json.dumps(cfg))
+
+        with patch("ductor_bot.__main__.resolve_paths") as mock_paths:
+            paths = DuctorPaths(
+                ductor_home=home,
+                home_defaults=tmp_path / "fw" / "workspace",
+                framework_root=tmp_path / "fw",
+            )
+            mock_paths.return_value = paths
+            assert _is_configured() is False
+
 
 class TestRunTelegram:
     async def test_exits_on_missing_token(self, tmp_path: Path) -> None:

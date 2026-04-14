@@ -1,4 +1,4 @@
-"""Minimal auth CLI entrypoints for Feishu device-flow login/status/logout."""
+"""Minimal auth CLI entrypoints for Feishu and Weixin."""
 
 from __future__ import annotations
 
@@ -18,8 +18,14 @@ from ductor_bot.messenger.feishu.auth.runtime_auth import (
     get_feishu_auth_status,
     persist_device_flow_auth,
 )
+from ductor_bot.messenger.weixin.api import fetch_qr_code, poll_qr_status
+from ductor_bot.messenger.weixin.auth_store import (
+    WeixinCredentialStore,
+    credentials_from_confirmed_qr_status,
+)
 
 _console = Console()
+_WEIXIN_QR_POLL_INTERVAL_SECONDS = 2.0
 
 
 def load_config() -> object:
@@ -30,12 +36,29 @@ def load_config() -> object:
 
 
 def cmd_auth(args: Sequence[str]) -> None:
-    """Handle ``ductor auth feishu <login|status|logout>``."""
+    """Handle transport auth commands."""
     commands = [arg for arg in args if not arg.startswith("-")]
-    if len(commands) < 3 or commands[0] != "auth" or commands[1] != "feishu":
-        raise SystemExit(1)
+    target, action = _parse_auth_command(commands)
+    if target == "feishu":
+        _cmd_feishu_auth(action)
+        return
+    if target == "weixin":
+        _cmd_weixin_auth(action)
+        return
+    raise SystemExit(1)
 
-    action = commands[2]
+
+def _parse_auth_command(commands: Sequence[str]) -> tuple[str, str]:
+    if len(commands) < 3:
+        raise SystemExit(1)
+    if commands[0] == "auth":
+        return commands[1], commands[2]
+    if commands[1] == "auth":
+        return commands[0], commands[2]
+    raise SystemExit(1)
+
+
+def _cmd_feishu_auth(action: str) -> None:
     if action == "login":
         asyncio.run(_cmd_feishu_login())
         return
@@ -44,6 +67,16 @@ def cmd_auth(args: Sequence[str]) -> None:
         return
     if action == "logout":
         _cmd_feishu_logout()
+        return
+    raise SystemExit(1)
+
+
+def _cmd_weixin_auth(action: str) -> None:
+    if action == "login":
+        asyncio.run(_cmd_weixin_login())
+        return
+    if action == "status":
+        _cmd_weixin_status()
         return
     raise SystemExit(1)
 
@@ -95,6 +128,66 @@ def _cmd_feishu_logout() -> None:
     config = load_config()
     clear_device_flow_auth(ductor_home=config.ductor_home, app_id=config.feishu.app_id)
     _console.print("Feishu device-flow auth cleared.")
+
+
+async def _cmd_weixin_login() -> None:
+    config = load_config()
+    qr = await fetch_qr_code(config.weixin.base_url)
+    qrcode = qr.get("qrcode")
+    qr_url = qr.get("qrcode_img_content")
+    if not isinstance(qrcode, str) or not isinstance(qr_url, str):
+        raise TypeError("Weixin QR login did not return a QR code")
+
+    _console.print(f"Weixin QR login URL: {qr_url}")
+    last_status = ""
+    while True:
+        status = await poll_qr_status(config.weixin.base_url, qrcode)
+        current_status = status.get("status")
+        if isinstance(current_status, str) and current_status != last_status:
+            _console.print(f"Weixin QR status: {current_status}")
+            last_status = current_status
+
+        if current_status == "confirmed":
+            credentials = credentials_from_confirmed_qr_status(
+                status,
+                fallback_base_url=config.weixin.base_url,
+            )
+            store = _weixin_store(config)
+            store.save_credentials(credentials)
+            _console.print("Weixin auth state: logged_in")
+            _console.print(f"Weixin account_id: {credentials.account_id}")
+            _console.print(f"Weixin user_id: {credentials.user_id}")
+            _console.print(f"Weixin credentials: {store.path}")
+            return
+
+        if current_status == "expired":
+            _console.print("Weixin auth state: expired")
+            raise SystemExit(1)
+
+        await asyncio.sleep(_WEIXIN_QR_POLL_INTERVAL_SECONDS)
+
+
+def _cmd_weixin_status() -> None:
+    config = load_config()
+    store = _weixin_store(config)
+    credentials = store.load_credentials()
+    if credentials is None:
+        _console.print("Weixin auth state: logged_out")
+        _console.print(f"Weixin credentials: {store.path}")
+        return
+
+    _console.print("Weixin auth state: logged_in")
+    _console.print(f"Weixin account_id: {credentials.account_id}")
+    _console.print(f"Weixin user_id: {credentials.user_id}")
+    _console.print(f"Weixin base_url: {credentials.base_url}")
+    _console.print(f"Weixin credentials: {store.path}")
+
+
+def _weixin_store(config: object) -> WeixinCredentialStore:
+    return WeixinCredentialStore(
+        config.ductor_home,
+        relative_path=config.weixin.credentials_path,
+    )
 
 
 def _render_authorization(authorization: object) -> None:

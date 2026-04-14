@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -10,6 +11,7 @@ from pathlib import Path
 from ductor_bot.infra.json_store import atomic_json_save, load_json
 
 DEFAULT_WEIXIN_BASE_URL = "https://ilinkai.weixin.qq.com"
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,7 +39,11 @@ class WeixinCredentialStore:
         raw = load_json(self.path)
         if raw is None:
             return None
-        return _coerce_credentials(raw, self.path)
+        try:
+            return _coerce_credentials(raw, self.path)
+        except (TypeError, ValueError):
+            logger.warning("Invalid Weixin credentials format in %s", self.path)
+            return None
 
     def save_credentials(self, credentials: StoredWeixinCredentials) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)

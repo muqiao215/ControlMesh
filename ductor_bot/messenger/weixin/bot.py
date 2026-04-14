@@ -19,7 +19,12 @@ from ductor_bot.messenger.notifications import NotificationService
 from ductor_bot.messenger.weixin.api import WeixinIlinkHttpClient
 from ductor_bot.messenger.weixin.auth_store import WeixinCredentialStore
 from ductor_bot.messenger.weixin.id_map import WeixinIdMap
-from ductor_bot.messenger.weixin.runtime import WeixinIncomingText, WeixinLongPollRuntime
+from ductor_bot.messenger.weixin.runtime import (
+    WeixinContextTokenRequiredError,
+    WeixinIncomingText,
+    WeixinLongPollRuntime,
+    WeixinReauthRequiredError,
+)
 from ductor_bot.messenger.weixin.transport import WeixinTransport
 from ductor_bot.session.key import SessionKey
 
@@ -165,13 +170,12 @@ class WeixinBot:
             await self._runtime.reply(message, result.text)
 
     async def send_text(self, chat_id: int, text: str) -> None:
-        if self._runtime is None:
-            logger.warning("Weixin send_text skipped before runtime init")
-            return
         user_id = self._id_map.int_to_user(chat_id)
         if user_id is None:
-            logger.warning("Weixin send_text skipped for unknown chat_id=%s", chat_id)
-            return
+            msg = f"No Weixin user mapping for chat_id {chat_id}"
+            raise WeixinContextTokenRequiredError(msg)
+        if self._runtime is None:
+            raise WeixinContextTokenRequiredError("Weixin runtime is not initialized")
         await self._runtime.send_text(user_id, text)
 
     async def broadcast_text(self, text: str) -> None:
@@ -192,6 +196,7 @@ class WeixinBot:
             credentials=credentials,
             client=WeixinIlinkHttpClient(self._session, self._config.weixin),
             on_text=self.handle_incoming_text,
+            on_auth_expired=self._on_auth_expired,
             cursor=self._config.weixin.poll_initial_cursor,
         )
         self._poll_task = asyncio.create_task(self._poll_loop(), name="weixin:poll")
@@ -205,11 +210,20 @@ class WeixinBot:
                 retry_delay_seconds = 1.0
             except asyncio.CancelledError:
                 raise
+            except WeixinReauthRequiredError:
+                logger.warning("Weixin iLink session expired; QR re-auth required")
+                self._credential_store.clear()
+                self._runtime = None
+                self._stop_event.set()
+                return
             except Exception:
                 logger.exception("Weixin iLink poll failed")
                 with contextlib.suppress(asyncio.TimeoutError):
                     await asyncio.wait_for(self._stop_event.wait(), timeout=retry_delay_seconds)
                 retry_delay_seconds = min(retry_delay_seconds * 2, 10.0)
+
+    async def _on_auth_expired(self, _credentials: object) -> None:
+        self._credential_store.clear()
 
     async def _close_runtime(self) -> None:
         if self._shutdown_started:
