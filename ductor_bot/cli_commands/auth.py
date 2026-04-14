@@ -23,6 +23,7 @@ from ductor_bot.messenger.weixin.auth_store import (
     WeixinCredentialStore,
     credentials_from_confirmed_qr_status,
 )
+from ductor_bot.messenger.weixin.runtime_state import WeixinRuntimeStateStore
 
 _console = Console()
 _WEIXIN_QR_POLL_INTERVAL_SECONDS = 2.0
@@ -153,6 +154,7 @@ async def _cmd_weixin_login() -> None:
                 fallback_base_url=config.weixin.base_url,
             )
             store = _weixin_store(config)
+            _weixin_runtime_state_store(config).clear()
             store.save_credentials(credentials)
             _console.print("Weixin auth state: logged_in")
             _console.print(f"Weixin account_id: {credentials.account_id}")
@@ -188,6 +190,10 @@ def _weixin_store(config: object) -> WeixinCredentialStore:
         config.ductor_home,
         relative_path=config.weixin.credentials_path,
     )
+
+
+def _weixin_runtime_state_store(config: object) -> WeixinRuntimeStateStore:
+    return WeixinRuntimeStateStore(config.ductor_home)
 
 
 def _render_authorization(authorization: object) -> None:

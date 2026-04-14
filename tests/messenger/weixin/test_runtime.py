@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 
@@ -15,12 +16,14 @@ from ductor_bot.messenger.weixin.runtime import (
     WeixinReauthRequiredError,
     WeixinUpdateBatch,
 )
+from ductor_bot.messenger.weixin.runtime_state import WeixinRuntimeState, WeixinRuntimeStateStore
 
 
 @dataclass
 class _FakeClient:
     updates: list[WeixinUpdateBatch]
     get_updates_error: Exception | None = None
+    send_text_error: Exception | None = None
 
     def __post_init__(self) -> None:
         self.get_updates_calls: list[tuple[StoredWeixinCredentials, str]] = []
@@ -43,6 +46,8 @@ class _FakeClient:
         context_token: str,
         text: str,
     ) -> None:
+        if self.send_text_error is not None:
+            raise self.send_text_error
         self.send_text_calls.append((credentials, user_id, context_token, text))
 
 
@@ -70,6 +75,84 @@ def _user_text_message(*, text: str, context_token: str = "ctx-1") -> dict[str, 
 
 
 class TestWeixinLongPollRuntime:
+    async def test_runtime_restores_saved_cursor_for_next_poll(self, tmp_path: Path) -> None:
+        state_store = WeixinRuntimeStateStore(tmp_path)
+        state_store.save_state(
+            _credentials(),
+            WeixinRuntimeState(cursor="cursor-1", context_tokens=(("user-1", "ctx-restore"),)),
+        )
+        client = _FakeClient(
+            updates=[
+                WeixinUpdateBatch(cursor="cursor-2", messages=[]),
+            ]
+        )
+        runtime = WeixinLongPollRuntime(
+            credentials=_credentials(),
+            client=client,
+            on_text=lambda _message: None,
+            state_store=state_store,
+        )
+
+        await runtime.poll_once()
+
+        assert client.get_updates_calls == [(_credentials(), "cursor-1")]
+        assert runtime.cursor == "cursor-2"
+
+    async def test_poll_once_persists_cursor_and_context_for_restart(self, tmp_path: Path) -> None:
+        state_store = WeixinRuntimeStateStore(tmp_path)
+        client = _FakeClient(
+            updates=[
+                WeixinUpdateBatch(cursor="cursor-2", messages=[_user_text_message(text="hello wx")]),
+            ]
+        )
+        runtime = WeixinLongPollRuntime(
+            credentials=_credentials(),
+            client=client,
+            on_text=lambda _message: None,
+            state_store=state_store,
+        )
+
+        await runtime.poll_once()
+
+        assert state_store.load_state(_credentials()) == WeixinRuntimeState(
+            cursor="cursor-2",
+            context_tokens=(("user-1", "ctx-1"),),
+        )
+
+        restored_client = _FakeClient(updates=[])
+        restored_runtime = WeixinLongPollRuntime(
+            credentials=_credentials(),
+            client=restored_client,
+            on_text=lambda _message: None,
+            state_store=state_store,
+        )
+
+        await restored_runtime.send_text("user-1", "pong")
+
+        assert restored_client.send_text_calls == [(_credentials(), "user-1", "ctx-1", "pong")]
+
+    async def test_context_cache_is_bounded_and_evicts_oldest_user(self, tmp_path: Path) -> None:
+        state_store = WeixinRuntimeStateStore(tmp_path)
+        runtime = WeixinLongPollRuntime(
+            credentials=_credentials(),
+            client=_FakeClient(updates=[]),
+            on_text=lambda _message: None,
+            state_store=state_store,
+            max_context_tokens=2,
+        )
+
+        runtime.remember_context("user-1", "ctx-1")
+        runtime.remember_context("user-2", "ctx-2")
+        runtime.remember_context("user-3", "ctx-3")
+
+        assert runtime.context_token_for("user-1") is None
+        assert runtime.context_token_for("user-2") == "ctx-2"
+        assert runtime.context_token_for("user-3") == "ctx-3"
+        assert state_store.load_state(_credentials()) == WeixinRuntimeState(
+            cursor="",
+            context_tokens=(("user-2", "ctx-2"), ("user-3", "ctx-3")),
+        )
+
     async def test_poll_once_dispatches_user_text_and_caches_context_token(self) -> None:
         seen: list[WeixinIncomingText] = []
         client = _FakeClient(
@@ -161,6 +244,34 @@ class TestWeixinLongPollRuntime:
 
         assert runtime.auth_state == "reauth_required"
         assert runtime.context_token_for("user-1") is None
+        assert expired == [_credentials()]
+
+    async def test_send_text_expiry_marks_reauth_required_and_clears_persisted_state(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        expired: list[StoredWeixinCredentials] = []
+        state_store = WeixinRuntimeStateStore(tmp_path)
+        client = _FakeClient(
+            updates=[],
+            send_text_error=WeixinIlinkApiError("expired", status=200, code=-14),
+        )
+        runtime = WeixinLongPollRuntime(
+            credentials=_credentials(),
+            client=client,
+            on_text=lambda _message: None,
+            on_auth_expired=expired.append,
+            state_store=state_store,
+        )
+        runtime.remember_context("user-1", "ctx-1")
+
+        with pytest.raises(WeixinReauthRequiredError, match="Weixin iLink session expired"):
+            await runtime.send_text("user-1", "pong")
+
+        assert runtime.auth_state == "reauth_required"
+        assert runtime.cursor == ""
+        assert runtime.context_token_for("user-1") is None
+        assert state_store.load_state(_credentials()) == WeixinRuntimeState()
         assert expired == [_credentials()]
 
     async def test_send_text_after_reauth_required_fails_explicitly(self) -> None:

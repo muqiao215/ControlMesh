@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 from ductor_bot.config import AgentConfig
 from ductor_bot.messenger.weixin.auth_store import StoredWeixinCredentials, WeixinCredentialStore
+from ductor_bot.messenger.weixin.runtime_state import WeixinRuntimeState, WeixinRuntimeStateStore
 
 if TYPE_CHECKING:
     import pytest
@@ -120,6 +121,60 @@ def test_cmd_auth_weixin_login_fetches_qr_and_persists_credentials(
     assert "https://login.example.com/qr" in rendered
     assert "bot-account" in rendered
     assert "wx-user" in rendered
+
+
+def test_cmd_auth_weixin_login_clears_stale_runtime_state(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _import_auth_cli_module()
+    config = _weixin_config(tmp_path)
+
+    async def _fake_fetch_qr_code(_base_url: str) -> dict[str, str]:
+        return {
+            "qrcode": "qr-token",
+            "qrcode_img_content": "https://login.example.com/qr",
+        }
+
+    async def _fake_poll_qr_status(_base_url: str, _qrcode: str) -> dict[str, object]:
+        return {
+            "status": "confirmed",
+            "bot_token": "bot-token",
+            "ilink_bot_id": "bot-account",
+            "ilink_user_id": "wx-user",
+            "baseurl": "https://mirror.example.com",
+        }
+
+    runtime_store = WeixinRuntimeStateStore(config.ductor_home)
+    runtime_store.save_state(
+        StoredWeixinCredentials(
+            token="old-token",
+            base_url="https://ilinkai.weixin.qq.com",
+            account_id="bot-account",
+            user_id="wx-user",
+        ),
+        WeixinRuntimeState(cursor="cursor-stale", context_tokens=(("user-1", "ctx-stale"),)),
+    )
+
+    class _FakeConsole:
+        def print(self, *args: object, **kwargs: object) -> None:
+            del args, kwargs
+
+    monkeypatch.setattr(module, "_console", _FakeConsole(), raising=False)
+    monkeypatch.setattr(module, "load_config", lambda: config, raising=False)
+    monkeypatch.setattr(module, "fetch_qr_code", _fake_fetch_qr_code, raising=False)
+    monkeypatch.setattr(module, "poll_qr_status", _fake_poll_qr_status, raising=False)
+
+    module.cmd_auth(["weixin", "auth", "login"])
+
+    assert runtime_store.load_state(
+        StoredWeixinCredentials(
+            token="bot-token",
+            base_url="https://mirror.example.com",
+            account_id="bot-account",
+            user_id="wx-user",
+        )
+    ) == WeixinRuntimeState()
 
 
 def test_cmd_auth_weixin_status_reports_logged_in_credentials(

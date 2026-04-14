@@ -8,11 +8,13 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from ductor_bot.messenger.weixin.auth_store import StoredWeixinCredentials
+from ductor_bot.messenger.weixin.runtime_state import WeixinRuntimeState, WeixinRuntimeStateStore
 
 _USER_MESSAGE_TYPE = 1
 _TEXT_ITEM_TYPE = 1
 _AUTHENTICATED = "authenticated"
 _REAUTH_REQUIRED = "reauth_required"
+_DEFAULT_MAX_CONTEXT_TOKENS = 100
 
 
 class WeixinRuntimeError(RuntimeError):
@@ -71,7 +73,7 @@ AuthExpiredHandler = Callable[[StoredWeixinCredentials], None | Awaitable[None]]
 class WeixinLongPollRuntime:
     """Stateful iLink adapter for getupdates and context-token-aware text sends."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         *,
         credentials: StoredWeixinCredentials,
@@ -79,13 +81,18 @@ class WeixinLongPollRuntime:
         on_text: TextHandler,
         on_auth_expired: AuthExpiredHandler | None = None,
         cursor: str = "",
+        state_store: WeixinRuntimeStateStore | None = None,
+        max_context_tokens: int = _DEFAULT_MAX_CONTEXT_TOKENS,
     ) -> None:
+        restored_state = state_store.load_state(credentials) if state_store is not None else WeixinRuntimeState()
         self._credentials = credentials
         self._client = client
         self._on_text = on_text
         self._on_auth_expired = on_auth_expired
-        self.cursor = cursor
-        self._context_tokens: dict[str, str] = {}
+        self._state_store = state_store
+        self._max_context_tokens = max(1, max_context_tokens)
+        self.cursor = restored_state.cursor or cursor
+        self._context_tokens: dict[str, str] = dict(restored_state.context_tokens)
         self._auth_state = _AUTHENTICATED
 
     @property
@@ -97,27 +104,29 @@ class WeixinLongPollRuntime:
 
     def remember_context(self, user_id: str, context_token: str) -> None:
         if user_id and context_token:
+            self._context_tokens.pop(user_id, None)
             self._context_tokens[user_id] = context_token
+            while len(self._context_tokens) > self._max_context_tokens:
+                oldest_user_id = next(iter(self._context_tokens))
+                del self._context_tokens[oldest_user_id]
+            self._persist_state()
 
     def mark_reauth_required(self) -> None:
         self._auth_state = _REAUTH_REQUIRED
         self.cursor = ""
         self._context_tokens.clear()
+        self._clear_state()
 
     async def poll_once(self) -> None:
         try:
             batch = await self._client.get_updates(self._credentials, self.cursor)
         except Exception as exc:
             if getattr(exc, "is_session_expired", False):
-                self.mark_reauth_required()
-                if self._on_auth_expired is not None:
-                    result = self._on_auth_expired(self._credentials)
-                    if inspect.isawaitable(result):
-                        await result
-                raise WeixinReauthRequiredError("Weixin iLink session expired") from exc
+                await self._handle_session_expired(exc)
             raise
         if batch.cursor:
             self.cursor = batch.cursor
+            self._persist_state()
 
         for raw in batch.messages:
             message = self._to_incoming_text(raw)
@@ -146,7 +155,12 @@ class WeixinLongPollRuntime:
         resolved_context = context_token or self.context_token_for(user_id)
         if resolved_context is None:
             raise WeixinContextTokenRequiredError(f"No cached context token for user {user_id}")
-        await self._client.send_text(self._credentials, user_id, resolved_context, text)
+        try:
+            await self._client.send_text(self._credentials, user_id, resolved_context, text)
+        except Exception as exc:
+            if getattr(exc, "is_session_expired", False):
+                await self._handle_session_expired(exc)
+            raise
 
     @staticmethod
     def _to_incoming_text(raw: Mapping[str, object]) -> WeixinIncomingText | None:
@@ -170,6 +184,30 @@ class WeixinLongPollRuntime:
             context_token=context_token,
             message_id=message_id,
             raw=dict(raw),
+        )
+
+    async def _handle_session_expired(self, exc: Exception) -> None:
+        self.mark_reauth_required()
+        if self._on_auth_expired is not None:
+            result = self._on_auth_expired(self._credentials)
+            if inspect.isawaitable(result):
+                await result
+        raise WeixinReauthRequiredError("Weixin iLink session expired") from exc
+
+    def _persist_state(self) -> None:
+        if self._state_store is None:
+            return
+        self._state_store.save_state(self._credentials, self._current_state())
+
+    def _clear_state(self) -> None:
+        if self._state_store is None:
+            return
+        self._state_store.clear()
+
+    def _current_state(self) -> WeixinRuntimeState:
+        return WeixinRuntimeState(
+            cursor=self.cursor,
+            context_tokens=tuple(self._context_tokens.items()),
         )
 
 

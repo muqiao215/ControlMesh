@@ -25,6 +25,7 @@ from ductor_bot.messenger.weixin.runtime import (
     WeixinLongPollRuntime,
     WeixinReauthRequiredError,
 )
+from ductor_bot.messenger.weixin.runtime_state import WeixinRuntimeStateStore
 from ductor_bot.messenger.weixin.transport import WeixinTransport
 from ductor_bot.session.key import SessionKey
 
@@ -82,6 +83,7 @@ class WeixinBot:
             config.ductor_home,
             relative_path=config.weixin.credentials_path,
         )
+        self._runtime_state_store = WeixinRuntimeStateStore(config.ductor_home)
         self._notification_service: NotificationService = WeixinNotificationService(self)
         self._bus.register_transport(WeixinTransport(self))
 
@@ -198,6 +200,7 @@ class WeixinBot:
             on_text=self.handle_incoming_text,
             on_auth_expired=self._on_auth_expired,
             cursor=self._config.weixin.poll_initial_cursor,
+            state_store=self._runtime_state_store,
         )
         self._poll_task = asyncio.create_task(self._poll_loop(), name="weixin:poll")
 
@@ -213,6 +216,7 @@ class WeixinBot:
             except WeixinReauthRequiredError:
                 logger.warning("Weixin iLink session expired; QR re-auth required")
                 self._credential_store.clear()
+                self._runtime_state_store.clear()
                 self._runtime = None
                 self._stop_event.set()
                 return
@@ -224,6 +228,7 @@ class WeixinBot:
 
     async def _on_auth_expired(self, _credentials: object) -> None:
         self._credential_store.clear()
+        self._runtime_state_store.clear()
 
     async def _close_runtime(self) -> None:
         if self._shutdown_started:
