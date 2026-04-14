@@ -67,6 +67,17 @@
         "reply_to_trigger": true
     },
 
+    "weixin": {
+        "mode": "ilink",
+        "enabled": false,
+        "base_url": "https://ilinkai.weixin.qq.com",
+        "credentials_path": "weixin_store/credentials.json",
+        "poll_initial_cursor": "",
+        "longpoll_timeout_ms": 40000,
+        "channel_version": "1.0.0",
+        "reply_chunk_chars": 2000
+    },
+
     "streaming": {
         "enabled": true,
         "min_chars": 200,

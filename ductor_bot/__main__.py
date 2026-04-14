@@ -9,6 +9,7 @@ import shutil
 import signal
 import sys
 from collections.abc import Callable
+from pathlib import Path
 
 from rich.console import Console
 
@@ -106,10 +107,26 @@ def _is_configured_feishu(data: dict[str, object]) -> bool:
     )
 
 
+def _is_configured_weixin(data: dict[str, object]) -> bool:
+    wx = data.get("weixin", {})
+    if not isinstance(wx, dict):
+        return False
+    if wx.get("mode", "ilink") != "ilink":
+        return False
+    if not bool(wx.get("enabled", False)):
+        return False
+
+    raw_home = data.get("ductor_home", "~/.ductor")
+    ductor_home = Path(str(raw_home)).expanduser()
+    relative_path = str(wx.get("credentials_path", "weixin_store/credentials.json"))
+    return (ductor_home / relative_path).is_file()
+
+
 _IS_CONFIGURED_CHECKS: dict[str, Callable[[dict[str, object]], bool]] = {
     "telegram": _is_configured_telegram,
     "matrix": _is_configured_matrix,
     "feishu": _is_configured_feishu,
+    "weixin": _is_configured_weixin,
 }
 
 
@@ -278,10 +295,29 @@ def _validate_feishu_config(config: AgentConfig) -> None:
         sys.exit(1)
 
 
+def _validate_weixin_config(config: AgentConfig) -> None:
+    """Validate Weixin iLink transport requirements."""
+    wx = config.weixin
+    if wx.mode != "ilink":
+        _console.print("Weixin cut 1 supports only weixin.mode='ilink'.")
+        sys.exit(1)
+    if not wx.enabled:
+        _console.print("Weixin iLink transport is disabled by default; set weixin.enabled=true.")
+        sys.exit(1)
+
+    from ductor_bot.messenger.weixin.auth_store import WeixinCredentialStore
+
+    store = WeixinCredentialStore(config.ductor_home, relative_path=wx.credentials_path)
+    if store.load_credentials() is None:
+        _console.print(f"Weixin iLink transport requires stored QR credentials at {store.path}.")
+        sys.exit(1)
+
+
 _TRANSPORT_VALIDATORS: dict[str, Callable[[AgentConfig], None]] = {
     "telegram": _validate_telegram_config,
     "matrix": _validate_matrix_config,
     "feishu": _validate_feishu_config,
+    "weixin": _validate_weixin_config,
 }
 
 

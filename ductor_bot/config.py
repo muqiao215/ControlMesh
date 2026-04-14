@@ -239,6 +239,24 @@ class FeishuConfig(BaseModel):
         return self
 
 
+class WeixinConfig(BaseModel):
+    """Weixin iLink transport settings.
+
+    This is intentionally disabled by default: iLink requires QR-derived bot
+    credentials and a context-token-bearing inbound message before replies are
+    safe to send.
+    """
+
+    mode: Literal["ilink"] = "ilink"
+    enabled: bool = False
+    base_url: str = "https://ilinkai.weixin.qq.com"
+    credentials_path: str = "weixin_store/credentials.json"
+    poll_initial_cursor: str = ""
+    longpoll_timeout_ms: int = 40000
+    channel_version: str = "1.0.0"
+    reply_chunk_chars: int = 2000
+
+
 class TasksConfig(BaseModel):
     """Settings for background task delegation."""
 
@@ -388,13 +406,14 @@ class AgentConfig(BaseModel):
     update_check: bool = True
     group_mention_only: bool = False
     interagent_port: int = 8799
-    transport: str = "telegram"  # "telegram" | "matrix"
+    transport: str = "telegram"  # "telegram" | "matrix" | "feishu" | "weixin"
     transports: list[str] = Field(default_factory=list)
     telegram_token: str = ""
     allowed_user_ids: list[int] = Field(default_factory=list)
     allowed_group_ids: list[int] = Field(default_factory=list)
     matrix: MatrixConfig = Field(default_factory=MatrixConfig)
     feishu: FeishuConfig = Field(default_factory=FeishuConfig)
+    weixin: WeixinConfig = Field(default_factory=WeixinConfig)
 
     @field_validator("gemini_api_key", mode="before")
     @classmethod
