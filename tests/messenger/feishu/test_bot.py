@@ -56,6 +56,29 @@ def _make_bot(tmp_path: Path, **feishu_overrides: object) -> FeishuBot:
 
 
 class TestFeishuBotRouting:
+    async def test_handle_incoming_text_auth_command_routes_to_card_auth_runner(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path)
+        bot._orchestrator = SimpleNamespace(
+            handle_message=AsyncMock(return_value=SimpleNamespace(text="pong"))
+        )
+        bot._card_auth_runner = SimpleNamespace(handle_message=AsyncMock(return_value=True))
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="授权飞书",
+                thread_id="omt_1",
+            )
+        )
+
+        bot._card_auth_runner.handle_message.assert_awaited_once()
+        bot._orchestrator.handle_message.assert_not_awaited()
+
     async def test_handle_incoming_event_normalizes_text_payload(self, tmp_path: Path) -> None:
         bot = _make_bot(tmp_path)
         bot.handle_incoming_text = AsyncMock()  # type: ignore[method-assign]
@@ -118,6 +141,28 @@ class TestFeishuBotRouting:
             "pong",
             reply_to_message_id="om_1",
         )
+
+    async def test_non_auth_message_still_routes_to_orchestrator_when_card_auth_runner_exists(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path)
+        bot._orchestrator = SimpleNamespace(
+            handle_message_streaming=AsyncMock(return_value=SimpleNamespace(text="pong"))
+        )
+        bot._card_auth_runner = SimpleNamespace(handle_message=AsyncMock(return_value=False))
+        bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="ping",
+            )
+        )
+
+        bot._card_auth_runner.handle_message.assert_awaited_once()
+        bot._orchestrator.handle_message_streaming.assert_awaited_once()
 
     async def test_handle_incoming_text_deduplicates_same_message_id(
         self,
@@ -195,6 +240,14 @@ class TestFeishuBotRouting:
             ("oc_chat_1", "[TOOL: Shell]", "om_1"),
             ("oc_chat_1", "pong", "om_1"),
         ]
+
+    async def test_shutdown_awaits_card_auth_runner(self, tmp_path: Path) -> None:
+        bot = _make_bot(tmp_path)
+        bot._card_auth_runner = SimpleNamespace(shutdown=AsyncMock())
+
+        await bot.shutdown()
+
+        bot._card_auth_runner.shutdown.assert_awaited_once()
 
     async def test_on_task_result_routes_to_fs_and_delivers(self, tmp_path: Path) -> None:
         bot = _make_bot(tmp_path)
