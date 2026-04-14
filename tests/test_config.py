@@ -14,6 +14,7 @@ from ductor_bot.config import (
     DockerConfig,
     ModelRegistry,
     StreamingConfig,
+    WeixinConfig,
     deep_merge_config,
     reset_gemini_models,
 )
@@ -175,6 +176,16 @@ def test_transport_feishu_backward_compat() -> None:
     assert cfg.transport == "feishu"
     assert cfg.feishu.mode == "bot_only"
     assert cfg.feishu.progress_mode == "text"
+
+
+def test_transport_weixin_backward_compat() -> None:
+    """transport='weixin' with empty transports normalizes correctly."""
+    cfg = AgentConfig(transport="weixin")
+    assert cfg.transports == ["weixin"]
+    assert cfg.transport == "weixin"
+    assert cfg.weixin == WeixinConfig()
+    assert cfg.weixin.mode == "ilink"
+    assert cfg.weixin.enabled is False
 
 
 def test_transports_multi_sets_primary_transport() -> None:

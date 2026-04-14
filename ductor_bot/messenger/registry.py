@@ -107,8 +107,21 @@ def _create_feishu(
     return FeishuBot(config, agent_name=agent_name, bus=bus, lock_pool=lock_pool)
 
 
+def _create_weixin(
+    config: AgentConfig,
+    *,
+    agent_name: str,
+    bus: MessageBus | None,
+    lock_pool: LockPool | None,
+) -> BotProtocol:
+    from ductor_bot.messenger.weixin.bot import WeixinBot
+
+    return WeixinBot(config, agent_name=agent_name, bus=bus, lock_pool=lock_pool)
+
+
 _TRANSPORT_FACTORIES: dict[str, _Factory] = {
     "telegram": _create_telegram,
     "matrix": _create_matrix,
     "feishu": _create_feishu,
+    "weixin": _create_weixin,
 }
