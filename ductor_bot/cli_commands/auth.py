@@ -19,6 +19,7 @@ from ductor_bot.messenger.feishu.auth.runtime_auth import (
     persist_device_flow_auth,
 )
 from ductor_bot.messenger.weixin.api import fetch_qr_code, poll_qr_status
+from ductor_bot.messenger.weixin.auth_state import WeixinAuthStateStore
 from ductor_bot.messenger.weixin.auth_store import (
     WeixinCredentialStore,
     credentials_from_confirmed_qr_status,
@@ -76,8 +77,14 @@ def _cmd_weixin_auth(action: str) -> None:
     if action == "login":
         asyncio.run(_cmd_weixin_login())
         return
+    if action == "reauth":
+        _cmd_weixin_reauth()
+        return
     if action == "status":
         _cmd_weixin_status()
+        return
+    if action == "logout":
+        _cmd_weixin_logout()
         return
     raise SystemExit(1)
 
@@ -133,6 +140,7 @@ def _cmd_feishu_logout() -> None:
 
 async def _cmd_weixin_login() -> None:
     config = load_config()
+    _ensure_weixin_enabled(config)
     qr = await fetch_qr_code(config.weixin.base_url)
     qrcode = qr.get("qrcode")
     qr_url = qr.get("qrcode_img_content")
@@ -155,6 +163,7 @@ async def _cmd_weixin_login() -> None:
             )
             store = _weixin_store(config)
             _weixin_runtime_state_store(config).clear()
+            _weixin_auth_state_store(config).clear()
             store.save_credentials(credentials)
             _console.print("Weixin auth state: logged_in")
             _console.print(f"Weixin account_id: {credentials.account_id}")
@@ -171,18 +180,56 @@ async def _cmd_weixin_login() -> None:
 
 def _cmd_weixin_status() -> None:
     config = load_config()
+    _console.print(f"Weixin configured: {str(bool(config.weixin.enabled)).lower()}")
+    if not config.weixin.enabled:
+        _console.print("Weixin auth state: disabled")
+        _console.print("Weixin runtime state: disabled")
+        return
+
     store = _weixin_store(config)
+    auth_state = _weixin_auth_state_store(config).load_state()
     credentials = store.load_credentials()
-    if credentials is None:
-        _console.print("Weixin auth state: logged_out")
+    if auth_state == "reauth_required":
+        _console.print("Weixin auth state: reauth_required")
+        _console.print("Weixin runtime state: degraded")
         _console.print(f"Weixin credentials: {store.path}")
         return
 
+    if credentials is None:
+        _console.print("Weixin auth state: logged_out")
+        _console.print("Weixin runtime state: unavailable")
+        _console.print(f"Weixin credentials: {store.path}")
+        return
+
+    runtime_state = _weixin_runtime_state_store(config).load_state(credentials)
     _console.print("Weixin auth state: logged_in")
+    runtime_state_text = (
+        "context_token_available"
+        if runtime_state.context_tokens
+        else "context_token_unavailable"
+    )
+    _console.print(f"Weixin runtime state: {runtime_state_text}")
     _console.print(f"Weixin account_id: {credentials.account_id}")
     _console.print(f"Weixin user_id: {credentials.user_id}")
     _console.print(f"Weixin base_url: {credentials.base_url}")
     _console.print(f"Weixin credentials: {store.path}")
+
+
+def _cmd_weixin_reauth() -> None:
+    config = load_config()
+    _ensure_weixin_enabled(config)
+    if _weixin_auth_state_store(config).load_state() != "reauth_required":
+        raise SystemExit(1)
+    asyncio.run(_cmd_weixin_login())
+
+
+def _cmd_weixin_logout() -> None:
+    config = load_config()
+    _weixin_store(config).clear()
+    _weixin_runtime_state_store(config).clear()
+    _weixin_auth_state_store(config).clear()
+    _console.print("Weixin auth state: logged_out")
+    _console.print("Weixin runtime state: unavailable")
 
 
 def _weixin_store(config: object) -> WeixinCredentialStore:
@@ -194,6 +241,15 @@ def _weixin_store(config: object) -> WeixinCredentialStore:
 
 def _weixin_runtime_state_store(config: object) -> WeixinRuntimeStateStore:
     return WeixinRuntimeStateStore(config.ductor_home)
+
+
+def _weixin_auth_state_store(config: object) -> WeixinAuthStateStore:
+    return WeixinAuthStateStore(config.ductor_home)
+
+
+def _ensure_weixin_enabled(config: object) -> None:
+    if not config.weixin.enabled:
+        raise SystemExit(1)
 
 
 def _render_authorization(authorization: object) -> None:

@@ -1,5 +1,6 @@
 """Weixin iLink transport scaffolding."""
 
+from ductor_bot.messenger.weixin.auth_state import WeixinAuthStateStore
 from ductor_bot.messenger.weixin.auth_store import StoredWeixinCredentials, WeixinCredentialStore
 from ductor_bot.messenger.weixin.runtime import (
     WeixinContextTokenRequiredError,
@@ -12,6 +13,7 @@ from ductor_bot.messenger.weixin.runtime_state import WeixinRuntimeState, Weixin
 
 __all__ = [
     "StoredWeixinCredentials",
+    "WeixinAuthStateStore",
     "WeixinContextTokenRequiredError",
     "WeixinCredentialStore",
     "WeixinIncomingText",

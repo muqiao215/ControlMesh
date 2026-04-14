@@ -17,6 +17,7 @@ from ductor_bot.config import AgentConfig
 from ductor_bot.files.allowed_roots import resolve_allowed_roots
 from ductor_bot.messenger.notifications import NotificationService
 from ductor_bot.messenger.weixin.api import WeixinIlinkHttpClient
+from ductor_bot.messenger.weixin.auth_state import WeixinAuthStateStore
 from ductor_bot.messenger.weixin.auth_store import WeixinCredentialStore
 from ductor_bot.messenger.weixin.id_map import WeixinIdMap
 from ductor_bot.messenger.weixin.runtime import (
@@ -83,6 +84,7 @@ class WeixinBot:
             config.ductor_home,
             relative_path=config.weixin.credentials_path,
         )
+        self._auth_state_store = WeixinAuthStateStore(config.ductor_home)
         self._runtime_state_store = WeixinRuntimeStateStore(config.ductor_home)
         self._notification_service: NotificationService = WeixinNotificationService(self)
         self._bus.register_transport(WeixinTransport(self))
@@ -215,6 +217,7 @@ class WeixinBot:
                 raise
             except WeixinReauthRequiredError:
                 logger.warning("Weixin iLink session expired; QR re-auth required")
+                self._auth_state_store.mark_reauth_required()
                 self._credential_store.clear()
                 self._runtime_state_store.clear()
                 self._runtime = None
@@ -227,6 +230,7 @@ class WeixinBot:
                 retry_delay_seconds = min(retry_delay_seconds * 2, 10.0)
 
     async def _on_auth_expired(self, _credentials: object) -> None:
+        self._auth_state_store.mark_reauth_required()
         self._credential_store.clear()
         self._runtime_state_store.clear()
 
