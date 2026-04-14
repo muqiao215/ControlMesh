@@ -21,6 +21,7 @@ from ductor_bot.files.allowed_roots import resolve_allowed_roots
 from ductor_bot.log_context import set_log_context
 from ductor_bot.messenger.feishu.auth.runtime_auth import resolve_feishu_auth
 from ductor_bot.messenger.notifications import NotificationService
+from ductor_bot.messenger.telegram.dedup import DedupeCache
 from ductor_bot.session.key import SessionKey
 
 if TYPE_CHECKING:
@@ -32,6 +33,8 @@ if TYPE_CHECKING:
     from ductor_bot.workspace.paths import DuctorPaths
 
 logger = logging.getLogger(__name__)
+_FEISHU_DEDUP_TTL_SECONDS = 120.0
+_FEISHU_DEDUP_MAX_SIZE = 2000
 
 
 @dataclass(slots=True)
@@ -82,6 +85,10 @@ class FeishuBot:
         self._tenant_access_token_expiry: float = 0.0
         self._shutdown_started = False
         self._exit_code = 0
+        self._dedup = DedupeCache(
+            ttl_seconds=_FEISHU_DEDUP_TTL_SECONDS,
+            max_size=_FEISHU_DEDUP_MAX_SIZE,
+        )
 
         store_path = Path(config.ductor_home).expanduser() / "feishu_store"
         store_path.mkdir(parents=True, exist_ok=True)
@@ -183,6 +190,14 @@ class FeishuBot:
         await self.handle_incoming_text(message)
 
     async def handle_incoming_text(self, message: FeishuIncomingText) -> None:
+        dedup_key = f"{message.chat_id}:{message.message_id}"
+        if self._dedup.check(dedup_key):
+            logger.info(
+                "Ignoring duplicate Feishu message chat_id=%s message_id=%s",
+                message.chat_id,
+                message.message_id,
+            )
+            return
         if not self._sender_allowed(message.sender_id):
             logger.info("Ignoring Feishu message from unauthorized sender=%s", message.sender_id)
             return

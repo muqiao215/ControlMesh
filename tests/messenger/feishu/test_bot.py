@@ -119,6 +119,33 @@ class TestFeishuBotRouting:
             reply_to_message_id="om_1",
         )
 
+    async def test_handle_incoming_text_deduplicates_same_message_id(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path)
+        bot._orchestrator = SimpleNamespace(
+            handle_message=AsyncMock(return_value=SimpleNamespace(text="pong"))
+        )
+        bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+
+        message = FeishuIncomingText(
+            sender_id="ou_sender",
+            chat_id="oc_chat_1",
+            message_id="om_same",
+            text="ping",
+        )
+
+        await bot.handle_incoming_text(message)
+        await bot.handle_incoming_text(message)
+
+        bot._orchestrator.handle_message.assert_awaited_once()
+        bot._send_text_to_chat_ref.assert_awaited_once_with(
+            "oc_chat_1",
+            "pong",
+            reply_to_message_id="om_same",
+        )
+
     async def test_on_task_result_routes_to_fs_and_delivers(self, tmp_path: Path) -> None:
         bot = _make_bot(tmp_path)
 
