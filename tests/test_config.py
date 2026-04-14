@@ -174,6 +174,7 @@ def test_transport_feishu_backward_compat() -> None:
     assert cfg.transports == ["feishu"]
     assert cfg.transport == "feishu"
     assert cfg.feishu.mode == "bot_only"
+    assert cfg.feishu.progress_mode == "text"
 
 
 def test_transports_multi_sets_primary_transport() -> None:

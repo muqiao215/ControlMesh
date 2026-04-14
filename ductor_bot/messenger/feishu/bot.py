@@ -64,6 +64,7 @@ class _FeishuProgressReporter:
         self._sent_labels: set[str] = set()
         self._progress_count = 0
         self._delay_task: asyncio.Task[None] | None = None
+        self.handles_final_response = False
 
     def start(self) -> None:
         self._delay_task = asyncio.create_task(self._send_delayed_ack())
@@ -87,6 +88,12 @@ class _FeishuProgressReporter:
         label = self._SYSTEM_LABELS.get(status)
         if label:
             await self._emit(label)
+
+    async def finish_success(self, _text: str) -> None:
+        return None
+
+    async def finish_failure(self, _error_text: str) -> None:
+        return None
 
     async def _send_delayed_ack(self) -> None:
         await asyncio.sleep(_FEISHU_PROGRESS_ACK_DELAY_SECONDS)
@@ -259,6 +266,8 @@ class FeishuBot:
         await self.handle_incoming_text(message)
 
     async def handle_incoming_text(self, message: FeishuIncomingText) -> None:
+        from ductor_bot.messenger.feishu.progress_preview import FeishuCardPreviewReporter
+
         dedup_key = f"{message.chat_id}:{message.message_id}"
         if self._dedup.check(dedup_key):
             logger.info(
@@ -283,23 +292,35 @@ class FeishuBot:
         )
         set_log_context(operation="feishu-msg", chat_id=chat_id)
         lock = self._lock_pool.get((chat_id, topic_id))
-        progress = _FeishuProgressReporter(
-            self,
-            chat_ref=message.chat_id,
-            reply_to_message_id=reply_to,
-        )
+        if self._config.feishu.progress_mode == "card_preview":
+            progress = FeishuCardPreviewReporter(
+                self,
+                chat_ref=message.chat_id,
+                reply_to_message_id=reply_to,
+                max_messages=_FEISHU_PROGRESS_MAX_MESSAGES,
+            )
+        else:
+            progress = _FeishuProgressReporter(
+                self,
+                chat_ref=message.chat_id,
+                reply_to_message_id=reply_to,
+            )
         progress.start()
-        async with lock:
-            try:
+        try:
+            async with lock:
                 result = await self._orchestrator.handle_message_streaming(
                     SessionKey.for_transport("fs", chat_id, topic_id),
                     message.text,
                     on_tool_activity=progress.on_tool,
                     on_system_status=progress.on_system,
                 )
-            finally:
-                await progress.close()
-        if result.text:
+        except Exception as exc:
+            await progress.finish_failure(str(exc))
+            raise
+        finally:
+            await progress.close()
+        await progress.finish_success(result.text)
+        if result.text and not progress.handles_final_response:
             await self._send_text_to_chat_ref(message.chat_id, result.text, reply_to_message_id=reply_to)
 
     async def send_text(self, chat_id: int, text: str) -> None:
@@ -322,13 +343,42 @@ class FeishuBot:
     ) -> None:
         if not text:
             return
+        await self._send_message_to_chat_ref(
+            chat_ref,
+            msg_type="text",
+            content={"text": text},
+            reply_to_message_id=reply_to_message_id,
+        )
+
+    async def _send_card_to_chat_ref(
+        self,
+        chat_ref: str,
+        content: dict[str, object],
+        *,
+        reply_to_message_id: str | None = None,
+    ) -> str | None:
+        return await self._send_message_to_chat_ref(
+            chat_ref,
+            msg_type="interactive",
+            content=content,
+            reply_to_message_id=reply_to_message_id,
+        )
+
+    async def _send_message_to_chat_ref(
+        self,
+        chat_ref: str,
+        *,
+        msg_type: str,
+        content: dict[str, object],
+        reply_to_message_id: str | None = None,
+    ) -> str | None:
         session = await self._ensure_session()
         token = await self._get_tenant_access_token()
         url = f"{self._config.feishu.domain.rstrip('/')}/open-apis/im/v1/messages"
         payload: dict[str, object] = {
             "receive_id": chat_ref,
-            "msg_type": "text",
-            "content": json.dumps({"text": text}, ensure_ascii=False),
+            "msg_type": msg_type,
+            "content": json.dumps(content, ensure_ascii=False),
         }
         if reply_to_message_id:
             payload["reply_to_message_id"] = reply_to_message_id
@@ -339,10 +389,45 @@ class FeishuBot:
             json=payload,
             headers=headers,
         ) as response:
+            body = await response.text()
+            if response.status >= 400:
+                logger.warning(
+                    "Feishu send failed: status=%s body=%s",
+                    response.status,
+                    body[:500],
+                )
+                return None
+        try:
+            payload_data = json.loads(body)
+        except json.JSONDecodeError:
+            return None
+        data = payload_data.get("data", {})
+        if isinstance(data, dict):
+            message_id = data.get("message_id")
+            if isinstance(message_id, str) and message_id:
+                return message_id
+        return None
+
+    async def _patch_message(
+        self,
+        message_id: str,
+        *,
+        msg_type: str,
+        content: dict[str, object],
+    ) -> None:
+        session = await self._ensure_session()
+        token = await self._get_tenant_access_token()
+        url = f"{self._config.feishu.domain.rstrip('/')}/open-apis/im/v1/messages/{message_id}"
+        headers = {"Authorization": f"Bearer {token}"}
+        payload = {
+            "msg_type": msg_type,
+            "content": json.dumps(content, ensure_ascii=False),
+        }
+        async with session.patch(url, json=payload, headers=headers) as response:
             if response.status >= 400:
                 body = await response.text()
                 logger.warning(
-                    "Feishu send failed: status=%s body=%s",
+                    "Feishu patch failed: status=%s body=%s",
                     response.status,
                     body[:500],
                 )
