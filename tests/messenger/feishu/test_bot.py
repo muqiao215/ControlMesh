@@ -99,7 +99,7 @@ class TestFeishuBotRouting:
     ) -> None:
         bot = _make_bot(tmp_path)
         bot._orchestrator = SimpleNamespace(
-            handle_message=AsyncMock(return_value=SimpleNamespace(text="pong"))
+            handle_message_streaming=AsyncMock(return_value=SimpleNamespace(text="pong"))
         )
         bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
 
@@ -112,7 +112,7 @@ class TestFeishuBotRouting:
             )
         )
 
-        bot._orchestrator.handle_message.assert_awaited_once()
+        bot._orchestrator.handle_message_streaming.assert_awaited_once()
         bot._send_text_to_chat_ref.assert_awaited_once_with(
             "oc_chat_1",
             "pong",
@@ -125,7 +125,7 @@ class TestFeishuBotRouting:
     ) -> None:
         bot = _make_bot(tmp_path)
         bot._orchestrator = SimpleNamespace(
-            handle_message=AsyncMock(return_value=SimpleNamespace(text="pong"))
+            handle_message_streaming=AsyncMock(return_value=SimpleNamespace(text="pong"))
         )
         bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
 
@@ -139,12 +139,62 @@ class TestFeishuBotRouting:
         await bot.handle_incoming_text(message)
         await bot.handle_incoming_text(message)
 
-        bot._orchestrator.handle_message.assert_awaited_once()
+        bot._orchestrator.handle_message_streaming.assert_awaited_once()
         bot._send_text_to_chat_ref.assert_awaited_once_with(
             "oc_chat_1",
             "pong",
             reply_to_message_id="om_same",
         )
+
+    async def test_handle_incoming_text_emits_progress_feedback_during_streaming(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path)
+        sent: list[tuple[str, str, str | None]] = []
+
+        async def _fake_send(
+            chat_ref: str,
+            text: str,
+            *,
+            reply_to_message_id: str | None = None,
+        ) -> None:
+            sent.append((chat_ref, text, reply_to_message_id))
+
+        async def _fake_stream(
+            _key: object,
+            _text: str,
+            *,
+            on_tool_activity: AsyncMock | None = None,
+            on_system_status: AsyncMock | None = None,
+            **_kwargs: object,
+        ) -> SimpleNamespace:
+            assert on_system_status is not None
+            assert on_tool_activity is not None
+            await on_system_status("thinking")
+            await on_system_status("thinking")
+            await on_tool_activity("Shell")
+            return SimpleNamespace(text="pong")
+
+        bot._orchestrator = SimpleNamespace(
+            handle_message_streaming=AsyncMock(side_effect=_fake_stream)
+        )
+        bot._send_text_to_chat_ref = AsyncMock(side_effect=_fake_send)  # type: ignore[method-assign]
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="ping",
+            )
+        )
+
+        assert sent == [
+            ("oc_chat_1", "处理中...", "om_1"),
+            ("oc_chat_1", "[TOOL: Shell]", "om_1"),
+            ("oc_chat_1", "pong", "om_1"),
+        ]
 
     async def test_on_task_result_routes_to_fs_and_delivers(self, tmp_path: Path) -> None:
         bot = _make_bot(tmp_path)
@@ -198,7 +248,7 @@ class TestFeishuInboundListener:
             callback_path="/feishu/events",
         )
         bot._orchestrator = SimpleNamespace(
-            handle_message=AsyncMock(return_value=SimpleNamespace(text="pong")),
+            handle_message_streaming=AsyncMock(return_value=SimpleNamespace(text="pong")),
             shutdown=AsyncMock(),
         )
         bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
@@ -240,7 +290,7 @@ class TestFeishuInboundListener:
             assert await response.json() == {"accepted": True}
 
         await asyncio.sleep(0)
-        bot._orchestrator.handle_message.assert_awaited_once()
+        bot._orchestrator.handle_message_streaming.assert_awaited_once()
         bot._send_text_to_chat_ref.assert_awaited_once_with(
             "oc_chat_1",
             "pong",

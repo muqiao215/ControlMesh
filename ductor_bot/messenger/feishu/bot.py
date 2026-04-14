@@ -7,6 +7,7 @@ import json
 import logging
 import time
 from collections.abc import Awaitable, Callable
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -35,6 +36,74 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 _FEISHU_DEDUP_TTL_SECONDS = 120.0
 _FEISHU_DEDUP_MAX_SIZE = 2000
+_FEISHU_PROGRESS_ACK_DELAY_SECONDS = 1.5
+_FEISHU_PROGRESS_MAX_MESSAGES = 8
+
+
+class _FeishuProgressReporter:
+    """Emit lightweight progress messages for long-running Feishu turns."""
+
+    _SYSTEM_LABELS: dict[str, str] = {
+        "thinking": "处理中...",
+        "compacting": "整理上下文后继续...",
+        "recovering": "恢复会话后继续...",
+        "timeout_warning": "处理时间较长, 继续执行中...",
+        "timeout_extended": "已延长处理时间, 继续执行中...",
+    }
+
+    def __init__(
+        self,
+        bot: FeishuBot,
+        *,
+        chat_ref: str,
+        reply_to_message_id: str | None,
+    ) -> None:
+        self._bot = bot
+        self._chat_ref = chat_ref
+        self._reply_to_message_id = reply_to_message_id
+        self._sent_labels: set[str] = set()
+        self._progress_count = 0
+        self._delay_task: asyncio.Task[None] | None = None
+
+    def start(self) -> None:
+        self._delay_task = asyncio.create_task(self._send_delayed_ack())
+
+    async def close(self) -> None:
+        task = self._delay_task
+        if task is None:
+            return
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+
+    async def on_tool(self, tool_name: str) -> None:
+        if not tool_name:
+            return
+        await self._emit(f"[TOOL: {tool_name}]")
+
+    async def on_system(self, status: str | None) -> None:
+        if status is None:
+            return
+        label = self._SYSTEM_LABELS.get(status)
+        if label:
+            await self._emit(label)
+
+    async def _send_delayed_ack(self) -> None:
+        await asyncio.sleep(_FEISHU_PROGRESS_ACK_DELAY_SECONDS)
+        await self._emit("处理中...")
+
+    async def _emit(self, label: str) -> None:
+        if not label or label in self._sent_labels:
+            return
+        if self._progress_count >= _FEISHU_PROGRESS_MAX_MESSAGES:
+            return
+        self._sent_labels.add(label)
+        self._progress_count += 1
+        await self._bot._send_text_to_chat_ref(
+            self._chat_ref,
+            label,
+            reply_to_message_id=self._reply_to_message_id,
+        )
 
 
 @dataclass(slots=True)
@@ -206,6 +275,7 @@ class FeishuBot:
             return
 
         chat_id = self._id_map.chat_to_int(message.chat_id)
+        reply_to = message.message_id if self._config.feishu.reply_to_trigger else None
         topic_id = (
             self._id_map.thread_to_int(message.thread_id)
             if self._config.feishu.thread_isolation and message.thread_id
@@ -213,13 +283,23 @@ class FeishuBot:
         )
         set_log_context(operation="feishu-msg", chat_id=chat_id)
         lock = self._lock_pool.get((chat_id, topic_id))
+        progress = _FeishuProgressReporter(
+            self,
+            chat_ref=message.chat_id,
+            reply_to_message_id=reply_to,
+        )
+        progress.start()
         async with lock:
-            result = await self._orchestrator.handle_message(
-                SessionKey.for_transport("fs", chat_id, topic_id),
-                message.text,
-            )
+            try:
+                result = await self._orchestrator.handle_message_streaming(
+                    SessionKey.for_transport("fs", chat_id, topic_id),
+                    message.text,
+                    on_tool_activity=progress.on_tool,
+                    on_system_status=progress.on_system,
+                )
+            finally:
+                await progress.close()
         if result.text:
-            reply_to = message.message_id if self._config.feishu.reply_to_trigger else None
             await self._send_text_to_chat_ref(message.chat_id, result.text, reply_to_message_id=reply_to)
 
     async def send_text(self, chat_id: int, text: str) -> None:
