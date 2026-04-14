@@ -11,6 +11,20 @@ from ductor_bot.messenger.weixin.auth_store import StoredWeixinCredentials
 
 _USER_MESSAGE_TYPE = 1
 _TEXT_ITEM_TYPE = 1
+_AUTHENTICATED = "authenticated"
+_REAUTH_REQUIRED = "reauth_required"
+
+
+class WeixinRuntimeError(RuntimeError):
+    """Base runtime failure for Weixin iLink."""
+
+
+class WeixinReauthRequiredError(WeixinRuntimeError):
+    """Raised when the iLink session has expired and QR re-auth is required."""
+
+
+class WeixinContextTokenRequiredError(WeixinRuntimeError):
+    """Raised when no usable context token exists for a proactive send."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,6 +65,7 @@ class WeixinIlinkClient(Protocol):
 
 
 TextHandler = Callable[[WeixinIncomingText], None | Awaitable[None]]
+AuthExpiredHandler = Callable[[StoredWeixinCredentials], None | Awaitable[None]]
 
 
 class WeixinLongPollRuntime:
@@ -62,13 +77,20 @@ class WeixinLongPollRuntime:
         credentials: StoredWeixinCredentials,
         client: WeixinIlinkClient,
         on_text: TextHandler,
+        on_auth_expired: AuthExpiredHandler | None = None,
         cursor: str = "",
     ) -> None:
         self._credentials = credentials
         self._client = client
         self._on_text = on_text
+        self._on_auth_expired = on_auth_expired
         self.cursor = cursor
         self._context_tokens: dict[str, str] = {}
+        self._auth_state = _AUTHENTICATED
+
+    @property
+    def auth_state(self) -> str:
+        return self._auth_state
 
     def context_token_for(self, user_id: str) -> str | None:
         return self._context_tokens.get(user_id)
@@ -77,8 +99,23 @@ class WeixinLongPollRuntime:
         if user_id and context_token:
             self._context_tokens[user_id] = context_token
 
+    def mark_reauth_required(self) -> None:
+        self._auth_state = _REAUTH_REQUIRED
+        self.cursor = ""
+        self._context_tokens.clear()
+
     async def poll_once(self) -> None:
-        batch = await self._client.get_updates(self._credentials, self.cursor)
+        try:
+            batch = await self._client.get_updates(self._credentials, self.cursor)
+        except Exception as exc:
+            if getattr(exc, "is_session_expired", False):
+                self.mark_reauth_required()
+                if self._on_auth_expired is not None:
+                    result = self._on_auth_expired(self._credentials)
+                    if inspect.isawaitable(result):
+                        await result
+                raise WeixinReauthRequiredError("Weixin iLink session expired") from exc
+            raise
         if batch.cursor:
             self.cursor = batch.cursor
 
@@ -104,9 +141,11 @@ class WeixinLongPollRuntime:
     ) -> None:
         if not text:
             raise ValueError("Weixin text replies cannot be empty")
+        if self._auth_state != _AUTHENTICATED:
+            raise WeixinReauthRequiredError("Weixin iLink session requires QR re-auth")
         resolved_context = context_token or self.context_token_for(user_id)
         if resolved_context is None:
-            raise RuntimeError(f"No cached context token for user {user_id}")
+            raise WeixinContextTokenRequiredError(f"No cached context token for user {user_id}")
         await self._client.send_text(self._credentials, user_id, resolved_context, text)
 
     @staticmethod
