@@ -1,0 +1,236 @@
+{
+    "_comment": "Full example config showing all features. Copy to ~/.controlmesh/config/config.json and adjust.",
+
+    "log_level": "INFO",
+    "provider": "claude",
+    "model": "sonnet",
+    "language": "en",
+    "controlmesh_home": "~/.controlmesh",
+    "user_timezone": "Europe/Berlin",
+    "update_check": true,
+
+    "idle_timeout_minutes": 1440,
+    "session_age_warning_hours": 12,
+    "daily_reset_hour": 4,
+    "daily_reset_enabled": false,
+
+    "max_budget_usd": null,
+    "max_turns": null,
+    "max_session_messages": null,
+
+    "permission_mode": "bypassPermissions",
+    "cli_timeout": 600.0,
+    "reasoning_effort": "medium",
+    "file_access": "all",
+    "gemini_api_key": "null",
+
+    "transport": "telegram",
+    "transports": ["telegram"],
+
+    "telegram_token": "YOUR_BOT_TOKEN_HERE",
+    "allowed_user_ids": [
+        123456789
+    ],
+    "allowed_group_ids": [
+        -1001234567890,
+        -1009876543210
+    ],
+    "group_mention_only": false,
+
+    "matrix": {
+        "homeserver": "https://matrix-client.matrix.org",
+        "user_id": "@your_bot:matrix.org",
+        "password": "YOUR_MATRIX_PASSWORD",
+        "access_token": "",
+        "device_id": "",
+        "allowed_rooms": [
+            "!roomid1:matrix.org",
+            "#your-room:matrix.org"
+        ],
+        "allowed_users": [
+            "@you:matrix.org"
+        ],
+        "store_path": "matrix_store"
+    },
+
+    "feishu": {
+        "mode": "bot_only",
+        "brand": "feishu",
+        "app_id": "cli_xxxxxxxxxxxx",
+        "app_secret": "sec_xxxxxxxxxxxx",
+        "domain": "https://open.feishu.cn",
+        "allow_from": [
+            "ou_xxxxxxxxxxxx"
+        ],
+        "group_reply_all": false,
+        "thread_isolation": false,
+        "reply_to_trigger": true
+    },
+
+    "weixin": {
+        "mode": "ilink",
+        "enabled": false,
+        "base_url": "https://ilinkai.weixin.qq.com",
+        "credentials_path": "weixin_store/credentials.json",
+        "poll_initial_cursor": "",
+        "longpoll_timeout_ms": 40000,
+        "channel_version": "1.0.0",
+        "reply_chunk_chars": 2000
+    },
+
+    "streaming": {
+        "enabled": true,
+        "min_chars": 200,
+        "max_chars": 4000,
+        "idle_ms": 800,
+        "edit_interval_seconds": 2.0,
+        "max_edit_failures": 3,
+        "append_mode": false,
+        "sentence_break": true
+    },
+
+    "docker": {
+        "enabled": true,
+        "image_name": "controlmesh-sandbox",
+        "container_name": "controlmesh-sandbox",
+        "auto_build": true,
+        "mount_host_cache": false,
+        "mounts": [
+            "/home/you/projects"
+        ],
+        "extras": [
+            "ffmpeg",
+            "pandoc",
+            "matplotlib",
+            "pandas"
+        ]
+    },
+
+    "heartbeat": {
+        "enabled": true,
+        "interval_minutes": 30,
+        "cooldown_minutes": 5,
+        "quiet_start": 22,
+        "quiet_end": 8,
+        "prompt": "You are running as a background heartbeat check. Review the current workspace context:\n- Read memory_system/MAINMEMORY.md for user interests and personality\n- Check cron_tasks/ for active projects\n- Think about what might be useful, interesting, or fun for the user\n\nIf you have a creative idea, suggestion, interesting fact, or something the user might enjoy:\nReply with your message directly.\n\nIf nothing needs attention right now:\nReply exactly: HEARTBEAT_OK",
+        "ack_token": "HEARTBEAT_OK",
+        "group_targets": [
+            {
+                "enabled": false,
+                "chat_id": -1001234567890,
+                "topic_id": 5,
+                "prompt": "Check server status and report anomalies.",
+                "interval_minutes": 60,
+                "quiet_start": 23,
+                "quiet_end": 7
+            }
+        ]
+    },
+
+    "cleanup": {
+        "enabled": true,
+        "media_files_days": 30,
+        "output_to_user_days": 30,
+        "api_files_days": 30,
+        "check_hour": 3
+    },
+
+    "webhooks": {
+        "enabled": true,
+        "host": "127.0.0.1",
+        "port": 8742,
+        "token": "YOUR_WEBHOOK_SECRET",
+        "max_body_bytes": 262144,
+        "rate_limit_per_minute": 30
+    },
+
+    "api": {
+        "enabled": false,
+        "host": "0.0.0.0",
+        "port": 8741,
+        "token": "",
+        "chat_id": 123456789,
+        "allow_public": false
+    },
+
+    "cli_parameters": {
+        "claude": ["--verbose", "--chrome"],
+        "codex": [],
+        "gemini": []
+    },
+
+    "image": {
+        "max_dimension": 2000,
+        "output_format": "webp",
+        "quality": 85
+    },
+
+    "scene": {
+        "seen_reaction": false,
+        "technical_footer": false
+    },
+
+    "codex_hooks": {
+        "enabled": false,
+        "prefer_native": true,
+        "config_file": ".codex/config.toml",
+        "hooks_file": ".codex/hooks.json",
+        "manage_project_hooks": false
+    },
+
+    "gateways": {
+        "enabled": false,
+        "precedence": "explicit-first",
+        "default_timeout_ms": 5000,
+        "gateways": {
+            "local-command": {
+                "enabled": true,
+                "type": "command",
+                "timeout_ms": 120000,
+                "command": "~/.local/bin/my-gateway --event {{event}} --text {{instruction}}"
+            },
+            "local-webhook": {
+                "enabled": false,
+                "type": "webhook",
+                "timeout_ms": 5000,
+                "url": "http://127.0.0.1:18789/hooks/agent",
+                "method": "POST",
+                "headers": {
+                    "Authorization": "Bearer ${HOOKS_TOKEN}"
+                }
+            }
+        },
+        "events": {
+            "session-end": {
+                "enabled": true,
+                "gateway": "local-command",
+                "instruction": "Session ended for {{session_id}}",
+                "fallback_allowed": true
+            },
+            "ask-user-question": {
+                "enabled": false,
+                "gateway": "local-webhook",
+                "instruction": "Need user input: {{question}}",
+                "fallback_allowed": true
+            }
+        }
+    },
+
+    "timeouts": {
+        "normal": 600.0,
+        "background": 1800.0,
+        "subagent": 3600.0,
+        "warning_intervals": [60.0, 10.0],
+        "extend_on_activity": true,
+        "activity_extension": 120.0,
+        "max_extensions": 3
+    },
+
+    "tasks": {
+        "enabled": true,
+        "max_parallel": 5,
+        "timeout_seconds": 3600.0
+    },
+
+    "interagent_port": 8799
+}

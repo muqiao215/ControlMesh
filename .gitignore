@@ -1,0 +1,76 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+.eggs/
+dist/
+build/
+*.whl
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Type checking & linting
+.mypy_cache/
+.ruff_cache/
+.dmypy.json
+dmypy.json
+
+# Testing
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.hypothesis/
+
+# IDE & editors
+.idea/
+.vscode/
+.claude/
+*.swp
+*.swo
+*.swn
+*~
+.project
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Environment & secrets
+.env
+.env.*
+
+# Runtime
+*.pid
+*.log
+*.sock
+
+# Local harness/controller scratch
+/evidence.yaml
+/proposed_*.md
+/plans/tasks/*
+!/plans/tasks/README.md
+!/plans/tasks/_template/
+!/plans/tasks/_template/**
+
+# Local release/certification runtime outputs
+/task_artifacts/**/api_runtime_home/
+/task_artifacts/**/fresh_home*/
+/task_artifacts/**/live_drill/config.before.json
+/task_artifacts/**/live_drill/state.env
+
+# Local uv workspace lock generated during ad-hoc verification
+/uv.lock
+
+# Personal / dev-only (not part of the project)
+start_bot.sh
+python_best_practice.md
+run.py

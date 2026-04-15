@@ -1,0 +1,182 @@
+# Nederlandse wizard-strings (Rich-geformatteerd, terminaluitvoer tijdens onboarding).
+
+[common]
+cancelled = "[dim]Setup geannuleerd.[/dim]"
+subtitle = "ControlMesh"
+
+[cli_backends]
+title = "CLI Backends"
+header = "[bold]Gedetecteerde AI-backends:[/bold]\n"
+claude = "  Claude Code CLI   {status}"
+codex = "  OpenAI Codex CLI  {status}"
+gemini = "  Google Gemini CLI {status}"
+no_auth = """\
+\n[bold red]Minstens één CLI moet geïnstalleerd en geauthenticeerd zijn.[/bold red]\n
+  Claude: [dim]https://docs.anthropic.com/en/docs/claude-code[/dim]
+  Codex:  [dim]https://github.com/openai/codex[/dim]
+  Gemini: [dim]https://github.com/google-gemini/gemini-cli[/dim]"""
+
+[disclaimer]
+title = "[bold yellow]Disclaimer[/bold yellow]"
+body = """\
+[bold]Belangrijk — lees dit voordat je verdergaat.[/bold]\n
+controlmesh maakt verbinding met [bold]Anthropic Claude CLI[/bold] en \
+[bold]OpenAI Codex CLI[/bold] als AI-agent-backends.\n
+De bot werkt in [bold yellow]volledige toegangsmodus[/bold yellow]. \
+De agent kan bestanden lezen, schrijven en verwijderen, commando's uitvoeren \
+en met je systeem werken zonder om bevestiging te vragen.\n
+Hoewel er beveiligingen aanwezig zijn, kunnen [bold red]onbedoelde acties plaatsvinden[/bold red] \
+— waaronder gegevensverlies, onverwachte bestandswijzigingen of onbedoelde commando-uitvoering.\n
+[bold green]We raden sterk aan om controlmesh in een Docker-container te draaien[/bold green] \
+om het te isoleren van je hostsysteem."""
+confirm = "Ik begrijp de risico's en wil doorgaan."
+
+[transport]
+title = "[bold]Berichtentransport[/bold]"
+body = """\
+[bold]Kies hoe gebruikers met de bot communiceren:[/bold]\n
+  [bold cyan]Telegram[/bold cyan]  — Vereist een bot-token van @BotFather
+  [bold cyan]Matrix[/bold cyan]    — Vereist een Matrix-account op een homeserver (bijv. Element)"""
+prompt = "Selecteer transport:"
+
+[telegram.token]
+title = "[bold]Telegram Bot Token[/bold]"
+body = """\
+[bold]Zo krijg je je Telegram Bot Token:[/bold]\n
+  1. Open Telegram en zoek naar [bold cyan]@BotFather[/bold cyan]
+  2. Stuur [bold]/newbot[/bold] en volg de stappen
+  3. Kies een naam en gebruikersnaam voor je bot
+  4. BotFather antwoordt met je bot-token\n
+[dim]Tokenformaat: 1234567890:ABCdefGHIjklMNOpqrsTUVwxyz[/dim]"""
+prompt = "Plak je bot-token:"
+error = "[red]Ongeldig tokenformaat. Verwacht: cijfers:alfanumeriek (bijv. 123456:ABC-xyz)[/red]"
+
+[telegram.user_id]
+title = "[bold]Telegram User ID[/bold]"
+body = """\
+[bold]Zo vind je je Telegram User ID:[/bold]\n
+  1. Open Telegram en zoek naar [bold cyan]@userinfobot[/bold cyan]
+  2. Stuur [bold]/start[/bold] naar de bot
+  3. Hij antwoordt met je numerieke user ID\n
+[dim]Alleen berichten van deze user ID worden geaccepteerd door de bot.[/dim]"""
+prompt = "Voer je numerieke user ID in:"
+error_nan = "[red]Voer een geldig nummer in.[/red]"
+error_negative = "[red]User ID moet een positief nummer zijn.[/red]"
+
+[matrix.homeserver]
+title = "[bold]Matrix Homeserver[/bold]"
+body = """\
+[bold]Voer de URL van je Matrix homeserver in.[/bold]\n
+  Dit is de server waar je bot-account zich bevindt.\n
+[dim]Voorbeeld: https://matrix.example.com[/dim]"""
+prompt = "Homeserver URL:"
+error = "[red]Moet een HTTPS-URL zijn (bijv. https://matrix.example.com)[/red]"
+
+[matrix.user_id]
+title = "[bold]Matrix Bot User ID[/bold]"
+body = """\
+[bold]Voer de Matrix user ID van de bot in.[/bold]\n
+  Maak een apart account voor de bot op je homeserver.\n
+[dim]Formaat: @botnaam:homeserver.domein[/dim]"""
+prompt = "Bot user ID:"
+error = "[red]Ongeldig formaat. Verwacht: @localpart:domein (bijv. @mijnbot:matrix.org)[/red]"
+
+[matrix.password]
+title = "[bold]Matrix Wachtwoord[/bold]"
+body = """\
+[bold]Voer het wachtwoord van het bot-account in.[/bold]\n
+  Wordt alleen gebruikt voor de eerste login. Na de eerste login
+  wordt een access-token opgeslagen en is het wachtwoord niet meer nodig."""
+prompt = "Wachtwoord:"
+error = "[red]Wachtwoord mag niet leeg zijn.[/red]"
+
+[matrix.allowed_users]
+title = "[bold]Toegestane gebruikers[/bold]"
+body = """\
+[bold]Wie mag er met deze bot praten?[/bold]\n
+  Voer je Matrix user ID in. Alleen berichten van toegestane
+  gebruikers worden verwerkt.\n
+[dim]Formaat: @gebruikersnaam:homeserver.domein[/dim]"""
+prompt = "Je Matrix user ID:"
+error = "[red]Ongeldig formaat. Verwacht: @user:domein (bijv. @nik:matrix.org)[/red]"
+
+[docker]
+title = "[bold]Docker Sandboxing[/bold]"
+found_body = """\
+[bold green]Docker gedetecteerd op je systeem.[/bold green]\n
+controlmesh in Docker draaien isoleert het van je host.
+Dit is de aanbevolen configuratie voor veiligheid."""
+found_prompt = "Docker-sandboxing inschakelen? (Aanbevolen)"
+not_found_body = """\
+[bold yellow]Docker is niet gevonden op je systeem.[/bold yellow]\n
+We raden aan Docker te installeren om de bot in een geïsoleerde container te draaien.
+Je kunt Docker-sandboxing later inschakelen in de config.\n
+[dim]https://docs.docker.com/get-docker/[/dim]"""
+
+[docker.extras]
+title = "[bold]Beschikbare Docker-extra's[/bold]"
+col_package = "Pakket"
+col_description = "Beschrijving"
+col_size = "Grootte"
+prompt = "Selecteer extra's (Spatie om te schakelen, Enter om te bevestigen):"
+hint = """\
+[dim]Deze pakketten zijn optioneel en verlengen de image-buildtijd.
+Je kunt dit later wijzigen met [cyan]controlmesh docker extras-add / extras-remove[/cyan].[/dim]"""
+auto_deps = "[dim]Automatisch toegevoegde afhankelijkheden: {names}[/dim]"
+
+[timezone]
+title = "[bold]Tijdzone[/bold]"
+body = """\
+Je tijdzone wordt gebruikt voor cron-planning, heartbeat-rusttijden
+en dagelijkse sessie-resets."""
+prompt = "Selecteer je tijdzone:"
+manual_prompt = "Voer IANA-tijdzone in (bijv. Europe/Amsterdam):"
+error = "[red]Onbekende tijdzone: {tz}[/red]"
+
+[service]
+title = "[bold]Achtergronddienst[/bold]"
+body = """\
+[bold]controlmesh als achtergronddienst draaien?[/bold]\n
+Dit maakt een {mechanism} aan die:\n
+  - controlmesh start bij {trigger}
+  - Automatisch herstart bij een crash
+  - Op de achtergrond blijft draaien\n
+[dim]Aanbevolen voor VPS of always-on-setups.[/dim]"""
+prompt = "Als achtergronddienst installeren? (Aanbevolen voor VPS)"
+
+[complete]
+title = "[bold green]Klaar[/bold green]"
+header = "[bold green]Setup voltooid![/bold green]"
+files_header = "[bold]Je controlmesh-bestanden:[/bold]"
+home = "  Home:       [cyan]{path}[/cyan]"
+config = "  Config:     [cyan]{path}[/cyan]"
+workspace = "  Workspace:  [cyan]{path}[/cyan]"
+logs = "  Logs:       [cyan]{path}[/cyan]"
+installing_service = "Dienst wordt geïnstalleerd..."
+starting_bot = "Bot wordt gestart..."
+
+[reset]
+title = "[bold yellow]Bestaande setup gevonden[/bold yellow]"
+body = """\
+[bold yellow]Je hebt al een geconfigureerde setup.[/bold yellow]\n
+Onboarding opnieuw uitvoeren betekent een [bold red]volledige reset[/bold red]:\n
+  [dim]{home}[/dim] wordt volledig verwijderd.
+  Alle sessies, configs, geheugen en cronjobs gaan verloren."""
+
+[reset.docker]
+title = "[bold]Docker-opruiming[/bold]"
+body = """\
+[bold]Docker-sandboxing is ingeschakeld in je huidige config.[/bold]\n
+  Container: [cyan]{container}[/cyan]
+  Image:     [cyan]{image}[/cyan]"""
+prompt = "Docker-container en image verwijderen?"
+removing = "[dim]Docker-resources worden verwijderd...[/dim]"
+done = "[green]Docker-opruiming voltooid.[/green]"
+
+[reset.confirm]
+prompt = "Alles wissen en opnieuw beginnen?"
+deleted = "[dim]Workspace verwijderd.[/dim]"
+warning = "[yellow]Waarschuwing: {home} kon niet volledig worden verwijderd. Verwijder handmatig.[/yellow]"
+
+[language]
+prompt = "Select language / Taal kiezen:"

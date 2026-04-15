@@ -1,0 +1,26 @@
+# Nederlandse botcommandobeschrijvingen (≤22 tekens voor Telegram).
+
+[bot]
+new = "Nieuw gesprek"
+stop = "Huidig + wachtrij stoppen"
+interrupt = "Onderbreken, wachtrij bewaren"
+model = "Model tonen/wisselen"
+status = "Sessie-info"
+memory = "Hoofdgeheugen tonen"
+session = "Achtergrondsessies"
+tasks = "Achtergrondtaken"
+cron = "Cronjobs beheren"
+agent_commands = "Multi-agent-systeem"
+showfiles = "Bestanden bekijken"
+info = "Docs, links & info"
+help = "Alle commando's"
+diagnose = "Systeemdiagnose"
+upgrade = "Controleer op updates"
+restart = "Bot herstarten"
+
+[multiagent]
+agents = "Alle agents tonen"
+agent_start = "Sub-agent starten"
+agent_stop = "Sub-agent stoppen"
+agent_restart = "Sub-agent herstarten"
+stop_all = "Alles beëindigen"

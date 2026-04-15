@@ -1,0 +1,80 @@
+"""Additive memory-v2 primitives for ControlMesh."""
+
+from controlmesh.memory.commands import (
+    apply_daily_note_promotions,
+    apply_memory_dreaming_sweep,
+    preview_daily_note_promotions,
+    preview_memory_dreaming_sweep,
+    search_memory,
+    sync_memory_search,
+)
+from controlmesh.memory.dreaming import (
+    acquire_dream_lock,
+    apply_dreaming_sweep,
+    load_checkpoints,
+    load_sweep_state,
+    preview_dreaming_sweep,
+    release_dream_lock,
+    save_checkpoints,
+    save_sweep_state,
+)
+from controlmesh.memory.models import (
+    DreamingCheckpoint,
+    DreamingLock,
+    DreamingSweepMode,
+    DreamingSweepNoteResult,
+    DreamingSweepResult,
+    DreamingSweepState,
+    MemoryDocumentKind,
+    MemoryIndexSyncResult,
+    MemorySearchHit,
+    MemorySearchResult,
+    PromotionApplyResult,
+    PromotionCandidate,
+    PromotionPreview,
+)
+from controlmesh.memory.promotion import (
+    apply_candidates,
+    parse_promotion_candidates,
+    preview_candidates,
+)
+from controlmesh.memory.search import search_memory_index, sync_memory_index
+from controlmesh.memory.store import append_dream_entry, ensure_daily_note, initialize_memory_v2
+
+__all__ = [
+    "DreamingCheckpoint",
+    "DreamingLock",
+    "DreamingSweepMode",
+    "DreamingSweepNoteResult",
+    "DreamingSweepResult",
+    "DreamingSweepState",
+    "MemoryDocumentKind",
+    "MemoryIndexSyncResult",
+    "MemorySearchHit",
+    "MemorySearchResult",
+    "PromotionApplyResult",
+    "PromotionCandidate",
+    "PromotionPreview",
+    "acquire_dream_lock",
+    "append_dream_entry",
+    "apply_candidates",
+    "apply_daily_note_promotions",
+    "apply_dreaming_sweep",
+    "apply_memory_dreaming_sweep",
+    "ensure_daily_note",
+    "initialize_memory_v2",
+    "load_checkpoints",
+    "load_sweep_state",
+    "parse_promotion_candidates",
+    "preview_candidates",
+    "preview_daily_note_promotions",
+    "preview_dreaming_sweep",
+    "preview_memory_dreaming_sweep",
+    "release_dream_lock",
+    "save_checkpoints",
+    "save_sweep_state",
+    "search_memory",
+    "search_memory_index",
+    "sync_memory_index",
+    "sync_memory_search",
+]

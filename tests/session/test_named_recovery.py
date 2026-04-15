@@ -1,0 +1,178 @@
+"""Tests for NamedSession last_prompt, mark_running, and recovery tracking."""
+
+from __future__ import annotations
+
+import time
+from pathlib import Path
+
+import pytest
+
+from controlmesh.session.named import NamedSessionRegistry
+
+
+def _make_registry(tmp_path: Path) -> NamedSessionRegistry:
+    return NamedSessionRegistry(tmp_path / "named_sessions.json")
+
+
+class TestLastPrompt:
+    def test_created_session_has_empty_last_prompt(self, tmp_path: Path) -> None:
+        reg = _make_registry(tmp_path)
+        ns = reg.create(chat_id=1, provider="claude", model="opus", prompt_preview="hello")
+        assert ns.last_prompt == ""
+
+    def test_mark_running_stores_prompt(self, tmp_path: Path) -> None:
+        reg = _make_registry(tmp_path)
+        ns = reg.create(chat_id=1, provider="claude", model="opus", prompt_preview="hello")
+        reg.mark_running(1, ns.name, "full prompt text here")
+        updated = reg.get(1, ns.name)
+        assert updated is not None
+        assert updated.status == "running"
+        assert updated.last_prompt == "full prompt text here"
+
+    def test_mark_running_truncates_at_4000(self, tmp_path: Path) -> None:
+        reg = _make_registry(tmp_path)
+        ns = reg.create(chat_id=1, provider="claude", model="opus", prompt_preview="hi")
+        long_prompt = "x" * 5000
+        reg.mark_running(1, ns.name, long_prompt)
+        updated = reg.get(1, ns.name)
+        assert updated is not None
+        assert len(updated.last_prompt) == 4000
+
+    def test_mark_running_nonexistent_is_noop(self, tmp_path: Path) -> None:
+        reg = _make_registry(tmp_path)
+        reg.mark_running(1, "nonexistent", "prompt")  # should not raise
+
+    def test_create_explicit_uses_requested_name(self, tmp_path: Path) -> None:
+        reg = _make_registry(tmp_path)
+
+        ns = reg.create_explicit(
+            chat_id=1,
+            name="ia-worker-1",
+            provider="codex",
+            model="gpt-5",
+            prompt_preview="bootstrap",
+        )
+
+        assert ns.name == "ia-worker-1"
+        assert ns.status == "running"
+        assert reg.get(1, "ia-worker-1") is not None
+
+    def test_create_explicit_rejects_active_duplicate(self, tmp_path: Path) -> None:
+        reg = _make_registry(tmp_path)
+        reg.create_explicit(
+            chat_id=1,
+            name="ia-worker-1",
+            provider="codex",
+            model="gpt-5",
+            prompt_preview="bootstrap",
+        )
+
+        with pytest.raises(ValueError, match="already exists"):
+            reg.create_explicit(
+                chat_id=1,
+                name="ia-worker-1",
+                provider="codex",
+                model="gpt-5",
+                prompt_preview="bootstrap again",
+            )
+
+    def test_create_explicit_reuses_ended_name(self, tmp_path: Path) -> None:
+        reg = _make_registry(tmp_path)
+        reg.create_explicit(
+            chat_id=1,
+            name="ia-worker-1",
+            provider="codex",
+            model="gpt-5",
+            prompt_preview="bootstrap",
+        )
+        assert reg.end_session(1, "ia-worker-1") is True
+
+        ns = reg.create_explicit(
+            chat_id=1,
+            name="ia-worker-1",
+            provider="codex",
+            model="gpt-5",
+            prompt_preview="restart",
+        )
+
+        assert ns.name == "ia-worker-1"
+        assert ns.status == "running"
+
+
+class TestRecoveredRunning:
+    def _persist_running_session(
+        self,
+        tmp_path: Path,
+        *,
+        name: str = "boldowl",
+        chat_id: int = 42,
+        last_prompt: str = "do stuff",
+    ) -> Path:
+        """Write a JSON file with a running session for reload testing."""
+        import json
+
+        path = tmp_path / "named_sessions.json"
+        data = {
+            "sessions": [
+                {
+                    "name": name,
+                    "chat_id": chat_id,
+                    "provider": "claude",
+                    "model": "opus",
+                    "session_id": "sid-123",
+                    "prompt_preview": "do stuff",
+                    "status": "running",
+                    "created_at": time.time(),
+                    "message_count": 3,
+                    "last_prompt": last_prompt,
+                },
+            ],
+        }
+        path.write_text(json.dumps(data))
+        return path
+
+    def test_running_session_downgraded_to_idle(self, tmp_path: Path) -> None:
+        path = self._persist_running_session(tmp_path)
+        reg = NamedSessionRegistry(path)
+        ns = reg.get(42, "boldowl")
+        assert ns is not None
+        assert ns.status == "idle"
+
+    def test_recovered_running_populated(self, tmp_path: Path) -> None:
+        path = self._persist_running_session(tmp_path)
+        reg = NamedSessionRegistry(path)
+        recovered = reg.pop_recovered_running()
+        assert len(recovered) == 1
+        assert recovered[0].name == "boldowl"
+        assert recovered[0].status == "idle"
+        assert recovered[0].last_prompt == "do stuff"
+
+    def test_pop_clears_recovered(self, tmp_path: Path) -> None:
+        path = self._persist_running_session(tmp_path)
+        reg = NamedSessionRegistry(path)
+        first = reg.pop_recovered_running()
+        assert len(first) == 1
+        second = reg.pop_recovered_running()
+        assert len(second) == 0
+
+    def test_pop_filtered_by_chat_id(self, tmp_path: Path) -> None:
+        path = self._persist_running_session(tmp_path, chat_id=42)
+        reg = NamedSessionRegistry(path)
+        assert len(reg.pop_recovered_running(chat_id=99)) == 0
+        assert len(reg.pop_recovered_running(chat_id=42)) == 1
+
+    def test_ia_sessions_excluded(self, tmp_path: Path) -> None:
+        path = self._persist_running_session(tmp_path, name="ia-sub1")
+        reg = NamedSessionRegistry(path)
+        assert len(reg.pop_recovered_running()) == 0
+
+    def test_last_prompt_round_trip(self, tmp_path: Path) -> None:
+        """last_prompt survives persist -> reload."""
+        reg = _make_registry(tmp_path)
+        ns = reg.create(chat_id=1, provider="claude", model="opus", prompt_preview="hello")
+        reg.mark_running(1, ns.name, "my prompt")
+
+        reg2 = NamedSessionRegistry(tmp_path / "named_sessions.json")
+        recovered = reg2.pop_recovered_running()
+        assert len(recovered) == 1
+        assert recovered[0].last_prompt == "my prompt"

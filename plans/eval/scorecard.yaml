@@ -1,0 +1,42 @@
+scorecard:
+  mode: hybrid
+  hard_gates:
+    require_all: true
+    checks:
+      - evidence_complete
+      - schema_valid
+      - no_scope_breach
+      - no_canonical_write_breach
+      - contract_matches_observed_result
+      - minimal_working_loop_present
+
+  score_thresholds:
+    pass: 4.2
+    pass_with_notes: 3.8
+    return_for_hardening: 0.0
+
+  auto_outcome_mapping:
+    environment_fail: blocked_by_environment
+    operator_safety_fail: blocked_by_operator_safety
+    schema_fail: return_for_hardening
+    scope_breach: split_into_new_scope
+    canonical_write_breach: split_into_new_scope
+    live_regression: return_for_hardening
+    timeout_no_progress: deferred_with_reason
+
+  soft_scores:
+    correctness:
+      min: 7
+      max: 10
+    boundary_discipline:
+      min: 8
+      max: 10
+    evidence_quality:
+      min: 7
+      max: 10
+    diagnosability:
+      min: 7
+      max: 10
+    trajectory_hygiene:
+      min: 8
+      max: 10

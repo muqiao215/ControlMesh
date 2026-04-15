@@ -1,0 +1,121 @@
+# session/
+
+Session lifecycle and persistence with provider isolation and topic/channel-aware keys.
+
+## Files
+
+- `session/key.py`: `SessionKey(transport, chat_id, topic_id)`
+- `session/manager.py`: `ProviderSessionData`, `SessionData`, `SessionManager`
+- `session/named.py`: `NamedSession`, `NamedSessionRegistry`
+
+## Session identity (`SessionKey`)
+
+`SessionKey` is transport-aware:
+
+- Telegram default chats -> `SessionKey("tg", chat_id, None)`
+- Telegram forum topics -> `SessionKey("tg", chat_id, message_thread_id)`
+- Matrix rooms -> `SessionKey("mx", mapped_room_int, None)`
+- API channel scope -> `SessionKey("api", chat_id, channel_id)`
+
+Persistence key (`storage_key`) format:
+
+- legacy accepted on parse: `"<chat_id>"` or `"<chat_id>:<topic_id>"`
+- current: `"<transport>:<chat_id>"` or `"<transport>:<chat_id>:<topic_id>"`
+
+Parsing is backward-compatible (`SessionKey.parse`).
+
+## `SessionData` model
+
+Fields:
+
+- `chat_id`
+- `topic_id` (optional)
+- `topic_name` (optional cached display name)
+- `provider`, `model` (active target for this session key)
+- `created_at`, `last_active`
+- `provider_sessions: dict[str, ProviderSessionData]`
+
+Provider bucket (`ProviderSessionData`):
+
+- `session_id`
+- `message_count`
+- `total_cost_usd`
+- `total_tokens`
+
+Compatibility behavior:
+
+- legacy flat metrics/session fields are migrated into provider buckets
+- legacy storage keys are still accepted
+
+## `SessionManager` API
+
+- `resolve_session(key, provider=None, model=None, preserve_existing_target=False)`
+- `get_active(key)`
+- `list_active_for_chat(chat_id)`
+- `list_all()`
+- `reset_session(key, provider=None, model=None)`
+- `reset_provider_session(key, provider, model)`
+- `update_session(session, cost_usd=0.0, tokens=0)`
+- `sync_session_target(session, provider=None, model=None)`
+- `set_topic_name_resolver(resolver)`
+
+## Freshness and rollover
+
+Session freshness checks include:
+
+- `max_session_messages`
+- idle timeout (`idle_timeout_minutes`, `0` disables)
+- daily reset boundary (`daily_reset_enabled`, `daily_reset_hour`, `user_timezone`)
+- timestamp validity
+
+Stale sessions are replaced on next `resolve_session(...)` call.
+
+## Provider/model switching behavior
+
+Switching model/provider for a key:
+
+- updates active target for that key
+- keeps other provider buckets intact
+- `is_new=True` only if target provider bucket lacks `session_id`
+
+This enables seamless return to previously used provider buckets.
+
+## Topic name integration
+
+`SessionManager` can resolve and backfill topic names through a callback:
+
+- `set_topic_name_resolver((chat_id, topic_id) -> str)`
+- used by bot startup with `TopicNameCache`
+- persisted `topic_name` improves `/status` and `/sessions` readability
+
+## Named sessions (`NamedSessionRegistry`)
+
+Purpose:
+
+- background `/session` registry
+- deterministic inter-agent sessions (`ia-<sender>`)
+
+Model fields:
+
+- `name`, `chat_id`, `provider`, `model`
+- `session_id`, `prompt_preview`, `status`, `created_at`, `message_count`, `last_prompt`
+
+Status values:
+
+- `running`
+- `idle`
+- `ended`
+
+Behavior:
+
+- user-created cap: `MAX_SESSIONS_PER_CHAT = 10`
+- persisted `running` entries are downgraded to `idle` on load
+- recovered-running sessions are tracked for startup recovery
+
+## Persistence
+
+- sessions: `~/.controlmesh/sessions.json`
+- named sessions: `~/.controlmesh/named_sessions.json`
+
+Storage is JSON + atomic write helpers (`atomic_json_save`).
+I/O runs in worker threads (`asyncio.to_thread`).

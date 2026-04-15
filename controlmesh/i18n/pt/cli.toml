@@ -1,0 +1,286 @@
+# Strings de CLI em Português (Rich-formatadas, exibidas no terminal).
+
+# -- Comando de status ---------------------------------------------------------
+
+[status]
+running = "[bold green]Rodando[/bold green]  pid={pid}  tempo ativo: {uptime}"
+not_running = "[dim]Não está rodando[/dim]"
+provider = "Provider:  [cyan]{provider}[/cyan] ({model})"
+docker_enabled = "Docker:    [green]habilitado[/green] ({name})"
+docker_disabled = "Docker:    [dim]desabilitado[/dim]"
+errors_found = "Erros:     [bold red]{count}[/bold red] no último log"
+errors_none = "Erros:     [green]0[/green]"
+paths_header = "[bold]Caminhos:[/bold]"
+not_configured = "[bold yellow]Não configurado.[/bold yellow]\n\nExecute [bold]controlmesh[/bold] para iniciar o assistente de configuração."
+
+# -- Validação de config -------------------------------------------------------
+
+[config]
+incomplete = "[bold yellow]Config está incompleta. Execute [bold]controlmesh onboarding[/bold].[/bold yellow]"
+matrix_no_homeserver = "[bold yellow]URL do homeserver Matrix é obrigatória.{hint}[/bold yellow]"
+matrix_no_user = "[bold yellow]user_id do Matrix é obrigatório.{hint}[/bold yellow]"
+matrix_no_auth = "[bold yellow]Senha ou access_token do Matrix é obrigatório.{hint}[/bold yellow]"
+matrix_no_target = "[bold yellow]Pelo menos um allowed_room ou allowed_user é obrigatório.{hint}[/bold yellow]"
+onboarding_hint = " Execute [bold]controlmesh onboarding[/bold] para reconfigurar."
+
+# -- Ciclo de vida -------------------------------------------------------------
+
+[lifecycle]
+stopping_docker = "[dim]Parando container Docker '{name}'...[/dim]"
+docker_stopped = "[green]Container Docker parado.[/green]"
+stopping_bot = "[dim]Parando bot (pid={pid})...[/dim]"
+bot_stopped = "[green]Bot parado.[/green]"
+killed_extra = "[dim]{count} processo(s) controlmesh restante(s) encerrado(s).[/dim]"
+no_instance = "[dim]Nenhuma instância do bot em execução encontrada.[/dim]"
+
+[lifecycle.uninstall]
+title = "[bold red]Desinstalar controlmesh[/bold red]"
+body = """\
+[bold red]Isso vai remover permanentemente o controlmesh do seu sistema.[/bold red]\n
+  1. Parar o bot em execução (se ativo)
+  2. Remover container e imagem Docker (se utilizado)
+  3. Excluir todos os dados em ~/.controlmesh/
+  4. Desinstalar o pacote controlmesh"""
+confirm = "Tem certeza de que deseja desinstalar tudo?"
+cancelled = "[dim]Desinstalação cancelada.[/dim]"
+removing_image = "[dim]Removendo imagem Docker '{image}'...[/dim]"
+image_removed = "[green]Imagem Docker removida.[/green]"
+uninstalling = "[dim]Desinstalando pacote controlmesh...[/dim]"
+delete_warning = "[yellow]Aviso: Não foi possível excluir completamente {home} (alguns arquivos podem estar bloqueados). Remova manualmente.[/yellow]"
+deleted = "[green]{home} excluído[/green]"
+done_title = "[bold green]Até logo[/bold green]"
+done_body = "[bold green]controlmesh foi completamente removido.[/bold green]\n\nObrigado por usar o controlmesh!"
+
+[lifecycle.upgrade]
+dev_title = "[bold yellow]Instalação de Desenvolvimento[/bold yellow]"
+dev_body = """\
+[bold yellow]Executando a partir do código-fonte (instalação editável).[/bold yellow]\n
+Self-upgrade não está disponível.
+Atualize com [bold]git pull[/bold] no diretório do projeto."""
+title = "[bold cyan]Atualizando controlmesh...[/bold cyan]"
+body = """\
+  1. Parar bot em execução de forma graceful
+  2. Atualizar para a versão mais recente
+  3. Reiniciar"""
+upgrading = "[dim]Atualizando pacote...[/dim]"
+complete = "[green]Upgrade concluído: {old} -> {new}[/green]"
+unchanged = "[bold yellow]Versão inalterada após upgrade ({version}).[/bold yellow]\nTentativa automática foi realizada, mas nenhuma nova versão instalada pôde ser verificada ainda."
+restarting = "[dim]Reiniciando...[/dim]"
+
+# -- Comandos Docker -----------------------------------------------------------
+
+[docker]
+config_not_found = "[bold red]Config não encontrada. Execute controlmesh primeiro.[/bold red]"
+config_read_error = "[bold red]Falha ao ler config.[/bold red]"
+enabled = "Docker sandboxing: [green]habilitado[/green]"
+disabled = "Docker sandboxing: [dim]desabilitado[/dim]"
+restart_hint = "[dim]Reinicie o bot para aplicar.[/dim]"
+
+[docker.rebuild]
+stopping = "[dim]Parando bot...[/dim]"
+removing_container = "[dim]Removendo container '{name}'...[/dim]"
+removing_image = "[dim]Removendo imagem '{name}'...[/dim]"
+done = "[green]Pronto.[/green] A imagem será reconstruída na próxima inicialização do bot.\n[dim]Se instalado como serviço, ele reiniciará automaticamente.[/dim]"
+
+[docker.mount]
+usage = "[bold red]Uso: controlmesh docker mount <caminho>[/bold red]"
+not_exist = "[bold red]Caminho não existe: {path}[/bold red]"
+not_dir = "[bold red]Não é um diretório: {path}[/bold red]"
+already = "[dim]Já montado: {path}[/dim]"
+done = "[green]Montado:[/green] {path}{target}"
+apply_hint = "[dim]Reinicie o bot (ou reconstrua o container) para aplicar.[/dim]"
+
+[docker.unmount]
+usage = "[bold red]Uso: controlmesh docker unmount <caminho>[/bold red]"
+not_found = "[bold red]Mount não encontrado: {path}[/bold red]"
+done = "[green]Desmontado:[/green] {path}"
+
+[docker.mounts]
+empty = "[dim]Nenhum mount configurado.[/dim]"
+add_hint = "[dim]Use 'controlmesh docker mount <caminho>' para adicionar.[/dim]"
+
+[docker.extras]
+col_package = "Pacote"
+col_description = "Descrição"
+col_status = "Status"
+selected = "[green]selecionado[/green]"
+not_selected = "[dim]—[/dim]"
+apply_hint = "[dim]Execute 'controlmesh docker rebuild' para aplicar os extras selecionados à imagem.[/dim]"
+add_hint = "[dim]Use 'controlmesh docker extras-add <id>' para adicionar.[/dim]"
+remove_hint = "[dim]Use 'controlmesh docker extras-remove <id>' para remover.[/dim]"
+usage_add = "[bold red]Uso: controlmesh docker extras-add <id>[/bold red]"
+usage_remove = "[bold red]Uso: controlmesh docker extras-remove <id>[/bold red]"
+see_ids = "[dim]Execute 'controlmesh docker extras' para ver IDs disponíveis.[/dim]"
+see_installed = "[dim]Execute 'controlmesh docker extras' para ver IDs instalados.[/dim]"
+unknown = "[bold red]Extra desconhecido: {id}[/bold red]"
+already_installed = "[dim]Já instalado: {id}[/dim]"
+not_installed = "[bold red]Não instalado: {id}[/bold red]"
+added = "[green]Adicionado:[/green] {names}"
+auto_deps = "[dim]Dependências adicionadas automaticamente: {names}[/dim]"
+removed = "[green]Removido:[/green] {name}"
+rebuild_hint = "[yellow]Execute 'controlmesh docker rebuild' para aplicar.[/yellow]"
+dep_warning = "[yellow]Aviso: {dependents} dependem de {name}.[/yellow]"
+
+# -- Comandos de serviço -------------------------------------------------------
+
+[service]
+not_installed = "[dim]Serviço não instalado. Execute [bold]controlmesh service install[/bold].[/dim]"
+not_running = "[dim]Serviço não está rodando.[/dim]"
+no_service = "[dim]Nenhum serviço instalado.[/dim]"
+no_binary = "[bold red]Não foi possível encontrar o binário controlmesh no PATH.[/bold red]"
+removed = "[green]Serviço removido.[/green]"
+started = "[green]Serviço iniciado.[/green]"
+stopped = "[green]Serviço parado.[/green]"
+start_failed = "[red]Falha ao iniciar: {error}[/red]"
+stop_failed = "[red]Falha ao parar: {error}[/red]"
+
+[service.install]
+title = "Serviço em segundo plano do controlmesh"
+body = """\
+[bold green]controlmesh agora está rodando como serviço em segundo plano.[/bold green]\n
+{detail}\n
+[bold]Comandos úteis:[/bold]\n
+  [cyan]controlmesh service status[/cyan]     Verificar se está rodando
+  [cyan]controlmesh service stop[/cyan]       Parar o serviço
+  [cyan]controlmesh service logs[/cyan]       {logs_hint}
+  [cyan]controlmesh service uninstall[/cyan]  Remover o serviço"""
+
+[service.linux]
+no_systemd = "[bold red]systemd não encontrado. Instalação de serviço requer Linux com systemd.[/bold red]"
+linger_warning = "[bold yellow]Linger precisa estar habilitado para que o controlmesh continue rodando após o logout.[/bold yellow]"
+linger_enabled = "[green]Linger habilitado.[/green]"
+linger_manual = "[yellow]Não foi possível habilitar linger automaticamente.[/yellow]\nExecute manualmente: [bold]sudo loginctl enable-linger {user}[/bold]"
+start_failed = "[bold red]Falha ao iniciar serviço:[/bold red] {error}"
+detail = "Inicia no boot e reinicia automaticamente em caso de crash."
+
+[service.macos]
+no_launchctl = "[bold red]launchctl não encontrado. Instalação de serviço requer macOS.[/bold red]"
+start_failed = "[bold red]Falha ao carregar Launch Agent:[/bold red] {error}"
+detail = "Inicia no login e reinicia em caso de crash (throttle de 10s)."
+unload_failed = "[red]Falha ao descarregar agente: {error}[/red]"
+not_loaded = "[red]Agente não carregado. Tente: [bold]controlmesh service install[/bold][/red]"
+
+[service.windows]
+admin_title = "[bold yellow]Administrador Necessário[/bold yellow]"
+admin_body = """\
+[bold yellow]Privilégios de administrador necessários.[/bold yellow]\n
+Abra um terminal como Administrador e tente novamente:\n
+  [bold]1.[/bold] Clique com o botão direito no CMD ou PowerShell
+  [bold]2.[/bold] Selecione [cyan]'Executar como administrador'[/cyan]
+  [bold]3.[/bold] Execute: [cyan]controlmesh service install[/cyan]"""
+no_scheduler = "[bold red]Agendador de Tarefas não disponível. Instalação de serviço requer Windows.[/bold red]"
+no_pythonw = "[dim]Nota: pythonw.exe não encontrado. Uma janela de console pode ficar visível.[/dim]"
+create_failed = "[bold red]Falha ao criar tarefa agendada:[/bold red] {error}"
+start_failed = "[bold red]Tarefa criada mas falha ao iniciar:[/bold red] {error}"
+remove_failed = "[red]Falha ao remover tarefa: {error}[/red]"
+detail = "Inicia 10s após o login e reinicia em caso de crash (até 3 tentativas, 1 min de intervalo)."
+query_failed = "[red]Não foi possível consultar o status da tarefa: {error}[/red]"
+
+[service.logs]
+no_logs = "[dim]Nenhum arquivo de log encontrado.[/dim]"
+showing = "[dim]Mostrando últimas {count} linhas de {name}[/dim]"
+read_error = "[red]Não foi possível ler arquivo de log: {error}[/red]"
+full_path = "[dim]Log completo: {path}[/dim]"
+not_installed = "[dim]Serviço não instalado.[/dim]"
+streaming = "[dim]Mostrando logs (Ctrl+C para parar)...[/dim]"
+no_journalctl = "[bold red]journalctl não encontrado.[/bold red]"
+
+# -- Comandos de API -----------------------------------------------------------
+
+[api]
+title = "[bold]Comandos de API[/bold] [dim](beta)[/dim]"
+status_not_configured = "[dim]não configurado[/dim]"
+status_enabled = "[green]habilitado[/green] (porta {port})"
+status_disabled = "[dim]desabilitado[/dim]"
+
+[api.missing_dep]
+title = "[bold]Dependência ausente[/bold]"
+body = """\
+[bold yellow]PyNaCl é necessário para o servidor API (criptografia E2E).[/bold yellow]\n
+Instale com:\n
+  [bold]{hint}[/bold]\n
+Depois execute [bold]controlmesh api enable[/bold] novamente."""
+
+[api.enabled]
+title = "[bold]Servidor API[/bold] [dim](beta)[/dim]"
+body = """\
+[bold green]Servidor API habilitado.[/bold green]\n
+  Host:   [cyan]{host}[/cyan]
+  Porta:  [cyan]{port}[/cyan]
+  Token:  [cyan]{token}[/cyan]\n
+[dim]Reinicie o bot para iniciar o servidor API.[/dim]
+[dim]Projetado para uso com Tailscale ou outras redes privadas.[/dim]"""
+
+[api.disabled]
+status = "Servidor API: [dim]desabilitado[/dim]"
+
+# -- Comandos de agente --------------------------------------------------------
+
+[agents]
+col_agent = "Agente"
+col_status = "Status"
+col_uptime = "Tempo ativo"
+col_provider = "Provider"
+col_model = "Modelo"
+status_running = "[bold green]rodando[/bold green]"
+status_starting = "[yellow]iniciando[/yellow]"
+status_crashed = "[bold red]crashou[/bold red]"
+status_stopped = "[dim]parado[/dim]"
+empty = "[dim]Nenhum sub-agente configurado.[/dim]"
+add_hint = "[dim]Use 'controlmesh agents add <nome>' para criar um.[/dim]"
+
+[agents.add]
+usage = "[bold red]Uso: controlmesh agents add <nome>[/bold red]"
+reserved = "[bold red]O nome 'main' é reservado.[/bold red]"
+exists = "[bold red]Agente '{name}' já existe.[/bold red]"
+prompt_token = "Token do bot Telegram para '{name}':"
+prompt_users = "IDs de usuários permitidos (separados por vírgula):"
+prompt_groups = "IDs de grupos permitidos (separados por vírgula, deixe vazio para nenhum):"
+prompt_provider = "Provider:"
+prompt_model = "Modelo (ex.: opus, sonnet, o3):"
+cancelled = "[dim]Cancelado.[/dim]"
+done = "[green]Agente '{name}' adicionado ao agents.json.[/green]"
+auto_start = "[dim]Será iniciado automaticamente na próxima (re)inicialização do bot.[/dim]"
+
+[agents.remove]
+usage = "[bold red]Uso: controlmesh agents remove <nome>[/bold red]"
+not_found = "[bold red]Agente '{name}' não encontrado.[/bold red]"
+confirm = "Remover agente '{name}'? (Os dados do workspace não serão excluídos.)"
+done = "[green]Agente '{name}' removido do agents.json.[/green]"
+data_hint = "[dim]Dados do workspace permanecem em {path}[/dim]"
+
+# -- Instalar extras -----------------------------------------------------------
+
+[install]
+already = "[green]✓[/green] {description} já está instalado."
+installing = "Instalando {description}..."
+command = "[dim]$ {cmd}[/dim]"
+done = "[green]✓[/green] {description} instalado com sucesso."
+failed = "[red]✗[/red] Instalação falhou."
+col_extra = "Extra"
+col_description = "Descrição"
+col_status = "Status"
+status_installed = "[green]instalado[/green]"
+status_not_installed = "[dim]não instalado[/dim]"
+
+# -- Tabela de ajuda -----------------------------------------------------------
+
+[help]
+col_command = "Comando"
+col_description = "Descrição"
+controlmesh = "Iniciar o bot (executa onboarding se necessário)"
+onboarding = "Assistente de configuração (reseta se já configurado)"
+stop = "Parar bot e container Docker em execução"
+restart = "Reiniciar o bot"
+reset = "Reset completo e reconfiguração"
+upgrade = "Parar, atualizar para última versão, reiniciar"
+uninstall = "Remover tudo e desinstalar"
+service_install = "Executar como serviço em segundo plano ({hint})"
+service = "Gerenciamento de serviço (status/stop/logs/...)"
+agents = "Gerenciamento de sub-agentes (list/add/remove)"
+docker = "Gerenciamento Docker (rebuild/enable/disable)"
+api = "Gerenciamento do servidor API (enable/disable) [beta]"
+install = "Instalar extras opcionais (matrix, api)"
+status = "Mostrar status do bot, caminhos e agentes"
+help = "Mostrar esta mensagem"
+verbose = "Saída de log detalhada"

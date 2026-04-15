@@ -1,0 +1,13 @@
+exception_triggers:
+  - name: schema_invalid
+    action: return_for_hardening
+  - name: scope_breach_suspected
+    action: split_into_new_scope
+  - name: canonical_state_write_breach
+    action: return_for_hardening
+  - name: environment_drift
+    action: blocked_by_environment
+  - name: live_regression
+    action: return_for_hardening
+  - name: task_timeout_no_progress
+    action: deferred_with_reason

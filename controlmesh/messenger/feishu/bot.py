@@ -1,0 +1,770 @@
+"""Feishu bot-only messenger skeleton."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import time
+from collections.abc import Awaitable, Callable
+from contextlib import suppress
+from dataclasses import dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+import aiohttp
+
+from controlmesh.bus.bus import MessageBus
+from controlmesh.bus.envelope import Envelope
+from controlmesh.bus.lock_pool import LockPool
+from controlmesh.config import AgentConfig
+from controlmesh.files.allowed_roots import resolve_allowed_roots
+from controlmesh.log_context import set_log_context
+from controlmesh.messenger.feishu.auth.card_auth_runner import FeishuCardAuthRunner
+from controlmesh.messenger.feishu.auth.feishu_card_sender import (
+    BotFeishuCardSender,
+    FeishuCardHandle,
+)
+from controlmesh.messenger.feishu.auth.runtime_auth import resolve_feishu_auth
+from controlmesh.messenger.notifications import NotificationService
+from controlmesh.messenger.telegram.dedup import DedupeCache
+from controlmesh.session.key import SessionKey
+
+if TYPE_CHECKING:
+    from controlmesh.messenger.feishu.inbound import FeishuInboundServer
+    from controlmesh.messenger.feishu.long_connection import FeishuLongConnectionClient
+    from controlmesh.multiagent.bus import AsyncInterAgentResult
+    from controlmesh.orchestrator.core import Orchestrator
+    from controlmesh.tasks.models import TaskResult
+    from controlmesh.workspace.paths import ControlMeshPaths
+
+logger = logging.getLogger(__name__)
+# Feishu long-connection retries can arrive minutes after the first delivery,
+# especially while a turn is still blocked on model/tool work.
+_FEISHU_DEDUP_TTL_SECONDS = 86400.0
+_FEISHU_DEDUP_MAX_SIZE = 10000
+_FEISHU_CONTENT_DEDUP_TTL_SECONDS = 300.0
+_FEISHU_CONTENT_DEDUP_MAX_SIZE = 4000
+_FEISHU_OLD_MESSAGE_GRACE_SECONDS = 2.0
+_FEISHU_PROGRESS_ACK_DELAY_SECONDS = 1.5
+_FEISHU_PROGRESS_MAX_MESSAGES = 8
+
+
+class _FeishuProgressReporter:
+    """Emit lightweight progress messages for long-running Feishu turns."""
+
+    _SYSTEM_LABELS: dict[str, str] = {
+        "thinking": "处理中...",
+        "compacting": "整理上下文后继续...",
+        "recovering": "恢复会话后继续...",
+        "timeout_warning": "处理时间较长, 继续执行中...",
+        "timeout_extended": "已延长处理时间, 继续执行中...",
+    }
+
+    def __init__(
+        self,
+        bot: FeishuBot,
+        *,
+        chat_ref: str,
+        reply_to_message_id: str | None,
+    ) -> None:
+        self._bot = bot
+        self._chat_ref = chat_ref
+        self._reply_to_message_id = reply_to_message_id
+        self._sent_labels: set[str] = set()
+        self._progress_count = 0
+        self._delay_task: asyncio.Task[None] | None = None
+        self.handles_final_response = False
+
+    def start(self) -> None:
+        self._delay_task = asyncio.create_task(self._send_delayed_ack())
+
+    async def close(self) -> None:
+        task = self._delay_task
+        if task is None:
+            return
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+
+    async def on_tool(self, tool_name: str) -> None:
+        if not tool_name:
+            return
+        await self._emit(f"[TOOL: {tool_name}]")
+
+    async def on_system(self, status: str | None) -> None:
+        if status is None:
+            return
+        label = self._SYSTEM_LABELS.get(status)
+        if label:
+            await self._emit(label)
+
+    async def finish_success(self, _text: str) -> None:
+        return None
+
+    async def finish_failure(self, _error_text: str) -> None:
+        return None
+
+    async def _send_delayed_ack(self) -> None:
+        await asyncio.sleep(_FEISHU_PROGRESS_ACK_DELAY_SECONDS)
+        await self._emit("处理中...")
+
+    async def _emit(self, label: str) -> None:
+        if not label or label in self._sent_labels:
+            return
+        if self._progress_count >= _FEISHU_PROGRESS_MAX_MESSAGES:
+            return
+        self._sent_labels.add(label)
+        self._progress_count += 1
+        await self._bot._send_text_to_chat_ref(
+            self._chat_ref,
+            label,
+            reply_to_message_id=self._reply_to_message_id,
+        )
+
+
+@dataclass(slots=True)
+class FeishuIncomingText:
+    """Normalized Feishu text message event."""
+
+    sender_id: str
+    chat_id: str
+    message_id: str
+    text: str
+    thread_id: str | None = None
+    create_time_ms: int | None = None
+
+
+class FeishuNotificationService:
+    """NotificationService implementation for Feishu."""
+
+    def __init__(self, bot: FeishuBot) -> None:
+        self._bot = bot
+
+    async def notify(self, chat_id: int, text: str) -> None:
+        await self._bot.send_text(chat_id, text)
+
+    async def notify_all(self, text: str) -> None:
+        await self._bot.broadcast_text(text)
+
+
+class FeishuBot:
+    """Minimal Feishu bot-only runtime for config/startup/plumbing cut 1."""
+
+    def __init__(
+        self,
+        config: AgentConfig,
+        *,
+        agent_name: str = "main",
+        bus: MessageBus | None = None,
+        lock_pool: LockPool | None = None,
+    ) -> None:
+        self._config = config
+        self._agent_name = agent_name
+        self._orchestrator: Orchestrator | None = None
+        self._abort_all_callback: Callable[[], Awaitable[int]] | None = None
+        self._startup_hooks: list[Callable[[], Awaitable[None]]] = []
+        self._lock_pool = lock_pool or LockPool()
+        self._bus = bus or MessageBus(lock_pool=self._lock_pool)
+        self._stop_event = asyncio.Event()
+        self._session: aiohttp.ClientSession | None = None
+        self._tenant_access_token: str = ""
+        self._tenant_access_token_expiry: float = 0.0
+        self._process_start_time = time.time()
+        self._shutdown_started = False
+        self._exit_code = 0
+        self._dedup = DedupeCache(
+            ttl_seconds=_FEISHU_DEDUP_TTL_SECONDS,
+            max_size=_FEISHU_DEDUP_MAX_SIZE,
+        )
+        self._recent_content_dedup = DedupeCache(
+            ttl_seconds=_FEISHU_CONTENT_DEDUP_TTL_SECONDS,
+            max_size=_FEISHU_CONTENT_DEDUP_MAX_SIZE,
+        )
+        self._inflight_content_keys: set[str] = set()
+
+        store_path = Path(config.controlmesh_home).expanduser() / "feishu_store"
+        store_path.mkdir(parents=True, exist_ok=True)
+
+        from controlmesh.messenger.feishu.id_map import FeishuIdMap
+        from controlmesh.messenger.feishu.transport import FeishuTransport
+
+        self._id_map = FeishuIdMap(store_path)
+        self._inbound_server: FeishuInboundServer | None = None
+        self._long_connection: FeishuLongConnectionClient | None = None
+        self._card_auth_runner: FeishuCardAuthRunner | None = None
+        self._notification_service: NotificationService = FeishuNotificationService(self)
+        self._bus.register_transport(FeishuTransport(self))
+
+    @property
+    def _orch(self) -> Orchestrator:
+        if self._orchestrator is None:
+            msg = "Orchestrator not initialized -- call after startup"
+            raise RuntimeError(msg)
+        return self._orchestrator
+
+    @property
+    def orchestrator(self) -> Orchestrator | None:
+        return self._orchestrator
+
+    @property
+    def config(self) -> AgentConfig:
+        return self._config
+
+    @property
+    def notification_service(self) -> NotificationService:
+        return self._notification_service
+
+    def register_startup_hook(self, hook: Callable[[], Awaitable[None]]) -> None:
+        self._startup_hooks.append(hook)
+
+    def set_abort_all_callback(self, callback: Callable[[], Awaitable[int]]) -> None:
+        self._abort_all_callback = callback
+
+    def file_roots(self, paths: ControlMeshPaths) -> list[Path] | None:
+        return resolve_allowed_roots(self._config.file_access, paths.workspace)
+
+    async def start_inbound_listener(self) -> None:
+        if self._inbound_server is None:
+            from controlmesh.messenger.feishu.inbound import FeishuInboundServer
+
+            self._inbound_server = FeishuInboundServer(self._config.feishu, self.handle_incoming_event)
+        await self._inbound_server.start()
+
+    async def start_long_connection(self) -> bool:
+        if self._long_connection is None:
+            from controlmesh.messenger.feishu.long_connection import FeishuLongConnectionClient
+
+            self._long_connection = FeishuLongConnectionClient(
+                self._config.feishu,
+                self.handle_incoming_event,
+            )
+        return await self._long_connection.start()
+
+    async def run(self) -> int:
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+
+        from controlmesh.messenger.feishu.startup import run_feishu_startup
+
+        try:
+            await run_feishu_startup(self)
+            await self._stop_event.wait()
+        finally:
+            await self._close_runtime()
+        return self._exit_code
+
+    async def shutdown(self) -> None:
+        self._stop_event.set()
+        await self._close_runtime()
+
+    async def _close_runtime(self) -> None:
+        if self._shutdown_started:
+            return
+        self._shutdown_started = True
+
+        if self._long_connection is not None:
+            await self._long_connection.stop()
+
+        if self._card_auth_runner is not None:
+            await self._card_auth_runner.shutdown()
+
+        if self._inbound_server is not None:
+            await self._inbound_server.stop()
+
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+
+        if self._orchestrator is not None:
+            shutdown = getattr(self._orchestrator, "shutdown", None)
+            if shutdown is not None:
+                await shutdown()
+
+    async def handle_incoming_event(self, payload: dict[str, Any]) -> None:
+        message = self._parse_incoming_text(payload)
+        if message is None:
+            return
+        if self._is_old_message(message):
+            logger.info(
+                "Ignoring old Feishu message after startup chat_id=%s message_id=%s",
+                message.chat_id,
+                message.message_id,
+            )
+            return
+        await self.handle_incoming_text(message)
+
+    async def handle_incoming_text(self, message: FeishuIncomingText) -> None:
+        content_key = await self._prepare_incoming_message(message)
+        if content_key is False:
+            return
+
+        chat_id = self._id_map.chat_to_int(message.chat_id)
+        reply_to = message.message_id if self._config.feishu.reply_to_trigger else None
+        topic_id = (
+            self._id_map.thread_to_int(message.thread_id)
+            if self._config.feishu.thread_isolation and message.thread_id
+            else None
+        )
+        set_log_context(operation="feishu-msg", chat_id=chat_id)
+        lock = self._lock_pool.get((chat_id, topic_id))
+        progress = self._build_progress_reporter(message.chat_id, reply_to)
+        progress.start()
+        if content_key:
+            self._inflight_content_keys.add(content_key)
+        try:
+            async with lock:
+                result = await self._orchestrator.handle_message_streaming(
+                    SessionKey.for_transport("fs", chat_id, topic_id),
+                    message.text,
+                    on_tool_activity=progress.on_tool,
+                    on_system_status=progress.on_system,
+                )
+        except Exception as exc:
+            await progress.finish_failure(str(exc))
+            raise
+        finally:
+            if content_key:
+                self._inflight_content_keys.discard(content_key)
+            await progress.close()
+        if content_key:
+            self._recent_content_dedup.check(content_key)
+        await progress.finish_success(result.text)
+        if result.text and not progress.handles_final_response:
+            await self._send_text_to_chat_ref(message.chat_id, result.text, reply_to_message_id=reply_to)
+
+    async def _prepare_incoming_message(self, message: FeishuIncomingText) -> str | bool | None:
+        dedup_key = f"{message.chat_id}:{message.message_id}"
+        if self._dedup.check(dedup_key):
+            logger.info(
+                "Ignoring duplicate Feishu message chat_id=%s message_id=%s",
+                message.chat_id,
+                message.message_id,
+            )
+            return False
+        if not self._sender_allowed(message.sender_id):
+            logger.info("Ignoring Feishu message from unauthorized sender=%s", message.sender_id)
+            return False
+        if self._orchestrator is None:
+            logger.warning("Ignoring Feishu message before startup")
+            return False
+        if await self._ensure_card_auth_runner().handle_message(message):
+            return False
+
+        content_key = self._should_ignore_content_duplicate(message)
+        if content_key is False:
+            return False
+        logger.info(
+            "Accepted Feishu message chat_id=%s message_id=%s",
+            message.chat_id,
+            message.message_id,
+        )
+        return content_key
+
+    def _should_ignore_content_duplicate(self, message: FeishuIncomingText) -> str | bool | None:
+        content_key = self._content_dedup_key(message)
+        if content_key and content_key in self._inflight_content_keys:
+            logger.info(
+                "Ignoring repeated Feishu content while in flight chat_id=%s sender_id=%s",
+                message.chat_id,
+                message.sender_id,
+            )
+            return False
+        if content_key and self._recent_content_dedup.check(content_key):
+            logger.info(
+                "Ignoring repeated Feishu content chat_id=%s sender_id=%s",
+                message.chat_id,
+                message.sender_id,
+            )
+            return False
+        return content_key
+
+    def _build_progress_reporter(
+        self,
+        chat_ref: str,
+        reply_to_message_id: str | None,
+    ) -> _FeishuProgressReporter:
+        if self._config.feishu.progress_mode == "card_preview":
+            from controlmesh.messenger.feishu.progress_preview import FeishuCardPreviewReporter
+
+            return FeishuCardPreviewReporter(
+                self,
+                chat_ref=chat_ref,
+                reply_to_message_id=reply_to_message_id,
+                max_messages=_FEISHU_PROGRESS_MAX_MESSAGES,
+            )
+        return _FeishuProgressReporter(
+            self,
+            chat_ref=chat_ref,
+            reply_to_message_id=reply_to_message_id,
+        )
+
+    @staticmethod
+    def _content_dedup_key(message: FeishuIncomingText) -> str | None:
+        normalized_text = " ".join(message.text.split())
+        if not normalized_text:
+            return None
+        return f"{message.chat_id}:{message.sender_id}:{message.thread_id or ''}:{normalized_text[:500]}"
+
+    def _is_old_message(self, message: FeishuIncomingText) -> bool:
+        if message.create_time_ms is None:
+            return False
+        return (message.create_time_ms / 1000.0) < (
+            self._process_start_time - _FEISHU_OLD_MESSAGE_GRACE_SECONDS
+        )
+
+    async def send_text(self, chat_id: int, text: str) -> None:
+        chat_ref = self._id_map.int_to_chat(chat_id)
+        if not chat_ref:
+            logger.warning("Feishu send_text: unknown chat_id=%s", chat_id)
+            return
+        await self._send_text_to_chat_ref(chat_ref, text)
+
+    async def broadcast_text(self, text: str) -> None:
+        for chat_id in self._id_map.known_chat_ids():
+            await self.send_text(chat_id, text)
+
+    async def _send_text_to_chat_ref(
+        self,
+        chat_ref: str,
+        text: str,
+        *,
+        reply_to_message_id: str | None = None,
+    ) -> None:
+        if not text:
+            return
+        await self._send_message_to_chat_ref(
+            chat_ref,
+            msg_type="text",
+            content={"text": text},
+            reply_to_message_id=reply_to_message_id,
+        )
+
+    async def _send_card_to_chat_ref(
+        self,
+        chat_ref: str,
+        content: dict[str, object],
+        *,
+        reply_to_message_id: str | None = None,
+    ) -> str | None:
+        return await self._send_message_to_chat_ref(
+            chat_ref,
+            msg_type="interactive",
+            content=content,
+            reply_to_message_id=reply_to_message_id,
+        )
+
+    async def _send_message_to_chat_ref(
+        self,
+        chat_ref: str,
+        *,
+        msg_type: str,
+        content: dict[str, object],
+        reply_to_message_id: str | None = None,
+    ) -> str | None:
+        session = await self._ensure_session()
+        token = await self._get_tenant_access_token()
+        url = f"{self._config.feishu.domain.rstrip('/')}/open-apis/im/v1/messages"
+        payload: dict[str, object] = {
+            "receive_id": chat_ref,
+            "msg_type": msg_type,
+            "content": json.dumps(content, ensure_ascii=False),
+        }
+        if reply_to_message_id:
+            payload["reply_to_message_id"] = reply_to_message_id
+        headers = {"Authorization": f"Bearer {token}"}
+        async with session.post(
+            url,
+            params={"receive_id_type": "chat_id"},
+            json=payload,
+            headers=headers,
+        ) as response:
+            body = await response.text()
+            if response.status >= 400:
+                logger.warning(
+                    "Feishu send failed: status=%s body=%s",
+                    response.status,
+                    body[:500],
+                )
+                return None
+        try:
+            payload_data = json.loads(body)
+        except json.JSONDecodeError:
+            return None
+        data = payload_data.get("data", {})
+        if isinstance(data, dict):
+            message_id = data.get("message_id")
+            if isinstance(message_id, str) and message_id:
+                return message_id
+        return None
+
+    async def _patch_message(
+        self,
+        message_id: str,
+        *,
+        msg_type: str,
+        content: dict[str, object],
+    ) -> None:
+        session = await self._ensure_session()
+        token = await self._get_tenant_access_token()
+        url = f"{self._config.feishu.domain.rstrip('/')}/open-apis/im/v1/messages/{message_id}"
+        headers = {"Authorization": f"Bearer {token}"}
+        payload = {
+            "msg_type": msg_type,
+            "content": json.dumps(content, ensure_ascii=False),
+        }
+        async with session.patch(url, json=payload, headers=headers) as response:
+            if response.status >= 400:
+                body = await response.text()
+                logger.warning(
+                    "Feishu patch failed: status=%s body=%s",
+                    response.status,
+                    body[:500],
+                )
+                return None
+            data = await response.json(content_type=None)
+            raw = data.get("data", {}) if isinstance(data, dict) else {}
+            if isinstance(raw, dict):
+                message_id = raw.get("message_id")
+                if isinstance(message_id, str) and message_id:
+                    return message_id
+            return None
+
+    async def _update_interactive_card(
+        self,
+        handle: FeishuCardHandle,
+        card: dict[str, Any],
+    ) -> None:
+        session = await self._ensure_session()
+        token = await self._get_tenant_access_token()
+        url = (
+            f"{self._config.feishu.domain.rstrip('/')}"
+            f"/open-apis/im/v1/messages/{handle.message_id}"
+        )
+        headers = {"Authorization": f"Bearer {token}"}
+        payload = {
+            "content": json.dumps(card, ensure_ascii=False),
+            "msg_type": "interactive",
+        }
+        async with session.patch(url, json=payload, headers=headers) as response:
+            if response.status >= 400:
+                body = await response.text()
+                logger.warning(
+                    "Feishu card update failed: status=%s body=%s",
+                    response.status,
+                    body[:500],
+                )
+
+    async def _ensure_session(self) -> aiohttp.ClientSession:
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
+
+    def _ensure_card_auth_runner(self) -> FeishuCardAuthRunner:
+        if self._card_auth_runner is None:
+            sender = BotFeishuCardSender(
+                send_card_func=self._send_auth_card_from_context,
+                update_card_func=self._update_interactive_card,
+            )
+            self._card_auth_runner = FeishuCardAuthRunner(
+                self._config,
+                session_factory=self._ensure_session,
+                sender=sender,
+                text_reply=self._reply_card_auth_text,
+            )
+        return self._card_auth_runner
+
+    async def _reply_card_auth_text(
+        self,
+        chat_ref: str,
+        text: str,
+        reply_to_message_id: str | None,
+    ) -> None:
+        await self._send_text_to_chat_ref(
+            chat_ref,
+            text,
+            reply_to_message_id=reply_to_message_id,
+        )
+
+    async def _send_auth_card_from_context(
+        self,
+        context: Any,
+        card: dict[str, Any],
+    ) -> str | None:
+        return await self._send_card_to_chat_ref(
+            context.chat_id,
+            card,
+            reply_to_message_id=context.trigger_message_id if self._config.feishu.reply_to_trigger else None,
+        )
+
+    async def _get_tenant_access_token(self) -> str:
+        now = time.time()
+        if self._tenant_access_token and now < self._tenant_access_token_expiry:
+            return self._tenant_access_token
+
+        resolved_auth = resolve_feishu_auth(config=self._config, now_ms=int(now * 1000))
+        app_id = self._config.feishu.app_id
+        app_secret = self._config.feishu.app_secret
+        if resolved_auth.auth_mode == "bot_only":
+            app_id = resolved_auth.app_id
+            app_secret = resolved_auth.app_secret
+        elif resolved_auth.auth_mode == "device_flow":
+            logger.info(
+                "Feishu runtime auth resolved to device_flow, but tenant-level sends still use "
+                "app_id/app_secret to mint a tenant access token"
+            )
+
+        session = await self._ensure_session()
+        url = (
+            f"{self._config.feishu.domain.rstrip('/')}"
+            "/open-apis/auth/v3/tenant_access_token/internal"
+        )
+        async with session.post(
+            url,
+            json={
+                "app_id": app_id,
+                "app_secret": app_secret,
+            },
+        ) as response:
+            data = await response.json(content_type=None)
+            token = str(data.get("tenant_access_token", ""))
+            expire = int(data.get("expire", 7200))
+            if not token:
+                msg = f"Feishu token request failed: {data}"
+                raise RuntimeError(msg)
+            self._tenant_access_token = token
+            self._tenant_access_token_expiry = now + max(expire - 60, 60)
+            return token
+
+    def _sender_allowed(self, sender_id: str) -> bool:
+        allow_from = self._config.feishu.allow_from
+        return not allow_from or sender_id in allow_from
+
+    def _parse_incoming_text(self, payload: dict[str, Any]) -> FeishuIncomingText | None:
+        header = payload.get("header")
+        event = payload.get("event")
+        if (
+            not isinstance(header, dict)
+            or not isinstance(event, dict)
+            or header.get("event_type") != "im.message.receive_v1"
+        ):
+            return None
+
+        message = event.get("message")
+        sender = event.get("sender")
+        if not isinstance(message, dict) or not isinstance(sender, dict) or message.get(
+            "message_type"
+        ) != "text":
+            return None
+
+        sender_id = self._extract_sender_id(sender)
+        chat_id = message.get("chat_id")
+        message_id = message.get("message_id")
+        if not all(
+            (
+                isinstance(sender_id, str) and sender_id,
+                isinstance(chat_id, str) and chat_id,
+                isinstance(message_id, str) and message_id,
+            )
+        ):
+            return None
+        assert isinstance(chat_id, str)
+        assert isinstance(message_id, str)
+
+        text = self._extract_text(message.get("content"))
+        if not text:
+            return None
+
+        thread_id = message.get("thread_id") or message.get("root_id") or message.get("parent_id")
+        create_time_ms = self._extract_create_time_ms(header.get("create_time"))
+        return FeishuIncomingText(
+            sender_id=sender_id,
+            chat_id=chat_id,
+            message_id=message_id,
+            text=text,
+            thread_id=thread_id if isinstance(thread_id, str) and thread_id else None,
+            create_time_ms=create_time_ms,
+        )
+
+    @staticmethod
+    def _extract_sender_id(sender: dict[str, Any]) -> str:
+        sender_id = sender.get("sender_id")
+        if not isinstance(sender_id, dict):
+            return ""
+        for key in ("open_id", "user_id", "union_id"):
+            value = sender_id.get(key)
+            if isinstance(value, str) and value:
+                return value
+        return ""
+
+    @staticmethod
+    def _extract_text(raw_content: object) -> str:
+        if isinstance(raw_content, dict):
+            value = raw_content.get("text")
+            return value.strip() if isinstance(value, str) else ""
+        if not isinstance(raw_content, str):
+            return ""
+        try:
+            content = json.loads(raw_content)
+        except json.JSONDecodeError:
+            return raw_content.strip()
+        value = content.get("text") if isinstance(content, dict) else None
+        return value.strip() if isinstance(value, str) else ""
+
+    @staticmethod
+    def _extract_create_time_ms(raw_create_time: object) -> int | None:
+        if isinstance(raw_create_time, str) and raw_create_time.isdigit():
+            return int(raw_create_time)
+        if isinstance(raw_create_time, int):
+            return raw_create_time
+        return None
+
+    async def on_async_interagent_result(self, result: AsyncInterAgentResult) -> None:
+        from controlmesh.bus.adapters import from_interagent_result
+
+        chat_id = result.chat_id or next(iter(self._id_map.known_chat_ids()), 0)
+        if not chat_id:
+            logger.warning("No Feishu chat available for async interagent result delivery")
+            return
+        set_log_context(operation="ia-async", chat_id=chat_id)
+        await self._submit_feishu_envelope(from_interagent_result(result, chat_id))
+
+    async def on_task_result(self, result: TaskResult) -> None:
+        from controlmesh.bus.adapters import from_task_result
+
+        chat_id = result.chat_id or next(iter(self._id_map.known_chat_ids()), 0)
+        if not chat_id:
+            logger.warning("No Feishu chat available for task result delivery")
+            return
+        set_log_context(operation="task", chat_id=chat_id)
+        await self._submit_feishu_envelope(from_task_result(result))
+
+    async def on_task_question(
+        self,
+        task_id: str,
+        question: str,
+        prompt_preview: str,
+        chat_id: int,
+        thread_id: int | None = None,
+    ) -> None:
+        from controlmesh.bus.adapters import from_task_question
+
+        if not chat_id:
+            chat_id = next(iter(self._id_map.known_chat_ids()), 0)
+        if not chat_id:
+            logger.warning("No Feishu chat available for task question delivery")
+            return
+        set_log_context(operation="task-question", chat_id=chat_id)
+        await self._submit_feishu_envelope(
+            from_task_question(
+                task_id,
+                question,
+                prompt_preview,
+                chat_id,
+                topic_id=thread_id,
+            )
+        )
+
+    async def _submit_feishu_envelope(self, envelope: Envelope) -> None:
+        """Route bus deliveries explicitly through the Feishu transport."""
+        envelope.transport = "fs"
+        await self._bus.submit(envelope)

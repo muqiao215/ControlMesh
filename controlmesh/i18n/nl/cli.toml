@@ -1,0 +1,286 @@
+# Nederlandse CLI-strings (Rich-geformatteerd, terminaluitvoer).
+
+# -- Statuscommando ---------------------------------------------------------------
+
+[status]
+running = "[bold green]Actief[/bold green]  pid={pid}  uptime: {uptime}"
+not_running = "[dim]Niet actief[/dim]"
+provider = "Provider:  [cyan]{provider}[/cyan] ({model})"
+docker_enabled = "Docker:    [green]ingeschakeld[/green] ({name})"
+docker_disabled = "Docker:    [dim]uitgeschakeld[/dim]"
+errors_found = "Fouten:    [bold red]{count}[/bold red] in laatste log"
+errors_none = "Fouten:    [green]0[/green]"
+paths_header = "[bold]Paden:[/bold]"
+not_configured = "[bold yellow]Niet geconfigureerd.[/bold yellow]\n\nVoer [bold]controlmesh[/bold] uit om de setup-wizard te starten."
+
+# -- Configvalidatie ---------------------------------------------------------------
+
+[config]
+incomplete = "[bold yellow]Config is onvolledig. Voer [bold]controlmesh onboarding[/bold] uit.[/bold yellow]"
+matrix_no_homeserver = "[bold yellow]Matrix homeserver-URL is vereist.{hint}[/bold yellow]"
+matrix_no_user = "[bold yellow]Matrix user_id is vereist.{hint}[/bold yellow]"
+matrix_no_auth = "[bold yellow]Matrix wachtwoord of access_token is vereist.{hint}[/bold yellow]"
+matrix_no_target = "[bold yellow]Minstens één allowed_room of allowed_user is vereist.{hint}[/bold yellow]"
+onboarding_hint = " Voer [bold]controlmesh onboarding[/bold] uit om opnieuw te configureren."
+
+# -- Levenscyclus -----------------------------------------------------------------
+
+[lifecycle]
+stopping_docker = "[dim]Docker-container '{name}' wordt gestopt...[/dim]"
+docker_stopped = "[green]Docker-container gestopt.[/green]"
+stopping_bot = "[dim]Bot wordt gestopt (pid={pid})...[/dim]"
+bot_stopped = "[green]Bot gestopt.[/green]"
+killed_extra = "[dim]{count} overgebleven controlmesh-proces(sen) beëindigd.[/dim]"
+no_instance = "[dim]Geen actieve bot-instantie gevonden.[/dim]"
+
+[lifecycle.uninstall]
+title = "[bold red]controlmesh verwijderen[/bold red]"
+body = """\
+[bold red]Dit verwijdert controlmesh permanent van je systeem.[/bold red]\n
+  1. Actieve bot stoppen (indien actief)
+  2. Docker-container en image verwijderen (indien gebruikt)
+  3. Alle gegevens in ~/.controlmesh/ wissen
+  4. Het controlmesh-pakket verwijderen"""
+confirm = "Weet je zeker dat je alles wilt verwijderen?"
+cancelled = "[dim]Verwijdering geannuleerd.[/dim]"
+removing_image = "[dim]Docker-image '{image}' wordt verwijderd...[/dim]"
+image_removed = "[green]Docker-image verwijderd.[/green]"
+uninstalling = "[dim]controlmesh-pakket wordt verwijderd...[/dim]"
+delete_warning = "[yellow]Waarschuwing: {home} kon niet volledig worden verwijderd (sommige bestanden zijn mogelijk vergrendeld). Verwijder handmatig.[/yellow]"
+deleted = "[green]{home} verwijderd[/green]"
+done_title = "[bold green]Tot ziens[/bold green]"
+done_body = "[bold green]controlmesh is volledig verwijderd.[/bold green]\n\nBedankt voor het gebruik van controlmesh!"
+
+[lifecycle.upgrade]
+dev_title = "[bold yellow]Ontwikkelinstallatie[/bold yellow]"
+dev_body = """\
+[bold yellow]Draait vanuit broncode (bewerkbare installatie).[/bold yellow]\n
+Self-upgrade is niet beschikbaar.
+Update met [bold]git pull[/bold] in je projectmap."""
+title = "[bold cyan]controlmesh wordt bijgewerkt...[/bold cyan]"
+body = """\
+  1. Actieve bot netjes stoppen
+  2. Naar nieuwste versie bijwerken
+  3. Herstarten"""
+upgrading = "[dim]Pakket wordt bijgewerkt...[/dim]"
+complete = "[green]Upgrade voltooid: {old} -> {new}[/green]"
+unchanged = "[bold yellow]Versie ongewijzigd na upgrade ({version}).[/bold yellow]\nAutomatische retry is geprobeerd, maar er kon geen nieuwe versie worden geverifieerd."
+restarting = "[dim]Herstarten...[/dim]"
+
+# -- Docker-commando's ------------------------------------------------------------
+
+[docker]
+config_not_found = "[bold red]Config niet gevonden. Voer eerst controlmesh uit.[/bold red]"
+config_read_error = "[bold red]Config kon niet worden gelezen.[/bold red]"
+enabled = "Docker-sandboxing: [green]ingeschakeld[/green]"
+disabled = "Docker-sandboxing: [dim]uitgeschakeld[/dim]"
+restart_hint = "[dim]Herstart de bot om toe te passen.[/dim]"
+
+[docker.rebuild]
+stopping = "[dim]Bot wordt gestopt...[/dim]"
+removing_container = "[dim]Container '{name}' wordt verwijderd...[/dim]"
+removing_image = "[dim]Image '{name}' wordt verwijderd...[/dim]"
+done = "[green]Klaar.[/green] Image wordt opnieuw gebouwd bij de volgende botstart.\n[dim]Als het als dienst draait, herstart het automatisch.[/dim]"
+
+[docker.mount]
+usage = "[bold red]Gebruik: controlmesh docker mount <pad>[/bold red]"
+not_exist = "[bold red]Pad bestaat niet: {path}[/bold red]"
+not_dir = "[bold red]Geen map: {path}[/bold red]"
+already = "[dim]Al gekoppeld: {path}[/dim]"
+done = "[green]Gekoppeld:[/green] {path}{target}"
+apply_hint = "[dim]Herstart de bot (of bouw de container opnieuw) om toe te passen.[/dim]"
+
+[docker.unmount]
+usage = "[bold red]Gebruik: controlmesh docker unmount <pad>[/bold red]"
+not_found = "[bold red]Koppeling niet gevonden: {path}[/bold red]"
+done = "[green]Ontkoppeld:[/green] {path}"
+
+[docker.mounts]
+empty = "[dim]Geen koppelingen geconfigureerd.[/dim]"
+add_hint = "[dim]Gebruik 'controlmesh docker mount <pad>' om er een toe te voegen.[/dim]"
+
+[docker.extras]
+col_package = "Pakket"
+col_description = "Beschrijving"
+col_status = "Status"
+selected = "[green]geselecteerd[/green]"
+not_selected = "[dim]—[/dim]"
+apply_hint = "[dim]Voer 'controlmesh docker rebuild' uit om geselecteerde extras toe te passen op het image.[/dim]"
+add_hint = "[dim]Gebruik 'controlmesh docker extras-add <id>' om toe te voegen.[/dim]"
+remove_hint = "[dim]Gebruik 'controlmesh docker extras-remove <id>' om te verwijderen.[/dim]"
+usage_add = "[bold red]Gebruik: controlmesh docker extras-add <id>[/bold red]"
+usage_remove = "[bold red]Gebruik: controlmesh docker extras-remove <id>[/bold red]"
+see_ids = "[dim]Voer 'controlmesh docker extras' uit om beschikbare ID's te zien.[/dim]"
+see_installed = "[dim]Voer 'controlmesh docker extras' uit om geïnstalleerde ID's te zien.[/dim]"
+unknown = "[bold red]Onbekende extra: {id}[/bold red]"
+already_installed = "[dim]Al geïnstalleerd: {id}[/dim]"
+not_installed = "[bold red]Niet geïnstalleerd: {id}[/bold red]"
+added = "[green]Toegevoegd:[/green] {names}"
+auto_deps = "[dim]Automatisch toegevoegde afhankelijkheden: {names}[/dim]"
+removed = "[green]Verwijderd:[/green] {name}"
+rebuild_hint = "[yellow]Voer 'controlmesh docker rebuild' uit om toe te passen.[/yellow]"
+dep_warning = "[yellow]Waarschuwing: {dependents} zijn afhankelijk van {name}.[/yellow]"
+
+# -- Dienstcommando's -------------------------------------------------------------
+
+[service]
+not_installed = "[dim]Dienst niet geïnstalleerd. Voer [bold]controlmesh service install[/bold] uit.[/dim]"
+not_running = "[dim]Dienst draait niet.[/dim]"
+no_service = "[dim]Geen dienst geïnstalleerd.[/dim]"
+no_binary = "[bold red]Kon het controlmesh-programma niet vinden in PATH.[/bold red]"
+removed = "[green]Dienst verwijderd.[/green]"
+started = "[green]Dienst gestart.[/green]"
+stopped = "[green]Dienst gestopt.[/green]"
+start_failed = "[red]Starten mislukt: {error}[/red]"
+stop_failed = "[red]Stoppen mislukt: {error}[/red]"
+
+[service.install]
+title = "controlmesh achtergronddienst"
+body = """\
+[bold green]controlmesh draait nu als achtergronddienst.[/bold green]\n
+{detail}\n
+[bold]Handige commando's:[/bold]\n
+  [cyan]controlmesh service status[/cyan]     Controleren of het draait
+  [cyan]controlmesh service stop[/cyan]       Dienst stoppen
+  [cyan]controlmesh service logs[/cyan]       {logs_hint}
+  [cyan]controlmesh service uninstall[/cyan]  Dienst verwijderen"""
+
+[service.linux]
+no_systemd = "[bold red]systemd niet gevonden. Dienstinstallatie vereist Linux met systemd.[/bold red]"
+linger_warning = "[bold yellow]Linger moet ingeschakeld zijn zodat controlmesh blijft draaien na het uitloggen.[/bold yellow]"
+linger_enabled = "[green]Linger ingeschakeld.[/green]"
+linger_manual = "[yellow]Linger kon niet automatisch worden ingeschakeld.[/yellow]\nHandmatig uitvoeren: [bold]sudo loginctl enable-linger {user}[/bold]"
+start_failed = "[bold red]Dienst starten mislukt:[/bold red] {error}"
+detail = "Start bij het opstarten en herstart automatisch bij een crash."
+
+[service.macos]
+no_launchctl = "[bold red]launchctl niet gevonden. Dienstinstallatie vereist macOS.[/bold red]"
+start_failed = "[bold red]Launch Agent kon niet worden geladen:[/bold red] {error}"
+detail = "Start bij het inloggen en herstart bij een crash (10s vertraging)."
+unload_failed = "[red]Agent kon niet worden ontladen: {error}[/red]"
+not_loaded = "[red]Agent niet geladen. Probeer: [bold]controlmesh service install[/bold][/red]"
+
+[service.windows]
+admin_title = "[bold yellow]Administrator vereist[/bold yellow]"
+admin_body = """\
+[bold yellow]Beheerdersrechten vereist.[/bold yellow]\n
+Open een terminal als beheerder en probeer het opnieuw:\n
+  [bold]1.[/bold] Klik met de rechtermuisknop op CMD of PowerShell
+  [bold]2.[/bold] Kies [cyan]'Als administrator uitvoeren'[/cyan]
+  [bold]3.[/bold] Voer uit: [cyan]controlmesh service install[/cyan]"""
+no_scheduler = "[bold red]Taakplanner niet beschikbaar. Dienstinstallatie vereist Windows.[/bold red]"
+no_pythonw = "[dim]Opmerking: pythonw.exe niet gevonden. Een consolevenster kan zichtbaar zijn.[/dim]"
+create_failed = "[bold red]Geplande taak kon niet worden aangemaakt:[/bold red] {error}"
+start_failed = "[bold red]Taak aangemaakt maar starten mislukt:[/bold red] {error}"
+remove_failed = "[red]Taak kon niet worden verwijderd: {error}[/red]"
+detail = "Start 10s na het inloggen en herstart bij een crash (maximaal 3 pogingen, 1 min tussentijd)."
+query_failed = "[red]Taakstatus kon niet worden opgevraagd: {error}[/red]"
+
+[service.logs]
+no_logs = "[dim]Geen logbestanden gevonden.[/dim]"
+showing = "[dim]Laatste {count} regels van {name}[/dim]"
+read_error = "[red]Logbestand kon niet worden gelezen: {error}[/red]"
+full_path = "[dim]Volledig log: {path}[/dim]"
+not_installed = "[dim]Dienst niet geïnstalleerd.[/dim]"
+streaming = "[dim]Logs worden getoond (Ctrl+C om te stoppen)...[/dim]"
+no_journalctl = "[bold red]journalctl niet gevonden.[/bold red]"
+
+# -- API-commando's ---------------------------------------------------------------
+
+[api]
+title = "[bold]API-commando's[/bold] [dim](bèta)[/dim]"
+status_not_configured = "[dim]niet geconfigureerd[/dim]"
+status_enabled = "[green]ingeschakeld[/green] (poort {port})"
+status_disabled = "[dim]uitgeschakeld[/dim]"
+
+[api.missing_dep]
+title = "[bold]Ontbrekende afhankelijkheid[/bold]"
+body = """\
+[bold yellow]PyNaCl is vereist voor de API-server (E2E-versleuteling).[/bold yellow]\n
+Installeer het met:\n
+  [bold]{hint}[/bold]\n
+Voer daarna [bold]controlmesh api enable[/bold] opnieuw uit."""
+
+[api.enabled]
+title = "[bold]API Server[/bold] [dim](bèta)[/dim]"
+body = """\
+[bold green]API-server ingeschakeld.[/bold green]\n
+  Host:   [cyan]{host}[/cyan]
+  Poort:  [cyan]{port}[/cyan]
+  Token:  [cyan]{token}[/cyan]\n
+[dim]Herstart de bot om de API-server te starten.[/dim]
+[dim]Ontworpen voor gebruik met Tailscale of andere privénetwerken.[/dim]"""
+
+[api.disabled]
+status = "API-server: [dim]uitgeschakeld[/dim]"
+
+# -- Agentcommando's --------------------------------------------------------------
+
+[agents]
+col_agent = "Agent"
+col_status = "Status"
+col_uptime = "Uptime"
+col_provider = "Provider"
+col_model = "Model"
+status_running = "[bold green]actief[/bold green]"
+status_starting = "[yellow]start op[/yellow]"
+status_crashed = "[bold red]gecrasht[/bold red]"
+status_stopped = "[dim]gestopt[/dim]"
+empty = "[dim]Geen sub-agents geconfigureerd.[/dim]"
+add_hint = "[dim]Gebruik 'controlmesh agents add <naam>' om er een aan te maken.[/dim]"
+
+[agents.add]
+usage = "[bold red]Gebruik: controlmesh agents add <naam>[/bold red]"
+reserved = "[bold red]Naam 'main' is gereserveerd.[/bold red]"
+exists = "[bold red]Agent '{name}' bestaat al.[/bold red]"
+prompt_token = "Telegram bot token voor '{name}':"
+prompt_users = "Toegestane gebruikers-ID's (kommagescheiden):"
+prompt_groups = "Toegestane groeps-ID's (kommagescheiden, leeg laten voor geen):"
+prompt_provider = "Provider:"
+prompt_model = "Model (bijv. opus, sonnet, o3):"
+cancelled = "[dim]Geannuleerd.[/dim]"
+done = "[green]Agent '{name}' toegevoegd aan agents.json.[/green]"
+auto_start = "[dim]Wordt automatisch gestart bij de volgende bot-(her)start.[/dim]"
+
+[agents.remove]
+usage = "[bold red]Gebruik: controlmesh agents remove <naam>[/bold red]"
+not_found = "[bold red]Agent '{name}' niet gevonden.[/bold red]"
+confirm = "Agent '{name}' verwijderen? (Workspace-gegevens worden niet gewist.)"
+done = "[green]Agent '{name}' verwijderd uit agents.json.[/green]"
+data_hint = "[dim]Workspace-gegevens blijven staan op {path}[/dim]"
+
+# -- Extra's installeren ----------------------------------------------------------
+
+[install]
+already = "[green]✓[/green] {description} is al geïnstalleerd."
+installing = "{description} wordt geïnstalleerd..."
+command = "[dim]$ {cmd}[/dim]"
+done = "[green]✓[/green] {description} succesvol geïnstalleerd."
+failed = "[red]✗[/red] Installatie mislukt."
+col_extra = "Extra"
+col_description = "Beschrijving"
+col_status = "Status"
+status_installed = "[green]geïnstalleerd[/green]"
+status_not_installed = "[dim]niet geïnstalleerd[/dim]"
+
+# -- Helptabel --------------------------------------------------------------------
+
+[help]
+col_command = "Commando"
+col_description = "Beschrijving"
+controlmesh = "Bot starten (voert onboarding uit indien nodig)"
+onboarding = "Setup-wizard (reset indien al geconfigureerd)"
+stop = "Actieve bot en Docker-container stoppen"
+restart = "Bot herstarten"
+reset = "Volledige reset en opnieuw instellen"
+upgrade = "Stoppen, bijwerken, herstarten"
+uninstall = "Alles verwijderen en deïnstalleren"
+service_install = "Als achtergronddienst draaien ({hint})"
+service = "Dienstbeheer (status/stop/logs/...)"
+agents = "Sub-agentbeheer (list/add/remove)"
+docker = "Dockerbeheer (rebuild/enable/disable)"
+api = "API-serverbeheer (enable/disable) [bèta]"
+install = "Optionele extra's installeren (matrix, api)"
+status = "Botstatus, paden en agents tonen"
+help = "Dit bericht tonen"
+verbose = "Uitgebreide loguitvoer"

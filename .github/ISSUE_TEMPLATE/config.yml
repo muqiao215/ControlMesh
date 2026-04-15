@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security Vulnerabilities
+    url: https://github.com/muqiao215/ControlMesh/security/advisories
+    about: Report security issues privately here.

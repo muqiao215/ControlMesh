@@ -1,0 +1,182 @@
+# Русские строки мастера настройки (Rich-форматирование, вывод в терминале при onboarding).
+
+[common]
+cancelled = "[dim]Настройка отменена.[/dim]"
+subtitle = "ControlMesh"
+
+[cli_backends]
+title = "CLI-бэкенды"
+header = "[bold]Обнаруженные ИИ-бэкенды:[/bold]\n"
+claude = "  Claude Code CLI   {status}"
+codex = "  OpenAI Codex CLI  {status}"
+gemini = "  Google Gemini CLI {status}"
+no_auth = """\
+\n[bold red]Хотя бы один CLI должен быть установлен и авторизован.[/bold red]\n
+  Claude: [dim]https://docs.anthropic.com/en/docs/claude-code[/dim]
+  Codex:  [dim]https://github.com/openai/codex[/dim]
+  Gemini: [dim]https://github.com/google-gemini/gemini-cli[/dim]"""
+
+[disclaimer]
+title = "[bold yellow]Отказ от ответственности[/bold yellow]"
+body = """\
+[bold]Важно — прочитай перед продолжением.[/bold]\n
+controlmesh подключается к [bold]Anthropic Claude CLI[/bold] и \
+[bold]OpenAI Codex CLI[/bold] как ИИ-бэкендам.\n
+Бот работает в [bold yellow]режиме полного доступа[/bold yellow]. \
+Агент может читать, записывать и удалять файлы, выполнять команды \
+и взаимодействовать с твоей системой без подтверждения.\n
+Несмотря на защитные механизмы, [bold red]возможны непреднамеренные действия[/bold red] \
+— включая потерю данных, неожиданные изменения файлов или непреднамеренное выполнение команд.\n
+[bold green]Настоятельно рекомендуем запускать controlmesh в Docker-контейнере[/bold green], \
+чтобы изолировать его от хост-системы."""
+confirm = "Я понимаю риски и хочу продолжить."
+
+[transport]
+title = "[bold]Транспорт сообщений[/bold]"
+body = """\
+[bold]Выбери, как пользователи будут общаться с ботом:[/bold]\n
+  [bold cyan]Telegram[/bold cyan]  — Нужен токен от @BotFather
+  [bold cyan]Matrix[/bold cyan]    — Нужен аккаунт Matrix на homeserver (напр. Element)"""
+prompt = "Выбери транспорт:"
+
+[telegram.token]
+title = "[bold]Telegram Bot Token[/bold]"
+body = """\
+[bold]Как получить Telegram Bot Token:[/bold]\n
+  1. Открой Telegram и найди [bold cyan]@BotFather[/bold cyan]
+  2. Отправь [bold]/newbot[/bold] и следуй инструкциям
+  3. Выбери имя и username для бота
+  4. BotFather пришлёт тебе токен\n
+[dim]Формат токена: 1234567890:ABCdefGHIjklMNOpqrsTUVwxyz[/dim]"""
+prompt = "Вставь токен бота:"
+error = "[red]Неверный формат токена. Ожидается: цифры:буквы-цифры (напр. 123456:ABC-xyz)[/red]"
+
+[telegram.user_id]
+title = "[bold]Telegram User ID[/bold]"
+body = """\
+[bold]Как узнать свой Telegram User ID:[/bold]\n
+  1. Открой Telegram и найди [bold cyan]@userinfobot[/bold cyan]
+  2. Отправь [bold]/start[/bold] боту
+  3. Он ответит твоим числовым User ID\n
+[dim]Бот будет принимать сообщения только от этого User ID.[/dim]"""
+prompt = "Введи свой числовой User ID:"
+error_nan = "[red]Введи корректное число.[/red]"
+error_negative = "[red]User ID должен быть положительным числом.[/red]"
+
+[matrix.homeserver]
+title = "[bold]Matrix Homeserver[/bold]"
+body = """\
+[bold]Введи URL своего Matrix homeserver.[/bold]\n
+  Это сервер, на котором живёт аккаунт бота.\n
+[dim]Пример: https://matrix.example.com[/dim]"""
+prompt = "URL homeserver:"
+error = "[red]Должен быть HTTPS URL (напр. https://matrix.example.com)[/red]"
+
+[matrix.user_id]
+title = "[bold]Matrix Bot User ID[/bold]"
+body = """\
+[bold]Введи Matrix User ID бота.[/bold]\n
+  Создай отдельный аккаунт для бота на своём homeserver.\n
+[dim]Формат: @botname:homeserver.domain[/dim]"""
+prompt = "User ID бота:"
+error = "[red]Неверный формат. Ожидается: @localpart:domain (напр. @mybot:matrix.org)[/red]"
+
+[matrix.password]
+title = "[bold]Пароль Matrix[/bold]"
+body = """\
+[bold]Введи пароль аккаунта бота.[/bold]\n
+  Используется только для первого входа. После первого входа
+  сохраняется access-токен, и пароль больше не нужен."""
+prompt = "Пароль:"
+error = "[red]Пароль не может быть пустым.[/red]"
+
+[matrix.allowed_users]
+title = "[bold]Разрешённые пользователи[/bold]"
+body = """\
+[bold]Кому разрешено общаться с этим ботом?[/bold]\n
+  Введи свой Matrix User ID. Обрабатываться будут только
+  сообщения от разрешённых пользователей.\n
+[dim]Формат: @username:homeserver.domain[/dim]"""
+prompt = "Твой Matrix User ID:"
+error = "[red]Неверный формат. Ожидается: @user:domain (напр. @nik:matrix.org)[/red]"
+
+[docker]
+title = "[bold]Docker-песочница[/bold]"
+found_body = """\
+[bold green]Docker обнаружен в твоей системе.[/bold green]\n
+Запуск controlmesh в Docker изолирует его от хоста.
+Это рекомендуемая конфигурация для безопасности."""
+found_prompt = "Включить Docker-песочницу? (Рекомендуется)"
+not_found_body = """\
+[bold yellow]Docker не найден в твоей системе.[/bold yellow]\n
+Рекомендуем установить Docker для запуска бота в изолированном контейнере.
+Docker-песочницу можно включить позже в конфиге.\n
+[dim]https://docs.docker.com/get-docker/[/dim]"""
+
+[docker.extras]
+title = "[bold]Доступные Docker-extras[/bold]"
+col_package = "Пакет"
+col_description = "Описание"
+col_size = "Размер"
+prompt = "Выбери extras (Пробел — переключить, Enter — подтвердить):"
+hint = """\
+[dim]Эти пакеты опциональны и увеличивают время сборки образа.
+Можно изменить позже через [cyan]controlmesh docker extras-add / extras-remove[/cyan].[/dim]"""
+auto_deps = "[dim]Автоматически добавленные зависимости: {names}[/dim]"
+
+[timezone]
+title = "[bold]Часовой пояс[/bold]"
+body = """\
+Часовой пояс используется для cron-планирования, тихих часов heartbeat
+и ежедневного сброса сессий."""
+prompt = "Выбери часовой пояс:"
+manual_prompt = "Введи часовой пояс IANA (напр. Europe/Moscow):"
+error = "[red]Неизвестный часовой пояс: {tz}[/red]"
+
+[service]
+title = "[bold]Фоновая служба[/bold]"
+body = """\
+[bold]Запустить controlmesh как фоновую службу?[/bold]\n
+Это создаст {mechanism}, который:\n
+  - Запускает controlmesh при {trigger}
+  - Автоматически перезапускает при сбое
+  - Работает в фоновом режиме\n
+[dim]Рекомендуется для VPS или постоянно работающих систем.[/dim]"""
+prompt = "Установить как фоновую службу? (Рекомендуется для VPS)"
+
+[complete]
+title = "[bold green]Готово[/bold green]"
+header = "[bold green]Настройка завершена![/bold green]"
+files_header = "[bold]Твои файлы controlmesh:[/bold]"
+home = "  Home:       [cyan]{path}[/cyan]"
+config = "  Config:     [cyan]{path}[/cyan]"
+workspace = "  Workspace:  [cyan]{path}[/cyan]"
+logs = "  Logs:       [cyan]{path}[/cyan]"
+installing_service = "Установка службы..."
+starting_bot = "Запуск бота..."
+
+[reset]
+title = "[bold yellow]Обнаружена существующая настройка[/bold yellow]"
+body = """\
+[bold yellow]У тебя уже есть настроенная конфигурация.[/bold yellow]\n
+Повторный запуск onboarding выполнит [bold red]полный сброс[/bold red]:\n
+  [dim]{home}[/dim] будет полностью удалён.
+  Все сессии, конфиги, память и cron-задачи будут потеряны."""
+
+[reset.docker]
+title = "[bold]Очистка Docker[/bold]"
+body = """\
+[bold]Docker-песочница включена в текущем конфиге.[/bold]\n
+  Контейнер: [cyan]{container}[/cyan]
+  Образ:     [cyan]{image}[/cyan]"""
+prompt = "Удалить Docker-контейнер и образ?"
+removing = "[dim]Удаление Docker-ресурсов...[/dim]"
+done = "[green]Очистка Docker завершена.[/green]"
+
+[reset.confirm]
+prompt = "Удалить всё и начать заново?"
+deleted = "[dim]Рабочее пространство удалено.[/dim]"
+warning = "[yellow]Внимание: не удалось полностью удалить {home}. Удали вручную.[/yellow]"
+
+[language]
+prompt = "Select language / Sprache wählen:"

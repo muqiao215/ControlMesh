@@ -1,0 +1,447 @@
+# Deutsche Chat-Strings (Markdown, gesendet an Telegram/Matrix/API).
+# Sympathisch, humorvoll — nicht steif, nicht albern.
+
+# -- Session-Verwaltung --------------------------------------------------------
+
+[session]
+error_header = "**Session-Fehler**"
+error_body = """\
+[{model}] Da ist was schiefgelaufen.
+Deine Session ist noch da — schick einfach nochmal eine Nachricht.
+Mit /new startest du komplett frisch."""
+error_cause = "**Ursache:** {hint}"
+error_detail = "**Detail:** `{detail}`"
+error_auth = "Authentifizierung fehlgeschlagen. Bitte erneut anmelden (z.B. `codex auth` oder API-Key prüfen)."
+error_rate = "Rate-Limit erreicht. Kurz durchatmen und nochmal versuchen."
+error_context = "Kontext-Limit erreicht. Mit /new startest du eine frische Session."
+
+reset_header = "**Session zurückgesetzt**"
+reset_body = """\
+Neustart für {provider} in diesem Chat.
+Andere Provider-Sessions sind noch da.
+Schreib einfach los!"""
+
+age_warning = "[Session ist {age} alt. Mit /new gibt's einen frischen Start.]"
+
+recovered = "_Die vorherige Session konnte nicht wiederhergestellt werden. Es wurde automatisch eine neue gestartet._"
+sigkill = "Die Ausführung wurde unterbrochen. Bitte schick die gleiche Anfrage nochmal."
+
+not_found = "Session '{name}' nicht gefunden."
+ended = "Session '{name}' ist beendet. Starte eine neue mit /session."
+still_running = "Session '{name}' arbeitet noch. Warten oder mit /stop abbrechen."
+
+# -- Stop/Interrupt ------------------------------------------------------------
+
+[stop]
+header = "**Agent gestoppt**"
+killed = "{provider} wurde gestoppt. Alle wartenden Nachrichten? Futsch."
+nothing = "Hier läuft gerade nix. Alles ruhig an der Front."
+
+[interrupt]
+done = "{count} Prozess(e) unterbrochen."
+nothing = "Keine aktiven Prozesse."
+
+[abort_all]
+done = "{count} Prozess(e) über alle Agents gestoppt."
+nothing = "Keine aktiven Prozesse auf irgendeinem Agent gefunden."
+
+# -- Timeout -------------------------------------------------------------------
+
+[timeout]
+error_header = "**Timeout**"
+error_body = """\
+[{model}] CLI wurde nach {minutes} Min. beendet.
+Deine Session ist noch da — schick eine Nachricht, um weiterzumachen.
+Mit /new startest du frisch."""
+
+result_header = "**Timeout**"
+result_body = """\
+Der Agent hat nach {elapsed}s aufgegeben (Limit: {configured}s).
+Versuch's mit einem kürzeren Prompt oder in kleineren Schritten."""
+
+warning_minutes = "Timeout in {mins} Min."
+warning_seconds = "Timeout in {secs}s"
+extended = "Timeout verlängert (+{secs}s, noch {remaining} übrig)"
+
+generic = "Agent hat zu lange gebraucht. Bitte nochmal versuchen."
+
+# -- Startup / Lifecycle -------------------------------------------------------
+
+[startup]
+first_start_header = "**Bot gestartet**"
+first_start_body = "Erster Start — Houston, wir sind bereit! 🚀"
+reboot_header = "**Bot gestartet**"
+reboot_body = "System-Reboot erkannt — wir sind zurück! Haben uns kurz hingelegt. 😴"
+
+restart_default = "Neustart abgeschlossen. Wir sind wieder da!"
+restart_header = "**Neustart**"
+restart_body = "Bot fährt runter und ist gleich wieder da. Kurze Kaffeepause! ☕"
+
+upgrade_complete = "**Upgrade abgeschlossen** `{old}` -> `{new}`"
+
+matrix_restart = "**Bot neu gestartet** ({reason})"
+matrix_update = "**Update verfügbar:** `{version}`\nMit `/upgrade` aktualisieren."
+matrix_upgraded_restarting = "Upgrade von {old} auf {new}. Neustart..."
+
+[recovery]
+named_header = "**Auto-Recovery**"
+named_body = "Hintergrund-Session **{session}** wird fortgesetzt\n`{preview}`"
+interrupted_header = "**Unterbrochene Aufgabe**"
+interrupted_body = "Eine Aufgabe wurde beim Neustart unterbrochen.\n`{preview}`\nBitte nochmal senden."
+
+# -- Speicher ------------------------------------------------------------------
+
+[memory]
+header = "**Hauptspeicher**"
+empty = "Leer. Der Agent baut sein Gedächtnis auf, während ihr zusammenarbeitet."
+empty_tip = "*Tipp: Sag deinem Agent, er soll sich etwas \"merken\", um loszulegen.*"
+filled_tip = "*Tipp: Der Agent liest und aktualisiert das automatisch.*"
+
+# -- Status --------------------------------------------------------------------
+
+[status]
+header = "**Status**"
+no_session = "Keine aktive Session."
+model_line = "Modell: {model}"
+model_line_configured = "Modell: {model} (konfiguriert: {configured})"
+topic_line = "Thema: {topic}"
+session_line = "Session: `{sid}`"
+messages_line = "Nachrichten: {count}"
+tokens_line = "Tokens: {tokens}"
+cost_line = "Kosten: ${cost}"
+bg_header = "Hintergrund-Aufgaben: {count} laufend"
+auth_header = "Auth:"
+agents_header = "Agents:"
+
+# -- Technischer Footer --------------------------------------------------------
+
+[footer]
+model = "Modell: {name}"
+tokens = "Tokens: {total} (rein: {input}, raus: {output})"
+cost = "Kosten: ${cost}"
+time = "Zeit: {secs}s"
+
+# -- Upgrade -------------------------------------------------------------------
+
+[upgrade]
+dev_header = "**Quellcode-Installation**"
+dev_body = "Self-Upgrade geht leider nicht bei Dev-Installationen.\nAktualisiere mit `git pull` im Projektverzeichnis."
+pypi_unreachable = "Konnte PyPI nicht erreichen. Versuch's später nochmal."
+up_to_date_header = "**Alles aktuell**"
+up_to_date_body = "Installiert: `{current}`\nAktuell:     `{latest}`\n\nDu hast die neueste Version. 👍"
+available_header = "**Update verfügbar**"
+available_body = "Installiert: `{current}`\nNeu:         `{latest}`\n\nJetzt updaten?"
+btn_changelog = "Changelog v{version}"
+btn_yes = "Ja, jetzt updaten"
+btn_not_now = "Nicht jetzt"
+
+# -- Diagnose ------------------------------------------------------------------
+
+[diagnose]
+header = "**System-Diagnose**"
+version_line = "Version: `{version}`"
+configured_line = "Konfiguriert: {provider} / {model}"
+effective_line = "Effektive Laufzeit: {provider} / {model}"
+log_header = "Letzte Logs (50 Zeilen):"
+no_log = "Keine Log-Datei gefunden."
+codex_cache_not_init = "Codex Model Cache: Observer nicht initialisiert"
+codex_cache_not_loaded = "Codex Model Cache: Nicht geladen"
+codex_cache_info = "Codex Model Cache:\n  Zuletzt aktualisiert: {updated}\n  Modelle im Cache: {count}\n  Standard-Modell: {default}"
+health_header = "**Multi-Agent Gesundheit:**"
+
+# -- Aufgaben ------------------------------------------------------------------
+
+[tasks]
+header = "**Hintergrund-Aufgaben**"
+disabled = "Aufgabensystem ist nicht aktiviert."
+empty = "Keine Hintergrund-Aufgaben."
+hint = "Aufgaben werden vom Agent für länger laufende Arbeit erstellt."
+too_many = "Zu viele Hintergrund-Aufgaben ({max} Maximum)"
+internal_error = "Interner Fehler (Logs prüfen)"
+
+cancelled_one = "{count} Aufgabe abgebrochen."
+cancelled_other = "{count} Aufgaben abgebrochen."
+no_running = "Keine laufenden Aufgaben."
+task_cancelled = "Aufgabe `{id}` abgebrochen."
+task_not_running = "Aufgabe `{id}` läuft nicht."
+cleaned_one = "{count} erledigte Aufgabe entfernt."
+cleaned_other = "{count} erledigte Aufgaben entfernt."
+nothing_to_clean = "Nichts aufzuräumen."
+
+running_header = "**Laufend**"
+waiting_header = "**Wartet auf Antwort**"
+finished_header = "**Fertig**"
+
+btn_cancel = "{name} abbrechen"
+btn_cancel_all = "Alle abbrechen"
+btn_refresh = "Aktualisieren"
+btn_delete_finished = "Erledigte löschen"
+
+summary_running = "Laufend: {count}"
+summary_waiting = "Wartend: {count}"
+summary_finished = "Fertig: {count}"
+
+# -- Sessions-Selektor --------------------------------------------------------
+
+[sessions]
+header = "**Sessions**"
+empty = "Keine aktiven Sessions."
+start_hint = "Starte eine mit `/session <Prompt>`."
+followup_hint = "Nachfassen: `@<Name> <Nachricht>`"
+active_count = "Aktiv: {count}"
+btn_end = "{name} beenden"
+btn_refresh = "Aktualisieren"
+btn_end_all = "Alle beenden"
+topics_header = "Themen:"
+named_header = "Benannt:"
+named_empty = "Keine aktiven Sessions.\n  Starte eine mit `/session <Prompt>`."
+
+ended_all_one = "Alle {count} Session(s) beendet."
+ended_all_none = "Keine aktiven Sessions."
+ended_one = "Session '{name}' beendet."
+ended_not_found = "Session '{name}' nicht gefunden."
+unknown_action = "Unbekannte Aktion."
+
+# -- Modell-Selektor ----------------------------------------------------------
+
+[model]
+header = "**Modell-Auswahl**"
+current = "Aktuell: {model}"
+current_with_effort = "Aktuell: {model} ({effort})"
+configured_default = "Konfigurierter Standard: {configured}"
+
+switched = "**Modell gewechselt.**"
+model_line = "Modell: {model}"
+model_change = "Modell: {old} -> {new}"
+provider_change = "Provider: {old} -> {new}"
+reasoning_line = "Reasoning: {effort}"
+effort_updated = "Reasoning-Stufe aktualisiert."
+already_running = "Läuft bereits mit {model}. Nichts zu ändern."
+
+resume_hint = """\
+Setze Session `{sid}` fort.
+Du hast bereits {count} {label} in dieser Provider-Session gesendet.
+Aktuelles Modell: `{model}`.
+Mit /new startest du eine frische Session."""
+resume_msg_one = "Nachricht"
+resume_msg_other = "Nachrichten"
+
+no_auth = "Kein Provider authentifiziert.\nFühre `claude auth`, `codex auth` aus oder melde dich bei `gemini` an."
+pick_provider = "Wähle einen Provider:"
+select_claude = "Claude-Modell auswählen:"
+select_gemini = "Gemini-Modell auswählen:"
+select_codex = "Codex-Modell auswählen:"
+no_codex = "Keine Codex-Modelle verfügbar."
+no_gemini = "Keine Gemini-Modelle aus lokalen CLI-Dateien gefunden."
+thinking_level = "Denk-Stufe für {model}:"
+unknown_action = "Unbekannte Aktion."
+btn_back = "<< Zurück"
+switched_while_busy = "**Modell gewechselt.** Aktueller Prozess läuft noch — neues Modell gilt ab der nächsten Nachricht."
+
+# -- Cron-Selektor -------------------------------------------------------------
+
+[cron]
+header = "**Geplante Aufgaben**"
+empty = "Keine Cron-Jobs konfiguriert."
+empty_hint = "*Frag deinen Agent: \"Mach jeden Tag um 9 Uhr einen Backup-Check\"*"
+job_line = "{number}. **{title}** ({status}){last_run}\n   `{schedule}`"
+status_active = "aktiv"
+status_paused = "pausiert"
+btn_disable = "{number}. Deaktivieren"
+btn_enable = "{number}. Aktivieren"
+btn_prev = "<< Zurück"
+btn_refresh = "Aktualisieren"
+btn_next = "Weiter >>"
+btn_all_on = "Alle AN"
+btn_all_off = "Alle AUS"
+info_active = "{active}/{total} aktiv"
+info_page = "Seite {current}/{total}"
+all_enabled = "Alle Cron-Jobs aktiviert."
+all_disabled = "Alle Cron-Jobs deaktiviert."
+already_enabled = "Alle Cron-Jobs waren bereits aktiv."
+already_disabled = "Alle Cron-Jobs waren bereits deaktiviert."
+toggled = "'{title}' {state}."
+list_changed = "Cron-Liste hat sich geändert. Bitte nochmal versuchen."
+unknown_action = "Unbekannte Aktion. Cron-Liste wurde aktualisiert."
+
+# -- Willkommen (Telegram) ----------------------------------------------------
+
+[welcome]
+header = "**Willkommen bei ControlMesh{name}!**"
+tagline = """\
+Deploy aus der Hosentasche. Automatisiere vom Sofa aus.
+Claude Code, Codex & Gemini — direkt über Telegram."""
+hint_model = "/model — Modelle wechseln"
+hint_info = "/info — Docs & Links"
+hint_help = "/help — alle Befehle"
+
+no_auth = "Noch kein CLI authentifiziert. Führe `claude auth`, `codex auth` aus oder melde dich bei `gemini` an."
+auth_line = "{providers} authentifiziert.\nModell: **{model}**"
+
+btn_know = "Lass uns kennenlernen!"
+btn_system = "Schau dich mal um!"
+btn_who = "Wer bist du? Wer bin ich?"
+
+prompt_know = """\
+Hey, ich hab gerade ControlMesh eingerichtet und möchte, dass du mich kennenlernst. \
+Frag mich alles, was du wissen musst, damit wir gut zusammenarbeiten können — \
+meinen Namen, was ich mache, woran ich arbeite, wie ich gerne kommuniziere. \
+Speichere, was du lernst, in deinem Gedächtnis."""
+prompt_system = """\
+Schau dich mal auf dem System um, auf dem du läufst. \
+Prüfe das Betriebssystem, installierte Tools, Projektordner, was dir auffällt. \
+Gib mir eine kurze Zusammenfassung."""
+prompt_who = """\
+Los geht's! Stell dich vor — wer bist du, was kannst du für mich tun? \
+Dann frag mich, wer ich bin und wobei ich Hilfe brauche."""
+
+# -- Info ----------------------------------------------------------------------
+
+[info]
+header = "**ControlMesh**"
+version = "Version: `{version}`"
+telegram_description = "KI-Coding-Agents (Claude, Codex, Gemini) auf Telegram.\nBenannte Sessions, persistentes Gedächtnis, Cron-Jobs, Webhooks, Live-Streaming."
+matrix_description = "KI-Coding-Agents (Claude, Codex, Gemini) auf Matrix.\nBenannte Sessions, persistentes Gedächtnis, Cron-Jobs, Webhooks, Live-Streaming."
+
+# -- Hilfe (Kategorien) -------------------------------------------------------
+
+[help]
+header = "**Befehlsübersicht**"
+cat_daily = "Alltag"
+cat_automation = "Automatisierung"
+cat_multiagent = "Multi-Agent"
+cat_browse = "Dateien & Info"
+cat_maintenance = "Wartung"
+footer = "Schick einfach eine Nachricht, um loszulegen."
+matrix_footer = "Nutze `!` oder `/` als Prefix. Schick eine Nachricht zum Starten."
+
+# -- Multi-Agent ---------------------------------------------------------------
+
+[agents]
+header = "**Agents**"
+empty = "Keine Agents."
+not_active = "Multi-Agent-Modus ist nicht aktiv."
+usage_stop = "Benutzung: /agent_stop <Name>"
+usage_start = "Benutzung: /agent_start <Name>"
+usage_restart = "Benutzung: /agent_restart <Name>"
+cannot_stop_main = "Den Haupt-Agent kann man nicht stoppen."
+not_running = "Agent '{name}' läuft nicht."
+stopped = "Agent '{name}' gestoppt."
+
+system_header = "**Multi-Agent-System**"
+telegram_explanation = """\
+Das Multi-Agent-System ermöglicht es, zusätzliche Bots als \
+Sub-Agents zu betreiben — jeder mit eigenem Telegram-Token, Workspace \
+und Benutzerliste. Alle Agents teilen sich einen Prozess und können \
+über den Inter-Agent-Bus kommunizieren."""
+matrix_explanation = """\
+Das Multi-Agent-System ermöglicht es, zusätzliche Bots als \
+Sub-Agents zu betreiben — jeder mit eigenem Workspace und Benutzerliste. \
+Alle Agents teilen sich einen Prozess und können \
+über den Inter-Agent-Bus kommunizieren."""
+commands_header = "**Befehle**"
+setup_header = "**Einrichtung**"
+setup_instruction = "Bitte deinen Agent, einen neuen Sub-Agent zu erstellen, oder bearbeite `agents.json` in deinem controlmesh Home-Verzeichnis."
+
+# -- Fehler (generisch) -------------------------------------------------------
+
+[error]
+generic = "Fehler: {detail}"
+check_logs = "Fehler: Logs prüfen für Details."
+
+# -- Gemini-Warnung -----------------------------------------------------------
+
+[gemini]
+missing_key = """\
+Gemini ist auf API-Key-Auth eingestellt, aber `gemini_api_key` in \
+`~/.controlmesh/config/config.json` ist `"null"` oder leer.
+Warum das nötig ist: Wenn controlmesh die Gemini CLI als externen Prozess aufruft, \
+gibt die Gemini CLI einen intern eingegebenen API-Key nicht an den Aufrufer weiter.
+Setze einen echten API-Key in `gemini_api_key` und starte `controlmesh` neu."""
+
+# -- Neue Session (Handler) ---------------------------------------------------
+
+[new]
+topic_not_found = "Thema \"{name}\" nicht gefunden."
+topic_reset = "Neue Session für **{name}** ({provider})."
+
+# -- Transport-spezifisch -----------------------------------------------------
+
+[telegram]
+group_rejected = "Dieser Bot ist für diese Gruppe nicht autorisiert."
+where_header = "**Wo**"
+where_no_tracker = "Chat-Tracker nicht verfügbar."
+where_empty = "Noch keine Chat-Aktivität aufgezeichnet."
+leave_usage_header = "**Benutzung**"
+leave_usage = "`/leave <group_id>`"
+leave_invalid_id = "Ungültige Gruppen-ID."
+leave_failed = "Konnte Gruppe nicht verlassen: {error}"
+left_group = "Gruppe <code>{group_id}</code> verlassen."
+
+[matrix]
+room_rejected = "Dieser Bot ist für diesen Raum nicht autorisiert."
+
+# -- Session-Hilfe (transport-spezifisch) --------------------------------------
+
+[session_help]
+header = "**Hintergrund-Sessions**"
+telegram_explanation = """\
+Hintergrund-Sessions führen Aufgaben parallel aus, ohne den \
+Haupt-Chat zu blockieren. Jede Session bekommt einen eigenen Namen und \
+läuft unabhängig — du kannst mehrere Sessions gleichzeitig aktiv haben."""
+usage_header = "**Benutzung**"
+followup_header = "**Nachfassen**"
+followup_line = "`@session-name <Nachricht>` — Nachricht an eine laufende Session senden"
+commands_header = "**Befehle**"
+telegram_sessions_cmd = "`/sessions` — alle Hintergrund-Sessions anzeigen und verwalten"
+telegram_stop_cmd = "`/stop` — laufende Session abbrechen"
+matrix_session_cmd = "`!session <Prompt>` — Hintergrund-Session starten"
+matrix_sessions_cmd = "`!sessions` — alle Sessions anzeigen und verwalten"
+matrix_stop_cmd = "`!stop` — laufende Session abbrechen"
+default_provider = "`/session <Prompt>` — Standard-Provider"
+claude_single = "`/session <Prompt>` — läuft auf Claude"
+claude_model = "`/session @opus <Prompt>` — bestimmtes Modell"
+codex_single = "`/session <Prompt>` — läuft auf Codex"
+gemini_single = "`/session <Prompt>` — läuft auf Gemini"
+gemini_model = "`/session @flash <Prompt>` — bestimmtes Modell"
+claude_multi = "`/session @opus <Prompt>` — Claude (opus)"
+codex_multi = "`/session @codex <Prompt>` — Codex"
+gemini_multi = "`/session @flash <Prompt>` — Gemini (flash)"
+explicit = "`/session @provider model <Prompt>` — explizit"
+
+# -- Dateibrowser --------------------------------------------------------------
+
+[file_browser]
+header = "**Dateibrowser**"
+directory_not_found = "Verzeichnis nicht gefunden."
+empty = "(leer)"
+btn_back = "<< Zurück"
+btn_request_files = "Schick mir eine Datei aus diesem Ordner"
+file_request_prompt = "Liste alle Dateien in {dir}/ auf und schick mir die, nach der ich frage. Nutze File-Tags für die Zustellung."
+
+# Matrix-Variante
+matrix_header = "**Workspace-Dateien**"
+matrix_hint = "_Nutze `!showfiles <Verzeichnis>` um ein bestimmtes Verzeichnis anzuzeigen._"
+matrix_dir_not_found = "Verzeichnis `{subdir}` nicht gefunden."
+matrix_permission_denied = "(Zugriff verweigert)"
+matrix_file_count = "{count} Datei(en)"
+matrix_no_dirs = "(keine Workspace-Verzeichnisse gefunden)"
+
+# -- Upgrade-Handler (Telegram) ------------------------------------------------
+
+[upgrade_handler]
+btn_changelog = "Changelog v{version}"
+btn_upgrade_now = "Jetzt updaten"
+btn_later = "Später"
+skipped = "Upgrade übersprungen."
+already_in_progress = "Upgrade läuft bereits. Bitte warten."
+in_progress = "Aktualisierung auf {version}..."
+verification_failed = "Upgrade konnte keine neue Version verifizieren (immer noch {version}) nach automatischem Retry.{details}"
+restarting = "Bot startet neu..."
+no_changelog = "Kein Changelog für v{version} gefunden."
+changelog_header = "**Changelog v{version}**"
+
+# -- Multi-Agent-Benachrichtigungen -------------------------------------------
+
+[multiagent]
+async_task_received = "📥 **Async-Aufgabe empfangen** von `{sender}`\nSession: `{session}` · Task-ID: `{task_id}`\n\n_{preview}_"

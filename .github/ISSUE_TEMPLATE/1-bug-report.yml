@@ -1,0 +1,126 @@
+name: "Bug Report"
+description: "Report a bug or unexpected behavior"
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting this issue. Please fill out the fields below so we can reproduce and fix the problem.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: "What happened?"
+      description: "A clear description of the bug."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: "Steps to Reproduce"
+      description: "Step-by-step instructions to trigger the bug."
+      placeholder: |
+        1. Send '/...' in Telegram
+        2. Wait for response
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: "Expected Behavior"
+      description: "What did you expect to happen?"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: "Operating System"
+      options:
+        - Linux
+        - macOS
+        - Windows
+    validations:
+      required: true
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: "Environment"
+      description: "Is controlmesh running locally or in Docker?"
+      options:
+        - Local (pip install)
+        - Docker
+    validations:
+      required: true
+
+  - type: dropdown
+    id: provider
+    attributes:
+      label: "Which LLM provider?"
+      description: "Which provider was active when the bug occurred?"
+      options:
+        - Claude
+        - Codex
+        - Gemini
+        - Not provider-specific
+      multiple: true
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: "controlmesh version"
+      description: "Run `controlmesh --version` or check `pip show controlmesh`."
+      placeholder: "e.g. 0.5.5"
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnose-logs
+    attributes:
+      label: "/diagnose output"
+      description: "Run `/diagnose` in your Telegram chat and paste the output here."
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: "Relevant log output"
+      description: "Paste logs from `controlmesh service logs` or `~/.controlmesh/logs/agent.log`."
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: llm-analysis
+    attributes:
+      label: "LLM self-diagnosis (optional)"
+      description: "Did you ask the LLM to analyze its own error logs? If so, paste its assessment here."
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: "Additional context"
+      description: "Screenshots, config excerpts, or anything else that might help."
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: "Before submitting"
+      options:
+        - label: "I have searched existing issues for duplicates."
+          required: true
+        - label: "I am running the latest version."
+          required: false

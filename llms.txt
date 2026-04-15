@@ -1,0 +1,138 @@
+# controlmesh
+
+> Multi-transport AI orchestration runtime (Telegram + Matrix) that executes official provider CLIs (`claude`, `codex`, `gemini`) as subprocesses, supports optional direct WebSocket API transport, streams responses, persists per-chat/provider state, and runs automation (cron, webhook, heartbeat, cleanup) in-process.
+
+controlmesh is a Python service that routes user input to official CLI tools instead of SDK proxy layers. Core principle: keep runtime state inspectable and local (`~/.controlmesh/`) with JSON/Markdown files and minimal hidden state.
+
+Current stack: Python 3.11+, aiogram 3.x, matrix-nio (optional extra), aiohttp, Pydantic 2.x, asyncio.
+
+## Fast Mental Model
+
+```text
+Telegram update / Matrix sync event / optional API message
+  -> ingress layer (TelegramBot / MatrixBot / ApiServer /ws)
+  -> Orchestrator (commands, directives, flows)
+  -> CLIService (provider wrapper)
+  -> provider subprocess (claude/codex/gemini)
+  -> streamed/non-streamed output back to caller
+```
+
+Runtime supervision model:
+
+- `AgentSupervisor` is always active.
+- Main agent is mandatory.
+- Sub-agents are optional and loaded from `~/.controlmesh/agents.json`.
+- Inter-agent communication uses in-memory bus + internal localhost HTTP bridge.
+
+## Non-Obvious Runtime Facts
+
+- Sessions are provider-isolated per transport-aware `SessionKey(transport, chat_id, topic_id)`.
+- `sessions.json` now stores transport-prefixed keys such as `tg:<chat_id>` / `mx:<room-int>` / `api:<chat_id>:<channel_id>` while still parsing legacy unprefixed keys.
+- `/new` resets only the active provider bucket.
+- `/stop` aborts local active work and drains pending queue.
+- `/stop_all` on main agent aborts active work across all agents (sub-agent fallback is local-only).
+- `/tasks` opens delegated background-task management for the current chat.
+- Startup classifies lifecycle as `first_start`, `service_restart`, `system_reboot` using `startup_state.json`.
+- Foreground in-flight turns are persisted in `inflight_turns.json` and used for startup recovery planning.
+- Named sessions persisted as `running` are downgraded to `idle` on startup and can be safely resumed by recovery logic.
+
+Timeout behavior (current implementation):
+
+- Foreground chat flow: `config.timeouts.normal`
+- Named background `/session`: `config.timeouts.background`
+- Delegated background tasks: `config.tasks.timeout_seconds`
+- Cron/webhook `cron_task` + inter-agent: `config.cli_timeout`
+- Stale process cleanup threshold: `config.cli_timeout * 2`
+
+`TimeoutController` is wired in foreground/named-session/heartbeat flows; cron/webhook/inter-agent/task-injection paths still use plain `timeout_seconds`.
+
+## Persistent State (Main Home)
+
+`~/.controlmesh/` typically contains:
+
+- `config/config.json`
+- `sessions.json`
+- `named_sessions.json`
+- `tasks.json`
+- `startup_state.json`
+- `inflight_turns.json`
+- `cron_jobs.json`
+- `webhooks.json`
+- `agents.json`
+- `SHAREDMEMORY.md`
+- `logs/agent.log`
+- `workspace/` (memory, tools, cron tasks, files, skills)
+
+Sub-agent homes live under `~/.controlmesh/agents/<name>/` with their own config/session/workspace state.
+
+## Transport Surfaces
+
+- Telegram bot ingress (primary)
+- Matrix bot ingress (optional primary/secondary transport)
+- Optional API server (`api.enabled=true`):
+  - WebSocket: `/ws`
+  - HTTP: `/health`, `/files`, `/upload`
+  - WebSocket payloads after auth handshake are E2E encrypted (NaCl Box)
+
+## Automation Systems
+
+- Named background sessions (`/session`)
+- Delegated background tasks (`TaskHub`, `/tasks`, `/tasks/*` internal API routes)
+- Cron scheduler (`cron_jobs.json`)
+- Webhook ingress (`webhooks.json`, modes: `wake`, `cron_task`)
+- Heartbeat observer
+- Cleanup observer
+- Codex/Gemini model cache observers
+- Config hot-reloader
+- Rule-sync and skill-sync watchers
+
+Current operational nuances:
+
+- webhook `wake` is currently wired by Telegram startup; Matrix-primary setups should use `cron_task`
+- startup recovery for interrupted named sessions is currently implemented in Telegram-primary startup, not Matrix-primary startup
+
+## Core Entry Points
+
+- `controlmesh/__main__.py` (CLI entry, load/merge config, run supervisor)
+- `controlmesh/multiagent/supervisor.py` (main + sub-agent lifecycle)
+- `controlmesh/messenger/telegram/app.py` + `controlmesh/messenger/telegram/startup.py` (Telegram startup, handlers, callback routing, recovery)
+- `controlmesh/messenger/matrix/bot.py` + `controlmesh/messenger/matrix/startup.py` (Matrix startup, auth, command routing, streaming)
+- `controlmesh/orchestrator/core.py` (wiring and routing)
+- `controlmesh/orchestrator/flows.py` (normal/streaming/session/heartbeat flows)
+- `controlmesh/cli/service.py` + provider wrappers
+
+## Canonical Docs For LLMs
+
+Start here:
+
+- [System Overview](https://github.com/muqiao215/ControlMesh/blob/main/docs/system_overview.md): fastest end-to-end runtime understanding
+- [Developer Quickstart](https://github.com/muqiao215/ControlMesh/blob/main/docs/developer_quickstart.md): contributor onboarding + key behavioral facts
+- [Architecture](https://github.com/muqiao215/ControlMesh/blob/main/docs/architecture.md): startup sequence, routing, callbacks, background systems
+- [Configuration](https://github.com/muqiao215/ControlMesh/blob/main/docs/config.md): full config schema, merge behavior, timeout matrix
+- [Service Management](https://github.com/muqiao215/ControlMesh/blob/main/docs/modules/service_management.md): systemd, launchd, Task Scheduler behavior
+- [Matrix Setup](https://github.com/muqiao215/ControlMesh/blob/main/docs/matrix-setup.md): Matrix install/config/runtime caveats
+
+Module-level references:
+
+- [bot](https://github.com/muqiao215/ControlMesh/blob/main/docs/modules/bot.md)
+- [orchestrator](https://github.com/muqiao215/ControlMesh/blob/main/docs/modules/orchestrator.md)
+- [cli](https://github.com/muqiao215/ControlMesh/blob/main/docs/modules/cli.md)
+- [session](https://github.com/muqiao215/ControlMesh/blob/main/docs/modules/session.md)
+- [background](https://github.com/muqiao215/ControlMesh/blob/main/docs/modules/background.md)
+- [tasks](https://github.com/muqiao215/ControlMesh/blob/main/docs/modules/tasks.md)
+- [cron](https://github.com/muqiao215/ControlMesh/blob/main/docs/modules/cron.md)
+- [webhook](https://github.com/muqiao215/ControlMesh/blob/main/docs/modules/webhook.md)
+- [heartbeat](https://github.com/muqiao215/ControlMesh/blob/main/docs/modules/heartbeat.md)
+- [infra](https://github.com/muqiao215/ControlMesh/blob/main/docs/modules/infra.md)
+- [multiagent](https://github.com/muqiao215/ControlMesh/blob/main/docs/modules/multiagent.md)
+- [api](https://github.com/muqiao215/ControlMesh/blob/main/docs/modules/api.md)
+- [workspace](https://github.com/muqiao215/ControlMesh/blob/main/docs/modules/workspace.md)
+- [setup wizard / CLI commands](https://github.com/muqiao215/ControlMesh/blob/main/docs/modules/setup_wizard.md)
+
+Project root docs:
+
+- [README](https://github.com/muqiao215/ControlMesh/blob/main/README.md)
+- [Docs index](https://github.com/muqiao215/ControlMesh/blob/main/docs/README.md)
+- [Installation](https://github.com/muqiao215/ControlMesh/blob/main/docs/installation.md)
+- [Automation quickstart](https://github.com/muqiao215/ControlMesh/blob/main/docs/automation.md)
+- [pyproject.toml](https://github.com/muqiao215/ControlMesh/blob/main/pyproject.toml)

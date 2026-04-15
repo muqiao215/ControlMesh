@@ -1,0 +1,26 @@
+# Bot command descriptions (≤22 chars for Telegram mobile clients).
+
+[bot]
+new = "Start new chat"
+stop = "Stop current + queued msgs"
+interrupt = "Interrupt current, keep queue"
+model = "Show/switch model"
+status = "Session info"
+memory = "Show main memory"
+session = "Background sessions"
+tasks = "Background tasks"
+cron = "Manage cron jobs"
+agent_commands = "Multi-agent system"
+showfiles = "Browse files"
+info = "Docs, links & about"
+help = "Show all commands"
+diagnose = "System diagnostics"
+upgrade = "Check for updates"
+restart = "Restart bot"
+
+[multiagent]
+agents = "List all agents"
+agent_start = "Start a sub-agent"
+agent_stop = "Stop a sub-agent"
+agent_restart = "Restart a sub-agent"
+stop_all = "Kill everything"

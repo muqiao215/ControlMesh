@@ -1,0 +1,107 @@
+diff --git a/controlmesh/infra/service_linux.py b/controlmesh/infra/service_linux.py
+index cf33480..6cadf15 100644
+--- a/controlmesh/infra/service_linux.py
++++ b/controlmesh/infra/service_linux.py
+@@ -24,6 +24,7 @@ from controlmesh.infra.service_base import (
+     print_stopped,
+ )
+ from controlmesh.infra.service_logs import print_journal_service_logs
++from controlmesh.workspace.paths import resolve_paths
+ 
+ if TYPE_CHECKING:
+     from rich.console import Console
+@@ -240,8 +241,10 @@ def print_service_status(console: Console | None = None) -> None:
+ def print_service_logs(console: Console | None = None) -> None:
+     """Show live journal logs for the service."""
+     console = ensure_console(console)
++    paths = resolve_paths()
+     print_journal_service_logs(
+         console,
+         installed=is_service_installed(),
+         service_name=_SERVICE_NAME,
++        fallback_logs_dir=paths.logs_dir,
+     )
+diff --git a/controlmesh/infra/service_logs.py b/controlmesh/infra/service_logs.py
+index 3dd7924..4459426 100644
+--- a/controlmesh/infra/service_logs.py
++++ b/controlmesh/infra/service_logs.py
+@@ -65,6 +65,7 @@ def print_journal_service_logs(
+     *,
+     installed: bool,
+     service_name: str,
++    fallback_logs_dir: Path | None = None,
+ ) -> None:
+     """Follow journalctl service logs when service is installed."""
+     if not installed:
+@@ -73,11 +74,28 @@ def print_journal_service_logs(
+ 
+     console.print(t_rich("service.logs.streaming") + "\n")
+     try:
++        if fallback_logs_dir is not None:
++            probe = subprocess.run(
++                ["journalctl", "--user", "-u", service_name, "-n", "1", "--no-hostname"],
++                capture_output=True,
++                text=True,
++                check=False,
++            )
++            combined = f"{probe.stdout}\n{probe.stderr}"
++            if probe.returncode != 0 or "No journal files were found." in combined:
++                console.print("[dim]No user journal available; showing recent file logs instead.[/dim]\n")
++                print_recent_logs(console, fallback_logs_dir)
++                return
++
+         subprocess.run(
+             ["journalctl", "--user", "-u", service_name, "-f", "--no-hostname"],
+             check=False,
+         )
+     except FileNotFoundError:
+-        console.print(t_rich("service.logs.no_journalctl"))
++        if fallback_logs_dir is not None:
++            console.print("[dim]journalctl not found; showing recent file logs instead.[/dim]\n")
++            print_recent_logs(console, fallback_logs_dir)
++        else:
++            console.print(t_rich("service.logs.no_journalctl"))
+     except KeyboardInterrupt:
+         pass
+diff --git a/tests/infra/test_service_linux.py b/tests/infra/test_service_linux.py
+index c233d52..2f3efa1 100644
+--- a/tests/infra/test_service_linux.py
++++ b/tests/infra/test_service_linux.py
+@@ -10,6 +10,7 @@ from controlmesh.infra.service_linux import (
+     _generate_service_unit,
+     is_service_available,
+     is_service_running,
++    print_service_logs,
+     print_service_status,
+     start_service,
+     stop_service,
+@@ -161,3 +162,29 @@ class TestPrintServiceStatus:
+         console = MagicMock()
+         print_service_status(console)
+         console.print.assert_called_with("active running")
++
++
++class TestPrintServiceLogs:
++    @patch("controlmesh.infra.service_linux.resolve_paths")
++    @patch("controlmesh.infra.service_linux.print_journal_service_logs")
++    @patch("controlmesh.infra.service_linux.is_service_installed", return_value=True)
++    def test_passes_logs_dir_for_fallback(
++        self,
++        _installed: MagicMock,
++        mock_print_logs: MagicMock,
++        mock_paths: MagicMock,
++        tmp_path: Path,
++    ) -> None:
++        paths_obj = MagicMock()
++        paths_obj.logs_dir = tmp_path / "logs"
++        mock_paths.return_value = paths_obj
++
++        console = MagicMock()
++        print_service_logs(console)
++
++        mock_print_logs.assert_called_once_with(
++            console,
++            installed=True,
++            service_name=_SERVICE_NAME,
++            fallback_logs_dir=paths_obj.logs_dir,
++        )

@@ -1,0 +1,1 @@
+"""Feishu auth-core tests."""

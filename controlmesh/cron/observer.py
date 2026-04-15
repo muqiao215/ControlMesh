@@ -1,0 +1,412 @@
+"""In-process cron job scheduler: watches cron_jobs.json, schedules and executes jobs."""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import time
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from datetime import datetime
+from typing import TYPE_CHECKING
+
+from cronsim import CronSim, CronSimError
+
+from controlmesh.cli.param_resolver import TaskOverrides
+from controlmesh.config import resolve_user_timezone
+from controlmesh.cron.manager import CronManager
+from controlmesh.infra.base_task_observer import BaseTaskObserver
+from controlmesh.infra.file_watcher import FileWatcher
+from controlmesh.infra.task_runner import execute_in_task_folder
+from controlmesh.log_context import set_log_context
+from controlmesh.utils.quiet_hours import check_quiet_hour
+
+if TYPE_CHECKING:
+    from controlmesh.cli.codex_cache import CodexModelCache
+    from controlmesh.config import AgentConfig
+    from controlmesh.cron.manager import CronJob
+    from controlmesh.workspace.paths import ControlMeshPaths
+
+logger = logging.getLogger(__name__)
+
+# Callback signature: (job_title, result_text, status, chat_id, topic_id, transport)
+CronResultCallback = Callable[[str, str, str, int, int | None, str], Awaitable[None]]
+
+
+@dataclass(slots=True)
+class _ScheduledJob:
+    """Scheduling payload for one cron entry."""
+
+    id: str
+    schedule: str
+    instruction: str
+    task_folder: str
+    timezone: str
+
+
+class CronObserver(BaseTaskObserver):
+    """Watches cron_jobs.json and schedules jobs in-process.
+
+    On start: reads all jobs, calculates next run times via cronsim,
+    and schedules asyncio tasks. A background watcher polls the JSON
+    file's mtime every 5 seconds; on change it reloads and reschedules.
+    """
+
+    def __init__(
+        self,
+        paths: ControlMeshPaths,
+        manager: CronManager,
+        *,
+        config: AgentConfig,
+        codex_cache: CodexModelCache,
+    ) -> None:
+        super().__init__(paths, config, codex_cache)
+        self._manager = manager
+        self._on_result: CronResultCallback | None = None
+        self._scheduled: dict[str, asyncio.Task[None]] = {}
+        self._executing: set[str] = set()
+        self._reschedule_lock = asyncio.Lock()
+        self._requested_reschedule_task: asyncio.Task[None] | None = None
+        self._running = False
+        self._watcher = FileWatcher(
+            paths.cron_jobs_path,
+            self._on_file_change,
+        )
+
+    def set_result_handler(self, handler: CronResultCallback) -> None:
+        """Set callback for job results (called after each execution)."""
+        self._on_result = handler
+
+    async def start(self) -> None:
+        """Start the observer: schedule all jobs and begin watching."""
+        self._running = True
+        await self._schedule_all()
+        await self._watcher.start()
+        logger.info("CronObserver started (%d jobs scheduled)", len(self._scheduled))
+
+    async def stop(self) -> None:
+        """Stop the observer: cancel all scheduled jobs and the watcher."""
+        self._running = False
+        await self._watcher.stop()
+        request_task = self._requested_reschedule_task
+        self._requested_reschedule_task = None
+        if request_task is not None:
+            request_task.cancel()
+            await asyncio.gather(request_task, return_exceptions=True)
+        tasks = list(self._scheduled.values())
+        for task in tasks:
+            task.cancel()
+        self._scheduled.clear()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        logger.info("CronObserver stopped")
+
+    def request_reschedule(self) -> None:
+        """Queue a background reschedule request without blocking the caller."""
+        if not self._running:
+            return
+        task = self._requested_reschedule_task
+        if task is not None and not task.done():
+            return
+        self._requested_reschedule_task = asyncio.create_task(self._run_requested_reschedule())
+
+    async def reschedule_now(self) -> None:
+        """Reschedule all jobs immediately (used by interactive cron toggles)."""
+        if not self._running:
+            return
+        await self._update_mtime()
+        await self._reschedule_locked()
+
+    async def _run_requested_reschedule(self) -> None:
+        """Execute one queued reschedule request and log failures."""
+        try:
+            await self.reschedule_now()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Background cron reschedule failed")
+        finally:
+            self._requested_reschedule_task = None
+
+    # -- File watcher callback --
+
+    async def _on_file_change(self) -> None:
+        """Reload manager in a thread, then reschedule."""
+        logger.info("File watcher detected cron_jobs.json change, rescheduling")
+        await asyncio.to_thread(self._manager.reload)
+        await self._reschedule_locked()
+
+    # -- Scheduling --
+
+    async def _schedule_all(self) -> None:
+        """Schedule asyncio tasks for all enabled jobs."""
+        await self._watcher.update_mtime()
+        for job in self._manager.list_jobs():
+            if job.enabled:
+                self._schedule_job(
+                    job.id,
+                    job.schedule,
+                    job.agent_instruction,
+                    job.task_folder,
+                    job.timezone,
+                )
+
+    async def _reschedule_all(self) -> None:
+        """Cancel idle schedules, await their termination, then reschedule.
+
+        Jobs that are currently executing are left running so that a
+        ``cron_jobs.json`` change mid-execution does not cancel an active
+        subprocess.  Awaiting cancellation of idle tasks prevents a race
+        where the old task runs concurrently with its replacement.
+        """
+        cancelled: list[asyncio.Task[None]] = []
+        for job_id, task in list(self._scheduled.items()):
+            if job_id not in self._executing:
+                task.cancel()
+                cancelled.append(task)
+                del self._scheduled[job_id]
+        if cancelled:
+            await asyncio.gather(*cancelled, return_exceptions=True)
+        await self._schedule_all()
+        logger.info("Rescheduled %d jobs", len(self._scheduled))
+
+    async def _reschedule_locked(self) -> None:
+        """Serialize reschedules from watcher and interactive updates."""
+        async with self._reschedule_lock:
+            await self._reschedule_all()
+
+    def _schedule_job(
+        self,
+        job_id: str,
+        schedule: str,
+        instruction: str,
+        task_folder: str,
+        job_timezone: str = "",
+    ) -> None:
+        """Calculate next run time and schedule an asyncio task.
+
+        Uses the job's timezone (if set), then the global ``user_timezone``
+        config, then the host OS timezone, and finally UTC as last resort.
+        CronSim iterates in the resolved local timezone so that ``0 9 * * *``
+        means 09:00 in the user's wall-clock time.
+        """
+        try:
+            tz = resolve_user_timezone(job_timezone or self._config.user_timezone)
+            now_local = datetime.now(tz)
+            # CronSim works on time components; feed it the local time
+            # so hour fields match the user's wall clock.
+            now_naive = now_local.replace(tzinfo=None)
+            it = CronSim(schedule, now_naive)
+            next_naive: datetime = next(it)
+            # Re-attach the timezone using fold=0 (prefer pre-DST interpretation
+            # for ambiguous times).  For non-existent times (DST spring-forward
+            # gap) the delay becomes negative; in that case advance to the next
+            # cron slot so the job fires at the correct wall-clock time.
+            next_aware = next_naive.replace(tzinfo=tz)  # fold=0 default
+            delay = (next_aware - datetime.now(tz)).total_seconds()
+            if delay < 0:
+                next_naive = next(it)
+                next_aware = next_naive.replace(tzinfo=tz)
+                delay = (next_aware - datetime.now(tz)).total_seconds()
+            delay = max(delay, 0)
+            scheduled_job = _ScheduledJob(
+                id=job_id,
+                schedule=schedule,
+                instruction=instruction,
+                task_folder=task_folder,
+                timezone=job_timezone,
+            )
+            task = asyncio.create_task(
+                self._run_at(delay, scheduled_job),
+            )
+            self._scheduled[job_id] = task
+            logger.debug(
+                "Scheduled %s: next run %s (%s), delay %.0fs",
+                job_id,
+                next_naive.isoformat(),
+                tz.key,
+                delay,
+            )
+        except (CronSimError, StopIteration):
+            logger.warning("Invalid cron expression for job %s: %s", job_id, schedule)
+        except Exception:
+            logger.exception("Failed to schedule job %s", job_id)
+
+    async def _run_at(self, delay: float, scheduled_job: _ScheduledJob) -> None:
+        """Wait for delay, execute the job, then reschedule for next occurrence."""
+        try:
+            await asyncio.sleep(delay)
+            await self._execute_job(
+                scheduled_job.id,
+                scheduled_job.instruction,
+                scheduled_job.task_folder,
+            )
+        except asyncio.CancelledError:
+            logger.warning("Cron job %s cancelled during execution", scheduled_job.id)
+            return
+        except Exception:
+            logger.exception("Cron job %s failed unexpectedly", scheduled_job.id)
+        if self._running:
+            job = self._manager.get_job(scheduled_job.id)
+            if job and job.enabled:
+                self._schedule_job(
+                    scheduled_job.id,
+                    scheduled_job.schedule,
+                    scheduled_job.instruction,
+                    scheduled_job.task_folder,
+                    scheduled_job.timezone,
+                )
+
+    # -- Execution --
+
+    async def _deliver_result(
+        self,
+        job_id: str,
+        job_title: str,
+        result_text: str,
+        status: str,
+        routing: tuple[int, int | None, str] = (0, None, "tg"),
+    ) -> None:
+        """Send result to the external handler (e.g. Telegram).
+
+        Uses *job_title* (computed at execution start) so delivery works even
+        if the job was removed from the manager mid-execution.
+        *routing* is ``(chat_id, topic_id, transport)``; ``(0, None, "tg")``
+        means broadcast.
+        """
+        if self._on_result:
+            try:
+                await self._on_result(job_title, result_text, status, *routing)
+            except Exception:
+                logger.exception("Error in cron result handler for job %s", job_id)
+
+    async def _execute_job(
+        self,
+        job_id: str,
+        instruction: str,
+        task_folder: str,
+    ) -> None:
+        """Spawn a fresh CLI session in the cron_task folder."""
+        self._executing.add(job_id)
+        try:
+            await self._execute_job_inner(job_id, instruction, task_folder)
+        finally:
+            self._executing.discard(job_id)
+
+    async def _execute_job_inner(
+        self,
+        job_id: str,
+        instruction: str,
+        task_folder: str,
+    ) -> None:
+        set_log_context(operation="cron")
+        job = self._manager.get_job(job_id)
+        job_title = job.title if job else job_id
+        routing = (job.chat_id, job.topic_id, job.transport) if job else (0, None, "tg")
+
+        if job and not job.enabled:
+            logger.info("Cron job %s is disabled, skipping execution", job_title)
+            return
+
+        if self._is_quiet_hours(job, job_title):
+            return
+
+        logger.info("Cron job starting job=%s", job_title)
+        t0 = time.monotonic()
+
+        overrides = TaskOverrides(
+            provider=job.provider if job else None,
+            model=job.model if job else None,
+            reasoning_effort=job.reasoning_effort if job else None,
+            cli_parameters=job.cli_parameters if job else [],
+        )
+
+        result = await execute_in_task_folder(
+            self,
+            cron_tasks_dir=self._paths.cron_tasks_dir,
+            task_folder=task_folder,
+            instruction=instruction,
+            overrides=overrides,
+            dependency=job.dependency if job else None,
+            task_id=job_id,
+            task_label="Cron job",
+            timeout_seconds=self._config.cli_timeout,
+        )
+
+        if result.status == "error:folder_missing":
+            logger.error("Cron task folder missing: %s", task_folder)
+            self._manager.update_run_status(job_id, status="error:folder_missing")
+            return
+
+        if result.execution is None:
+            logger.error("CLI not found for cron job %s", job_id)
+            await self._deliver_result(
+                job_id,
+                job_title,
+                result.result_text,
+                result.status,
+                routing,
+            )
+            self._manager.update_run_status(job_id, status=result.status)
+            return
+
+        elapsed_ms = (time.monotonic() - t0) * 1000
+        logger.info(
+            "Cron job completed job=%s status=%s duration_ms=%.0f stdout=%d result=%d",
+            job_title,
+            result.status,
+            elapsed_ms,
+            len(result.execution.stdout),
+            len(result.result_text),
+        )
+
+        # Deliver result BEFORE writing run-status to disk.  The file
+        # write can trigger the file-watcher which reschedules (and
+        # cancels) running tasks.  Delivering first guarantees the
+        # Telegram message is sent even if the task is cancelled during
+        # the subsequent file I/O.
+        await self._deliver_result(
+            job_id,
+            job_title,
+            result.result_text,
+            result.status,
+            routing,
+        )
+
+        self._manager.update_run_status(job_id, status=result.status)
+        # Refresh our mtime baseline so the file-watcher doesn't treat the
+        # run-status write as a user-initiated change and trigger a full
+        # reschedule of all other jobs.
+        await self._watcher.update_mtime()
+
+    def _is_quiet_hours(self, job: CronJob | None, job_title: str) -> bool:
+        """Return True when the job must be skipped due to quiet-hour settings."""
+        job_start = job.quiet_start if job else None
+        job_end = job.quiet_end if job else None
+
+        # Cron jobs only respect quiet hours explicitly set on the job itself.
+        # Do NOT fall back to heartbeat quiet hours.
+        if job_start is None and job_end is None:
+            return False
+
+        is_quiet, now_hour, tz = check_quiet_hour(
+            quiet_start=job_start,
+            quiet_end=job_end,
+            user_timezone=self._config.user_timezone,
+            global_quiet_start=0,
+            global_quiet_end=0,
+        )
+        if not is_quiet:
+            return False
+
+        logger.debug(
+            "Cron job skipped: quiet hours (%d:00 %s) job=%s",
+            now_hour,
+            tz.key,
+            job_title,
+        )
+        return True
+
+    async def _update_mtime(self) -> None:
+        """Cache the current mtime of the jobs file."""
+        await self._watcher.update_mtime()

@@ -1,0 +1,18 @@
+evidence_schema:
+  required_fields:
+    - task_id
+    - mode
+    - scope
+    - status
+    - evidence
+    - findings
+    - proposed_outcome
+
+  evidence_item_fields:
+    - type
+    - file
+
+  findings_fields:
+    - summary
+    - probable_cause
+    - reproducibility

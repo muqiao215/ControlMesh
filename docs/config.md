@@ -1,0 +1,618 @@
+# Configuration
+
+Runtime config file: `~/.controlmesh/config/config.json`.
+
+Seed source: `<repo>/config.example.json` (source checkout) or packaged fallback `controlmesh/_config_example.json` (installed mode).
+
+## Config Creation
+
+Primary path: `controlmesh onboarding` (interactive wizard) writes `config.json` with user-provided values merged into `AgentConfig` defaults.
+
+## Load & Merge Behavior
+
+Config is merged in two places:
+
+1. `controlmesh/__main__.py::load_config()`
+   - creates config on first start (copy from `config.example.json` or Pydantic defaults),
+   - deep-merges runtime file with `AgentConfig` defaults,
+   - writes back only when new keys were added.
+2. `controlmesh/workspace/init.py::_smart_merge_config()`
+   - shallow merge `{**defaults, **existing}` with `config.example.json`,
+   - preserves existing user top-level keys,
+   - fills missing top-level keys from `config.example.json`.
+
+Normalization detail:
+
+- onboarding and runtime config load normalize `gemini_api_key` default to string `"null"` in persisted JSON for backward compatibility.
+- `AgentConfig` validator converts null-like text (`""`, `"null"`, `"none"`) to `None` at runtime.
+
+Runtime edits persisted through config helpers include `/model` changes (model/provider/reasoning), webhook token auto-generation, and API token auto-generation.
+
+API config persistence note:
+
+- `load_config()` intentionally does not auto-add the `api` block during default deep-merge (beta gating).
+- `controlmesh api enable` writes the `api` block (including generated token) into `config.json`.
+
+## External API Secrets (`~/.controlmesh/.env`)
+
+User-defined environment secrets for external APIs (e.g. `PPLX_API_KEY`, `DEEPSEEK_API_KEY`).
+
+Standard dotenv syntax:
+
+```env
+PPLX_API_KEY=sk-xxx
+DEEPSEEK_API_KEY=sk-yyy
+export MY_VAR="quoted value"
+```
+
+Propagation:
+
+- host CLI execution: merged into subprocess env via `_build_subprocess_env()`
+- Docker exec: injected as `-e` flags via `docker_wrap()`
+- Docker container creation: injected as `-e` flags via `_start_container()`
+- sub-agents and background tasks: inherited through the same execution paths
+
+Priority (highest to lowest):
+
+1. existing host environment variables (never overridden)
+2. provider-specific config (e.g. `gemini_api_key` in `config.json`)
+3. `.env` values (fill gaps only)
+
+Changes take effect on the next CLI invocation (mtime-based cache invalidation, no restart needed).
+
+## `AgentConfig` (`controlmesh/config.py`)
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `log_level` | `str` | `"INFO"` | Applied at startup unless CLI `--verbose` is used |
+| `provider` | `str` | `"claude"` | Default provider |
+| `model` | `str` | `"opus"` | Default model ID |
+| `controlmesh_home` | `str` | `"~/.controlmesh"` | Runtime home root |
+| `idle_timeout_minutes` | `int` | `1440` | Session freshness idle timeout (`0` disables idle expiry) |
+| `session_age_warning_hours` | `int` | `12` | Adds `/new` reminder after threshold (every 10 messages) |
+| `daily_reset_hour` | `int` | `4` | Daily reset boundary hour in `user_timezone` |
+| `daily_reset_enabled` | `bool` | `false` | Enables daily session reset checks |
+| `user_timezone` | `str` | `""` | IANA timezone used by cron/heartbeat/cleanup/session reset |
+| `max_budget_usd` | `float \| None` | `None` | Passed to Claude CLI |
+| `max_turns` | `int \| None` | `None` | Passed to Claude CLI |
+| `max_session_messages` | `int \| None` | `None` | Session rollover limit |
+| `permission_mode` | `str` | `"bypassPermissions"` | Provider sandbox/approval mode |
+| `cli_timeout` | `float` | `1800.0` | Legacy/global timeout. Still used by cron/webhook `cron_task`, inter-agent turns, stale-process heartbeat cleanup, and as fallback for unknown timeout paths |
+| `reasoning_effort` | `str` | `"medium"` | Default Codex reasoning level |
+| `file_access` | `str` | `"all"` | File access scope (`all`, `home`, `workspace`) for file sends and API `GET /files`; unknown values fall back to workspace-only |
+| `gemini_api_key` | `str \| None` | `None` | Config fallback key injected for Gemini API-key mode |
+| `transport` | `str` | `"telegram"` | Messaging transport: `"telegram"`, `"matrix"`, or `"feishu"` |
+| `transports` | `list[str]` | `[]` | List of transports to run in parallel (e.g. `["telegram", "matrix"]`). When empty, falls back to single `transport` value. |
+| `telegram_token` | `str` | `""` | Telegram bot token (required when `transport=telegram`) |
+| `allowed_user_ids` | `list[int]` | `[]` | Telegram user allowlist (applies in both private and group chats) |
+| `allowed_group_ids` | `list[int]` | `[]` | Telegram group allowlist (which groups the bot can operate in; default `[]` = no groups, fail-closed). In groups, both the group and the user must be allowlisted |
+| `group_mention_only` | `bool` | `false` | Mention/reply gating in group rooms. Telegram: filter only (no auth bypass). Matrix: in non-DM rooms this bypasses `allowed_users` and uses room + mention/reply as gate |
+| `matrix` | `MatrixConfig` | see below | Matrix homeserver connection (required when `transport=matrix`) |
+| `feishu` | `FeishuConfig` | see below | Feishu domestic bot-only transport skeleton (required when `transport=feishu`) |
+| `streaming` | `StreamingConfig` | see below | Streaming tuning |
+| `docker` | `DockerConfig` | see below | Docker sidecar config |
+| `heartbeat` | `HeartbeatConfig` | see below | Background heartbeat config |
+| `cleanup` | `CleanupConfig` | see below | Daily file-retention cleanup |
+| `webhooks` | `WebhookConfig` | see below | Webhook HTTP server config |
+| `api` | `ApiConfig` | see below | Direct WebSocket API server config |
+| `cli_parameters` | `CLIParametersConfig` | see below | Provider-specific extra CLI flags |
+| `image` | `ImageConfig` | see below | Incoming image processing settings |
+| `timeouts` | `TimeoutConfig` | see below | Path-specific timeout policy (`normal`, `background`, `subagent`) |
+| `tasks` | `TasksConfig` | see below | Delegated background task system (`TaskHub`) |
+| `scene` | `SceneConfig` | see below | Scene indicators and technical footer |
+| `update_check` | `bool` | `true` | Enables periodic update observer (`UpdateObserver`) |
+| `interagent_port` | `int` | `8799` | Port for internal localhost API (`InternalAgentAPI`) |
+
+### Multi-transport behavior
+
+When `transports` is empty (default), the single `transport` value
+is used. When `transports` contains multiple entries (e.g.
+`["telegram", "matrix"]`), `MultiBotAdapter` starts all listed
+transports in parallel and `transport` is auto-set to the first
+entry. A model validator normalizes both fields at load time so
+they stay consistent.
+
+## `MatrixConfig`
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `homeserver` | `str` | `""` | Matrix homeserver URL (e.g. `https://matrix.org`) |
+| `user_id` | `str` | `""` | Bot user ID (e.g. `@controlmesh:matrix.org`) |
+| `password` | `str` | `""` | Password for initial login |
+| `access_token` | `str` | `""` | Optional manual restore source; runtime normally persists credentials in the Matrix store |
+| `device_id` | `str` | `""` | Optional manual restore source paired with `access_token` |
+| `allowed_rooms` | `list[str]` | `[]` | Room IDs or aliases the bot may operate in |
+| `allowed_users` | `list[str]` | `[]` | Matrix user IDs allowed to interact |
+| `store_path` | `str` | `"matrix_store"` | E2EE key store directory, relative to `controlmesh_home` |
+
+Notes:
+
+- first successful login persists credentials to `~/.controlmesh/<store_path>/credentials.json` (mode `0o600`), not back into `config.json`
+- when `access_token` and `device_id` are explicitly present in `config.json`, runtime restores from them and also mirrors them into the credentials store
+- The bot supports end-to-end encrypted rooms via `matrix-nio[e2e]`.
+- `allowed_rooms` and `allowed_users` together form the Matrix auth model.
+
+## `FeishuConfig`
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `mode` | `str` | `"bot_only"` | Cut 1 only supports `bot_only` |
+| `brand` | `str` | `"feishu"` | Cut 1 only supports domestic Feishu, not Lark webhook mode |
+| `app_id` | `str` | `""` | Feishu app ID |
+| `app_secret` | `str` | `""` | Feishu app secret |
+| `domain` | `str` | `"https://open.feishu.cn"` | Runtime API base URL |
+| `allow_from` | `list[str]` | `[]` | Optional sender allowlist (Feishu user IDs such as `open_id`) |
+| `group_reply_all` | `bool` | `false` | Reserved bot-only group behavior knob for later cuts |
+| `thread_isolation` | `bool` | `false` | When enabled, inbound thread/root IDs get separate ControlMesh session keys |
+| `reply_to_trigger` | `bool` | `true` | Reply to the triggering Feishu message when possible |
+
+Current implementation status:
+
+- domestic Feishu shape only
+- bot-only mode only
+- plain-text inbound/outbound plumbing only
+- no user OAuth, QR setup, webhook mode, or Feishu tool suite yet
+
+## `CLIParametersConfig`
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `claude` | `list[str]` | `[]` | Extra args appended to Claude CLI command |
+| `codex` | `list[str]` | `[]` | Extra args appended to Codex CLI command |
+| `gemini` | `list[str]` | `[]` | Extra args appended to Gemini CLI command |
+
+Used by `CLIServiceConfig` for main-chat calls.
+
+Argument shape note:
+
+- each list element is passed as one CLI argument; do not combine multiple shell flags into one string such as `"--verbose --chrome"`
+
+Automation note:
+
+- cron/webhook `cron_task` runs use task-level `cli_parameters` from `cron_jobs.json` / `webhooks.json` (no merge with global `cli_parameters`).
+
+## `TimeoutConfig`
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `normal` | `float` | `600.0` | Default timeout for foreground chat turns (`normal` / `normal_streaming`) |
+| `background` | `float` | `1800.0` | Timeout for named background sessions (`BackgroundObserver`) |
+| `subagent` | `float` | `3600.0` | Reserved timeout bucket for sub-agent-specific paths |
+| `warning_intervals` | `list[float]` | `[60.0, 10.0]` | Warning thresholds for `TimeoutController` |
+| `extend_on_activity` | `bool` | `true` | Enables deadline extension when subprocess output is active |
+| `activity_extension` | `float` | `120.0` | Seconds added per granted extension |
+| `max_extensions` | `int` | `3` | Maximum activity-based extensions |
+
+Runtime sync behavior:
+
+- `AgentConfig` keeps backward compatibility with `cli_timeout`.
+- If `cli_timeout != 600.0` and `timeouts.normal` is still default, runtime validation copies `cli_timeout` into `timeouts.normal`.
+- If `timeouts.normal` is explicitly set, it wins over `cli_timeout`.
+
+Current execution-path usage:
+
+- foreground chat turns: `resolve_timeout(config, "normal")` -> `timeouts.normal`
+- named background sessions (`/session`): `timeouts.background`
+- delegated background tasks (`TaskHub`): `tasks.timeout_seconds`
+- cron + webhook `cron_task`: still `config.cli_timeout`
+- inter-agent turns: still `config.cli_timeout`
+- stale-process cleanup threshold: `config.cli_timeout * 2`
+
+Implementation status note:
+
+- `cli/timeout_controller.py` and warning/extension config are implemented and tested.
+- provider wrappers and executor support `TimeoutController` in production paths.
+- normal/streaming/named-session/heartbeat flows create controllers via `flows._make_timeout_controller(...)`.
+- timeout warning/extension callbacks are not yet wired to Telegram/API system-status output, so user-visible timeout status labels are not emitted by default.
+
+## `TasksConfig`
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `enabled` | `bool` | `true` | Enables shared delegated task system (`TaskHub`) |
+| `max_parallel` | `int` | `5` | Max concurrent running tasks per chat in `TaskHub` |
+| `timeout_seconds` | `float` | `3600.0` | Timeout per delegated task run |
+
+## Task-Level Automation Overrides
+
+Stored outside `config.json` in:
+
+- `~/.controlmesh/cron_jobs.json` (`CronJob`)
+- `~/.controlmesh/webhooks.json` (`WebhookEntry`, `cron_task` mode)
+
+Common per-task fields:
+
+- execution: `provider`, `model`, `reasoning_effort`, `cli_parameters`
+- scheduling guards: `quiet_start`, `quiet_end`, `dependency`
+
+Cron-only field:
+
+- `timezone` (per-job timezone override)
+
+Behavior notes:
+
+- missing execution fields fall back to global config via `resolve_cli_config()`,
+- `dependency` is global across cron + webhook `cron_task` runs (shared `DependencyQueue`),
+- quiet-hour checks run only when per-task quiet fields are set (no fallback to global heartbeat quiet settings).
+
+## `StreamingConfig`
+
+| Field | Type | Default |
+|---|---|---|
+| `enabled` | `bool` | `true` |
+| `min_chars` | `int` | `200` |
+| `max_chars` | `int` | `4000` |
+| `idle_ms` | `int` | `800` |
+| `edit_interval_seconds` | `float` | `2.0` |
+| `max_edit_failures` | `int` | `3` |
+| `append_mode` | `bool` | `false` |
+| `sentence_break` | `bool` | `true` |
+
+## `DockerConfig`
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `enabled` | `bool` | `false` | Master toggle |
+| `image_name` | `str` | `"controlmesh-sandbox"` | Docker image name |
+| `container_name` | `str` | `"controlmesh-sandbox"` | Docker container name |
+| `auto_build` | `bool` | `true` | Build image automatically when missing |
+| `mount_host_cache` | `bool` | `false` | Mount host `~/.cache` into container (see below) |
+| `mounts` | `list[str]` | `[]` | Extra host directories mounted into sandbox (`/mnt/...`) |
+| `extras` | `list[str]` | `[]` | Optional AI/ML package IDs to install in the Docker image (see below) |
+
+`Orchestrator.create()` calls `DockerManager.setup()` when enabled. If setup fails, controlmesh logs warning and falls back to host execution.
+
+### `mount_host_cache`
+
+Mounts the host's platform-specific cache directory into the container at `/home/node/.cache`:
+
+| Platform | Host path |
+|---|---|
+| Linux | `~/.cache` (or `$XDG_CACHE_HOME`) |
+| macOS | `~/Library/Caches` |
+| Windows | `%LOCALAPPDATA%` |
+
+Use case: browser-based skills (e.g. google-ai-mode) that use patchright/playwright need access to persistent browser profiles and browser binaries stored in the host cache. Without this, each container start requires a fresh CAPTCHA solve and Chrome download.
+
+Disabled by default because it exposes the host cache directory to the sandbox.
+
+### `mounts`
+
+User-defined directory mounts for project/data access inside Docker sandbox.
+
+- each entry is expanded (`~`, env vars), resolved, and validated as an existing directory
+- each entry is just a host directory path (for example `"/home/you/projects"`), not Docker `host:container[:mode]` syntax
+- invalid or missing entries are skipped with warnings
+- container target path is derived from host basename: `/mnt/<sanitized-name>`
+- duplicate target names are disambiguated as `/mnt/name_2`, `/mnt/name_3`, ...
+
+Runtime note:
+
+- updates are typically managed via `controlmesh docker mount|unmount`
+- changing mounts requires bot restart (or `controlmesh docker rebuild`) to affect container run flags
+
+### `extras`
+
+Optional AI/ML packages installed into the Docker sandbox image at build time. Each entry is an ID from the extras registry (`controlmesh/infra/docker_extras.py`).
+
+Available extras:
+
+| ID | Name | Category | Size |
+|---|---|---|---|
+| `ffmpeg` | FFmpeg | Audio / Speech | ~100 MB |
+| `whisper` | Faster Whisper | Audio / Speech | ~500 MB |
+| `opencv` | OpenCV | Vision / OCR | ~100 MB |
+| `tesseract` | Tesseract OCR | Vision / OCR | ~40 MB |
+| `easyocr` | EasyOCR | Vision / OCR | ~2.5 GB |
+| `pymupdf` | PyMuPDF | Document Processing | ~50 MB |
+| `pandoc` | Pandoc | Document Processing | ~80 MB |
+| `scipy` | SciPy | Scientific / Data | ~130 MB |
+| `pandas` | pandas | Scientific / Data | ~60 MB |
+| `matplotlib` | Matplotlib | Scientific / Data | ~60 MB |
+| `pytorch-cpu` | PyTorch (CPU) | ML Frameworks | ~800 MB |
+| `transformers` | HF Transformers | ML Frameworks | ~2 GB |
+| `playwright` | Playwright | Web / Browser | ~450 MB |
+
+Dependency resolution:
+
+- `whisper` depends on `ffmpeg`
+- `easyocr` and `transformers` depend on `pytorch-cpu`
+- dependencies are auto-resolved at build time
+
+Managed via `controlmesh docker extras-add|extras-remove` or during onboarding wizard. Changes require `controlmesh docker rebuild` to take effect.
+
+When extras are configured, the supervisor startup timeout is dynamically extended to accommodate longer Docker build times.
+
+## `HeartbeatConfig`
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `enabled` | `bool` | `false` | Master toggle |
+| `interval_minutes` | `int` | `30` | Loop interval |
+| `cooldown_minutes` | `int` | `5` | Skip if user active recently |
+| `quiet_start` | `int` | `21` | Quiet start hour in `user_timezone` |
+| `quiet_end` | `int` | `8` | Quiet end hour in `user_timezone` |
+| `prompt` | `str` | default prompt | Multiline default prompt references `MAINMEMORY.md` and `cron_tasks/` |
+| `ack_token` | `str` | `"HEARTBEAT_OK"` | Suppression token |
+| `group_targets` | `list[HeartbeatTarget]` | `[]` | Per-group/topic heartbeat targets with optional overrides |
+
+### `HeartbeatTarget`
+
+Each entry in `group_targets` identifies a specific group chat (and optional topic) to send heartbeat checks to. All optional fields override the global `HeartbeatConfig` when set; unset fields fall back to global values.
+
+| Field | Type | Required | Default | Notes |
+|---|---|---|---|---|
+| `chat_id` | `int` | yes | | Target group chat ID |
+| `topic_id` | `int \| None` | no | `None` | Optional forum topic ID within the group |
+| `prompt` | `str \| None` | no | `None` | Per-target prompt override (falls back to global `prompt`) |
+| `ack_token` | `str \| None` | no | `None` | Per-target suppression token (falls back to global `ack_token`) |
+| `interval_minutes` | `int \| None` | no | `None` | Per-target interval override (falls back to global `interval_minutes`) |
+| `quiet_start` | `int \| None` | no | `None` | Per-target quiet-hour start (falls back to global `quiet_start`) |
+| `quiet_end` | `int \| None` | no | `None` | Per-target quiet-hour end (falls back to global `quiet_end`) |
+
+## `ImageConfig`
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `max_dimension` | `int` | `2000` | Maximum width/height in pixels; images exceeding this are resized proportionally |
+| `output_format` | `str` | `"webp"` | Target image format (e.g. `webp`, `jpeg`, `png`) |
+| `quality` | `int` | `85` | Compression quality for lossy formats (WebP, JPEG) |
+
+Applied to incoming images across all transports (Telegram, Matrix, API). See `files/image_processor.py` for implementation details.
+
+## `SceneConfig`
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `seen_reaction` | `bool` | `false` | Enables "seen" indicator on incoming messages (Telegram: emoji reaction, Matrix: read receipt) |
+| `technical_footer` | `bool` | `false` | Appends model/token/cost/time footer to agent responses |
+
+## `CleanupConfig`
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `enabled` | `bool` | `true` | Master toggle |
+| `media_files_days` | `int` | `30` | Retention for media files (telegram + matrix) |
+| `output_to_user_days` | `int` | `30` | Retention in `workspace/output_to_user/` |
+| `api_files_days` | `int` | `30` | Retention in `workspace/api_files/` |
+| `check_hour` | `int` | `3` | Local hour in `user_timezone` for cleanup run |
+
+Cleanup implementation detail:
+
+- cleanup is recursive (`_delete_old_files` walks nested files via `rglob("*")`),
+- after file deletion, empty subdirectories are pruned,
+- dated upload folders (`.../YYYY-MM-DD/...`) are cleaned when contained files exceed retention and directories become empty.
+
+## `WebhookConfig`
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `enabled` | `bool` | `false` | Master toggle |
+| `host` | `str` | `"127.0.0.1"` | Bind address (localhost by default) |
+| `port` | `int` | `8742` | HTTP server port |
+| `token` | `str` | `""` | Global bearer fallback token (auto-generated when webhooks start) |
+| `max_body_bytes` | `int` | `262144` | Max request body size |
+| `rate_limit_per_minute` | `int` | `30` | Sliding-window rate limit |
+
+## `ApiConfig`
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `enabled` | `bool` | `false` | Master toggle |
+| `host` | `str` | `"0.0.0.0"` | Bind address |
+| `port` | `int` | `8741` | API HTTP/WebSocket port |
+| `token` | `str` | `""` | Bearer/WebSocket auth token (generated by `controlmesh api enable`, with runtime generation fallback on API start) |
+| `chat_id` | `int` | `0` | Default API session chat (`0` means fallback to first `allowed_user_ids` entry, else `1`) |
+| `allow_public` | `bool` | `false` | Suppresses Tailscale-not-detected warning |
+
+Runtime note (`Orchestrator._start_api_server` + `ApiServer._authenticate`):
+
+- `config.api.chat_id` is used via truthiness (`0` falls back),
+- fallback default comes from first `allowed_user_ids` entry (fallback `1`),
+- per-connection auth payload may override via:
+  - `{"type":"auth","chat_id":...}` (positive int),
+  - optional `channel_id` (positive int) for per-channel session isolation (`SessionKey.topic_id`),
+- clients can override only for that connection; persisted default stays in config.
+
+## Runtime hot-reload (`config_reload.py`)
+
+`Orchestrator.create()` starts `ConfigReloader`, which polls `config.json` every 5 seconds, validates it with `AgentConfig`, diffs top-level fields, and applies safe changes without restart.
+
+Hot-reloadable top-level fields:
+
+- `model`, `provider`, `reasoning_effort`
+- `cli_timeout`, `max_budget_usd`, `max_turns`, `max_session_messages`
+- `idle_timeout_minutes`, `session_age_warning_hours`, `daily_reset_hour`, `daily_reset_enabled`
+- `permission_mode`, `file_access`, `user_timezone`
+- `streaming`, `heartbeat`, `cleanup`, `cli_parameters`
+- `allowed_user_ids`, `allowed_group_ids`, `group_mention_only`
+- `timeouts` is currently restart-required (not in hot-reloadable set)
+
+Observer lifecycle caveat:
+
+- heartbeat/cleanup values hot-reload into config
+- observer start/stop is not hot-toggled
+- enabling heartbeat/cleanup after startup requires restart if the observer was not started initially
+
+Restart-required top-level fields:
+
+- `transport`, `telegram_token`, `matrix`
+- `docker`, `api`, `webhooks`
+- `controlmesh_home`, `log_level`, `gemini_api_key`, `timeouts`, `tasks`
+
+Restart classification is computed from `AgentConfig` top-level schema fields.
+
+## Model Resolution
+
+`ModelRegistry` (`controlmesh/config.py`):
+
+- Claude models are hardcoded: `haiku`, `sonnet`, `opus`.
+- Gemini aliases are hardcoded: `auto`, `pro`, `flash`, `flash-lite`.
+- Runtime Gemini models are discovered from local Gemini CLI files at startup.
+- Provider resolution (`provider_for(model_id)`):
+  - Claude when in `CLAUDE_MODELS`,
+  - Gemini when in aliases/discovered set or when model looks like `gemini-*`/`auto-gemini-*`,
+  - otherwise Codex.
+
+## Timezone Resolution
+
+`resolve_user_timezone(configured)` in `controlmesh/config.py`:
+
+1. valid configured IANA timezone,
+2. `$TZ` env var,
+3. host system detection:
+   - Windows: local datetime tzinfo,
+   - POSIX: `/etc/localtime` symlink,
+4. fallback `UTC`.
+
+Returns `ZoneInfo` when available, otherwise a UTC tzinfo fallback object with `key="UTC"` on systems without timezone data. Used by cron scheduling, session daily-reset checks, heartbeat quiet hours, and cleanup scheduling.
+
+## `reasoning_effort`
+
+UI values: `low`, `medium`, `high`, `xhigh`.
+
+Main-chat flow:
+
+`AgentConfig` -> `CLIServiceConfig` -> `CLIConfig` -> `CodexCLI` (`-c model_reasoning_effort=<value>` when relevant).
+
+Automation flow:
+
+- `resolve_cli_config()` applies reasoning effort only for Codex models that support the requested effort.
+
+## Codex Model Cache
+
+Path: `~/.controlmesh/config/codex_models.json`.
+
+Behavior:
+
+- loaded at orchestrator startup (`CodexCacheObserver.start()`),
+- startup load is forced refresh (`force_refresh=True`),
+- checked hourly in background,
+- `load_or_refresh()` uses cache if `<24h` old, otherwise re-discovers via Codex app server,
+- consumed by `/model` wizard, `resolve_cli_config()` for cron/webhook validation, and `/diagnose` output.
+
+## Gemini Model Cache
+
+Path: `~/.controlmesh/config/gemini_models.json`.
+
+Behavior:
+
+- loaded at orchestrator startup (`GeminiCacheObserver.start()`),
+- startup load uses cached data when fresh and refreshes only when stale/missing,
+- refreshed hourly in background,
+- refresh callback updates runtime Gemini model registry (`set_gemini_models(...)`) used by directives and model selector.
+
+## `agents.json` (Multi-Agent Registry)
+
+Path: `~/.controlmesh/agents.json`.
+
+Top-level JSON array of `SubAgentConfig` objects. Each entry defines a sub-agent that runs alongside the main agent.
+
+Managed via:
+
+- `controlmesh agents add <name>` (interactive CLI, currently Telegram-focused)
+- `controlmesh agents remove <name>` (CLI)
+- `create_agent.py` / `remove_agent.py` tool scripts (from within a CLI session)
+- manual file editing (auto-detected by `FileWatcher`)
+
+### `SubAgentConfig` fields
+
+| Field | Type | Required | Default | Notes |
+|---|---|---|---|---|
+| `name` | `str` | yes | | Unique lowercase identifier |
+| `transport` | `str` | no | `"telegram"` | `"telegram"` or `"matrix"` |
+| `telegram_token` | `str` | conditional | | Required when `transport=telegram` |
+| `matrix` | `MatrixConfig` | conditional | | Required when `transport=matrix` |
+| `allowed_user_ids` | `list[int]` | no | `[]` | Telegram user allowlist |
+| `allowed_group_ids` | `list[int]` | no | `[]` | Telegram group allowlist |
+| `group_mention_only` | `bool` | no | inherited | Mention/reply gating toggle (transport-specific behavior) |
+| `provider` | `str` | no | inherited | Default provider |
+| `model` | `str` | no | inherited | Default model |
+| `log_level` | `str` | no | inherited | |
+| `idle_timeout_minutes` | `int` | no | inherited | |
+| `session_age_warning_hours` | `int` | no | inherited | |
+| `daily_reset_hour` | `int` | no | inherited | |
+| `daily_reset_enabled` | `bool` | no | inherited | |
+| `max_budget_usd` | `float` | no | inherited | |
+| `max_turns` | `int` | no | inherited | |
+| `max_session_messages` | `int` | no | inherited | |
+| `permission_mode` | `str` | no | inherited | |
+| `cli_timeout` | `float` | no | inherited | |
+| `reasoning_effort` | `str` | no | inherited | |
+| `file_access` | `str` | no | inherited | |
+| `streaming` | `StreamingConfig` | no | inherited | |
+| `docker` | `DockerConfig` | no | inherited | |
+| `heartbeat` | `HeartbeatConfig` | no | inherited | |
+| `cleanup` | `CleanupConfig` | no | inherited | |
+| `webhooks` | `WebhookConfig` | no | inherited | |
+| `api` | `ApiConfig` | no | disabled | Disabled by default for sub-agents |
+| `cli_parameters` | `CLIParametersConfig` | no | inherited | |
+| `user_timezone` | `str` | no | inherited | |
+
+"inherited" means the value comes from the main agent's `config.json` when omitted.
+
+Timeout nuance:
+
+- `SubAgentConfig` currently has no dedicated `timeouts` field.
+- `SubAgentConfig` currently has no dedicated `tasks` field.
+- sub-agents inherit the main agent `timeouts` block through merge base.
+- sub-agents inherit the main agent `tasks` block through merge base.
+
+Example:
+
+```json
+[
+  {
+    "name": "researcher",
+    "telegram_token": "123456:ABC...",
+    "allowed_user_ids": [12345678],
+    "provider": "claude",
+    "model": "sonnet"
+  },
+  {
+    "name": "coder",
+    "transport": "matrix",
+    "matrix": {
+      "homeserver": "https://matrix.example.com",
+      "user_id": "@coder:example.com",
+      "password": "...",
+      "allowed_rooms": ["!room:example.com"],
+      "allowed_users": ["@user:example.com"]
+    },
+    "provider": "codex",
+    "reasoning_effort": "high"
+  }
+]
+```
+
+### Sub-agent runtime merge behavior
+
+`merge_sub_agent_config(main, sub, agent_home)` builds the effective sub-agent `AgentConfig` with this priority:
+
+1. main agent config (`config.json`) as base
+2. explicit non-null overrides from `agents.json` (highest priority)
+
+Then it always forces:
+
+- `controlmesh_home = ~/.controlmesh/agents/<name>/`
+- `transport`, `telegram_token`, `matrix`, `allowed_user_ids`, and `allowed_group_ids` from the sub-agent entry
+- `api.enabled = false` when no explicit `api` block is provided
+
+Notes:
+
+- there is no extra persisted runtime config layer for sub-agents in merge order
+- `/model` changes in a sub-agent chat are written back to `agents.json`, so restart/reload uses the updated values from that registry file
+
+### `agents.json` watcher behavior
+
+`AgentSupervisor` watches `agents.json` (mtime poll every 5s):
+
+- new entry -> start sub-agent
+- removed entry -> stop sub-agent
+- restart triggers for running agents:
+  - `transport` changed
+  - Telegram identity changed (`telegram_token`)
+  - Matrix identity changed (`matrix.homeserver` or `matrix.user_id`)
+- other field changes currently do not auto-restart running agents
+
+For non-token field updates on a running agent, use `/agent_restart <name>` (or restart the bot) to apply them immediately.

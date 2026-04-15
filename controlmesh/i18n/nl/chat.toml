@@ -1,0 +1,447 @@
+# Nederlandse chat-strings (Markdown, verzonden naar Telegram/Matrix/API).
+# Vriendelijk, warm, licht humoristisch — als een behulpzame collega.
+
+# -- Sessiebeheer -----------------------------------------------------------------
+
+[session]
+error_header = "**Sessiefout**"
+error_body = """\
+[{model}] Er ging iets mis.
+Je sessie is bewaard — stuur gewoon nog een bericht om het opnieuw te proberen.
+Gebruik /new om een frisse sessie te starten als het probleem aanhoudt."""
+error_cause = "**Oorzaak:** {hint}"
+error_detail = "**Detail:** `{detail}`"
+error_auth = "Authenticatie mislukt. Log opnieuw in via de CLI (bijv. `codex auth` of controleer je API-key)."
+error_rate = "Rate-limit bereikt. Even ademhalen en opnieuw proberen."
+error_context = "Contextlimiet bereikt. Gebruik /new om een frisse sessie te starten."
+
+reset_header = "**Sessie gereset**"
+reset_body = """\
+Sessie gereset voor {provider} in deze chat.
+Andere provider-sessies zijn bewaard gebleven.
+Stuur een bericht om verder te gaan."""
+
+age_warning = "[Sessie is {age} oud. Gebruik /new voor een frisse start.]"
+
+recovered = "_De vorige sessie kon niet worden hersteld. Er is automatisch een nieuwe gestart._"
+sigkill = "De uitvoering werd onderbroken. Stuur hetzelfde verzoek opnieuw."
+
+not_found = "Sessie '{name}' niet gevonden."
+ended = "Sessie '{name}' is beëindigd. Start een nieuwe met /session."
+still_running = "Sessie '{name}' is nog bezig. Wachten of /stop gebruiken om te annuleren."
+
+# -- Stop/onderbreking -------------------------------------------------------------
+
+[stop]
+header = "**Agent gestopt**"
+killed = "{provider} beëindigd. Alle wachtende berichten weggegooid."
+nothing = "Er draait op dit moment niets."
+
+[interrupt]
+done = "{count} proces(sen) onderbroken."
+nothing = "Geen actieve processen."
+
+[abort_all]
+done = "{count} proces(sen) over alle agents gestopt."
+nothing = "Geen actieve processen gevonden op enige agent."
+
+# -- Timeout -----------------------------------------------------------------------
+
+[timeout]
+error_header = "**Timeout**"
+error_body = """\
+[{model}] CLI is beëindigd na {minutes} min.
+Je sessie is bewaard — stuur een bericht om verder te gaan waar je was gebleven.
+Gebruik /new om een frisse sessie te starten."""
+
+result_header = "**Timeout**"
+result_body = """\
+De agent heeft een timeout na {elapsed}s (limiet: {configured}s).
+Probeer een kortere prompt, of vraag in kleinere stappen."""
+
+warning_minutes = "Timeout over {mins} min"
+warning_seconds = "Timeout over {secs}s"
+extended = "Timeout verlengd (+{secs}s, nog {remaining} over)"
+
+generic = "Agent had een timeout. Probeer het opnieuw."
+
+# -- Opstarten / levenscyclus -----------------------------------------------------
+
+[startup]
+first_start_header = "**Bot gestart**"
+first_start_body = "Eerste start — klaar voor actie."
+reboot_header = "**Bot gestart**"
+reboot_body = "Systeemherstart gedetecteerd — we zijn er weer."
+
+restart_default = "Herstart voltooid."
+restart_header = "**Herstarten**"
+restart_body = "Bot gaat even uit en is zo weer terug."
+
+upgrade_complete = "**Upgrade voltooid** `{old}` -> `{new}`"
+
+matrix_restart = "**Bot herstart** ({reason})"
+matrix_update = "**Update beschikbaar:** `{version}`\nGebruik `/upgrade` om te updaten."
+matrix_upgraded_restarting = "Upgrade van {old} naar {new}. Herstarten..."
+
+[recovery]
+named_header = "**Auto-Recovery**"
+named_body = "Achtergrondsessie **{session}** wordt hervat\n`{preview}`"
+interrupted_header = "**Onderbroken taak**"
+interrupted_body = "Een taak werd onderbroken tijdens de herstart.\n`{preview}`\nStuur opnieuw om verder te gaan."
+
+# -- Geheugen ----------------------------------------------------------------------
+
+[memory]
+header = "**Hoofdgeheugen**"
+empty = "Leeg. De agent bouwt zijn geheugen op terwijl jullie samenwerken."
+empty_tip = "*Tip: Vraag je agent om iets te \"onthouden\" om te beginnen.*"
+filled_tip = "*Tip: De agent leest en werkt dit automatisch bij.*"
+
+# -- Status ------------------------------------------------------------------------
+
+[status]
+header = "**Status**"
+no_session = "Geen actieve sessie."
+model_line = "Model: {model}"
+model_line_configured = "Model: {model} (geconfigureerd: {configured})"
+topic_line = "Onderwerp: {topic}"
+session_line = "Sessie: `{sid}`"
+messages_line = "Berichten: {count}"
+tokens_line = "Tokens: {tokens}"
+cost_line = "Kosten: ${cost}"
+bg_header = "Achtergrondtaken: {count} actief"
+auth_header = "Auth:"
+agents_header = "Agents:"
+
+# -- Technische voettekst ---------------------------------------------------------
+
+[footer]
+model = "Model: {name}"
+tokens = "Tokens: {total} (in: {input}, uit: {output})"
+cost = "Kosten: ${cost}"
+time = "Tijd: {secs}s"
+
+# -- Upgrade -----------------------------------------------------------------------
+
+[upgrade]
+dev_header = "**Broncode-installatie**"
+dev_body = "Self-upgrade is niet beschikbaar voor dev-installaties.\nUpdate met `git pull` in je projectmap."
+pypi_unreachable = "Kon PyPI niet bereiken om op updates te controleren. Probeer het later opnieuw."
+up_to_date_header = "**Al up-to-date**"
+up_to_date_body = "Geïnstalleerd: `{current}`\nNieuwste:      `{latest}`\n\nJe draait de nieuwste versie."
+available_header = "**Update beschikbaar**"
+available_body = "Geïnstalleerd: `{current}`\nNieuw:         `{latest}`\n\nNu updaten?"
+btn_changelog = "Changelog v{version}"
+btn_yes = "Ja, nu updaten"
+btn_not_now = "Niet nu"
+
+# -- Diagnose ----------------------------------------------------------------------
+
+[diagnose]
+header = "**Systeemdiagnose**"
+version_line = "Versie: `{version}`"
+configured_line = "Geconfigureerd: {provider} / {model}"
+effective_line = "Effectieve runtime: {provider} / {model}"
+log_header = "Recente logs (laatste 50 regels):"
+no_log = "Geen logbestand gevonden."
+codex_cache_not_init = "Codex Model Cache: Observer niet geïnitialiseerd"
+codex_cache_not_loaded = "Codex Model Cache: Niet geladen"
+codex_cache_info = "Codex Model Cache:\n  Laatst bijgewerkt: {updated}\n  Modellen in cache: {count}\n  Standaardmodel: {default}"
+health_header = "**Multi-Agent gezondheid:**"
+
+# -- Taken -------------------------------------------------------------------------
+
+[tasks]
+header = "**Achtergrondtaken**"
+disabled = "Takensysteem is niet ingeschakeld."
+empty = "Geen achtergrondtaken."
+hint = "Taken worden door de agent aangemaakt voor langlopend werk."
+too_many = "Te veel achtergrondtaken ({max} maximaal)"
+internal_error = "Interne fout (logs controleren)"
+
+cancelled_one = "{count} taak geannuleerd."
+cancelled_other = "{count} taken geannuleerd."
+no_running = "Geen lopende taken."
+task_cancelled = "Taak `{id}` geannuleerd."
+task_not_running = "Taak `{id}` draait niet."
+cleaned_one = "{count} voltooide taak verwijderd."
+cleaned_other = "{count} voltooide taken verwijderd."
+nothing_to_clean = "Niets op te ruimen."
+
+running_header = "**Actief**"
+waiting_header = "**Wacht op antwoord**"
+finished_header = "**Voltooid**"
+
+btn_cancel = "{name} annuleren"
+btn_cancel_all = "Alles annuleren"
+btn_refresh = "Vernieuwen"
+btn_delete_finished = "Voltooide verwijderen"
+
+summary_running = "Actief: {count}"
+summary_waiting = "Wachtend: {count}"
+summary_finished = "Voltooid: {count}"
+
+# -- Sessieselector ----------------------------------------------------------------
+
+[sessions]
+header = "**Sessies**"
+empty = "Geen actieve sessies."
+start_hint = "Start er een met `/session <prompt>`."
+followup_hint = "Opvolgen: `@<naam> <bericht>`"
+active_count = "Actief: {count}"
+btn_end = "{name} beëindigen"
+btn_refresh = "Vernieuwen"
+btn_end_all = "Alles beëindigen"
+topics_header = "Onderwerpen:"
+named_header = "Benoemd:"
+named_empty = "Geen actieve sessies.\n  Start er een met `/session <prompt>`."
+
+ended_all_one = "Alle {count} sessie(s) beëindigd."
+ended_all_none = "Geen actieve sessies."
+ended_one = "Sessie '{name}' beëindigd."
+ended_not_found = "Sessie '{name}' niet gevonden."
+unknown_action = "Onbekende actie."
+
+# -- Modelselector -----------------------------------------------------------------
+
+[model]
+header = "**Modelselectie**"
+current = "Huidig: {model}"
+current_with_effort = "Huidig: {model} ({effort})"
+configured_default = "Geconfigureerde standaard: {configured}"
+
+switched = "**Model gewisseld.**"
+model_line = "Model: {model}"
+model_change = "Model: {old} -> {new}"
+provider_change = "Provider: {old} -> {new}"
+reasoning_line = "Reasoning: {effort}"
+effort_updated = "Reasoning-niveau bijgewerkt."
+already_running = "Draait al op {model}. Geen wijzigingen."
+
+resume_hint = """\
+Sessie `{sid}` wordt hervat.
+Je hebt al {count} {label} verstuurd in deze provider-sessie.
+Huidig model: `{model}`.
+Gebruik /new om een frisse sessie te starten."""
+resume_msg_one = "bericht"
+resume_msg_other = "berichten"
+
+no_auth = "Geen geauthenticeerde providers gevonden.\nVoer `claude auth`, `codex auth` uit, of authenticeer in `gemini` om te beginnen."
+pick_provider = "Kies een provider:"
+select_claude = "Selecteer Claude-model:"
+select_gemini = "Selecteer Gemini-model:"
+select_codex = "Selecteer Codex-model:"
+no_codex = "Geen Codex-modellen beschikbaar."
+no_gemini = "Geen Gemini-modellen gevonden uit lokale Gemini CLI-bestanden."
+thinking_level = "Denkniveau voor {model}:"
+unknown_action = "Onbekende actie."
+btn_back = "<< Terug"
+switched_while_busy = "**Model gewisseld.** Huidig proces draait nog — nieuw model geldt vanaf het volgende bericht."
+
+# -- Cronselector ------------------------------------------------------------------
+
+[cron]
+header = "**Geplande taken**"
+empty = "Geen cronjobs geconfigureerd."
+empty_hint = "*Vraag je agent: \"Doe elke dag om 9 uur een backup-check\"*"
+job_line = "{number}. **{title}** ({status}){last_run}\n   `{schedule}`"
+status_active = "actief"
+status_paused = "gepauzeerd"
+btn_disable = "{number}. Uitschakelen"
+btn_enable = "{number}. Inschakelen"
+btn_prev = "<< Vorige"
+btn_refresh = "Vernieuwen"
+btn_next = "Volgende >>"
+btn_all_on = "Alles AAN"
+btn_all_off = "Alles UIT"
+info_active = "{active}/{total} actief"
+info_page = "pagina {current}/{total}"
+all_enabled = "Alle cronjobs ingeschakeld."
+all_disabled = "Alle cronjobs uitgeschakeld."
+already_enabled = "Alle cronjobs waren al ingeschakeld."
+already_disabled = "Alle cronjobs waren al uitgeschakeld."
+toggled = "'{title}' {state}."
+list_changed = "Cronlijst is gewijzigd. Probeer het opnieuw."
+unknown_action = "Onbekende actie. Cronlijst is vernieuwd."
+
+# -- Welkom (Telegram) -------------------------------------------------------------
+
+[welcome]
+header = "**Welkom bij ControlMesh{name}!**"
+tagline = """\
+Deploy vanuit je broekzak. Automatiseer vanaf de bank.
+Claude Code, Codex & Gemini — rechtstreeks via Telegram."""
+hint_model = "/model — modellen wisselen"
+hint_info = "/info — docs & links"
+hint_help = "/help — alle commando's"
+
+no_auth = "Nog geen CLI geauthenticeerd. Voer `claude auth`, `codex auth` uit, of authenticeer in `gemini` om te beginnen."
+auth_line = "{providers} geauthenticeerd.\nModel: **{model}**"
+
+btn_know = "Laten we elkaar leren kennen!"
+btn_system = "Bekijk het systeem!"
+btn_who = "Wie ben jij? Wie ben ik?"
+
+prompt_know = """\
+Hey, ik heb net ControlMesh opgezet en ik wil dat je me leert kennen. \
+Vraag me alles wat je moet weten zodat we goed kunnen samenwerken — \
+mijn naam, wat ik doe, waar ik aan werk, hoe ik graag communiceer. \
+Sla op wat je leert in je geheugen."""
+prompt_system = """\
+Kijk eens rond op het systeem waar je op draait. \
+Check het OS, geïnstalleerde tools, projectmappen, wat je interessant vindt. \
+Geef me een kort overzicht van wat je ziet."""
+prompt_who = """\
+Laten we beginnen! Stel je voor — wie ben je, wat kun je voor me doen? \
+Vraag me dan wie ik ben en waarmee ik hulp nodig heb."""
+
+# -- Info --------------------------------------------------------------------------
+
+[info]
+header = "**ControlMesh**"
+version = "Versie: `{version}`"
+telegram_description = "AI-coding-agents (Claude, Codex, Gemini) op Telegram.\nBenoemde sessies, persistent geheugen, cronjobs, webhooks, live streaming."
+matrix_description = "AI-coding-agents (Claude, Codex, Gemini) op Matrix.\nBenoemde sessies, persistent geheugen, cronjobs, webhooks, live streaming."
+
+# -- Help (categorieën) -----------------------------------------------------------
+
+[help]
+header = "**Commandooverzicht**"
+cat_daily = "Dagelijks"
+cat_automation = "Automatisering"
+cat_multiagent = "Multi-Agent"
+cat_browse = "Bestanden & Info"
+cat_maintenance = "Onderhoud"
+footer = "Stuur een bericht om met je agent aan de slag te gaan."
+matrix_footer = "Gebruik `!` of `/` als prefix. Stuur een bericht om te beginnen."
+
+# -- Multi-agent -------------------------------------------------------------------
+
+[agents]
+header = "**Agents**"
+empty = "Geen agents."
+not_active = "Multi-agent-modus is niet actief."
+usage_stop = "Gebruik: /agent_stop <naam>"
+usage_start = "Gebruik: /agent_start <naam>"
+usage_restart = "Gebruik: /agent_restart <naam>"
+cannot_stop_main = "De hoofd-agent kan niet gestopt worden."
+not_running = "Agent '{name}' draait niet."
+stopped = "Agent '{name}' gestopt."
+
+system_header = "**Multi-Agent-systeem**"
+telegram_explanation = """\
+Het multi-agent-systeem laat je extra bots draaien als \
+sub-agents — elk met een eigen Telegram-token, workspace \
+en gebruikerslijst. Alle agents delen één proces en kunnen \
+communiceren via de inter-agent-bus."""
+matrix_explanation = """\
+Het multi-agent-systeem laat je extra bots draaien als \
+sub-agents — elk met een eigen workspace en gebruikerslijst. \
+Alle agents delen één proces en kunnen communiceren \
+via de inter-agent-bus."""
+commands_header = "**Commando's**"
+setup_header = "**Instellen**"
+setup_instruction = "Vraag je agent om een nieuwe sub-agent aan te maken, of bewerk `agents.json` in je controlmesh home-map."
+
+# -- Fouten (algemeen) ------------------------------------------------------------
+
+[error]
+generic = "Fout: {detail}"
+check_logs = "Fout: controleer de logs voor details."
+
+# -- Gemini-waarschuwing -----------------------------------------------------------
+
+[gemini]
+missing_key = """\
+Gemini staat ingesteld op API-key-authenticatie, maar `gemini_api_key` in \
+`~/.controlmesh/config/config.json` is `"null"` of leeg.
+Waarom dit nodig is: wanneer controlmesh de Gemini CLI als extern proces aanroept, \
+stelt de Gemini CLI een intern ingevoerde API-key niet beschikbaar aan de aanroeper.
+Stel een echte API-key in bij `gemini_api_key` en herstart `controlmesh`."""
+
+# -- Nieuwe sessie (handler) ------------------------------------------------------
+
+[new]
+topic_not_found = "Onderwerp \"{name}\" niet gevonden."
+topic_reset = "Nieuwe sessie voor **{name}** ({provider})."
+
+# -- Transportspecifiek ------------------------------------------------------------
+
+[telegram]
+group_rejected = "Deze bot is niet geautoriseerd voor deze groep."
+where_header = "**Waar**"
+where_no_tracker = "Chat-tracker niet beschikbaar."
+where_empty = "Nog geen chatactiviteit vastgelegd."
+leave_usage_header = "**Gebruik**"
+leave_usage = "`/leave <group_id>`"
+leave_invalid_id = "Ongeldige groeps-ID."
+leave_failed = "Kon groep niet verlaten: {error}"
+left_group = "Groep <code>{group_id}</code> verlaten."
+
+[matrix]
+room_rejected = "Deze bot is niet geautoriseerd voor deze ruimte."
+
+# -- Sessiehulp (transportspecifiek) -----------------------------------------------
+
+[session_help]
+header = "**Achtergrondsessies**"
+telegram_explanation = """\
+Achtergrondsessies voeren taken parallel uit zonder de \
+hoofdchat te blokkeren. Elke sessie krijgt een unieke naam en draait \
+onafhankelijk — je kunt meerdere sessies tegelijk actief hebben."""
+usage_header = "**Gebruik**"
+followup_header = "**Opvolgen**"
+followup_line = "`@sessienaam <bericht>` — stuur een opvolgbericht naar een lopende sessie"
+commands_header = "**Commando's**"
+telegram_sessions_cmd = "`/sessions` — alle achtergrondsessies bekijken en beheren"
+telegram_stop_cmd = "`/stop` — lopende sessie annuleren"
+matrix_session_cmd = "`!session <prompt>` — achtergrondsessie starten"
+matrix_sessions_cmd = "`!sessions` — alle sessies bekijken en beheren"
+matrix_stop_cmd = "`!stop` — lopende sessie annuleren"
+default_provider = "`/session <prompt>` — standaard provider"
+claude_single = "`/session <prompt>` — draait op Claude"
+claude_model = "`/session @opus <prompt>` — specifiek model"
+codex_single = "`/session <prompt>` — draait op Codex"
+gemini_single = "`/session <prompt>` — draait op Gemini"
+gemini_model = "`/session @flash <prompt>` — specifiek model"
+claude_multi = "`/session @opus <prompt>` — Claude (opus)"
+codex_multi = "`/session @codex <prompt>` — Codex"
+gemini_multi = "`/session @flash <prompt>` — Gemini (flash)"
+explicit = "`/session @provider model <prompt>` — expliciet"
+
+# -- Bestandsbrowser ---------------------------------------------------------------
+
+[file_browser]
+header = "**Bestandsbrowser**"
+directory_not_found = "Map niet gevonden."
+empty = "(leeg)"
+btn_back = "<< Terug"
+btn_request_files = "Stuur me een bestand uit deze map"
+file_request_prompt = "Lijst alle bestanden in {dir}/ en stuur me het bestand waar ik om vraag. Gebruik file tags voor de levering."
+
+# Matrix-variant
+matrix_header = "**Workspace-bestanden**"
+matrix_hint = "_Gebruik `!showfiles <map>` om een specifieke map te bekijken._"
+matrix_dir_not_found = "Map `{subdir}` niet gevonden."
+matrix_permission_denied = "(geen toegang)"
+matrix_file_count = "{count} bestand(en)"
+matrix_no_dirs = "(geen workspace-mappen gevonden)"
+
+# -- Upgrade-handler (Telegram) ----------------------------------------------------
+
+[upgrade_handler]
+btn_changelog = "Changelog v{version}"
+btn_upgrade_now = "Nu updaten"
+btn_later = "Later"
+skipped = "Upgrade overgeslagen."
+already_in_progress = "Upgrade is al bezig. Even geduld."
+in_progress = "Bijwerken naar {version}..."
+verification_failed = "Upgrade kon geen nieuwe versie verifiëren (nog steeds {version}) na automatische retry.{details}"
+restarting = "Bot herstart..."
+no_changelog = "Geen changelog gevonden voor v{version}."
+changelog_header = "**Changelog v{version}**"
+
+# -- Multi-agent-meldingen --------------------------------------------------------
+
+[multiagent]
+async_task_received = "📥 **Async taak ontvangen** van `{sender}`\nSessie: `{session}` · Taak-ID: `{task_id}`\n\n_{preview}_"

@@ -1,0 +1,26 @@
+# Descrições de comandos do bot em Português (≤22 caracteres para Telegram).
+
+[bot]
+new = "Novo chat"
+stop = "Parar atual + na fila"
+interrupt = "Interromper, manter fila"
+model = "Ver/trocar modelo"
+status = "Info da sessão"
+memory = "Memória principal"
+session = "Sessões em segundo plano"
+tasks = "Tarefas em segundo plano"
+cron = "Gerenciar cron jobs"
+agent_commands = "Sistema multi-agent"
+showfiles = "Navegar arquivos"
+info = "Docs, links e sobre"
+help = "Todos os comandos"
+diagnose = "Diagnóstico do sistema"
+upgrade = "Verificar atualizações"
+restart = "Reiniciar bot"
+
+[multiagent]
+agents = "Listar todos os agentes"
+agent_start = "Iniciar sub-agente"
+agent_stop = "Parar sub-agente"
+agent_restart = "Reiniciar sub-agente"
+stop_all = "Parar tudo"

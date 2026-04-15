@@ -1,0 +1,286 @@
+# Русские строки CLI (Rich-форматирование, вывод в терминале).
+
+# -- Команда status ------------------------------------------------------------
+
+[status]
+running = "[bold green]Работает[/bold green]  pid={pid}  аптайм: {uptime}"
+not_running = "[dim]Не работает[/dim]"
+provider = "Провайдер: [cyan]{provider}[/cyan] ({model})"
+docker_enabled = "Docker:    [green]включён[/green] ({name})"
+docker_disabled = "Docker:    [dim]отключён[/dim]"
+errors_found = "Ошибки:    [bold red]{count}[/bold red] в последнем логе"
+errors_none = "Ошибки:    [green]0[/green]"
+paths_header = "[bold]Пути:[/bold]"
+not_configured = "[bold yellow]Не настроено.[/bold yellow]\n\nВыполни [bold]controlmesh[/bold], чтобы запустить мастер настройки."
+
+# -- Валидация конфига ---------------------------------------------------------
+
+[config]
+incomplete = "[bold yellow]Конфиг неполный. Выполни [bold]controlmesh onboarding[/bold].[/bold yellow]"
+matrix_no_homeserver = "[bold yellow]Требуется URL Matrix homeserver.{hint}[/bold yellow]"
+matrix_no_user = "[bold yellow]Требуется Matrix user_id.{hint}[/bold yellow]"
+matrix_no_auth = "[bold yellow]Требуется пароль или access_token Matrix.{hint}[/bold yellow]"
+matrix_no_target = "[bold yellow]Нужен хотя бы один allowed_room или allowed_user.{hint}[/bold yellow]"
+onboarding_hint = " Выполни [bold]controlmesh onboarding[/bold] для перенастройки."
+
+# -- Жизненный цикл -----------------------------------------------------------
+
+[lifecycle]
+stopping_docker = "[dim]Остановка Docker-контейнера '{name}'...[/dim]"
+docker_stopped = "[green]Docker-контейнер остановлен.[/green]"
+stopping_bot = "[dim]Остановка бота (pid={pid})...[/dim]"
+bot_stopped = "[green]Бот остановлен.[/green]"
+killed_extra = "[dim]Завершено {count} оставшихся процессов controlmesh.[/dim]"
+no_instance = "[dim]Работающий экземпляр бота не найден.[/dim]"
+
+[lifecycle.uninstall]
+title = "[bold red]Удаление controlmesh[/bold red]"
+body = """\
+[bold red]Это полностью удалит controlmesh из твоей системы.[/bold red]\n
+  1. Остановить работающего бота (если активен)
+  2. Удалить Docker-контейнер и образ (если используется)
+  3. Удалить все данные в ~/.controlmesh/
+  4. Деинсталлировать пакет controlmesh"""
+confirm = "Ты уверен, что хочешь всё удалить?"
+cancelled = "[dim]Удаление отменено.[/dim]"
+removing_image = "[dim]Удаление Docker-образа '{image}'...[/dim]"
+image_removed = "[green]Docker-образ удалён.[/green]"
+uninstalling = "[dim]Деинсталляция пакета controlmesh...[/dim]"
+delete_warning = "[yellow]Внимание: не удалось полностью удалить {home} (некоторые файлы могут быть заблокированы). Удали вручную.[/yellow]"
+deleted = "[green]{home} удалён[/green]"
+done_title = "[bold green]До свидания[/bold green]"
+done_body = "[bold green]controlmesh полностью удалён.[/bold green]\n\nСпасибо, что пользовался controlmesh!"
+
+[lifecycle.upgrade]
+dev_title = "[bold yellow]Dev-установка[/bold yellow]"
+dev_body = """\
+[bold yellow]Запущено из исходников (editable install).[/bold yellow]\n
+Автообновление недоступно.
+Обновляй через [bold]git pull[/bold] в каталоге проекта."""
+title = "[bold cyan]Обновление controlmesh...[/bold cyan]"
+body = """\
+  1. Корректно остановить бота
+  2. Обновить до последней версии
+  3. Перезапустить"""
+upgrading = "[dim]Обновление пакета...[/dim]"
+complete = "[green]Обновление завершено: {old} -> {new}[/green]"
+unchanged = "[bold yellow]Версия не изменилась после обновления ({version}).[/bold yellow]\nАвтоматический повтор был выполнен, но новая версия не подтверждена."
+restarting = "[dim]Перезапуск...[/dim]"
+
+# -- Команды Docker ------------------------------------------------------------
+
+[docker]
+config_not_found = "[bold red]Конфиг не найден. Сначала запусти controlmesh.[/bold red]"
+config_read_error = "[bold red]Не удалось прочитать конфиг.[/bold red]"
+enabled = "Docker-песочница: [green]включена[/green]"
+disabled = "Docker-песочница: [dim]отключена[/dim]"
+restart_hint = "[dim]Перезапусти бота для применения изменений.[/dim]"
+
+[docker.rebuild]
+stopping = "[dim]Остановка бота...[/dim]"
+removing_container = "[dim]Удаление контейнера '{name}'...[/dim]"
+removing_image = "[dim]Удаление образа '{name}'...[/dim]"
+done = "[green]Готово.[/green] Образ будет пересобран при следующем запуске бота.\n[dim]Если установлен как служба — перезапустится автоматически.[/dim]"
+
+[docker.mount]
+usage = "[bold red]Использование: controlmesh docker mount <путь>[/bold red]"
+not_exist = "[bold red]Путь не существует: {path}[/bold red]"
+not_dir = "[bold red]Не каталог: {path}[/bold red]"
+already = "[dim]Уже подключён: {path}[/dim]"
+done = "[green]Подключён:[/green] {path}{target}"
+apply_hint = "[dim]Перезапусти бота (или пересобери контейнер) для применения.[/dim]"
+
+[docker.unmount]
+usage = "[bold red]Использование: controlmesh docker unmount <путь>[/bold red]"
+not_found = "[bold red]Монтирование не найдено: {path}[/bold red]"
+done = "[green]Отключён:[/green] {path}"
+
+[docker.mounts]
+empty = "[dim]Монтирования не настроены.[/dim]"
+add_hint = "[dim]Используй 'controlmesh docker mount <путь>' для добавления.[/dim]"
+
+[docker.extras]
+col_package = "Пакет"
+col_description = "Описание"
+col_status = "Статус"
+selected = "[green]выбран[/green]"
+not_selected = "[dim]—[/dim]"
+apply_hint = "[dim]Выполни 'controlmesh docker rebuild' для применения выбранных extras к образу.[/dim]"
+add_hint = "[dim]Используй 'controlmesh docker extras-add <id>' для добавления.[/dim]"
+remove_hint = "[dim]Используй 'controlmesh docker extras-remove <id>' для удаления.[/dim]"
+usage_add = "[bold red]Использование: controlmesh docker extras-add <id>[/bold red]"
+usage_remove = "[bold red]Использование: controlmesh docker extras-remove <id>[/bold red]"
+see_ids = "[dim]Выполни 'controlmesh docker extras' для списка доступных ID.[/dim]"
+see_installed = "[dim]Выполни 'controlmesh docker extras' для списка установленных ID.[/dim]"
+unknown = "[bold red]Неизвестный extra: {id}[/bold red]"
+already_installed = "[dim]Уже установлен: {id}[/dim]"
+not_installed = "[bold red]Не установлен: {id}[/bold red]"
+added = "[green]Добавлен:[/green] {names}"
+auto_deps = "[dim]Автоматически добавленные зависимости: {names}[/dim]"
+removed = "[green]Удалён:[/green] {name}"
+rebuild_hint = "[yellow]Выполни 'controlmesh docker rebuild' для применения.[/yellow]"
+dep_warning = "[yellow]Внимание: {dependents} зависят от {name}.[/yellow]"
+
+# -- Команды службы ------------------------------------------------------------
+
+[service]
+not_installed = "[dim]Служба не установлена. Выполни [bold]controlmesh service install[/bold].[/dim]"
+not_running = "[dim]Служба не работает.[/dim]"
+no_service = "[dim]Служба не установлена.[/dim]"
+no_binary = "[bold red]Бинарный файл controlmesh не найден в PATH.[/bold red]"
+removed = "[green]Служба удалена.[/green]"
+started = "[green]Служба запущена.[/green]"
+stopped = "[green]Служба остановлена.[/green]"
+start_failed = "[red]Не удалось запустить: {error}[/red]"
+stop_failed = "[red]Не удалось остановить: {error}[/red]"
+
+[service.install]
+title = "Фоновая служба controlmesh"
+body = """\
+[bold green]controlmesh теперь работает как фоновая служба.[/bold green]\n
+{detail}\n
+[bold]Полезные команды:[/bold]\n
+  [cyan]controlmesh service status[/cyan]     Проверить работает ли
+  [cyan]controlmesh service stop[/cyan]       Остановить службу
+  [cyan]controlmesh service logs[/cyan]       {logs_hint}
+  [cyan]controlmesh service uninstall[/cyan]  Удалить службу"""
+
+[service.linux]
+no_systemd = "[bold red]systemd не найден. Установка службы требует Linux с systemd.[/bold red]"
+linger_warning = "[bold yellow]Linger должен быть включён, чтобы controlmesh продолжал работать после выхода из системы.[/bold yellow]"
+linger_enabled = "[green]Linger включён.[/green]"
+linger_manual = "[yellow]Не удалось включить linger автоматически.[/yellow]\nВыполни вручную: [bold]sudo loginctl enable-linger {user}[/bold]"
+start_failed = "[bold red]Не удалось запустить службу:[/bold red] {error}"
+detail = "Запускается при загрузке и автоматически перезапускается при сбое."
+
+[service.macos]
+no_launchctl = "[bold red]launchctl не найден. Установка службы требует macOS.[/bold red]"
+start_failed = "[bold red]Не удалось загрузить Launch Agent:[/bold red] {error}"
+detail = "Запускается при входе и перезапускается при сбое (задержка 10с)."
+unload_failed = "[red]Не удалось выгрузить агент: {error}[/red]"
+not_loaded = "[red]Агент не загружен. Попробуй: [bold]controlmesh service install[/bold][/red]"
+
+[service.windows]
+admin_title = "[bold yellow]Требуются права администратора[/bold yellow]"
+admin_body = """\
+[bold yellow]Требуются права администратора.[/bold yellow]\n
+Открой терминал от имени администратора и попробуй снова:\n
+  [bold]1.[/bold] Правый клик по CMD или PowerShell
+  [bold]2.[/bold] Выбери [cyan]'Запуск от имени администратора'[/cyan]
+  [bold]3.[/bold] Выполни: [cyan]controlmesh service install[/cyan]"""
+no_scheduler = "[bold red]Планировщик задач недоступен. Установка службы требует Windows.[/bold red]"
+no_pythonw = "[dim]Примечание: pythonw.exe не найден. Может быть видно окно консоли.[/dim]"
+create_failed = "[bold red]Не удалось создать запланированную задачу:[/bold red] {error}"
+start_failed = "[bold red]Задача создана, но не удалось запустить:[/bold red] {error}"
+remove_failed = "[red]Не удалось удалить задачу: {error}[/red]"
+detail = "Запускается через 10с после входа и перезапускается при сбое (до 3 попыток, интервал 1 мин.)."
+query_failed = "[red]Не удалось запросить статус задачи: {error}[/red]"
+
+[service.logs]
+no_logs = "[dim]Лог-файлы не найдены.[/dim]"
+showing = "[dim]Последние {count} строк из {name}[/dim]"
+read_error = "[red]Не удалось прочитать лог-файл: {error}[/red]"
+full_path = "[dim]Полный лог: {path}[/dim]"
+not_installed = "[dim]Служба не установлена.[/dim]"
+streaming = "[dim]Просмотр логов (Ctrl+C для выхода)...[/dim]"
+no_journalctl = "[bold red]journalctl не найден.[/bold red]"
+
+# -- Команды API ---------------------------------------------------------------
+
+[api]
+title = "[bold]Команды API[/bold] [dim](бета)[/dim]"
+status_not_configured = "[dim]не настроен[/dim]"
+status_enabled = "[green]включён[/green] (порт {port})"
+status_disabled = "[dim]отключён[/dim]"
+
+[api.missing_dep]
+title = "[bold]Отсутствует зависимость[/bold]"
+body = """\
+[bold yellow]PyNaCl необходим для API-сервера (E2E-шифрование).[/bold yellow]\n
+Установи его:\n
+  [bold]{hint}[/bold]\n
+Затем выполни [bold]controlmesh api enable[/bold] снова."""
+
+[api.enabled]
+title = "[bold]API-сервер[/bold] [dim](бета)[/dim]"
+body = """\
+[bold green]API-сервер включён.[/bold green]\n
+  Host:   [cyan]{host}[/cyan]
+  Port:   [cyan]{port}[/cyan]
+  Token:  [cyan]{token}[/cyan]\n
+[dim]Перезапусти бота для запуска API-сервера.[/dim]
+[dim]Предназначен для использования с Tailscale или другими частными сетями.[/dim]"""
+
+[api.disabled]
+status = "API-сервер: [dim]отключён[/dim]"
+
+# -- Команды агентов -----------------------------------------------------------
+
+[agents]
+col_agent = "Агент"
+col_status = "Статус"
+col_uptime = "Аптайм"
+col_provider = "Провайдер"
+col_model = "Модель"
+status_running = "[bold green]работает[/bold green]"
+status_starting = "[yellow]запускается[/yellow]"
+status_crashed = "[bold red]упал[/bold red]"
+status_stopped = "[dim]остановлен[/dim]"
+empty = "[dim]Суб-агенты не настроены.[/dim]"
+add_hint = "[dim]Используй 'controlmesh agents add <имя>' для создания.[/dim]"
+
+[agents.add]
+usage = "[bold red]Использование: controlmesh agents add <имя>[/bold red]"
+reserved = "[bold red]Имя 'main' зарезервировано.[/bold red]"
+exists = "[bold red]Агент '{name}' уже существует.[/bold red]"
+prompt_token = "Telegram-токен бота для '{name}':"
+prompt_users = "Разрешённые User ID (через запятую):"
+prompt_groups = "Разрешённые Group ID (через запятую, пустое — без групп):"
+prompt_provider = "Провайдер:"
+prompt_model = "Модель (напр. opus, sonnet, o3):"
+cancelled = "[dim]Отменено.[/dim]"
+done = "[green]Агент '{name}' добавлен в agents.json.[/green]"
+auto_start = "[dim]Будет запущен автоматически при следующем (пере)запуске бота.[/dim]"
+
+[agents.remove]
+usage = "[bold red]Использование: controlmesh agents remove <имя>[/bold red]"
+not_found = "[bold red]Агент '{name}' не найден.[/bold red]"
+confirm = "Удалить агента '{name}'? (Данные рабочего пространства сохранятся.)"
+done = "[green]Агент '{name}' удалён из agents.json.[/green]"
+data_hint = "[dim]Данные рабочего пространства остаются в {path}[/dim]"
+
+# -- Установка extras ----------------------------------------------------------
+
+[install]
+already = "[green]✓[/green] {description} уже установлен."
+installing = "Установка {description}..."
+command = "[dim]$ {cmd}[/dim]"
+done = "[green]✓[/green] {description} успешно установлен."
+failed = "[red]✗[/red] Установка не удалась."
+col_extra = "Extra"
+col_description = "Описание"
+col_status = "Статус"
+status_installed = "[green]установлен[/green]"
+status_not_installed = "[dim]не установлен[/dim]"
+
+# -- Таблица помощи ------------------------------------------------------------
+
+[help]
+col_command = "Команда"
+col_description = "Описание"
+controlmesh = "Запустить бота (при необходимости — onboarding)"
+onboarding = "Мастер настройки (сброс, если уже настроено)"
+stop = "Остановить бота и Docker-контейнер"
+restart = "Перезапустить бота"
+reset = "Полный сброс и повторная настройка"
+upgrade = "Остановить, обновить, перезапустить"
+uninstall = "Полностью удалить и деинсталлировать"
+service_install = "Запустить как фоновую службу ({hint})"
+service = "Управление службой (status/stop/logs/...)"
+agents = "Управление суб-агентами (list/add/remove)"
+docker = "Управление Docker (rebuild/enable/disable)"
+api = "Управление API-сервером (enable/disable) [бета]"
+install = "Установка доп. пакетов (matrix, api)"
+status = "Статус бота, пути и агенты"
+help = "Показать это сообщение"
+verbose = "Подробный вывод логов"

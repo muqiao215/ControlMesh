@@ -1,0 +1,182 @@
+# Chaînes de l'assistant en français (formatées Rich, affichées dans le terminal lors de l'onboarding).
+
+[common]
+cancelled = "[dim]Configuration annulée.[/dim]"
+subtitle = "ControlMesh"
+
+[cli_backends]
+title = "Backends CLI"
+header = "[bold]Backends IA détectés :[/bold]\n"
+claude = "  Claude Code CLI   {status}"
+codex = "  OpenAI Codex CLI  {status}"
+gemini = "  Google Gemini CLI {status}"
+no_auth = """\
+\n[bold red]Au moins un CLI doit être installé et authentifié.[/bold red]\n
+  Claude: [dim]https://docs.anthropic.com/en/docs/claude-code[/dim]
+  Codex:  [dim]https://github.com/openai/codex[/dim]
+  Gemini: [dim]https://github.com/google-gemini/gemini-cli[/dim]"""
+
+[disclaimer]
+title = "[bold yellow]Avertissement[/bold yellow]"
+body = """\
+[bold]Important — lis bien avant de continuer.[/bold]\n
+controlmesh se connecte à [bold]Anthropic Claude CLI[/bold] et \
+[bold]OpenAI Codex CLI[/bold] comme backends d'agent IA.\n
+Le bot fonctionne en [bold yellow]mode accès complet[/bold yellow]. \
+L'agent peut lire, écrire et supprimer des fichiers, exécuter des commandes \
+et interagir avec ton système sans demander de confirmation.\n
+Bien que des protections soient en place, [bold red]des actions non souhaitées peuvent survenir[/bold red] \
+— y compris la perte de données, des modifications de fichiers inattendues ou l'exécution involontaire de commandes.\n
+[bold green]Nous recommandons fortement de lancer controlmesh dans un conteneur Docker[/bold green] \
+pour l'isoler de ton système hôte."""
+confirm = "Je comprends les risques et je veux continuer."
+
+[transport]
+title = "[bold]Transport de messagerie[/bold]"
+body = """\
+[bold]Choisis comment les utilisateurs communiqueront avec le bot :[/bold]\n
+  [bold cyan]Telegram[/bold cyan]  — Nécessite un token de bot de @BotFather
+  [bold cyan]Matrix[/bold cyan]    — Nécessite un compte Matrix sur un homeserver (par ex. Element)"""
+prompt = "Choisis le transport :"
+
+[telegram.token]
+title = "[bold]Token Telegram du bot[/bold]"
+body = """\
+[bold]Comment obtenir ton token Telegram :[/bold]\n
+  1. Ouvre Telegram et cherche [bold cyan]@BotFather[/bold cyan]
+  2. Envoie [bold]/newbot[/bold] et suis les instructions
+  3. Choisis un nom et un identifiant pour ton bot
+  4. BotFather te répondra avec ton token\n
+[dim]Format du token : 1234567890:ABCdefGHIjklMNOpqrsTUVwxyz[/dim]"""
+prompt = "Colle ton token de bot :"
+error = "[red]Format de token invalide. Attendu : chiffres:alphanumérique (par ex. 123456:ABC-xyz)[/red]"
+
+[telegram.user_id]
+title = "[bold]ID utilisateur Telegram[/bold]"
+body = """\
+[bold]Comment trouver ton ID utilisateur Telegram :[/bold]\n
+  1. Ouvre Telegram et cherche [bold cyan]@userinfobot[/bold cyan]
+  2. Envoie [bold]/start[/bold] au bot
+  3. Il te répondra avec ton ID numérique\n
+[dim]Seuls les messages provenant de cet ID seront acceptés par le bot.[/dim]"""
+prompt = "Entre ton ID utilisateur numérique :"
+error_nan = "[red]Entre un nombre valide, s'il te plaît.[/red]"
+error_negative = "[red]L'ID utilisateur doit être un nombre positif.[/red]"
+
+[matrix.homeserver]
+title = "[bold]Homeserver Matrix[/bold]"
+body = """\
+[bold]Entre l'URL de ton homeserver Matrix.[/bold]\n
+  C'est le serveur sur lequel vit le compte de ton bot.\n
+[dim]Exemple : https://matrix.example.com[/dim]"""
+prompt = "URL du homeserver :"
+error = "[red]Doit être une URL HTTPS (par ex. https://matrix.example.com)[/red]"
+
+[matrix.user_id]
+title = "[bold]ID utilisateur Matrix du bot[/bold]"
+body = """\
+[bold]Entre l'ID utilisateur Matrix du bot.[/bold]\n
+  Crée un compte dédié pour le bot sur ton homeserver.\n
+[dim]Format : @nomdubot:homeserver.domain[/dim]"""
+prompt = "ID utilisateur du bot :"
+error = "[red]Format invalide. Attendu : @localpart:domain (par ex. @monbot:matrix.org)[/red]"
+
+[matrix.password]
+title = "[bold]Mot de passe Matrix[/bold]"
+body = """\
+[bold]Entre le mot de passe du compte bot.[/bold]\n
+  Utilisé uniquement pour la première connexion. Après la première connexion,
+  un access token est sauvegardé et le mot de passe n'est plus nécessaire."""
+prompt = "Mot de passe :"
+error = "[red]Le mot de passe ne peut pas être vide.[/red]"
+
+[matrix.allowed_users]
+title = "[bold]Utilisateurs autorisés[/bold]"
+body = """\
+[bold]Qui peut parler à ce bot ?[/bold]\n
+  Entre ton ID utilisateur Matrix. Seuls les messages des
+  utilisateurs autorisés seront traités.\n
+[dim]Format : @utilisateur:homeserver.domain[/dim]"""
+prompt = "Ton ID utilisateur Matrix :"
+error = "[red]Format invalide. Attendu : @user:domain (par ex. @nik:matrix.org)[/red]"
+
+[docker]
+title = "[bold]Sandboxing Docker[/bold]"
+found_body = """\
+[bold green]Docker détecté sur ton système.[/bold green]\n
+Lancer controlmesh dans Docker l'isole de ton hôte.
+C'est la configuration recommandée pour la sécurité."""
+found_prompt = "Activer le sandboxing Docker ? (Recommandé)"
+not_found_body = """\
+[bold yellow]Docker n'a pas été trouvé sur ton système.[/bold yellow]\n
+Nous recommandons d'installer Docker pour lancer le bot dans un conteneur isolé.
+Tu peux activer le sandboxing Docker plus tard dans la config.\n
+[dim]https://docs.docker.com/get-docker/[/dim]"""
+
+[docker.extras]
+title = "[bold]Extras Docker disponibles[/bold]"
+col_package = "Paquet"
+col_description = "Description"
+col_size = "Taille"
+prompt = "Sélectionne les extras (Espace pour basculer, Entrée pour confirmer) :"
+hint = """\
+[dim]Ces paquets sont optionnels et augmentent le temps de build de l'image.
+Tu peux changer ça plus tard avec [cyan]controlmesh docker extras-add / extras-remove[/cyan].[/dim]"""
+auto_deps = "[dim]Dépendances ajoutées automatiquement : {names}[/dim]"
+
+[timezone]
+title = "[bold]Fuseau horaire[/bold]"
+body = """\
+Ton fuseau horaire est utilisé pour la planification cron, les heures calmes du heartbeat
+et les réinitialisations quotidiennes de session."""
+prompt = "Choisis ton fuseau horaire :"
+manual_prompt = "Entre le fuseau horaire IANA (par ex. Europe/Paris) :"
+error = "[red]Fuseau horaire inconnu : {tz}[/red]"
+
+[service]
+title = "[bold]Service d'arrière-plan[/bold]"
+body = """\
+[bold]Lancer controlmesh en service d'arrière-plan ?[/bold]\n
+Ceci crée un {mechanism} qui :\n
+  - Démarre controlmesh au {trigger}
+  - Redémarre automatiquement en cas de crash
+  - Continue de tourner en arrière-plan\n
+[dim]Recommandé pour les VPS ou les configurations toujours allumées.[/dim]"""
+prompt = "Installer en service d'arrière-plan ? (Recommandé pour VPS)"
+
+[complete]
+title = "[bold green]Prêt[/bold green]"
+header = "[bold green]Configuration terminée ![/bold green]"
+files_header = "[bold]Tes fichiers controlmesh :[/bold]"
+home = "  Home :      [cyan]{path}[/cyan]"
+config = "  Config :    [cyan]{path}[/cyan]"
+workspace = "  Workspace : [cyan]{path}[/cyan]"
+logs = "  Logs :      [cyan]{path}[/cyan]"
+installing_service = "Installation du service..."
+starting_bot = "Démarrage du bot..."
+
+[reset]
+title = "[bold yellow]Configuration existante détectée[/bold yellow]"
+body = """\
+[bold yellow]Tu as déjà une configuration en place.[/bold yellow]\n
+Relancer l'onboarding effectuera une [bold red]réinitialisation complète[/bold red] :\n
+  [dim]{home}[/dim] sera entièrement supprimé.
+  Toutes les sessions, configs, mémoire et tâches cron seront perdues."""
+
+[reset.docker]
+title = "[bold]Nettoyage Docker[/bold]"
+body = """\
+[bold]Le sandboxing Docker est activé dans ta config actuelle.[/bold]\n
+  Conteneur : [cyan]{container}[/cyan]
+  Image :     [cyan]{image}[/cyan]"""
+prompt = "Supprimer le conteneur et l'image Docker ?"
+removing = "[dim]Suppression des ressources Docker...[/dim]"
+done = "[green]Nettoyage Docker terminé.[/green]"
+
+[reset.confirm]
+prompt = "Tout supprimer et repartir de zéro ?"
+deleted = "[dim]Workspace supprimé.[/dim]"
+warning = "[yellow]Attention : {home} n'a pas pu être entièrement supprimé. Supprime-le manuellement.[/yellow]"
+
+[language]
+prompt = "Select language / Choisir la langue :"

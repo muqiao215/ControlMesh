@@ -1,0 +1,262 @@
+# Confirmed Facts
+- Existing harness semantics already live in canonical plan files under `plans/eval/` and product-line `task_plan.md` / `findings.md` / `progress.md`.
+- The current repo already standardizes the required lower-snake-case review outcomes in `plans/eval/review_outcomes.yaml`.
+- `plans/eval/scorecard.yaml` encodes thresholds of `4.2 -> pass`, `3.8 -> pass_with_notes`, and lower scores -> hardening.
+- Existing docs position the evaluator/controller as the final judge, while workers remain evidence producers only.
+- `docs/modules/harness.md` explicitly treats files as truth, evidence before promotion, and semantic drift as a split-scope condition.
+- `docs/modules/team.md` already follows a runtime-first pattern: explicit lifecycle states, narrow write surfaces, and additive state separated from transport.
+- `claw-code` public docs reinforce the same architectural direction: state machine first, events over prose, recovery before escalation, and terminal as transport rather than truth.
+- Phase 1 focused verification passed:
+  - `uv run pytest tests/controlmesh_runtime/test_review.py -q` -> `12 passed`
+  - `uv run ruff check controlmesh_runtime tests/controlmesh_runtime` -> `All checks passed`
+- Phase 2 now adds typed runtime expression surfaces before persistence:
+  - `TaskPacket` for work definition and reporting/escalation contract
+  - `RuntimeEvent` for stage, failure, and review-result expression
+- Phase 2 focused verification passed:
+  - `uv run pytest tests/controlmesh_runtime -q` -> `20 passed`
+  - `uv run ruff check controlmesh_runtime tests/controlmesh_runtime` -> `All checks passed`
+- Phase 3 now adds worker lifecycle semantics without adding control or storage:
+  - `WorkerStatus` defines normal, degraded, and terminal states
+  - `transition_worker_state(...)` makes lifecycle legality explicit
+- Phase 3 focused verification passed:
+  - `uv run pytest tests/controlmesh_runtime -q` -> `35 passed`
+  - `uv run ruff check controlmesh_runtime tests/controlmesh_runtime` -> `All checks passed`
+- Phase 4 now adds bounded file-backed persistence without adding behavior:
+  - `ReviewRecord` persists review facts separately from `review()`
+  - `RuntimeStore` persists task packets, worker states, review records, and append-only events
+  - `controlmesh_state/tasks/*.json`, `workers/*.json`, `reviews/*.json`, `events/*.jsonl` is the current stable layout
+  - `schema_version` now exists on all persisted runtime object types
+- Phase 4 focused verification passed:
+  - `uv run pytest tests/controlmesh_runtime/test_store.py -q` -> `6 passed`
+  - `uv run pytest tests/controlmesh_runtime -q` -> `41 passed`
+  - `uv run ruff check controlmesh_runtime tests/controlmesh_runtime` -> `All checks passed`
+- Phase 5 now adds recovery expression without recovery execution:
+  - `RecoveryIntent`, `RecoveryReason`, and `EscalationLevel` define the vocabulary
+  - `RecoveryContext`, `RecoveryPolicy`, and `RecoveryDecision` define the typed decision boundary
+  - `evaluate_recovery_policy(...)` provides pure mapping from context + policy to decision
+- Phase 5 focused verification passed:
+  - `uv run pytest tests/controlmesh_runtime/test_recovery_contracts.py tests/controlmesh_runtime/test_recovery_policy.py -q` -> `9 passed`
+  - `uv run pytest tests/controlmesh_runtime -q` -> `50 passed`
+  - `uv run ruff check controlmesh_runtime tests/controlmesh_runtime` -> `All checks passed`
+- Phase 6 now adds summary-compression expression without summary generation:
+  - `SummaryKind` defines summary categories such as `task_handoff`, `line_checkpoint`, and `failure_capsule`
+  - `SummaryInput`, `SummaryRecord`, and `CompressionDecision` define the typed summary boundary
+  - `CompressionPolicy` and `evaluate_compression_policy(...)` provide pure summary-policy mapping
+- Phase 6 focused verification passed:
+  - `uv run pytest tests/controlmesh_runtime/summary/test_contracts.py tests/controlmesh_runtime/summary/test_policy.py -q` -> `10 passed`
+  - `uv run pytest tests/controlmesh_runtime -q` -> `60 passed`
+  - `uv run ruff check controlmesh_runtime tests/controlmesh_runtime` -> `All checks passed`
+- Phase 7 now defines the recovery execution boundary without adding engine code:
+  - `controlmesh_runtime/recovery_execution_boundary.md` states where protocol ends and future execution begins
+  - future engine inputs are limited to typed runtime objects and runtime substrate interfaces
+  - future engine outputs are design targets named `RecoveryExecutionPlan` and `RecoveryExecutionResult`
+  - generic recovery actions are separated from adapter-specific recovery actions
+  - mandatory human-gate boundaries are explicit
+- Phase 8 now adds recovery execution contracts without adding execution logic:
+  - `RecoveryExecutionAction` fixes the generic core recovery action set
+  - `RecoveryExecutionStep` makes per-step target, args, destructive flag, retryability, and human-gate semantics explicit
+  - `RecoveryExecutionPlan` expresses bounded execution plans with policy snapshots and stable next-step tokens
+  - `RecoveryExecutionStatus` and `RecoveryExecutionResult` express execution outcomes without promoting canonical state
+- Phase 9 now defines execution wiring without adding implementation:
+  - `controlmesh_runtime/execution_wiring_boundary.md` assigns future store namespaces for execution plans and results
+  - the same document defines a typed event-surface expectation for plan creation, step progress, and result recording
+  - the future orchestrator is constrained to consume decisions, produce plans, observe results, and hand evidence back to review/state layers
+- Phase 10 now fixes the execution event shape without adding event implementation:
+  - `controlmesh_runtime/execution_event_shape.md` chooses `RuntimeEvent` as the stable outer shell
+  - fine-grained execution semantics are carried by typed payload families, not by a large new `EventKind` tree
+  - the initial execution event set is limited to plan-created, plan-approved, step-started, step-completed, step-failed, and result-recorded
+- Phase 11 now fixes orchestrator scope without adding orchestrator code:
+  - `controlmesh_runtime/orchestrator_boundary.md` defines the orchestrator as a stitching layer only
+  - the orchestrator may consume decisions, derive plans, emit typed execution events, observe results, and hand evidence to review/state inputs
+  - the orchestrator is explicitly forbidden from owning policy, canonical promotion, transport/provider logic, or store/event-bus implementation
+- Phase 12 now fixes the first-engine boundary without adding engine code:
+  - `controlmesh_runtime/first_engine_boundary.md` limits the first engine to `single worker -> single plan -> single result`
+  - the first engine may only translate one decision into one plan, consume steps in sequence, emit typed execution events, produce one result, and hand it back
+  - the first engine must stop at human gates, unauthorized destructive steps, adapter-specific actions, split/defer/stopline promotion needs, and implementation-detail leakage
+- Phase 13 now freezes engine-local truth without adding implementation:
+  - `controlmesh_runtime/first_engine_contract_surface.md` narrows the first-engine request/output/stop-reason surface and linear state semantics
+  - `controlmesh_runtime/first_engine_test_matrix.md` turns happy-path and stop-boundary discipline into explicit expected cases
+  - `controlmesh_runtime/first_engine_trace_examples.md` shows the first engine as a straight-line typed flow rather than an integration workflow
+- Phase 14 now adds the first engine local executor without crossing integration seams:
+  - `controlmesh_runtime/engine.py` adds `EngineRequest`, `EngineState`, `EngineStopReason`, engine-local trace events, and a minimal executor surface
+  - only `retry_same_worker`, `restart_worker`, and `recreate_worker` execute; reauth, split/defer/stopline, and branch/worktree refresh stop instead of executing
+  - request extras, step args, and plan metadata are rejected or stopped so the first engine cannot grow hidden backdoors
+  - store, event-bus, transport/provider, canonical-promotion, human-gate, and destructive boundaries now stop before any execution step begins
+- Phase 15 now hardens the first engine without widening it:
+  - `EngineExecution` now enforces matching `plan_id`, one terminal `result_recorded` event, and no trace events after the terminal result
+  - focused tests lock terminal/result invariants, token-set enforcement, failed/stopped/completed shape validation, and stable stop-reason mapping more tightly
+  - runnable subset remains frozen to worker-local actions only; handoff-only intents still stop rather than execute, and missing worker ids cannot be bypassed with blank or `default`
+- Phase 16 now chooses the first post-hardening seam without adding implementation:
+  - `controlmesh_runtime/execution_payload_seam.md` chooses typed execution payload classes before typed persistence landing zones
+  - the seam is limited to `ExecutionPlanPayload`, `ExecutionStepPayload`, `ExecutionResultPayload`, and a future payload union
+  - the six approved execution event tokens remain the full first payload-token set
+  - payloads must reject unknown metadata, provider/transport fields, store/event-bus routing fields, and canonical-promotion shortcuts
+  - persistence, publisher, orchestrator, transport/provider, CLI, and canonical state work remain deferred
+- Phase 17 now implements the first event-side seam without widening it:
+  - `controlmesh_runtime/execution_payloads.py` adds `ExecutionPlanPayload`, `ExecutionStepPayload`, `ExecutionResultPayload`, a payload union, and a typed execution payload token set
+  - `build_execution_payload(...)` converts engine-local trace evidence into typed payloads without publishing events, writing store state, mutating plans/results, or changing engine trace semantics
+  - step payload conversion reads the plan step as truth for action/target, so payload conversion expresses trace evidence instead of redefining trace behavior
+  - result payload conversion remains evidence-only and may carry `stop_reason`, but it does not promote review/state truth
+  - `event_kind_for_execution_payload(...)` stays a pure coarse-routing helper; it is not an event bus seam
+- Phase 18 now wraps typed execution payloads into `RuntimeEvent` without adding event flow:
+  - `controlmesh_runtime/execution_runtime_events.py` adds `build_runtime_event_from_execution_payload(...)`
+  - wrapping requires explicit `packet_id` and `message` so the helper does not invent hidden human-facing semantics
+  - the wrapper preserves the existing coarse `EventKind` mapping instead of expanding top-level event kinds
+  - step/result failure classes are propagated into the runtime event shell when present
+  - payload data is serialized from the typed payload model and the original payload object is not mutated
+  - publisher, event bus, store, orchestrator, transport/provider, replay, and canonical-promotion behavior remain deferred
+- Phase 19 now lands execution evidence in typed persistence without widening it:
+  - `RuntimeStorePaths` adds a separate `controlmesh_state/execution_evidence/<packet_id>.jsonl` namespace
+  - `RuntimeStore.append_execution_evidence(...)` and `load_execution_evidence(...)` accept only wrapped execution runtime events, not general runtime events
+  - `extract_execution_payload_from_runtime_event(...)` validates that persisted runtime events still carry typed execution payload evidence, consistent coarse `EventKind` routing, consistent `worker_id`, and consistent `failure_class`
+  - execution evidence persists the wrapped `RuntimeEvent` as the archived fact; it does not also persist a second bare payload or trace truth
+  - append/load behavior remains file-backed and append-only; replay, publisher, event bus, orchestrator, and promotion semantics remain deferred
+- Phase 20 now fixes the storage posture without adding new backend code:
+  - `controlmesh_runtime/file_backed_primary_boundary.md` keeps file-backed persistence as the current primary model
+  - the same document defines hard SQLite trigger conditions instead of allowing speculative migration
+  - execution evidence is fixed as the first SQLite landing zone if later migration pressure becomes real
+  - Phase 20 rejects SQLite code, migration code, dual-write, replay, query surfaces, and backend abstraction in the current cut
+- Phase 21 now fixes summary timing and landing posture without adding summary implementation:
+  - `controlmesh_runtime/summary_trigger_landing_boundary.md` allows summary generation only for durable trigger classes: phase boundary, recovery-chain completion, context-budget pressure, and human-gate readability
+  - routine step events, transient progress, single retry attempts, and unstable failure scenes are explicitly rejected as default summary triggers
+  - the first summary subject scope is fixed to `task` and `line`
+  - the first summary landing zone is a separate file-backed `controlmesh_state/summaries/` namespace rather than canonical files, execution evidence, or event flow
+  - first summary revision semantics stay at latest snapshot plus stable source refs; revision chains and history graphs remain deferred
+- Phase 22 now fixes replay/query boundaries without adding replay or query implementation:
+  - `controlmesh_runtime/execution_evidence_replay_query_boundary.md` defines archived execution `RuntimeEvent` evidence as the only legal replay source
+  - replay is defined at execution-evidence level, not naked trace, transport log, controller, or canonical-state level
+  - future query is limited first to packet-level execution episode lookup and limited task-level aggregation
+  - replay/query pressure must go through the file-backed primary and SQLite boundary criteria instead of forcing immediate store or database changes
+  - replay/query must not publish events, trigger orchestrator actions, decide review outcomes, mutate worker state, or promote canonical truth
+
+# Architectural Implications
+- The first runtime package cut should be pure and typed, not transport-coupled.
+- Review outcomes should exist as runtime enums even if current plan files still store snake-case strings.
+- Task and event expression should exist as typed runtime models before store/recovery layers are added.
+- Worker lifecycle should exist as a typed state machine before store/recovery/controller layers are added.
+- File-backed persistence can stay deliberately small: object round-trip, JSONL append, explicit decode failures, and atomic replacement are enough for this cut.
+- Recovery should first exist as a protocol layer: vocabulary, context, policy, and decision. Execution loops remain a later cut.
+- Summary compression should first exist as a protocol layer: summary kinds, inputs, records, policy, and preservation rules. Generation and consumption remain later cuts.
+- Recovery execution needs a design boundary before implementation so controller, store, transport, product adapters, and human gates do not collapse into one engine.
+- A future engine must consume typed runtime facts, not raw logs, transport payloads, CLI output, or plan prose.
+- Generic recovery action taxonomy should stay runtime-owned; adapter-specific actions need a later typed extension boundary.
+- Recovery execution plans and results should be typed facts, not implicit side effects; a result is evidence, not canonical state promotion.
+- Destructive execution steps need explicit marking at the contract level so later orchestrators cannot hide risky actions inside generic restart flows.
+- Execution plans and execution results need an explicit typed landing zone in both persistence and events before any orchestrator is written.
+- The orchestrator should be an integration seam, not a second policy engine and not a direct canonical-state writer.
+- Execution event shape should separate coarse runtime routing from fine-grained execution semantics: `RuntimeEvent` remains the envelope while typed execution payloads carry execution-specific facts.
+- `EventKind` should stay small and routing-oriented; execution leaf semantics belong in a typed execution-event family.
+- The orchestrator should remain a narrow integration seam in the middle of the chain, not a new control-plane brain.
+- A future engine should begin only after `RecoveryDecision` exists and stop once `RecoveryExecutionResult` has been handed back to review/state input surfaces.
+- The first engine should be linear and intentionally incomplete; early stop is safer than absorbing transport, provider, policy, or promotion responsibilities.
+- The first implementation target should be constrained by stop boundaries, not just by happy-path capability.
+- The first implementation cut should freeze engine-local truth before any store/event/orchestrator integration seam is allowed to expand.
+- Stop boundaries become much stronger once each stop mode is represented as explicit contract and test-matrix truth rather than prose intent.
+- The first executable engine can stay honest by treating unsupported or integration-leaking work as explicit stop evidence rather than soft TODO behavior.
+- Engine-local hardening matters because later seam work should adapt to executor truth, not weaken it.
+- Trace terminality and one-result invariants are now part of first-engine runtime truth.
+- The first seam after engine hardening should define typed event evidence before deciding how execution evidence lands in the store.
+- Typed execution payloads should be a pure evidence shape, not an event bus protocol and not a persistence API.
+- Trace remains the source and payload remains the expression layer; payload conversion should fail on incomplete trace evidence instead of inventing missing semantics.
+- Plan steps remain the stable source of step target/action during conversion, which prevents payload mapping from silently drifting away from execution truth.
+- `RuntimeEvent` is now the shared shell for execution evidence, but wrapping remains a pure object conversion rather than an event publication or persistence operation.
+- The wrapper must require caller-provided `packet_id` and `message`; this keeps task identity and human-facing wording outside the execution-payload conversion layer.
+- The persistence landing zone should archive wrapped execution runtime events rather than reintroducing naked trace storage or duplicating payload truth in a second record family.
+- Execution evidence persistence can stay narrow if it validates typed payload integrity on append/load but refuses to add replay or orchestration semantics.
+- File-backed primary remains the right default while object boundaries are still stabilizing and runtime pressure is still dominated by inspectability rather than cross-entity query needs.
+- SQLite should be opened only by hard runtime pressure such as cross-entity query demand, evidence-volume maintenance burden, synchronized multi-reader views, or structural cross-file joins.
+- If SQLite is opened later, execution evidence should be the first landing zone rather than a broad migration of tasks, workers, summaries, and recovery state all at once.
+- Summary should be generated only at durable compression moments; otherwise it degenerates into a second progress log.
+- Summary should land first as a separate evidence-layer object, not as canonical state and not as part of the execution event stream.
+- Latest-snapshot semantics are enough for the first summary landing boundary; summary revision graphs would be premature in the current line.
+- Execution evidence may become replayable or queryable later, but only from the archived `RuntimeEvent` evidence layer and only without redefining trace, payload, or store shape.
+- First query grain should remain packet-level and limited task-level aggregation; broader global search belongs behind later query and SQLite boundary decisions.
+- Replay/query are evidence-inspection capabilities, not controller, publisher, or promotion capabilities.
+- Review/query-oriented read surfaces are a separate future decision from replay: they may help review and handoff consume archived execution evidence later, but only as bounded read views over the same archived `RuntimeEvent` evidence layer.
+- A future read surface is justified only by durable pressure such as evidence volume, stable packet/task lookup demand, fixed review/handoff read-view demand, or Phase 20 SQLite criteria pressure; ad hoc debugging convenience is not enough.
+- The first legal read views should stay narrow to packet-level episode reads and limited task-level aggregation; line/worker/summary/review/global search remains explicitly deferred.
+- Any future read surface must remain an evidence consumer rather than a truth owner: it may project bounded views over archived evidence, but it must not mutate evidence, decide review outcomes, promote canonical state, emit events, or trigger orchestration.
+- The harness-runtime line has crossed the point of diminishing returns for additional micro-phases; the remaining work is better expressed as a bounded completion pack of implementation blocks.
+- The six remaining implementation blocks are: worker controller plus ControlMesh adapter, thin orchestrator, recovery thin loop, typed summary generation plus landing, execution evidence read surface, and promotion bridge.
+- Split-scope should remain a semantic-drift decision, not a catch-all for every hardening failure.
+- Canonical-write breaches are safer to classify as `RETURN_FOR_HARDENING` in the foundation cut so review remains an implementation gate, not an automatic scope fork.
+
+# Risks
+- Plan YAML and runtime enums can drift if both remain authoritative for too long.
+- The existing repo contains a small policy inconsistency:
+  - `plans/eval/scorecard.yaml` maps `canonical_write_breach` to `split_into_new_scope`
+  - `plans/eval/exception_triggers.yaml` maps `canonical_state_write_breach` to `return_for_hardening`
+- Using uppercase runtime enums without an explicit bridge to plan tokens would make later migration noisier.
+
+# Deferred
+- migrating `plans/eval/*.yaml` behind the runtime package
+- routing team/task/taskhub decisions through `controlmesh_runtime/`
+- event persistence and recovery policy execution
+- worker controller automation
+- runtime board, dashboard, or operator UI
+- SQLite migration or store-backend abstraction
+- automatic recovery loops or transport-specific recovery hooks
+- model-driven summary generation or auto-triggered summary pipelines
+- Python `RecoveryExecutionPlan` / `RecoveryExecutionResult` contracts
+- recovery engine implementation or controller wiring
+- event-publisher and store write-side integration for recovery attempts
+- adapter extension systems for product-specific recovery actions
+- store/event integration for execution plans and execution results
+- automatic approval or scheduling semantics for human-gated plans
+- execution event-shape finalization
+- thin orchestrator implementation
+- typed execution-event payload classes or unions
+- event-kind or payload implementation changes in code
+- orchestrator implementation, protocols, or controller wiring
+- any engine loop beyond the first minimal boundary
+- actual first-engine implementation
+- transport/provider-aware recovery actions
+- store/event integration for first-engine implementation
+- any engine-local contract broadening for convenience before first implementation
+- seam integration before engine-local hardening is sealed
+- typed persistence landing zone for execution evidence
+- event publisher or event bus implementation for execution payloads
+- replay or append semantics for execution runtime events
+- execution evidence query surfaces beyond append/load
+- SQLite implementation, migration, and dual-write behavior
+- summary generation implementation, landing implementation, and query surfaces
+- replay implementation, query APIs, and replay/query-driven store changes
+- review/query-oriented read-surface implementation, APIs, SQLite-backed reads, and broad runtime query surfaces
+- new Phase 24+ micro-phase expansion on the sealed harness-runtime foundation line
+
+# Decision Records
+- 2026-04-14: This line is opened as a new bounded scope instead of widening the sealed `plans/runtime/` line.
+- 2026-04-14: `controlmesh_runtime/` is introduced as a top-level additive package so ControlMesh-specific system code is not treated as the long-term runtime host.
+- 2026-04-14: The first cut is limited to typed review semantics plus placeholder runtime-stage enums; no transport or production wiring is included.
+- 2026-04-14: Borrow only `claw-code` architecture patterns and runtime goals; do not copy its Rust/CLI/transport surface.
+- 2026-04-14: Phase 1 foundation is accepted as ready for the next design cut after focused tests and local lint passed.
+- 2026-04-14: Phase 2 is kept narrow to `task_packet + event_schema` only; worker state, persistence, recovery, and policy remain later cuts.
+- 2026-04-14: Phase 2 packet/event contracts are accepted as ready after focused tests and local lint passed.
+- 2026-04-14: Phase 3 is kept narrow to worker lifecycle semantics only; no persisted store, recovery engine, controller, transport, or CLI work is included.
+- 2026-04-14: Phase 3 worker-state semantics are accepted as ready after focused tests and local lint passed.
+- 2026-04-14: Phase 4 is kept narrow to persisted object storage only; no recovery engine, controller, transport, or CLI work is included.
+- 2026-04-14: Phase 4 store semantics are accepted as ready after focused tests and local lint passed.
+- 2026-04-14: Phase 5 is kept narrow to recovery/policy contracts and pure mapping only; no recovery engine, controller, transport, or CLI work is included.
+- 2026-04-14: Phase 5 recovery/policy semantics are accepted as ready after focused tests and local lint passed.
+- 2026-04-14: Phase 6 is kept narrow to summary-compression contracts and pure mapping only; no summary generation, store wiring, controller, transport, or CLI work is included.
+- 2026-04-14: Phase 6 summary semantics are accepted as ready after focused tests and local lint passed.
+- 2026-04-14: Phase 7 is kept design-only to define the recovery execution boundary; no engine classes, controller wiring, transport hooks, CLI changes, or production configuration are included.
+- 2026-04-14: Future recovery execution must stay below policy decisions and above product transports: policy decides, execution runs generic runtime actions, and human gates stop unsafe or externally sensitive actions.
+- 2026-04-14: Phase 8 is kept narrow to typed recovery execution contracts only; no engine loop, controller, store wiring, event wiring, transport hooks, or CLI work is included.
+- 2026-04-14: Recovery execution results are treated as evidence objects, not direct canonical-state mutations.
+- 2026-04-14: Phase 9 is kept design-only to define execution contract wiring boundaries across typed store, typed events, and future orchestrator responsibility; no store wiring, event bus, orchestrator code, or transport integration is included.
+- 2026-04-14: Phase 10 is kept design-only to define execution event shape; the default direction is to keep `RuntimeEvent` as the outer shell and introduce typed execution payload families rather than expanding `EventKind` into a large execution enum tree.
+- 2026-04-14: Phase 11 is kept design-only to define the thinnest orchestrator boundary; the orchestrator may stitch typed objects together but must not own policy, canonical promotion, transport/provider behavior, or real execution implementation.
+- 2026-04-14: Phase 12 is kept design-only to define the first-engine boundary; the first engine must stay linear, single-unit, capability-capped, and explicitly stop before absorbing transport/provider behavior, policy recalculation, or canonical promotion.
+- 2026-04-14: Phase 13 is kept design-first and engine-local only; freeze first-engine contract truth, stop reasons, test matrix, and trace examples before allowing any first implementation or integration seam expansion.
+- 2026-04-14: Phase 14 is kept engine-local and test-first; the first executable engine may only run whitelist worker-local recovery actions and must stop with explicit evidence at every handoff, promotion, destructive, or integration-leak boundary.
+- 2026-04-14: Phase 15 is kept engine-local and hardening-only; strengthen invariants, negative cases, and runnable-subset guardrails before any seam integration work begins.
+- 2026-04-14: Phase 16 chooses typed execution payload shape as the first post-hardening seam; typed persistence landing zones remain deferred so event evidence semantics stabilize before store layout expands.
+- 2026-04-14: Phase 17 implements typed execution payload classes and pure trace-to-payload conversion only; trace remains the source of truth, and publisher/store/orchestrator/transport integration remains deferred.
+- 2026-04-14: Phase 18 implements pure typed execution payload to `RuntimeEvent` wrapping only; it requires explicit packet/message inputs, preserves coarse `EventKind` routing, and still defers publisher, store, orchestrator, replay, and canonical promotion.
+- 2026-04-14: Phase 19 lands a typed persistence namespace for wrapped execution runtime events only; archive the unified runtime event evidence, validate typed payload integrity on append/load, and still defer replay, publisher, event bus, orchestrator, and promotion behavior.
+- 2026-04-14: Phase 20 keeps file-backed persistence as primary by design, defines hard SQLite trigger conditions, and fixes execution evidence as the first SQLite landing zone if database pressure becomes real later.
+- 2026-04-14: Phase 21 defines summary trigger and landing boundaries only; summary remains a separate evidence-layer object with narrow trigger classes, narrow subject scope, file-backed landing, and latest-snapshot semantics, while generation, persistence implementation, and promotion remain deferred.
+- 2026-04-14: Phase 22 defines execution evidence replay/query boundaries only; replay/query may be future evidence-inspection capabilities over archived execution `RuntimeEvent` evidence, but they must not force store shape changes, SQLite, publisher/event bus, orchestrator, or canonical promotion.
+- 2026-04-14: Phase 23 defines review/query read-surface boundaries only; future read surfaces may help review and handoff consume archived execution evidence, but only after durable demand exists and only as narrow packet/task views that remain evidence consumers rather than truth owners.
+- 2026-04-14: The harness-runtime design/foundation line is sealed after phases 1-23; further continuation should move to `Harness Runtime Completion Pack v1` and be tracked by six implementation blocks rather than additional micro-phases on this line.

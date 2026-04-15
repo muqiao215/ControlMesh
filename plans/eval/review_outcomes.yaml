@@ -1,0 +1,10 @@
+review_outcomes:
+  - pass
+  - pass_with_notes
+  - return_for_hardening
+  - blocked_by_environment
+  - blocked_by_operator_safety
+  - stopline
+  - split_into_new_scope
+  - deferred_with_reason
+  - runbook_only

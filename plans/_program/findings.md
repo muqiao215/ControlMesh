@@ -1,0 +1,136 @@
+# Confirmed Facts
+- ControlMesh should be treated as a file-driven project state machine, not a chat workflow.
+- Canonical project truth belongs in `task_plan.md`, `findings.md`, and `progress.md`.
+- Background workers are bounded execution lanes and should not mutate canonical state directly.
+- Frontstage history must contain only user-visible interaction.
+- Runtime/task lifecycle events belong in a separate event surface.
+- The `plans/` control-plane skeleton and harness doctrine docs already exist in the repository.
+- The harness-runtime 1-23 line already established the runtime foundation: typed review/task/event/worker/store/recovery/summary contracts, first boxed engine, execution payloads, runtime-event wrapping, execution evidence landing, and the design boundaries around replay/query/read surfaces.
+- The main remaining architecture work is no longer boundary design; it is the implementation closure of six bounded runtime blocks.
+- The 2026-04-13 live certification closure reached a `prod-ready` conclusion under external takeover, controlled restart drill, bounded API enable/smoke/rollback, and live binary deployment-consistency evidence.
+- The canonical release evidence for the current production-ready state is anchored under `task_artifacts/prod_cert_live_20260413_foreground/`.
+- `ControlMesh Release Operations` is now the active post-release line for operating the released state without reopening certification scope.
+- The new program-level engineering focus is `Harness Runtime Completion Pack v1`, which is separate from release-operations and should not be expressed as further Phase 24+ micro-cuts.
+- `Harness Runtime Completion Pack v1` is now fully implemented and locally verified.
+- The main integration hazards were identity drift and authority drift across `packet_id` / `task_id` / `plan_id` / `entity_id`, and they were narrowed by explicit mappings in the orchestrator, summary runtime, read surface, and promotion bridge.
+- The current first engine is now bounded to plan/preflight help; real worker-controller step execution lives in the thin orchestrator.
+- Summary generation/landing and read surface now align on `controlmesh_state/summaries/{task|line}/...`.
+- The residual cross-evidence identity gap is now closed by a separate hardening scope instead of by reopening the completion pack.
+- Review records, execution plans/results, and summaries now share one typed runtime episode identity tuple before promotion.
+- Promotion bridge now rejects implicit cross-episode joins and cross-subject summary drift.
+- The first bounded replay/query scope is now complete: archived execution `RuntimeEvent` evidence can be queried by packet id and by bounded task id aggregation.
+- Execution payloads now carry `line`, so replay/query can reconstruct `RuntimeEvidenceIdentity(packet_id, task_id, line, plan_id)` without hidden joins.
+- Replay validation reports evidence-shape anomalies only; it does not mutate truth, decide reviews, trigger recovery, or promote canonical files.
+- The evidence plane is now considered closed enough; further runtime value should come from evidence consumers rather than deeper replay/query work.
+- The first independent evidence consumer above the sealed evidence plane is `harness-summary-runtime-v1`.
+- Summary runtime v1 now materializes paired task/line latest snapshots from one typed runtime evidence identity instead of leaving summary generation as a disconnected builder/store substrate.
+- Summary runtime v1 rejects cross-identity pairing drift before persisting task and line snapshots.
+- The next bounded consumer above summary runtime is `harness-promotion-bridge-v1`, which promotes only review facts plus latest task/line summaries.
+- Promotion bridge v1 now exposes an explicit eligibility gate before canonical write-back rather than treating promotion as an opaque direct write helper.
+- Promotion bridge v1 keeps canonical write-back bounded to line `task_plan.md` and `progress.md`; `findings.md` remains outside this cut.
+- Promotion bridge v1 keeps latest summaries as provenance inputs rather than direct authors of canonical prose.
+- Promotion bridge v1 preserves human notes by replacing only a machine-owned provenance block inside `progress.md #Notes`.
+- Promotion Safety Pack now hardens the bridge as one package instead of continuing tiny hardening scopes.
+- `PromotionWriteIntent` now makes canonical write-back inspectable before mutation.
+- `CanonicalSectionWriter` now constrains promotion writes to fixed files, sections, and write shapes.
+- Promotion now rechecks task and line summary freshness at write time before applying section patches.
+- `PromotionReceipt` now records which review and summary snapshots produced each canonical write.
+- `ThinRuntimeLoop` now makes one controller-owned runtime cycle explicit without reopening the sealed orchestrator or recovery block docs.
+- The runtime loop now reports `runtime_runnable`, `plan_id`, and `final_worker_state`, so policy-auto and runtime-runnable are no longer conflated at the pack surface.
+- Operator read surfaces now prefer latest event timestamps over packet-name ordering when bounding task episodes.
+- `ReviewHandoffPacketBuilder` now keeps `primary_identity` aligned with the same latest-first episode ordering used by operator packet ids and source refs.
+- Review handoff packet behavior is now covered by focused tests instead of only indirect execution-read-surface coverage.
+- The runtime skeleton now has one bounded checkpoint pack that persists a thin runtime cycle under a packet id and returns immediate packet/task readback views.
+- Duplicate packet checkpoint writes are now rejected before any second evidence append can occur.
+- The runtime now has one bounded autonomous chain that can schedule jobs, persist evidence, materialize summaries, and perform controller-approved automatic promotion.
+- Autonomous scheduling is currently proven through in-process drain-until-idle behavior, not through daemon/system integration.
+- The runtime now has one thin external CLI ingress that can translate external args into autonomous runtime requests without widening into daemon/system work.
+- The repository-wide fresh gate is now restored above all landed runtime packs, so new scopes no longer need to guess whether the base tree is already broken.
+- The repo gate restoration required real fixes in concurrency control, test isolation, optional-import ordering, host-dependent suffix detection, and rapid file-rewrite detection.
+- The current runtime now exposes a bounded operational control surface through typed `signal/query/update` verbs over append-only `ControlEvent` history.
+- Task/line summary observation and promotion receipt materialization now carry trace/span identity across the new control surface.
+- Canonical mutation remains controller-owned through `PromotionController.reconcile()` even after adding external control verbs.
+- The current repository-wide verification result is `3941 passed, 3 skipped` plus clean `ruff`.
+
+# Blockers
+- None in the current release-closing scope.
+
+# Risks
+- Transcript and runtime concerns may get re-coupled if the read surface is placed too low.
+- Worker result/evidence files can still drift from canonical outcome or schema conventions; controller verification remains the final promotion gate.
+- Post-release work can blur the closure boundary if deployment observation, rollback rehearsal, or new product changes are written back into the completed certification line instead of being opened as a new scope.
+- The completion pack can sprawl if worker control, orchestration, summaries, read surface, and promotion are mixed with SQLite, UI, provider-specific recovery, or multi-worker features.
+- The harness-runtime foundation line can lose clarity if new work is still tracked as micro-phases instead of as the six bounded completion blocks.
+- Future runtime producers or replay/query surfaces could drift again if they do not adopt the typed episode identity contract.
+- Replay/query pressure may later justify SQLite, but only through the existing hard criteria rather than convenience or dashboard demand.
+- Future summary work can still blur evidence vs truth if it grows query, promotion, or controller coupling into the materialization layer.
+- Future promotion work can still blur summary/review evidence into canonical truth too early if write-back targets widen or raw evidence bypasses the summary/review gate.
+- Future promotion work can still become too broad if receipts, section contracts, or write intents are used as a path toward workflow automation inside the bridge.
+- Future runtime loop work can still sprawl if retries, transport hooks, or workflow automation are mixed into the new pack surface.
+- Future operator tooling can still sprawl if latest-first read logic is used as a wedge toward dashboard or broad query work.
+- Future runtime checkpoint work can still sprawl if it is used as a wedge toward scheduler/daemon automation or automatic promotion triggering.
+- Future autonomous runtime work can still sprawl if in-process scheduling is widened directly into transport ingress or daemon/system integration.
+- Future ingress work can still sprawl if the CLI surface is widened directly into broader transport behavior instead of opening a new scope.
+- Future work can lose the value of this checkpoint if repo-wide fresh verification stops being treated as the required baseline before opening another pack.
+- The three skipped tests are visible non-blocking backlog; if they remain forever skipped, they can become a blind spot.
+- Future control-surface work can still drift if packet, plan, worker, or trace identity constraints are relaxed at the `signal/query/update` boundary.
+- Future promotion hardening may still need a separate pass if the current `already_promoted` basis needs to grow beyond the latest task/line summary pair.
+
+# Deferred
+- broader UI/history browser work
+- richer event analytics
+- wider command/control-plane expansion
+- broader runtime producers beyond the current TaskHub lifecycle slice
+- separate `ControlMesh Release Operations` line for post-release observation, rollback discipline, change management, and operating feedback capture
+- SQLite implementation and migration
+- replay tooling and broad query surfaces
+- provider-specific recovery automation
+- multi-worker orchestration or graph execution
+- richer transport UX work outside the narrow runtime pack
+- future adoption of the typed episode identity contract by any new runtime producers
+- broader query/index/storage work beyond packet/task bounded replay/query v1
+- any broader summary query/promotion/history work beyond summary-runtime v1
+- any broader promotion workflow, richer canonical target surface, or automatic trigger path beyond promotion-bridge v1
+- any broader promotion workflow, richer canonical target surface, automatic trigger path, or receipt read API beyond Promotion Safety Pack
+- any broader orchestration or workflow automation beyond Thin Runtime Loop Pack
+- any richer operator tooling, dashboard surface, or broad query/index work beyond Operator Read Surface Pack
+- any scheduler/daemon automation or trigger plumbing beyond Runtime Execution Checkpoint Pack
+- any transport ingress, daemon/system integration, or broader trigger plumbing beyond Autonomous Runtime Loop Pack
+- any daemon/system wiring or broader transport behavior beyond Transport and CLI Ingress Pack
+- any new feature work before first preserving the restored repo-wide fresh baseline as a checkpoint
+- whether any of the three skipped tests should become required coverage in a later hardening scope
+- any daemon/system wiring, broader transport/provider ingress, multi-worker orchestration, SQLite, UI/dashboard, or broad query work beyond Runtime Control Surface Pack
+
+# Decision Records
+- 2026-04-09: Adopt `plans/` as the harness control-plane skeleton.
+- 2026-04-09: Default to automatic adjudication and exception-triggered pullback.
+- 2026-04-09: Preserve single-writer truth promotion.
+- 2026-04-09: Start with the history line before opening broader product-line work.
+- 2026-04-09: Recycle a running task if it leaves code changes behind without result/evidence closure.
+- 2026-04-09: Harden the harness with a pure automatic worker contract plus explicit score thresholds and automatic outcome mapping.
+- 2026-04-09: Remove human-gate fallback entirely; the evaluator/controller now performs final adjudication without human intervention.
+- 2026-04-09: After sealing history cut 2, move to a separate runtime line rather than broadening history scope.
+- 2026-04-09: Accept runtime cut 1 red contract as `pass_with_notes` and advance immediately to the bounded green cut.
+- 2026-04-09: Accept runtime cut 1 green substrate as `pass_with_notes` and advance immediately to a bounded TaskHub lifecycle write seam.
+- 2026-04-09: Accept runtime cut 2 red contract as `pass_with_notes` and advance immediately to the bounded TaskHub lifecycle green cut.
+- 2026-04-09: Accept runtime cut 2 green as `pass_with_notes`; focused controller verification passed, with only task-local outcome/schema drift left as a note.
+- 2026-04-09: Close the current autonomous round at `stopline` because history is sealed, runtime is sealed, and the remaining lines are explicitly deferred.
+- 2026-04-13: Promote the live certification closure into canonical program truth: ControlMesh current state is `prod-ready`.
+- 2026-04-13: Freeze the completed certification scope and require any further deployment, monitoring, rollback, or change-management work to open a separate `ControlMesh Release Operations` line.
+- 2026-04-13: Open `plans/release-operations/` as the active post-release operations line.
+- 2026-04-14: Stop extending harness-runtime via Phase 24+ micro-cuts; continue the rewrite through `Harness Runtime Completion Pack v1`.
+- 2026-04-14: The six completion-pack blocks are worker controller plus ControlMesh adapter, thin orchestrator, recovery thin loop, typed summary generation plus landing, execution evidence read surface, and promotion bridge.
+- 2026-04-15: Close `Harness Runtime Completion Pack v1` as implemented and locally verified; any further runtime work must open as a new scope rather than extending this pack.
+- 2026-04-15: Open and close `typed cross-evidence identity hardening` as a separate post-pack scope; harden identity proof without widening runtime behavior or reopening the completion pack.
+- 2026-04-15: Open and close `harness-evidence-replay-query-v1` as a separate post-identity-hardening scope; keep replay/query read-only, packet/task bounded, and file-backed.
+- 2026-04-15: Treat the evidence plane as closed enough after replay/query v1 and open `harness-summary-runtime-v1` as the next independent evidence-consumer scope instead of extending replay/query.
+- 2026-04-15: Close `harness-summary-runtime-v1` as a bounded task/line latest-snapshot materialization cut; keep summary query, promotion, and controller coupling out of scope.
+- 2026-04-15: Open and close `harness-promotion-bridge-v1` as a separate post-summary hardening scope; accept only review facts plus latest task/line summaries, make eligibility explicit, and keep canonical write-back bounded to line `task_plan.md` and `progress.md`.
+- 2026-04-15: Stop splitting promotion hardening into tiny v1 scopes; close `Promotion Safety Pack` as the coherent hardening unit for write intent, write-time freshness, receipts, and canonical section contracts.
+- 2026-04-15: Close `Thin Runtime Loop Pack` as the next controller-owned execution package above the sealed worker/orchestrator/recovery blocks.
+- 2026-04-15: Close `Operator Read Surface Pack` as the next read-only operator package above the sealed replay/query and execution-read blocks.
+- 2026-04-15: Close `Runtime Execution Checkpoint Pack` as the next bounded persistence package above the thin runtime loop and operator read surfaces.
+- 2026-04-15: Close `Autonomous Runtime Loop Pack` as one bounded implementation package instead of splitting scheduler, triggers, and automatic promotion into smaller scopes.
+- 2026-04-15: Close `Transport and CLI Ingress Pack` as one bounded implementation package instead of splitting CLI surface and request translation into smaller scopes.
+- 2026-04-15: Close `Repo Gate Unblock Pack` as the hard checkpoint that restores repository-wide fresh `pytest` and `ruff` before any new scope opens.
+- 2026-04-15: Close `Runtime Control Surface Pack` as one bounded implementation package that adds `signal/query/update` over the existing autonomous runtime loop without creating a second runtime.
