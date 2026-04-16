@@ -92,10 +92,10 @@ def test_cmd_auth_feishu_setup_guides_zero_app_users(
     rendered = "\n".join(console_lines)
     assert "Feishu app configured: false" in rendered
     assert "missing feishu.app_id" in rendered or "feishu.app_id" in rendered
-    assert "Feishu Open Platform app console" in rendered
-    assert "Create a Feishu self-built app" in rendered
+    assert "controlmesh auth feishu register-begin" in rendered
+    assert "official Feishu/Lark scan-to-create" in rendered
+    assert "Manual fallback" in rendered
     assert "controlmesh auth feishu login" in rendered
-    assert "does not create a new app" in rendered
 
 
 def test_cmd_auth_feishu_setup_reuses_feishu_auth_kit_when_available(
@@ -134,6 +134,172 @@ def test_cmd_auth_feishu_setup_reuses_feishu_auth_kit_when_available(
     assert calls == [(["setup", "--brand", "feishu"], {})]
     assert "Feishu / Lark app setup guide" in rendered
     assert "cannot create the app" in rendered
+
+
+def test_cmd_auth_feishu_register_begin_delegates_to_scan_create_no_poll(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _import_auth_cli_module()
+    config = _feishu_config_without_app(tmp_path)
+    console_lines: list[str] = []
+    calls: list[list[str]] = []
+
+    class _FakeConsole:
+        def print(self, *args: object, **kwargs: object) -> None:
+            console_lines.append(" ".join(str(arg) for arg in args))
+
+    def _fake_run_feishu_auth_kit_json(args: list[str]) -> dict[str, object]:
+        calls.append(args)
+        return {
+            "status": "authorization_required",
+            "qr_url": "https://accounts.feishu.cn/verify?from=oc_onboard&tp=ob_cli_app",
+            "device_code": "dev_123",
+            "user_code": "ABCD-EFGH",
+            "interval": 5,
+            "expires_in": 600,
+        }
+
+    monkeypatch.setattr(module, "_console", _FakeConsole(), raising=False)
+    monkeypatch.setattr(module, "load_config", lambda: config, raising=False)
+    monkeypatch.setattr(
+        module,
+        "run_feishu_auth_kit_json",
+        _fake_run_feishu_auth_kit_json,
+        raising=False,
+    )
+
+    module.cmd_auth(["auth", "feishu", "register-begin"])
+
+    assert calls == [
+        ["register", "scan-create", "--brand", "feishu", "--no-poll", "--json"]
+    ]
+    rendered = "\n".join(console_lines)
+    assert '"status": "authorization_required"' in rendered
+    assert "dev_123" in rendered
+    assert "oc_onboard" in rendered
+
+
+def test_cmd_auth_feishu_register_poll_delegates_to_auth_kit_poll(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _import_auth_cli_module()
+    config = _feishu_config_without_app(tmp_path)
+    console_lines: list[str] = []
+    calls: list[list[str]] = []
+
+    class _FakeConsole:
+        def print(self, *args: object, **kwargs: object) -> None:
+            console_lines.append(" ".join(str(arg) for arg in args))
+
+    def _fake_run_feishu_auth_kit_json(args: list[str]) -> dict[str, object]:
+        calls.append(args)
+        return {
+            "status": "success",
+            "app_id": "cli_new",
+            "app_secret": "secret-new",
+            "domain": "feishu",
+            "open_id": "ou_owner",
+        }
+
+    monkeypatch.setattr(module, "_console", _FakeConsole(), raising=False)
+    monkeypatch.setattr(module, "load_config", lambda: config, raising=False)
+    monkeypatch.setattr(
+        module,
+        "run_feishu_auth_kit_json",
+        _fake_run_feishu_auth_kit_json,
+        raising=False,
+    )
+
+    module.cmd_auth(
+        [
+            "auth",
+            "feishu",
+            "register-poll",
+            "--device-code",
+            "dev_123",
+            "--interval",
+            "5",
+            "--expires-in",
+            "600",
+            "--poll-timeout",
+            "30",
+        ]
+    )
+
+    assert calls == [
+        [
+            "register",
+            "poll",
+            "--brand",
+            "feishu",
+            "--device-code",
+            "dev_123",
+            "--interval",
+            "5",
+            "--expires-in",
+            "600",
+            "--poll-timeout",
+            "30",
+            "--json",
+        ]
+    ]
+    rendered = "\n".join(console_lines)
+    assert '"status": "success"' in rendered
+    assert '"app_id": "cli_new"' in rendered
+
+
+def test_cmd_auth_feishu_probe_delegates_to_register_probe_with_env_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _import_auth_cli_module()
+    config = _feishu_config(tmp_path)
+    console_lines: list[str] = []
+    calls: list[tuple[list[str], dict[str, str]]] = []
+
+    class _FakeConsole:
+        def print(self, *args: object, **kwargs: object) -> None:
+            console_lines.append(" ".join(str(arg) for arg in args))
+
+    def _fake_run_feishu_auth_kit_json(
+        args: list[str],
+        *,
+        extra_env: dict[str, str] | None = None,
+    ) -> dict[str, object]:
+        calls.append((args, extra_env or {}))
+        return {
+            "ok": True,
+            "app_id": "cli_123",
+            "bot_name": "ControlMesh Bot",
+            "bot_open_id": "ou_bot",
+        }
+
+    monkeypatch.setattr(module, "_console", _FakeConsole(), raising=False)
+    monkeypatch.setattr(module, "load_config", lambda: config, raising=False)
+    monkeypatch.setattr(
+        module,
+        "run_feishu_auth_kit_json",
+        _fake_run_feishu_auth_kit_json,
+        raising=False,
+    )
+
+    module.cmd_auth(["auth", "feishu", "probe"])
+
+    assert calls == [
+        (
+            ["register", "probe", "--brand", "feishu", "--json"],
+            {
+                "FEISHU_APP_ID": "cli_123",
+                "FEISHU_APP_SECRET": "sec_456",
+                "FEISHU_BRAND": "feishu",
+            },
+        )
+    ]
+    rendered = "\n".join(console_lines)
+    assert '"ok": true' in rendered
+    assert "ControlMesh Bot" in rendered
 
 
 def test_cmd_auth_feishu_doctor_delegates_to_feishu_auth_kit_with_env_credentials(

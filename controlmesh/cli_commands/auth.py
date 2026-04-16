@@ -5,10 +5,11 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import functools
 import json
 import logging
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from pathlib import Path
 from urllib.parse import urlparse
@@ -87,25 +88,23 @@ def _parse_auth_command(args: Sequence[str]) -> tuple[str, str, list[str]]:
 
 
 def _cmd_feishu_auth(action: str, action_args: Sequence[str] = ()) -> None:
-    match action:
-        case "setup":
-            _cmd_feishu_setup()
-        case "doctor":
-            _cmd_feishu_doctor()
-        case "plan":
-            _cmd_feishu_orchestration_plan(action_args)
-        case "route":
-            _cmd_feishu_orchestration_route(action_args)
-        case "retry":
-            _cmd_feishu_orchestration_retry(action_args)
-        case "login":
-            asyncio.run(_cmd_feishu_login())
-        case "status":
-            _cmd_feishu_status()
-        case "logout":
-            _cmd_feishu_logout()
-        case _:
-            raise SystemExit(1)
+    handlers: dict[str, Callable[[], None]] = {
+        "setup": _cmd_feishu_setup,
+        "doctor": _cmd_feishu_doctor,
+        "register-begin": _cmd_feishu_register_begin,
+        "register-poll": functools.partial(_cmd_feishu_register_poll, action_args),
+        "probe": _cmd_feishu_probe,
+        "plan": functools.partial(_cmd_feishu_orchestration_plan, action_args),
+        "route": functools.partial(_cmd_feishu_orchestration_route, action_args),
+        "retry": functools.partial(_cmd_feishu_orchestration_retry, action_args),
+        "login": _cmd_feishu_login_sync,
+        "status": _cmd_feishu_status,
+        "logout": _cmd_feishu_logout,
+    }
+    handler = handlers.get(action)
+    if handler is None:
+        raise SystemExit(1)
+    handler()
 
 
 def _cmd_weixin_auth(action: str, action_args: Sequence[str] = ()) -> None:
@@ -127,6 +126,10 @@ def _cmd_weixin_auth(action: str, action_args: Sequence[str] = ()) -> None:
     if action_args:
         raise SystemExit(1)
     raise SystemExit(1)
+
+
+def _cmd_feishu_login_sync() -> None:
+    asyncio.run(_cmd_feishu_login())
 
 
 def _cmd_weixin_setup() -> None:
@@ -152,11 +155,7 @@ def _cmd_feishu_doctor() -> None:
     try:
         result = run_feishu_auth_kit(
             ["doctor", "--brand", config.feishu.brand],
-            extra_env={
-                "FEISHU_APP_ID": config.feishu.app_id,
-                "FEISHU_APP_SECRET": config.feishu.app_secret,
-                "FEISHU_BRAND": config.feishu.brand,
-            },
+            extra_env=_feishu_auth_env(config),
         )
     except FileNotFoundError as exc:
         _console.print(str(exc))
@@ -164,6 +163,48 @@ def _cmd_feishu_doctor() -> None:
     _render_external_result(result)
     if result.returncode != 0:
         raise SystemExit(result.returncode)
+
+
+def _cmd_feishu_register_begin() -> None:
+    config = load_config()
+    payload = _run_feishu_auth_kit_json(
+        ["register", "scan-create", "--brand", config.feishu.brand, "--no-poll", "--json"]
+    )
+    _render_json_payload(payload)
+
+
+def _cmd_feishu_register_poll(action_args: Sequence[str]) -> None:
+    config = load_config()
+    parsed = _parse_kv_args(
+        action_args,
+        optional={"device-code", "interval", "expires-in", "poll-timeout", "tp"},
+        int_fields={"interval", "expires-in", "poll-timeout"},
+    )
+    device_code = parsed.values.get("device-code")
+    if device_code is None:
+        _console.print("Feishu register-poll requires --device-code.")
+        raise SystemExit(1)
+    args = [
+        "register",
+        "poll",
+        "--brand",
+        config.feishu.brand,
+        "--device-code",
+        device_code,
+    ]
+    _extend_optional_args(args, parsed.values, ["interval", "expires-in", "poll-timeout", "tp"])
+    args.append("--json")
+    _render_json_payload(_run_feishu_auth_kit_json(args))
+
+
+def _cmd_feishu_probe() -> None:
+    config = load_config()
+    _ensure_feishu_app_credentials(config, action="probe")
+    payload = _run_feishu_auth_kit_json(
+        ["register", "probe", "--brand", config.feishu.brand, "--json"],
+        extra_env=_feishu_auth_env(config),
+    )
+    _render_json_payload(payload)
 
 
 def _cmd_feishu_orchestration_plan(action_args: Sequence[str]) -> None:
@@ -379,16 +420,20 @@ def _render_feishu_app_state(config: AgentConfig) -> None:
 def _render_feishu_setup_guidance(config: AgentConfig) -> None:
     _render_feishu_app_state(config)
     _console.print("Feishu independent auth boundary: ControlMesh can verify and use an app bot,")
-    _console.print("but it cannot create the first Feishu self-built app without developer-console setup.")
+    _console.print("and it can now delegate official Feishu/Lark scan-to-create registration through feishu-auth-kit.")
+    _console.print("It still does not bypass official registration, approval, publishing, or tenant policy.")
     _console.print(f"Feishu Open Platform app console: {_FEISHU_APP_CONSOLE_URL}")
     _console.print(f"Feishu self-built app guide: {_FEISHU_APP_DEV_GUIDE_URL}")
     _console.print("Required setup for a new user with no Feishu bot:")
-    _console.print("1. Create a Feishu self-built app in the app console.")
-    _console.print("2. Enable the Bot capability and install/publish it to the target tenant.")
-    _console.print("3. Enable event delivery for messages, preferably long-connection mode for ControlMesh.")
-    _console.print("4. Subscribe to message receive events such as im.message.receive_v1.")
-    _console.print("5. Copy the app_id and app_secret into config.json under the feishu section.")
-    _console.print("6. Add the bot to a chat and send a first message to validate inbound/reply wiring.")
+    _console.print("1. Preferred path: run `controlmesh auth feishu register-begin` and scan the official QR flow.")
+    _console.print("2. Then run `controlmesh auth feishu register-poll --device-code <code>` until credentials are returned.")
+    _console.print("3. Manual fallback: create a Feishu self-built app in the app console.")
+    _console.print("4. Enable the Bot capability and install/publish it to the target tenant.")
+    _console.print("5. Enable event delivery for messages, preferably long-connection mode for ControlMesh.")
+    _console.print("6. Subscribe to message receive events such as im.message.receive_v1.")
+    _console.print("7. Copy the app_id and app_secret into config.json under the feishu section.")
+    _console.print("8. Add the bot to a chat and send a first message to validate inbound/reply wiring.")
+    _console.print("Manual fallback remains valid if the official scan-to-create flow is unavailable in your environment.")
     _console.print("After app credentials exist, `controlmesh auth feishu login` only performs optional device-flow user auth.")
     _console.print("It does not create a new app or bot.")
 
@@ -411,15 +456,33 @@ def _render_external_result(result: object) -> None:
         _console.print(line)
 
 
-def _run_feishu_orchestration_json(args: list[str]) -> dict[str, object]:
+def _feishu_auth_env(config: AgentConfig) -> dict[str, str]:
+    return {
+        "FEISHU_APP_ID": config.feishu.app_id,
+        "FEISHU_APP_SECRET": config.feishu.app_secret,
+        "FEISHU_BRAND": config.feishu.brand,
+    }
+
+
+def _run_feishu_auth_kit_json(
+    args: list[str],
+    *,
+    extra_env: dict[str, str] | None = None,
+) -> dict[str, object]:
     try:
-        return run_feishu_auth_kit_json(args)
+        if extra_env is None:
+            return run_feishu_auth_kit_json(args)
+        return run_feishu_auth_kit_json(args, extra_env=extra_env)
     except FileNotFoundError as exc:
         _console.print(str(exc))
         raise SystemExit(1) from exc
     except (RuntimeError, TypeError) as exc:
         _console.print(str(exc))
         raise SystemExit(1) from exc
+
+
+def _run_feishu_orchestration_json(args: list[str]) -> dict[str, object]:
+    return _run_feishu_auth_kit_json(args)
 
 
 def _render_json_payload(payload: dict[str, object]) -> None:

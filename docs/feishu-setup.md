@@ -4,10 +4,29 @@ ControlMesh currently supports an early Feishu app-bot path.
 
 Important boundary:
 
-- `controlmesh auth feishu login` does **not** create a Feishu bot for you.
-- It only runs optional device-flow user auth **after** you already have a Feishu self-built app with `app_id` and `app_secret`.
+- `controlmesh auth feishu register-begin` / `register-poll` delegate the
+  official Feishu/Lark scan-to-create app registration flow to the standalone
+  `feishu-auth-kit`.
+- This is an official `accounts` registration flow. It does not bypass tenant
+  approval, publishing, or Feishu/Lark platform policy.
+- `controlmesh auth feishu login` still only runs optional device-flow user auth
+  **after** you already have a Feishu app with `app_id` and `app_secret`.
 
-If you have never created a Feishu bot before, do this first:
+If you have never created a Feishu bot before, try the scan-to-create path first:
+
+```bash
+controlmesh auth feishu register-begin
+controlmesh auth feishu register-poll --device-code "<device_code>" --interval 5 --expires-in 600
+```
+
+`register-begin` prints JSON from `feishu-auth-kit register scan-create --no-poll --json`,
+including `qr_url`, `device_code`, `user_code`, `interval`, and `expires_in`.
+Render or open the QR URL for the user to scan with Feishu/Lark, then call
+`register-poll` until it returns `status=success` with `app_id`, `app_secret`,
+`domain`, and optionally `open_id`.
+
+Manual fallback remains available if scan-to-create is unavailable in your
+tenant/environment:
 
 1. Open the Feishu Open Platform app console: <https://open.feishu.cn/app>
 2. Create a self-built app for your tenant.
@@ -36,7 +55,10 @@ After the app exists, these commands help:
 
 ```bash
 controlmesh auth feishu setup
+controlmesh auth feishu register-begin
+controlmesh auth feishu register-poll --device-code "<device_code>" --interval 5 --expires-in 600
 controlmesh auth feishu doctor
+controlmesh auth feishu probe
 controlmesh auth feishu plan --requested-scope im:message --app-scope im:message
 controlmesh auth feishu route --error-kind app_scope_missing --required-scope im:message --permission-url "<url>"
 controlmesh auth feishu retry --operation-id "<op>" --text "retry original request"
@@ -49,9 +71,16 @@ Use them like this:
 - `setup`: prints the zero-app prerequisite and the next steps. When the standalone
   `feishu-auth-kit` CLI is available, ControlMesh reuses its setup guidance
   instead of maintaining a separate copy only.
+- `register-begin`: delegates to `feishu-auth-kit register scan-create --no-poll --json`
+  and exposes the official from-zero QR/link onboarding payload.
+- `register-poll`: delegates to `feishu-auth-kit register poll --json` and returns
+  the registered app credentials once the user finishes the QR flow.
 - `doctor`: delegates app credential and scope diagnostics to the standalone
   `feishu-auth-kit` repo/CLI while keeping ControlMesh itself independent from
   Feishu onboarding internals.
+- `probe`: delegates to `feishu-auth-kit register probe --json`, validating
+  configured credentials and registering/checking the app as an AI agent through
+  the official OpenClaw bot ping endpoint.
 - `plan`: delegates to `feishu-auth-kit orchestration plan` and produces an
   OpenClaw-style missing-scope/batch authorization plan from explicit scope
   inputs.
