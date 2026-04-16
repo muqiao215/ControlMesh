@@ -36,15 +36,43 @@ After the app exists, these commands help:
 
 ```bash
 controlmesh auth feishu setup
+controlmesh auth feishu doctor
+controlmesh auth feishu plan --requested-scope im:message --app-scope im:message
+controlmesh auth feishu route --error-kind app_scope_missing --required-scope im:message --permission-url "<url>"
+controlmesh auth feishu retry --operation-id "<op>" --text "retry original request"
 controlmesh auth feishu status
 controlmesh auth feishu login
 ```
 
 Use them like this:
 
-- `setup`: prints the zero-app prerequisite and the next steps.
+- `setup`: prints the zero-app prerequisite and the next steps. When the standalone
+  `feishu-auth-kit` CLI is available, ControlMesh reuses its setup guidance
+  instead of maintaining a separate copy only.
+- `doctor`: delegates app credential and scope diagnostics to the standalone
+  `feishu-auth-kit` repo/CLI while keeping ControlMesh itself independent from
+  Feishu onboarding internals.
+- `plan`: delegates to `feishu-auth-kit orchestration plan` and produces an
+  OpenClaw-style missing-scope/batch authorization plan from explicit scope
+  inputs.
+- `route`: delegates to `feishu-auth-kit orchestration route` and stores generic
+  continuation state under `feishu_store/auth/` for permission-missing or
+  user-auth-required flows. ControlMesh still owns the actual Feishu card send
+  and callback ingress.
+- `retry`: delegates to `feishu-auth-kit orchestration retry` and turns a saved
+  continuation into a messenger-agnostic synthetic retry artifact.
 - `status`: shows whether `app_id/app_secret` are configured and whether device-flow auth is active.
 - `login`: runs device-flow auth against the already-configured app. It does not replace app creation.
+
+This is the ControlMesh side of the OpenClaw-style auth split:
+
+- `feishu-auth-kit` owns app/scope inspection, permission URL/card payloads,
+  continuation schemas, batching, and synthetic retry artifacts.
+- ControlMesh owns Feishu transport delivery, card action callbacks, session
+  binding, and reinjecting a synthetic retry into the ControlMesh runtime.
+
+The current integration is intentionally narrow: it consumes the standalone kit
+through its CLI and does not copy the OpenClaw implementation into ControlMesh.
 
 Official Feishu self-built app guide:
 

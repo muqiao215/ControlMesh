@@ -98,6 +98,319 @@ def test_cmd_auth_feishu_setup_guides_zero_app_users(
     assert "does not create a new app" in rendered
 
 
+def test_cmd_auth_feishu_setup_reuses_feishu_auth_kit_when_available(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _import_auth_cli_module()
+    config = _feishu_config_without_app(tmp_path)
+    console_lines: list[str] = []
+    calls: list[tuple[list[str], dict[str, str]]] = []
+
+    class _FakeConsole:
+        def print(self, *args: object, **kwargs: object) -> None:
+            console_lines.append(" ".join(str(arg) for arg in args))
+
+    class _FakeResult:
+        returncode = 0
+        stdout = "Feishu / Lark app setup guide\nThis kit cannot create the app for you.\n"
+        stderr = ""
+
+    def _fake_run_feishu_auth_kit(
+        args: list[str],
+        *,
+        extra_env: dict[str, str] | None = None,
+    ) -> _FakeResult:
+        calls.append((args, extra_env or {}))
+        return _FakeResult()
+
+    monkeypatch.setattr(module, "_console", _FakeConsole(), raising=False)
+    monkeypatch.setattr(module, "load_config", lambda: config, raising=False)
+    monkeypatch.setattr(module, "run_feishu_auth_kit", _fake_run_feishu_auth_kit, raising=False)
+
+    module.cmd_auth(["auth", "feishu", "setup"])
+
+    rendered = "\n".join(console_lines)
+    assert calls == [(["setup", "--brand", "feishu"], {})]
+    assert "Feishu / Lark app setup guide" in rendered
+    assert "cannot create the app" in rendered
+
+
+def test_cmd_auth_feishu_doctor_delegates_to_feishu_auth_kit_with_env_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _import_auth_cli_module()
+    config = _feishu_config(tmp_path)
+    console_lines: list[str] = []
+    calls: list[tuple[list[str], dict[str, str]]] = []
+
+    class _FakeConsole:
+        def print(self, *args: object, **kwargs: object) -> None:
+            console_lines.append(" ".join(str(arg) for arg in args))
+
+    class _FakeResult:
+        returncode = 0
+        stdout = "Doctor report\nTenant token: OK\n"
+        stderr = ""
+
+    def _fake_run_feishu_auth_kit(
+        args: list[str],
+        *,
+        extra_env: dict[str, str] | None = None,
+    ) -> _FakeResult:
+        calls.append((args, extra_env or {}))
+        return _FakeResult()
+
+    monkeypatch.setattr(module, "_console", _FakeConsole(), raising=False)
+    monkeypatch.setattr(module, "load_config", lambda: config, raising=False)
+    monkeypatch.setattr(module, "run_feishu_auth_kit", _fake_run_feishu_auth_kit, raising=False)
+
+    module.cmd_auth(["auth", "feishu", "doctor"])
+
+    rendered = "\n".join(console_lines)
+    assert calls == [
+        (
+            ["doctor", "--brand", "feishu"],
+            {
+                "FEISHU_APP_ID": "cli_123",
+                "FEISHU_APP_SECRET": "sec_456",
+                "FEISHU_BRAND": "feishu",
+            },
+        )
+    ]
+    assert "Doctor report" in rendered
+    assert "Tenant token: OK" in rendered
+    assert "sec_456" not in " ".join(calls[0][0])
+
+
+def test_cmd_auth_feishu_doctor_exits_with_auth_kit_status(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _import_auth_cli_module()
+    config = _feishu_config(tmp_path)
+
+    class _FakeConsole:
+        def print(self, *args: object, **kwargs: object) -> None:
+            return None
+
+    class _FakeResult:
+        returncode = 3
+        stdout = "Doctor failed\n"
+        stderr = "missing permission\n"
+
+    monkeypatch.setattr(module, "_console", _FakeConsole(), raising=False)
+    monkeypatch.setattr(module, "load_config", lambda: config, raising=False)
+    monkeypatch.setattr(
+        module,
+        "run_feishu_auth_kit",
+        lambda *_args, **_kwargs: _FakeResult(),
+        raising=False,
+    )
+
+    import pytest
+
+    with pytest.raises(SystemExit) as exc_info:
+        module.cmd_auth(["auth", "feishu", "doctor"])
+
+    assert exc_info.value.code == 3
+
+
+def test_cmd_auth_feishu_plan_delegates_to_orchestration_plan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _import_auth_cli_module()
+    console_lines: list[str] = []
+    calls: list[list[str]] = []
+
+    class _FakeConsole:
+        def print(self, *args: object, **kwargs: object) -> None:
+            console_lines.append(" ".join(str(arg) for arg in args))
+
+    def _fake_run_feishu_auth_kit_json(args: list[str]) -> dict[str, object]:
+        calls.append(args)
+        return {
+            "requested_scopes": ["offline_access", "im:message"],
+            "missing_user_scopes": ["im:message"],
+            "batches": [["im:message"]],
+        }
+
+    monkeypatch.setattr(module, "_console", _FakeConsole(), raising=False)
+    monkeypatch.setattr(
+        module,
+        "run_feishu_auth_kit_json",
+        _fake_run_feishu_auth_kit_json,
+        raising=False,
+    )
+
+    module.cmd_auth(
+        [
+            "auth",
+            "feishu",
+            "plan",
+            "--requested-scope",
+            "offline_access,im:message",
+            "--app-scope",
+            "offline_access",
+            "--user-scope",
+            "offline_access",
+            "--batch-size",
+            "25",
+            "--keep-sensitive",
+        ]
+    )
+
+    assert calls == [
+        [
+            "orchestration",
+            "plan",
+            "--requested-scope",
+            "offline_access",
+            "--requested-scope",
+            "im:message",
+            "--app-scope",
+            "offline_access",
+            "--user-scope",
+            "offline_access",
+            "--batch-size",
+            "25",
+            "--keep-sensitive",
+        ]
+    ]
+    rendered = "\n".join(console_lines)
+    assert '"missing_user_scopes": [' in rendered
+    assert '"im:message"' in rendered
+
+
+def test_cmd_auth_feishu_route_delegates_to_orchestration_route_with_default_store_paths(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _import_auth_cli_module()
+    config = _feishu_config(tmp_path)
+    console_lines: list[str] = []
+    calls: list[list[str]] = []
+
+    class _FakeConsole:
+        def print(self, *args: object, **kwargs: object) -> None:
+            console_lines.append(" ".join(str(arg) for arg in args))
+
+    def _fake_run_feishu_auth_kit_json(args: list[str]) -> dict[str, object]:
+        calls.append(args)
+        return {
+            "decision": "permission_card",
+            "flow": {"operation_id": "op_123", "flow_key": "fk_123"},
+            "card": {"kind": "permission_missing"},
+        }
+
+    monkeypatch.setattr(module, "_console", _FakeConsole(), raising=False)
+    monkeypatch.setattr(module, "load_config", lambda: config, raising=False)
+    monkeypatch.setattr(
+        module,
+        "run_feishu_auth_kit_json",
+        _fake_run_feishu_auth_kit_json,
+        raising=False,
+    )
+
+    module.cmd_auth(
+        [
+            "auth",
+            "feishu",
+            "route",
+            "--error-kind",
+            "app_scope_missing",
+            "--required-scope",
+            "im:message",
+            "--permission-url",
+            "https://open.feishu.cn/perm",
+            "--user-open-id",
+            "ou_123",
+        ]
+    )
+
+    assert calls == [
+        [
+            "orchestration",
+            "route",
+            "--app-id",
+            "cli_123",
+            "--error-kind",
+            "app_scope_missing",
+            "--required-scope",
+            "im:message",
+            "--user-open-id",
+            "ou_123",
+            "--permission-url",
+            "https://open.feishu.cn/perm",
+            "--continuation-store-path",
+            f"{tmp_path}/feishu_store/auth/continuations.json",
+            "--pending-flow-store-path",
+            f"{tmp_path}/feishu_store/auth/pending_flows.json",
+        ]
+    ]
+    rendered = "\n".join(console_lines)
+    assert '"decision": "permission_card"' in rendered
+
+
+def test_cmd_auth_feishu_retry_delegates_to_orchestration_retry(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _import_auth_cli_module()
+    config = _feishu_config(tmp_path)
+    console_lines: list[str] = []
+    calls: list[list[str]] = []
+
+    class _FakeConsole:
+        def print(self, *args: object, **kwargs: object) -> None:
+            console_lines.append(" ".join(str(arg) for arg in args))
+
+    def _fake_run_feishu_auth_kit_json(args: list[str]) -> dict[str, object]:
+        calls.append(args)
+        return {
+            "kind": "synthetic_retry",
+            "operation_id": "op_123",
+            "text": "retry original task",
+        }
+
+    monkeypatch.setattr(module, "_console", _FakeConsole(), raising=False)
+    monkeypatch.setattr(module, "load_config", lambda: config, raising=False)
+    monkeypatch.setattr(
+        module,
+        "run_feishu_auth_kit_json",
+        _fake_run_feishu_auth_kit_json,
+        raising=False,
+    )
+
+    module.cmd_auth(
+        [
+            "auth",
+            "feishu",
+            "retry",
+            "--operation-id",
+            "op_123",
+            "--text",
+            "retry original task",
+        ]
+    )
+
+    assert calls == [
+        [
+            "orchestration",
+            "retry",
+            "--operation-id",
+            "op_123",
+            "--text",
+            "retry original task",
+            "--continuation-store-path",
+            f"{tmp_path}/feishu_store/auth/continuations.json",
+        ]
+    ]
+    rendered = "\n".join(console_lines)
+    assert '"kind": "synthetic_retry"' in rendered
+
+
 def test_cmd_auth_feishu_login_requires_existing_app_credentials(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

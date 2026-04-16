@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import json
 import logging
 import time
 from collections.abc import Sequence
@@ -16,6 +17,7 @@ import aiohttp
 from rich.console import Console
 
 from controlmesh.config import AgentConfig
+from controlmesh.integrations.feishu_auth_kit import run_feishu_auth_kit, run_feishu_auth_kit_json
 from controlmesh.messenger.feishu.auth.device_flow import (
     DeviceAuthorization,
     poll_device_token,
@@ -64,44 +66,49 @@ def load_config() -> AgentConfig:
 
 def cmd_auth(args: Sequence[str]) -> None:
     """Handle transport auth commands."""
-    commands = [arg for arg in args if not arg.startswith("-")]
-    target, action = _parse_auth_command(commands)
+    target, action, action_args = _parse_auth_command(args)
     if target == "feishu":
-        _cmd_feishu_auth(action)
+        _cmd_feishu_auth(action, action_args)
         return
     if target == "weixin":
-        _cmd_weixin_auth(action)
+        _cmd_weixin_auth(action, action_args)
         return
     raise SystemExit(1)
 
 
-def _parse_auth_command(commands: Sequence[str]) -> tuple[str, str]:
-    if len(commands) < 3:
+def _parse_auth_command(args: Sequence[str]) -> tuple[str, str, list[str]]:
+    if len(args) < 3:
         raise SystemExit(1)
-    if commands[0] == "auth":
-        return commands[1], commands[2]
-    if commands[1] == "auth":
-        return commands[0], commands[2]
+    if args[0] == "auth":
+        return args[1], args[2], list(args[3:])
+    if args[1] == "auth":
+        return args[0], args[2], list(args[3:])
     raise SystemExit(1)
 
 
-def _cmd_feishu_auth(action: str) -> None:
-    if action == "setup":
-        _cmd_feishu_setup()
-        return
-    if action == "login":
-        asyncio.run(_cmd_feishu_login())
-        return
-    if action == "status":
-        _cmd_feishu_status()
-        return
-    if action == "logout":
-        _cmd_feishu_logout()
-        return
-    raise SystemExit(1)
+def _cmd_feishu_auth(action: str, action_args: Sequence[str] = ()) -> None:
+    match action:
+        case "setup":
+            _cmd_feishu_setup()
+        case "doctor":
+            _cmd_feishu_doctor()
+        case "plan":
+            _cmd_feishu_orchestration_plan(action_args)
+        case "route":
+            _cmd_feishu_orchestration_route(action_args)
+        case "retry":
+            _cmd_feishu_orchestration_retry(action_args)
+        case "login":
+            asyncio.run(_cmd_feishu_login())
+        case "status":
+            _cmd_feishu_status()
+        case "logout":
+            _cmd_feishu_logout()
+        case _:
+            raise SystemExit(1)
 
 
-def _cmd_weixin_auth(action: str) -> None:
+def _cmd_weixin_auth(action: str, action_args: Sequence[str] = ()) -> None:
     if action == "setup":
         _cmd_weixin_setup()
         return
@@ -117,6 +124,8 @@ def _cmd_weixin_auth(action: str) -> None:
     if action == "logout":
         _cmd_weixin_logout()
         return
+    if action_args:
+        raise SystemExit(1)
     raise SystemExit(1)
 
 
@@ -131,9 +140,145 @@ def _cmd_weixin_setup() -> None:
 def _cmd_feishu_setup() -> None:
     config = load_config()
     _console.print("Feishu setup: checking app-bot prerequisites.")
+    _render_feishu_auth_kit_setup(config)
     _render_feishu_setup_guidance(config)
     if _feishu_has_app_credentials(config):
         _console.print("Next step: run `controlmesh auth feishu status` or start the Feishu transport.")
+
+
+def _cmd_feishu_doctor() -> None:
+    config = load_config()
+    _ensure_feishu_app_credentials(config, action="doctor")
+    try:
+        result = run_feishu_auth_kit(
+            ["doctor", "--brand", config.feishu.brand],
+            extra_env={
+                "FEISHU_APP_ID": config.feishu.app_id,
+                "FEISHU_APP_SECRET": config.feishu.app_secret,
+                "FEISHU_BRAND": config.feishu.brand,
+            },
+        )
+    except FileNotFoundError as exc:
+        _console.print(str(exc))
+        raise SystemExit(1) from exc
+    _render_external_result(result)
+    if result.returncode != 0:
+        raise SystemExit(result.returncode)
+
+
+def _cmd_feishu_orchestration_plan(action_args: Sequence[str]) -> None:
+    parsed = _parse_kv_args(
+        action_args,
+        optional={"batch-size"},
+        repeated={"requested-scope", "app-scope", "user-scope"},
+        flags={"keep-sensitive"},
+        int_fields={"batch-size"},
+    )
+    requested_scopes = parsed.repeated["requested-scope"]
+    if not requested_scopes:
+        _console.print("Feishu orchestration plan requires at least one --requested-scope.")
+        raise SystemExit(1)
+
+    args = ["orchestration", "plan"]
+    _extend_repeated_arg(args, "--requested-scope", requested_scopes)
+    _extend_repeated_arg(args, "--app-scope", parsed.repeated["app-scope"])
+    _extend_repeated_arg(args, "--user-scope", parsed.repeated["user-scope"])
+    batch_size = parsed.values.get("batch-size")
+    if batch_size is not None:
+        args.extend(["--batch-size", batch_size])
+    if "keep-sensitive" in parsed.flags:
+        args.append("--keep-sensitive")
+    _render_json_payload(_run_feishu_orchestration_json(args))
+
+
+def _cmd_feishu_orchestration_route(action_args: Sequence[str]) -> None:
+    config = load_config()
+    _ensure_feishu_app_credentials(config, action="route")
+    parsed = _parse_kv_args(
+        action_args,
+        repeated={"required-scope"},
+        optional={
+            "error-kind",
+            "user-open-id",
+            "flow-key",
+            "operation-id",
+            "source",
+            "token-type",
+            "scope-need-type",
+            "permission-url",
+            "device-code",
+            "user-code",
+            "verification-uri",
+            "verification-uri-complete",
+            "expires-in",
+            "interval",
+            "continuation-store-path",
+            "pending-flow-store-path",
+        },
+        int_fields={"expires-in", "interval"},
+    )
+    required_scopes = parsed.repeated["required-scope"]
+    if not required_scopes:
+        _console.print("Feishu orchestration route requires at least one --required-scope.")
+        raise SystemExit(1)
+    error_kind = parsed.values.get("error-kind")
+    if error_kind is None:
+        _console.print("Feishu orchestration route requires --error-kind.")
+        raise SystemExit(1)
+
+    args = [
+        "orchestration",
+        "route",
+        "--app-id",
+        config.feishu.app_id,
+        "--error-kind",
+        error_kind,
+    ]
+    _extend_repeated_arg(args, "--required-scope", required_scopes)
+    _extend_optional_args(
+        args,
+        parsed.values,
+        [
+            "user-open-id",
+            "flow-key",
+            "operation-id",
+            "source",
+            "token-type",
+            "scope-need-type",
+            "permission-url",
+            "device-code",
+            "user-code",
+            "verification-uri",
+            "verification-uri-complete",
+            "expires-in",
+            "interval",
+        ],
+    )
+    _extend_default_store_paths(config, args, parsed.values)
+    _render_json_payload(_run_feishu_orchestration_json(args))
+
+
+def _cmd_feishu_orchestration_retry(action_args: Sequence[str]) -> None:
+    config = load_config()
+    parsed = _parse_kv_args(
+        action_args,
+        optional={"operation-id", "text", "reason", "continuation-store-path"},
+    )
+    operation_id = parsed.values.get("operation-id")
+    text = parsed.values.get("text")
+    if operation_id is None or text is None:
+        _console.print("Feishu orchestration retry requires --operation-id and --text.")
+        raise SystemExit(1)
+
+    args = ["orchestration", "retry", "--operation-id", operation_id, "--text", text]
+    _extend_optional_args(args, parsed.values, ["reason"])
+    args.extend(
+        [
+            "--continuation-store-path",
+            parsed.values.get("continuation-store-path") or _feishu_continuation_store_path(config),
+        ]
+    )
+    _render_json_payload(_run_feishu_orchestration_json(args))
 
 
 async def _cmd_feishu_login() -> None:
@@ -246,6 +391,145 @@ def _render_feishu_setup_guidance(config: AgentConfig) -> None:
     _console.print("6. Add the bot to a chat and send a first message to validate inbound/reply wiring.")
     _console.print("After app credentials exist, `controlmesh auth feishu login` only performs optional device-flow user auth.")
     _console.print("It does not create a new app or bot.")
+
+
+def _render_feishu_auth_kit_setup(config: AgentConfig) -> None:
+    try:
+        result = run_feishu_auth_kit(["setup", "--brand", config.feishu.brand])
+    except FileNotFoundError:
+        return
+    if result.returncode == 0:
+        _render_external_result(result)
+
+
+def _render_external_result(result: object) -> None:
+    stdout = getattr(result, "stdout", "") or ""
+    stderr = getattr(result, "stderr", "") or ""
+    for line in stdout.splitlines():
+        _console.print(line)
+    for line in stderr.splitlines():
+        _console.print(line)
+
+
+def _run_feishu_orchestration_json(args: list[str]) -> dict[str, object]:
+    try:
+        return run_feishu_auth_kit_json(args)
+    except FileNotFoundError as exc:
+        _console.print(str(exc))
+        raise SystemExit(1) from exc
+    except (RuntimeError, TypeError) as exc:
+        _console.print(str(exc))
+        raise SystemExit(1) from exc
+
+
+def _render_json_payload(payload: dict[str, object]) -> None:
+    _console.print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+
+
+class _ParsedArgs:
+    def __init__(
+        self,
+        *,
+        values: dict[str, str],
+        repeated: dict[str, list[str]],
+        flags: set[str],
+    ) -> None:
+        self.values = values
+        self.repeated = repeated
+        self.flags = flags
+
+
+def _parse_kv_args(
+    action_args: Sequence[str],
+    *,
+    optional: set[str] | None = None,
+    repeated: set[str] | None = None,
+    flags: set[str] | None = None,
+    int_fields: set[str] | None = None,
+) -> _ParsedArgs:
+    optional = optional or set()
+    repeated = repeated or set()
+    flags = flags or set()
+    int_fields = int_fields or set()
+    values: dict[str, str] = {}
+    repeated_values: dict[str, list[str]] = {key: [] for key in repeated}
+    flag_values: set[str] = set()
+    index = 0
+    while index < len(action_args):
+        raw_key = action_args[index]
+        if not raw_key.startswith("--"):
+            _console.print(f"Unexpected Feishu auth argument: {raw_key}")
+            raise SystemExit(1)
+        key = raw_key[2:]
+        if key in flags:
+            flag_values.add(key)
+            index += 1
+            continue
+        if key not in optional and key not in repeated:
+            _console.print(f"Unknown Feishu auth option: {raw_key}")
+            raise SystemExit(1)
+        if index + 1 >= len(action_args):
+            _console.print(f"Missing value for Feishu auth option: {raw_key}")
+            raise SystemExit(1)
+        value = action_args[index + 1]
+        if value.startswith("--"):
+            _console.print(f"Missing value for Feishu auth option: {raw_key}")
+            raise SystemExit(1)
+        if key in int_fields:
+            try:
+                int(value)
+            except ValueError as exc:
+                _console.print(f"Feishu auth option {raw_key} requires an integer.")
+                raise SystemExit(1) from exc
+        if key in repeated:
+            repeated_values[key].extend(_split_csv(value))
+        else:
+            values[key] = value
+        index += 2
+    return _ParsedArgs(values=values, repeated=repeated_values, flags=flag_values)
+
+
+def _split_csv(value: str) -> list[str]:
+    return [part.strip() for part in value.split(",") if part.strip()]
+
+
+def _extend_repeated_arg(args: list[str], option: str, values: Sequence[str]) -> None:
+    for value in values:
+        args.extend([option, value])
+
+
+def _extend_optional_args(args: list[str], values: dict[str, str], keys: Sequence[str]) -> None:
+    for key in keys:
+        value = values.get(key)
+        if value is not None:
+            args.extend([f"--{key}", value])
+
+
+def _extend_default_store_paths(
+    config: AgentConfig,
+    args: list[str],
+    values: dict[str, str],
+) -> None:
+    args.extend(
+        [
+            "--continuation-store-path",
+            values.get("continuation-store-path") or _feishu_continuation_store_path(config),
+            "--pending-flow-store-path",
+            values.get("pending-flow-store-path") or _feishu_pending_flow_store_path(config),
+        ]
+    )
+
+
+def _feishu_auth_state_dir(config: AgentConfig) -> Path:
+    return Path(config.controlmesh_home).expanduser() / "feishu_store" / "auth"
+
+
+def _feishu_continuation_store_path(config: AgentConfig) -> str:
+    return str(_feishu_auth_state_dir(config) / "continuations.json")
+
+
+def _feishu_pending_flow_store_path(config: AgentConfig) -> str:
+    return str(_feishu_auth_state_dir(config) / "pending_flows.json")
 
 
 async def _cmd_weixin_login() -> None:
