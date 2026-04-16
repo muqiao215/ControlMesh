@@ -178,6 +178,7 @@ class FeishuConfig(BaseModel):
     """Feishu bot-only transport settings."""
 
     mode: str = "bot_only"
+    runtime_mode: Literal["bridge", "native"] = "bridge"
     brand: str = "feishu"
     app_id: str = ""
     app_secret: str = ""
@@ -235,6 +236,9 @@ class FeishuConfig(BaseModel):
             raise ValueError(msg)
         if self.brand != "feishu":
             msg = "Feishu cut 1 supports only brand='feishu'"
+            raise ValueError(msg)
+        if self.progress_mode == "card_stream" and self.runtime_mode != "native":
+            msg = "Feishu progress_mode='card_stream' requires runtime_mode='native'"
             raise ValueError(msg)
         return self
 

@@ -461,6 +461,8 @@ def _ensure_feishu_app_credentials(config: AgentConfig, *, action: str) -> None:
 def _render_feishu_app_state(config: AgentConfig) -> None:
     missing = _feishu_missing_app_credentials(config)
     _console.print(f"Feishu app configured: {str(not missing).lower()}")
+    _console.print(f"Feishu runtime mode: {config.feishu.runtime_mode}")
+    _console.print(f"Feishu progress mode: {config.feishu.progress_mode}")
     _console.print(f"Feishu brand: {config.feishu.brand}")
     _console.print(f"Feishu app_id: {config.feishu.app_id or 'missing'}")
     _console.print(f"Feishu app_secret: {'present' if config.feishu.app_secret else 'missing'}")
@@ -470,20 +472,25 @@ def _render_feishu_app_state(config: AgentConfig) -> None:
 
 def _render_feishu_setup_guidance(config: AgentConfig) -> None:
     _render_feishu_app_state(config)
-    _console.print("Feishu independent auth boundary: ControlMesh can verify and use an app bot,")
-    _console.print("and it can now delegate official Feishu/Lark scan-to-create registration through feishu-auth-kit.")
-    _console.print("It still does not bypass official registration, approval, publishing, or tenant policy.")
+    _console.print("Feishu has two explicit runtime tracks:")
+    _console.print("- native: official scan-create/app registration + CardKit/SDK-oriented runtime path.")
+    _console.print("- bridge: reuse an existing app_id/app_secret and treat Feishu mainly as the chat bridge.")
+    _console.print("ControlMesh can verify and use an app bot, and it can now delegate official Feishu/Lark")
+    _console.print("scan-to-create registration through feishu-auth-kit. It still does not bypass official")
+    _console.print("registration, approval, publishing, or tenant policy.")
     _console.print(f"Feishu Open Platform app console: {_FEISHU_APP_CONSOLE_URL}")
     _console.print(f"Feishu self-built app guide: {_FEISHU_APP_DEV_GUIDE_URL}")
     _console.print("Required setup for a new user with no Feishu bot:")
-    _console.print("1. Preferred path: run `controlmesh auth feishu register-begin` and scan the official QR flow.")
+    _console.print("1. Preferred native path: run `controlmesh auth feishu register-begin` and scan the official QR flow.")
     _console.print("2. Then run `controlmesh auth feishu register-poll --device-code <code>` until credentials are returned.")
-    _console.print("3. Manual fallback: create a Feishu self-built app in the app console.")
-    _console.print("4. Enable the Bot capability and install/publish it to the target tenant.")
-    _console.print("5. Enable event delivery for messages, preferably long-connection mode for ControlMesh.")
-    _console.print("6. Subscribe to message receive events such as im.message.receive_v1.")
-    _console.print("7. Copy the app_id and app_secret into config.json under the feishu section.")
-    _console.print("8. Add the bot to a chat and send a first message to validate inbound/reply wiring.")
+    _console.print("3. That path writes `runtime_mode=native` and enables CardKit streaming by default.")
+    _console.print("4. Manual bridge fallback: create a Feishu self-built app in the app console.")
+    _console.print("5. Put the app_id/app_secret into config.json and keep `runtime_mode=bridge`.")
+    _console.print("6. Bridge mode supports ordinary message/card preview UX but not the full native SDK surface.")
+    _console.print("7. Enable the Bot capability and install/publish it to the target tenant.")
+    _console.print("8. Enable event delivery for messages, preferably long-connection mode for ControlMesh.")
+    _console.print("9. Subscribe to message receive events such as im.message.receive_v1.")
+    _console.print("10. Add the bot to a chat and send a first message to validate inbound/reply wiring.")
     _console.print("Manual fallback remains valid if the official scan-to-create flow is unavailable in your environment.")
     _console.print("After app credentials exist, `controlmesh auth feishu login` only performs optional device-flow user auth.")
     _console.print("It does not create a new app or bot.")
@@ -552,6 +559,8 @@ def _write_feishu_registration_to_config(
     next_feishu = dict(feishu_raw)
     next_feishu["app_id"] = app_id
     next_feishu["app_secret"] = app_secret
+    next_feishu["runtime_mode"] = "native"
+    next_feishu["progress_mode"] = "card_stream"
     if registration_domain == "lark":
         next_feishu["domain"] = "https://open.larksuite.com"
     else:

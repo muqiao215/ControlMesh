@@ -179,9 +179,20 @@ def test_transport_feishu_backward_compat() -> None:
 
 
 def test_feishu_progress_mode_accepts_card_stream() -> None:
-    cfg = AgentConfig(transport="feishu", feishu={"progress_mode": "card_stream"})
+    cfg = AgentConfig(
+        transport="feishu",
+        feishu={"runtime_mode": "native", "progress_mode": "card_stream"},
+    )
 
     assert cfg.feishu.progress_mode == "card_stream"
+
+
+def test_feishu_card_stream_requires_native_runtime_mode() -> None:
+    with pytest.raises(ValueError, match="runtime_mode='native'"):
+        AgentConfig(
+            transport="feishu",
+            feishu={"runtime_mode": "bridge", "progress_mode": "card_stream"},
+        )
 
 
 def test_transport_weixin_backward_compat() -> None:

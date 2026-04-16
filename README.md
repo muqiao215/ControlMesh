@@ -96,7 +96,7 @@ controlmesh auth feishu plan --requested-scope im:message --app-scope im:message
 controlmesh auth feishu route --error-kind app_scope_missing --required-scope im:message --permission-url "<url>"
 ```
 
-`setup` 会说明零 app 用户如何优先走官方扫码创建；`register-begin/register-poll` 直接复用独立 `feishu-auth-kit` 的官方 scan-to-create/app-registration 能力，其中 `register-poll` 成功后会自动写回 ControlMesh 配置、自动 probe，并告诉你 transport 是否 ready；`doctor/probe` 继续委托 `feishu-auth-kit` 做 app/scopes/AI-agent 诊断；`plan/route/retry` 复用 `feishu-auth-kit orchestration` 的 OpenClaw 式授权编排原语。`controlmesh auth feishu login` 仍然只是复用已有 app 做用户认证，不负责创建机器人。详见 [`docs/feishu-setup.md`](docs/feishu-setup.md)。
+`setup` 会说明零 app 用户如何优先走官方扫码创建；`register-begin/register-poll` 直接复用独立 `feishu-auth-kit` 的官方 scan-to-create/app-registration 能力，其中 `register-poll` 成功后会自动写回 `feishu.runtime_mode=native` 和 `feishu.progress_mode=card_stream`、自动 probe，并告诉你 transport 是否 ready；`doctor/probe` 继续委托 `feishu-auth-kit` 做 app/scopes/AI-agent 诊断；`plan/route/retry` 复用 `feishu-auth-kit orchestration` 的 OpenClaw 式授权编排原语。手工填写 `app_id/app_secret` 的兼容路径属于 `bridge` runtime。`controlmesh auth feishu login` 仍然只是复用已有 app 做用户认证，不负责创建机器人。详见 [`docs/feishu-setup.md`](docs/feishu-setup.md)。
 
 Feishu runtime 也已经接入最小授权编排桥：权限卡片可以保存 continuation，用户点击完成后生成 synthetic retry 并回注当前 Feishu 会话。开发/验活入口为 `/feishu_permission --scope ... --url ... --text ...`；自动从 API 权限异常触发这一步仍是下一阶段。
 
@@ -232,7 +232,7 @@ controlmesh auth feishu probe
 controlmesh auth feishu plan --requested-scope im:message --app-scope im:message
 ```
 
-These commands expose the official scan-to-create Feishu/Lark onboarding path through the standalone `feishu-auth-kit`, and `register-poll` now closes the CLI loop by writing successful credentials back into ControlMesh config, probing the app, and reporting readiness. App diagnostics/probe still stay in the standalone repo, and OpenClaw-style auth orchestration remains behind the same narrow subprocess seam. `controlmesh auth feishu login` still reuses an existing app for user auth rather than creating the bot. See [`docs/feishu-setup.md`](docs/feishu-setup.md).
+These commands expose the official scan-to-create Feishu/Lark onboarding path through the standalone `feishu-auth-kit`, and `register-poll` now closes the CLI loop by writing successful credentials back into ControlMesh config as the `native` runtime path, probing the app, and reporting readiness. Manual `app_id/app_secret` reuse remains the `bridge` runtime path. App diagnostics/probe still stay in the standalone repo, and OpenClaw-style auth orchestration remains behind the same narrow subprocess seam. `controlmesh auth feishu login` still reuses an existing app for user auth rather than creating the bot. See [`docs/feishu-setup.md`](docs/feishu-setup.md).
 
 The Feishu runtime also has a minimal auth orchestration bridge: a permission card can persist continuation state, receive a card-action callback, and reinject a synthetic retry into the same Feishu chat/session. The development smoke entrypoint is `/feishu_permission --scope ... --url ... --text ...`; automatic triggering from Feishu API permission errors remains the next integration step.
 

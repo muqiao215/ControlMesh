@@ -100,10 +100,11 @@ def test_cmd_auth_feishu_setup_guides_zero_app_users(
 
     rendered = "\n".join(console_lines)
     assert "Feishu app configured: false" in rendered
+    assert "Feishu runtime mode: bridge" in rendered
     assert "missing feishu.app_id" in rendered or "feishu.app_id" in rendered
     assert "controlmesh auth feishu register-begin" in rendered
-    assert "official Feishu/Lark scan-to-create" in rendered
-    assert "Manual fallback" in rendered
+    assert "native path" in rendered
+    assert "Manual bridge fallback" in rendered
     assert "controlmesh auth feishu login" in rendered
 
 
@@ -356,6 +357,8 @@ def test_cmd_auth_feishu_register_poll_preserves_existing_allowlist(
 
     saved = json.loads(config_path.read_text(encoding="utf-8"))
     assert saved["feishu"]["allow_from"] == ["ou_existing"]
+    assert saved["feishu"]["runtime_mode"] == "native"
+    assert saved["feishu"]["progress_mode"] == "card_stream"
 
 
 def test_cmd_auth_feishu_register_poll_writes_config_even_when_probe_fails(
@@ -400,6 +403,8 @@ def test_cmd_auth_feishu_register_poll_writes_config_even_when_probe_fails(
     saved = json.loads(config_path.read_text(encoding="utf-8"))
     assert saved["feishu"]["app_id"] == "cli_new"
     assert saved["feishu"]["app_secret"] == "secret-new"
+    assert saved["feishu"]["runtime_mode"] == "native"
+    assert saved["feishu"]["progress_mode"] == "card_stream"
     rendered = "\n".join(console_lines)
     assert "ControlMesh config updated:" in rendered
     assert "Feishu AI agent probe: FAILED" in rendered

@@ -137,6 +137,7 @@ Notes:
 | Field | Type | Default | Notes |
 |---|---|---|---|
 | `mode` | `str` | `"bot_only"` | Cut 1 only supports `bot_only` |
+| `runtime_mode` | `"bridge" \| "native"` | `"bridge"` | `bridge` reuses an existing app as a chat bridge; `native` is the Feishu-first runtime path for scan-create/CardKit/SDK features |
 | `brand` | `str` | `"feishu"` | Cut 1 only supports domestic Feishu, not Lark webhook mode |
 | `app_id` | `str` | `""` | Feishu app ID |
 | `app_secret` | `str` | `""` | Feishu app secret |
@@ -145,13 +146,14 @@ Notes:
 | `group_reply_all` | `bool` | `false` | Reserved bot-only group behavior knob for later cuts |
 | `thread_isolation` | `bool` | `false` | When enabled, inbound thread/root IDs get separate ControlMesh session keys |
 | `reply_to_trigger` | `bool` | `true` | Reply to the triggering Feishu message when possible |
-| `progress_mode` | `"text" \| "card_preview" \| "card_stream"` | `"text"` | `text` sends plain progress text; `card_preview` repeatedly patches one interactive card; `card_stream` uses Feishu CardKit streaming card APIs |
+| `progress_mode` | `"text" \| "card_preview" \| "card_stream"` | `"text"` | `text` sends plain progress text; `card_preview` repeatedly patches one interactive card; `card_stream` uses Feishu CardKit streaming card APIs and requires `runtime_mode="native"` |
 
 Current implementation status:
 
 - domestic Feishu runtime is the primary tested path
 - bot-only mode is the production runtime path
-- zero-start bot/app creation is available through `controlmesh auth feishu register-begin` + `register-poll`
+- `bridge` is the compatibility path for manually managed `app_id/app_secret` setups
+- `native` is the Feishu-first path; `controlmesh auth feishu register-begin` + `register-poll` writes `runtime_mode=native`
 - `card_stream` uses CardKit create/update/close APIs and falls back to ordinary text if CardKit is unavailable
 - optional device-flow auth reuses the configured app for user-token flows
 - see `docs/feishu-setup.md` for the first-time app-bot setup path

@@ -1,6 +1,11 @@
 # Feishu Setup
 
-ControlMesh currently supports an early Feishu app-bot path.
+ControlMesh currently supports two distinct Feishu runtime tracks:
+
+- `native`: the Feishu-first path. Use the official scan-to-create flow, keep
+  SDK/CardKit capabilities available, and prefer true streaming cards.
+- `bridge`: the compatibility path. Reuse an existing `app_id/app_secret` and
+  treat Feishu mainly as the chat interface.
 
 Important boundary:
 
@@ -29,6 +34,8 @@ ControlMesh now closes the CLI loop on `register-poll`:
 
 - writes `feishu.app_id` and `feishu.app_secret` back into the ControlMesh config
   using atomic JSON save
+- writes `feishu.runtime_mode=native`
+- writes `feishu.progress_mode=card_stream`
 - writes the resolved Open Platform base URL into `feishu.domain`
 - preserves unrelated config fields and existing Feishu settings
 - initializes `feishu.allow_from` from the returned owner `open_id` only when
@@ -37,7 +44,7 @@ ControlMesh now closes the CLI loop on `register-poll`:
   credentials and reports transport readiness
 
 Manual fallback remains available if scan-to-create is unavailable in your
-tenant/environment:
+tenant/environment. That path is the `bridge` runtime:
 
 1. Open the Feishu Open Platform app console: <https://open.feishu.cn/app>
 2. Create a self-built app for your tenant.
@@ -55,6 +62,7 @@ Example config shape:
   "transport": "feishu",
   "feishu": {
     "mode": "bot_only",
+    "runtime_mode": "bridge",
     "brand": "feishu",
     "app_id": "cli_xxx",
     "app_secret": "xxx"
@@ -85,8 +93,9 @@ Use them like this:
 - `register-begin`: delegates to `feishu-auth-kit register scan-create --no-poll --json`
   and exposes the official from-zero QR/link onboarding payload.
 - `register-poll`: delegates to `feishu-auth-kit register poll --json`, writes
-  the successful credentials back into ControlMesh config, auto-runs probe, and
-  tells you whether Feishu transport is ready to start.
+  the successful credentials back into ControlMesh config as the `native`
+  runtime path, auto-runs probe, and tells you whether Feishu transport is
+  ready to start.
 - `doctor`: delegates app credential and scope diagnostics to the standalone
   `feishu-auth-kit` repo/CLI while keeping ControlMesh itself independent from
   Feishu onboarding internals.
@@ -103,7 +112,7 @@ Use them like this:
 - `retry`: delegates to `feishu-auth-kit orchestration retry` and turns a saved
   continuation into a messenger-agnostic synthetic retry artifact.
 - `status`: shows whether `app_id/app_secret` are configured and whether device-flow auth is active.
-- `login`: runs device-flow auth against the already-configured app. It does not replace app creation.
+- `login`: runs device-flow auth against the already-configured app. It does not replace app creation; this is primarily the `bridge` companion path when you already manage the app manually.
 
 This is the ControlMesh side of the OpenClaw-style auth split:
 

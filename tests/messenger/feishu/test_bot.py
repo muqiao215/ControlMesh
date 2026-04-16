@@ -531,7 +531,7 @@ class TestFeishuBotRouting:
         self,
         tmp_path: Path,
     ) -> None:
-        bot = _make_bot(tmp_path, progress_mode="card_stream")
+        bot = _make_bot(tmp_path, runtime_mode="native", progress_mode="card_stream")
         bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
         bot._create_streaming_card = AsyncMock(return_value="card_1")  # type: ignore[attr-defined]
         bot._send_card_to_chat_ref = AsyncMock(return_value="om_stream")  # type: ignore[attr-defined]
@@ -581,7 +581,7 @@ class TestFeishuBotRouting:
         self,
         tmp_path: Path,
     ) -> None:
-        bot = _make_bot(tmp_path, progress_mode="card_stream")
+        bot = _make_bot(tmp_path, runtime_mode="native", progress_mode="card_stream")
         bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
         bot._create_streaming_card = AsyncMock(return_value=None)  # type: ignore[attr-defined]
         bot._send_card_to_chat_ref = AsyncMock()  # type: ignore[attr-defined]
