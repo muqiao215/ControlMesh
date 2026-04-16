@@ -10,7 +10,7 @@ import json
 import logging
 import time
 from collections.abc import Callable, Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -18,6 +18,7 @@ import aiohttp
 from rich.console import Console
 
 from controlmesh.config import AgentConfig
+from controlmesh.infra.json_store import atomic_json_save
 from controlmesh.integrations.feishu_auth_kit import run_feishu_auth_kit, run_feishu_auth_kit_json
 from controlmesh.messenger.feishu.auth.device_flow import (
     DeviceAuthorization,
@@ -44,6 +45,7 @@ from controlmesh.messenger.weixin.auth_store import (
 )
 from controlmesh.messenger.weixin.id_map import WeixinIdMap
 from controlmesh.messenger.weixin.runtime_state import WeixinRuntimeStateStore
+from controlmesh.workspace.paths import resolve_paths
 
 _console = Console()
 _WEIXIN_QR_POLL_INTERVAL_SECONDS = 2.0
@@ -194,7 +196,56 @@ def _cmd_feishu_register_poll(action_args: Sequence[str]) -> None:
     ]
     _extend_optional_args(args, parsed.values, ["interval", "expires-in", "poll-timeout", "tp"])
     args.append("--json")
-    _render_json_payload(_run_feishu_auth_kit_json(args))
+    payload = _run_feishu_auth_kit_json(args)
+    if payload.get("status") != "success":
+        _render_json_payload(payload)
+        return
+
+    write_result = _write_feishu_registration_to_config(config=config, payload=payload)
+    probe_payload = _run_feishu_auth_kit_json(
+        ["register", "probe", "--brand", write_result.probe_brand, "--json"],
+        extra_env={
+            "FEISHU_APP_ID": write_result.app_id,
+            "FEISHU_APP_SECRET": write_result.app_secret,
+            "FEISHU_BRAND": write_result.probe_brand,
+        },
+    )
+    readiness = _feishu_registration_readiness(
+        registration_domain=write_result.registration_domain,
+        probe_payload=probe_payload,
+    )
+    _console.print("Feishu registration completed.")
+    _console.print(f"ControlMesh config updated: {write_result.config_path}")
+    _console.print(f"Feishu app_id: {write_result.app_id}")
+    _console.print(f"Feishu registration domain: {write_result.registration_domain}")
+    if write_result.allow_from_initialized and write_result.owner_open_id:
+        _console.print(
+            f"Feishu allow_from initialized from owner open_id: {write_result.owner_open_id}"
+        )
+    elif write_result.owner_open_id:
+        _console.print(
+            "Feishu owner open_id returned by registration, but existing allow_from was preserved."
+        )
+    _console.print(f"Feishu AI agent probe: {'OK' if probe_payload.get('ok') else 'FAILED'}")
+    if probe_payload.get("bot_name"):
+        _console.print(f"Feishu bot name: {probe_payload['bot_name']}")
+    if probe_payload.get("bot_open_id"):
+        _console.print(f"Feishu bot open_id: {probe_payload['bot_open_id']}")
+    if probe_payload.get("error"):
+        _console.print(f"Feishu probe error: {probe_payload['error']}")
+    _console.print(f"Feishu transport readiness: {readiness}")
+    if readiness == "ready":
+        _console.print(
+            "Next step: restart ControlMesh or start the Feishu transport so it reloads the new config."
+        )
+    elif readiness == "config-written-probe-failed":
+        _console.print(
+            "Config has been written, but probe failed. Fix the probe issue or rerun `controlmesh auth feishu probe` before starting the transport."
+        )
+    else:
+        _console.print(
+            "Config has been written, but this registration domain is not fully supported by the current ControlMesh Feishu runtime."
+        )
 
 
 def _cmd_feishu_probe() -> None:
@@ -462,6 +513,81 @@ def _feishu_auth_env(config: AgentConfig) -> dict[str, str]:
         "FEISHU_APP_SECRET": config.feishu.app_secret,
         "FEISHU_BRAND": config.feishu.brand,
     }
+
+
+@dataclass(frozen=True)
+class _FeishuRegistrationWriteResult:
+    config_path: Path
+    app_id: str
+    app_secret: str
+    registration_domain: str
+    probe_brand: str
+    owner_open_id: str | None
+    allow_from_initialized: bool
+
+
+def _write_feishu_registration_to_config(
+    *,
+    config: AgentConfig,
+    payload: dict[str, object],
+) -> _FeishuRegistrationWriteResult:
+    config_path = resolve_paths(controlmesh_home=config.controlmesh_home).config_path
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    if config_path.exists():
+        raw = json.loads(config_path.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            raw = {}
+    else:
+        raw = config.model_dump(mode="json")
+
+    feishu_raw = raw.get("feishu", {})
+    if not isinstance(feishu_raw, dict):
+        feishu_raw = {}
+
+    app_id = str(payload["app_id"])
+    app_secret = str(payload["app_secret"])
+    registration_domain = str(payload.get("domain") or "feishu")
+    owner_open_id = str(payload["open_id"]) if payload.get("open_id") else None
+
+    next_feishu = dict(feishu_raw)
+    next_feishu["app_id"] = app_id
+    next_feishu["app_secret"] = app_secret
+    if registration_domain == "lark":
+        next_feishu["domain"] = "https://open.larksuite.com"
+    else:
+        next_feishu["brand"] = "feishu"
+        next_feishu["domain"] = "https://open.feishu.cn"
+
+    allow_from_initialized = False
+    if owner_open_id:
+        existing_allow_from = next_feishu.get("allow_from")
+        if not isinstance(existing_allow_from, list) or not existing_allow_from:
+            next_feishu["allow_from"] = [owner_open_id]
+            allow_from_initialized = True
+
+    raw["feishu"] = next_feishu
+    atomic_json_save(config_path, raw)
+    return _FeishuRegistrationWriteResult(
+        config_path=config_path,
+        app_id=app_id,
+        app_secret=app_secret,
+        registration_domain=registration_domain,
+        probe_brand="lark" if registration_domain == "lark" else "feishu",
+        owner_open_id=owner_open_id,
+        allow_from_initialized=allow_from_initialized,
+    )
+
+
+def _feishu_registration_readiness(
+    *,
+    registration_domain: str,
+    probe_payload: dict[str, object],
+) -> str:
+    if registration_domain != "feishu":
+        return "config-written-unsupported-domain"
+    if probe_payload.get("ok") is True:
+        return "ready"
+    return "config-written-probe-failed"
 
 
 def _run_feishu_auth_kit_json(

@@ -25,6 +25,17 @@ Render or open the QR URL for the user to scan with Feishu/Lark, then call
 `register-poll` until it returns `status=success` with `app_id`, `app_secret`,
 `domain`, and optionally `open_id`.
 
+ControlMesh now closes the CLI loop on `register-poll`:
+
+- writes `feishu.app_id` and `feishu.app_secret` back into the ControlMesh config
+  using atomic JSON save
+- writes the resolved Open Platform base URL into `feishu.domain`
+- preserves unrelated config fields and existing Feishu settings
+- initializes `feishu.allow_from` from the returned owner `open_id` only when
+  no allowlist already exists
+- automatically calls `controlmesh auth feishu probe` logic with the new
+  credentials and reports transport readiness
+
 Manual fallback remains available if scan-to-create is unavailable in your
 tenant/environment:
 
@@ -73,8 +84,9 @@ Use them like this:
   instead of maintaining a separate copy only.
 - `register-begin`: delegates to `feishu-auth-kit register scan-create --no-poll --json`
   and exposes the official from-zero QR/link onboarding payload.
-- `register-poll`: delegates to `feishu-auth-kit register poll --json` and returns
-  the registered app credentials once the user finishes the QR flow.
+- `register-poll`: delegates to `feishu-auth-kit register poll --json`, writes
+  the successful credentials back into ControlMesh config, auto-runs probe, and
+  tells you whether Feishu transport is ready to start.
 - `doctor`: delegates app credential and scope diagnostics to the standalone
   `feishu-auth-kit` repo/CLI while keeping ControlMesh itself independent from
   Feishu onboarding internals.

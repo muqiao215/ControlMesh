@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -10,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 from controlmesh.config import AgentConfig
 from controlmesh.messenger.feishu.auth.device_flow import DeviceAuthorization, DeviceTokenGrant
+from controlmesh.workspace.paths import resolve_paths
 
 if TYPE_CHECKING:
     import pytest
@@ -47,6 +49,13 @@ def _feishu_config_without_app(tmp_path: Path) -> AgentConfig:
             "brand": "feishu",
         },
     )
+
+
+def _write_config_file(tmp_path: Path, data: dict[str, object]) -> Path:
+    path = resolve_paths(controlmesh_home=tmp_path).config_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    return path
 
 
 def test_main_routes_auth_feishu_login_to_auth_command(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -180,21 +189,45 @@ def test_cmd_auth_feishu_register_begin_delegates_to_scan_create_no_poll(
     assert "oc_onboard" in rendered
 
 
-def test_cmd_auth_feishu_register_poll_delegates_to_auth_kit_poll(
+def test_cmd_auth_feishu_register_poll_writes_config_probes_and_reports_readiness(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     module = _import_auth_cli_module()
     config = _feishu_config_without_app(tmp_path)
+    config_path = _write_config_file(
+        tmp_path,
+        {
+            "transport": "feishu",
+            "transports": ["feishu"],
+            "provider": "claude",
+            "feishu": {
+                "mode": "bot_only",
+                "brand": "feishu",
+                "group_reply_all": True,
+            },
+        },
+    )
     console_lines: list[str] = []
-    calls: list[list[str]] = []
+    calls: list[tuple[list[str], dict[str, str]]] = []
 
     class _FakeConsole:
         def print(self, *args: object, **kwargs: object) -> None:
             console_lines.append(" ".join(str(arg) for arg in args))
 
-    def _fake_run_feishu_auth_kit_json(args: list[str]) -> dict[str, object]:
-        calls.append(args)
+    def _fake_run_feishu_auth_kit_json(
+        args: list[str],
+        *,
+        extra_env: dict[str, str] | None = None,
+    ) -> dict[str, object]:
+        calls.append((args, extra_env or {}))
+        if args[:2] == ["register", "probe"]:
+            return {
+                "ok": True,
+                "app_id": "cli_new",
+                "bot_name": "ControlMesh Bot",
+                "bot_open_id": "ou_bot",
+            }
         return {
             "status": "success",
             "app_id": "cli_new",
@@ -229,25 +262,148 @@ def test_cmd_auth_feishu_register_poll_delegates_to_auth_kit_poll(
     )
 
     assert calls == [
-        [
-            "register",
-            "poll",
-            "--brand",
-            "feishu",
-            "--device-code",
-            "dev_123",
-            "--interval",
-            "5",
-            "--expires-in",
-            "600",
-            "--poll-timeout",
-            "30",
-            "--json",
-        ]
+        (
+            [
+                "register",
+                "poll",
+                "--brand",
+                "feishu",
+                "--device-code",
+                "dev_123",
+                "--interval",
+                "5",
+                "--expires-in",
+                "600",
+                "--poll-timeout",
+                "30",
+                "--json",
+            ],
+            {},
+        ),
+        (
+            ["register", "probe", "--brand", "feishu", "--json"],
+            {
+                "FEISHU_APP_ID": "cli_new",
+                "FEISHU_APP_SECRET": "secret-new",
+                "FEISHU_BRAND": "feishu",
+            },
+        ),
     ]
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    assert saved["provider"] == "claude"
+    assert saved["feishu"]["app_id"] == "cli_new"
+    assert saved["feishu"]["app_secret"] == "secret-new"
+    assert saved["feishu"]["brand"] == "feishu"
+    assert saved["feishu"]["domain"] == "https://open.feishu.cn"
+    assert saved["feishu"]["allow_from"] == ["ou_owner"]
+    assert saved["feishu"]["group_reply_all"] is True
     rendered = "\n".join(console_lines)
-    assert '"status": "success"' in rendered
-    assert '"app_id": "cli_new"' in rendered
+    assert "Feishu registration completed." in rendered
+    assert f"ControlMesh config updated: {config_path}" in rendered
+    assert "Feishu AI agent probe: OK" in rendered
+    assert "Feishu transport readiness: ready" in rendered
+    assert "restart ControlMesh" in rendered
+
+
+def test_cmd_auth_feishu_register_poll_preserves_existing_allowlist(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _import_auth_cli_module()
+    config = _feishu_config_without_app(tmp_path)
+    config_path = _write_config_file(
+        tmp_path,
+        {
+            "transport": "feishu",
+            "feishu": {
+                "mode": "bot_only",
+                "brand": "feishu",
+                "allow_from": ["ou_existing"],
+            },
+        },
+    )
+
+    class _FakeConsole:
+        def print(self, *args: object, **kwargs: object) -> None:
+            return None
+
+    def _fake_run_feishu_auth_kit_json(
+        args: list[str],
+        *,
+        extra_env: dict[str, str] | None = None,
+    ) -> dict[str, object]:
+        _ = extra_env
+        if args[:2] == ["register", "probe"]:
+            return {"ok": True, "app_id": "cli_new"}
+        return {
+            "status": "success",
+            "app_id": "cli_new",
+            "app_secret": "secret-new",
+            "domain": "feishu",
+            "open_id": "ou_owner",
+        }
+
+    monkeypatch.setattr(module, "_console", _FakeConsole(), raising=False)
+    monkeypatch.setattr(module, "load_config", lambda: config, raising=False)
+    monkeypatch.setattr(
+        module,
+        "run_feishu_auth_kit_json",
+        _fake_run_feishu_auth_kit_json,
+        raising=False,
+    )
+
+    module.cmd_auth(["auth", "feishu", "register-poll", "--device-code", "dev_123"])
+
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    assert saved["feishu"]["allow_from"] == ["ou_existing"]
+
+
+def test_cmd_auth_feishu_register_poll_writes_config_even_when_probe_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _import_auth_cli_module()
+    config = _feishu_config_without_app(tmp_path)
+    config_path = _write_config_file(tmp_path, {"transport": "feishu", "feishu": {}})
+    console_lines: list[str] = []
+
+    class _FakeConsole:
+        def print(self, *args: object, **kwargs: object) -> None:
+            console_lines.append(" ".join(str(arg) for arg in args))
+
+    def _fake_run_feishu_auth_kit_json(
+        args: list[str],
+        *,
+        extra_env: dict[str, str] | None = None,
+    ) -> dict[str, object]:
+        _ = extra_env
+        if args[:2] == ["register", "probe"]:
+            return {"ok": False, "app_id": "cli_new", "error": "API error"}
+        return {
+            "status": "success",
+            "app_id": "cli_new",
+            "app_secret": "secret-new",
+            "domain": "feishu",
+        }
+
+    monkeypatch.setattr(module, "_console", _FakeConsole(), raising=False)
+    monkeypatch.setattr(module, "load_config", lambda: config, raising=False)
+    monkeypatch.setattr(
+        module,
+        "run_feishu_auth_kit_json",
+        _fake_run_feishu_auth_kit_json,
+        raising=False,
+    )
+
+    module.cmd_auth(["auth", "feishu", "register-poll", "--device-code", "dev_123"])
+
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    assert saved["feishu"]["app_id"] == "cli_new"
+    assert saved["feishu"]["app_secret"] == "secret-new"
+    rendered = "\n".join(console_lines)
+    assert "ControlMesh config updated:" in rendered
+    assert "Feishu AI agent probe: FAILED" in rendered
+    assert "Feishu transport readiness: config-written-probe-failed" in rendered
 
 
 def test_cmd_auth_feishu_probe_delegates_to_register_probe_with_env_credentials(
