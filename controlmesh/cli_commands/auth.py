@@ -48,6 +48,11 @@ _WEIXIN_QR_POLL_RETRY_LIMIT = 3
 _WEIXIN_QR_POLL_RETRY_DELAY_SECONDS = 1.0
 _WEIXIN_QR_WAITING_STATUSES = frozenset({"waiting", "wait", "created", "new", "init", "unscanned"})
 logger = logging.getLogger(__name__)
+_FEISHU_APP_CONSOLE_URL = "https://open.feishu.cn/app"
+_FEISHU_APP_DEV_GUIDE_URL = (
+    "https://open.feishu.cn/document/home/introduction-to-custom-app-development/"
+    "self-built-application-development-process"
+)
 
 
 def load_config() -> AgentConfig:
@@ -81,6 +86,9 @@ def _parse_auth_command(commands: Sequence[str]) -> tuple[str, str]:
 
 
 def _cmd_feishu_auth(action: str) -> None:
+    if action == "setup":
+        _cmd_feishu_setup()
+        return
     if action == "login":
         asyncio.run(_cmd_feishu_login())
         return
@@ -120,8 +128,17 @@ def _cmd_weixin_setup() -> None:
     asyncio.run(_cmd_weixin_login())
 
 
+def _cmd_feishu_setup() -> None:
+    config = load_config()
+    _console.print("Feishu setup: checking app-bot prerequisites.")
+    _render_feishu_setup_guidance(config)
+    if _feishu_has_app_credentials(config):
+        _console.print("Next step: run `controlmesh auth feishu status` or start the Feishu transport.")
+
+
 async def _cmd_feishu_login() -> None:
     config = load_config()
+    _ensure_feishu_app_credentials(config, action="login")
     async with aiohttp.ClientSession() as session:
         authorization = await request_device_authorization(
             session,
@@ -158,15 +175,77 @@ async def _cmd_feishu_login() -> None:
 
 def _cmd_feishu_status() -> None:
     config = load_config()
+    _render_feishu_app_state(config)
+    if not _feishu_has_app_credentials(config):
+        _console.print("Feishu auth mode: unavailable")
+        _console.print("Feishu token source: unavailable")
+        _console.print("Next step: run `controlmesh auth feishu setup` and create/configure a Feishu app first.")
+        return
     status = get_feishu_auth_status(config=config, now_ms=int(time.time() * 1000))
     _console.print(f"Feishu auth mode: {status.active_auth_mode}")
     _console.print(f"Feishu token source: {status.token_source}")
+    _console.print("Note: Feishu device-flow auth reuses the configured app; it does not create a new app.")
 
 
 def _cmd_feishu_logout() -> None:
     config = load_config()
+    if not config.feishu.app_id:
+        _console.print("Feishu device-flow auth not cleared: missing feishu.app_id.")
+        _console.print("Next step: run `controlmesh auth feishu setup` if this is a new Feishu bot.")
+        return
     clear_device_flow_auth(controlmesh_home=config.controlmesh_home, app_id=config.feishu.app_id)
     _console.print("Feishu device-flow auth cleared.")
+
+
+def _feishu_missing_app_credentials(config: AgentConfig) -> list[str]:
+    missing: list[str] = []
+    if not config.feishu.app_id:
+        missing.append("feishu.app_id")
+    if not config.feishu.app_secret:
+        missing.append("feishu.app_secret")
+    return missing
+
+
+def _feishu_has_app_credentials(config: AgentConfig) -> bool:
+    return not _feishu_missing_app_credentials(config)
+
+
+def _ensure_feishu_app_credentials(config: AgentConfig, *, action: str) -> None:
+    missing = _feishu_missing_app_credentials(config)
+    if not missing:
+        return
+    _console.print(
+        f"Feishu {action} requires an existing Feishu self-built app: missing {', '.join(missing)}."
+    )
+    _render_feishu_setup_guidance(config)
+    raise SystemExit(1)
+
+
+def _render_feishu_app_state(config: AgentConfig) -> None:
+    missing = _feishu_missing_app_credentials(config)
+    _console.print(f"Feishu app configured: {str(not missing).lower()}")
+    _console.print(f"Feishu brand: {config.feishu.brand}")
+    _console.print(f"Feishu app_id: {config.feishu.app_id or 'missing'}")
+    _console.print(f"Feishu app_secret: {'present' if config.feishu.app_secret else 'missing'}")
+    if missing:
+        _console.print(f"Feishu missing fields: {', '.join(missing)}")
+
+
+def _render_feishu_setup_guidance(config: AgentConfig) -> None:
+    _render_feishu_app_state(config)
+    _console.print("Feishu independent auth boundary: ControlMesh can verify and use an app bot,")
+    _console.print("but it cannot create the first Feishu self-built app without developer-console setup.")
+    _console.print(f"Feishu Open Platform app console: {_FEISHU_APP_CONSOLE_URL}")
+    _console.print(f"Feishu self-built app guide: {_FEISHU_APP_DEV_GUIDE_URL}")
+    _console.print("Required setup for a new user with no Feishu bot:")
+    _console.print("1. Create a Feishu self-built app in the app console.")
+    _console.print("2. Enable the Bot capability and install/publish it to the target tenant.")
+    _console.print("3. Enable event delivery for messages, preferably long-connection mode for ControlMesh.")
+    _console.print("4. Subscribe to message receive events such as im.message.receive_v1.")
+    _console.print("5. Copy the app_id and app_secret into config.json under the feishu section.")
+    _console.print("6. Add the bot to a chat and send a first message to validate inbound/reply wiring.")
+    _console.print("After app credentials exist, `controlmesh auth feishu login` only performs optional device-flow user auth.")
+    _console.print("It does not create a new app or bot.")
 
 
 async def _cmd_weixin_login() -> None:

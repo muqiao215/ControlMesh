@@ -151,7 +151,9 @@ Current implementation status:
 - domestic Feishu shape only
 - bot-only mode only
 - plain-text inbound/outbound plumbing only
-- no user OAuth, QR setup, webhook mode, or Feishu tool suite yet
+- zero-app bot creation is not automated yet; create the Feishu self-built app first
+- optional device-flow auth reuses the configured app and does not create one
+- see `docs/feishu-setup.md` for the first-time app-bot setup path
 
 ## `CLIParametersConfig`
 

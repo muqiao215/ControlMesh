@@ -37,6 +37,18 @@ def _feishu_config(tmp_path: Path) -> AgentConfig:
     )
 
 
+def _feishu_config_without_app(tmp_path: Path) -> AgentConfig:
+    return AgentConfig(
+        controlmesh_home=str(tmp_path),
+        transport="feishu",
+        transports=["feishu"],
+        feishu={
+            "mode": "bot_only",
+            "brand": "feishu",
+        },
+    )
+
+
 def test_main_routes_auth_feishu_login_to_auth_command(monkeypatch: pytest.MonkeyPatch) -> None:
     import controlmesh.__main__ as main_mod
 
@@ -58,6 +70,64 @@ def test_main_routes_auth_feishu_login_to_auth_command(monkeypatch: pytest.Monke
     main_mod.main()
 
     assert calls == [("auth", ["auth", "feishu", "login"])]
+
+
+def test_cmd_auth_feishu_setup_guides_zero_app_users(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _import_auth_cli_module()
+    config = _feishu_config_without_app(tmp_path)
+    console_lines: list[str] = []
+
+    class _FakeConsole:
+        def print(self, *args: object, **kwargs: object) -> None:
+            console_lines.append(" ".join(str(arg) for arg in args))
+
+    monkeypatch.setattr(module, "_console", _FakeConsole(), raising=False)
+    monkeypatch.setattr(module, "load_config", lambda: config, raising=False)
+
+    module.cmd_auth(["auth", "feishu", "setup"])
+
+    rendered = "\n".join(console_lines)
+    assert "Feishu app configured: false" in rendered
+    assert "missing feishu.app_id" in rendered or "feishu.app_id" in rendered
+    assert "Feishu Open Platform app console" in rendered
+    assert "Create a Feishu self-built app" in rendered
+    assert "controlmesh auth feishu login" in rendered
+    assert "does not create a new app" in rendered
+
+
+def test_cmd_auth_feishu_login_requires_existing_app_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _import_auth_cli_module()
+    config = _feishu_config_without_app(tmp_path)
+    console_lines: list[str] = []
+
+    class _FakeConsole:
+        def print(self, *args: object, **kwargs: object) -> None:
+            console_lines.append(" ".join(str(arg) for arg in args))
+
+    async def _should_not_call(*_args: object, **_kwargs: object) -> DeviceAuthorization:
+        raise AssertionError("login must not call Feishu device authorization without app credentials")
+
+    monkeypatch.setattr(module, "_console", _FakeConsole(), raising=False)
+    monkeypatch.setattr(module, "load_config", lambda: config, raising=False)
+    monkeypatch.setattr(module, "request_device_authorization", _should_not_call, raising=False)
+
+    import pytest
+
+    with pytest.raises(SystemExit) as exc_info:
+        module.cmd_auth(["auth", "feishu", "login"])
+
+    assert exc_info.value.code == 1
+    rendered = "\n".join(console_lines)
+    assert "Feishu login requires an existing Feishu self-built app" in rendered
+    assert "feishu.app_id" in rendered
+    assert "feishu.app_secret" in rendered
+    assert "controlmesh auth feishu login" in rendered
 
 
 def test_cmd_auth_feishu_login_starts_device_flow_and_surfaces_authorization_fields(

@@ -76,12 +76,21 @@ controlmesh
 - 至少一种聊天入口：
   - Telegram Bot Token
   - Matrix 账号
+  - Feishu 自建应用机器人（早期接入面，需要先在飞书开放平台创建 app）
 
 Matrix 额外安装：
 
 ```bash
 controlmesh install matrix
 ```
+
+Feishu 不是 `controlmesh install matrix` 这类依赖安装问题。它需要先有一个飞书自建应用机器人：
+
+```bash
+controlmesh auth feishu setup
+```
+
+这条命令会说明零 app 用户如何先创建 Feishu app，以及为什么 `controlmesh auth feishu login` 只是复用已有 app 做认证，不会替你创建机器人。详见 [`docs/feishu-setup.md`](docs/feishu-setup.md)。
 
 ### 核心交互模型
 
@@ -196,12 +205,21 @@ On first run, ControlMesh guides you through:
 - At least one transport:
   - Telegram Bot Token
   - Matrix account
+  - Feishu self-built app bot (early path; create the app in Feishu Open Platform first)
 
 Install Matrix support with:
 
 ```bash
 controlmesh install matrix
 ```
+
+Feishu is not an optional dependency like `controlmesh install matrix`. You need an existing Feishu self-built app bot first:
+
+```bash
+controlmesh auth feishu setup
+```
+
+This command explains the zero-app setup path and clarifies that `controlmesh auth feishu login` reuses an existing app; it does not create the bot. See [`docs/feishu-setup.md`](docs/feishu-setup.md).
 
 ### Interaction model
 
