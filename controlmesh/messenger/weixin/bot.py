@@ -164,6 +164,12 @@ class WeixinBot:
             return
 
         chat_id = self._id_map.user_to_int(message.user_id)
+        logger.info(
+            "Accepted Weixin message user_id=%s chat_id=%s message_id=%s",
+            message.user_id,
+            chat_id,
+            message.message_id,
+        )
         lock = self._lock_pool.get((chat_id, None))
         async with lock:
             result = await self._orchestrator.handle_message_streaming(
@@ -171,7 +177,33 @@ class WeixinBot:
                 message.text,
             )
         if result.text:
-            await self._runtime.reply(message, result.text)
+            logger.info(
+                "Weixin reply start chat_id=%s message_id=%s chars=%s",
+                chat_id,
+                message.message_id,
+                len(result.text),
+            )
+            try:
+                await self._runtime.reply(message, result.text)
+            except Exception:
+                logger.exception(
+                    "Weixin reply failed chat_id=%s message_id=%s",
+                    chat_id,
+                    message.message_id,
+                )
+                raise
+            logger.info(
+                "Weixin reply success chat_id=%s message_id=%s chars=%s",
+                chat_id,
+                message.message_id,
+                len(result.text),
+            )
+            return
+        logger.info(
+            "Weixin reply skipped chat_id=%s message_id=%s empty_result=True",
+            chat_id,
+            message.message_id,
+        )
 
     async def send_text(self, chat_id: int, text: str) -> None:
         user_id = self._id_map.int_to_user(chat_id)
@@ -180,7 +212,13 @@ class WeixinBot:
             raise WeixinContextTokenRequiredError(msg)
         if self._runtime is None:
             raise WeixinContextTokenRequiredError("Weixin runtime is not initialized")
-        await self._runtime.send_text(user_id, text)
+        logger.info("Weixin send_text start chat_id=%s chars=%s", chat_id, len(text))
+        try:
+            await self._runtime.send_text(user_id, text)
+        except Exception:
+            logger.exception("Weixin send_text failed chat_id=%s chars=%s", chat_id, len(text))
+            raise
+        logger.info("Weixin send_text success chat_id=%s chars=%s", chat_id, len(text))
 
     async def broadcast_text(self, text: str) -> None:
         for chat_id in self._id_map.known_user_ids():
@@ -203,6 +241,14 @@ class WeixinBot:
             on_auth_expired=self._on_auth_expired,
             cursor=self._config.weixin.poll_initial_cursor,
             state_store=self._runtime_state_store,
+        )
+        persisted_state = self._runtime_state_store.load_state(credentials)
+        reply_state = "ready" if persisted_state.context_tokens else "waiting_first_message"
+        logger.info(
+            "Weixin runtime started account_id=%s reply_state=%s cached_context_tokens=%s",
+            credentials.account_id,
+            reply_state,
+            len(persisted_state.context_tokens),
         )
         self._poll_task = asyncio.create_task(self._poll_loop(), name="weixin:poll")
 

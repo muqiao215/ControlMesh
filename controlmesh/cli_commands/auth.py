@@ -94,6 +94,9 @@ def _cmd_feishu_auth(action: str) -> None:
 
 
 def _cmd_weixin_auth(action: str) -> None:
+    if action == "setup":
+        _cmd_weixin_setup()
+        return
     if action == "login":
         asyncio.run(_cmd_weixin_login())
         return
@@ -107,6 +110,14 @@ def _cmd_weixin_auth(action: str) -> None:
         _cmd_weixin_logout()
         return
     raise SystemExit(1)
+
+
+def _cmd_weixin_setup() -> None:
+    config = load_config()
+    _ensure_weixin_enabled(config)
+    _console.print("Weixin setup: checking login and reply prerequisites.")
+    _render_transport_state(config)
+    asyncio.run(_cmd_weixin_login())
 
 
 async def _cmd_feishu_login() -> None:
@@ -180,6 +191,7 @@ async def _cmd_weixin_login() -> None:
             return
         _console.print("Weixin auth state: logged_out")
         _console.print("Weixin QR status: expired")
+        _console.print("This QR code has expired; do not keep scanning it.")
         _console.print("Weixin QR expired, generating a new code.")
 
 
@@ -187,8 +199,10 @@ def _cmd_weixin_status() -> None:
     config = load_config()
     _console.print(f"Weixin configured: {str(bool(config.weixin.enabled)).lower()}")
     if not config.weixin.enabled:
+        _console.print("Weixin transport state: disabled")
         _console.print("Weixin auth state: disabled")
         _console.print("Weixin runtime state: disabled")
+        _console.print("Weixin reply state: disabled")
         return
 
     store = _weixin_store(config)
@@ -197,22 +211,30 @@ def _cmd_weixin_status() -> None:
     qr_state = qr_state_store.load()
     credentials = store.load_credentials()
     if auth_state == "reauth_required":
+        _render_transport_state(config)
         _console.print("Weixin auth state: reauth_required")
         _console.print("Weixin runtime state: degraded")
+        _console.print("Weixin reply state: reauth_required")
         _console.print(f"Weixin credentials: {store.path}")
+        _console.print("Next step: rerun `controlmesh auth weixin reauth` to refresh the QR login.")
         return
 
     if credentials is None:
         if qr_state.has_active_qr:
+            _render_transport_state(config)
             _console.print(f"Weixin auth state: {qr_state.auth_state}")
             _console.print("Weixin runtime state: unavailable")
+            _console.print("Weixin reply state: waiting_for_login")
             _render_qr_login_details(qr_state_store, qr_state)
             _render_qr_guidance(qr_state.auth_state)
             _console.print(f"Weixin credentials: {store.path}")
             return
+        _render_transport_state(config)
         _console.print("Weixin auth state: logged_out")
         _console.print("Weixin runtime state: unavailable")
+        _console.print("Weixin reply state: waiting_for_login")
         _console.print(f"Weixin credentials: {store.path}")
+        _console.print("Next step: run `controlmesh auth weixin setup` to generate a QR code.")
         return
 
     _render_logged_in(config=config, credentials=credentials, store=store)
@@ -463,21 +485,55 @@ def _render_logged_in(
         if runtime_state.context_tokens
         else "context_token_unavailable"
     )
+    reply_state_text = (
+        "ready"
+        if _is_weixin_transport_configured(config) and runtime_state.context_tokens
+        else "transport_not_configured"
+        if not _is_weixin_transport_configured(config)
+        else "waiting_first_message"
+    )
     _console.print("Weixin auth state: logged_in")
+    _render_transport_state(config)
     _console.print(f"Weixin runtime state: {runtime_state_text}")
+    _console.print(f"Weixin reply state: {reply_state_text}")
     _console.print(f"Weixin account_id: {credentials.account_id}")
     _console.print(f"Weixin user_id: {credentials.user_id}")
     _console.print(f"Weixin base_url: {credentials.base_url}")
     _console.print(f"Weixin credentials: {store.path}")
+    if not _is_weixin_transport_configured(config):
+        _console.print(
+            "登录已完成, 但当前 transports 未包含 weixin; 机器人还不会通过微信收发消息。"
+        )
+        _console.print('Next step: add "weixin" to transports and restart ControlMesh.')
+        return
     if runtime_state_text == "context_token_unavailable" and _context_token_unavailable(config):
         _console.print(
             "已登录, 但尚未收到第一条微信消息; 请向该微信机器人发送任意消息以建立 context_token"
         )
+        _console.print('Next step: send a first message such as "你好" to finish Weixin setup.')
+        return
+    _console.print("Weixin setup complete: inbound and reply traffic are ready.")
 
 
 def _context_token_unavailable(config: AgentConfig) -> bool:
     id_map = WeixinIdMap(Path(config.controlmesh_home).expanduser() / "weixin_store")
     return not id_map.known_user_ids()
+
+
+def _render_transport_state(config: AgentConfig) -> None:
+    _console.print(f"Weixin transport state: {_transport_state(config)}")
+
+
+def _transport_state(config: AgentConfig) -> str:
+    if not config.weixin.enabled:
+        return "disabled"
+    if not _is_weixin_transport_configured(config):
+        return "not_in_transports"
+    return "configured"
+
+
+def _is_weixin_transport_configured(config: AgentConfig) -> bool:
+    return "weixin" in config.transports
 
 
 def _state_with(  # noqa: PLR0913

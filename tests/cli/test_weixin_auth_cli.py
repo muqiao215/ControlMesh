@@ -43,6 +43,19 @@ def _weixin_config(tmp_path: Path) -> AgentConfig:
     )
 
 
+def _weixin_config_without_transport(tmp_path: Path) -> AgentConfig:
+    return AgentConfig(
+        controlmesh_home=str(tmp_path),
+        transport="feishu",
+        transports=["feishu", "telegram"],
+        weixin={
+            "mode": "ilink",
+            "enabled": True,
+            "credentials_path": "weixin_store/credentials.json",
+        },
+    )
+
+
 def _disabled_weixin_config(tmp_path: Path) -> AgentConfig:
     return AgentConfig(
         controlmesh_home=str(tmp_path),
@@ -82,6 +95,35 @@ def test_main_routes_weixin_auth_login_to_auth_command(monkeypatch: pytest.Monke
     main_mod.main()
 
     assert calls == [("auth", ["weixin", "auth", "login"])]
+
+
+def test_cmd_auth_weixin_setup_renders_preflight_before_login(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _import_auth_cli_module()
+    config = _weixin_config(tmp_path)
+    console_lines: list[str] = []
+    called: list[str] = []
+
+    class _FakeConsole:
+        def print(self, *args: object, **kwargs: object) -> None:
+            del kwargs
+            console_lines.append(" ".join(str(arg) for arg in args))
+
+    async def _fake_weixin_login() -> None:
+        called.append("login")
+
+    monkeypatch.setattr(module, "_console", _FakeConsole(), raising=False)
+    monkeypatch.setattr(module, "load_config", lambda: config, raising=False)
+    monkeypatch.setattr(module, "_cmd_weixin_login", _fake_weixin_login, raising=False)
+
+    module.cmd_auth(["weixin", "auth", "setup"])
+
+    rendered = "\n".join(console_lines)
+    assert "Weixin setup" in rendered
+    assert "transport state: configured" in rendered
+    assert called == ["login"]
 
 
 def test_cmd_auth_weixin_login_fetches_qr_and_persists_credentials(
@@ -280,6 +322,7 @@ def test_cmd_auth_weixin_login_regenerates_after_expired_qr(
     rendered = "\n".join(console_lines)
     assert "stale-qr" in rendered
     assert "expired" in rendered
+    assert "do not keep scanning" in rendered
     assert created_qrs == ["fresh-qr"]
 
 
@@ -438,10 +481,49 @@ def test_cmd_auth_weixin_status_reports_logged_in_credentials(
     rendered = "\n".join(console_lines)
     assert "configured: true" in rendered
     assert "logged_in" in rendered
+    assert "transport state: configured" in rendered
     assert "context_token_unavailable" in rendered
+    assert "reply state: waiting_first_message" in rendered
     assert "bot-account" in rendered
     assert "wx-user" in rendered
     assert "请向该微信机器人发送任意消息以建立 context_token" in rendered
+    assert 'send a first message such as "你好"' in rendered
+
+
+def test_cmd_auth_weixin_status_warns_when_login_exists_but_transport_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _import_auth_cli_module()
+    config = _weixin_config_without_transport(tmp_path)
+    console_lines: list[str] = []
+    WeixinCredentialStore(
+        config.controlmesh_home,
+        relative_path=config.weixin.credentials_path,
+    ).save_credentials(
+        StoredWeixinCredentials(
+            token="bot-token",
+            base_url="https://ilinkai.weixin.qq.com",
+            account_id="bot-account",
+            user_id="wx-user",
+        )
+    )
+
+    class _FakeConsole:
+        def print(self, *args: object, **kwargs: object) -> None:
+            del kwargs
+            console_lines.append(" ".join(str(arg) for arg in args))
+
+    monkeypatch.setattr(module, "_console", _FakeConsole(), raising=False)
+    monkeypatch.setattr(module, "load_config", lambda: config, raising=False)
+
+    module.cmd_auth(["weixin", "auth", "status"])
+
+    rendered = "\n".join(console_lines)
+    assert "transport state: not_in_transports" in rendered
+    assert "reply state: transport_not_configured" in rendered
+    assert "transports 未包含 weixin" in rendered
+    assert 'add "weixin" to transports and restart ControlMesh' in rendered
 
 
 def test_cmd_auth_weixin_status_reports_reauth_required_as_degraded(

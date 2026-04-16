@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,7 @@ from controlmesh.messenger.weixin.auth_store import StoredWeixinCredentials
 from controlmesh.messenger.weixin.bot import WeixinBot
 from controlmesh.messenger.weixin.runtime import (
     WeixinContextTokenRequiredError,
+    WeixinIncomingText,
     WeixinReauthRequiredError,
 )
 
@@ -44,6 +46,34 @@ def _save_credentials(bot: WeixinBot) -> None:
 class _ExpiredRuntime:
     async def poll_once(self) -> None:
         raise WeixinReauthRequiredError("Weixin iLink session expired")
+
+
+class _RecordingRuntime:
+    def __init__(self, *, fail_reply: bool = False, fail_send: bool = False) -> None:
+        self.reply_calls: list[tuple[WeixinIncomingText, str]] = []
+        self.send_calls: list[tuple[str, str]] = []
+        self.fail_reply = fail_reply
+        self.fail_send = fail_send
+
+    async def reply(self, message: WeixinIncomingText, text: str) -> None:
+        if self.fail_reply:
+            raise RuntimeError("reply failed")
+        self.reply_calls.append((message, text))
+
+    async def send_text(self, user_id: str, text: str) -> None:
+        if self.fail_send:
+            raise RuntimeError("send failed")
+        self.send_calls.append((user_id, text))
+
+
+class _FakeOrchestrator:
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.calls: list[tuple[object, str]] = []
+
+    async def handle_message_streaming(self, key: object, text: str) -> object:
+        self.calls.append((key, text))
+        return type("Result", (), {"text": self.text})()
 
 
 class TestWeixinBotResilience:
@@ -111,3 +141,67 @@ class TestWeixinBotResilience:
 
         with patch("controlmesh.__main__.resolve_paths", return_value=paths):
             assert _is_configured() is False
+
+    async def test_handle_incoming_text_logs_reply_success(
+        self,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        bot = _make_bot(tmp_path)
+        runtime = _RecordingRuntime()
+        bot._runtime = runtime  # type: ignore[assignment]
+        bot._orchestrator = _FakeOrchestrator("OK")  # type: ignore[assignment]
+        message = WeixinIncomingText(
+            user_id="wx-user",
+            text="ping",
+            context_token="ctx-1",
+            message_id=7,
+            raw={"message_id": 7},
+        )
+
+        with caplog.at_level(logging.INFO):
+            await bot.handle_incoming_text(message)
+
+        assert runtime.reply_calls == [(message, "OK")]
+        assert "Accepted Weixin message" in caplog.text
+        assert "Weixin reply start" in caplog.text
+        assert "Weixin reply success" in caplog.text
+
+    async def test_handle_incoming_text_logs_reply_failure(
+        self,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        bot = _make_bot(tmp_path)
+        runtime = _RecordingRuntime(fail_reply=True)
+        bot._runtime = runtime  # type: ignore[assignment]
+        bot._orchestrator = _FakeOrchestrator("OK")  # type: ignore[assignment]
+        message = WeixinIncomingText(
+            user_id="wx-user",
+            text="ping",
+            context_token="ctx-1",
+            message_id=8,
+            raw={"message_id": 8},
+        )
+
+        with caplog.at_level(logging.INFO), pytest.raises(RuntimeError, match="reply failed"):
+            await bot.handle_incoming_text(message)
+
+        assert "Weixin reply failed" in caplog.text
+
+    async def test_send_text_logs_success(
+        self,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        bot = _make_bot(tmp_path)
+        runtime = _RecordingRuntime()
+        bot._runtime = runtime  # type: ignore[assignment]
+        bot._id_map.user_to_int("wx-user")
+
+        with caplog.at_level(logging.INFO):
+            await bot.send_text(bot._id_map.user_to_int("wx-user"), "hello")
+
+        assert runtime.send_calls == [("wx-user", "hello")]
+        assert "Weixin send_text start" in caplog.text
+        assert "Weixin send_text success" in caplog.text
