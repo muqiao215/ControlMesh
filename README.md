@@ -10,6 +10,8 @@ background tasks, sub-agents, runtime controls, and auditable write-back.
 
 The current spine is **ControlMesh Runtime**.
 
+![ControlMesh runtime and Feishu native/bridge modes](docs/assets/controlmesh-feishu-runtime.svg)
+
 ## 中文
 
 ### 一句话
@@ -295,4 +297,3 @@ controlmesh auth feishu setup
 ### License
 
 MIT License. See [`LICENSE`](LICENSE).
-
