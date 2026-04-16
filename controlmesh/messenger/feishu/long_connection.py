@@ -140,9 +140,12 @@ class _SdkLongConnectionAdapter:
 
     def _build_dispatcher(self, event_handler: FeishuEventHandler) -> object:
         builder = self._lark_module.EventDispatcherHandler.builder("", "")
-        return builder.register_p2_im_message_receive_v1(
-            self._make_sdk_event_handler(event_handler)
-        ).build()
+        handler = self._make_sdk_event_handler(event_handler)
+        builder = builder.register_p2_im_message_receive_v1(handler)
+        register_card_action = getattr(builder, "register_p2_card_action_trigger", None)
+        if callable(register_card_action):
+            builder = register_card_action(handler)
+        return builder.build()
 
     def _build_sdk_client(self, *, app_id: str, app_secret: str, dispatcher: object) -> Any:
         log_level = getattr(getattr(self._lark_module, "LogLevel", None), "INFO", None)

@@ -74,6 +74,22 @@ This is the ControlMesh side of the OpenClaw-style auth split:
 The current integration is intentionally narrow: it consumes the standalone kit
 through its CLI and does not copy the OpenClaw implementation into ControlMesh.
 
+Runtime bridge:
+
+- ControlMesh now has a Feishu runtime orchestration runner that can send an
+  auth-kit-derived permission card, persist continuation metadata, accept
+  `card.action.trigger` callbacks, and inject a synthetic retry back into the
+  same Feishu chat/session after the user clicks "I have granted permissions".
+- For development and live smoke tests, the runner accepts:
+
+```bash
+/feishu_permission --scope im:message --url "https://open.feishu.cn/..." --text "continue original task"
+```
+
+- The command is a bridge hook, not the final product UX. The final automatic
+  path should call the same runner from Feishu API/tool error handling when an
+  app-scope-missing error is detected.
+
 Official Feishu self-built app guide:
 
 - <https://open.feishu.cn/document/home/introduction-to-custom-app-development/self-built-application-development-process>

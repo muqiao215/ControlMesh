@@ -79,3 +79,29 @@ class TestFeishuInboundServer:
             handler.assert_awaited_once_with(payload)
         finally:
             await client.close()
+
+    async def test_card_action_event_returns_immediate_success_status(self) -> None:
+        handler = AsyncMock()
+        server = FeishuInboundServer(_make_config().feishu, handler)
+        client = TestClient(TestServer(_make_app(server)))
+        payload = {
+            "schema": "2.0",
+            "header": {"event_type": "card.action.trigger"},
+            "event": {
+                "operator": {"open_id": "ou_sender"},
+                "action": {
+                    "value": {
+                        "action": "permissions_granted_continue",
+                        "operation_id": "op_123",
+                    }
+                },
+            },
+        }
+        await client.start_server()
+        try:
+            response = await client.post(server.path, json=payload)
+            assert response.status == 200
+            assert await response.json() == {"accepted": True}
+            handler.assert_awaited_once_with(payload)
+        finally:
+            await client.close()

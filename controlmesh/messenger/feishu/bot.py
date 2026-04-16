@@ -25,6 +25,7 @@ from controlmesh.messenger.feishu.auth.feishu_card_sender import (
     BotFeishuCardSender,
     FeishuCardHandle,
 )
+from controlmesh.messenger.feishu.auth.orchestration_runner import FeishuAuthOrchestrationRunner
 from controlmesh.messenger.feishu.auth.runtime_auth import resolve_feishu_auth
 from controlmesh.messenger.notifications import NotificationService
 from controlmesh.messenger.telegram.dedup import DedupeCache
@@ -193,6 +194,7 @@ class FeishuBot:
         self._inbound_server: FeishuInboundServer | None = None
         self._long_connection: FeishuLongConnectionClient | None = None
         self._card_auth_runner: FeishuCardAuthRunner | None = None
+        self._auth_orchestration_runner: FeishuAuthOrchestrationRunner | None = None
         self._notification_service: NotificationService = FeishuNotificationService(self)
         self._bus.register_transport(FeishuTransport(self))
 
@@ -269,6 +271,9 @@ class FeishuBot:
         if self._card_auth_runner is not None:
             await self._card_auth_runner.shutdown()
 
+        if self._auth_orchestration_runner is not None:
+            await self._auth_orchestration_runner.shutdown()
+
         if self._inbound_server is not None:
             await self._inbound_server.stop()
 
@@ -281,6 +286,9 @@ class FeishuBot:
                 await shutdown()
 
     async def handle_incoming_event(self, payload: dict[str, Any]) -> None:
+        if self._is_card_action_event(payload):
+            self._ensure_auth_orchestration_runner().schedule_card_action(payload)
+            return
         message = self._parse_incoming_text(payload)
         if message is None:
             return
@@ -347,7 +355,7 @@ class FeishuBot:
         if self._orchestrator is None:
             logger.warning("Ignoring Feishu message before startup")
             return False
-        if await self._ensure_card_auth_runner().handle_message(message):
+        if await self._handle_auth_message(message):
             return False
 
         content_key = self._should_ignore_content_duplicate(message)
@@ -359,6 +367,11 @@ class FeishuBot:
             message.message_id,
         )
         return content_key
+
+    async def _handle_auth_message(self, message: FeishuIncomingText) -> bool:
+        if await self._ensure_auth_orchestration_runner().handle_message(message):
+            return True
+        return await self._ensure_card_auth_runner().handle_message(message)
 
     def _should_ignore_content_duplicate(self, message: FeishuIncomingText) -> str | bool | None:
         content_key = self._content_dedup_key(message)
@@ -573,6 +586,19 @@ class FeishuBot:
             )
         return self._card_auth_runner
 
+    def _ensure_auth_orchestration_runner(self) -> FeishuAuthOrchestrationRunner:
+        if self._auth_orchestration_runner is None:
+            sender = BotFeishuCardSender(
+                send_card_func=self._send_auth_card_from_context,
+                update_card_func=self._update_interactive_card,
+            )
+            self._auth_orchestration_runner = FeishuAuthOrchestrationRunner(
+                self._config,
+                sender=sender,
+                inject_retry=self._inject_auth_synthetic_retry,
+            )
+        return self._auth_orchestration_runner
+
     async def _reply_card_auth_text(
         self,
         chat_ref: str,
@@ -594,6 +620,19 @@ class FeishuBot:
             context.chat_id,
             card,
             reply_to_message_id=context.trigger_message_id if self._config.feishu.reply_to_trigger else None,
+        )
+
+    async def _inject_auth_synthetic_retry(self, entry: Any, artifact: dict[str, Any]) -> None:
+        text = artifact.get("text")
+        retry_text = text if isinstance(text, str) and text else entry.retry_text
+        await self.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id=entry.sender_open_id,
+                chat_id=entry.chat_id,
+                message_id=f"{entry.operation_id}:auth-retry",
+                text=retry_text,
+                thread_id=entry.thread_id,
+            )
         )
 
     async def _get_tenant_access_token(self) -> str:
@@ -684,6 +723,16 @@ class FeishuBot:
             thread_id=thread_id if isinstance(thread_id, str) and thread_id else None,
             create_time_ms=create_time_ms,
         )
+
+    @staticmethod
+    def _is_card_action_event(payload: dict[str, Any]) -> bool:
+        header = payload.get("header")
+        if isinstance(header, dict) and header.get("event_type") == "card.action.trigger":
+            return True
+        event = payload.get("event")
+        if isinstance(event, dict) and isinstance(event.get("action"), dict):
+            return True
+        return isinstance(payload.get("action"), dict)
 
     @staticmethod
     def _extract_sender_id(sender: dict[str, Any]) -> str:

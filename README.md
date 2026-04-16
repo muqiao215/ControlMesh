@@ -95,6 +95,8 @@ controlmesh auth feishu route --error-kind app_scope_missing --required-scope im
 
 `setup` 会说明零 app 用户如何先创建 Feishu app；`doctor` 会在可用时委托独立的 `feishu-auth-kit` 做 app/scopes 诊断；`plan/route/retry` 复用 `feishu-auth-kit orchestration` 的 OpenClaw 式授权编排原语。`controlmesh auth feishu login` 仍然只是复用已有 app 做认证，不会替你创建机器人。详见 [`docs/feishu-setup.md`](docs/feishu-setup.md)。
 
+Feishu runtime 也已经接入最小授权编排桥：权限卡片可以保存 continuation，用户点击完成后生成 synthetic retry 并回注当前 Feishu 会话。开发/验活入口为 `/feishu_permission --scope ... --url ... --text ...`；自动从 API 权限异常触发这一步仍是下一阶段。
+
 ### 核心交互模型
 
 ControlMesh 当前支持五层使用方式：
@@ -225,6 +227,8 @@ controlmesh auth feishu plan --requested-scope im:message --app-scope im:message
 ```
 
 These commands explain the zero-app setup boundary, delegate app diagnostics to the standalone `feishu-auth-kit`, and expose OpenClaw-style auth orchestration planning. `controlmesh auth feishu login` reuses an existing app; it does not create the bot. See [`docs/feishu-setup.md`](docs/feishu-setup.md).
+
+The Feishu runtime also has a minimal auth orchestration bridge: a permission card can persist continuation state, receive a card-action callback, and reinject a synthetic retry into the same Feishu chat/session. The development smoke entrypoint is `/feishu_permission --scope ... --url ... --text ...`; automatic triggering from Feishu API permission errors remains the next integration step.
 
 ### Interaction model
 

@@ -33,6 +33,11 @@ from controlmesh.messenger.feishu.auth.feishu_card_sender import (
     BotFeishuCardSender,
     FeishuCardHandle,
 )
+from controlmesh.messenger.feishu.auth.orchestration_runner import (
+    FeishuAuthContinuationEntry,
+    FeishuAuthOrchestrationRunner,
+    FeishuAuthRuntimeStore,
+)
 from controlmesh.messenger.feishu.auth.token_store import (
     FeishuTokenStore,
     StoredFeishuToken,
@@ -47,6 +52,9 @@ __all__ = [
     "DeviceFlowCardAuthStart",
     "DeviceTokenGrant",
     "FeishuAppInfoCache",
+    "FeishuAuthContinuationEntry",
+    "FeishuAuthOrchestrationRunner",
+    "FeishuAuthRuntimeStore",
     "FeishuCardAuthContext",
     "FeishuCardAuthRunner",
     "FeishuCardHandle",

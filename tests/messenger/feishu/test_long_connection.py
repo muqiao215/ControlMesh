@@ -90,6 +90,22 @@ def _text_event(*, create_time_ms: int | None = None) -> dict[str, Any]:
     }
 
 
+def _card_action_event() -> dict[str, Any]:
+    return {
+        "schema": "2.0",
+        "header": {"event_type": "card.action.trigger"},
+        "event": {
+            "operator": {"open_id": "ou_sender"},
+            "action": {
+                "value": {
+                    "action": "permissions_granted_continue",
+                    "operation_id": "op_123",
+                }
+            },
+        },
+    }
+
+
 class _FakeSdkPayload:
     def __init__(self, payload: dict[str, Any]) -> None:
         self.payload = payload
@@ -103,11 +119,20 @@ class _FakeSdkDispatcher:
 class _FakeSdkDispatcherBuilder:
     def __init__(self) -> None:
         self.callback: Callable[[object], None] | None = None
+        self.card_action_callback: Callable[[object], None] | None = None
 
     def register_p2_im_message_receive_v1(
         self,
         callback: Callable[[object], None],
     ) -> _FakeSdkDispatcherBuilder:
+        self.callback = callback
+        return self
+
+    def register_p2_card_action_trigger(
+        self,
+        callback: Callable[[object], None],
+    ) -> _FakeSdkDispatcherBuilder:
+        self.card_action_callback = callback
         self.callback = callback
         return self
 
@@ -339,6 +364,32 @@ class TestBuildLongConnectionAdapter:
 
         await adapter.stop()
         assert client.disconnect_calls == 1
+
+    async def test_constructs_sdk_adapter_and_routes_card_action_event(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from controlmesh.messenger.feishu import long_connection
+
+        _FakeSdkClient.instances.clear()
+        _FakeSdkClient.fail_on_connect = None
+        monkeypatch.setattr(long_connection.importlib, "import_module", _fake_sdk_import)
+        adapter = build_long_connection_adapter()
+        assert adapter is not None
+
+        handler = AsyncMock()
+        await adapter.start(
+            app_id="cli_123",
+            app_secret="sec_456",
+            event_handler=handler,
+        )
+
+        client = _FakeSdkClient.instances[-1]
+        payload = _card_action_event()
+        await asyncio.to_thread(client.emit, payload)
+        handler.assert_awaited_once_with(payload)
+
+        await adapter.stop()
 
     async def test_sdk_adapter_does_not_block_receive_thread_on_slow_handler(
         self,

@@ -152,6 +152,36 @@ class TestFeishuBotRouting:
 
         bot.handle_incoming_text.assert_not_awaited()
 
+    async def test_handle_incoming_event_routes_card_action_to_auth_orchestration_runner(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path)
+        bot.handle_incoming_text = AsyncMock()  # type: ignore[method-assign]
+        routed: list[dict[str, object]] = []
+        bot._auth_orchestration_runner = SimpleNamespace(
+            schedule_card_action=lambda payload: routed.append(payload) or True
+        )
+
+        payload = {
+            "schema": "2.0",
+            "header": {"event_type": "card.action.trigger"},
+            "event": {
+                "operator": {"open_id": "ou_sender"},
+                "action": {
+                    "value": {
+                        "action": "permissions_granted_continue",
+                        "operation_id": "op_123",
+                    }
+                },
+            },
+        }
+
+        await bot.handle_incoming_event(payload)
+
+        assert routed == [payload]
+        bot.handle_incoming_text.assert_not_awaited()
+
     async def test_handle_incoming_text_routes_to_orchestrator_and_replies(
         self,
         tmp_path: Path,

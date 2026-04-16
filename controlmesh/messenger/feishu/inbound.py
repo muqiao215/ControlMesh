@@ -91,4 +91,15 @@ class FeishuInboundServer:
             return web.json_response({"challenge": challenge})
 
         await self._handler(payload)
-        return web.json_response({"accepted": True}, status=202)
+        status = 200 if _is_card_action_event(payload) else 202
+        return web.json_response({"accepted": True}, status=status)
+
+
+def _is_card_action_event(payload: dict[str, Any]) -> bool:
+    header = payload.get("header")
+    if isinstance(header, dict) and header.get("event_type") == "card.action.trigger":
+        return True
+    event = payload.get("event")
+    if isinstance(event, dict) and isinstance(event.get("action"), dict):
+        return True
+    return isinstance(payload.get("action"), dict)
