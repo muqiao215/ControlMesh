@@ -145,14 +145,15 @@ Notes:
 | `group_reply_all` | `bool` | `false` | Reserved bot-only group behavior knob for later cuts |
 | `thread_isolation` | `bool` | `false` | When enabled, inbound thread/root IDs get separate ControlMesh session keys |
 | `reply_to_trigger` | `bool` | `true` | Reply to the triggering Feishu message when possible |
+| `progress_mode` | `"text" \| "card_preview" \| "card_stream"` | `"text"` | `text` sends plain progress text; `card_preview` repeatedly patches one interactive card; `card_stream` uses Feishu CardKit streaming card APIs |
 
 Current implementation status:
 
-- domestic Feishu shape only
-- bot-only mode only
-- plain-text inbound/outbound plumbing only
-- zero-app bot creation is not automated yet; create the Feishu self-built app first
-- optional device-flow auth reuses the configured app and does not create one
+- domestic Feishu runtime is the primary tested path
+- bot-only mode is the production runtime path
+- zero-start bot/app creation is available through `controlmesh auth feishu register-begin` + `register-poll`
+- `card_stream` uses CardKit create/update/close APIs and falls back to ordinary text if CardKit is unavailable
+- optional device-flow auth reuses the configured app for user-token flows
 - see `docs/feishu-setup.md` for the first-time app-bot setup path
 
 ## `CLIParametersConfig`

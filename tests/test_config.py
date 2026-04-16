@@ -178,6 +178,12 @@ def test_transport_feishu_backward_compat() -> None:
     assert cfg.feishu.progress_mode == "text"
 
 
+def test_feishu_progress_mode_accepts_card_stream() -> None:
+    cfg = AgentConfig(transport="feishu", feishu={"progress_mode": "card_stream"})
+
+    assert cfg.feishu.progress_mode == "card_stream"
+
+
 def test_transport_weixin_backward_compat() -> None:
     """transport='weixin' with empty transports normalizes correctly."""
     cfg = AgentConfig(transport="weixin")

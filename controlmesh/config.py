@@ -202,7 +202,7 @@ class FeishuConfig(BaseModel):
     group_reply_all: bool = False
     thread_isolation: bool = False
     reply_to_trigger: bool = True
-    progress_mode: Literal["text", "card_preview"] = "text"
+    progress_mode: Literal["text", "card_preview", "card_stream"] = "text"
 
     @field_validator("listener_path")
     @classmethod

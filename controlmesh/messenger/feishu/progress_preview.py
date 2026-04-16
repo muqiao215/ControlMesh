@@ -96,6 +96,9 @@ class FeishuCardPreviewReporter:
         if label:
             await self._emit(label)
 
+    async def on_text_delta(self, _text: str) -> None:
+        return None
+
     async def finish_success(self, text: str) -> None:
         await self._set_body(text or "_No output._", status="complete")
 

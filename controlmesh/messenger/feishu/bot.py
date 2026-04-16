@@ -100,6 +100,9 @@ class _FeishuProgressReporter:
         if label:
             await self._emit(label)
 
+    async def on_text_delta(self, _text: str) -> None:
+        return None
+
     async def finish_success(self, _text: str) -> None:
         return None
 
@@ -324,6 +327,7 @@ class FeishuBot:
                 result = await self._orchestrator.handle_message_streaming(
                     SessionKey.for_transport("fs", chat_id, topic_id),
                     message.text,
+                    on_text_delta=progress.on_text_delta,
                     on_tool_activity=progress.on_tool,
                     on_system_status=progress.on_system,
                 )
@@ -396,6 +400,16 @@ class FeishuBot:
         chat_ref: str,
         reply_to_message_id: str | None,
     ) -> _FeishuProgressReporter:
+        if self._config.feishu.progress_mode == "card_stream":
+            from controlmesh.messenger.feishu.card_stream import FeishuCardStreamReporter
+
+            return FeishuCardStreamReporter(
+                self,
+                chat_ref=chat_ref,
+                reply_to_message_id=reply_to_message_id,
+                title="ControlMesh",
+                note="Feishu CardKit streaming",
+            )
         if self._config.feishu.progress_mode == "card_preview":
             from controlmesh.messenger.feishu.progress_preview import FeishuCardPreviewReporter
 
@@ -563,6 +577,99 @@ class FeishuBot:
                 body = await response.text()
                 logger.warning(
                     "Feishu card update failed: status=%s body=%s",
+                    response.status,
+                    body[:500],
+                )
+
+    async def _create_streaming_card(self, card: dict[str, object]) -> str | None:
+        session = await self._ensure_session()
+        token = await self._get_tenant_access_token()
+        url = f"{self._config.feishu.domain.rstrip('/')}/open-apis/cardkit/v1/cards"
+        headers = {"Authorization": f"Bearer {token}"}
+        payload = {
+            "type": "card_json",
+            "data": json.dumps(card, ensure_ascii=False),
+        }
+        async with session.post(url, json=payload, headers=headers) as response:
+            body = await response.text()
+            if response.status >= 400:
+                logger.warning(
+                    "Feishu cardkit create failed: status=%s body=%s",
+                    response.status,
+                    body[:500],
+                )
+                return None
+        try:
+            payload_data = json.loads(body)
+        except json.JSONDecodeError:
+            return None
+        data = payload_data.get("data", {})
+        if isinstance(data, dict):
+            card_id = data.get("card_id")
+            if isinstance(card_id, str) and card_id:
+                return card_id
+        logger.warning("Feishu cardkit create returned no card_id body=%s", body[:500])
+        return None
+
+    async def _update_streaming_card_content(
+        self,
+        card_id: str,
+        content: str,
+        *,
+        sequence: int,
+        uuid: str,
+    ) -> None:
+        session = await self._ensure_session()
+        token = await self._get_tenant_access_token()
+        url = (
+            f"{self._config.feishu.domain.rstrip('/')}"
+            f"/open-apis/cardkit/v1/cards/{card_id}/elements/content/content"
+        )
+        headers = {"Authorization": f"Bearer {token}"}
+        payload = {
+            "content": content,
+            "sequence": sequence,
+            "uuid": uuid,
+        }
+        async with session.put(url, json=payload, headers=headers) as response:
+            if response.status >= 400:
+                body = await response.text()
+                logger.warning(
+                    "Feishu cardkit content update failed: status=%s body=%s",
+                    response.status,
+                    body[:500],
+                )
+
+    async def _close_streaming_card(
+        self,
+        card_id: str,
+        *,
+        summary: str,
+        sequence: int,
+        uuid: str,
+    ) -> None:
+        session = await self._ensure_session()
+        token = await self._get_tenant_access_token()
+        url = f"{self._config.feishu.domain.rstrip('/')}/open-apis/cardkit/v1/cards/{card_id}/settings"
+        headers = {"Authorization": f"Bearer {token}"}
+        payload = {
+            "settings": json.dumps(
+                {
+                    "config": {
+                        "streaming_mode": False,
+                        "summary": {"content": summary or "完成"},
+                    }
+                },
+                ensure_ascii=False,
+            ),
+            "sequence": sequence,
+            "uuid": uuid,
+        }
+        async with session.patch(url, json=payload, headers=headers) as response:
+            if response.status >= 400:
+                body = await response.text()
+                logger.warning(
+                    "Feishu cardkit close failed: status=%s body=%s",
                     response.status,
                     body[:500],
                 )

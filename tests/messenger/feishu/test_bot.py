@@ -527,6 +527,101 @@ class TestFeishuBotRouting:
             reply_to_message_id="om_1",
         )
 
+    async def test_handle_incoming_text_card_stream_mode_uses_text_delta_callback(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path, progress_mode="card_stream")
+        bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+        bot._create_streaming_card = AsyncMock(return_value="card_1")  # type: ignore[attr-defined]
+        bot._send_card_to_chat_ref = AsyncMock(return_value="om_stream")  # type: ignore[attr-defined]
+        bot._update_streaming_card_content = AsyncMock()  # type: ignore[attr-defined]
+        bot._close_streaming_card = AsyncMock()  # type: ignore[attr-defined]
+        bot._patch_message = AsyncMock()  # type: ignore[attr-defined]
+
+        async def _fake_stream(
+            _key: object,
+            _text: str,
+            *,
+            on_text_delta: AsyncMock | None = None,
+            on_tool_activity: AsyncMock | None = None,
+            on_system_status: AsyncMock | None = None,
+            **_kwargs: object,
+        ) -> SimpleNamespace:
+            assert on_text_delta is not None
+            assert on_system_status is not None
+            assert on_tool_activity is not None
+            await on_system_status("thinking")
+            await on_text_delta("你")
+            await on_text_delta("好")
+            await on_tool_activity("Shell")
+            return SimpleNamespace(text="你好")
+
+        bot._orchestrator = SimpleNamespace(
+            handle_message_streaming=AsyncMock(side_effect=_fake_stream)
+        )
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="ping",
+            )
+        )
+
+        bot._create_streaming_card.assert_awaited_once()
+        bot._send_card_to_chat_ref.assert_awaited_once()
+        bot._patch_message.assert_not_awaited()
+        assert bot._update_streaming_card_content.await_count >= 1
+        bot._close_streaming_card.assert_awaited_once()
+        bot._send_text_to_chat_ref.assert_not_awaited()
+
+    async def test_handle_incoming_text_card_stream_mode_falls_back_to_text_when_cardkit_unavailable(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path, progress_mode="card_stream")
+        bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+        bot._create_streaming_card = AsyncMock(return_value=None)  # type: ignore[attr-defined]
+        bot._send_card_to_chat_ref = AsyncMock()  # type: ignore[attr-defined]
+        bot._update_streaming_card_content = AsyncMock()  # type: ignore[attr-defined]
+        bot._close_streaming_card = AsyncMock()  # type: ignore[attr-defined]
+
+        async def _fake_stream(
+            _key: object,
+            _text: str,
+            *,
+            on_text_delta: AsyncMock | None = None,
+            **_kwargs: object,
+        ) -> SimpleNamespace:
+            assert on_text_delta is not None
+            await on_text_delta("你")
+            return SimpleNamespace(text="你好")
+
+        bot._orchestrator = SimpleNamespace(
+            handle_message_streaming=AsyncMock(side_effect=_fake_stream)
+        )
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="ping",
+            )
+        )
+
+        bot._create_streaming_card.assert_awaited()
+        bot._send_card_to_chat_ref.assert_not_awaited()
+        bot._update_streaming_card_content.assert_not_awaited()
+        bot._close_streaming_card.assert_not_awaited()
+        bot._send_text_to_chat_ref.assert_awaited_once_with(
+            "oc_chat_1",
+            "你好",
+            reply_to_message_id="om_1",
+        )
+
     async def test_on_task_result_routes_to_fs_and_delivers(self, tmp_path: Path) -> None:
         bot = _make_bot(tmp_path)
 
