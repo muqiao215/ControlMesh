@@ -150,6 +150,28 @@ Native-only OAPI MVP:
   into `FeishuNativeToolAuthRequiredError`, which is already handled by the
   Feishu bot runtime and routed to permission-card or retryable device-auth
   flows.
+- There is now an explicit native-only auth UX entry for this MVP:
+
+```bash
+/feishu_auth_all
+```
+
+- `/feishu_auth_all` calls `feishu-auth-kit orchestration plan` over the
+  existing subprocess JSON seam, then:
+  - if app scopes are still unavailable, sends a Feishu permission card with
+    continue/retry actions and explicit app-owner/admin wording;
+  - if app scopes are ready but user OAuth scopes are missing, starts the first
+    retryable device-auth batch in-chat;
+  - if current native MVP scopes are already granted, replies that native OAPI
+    permissions are ready.
+- Boundary split:
+  - app scope = app/platform boundary; user cannot self-grant it, so the card
+    explains that admin/app-owner action is still required;
+  - user OAuth = per-user boundary; ControlMesh keeps this inside Feishu via
+    the existing card/device-auth flow.
+- This wrapper currently targets the native-only MVP scopes behind
+  `contact.search_user`, `contact.get_user`, and `im.get_messages`. `bridge`
+  does not support it.
 - Current manual smoke entry:
 
 ```bash

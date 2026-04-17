@@ -59,6 +59,8 @@ ControlMesh 配置。
   `contact.search_user`、`contact.get_user`、`im.get_messages`
 - 缺 app scope / user token / user scope 时会抛标准
   `FeishuNativeToolAuthRequiredError`，由 runtime auth seam 路由权限卡或 device auth
+- 新增 `/feishu_auth_all` 飞书内批量授权入口：优先走权限卡/设备授权，
+  不再把“去开发者后台”作为唯一交互；当前只覆盖 native-only OAPI MVP
 - 当前 smoke 入口是 `/feishu-native ...`，只在 `runtime_mode=native` 可用
 
 ```bash
@@ -237,8 +239,11 @@ The current MVP also wires native-only read OAPI tools:
 `contact.search_user`, `contact.get_user`, and `im.get_messages`. Missing app
 scope, user token, or user scope is surfaced as
 `FeishuNativeToolAuthRequiredError`, so the runtime can route into permission
-cards or retryable device auth. The explicit smoke entry is
-`/feishu-native ...`, and bridge mode does not support it.
+cards or retryable device auth. `/feishu_auth_all` is the current in-chat batch
+auth entry for these native-only tools: app-scope gaps still require app
+owner/admin approval, while user OAuth gaps stay inside Feishu device-auth
+cards with retry. The explicit smoke entry is `/feishu-native ...`, and bridge
+mode does not support either native tool execution or `/feishu_auth_all`.
 
 ```bash
 controlmesh auth feishu register-begin

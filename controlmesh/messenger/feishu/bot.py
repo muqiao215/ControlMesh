@@ -28,6 +28,10 @@ from controlmesh.messenger.feishu.auth.feishu_card_sender import (
     BotFeishuCardSender,
     FeishuCardHandle,
 )
+from controlmesh.messenger.feishu.auth.native_auth_all_runner import (
+    FeishuNativeAuthAllRunner,
+    is_native_auth_all_command,
+)
 from controlmesh.messenger.feishu.auth.orchestration_runner import FeishuAuthOrchestrationRunner
 from controlmesh.messenger.feishu.auth.runtime_auth import resolve_feishu_auth
 from controlmesh.messenger.feishu.media import ResolveMediaRequest, is_supported_media_message_type
@@ -215,6 +219,7 @@ class FeishuBot:
         self._long_connection: FeishuLongConnectionClient | None = None
         self._card_auth_runner: FeishuCardAuthRunner | None = None
         self._auth_orchestration_runner: FeishuAuthOrchestrationRunner | None = None
+        self._native_auth_all_runner: FeishuNativeAuthAllRunner | None = None
         self._native_tool_executor: FeishuNativeToolExecutor | None = None
         self._notification_service: NotificationService = FeishuNotificationService(self)
         self._bus.register_transport(FeishuTransport(self))
@@ -400,6 +405,8 @@ class FeishuBot:
         return content_key
 
     async def _handle_auth_message(self, message: FeishuIncomingText) -> bool:
+        if is_native_auth_all_command(message.text) and await self._ensure_native_auth_all_runner().handle_message(message):
+            return True
         if await self._ensure_auth_orchestration_runner().handle_message(message):
             return True
         return await self._ensure_card_auth_runner().handle_message(message)
@@ -1005,6 +1012,18 @@ class FeishuBot:
                 inject_retry=self._inject_auth_synthetic_retry,
             )
         return self._auth_orchestration_runner
+
+    def _ensure_native_auth_all_runner(self) -> FeishuNativeAuthAllRunner:
+        if self._native_auth_all_runner is None:
+            self._native_auth_all_runner = FeishuNativeAuthAllRunner(
+                self._config,
+                session_factory=self._ensure_session,
+                get_tenant_access_token=self._get_tenant_access_token,
+                start_app_permission_flow=self._ensure_auth_orchestration_runner().start_permission_flow,
+                start_user_auth_flow=self._ensure_card_auth_runner().start_retryable_auth_flow,
+                text_reply=self._reply_card_auth_text,
+            )
+        return self._native_auth_all_runner
 
     def _ensure_native_tool_executor(self) -> FeishuNativeToolExecutor:
         if self._native_tool_executor is None:

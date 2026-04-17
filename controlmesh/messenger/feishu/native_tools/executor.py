@@ -47,6 +47,12 @@ IM_GET_MESSAGES_SCOPES = (
     "im:message.group_msg:get_as_user",
     "im:message.p2p_msg:get_as_user",
 )
+NATIVE_TOOL_AUTH_PREP_SCOPES = (
+    _OFFLINE_ACCESS,
+    *CONTACT_SEARCH_USER_SCOPES,
+    *CONTACT_GET_USER_SCOPES,
+    *IM_GET_MESSAGES_SCOPES,
+)
 
 _SUPPORTED_TOOLS = {
     "contact.search_user",
@@ -404,6 +410,12 @@ def _permission_url(config: AgentConfig) -> str:
 
 def _json(value: Mapping[str, Any]) -> str:
     return json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True)
+
+
+def all_native_user_auth_scopes() -> tuple[str, ...]:
+    """Return the deduped user-scope set needed by current native Feishu tools."""
+    deduped = dict.fromkeys(NATIVE_TOOL_AUTH_PREP_SCOPES)
+    return tuple(deduped)
 
 
 async def _maybe_await(value: Any) -> Any:

@@ -33,6 +33,10 @@ from controlmesh.messenger.feishu.auth.feishu_card_sender import (
     BotFeishuCardSender,
     FeishuCardHandle,
 )
+from controlmesh.messenger.feishu.auth.native_auth_all_runner import (
+    FeishuNativeAuthAllRunner,
+    is_native_auth_all_command,
+)
 from controlmesh.messenger.feishu.auth.orchestration_runner import (
     FeishuAuthContinuationEntry,
     FeishuAuthOrchestrationRunner,
@@ -58,6 +62,7 @@ __all__ = [
     "FeishuCardAuthContext",
     "FeishuCardAuthRunner",
     "FeishuCardHandle",
+    "FeishuNativeAuthAllRunner",
     "FeishuTokenStore",
     "FeishuUATClient",
     "StoredFeishuToken",
@@ -69,6 +74,7 @@ __all__ = [
     "build_identity_mismatch_card",
     "complete_device_flow_card_auth",
     "is_card_auth_command",
+    "is_native_auth_all_command",
     "poll_device_token",
     "request_device_authorization",
     "resolve_oauth_endpoints",

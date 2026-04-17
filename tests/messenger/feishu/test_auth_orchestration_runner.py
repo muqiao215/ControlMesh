@@ -119,6 +119,8 @@ async def test_start_permission_flow_routes_auth_kit_card_and_saves_runtime_cont
     card = sender.sent[0][1]
     assert "Open permission page" in str(card)
     assert "permissions_granted_continue" in str(card)
+    assert "app-level boundary" in str(card)
+    assert "continue / retry" in str(card)
     stored = FeishuAuthRuntimeStore(tmp_path).load("op_123")
     assert stored is not None
     assert stored.retry_text == "continue original task"

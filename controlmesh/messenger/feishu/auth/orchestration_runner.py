@@ -333,6 +333,12 @@ def _feishu_card_from_auth_kit(card: object) -> dict[str, Any]:
         raise TypeError(msg)
     title = str(card.get("title") or "Feishu permissions required")
     message = str(card.get("message") or "Grant permissions, then continue.")
+    if card.get("type") == "permission_missing":
+        message = (
+            f"{message}\n\n"
+            "This is an app-level boundary handled by the app owner/admin, not user OAuth.\n"
+            "After the app permissions are approved, come back here and tap continue / retry."
+        )
     operation_id = str(card.get("operation_id") or "")
     fields = card.get("fields") if isinstance(card.get("fields"), dict) else {}
     missing_scopes = fields.get("missing_scopes") if isinstance(fields, dict) else []
