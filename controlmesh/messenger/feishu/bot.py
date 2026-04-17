@@ -33,6 +33,11 @@ from controlmesh.messenger.feishu.auth.runtime_auth import resolve_feishu_auth
 from controlmesh.messenger.feishu.media import ResolveMediaRequest, is_supported_media_message_type
 from controlmesh.messenger.feishu.media import resolve_media_text as _resolve_media_text
 from controlmesh.messenger.feishu.media_meta import parse_mp4_duration, prepare_audio_upload
+from controlmesh.messenger.feishu.native_tools import (
+    FeishuNativeToolExecutor,
+    format_native_tool_result,
+    parse_native_tool_command,
+)
 from controlmesh.messenger.feishu.tool_auth import (
     FeishuNativeToolAuthContract,
     FeishuNativeToolAuthRequiredError,
@@ -210,6 +215,7 @@ class FeishuBot:
         self._long_connection: FeishuLongConnectionClient | None = None
         self._card_auth_runner: FeishuCardAuthRunner | None = None
         self._auth_orchestration_runner: FeishuAuthOrchestrationRunner | None = None
+        self._native_tool_executor: FeishuNativeToolExecutor | None = None
         self._notification_service: NotificationService = FeishuNotificationService(self)
         self._bus.register_transport(FeishuTransport(self))
 
@@ -331,24 +337,22 @@ class FeishuBot:
         set_log_context(operation="feishu-msg", chat_id=chat_id)
         lock = self._lock_pool.get((chat_id, topic_id))
         progress = self._build_progress_reporter(message.chat_id, reply_to)
-        progress.start()
-        if content_key:
-            self._inflight_content_keys.add(content_key)
         auth_routed = False
         try:
             async with lock:
-                try:
-                    result = await self._orchestrator.handle_message_streaming(
-                        SessionKey.for_transport("fs", chat_id, topic_id),
-                        message.text,
-                        on_text_delta=progress.on_text_delta,
-                        on_tool_activity=progress.on_tool,
-                        on_system_status=progress.on_system,
-                    )
-                except FeishuNativeToolAuthRequiredError as exc:
-                    await self._handle_native_tool_auth_required(message, exc.contract)
-                    auth_routed = True
-                    result = None
+                if await self._handle_native_tool_command(message, reply_to_message_id=reply_to):
+                    if content_key:
+                        self._recent_content_dedup.check(content_key)
+                    return
+                progress.start()
+                if content_key:
+                    self._inflight_content_keys.add(content_key)
+                auth_routed, result = await self._run_streaming_turn(
+                    message,
+                    chat_id=chat_id,
+                    topic_id=topic_id,
+                    progress=progress,
+                )
         except Exception as exc:
             await progress.finish_failure(str(exc))
             raise
@@ -360,27 +364,12 @@ class FeishuBot:
             self._recent_content_dedup.check(content_key)
         if auth_routed or result is None:
             return
-        result_text = result.text or ""
-        file_tags = extract_file_paths(result_text)
-        visible_text = FILE_PATH_RE.sub("", result_text).strip() if file_tags else result_text
-        progress_text = visible_text or ("已发送附件。" if file_tags else result_text)
-        await progress.finish_success(progress_text)
-        if file_tags:
-            from controlmesh.messenger.feishu.sender import send_files_from_text
-
-            await send_files_from_text(
-                self,
-                message.chat_id,
-                result_text,
-                allowed_roots=self.file_roots(self._paths),
-                reply_to_message_id=reply_to,
-            )
-        if visible_text and not progress.handles_final_response:
-            await self._send_plain_text_to_chat_ref(
-                message.chat_id,
-                visible_text,
-                reply_to_message_id=reply_to,
-            )
+        await self._deliver_stream_result(
+            result=result,
+            chat_ref=message.chat_id,
+            reply_to_message_id=reply_to,
+            progress=progress,
+        )
 
     async def _prepare_incoming_message(self, message: FeishuIncomingText) -> str | bool | None:
         dedup_key = f"{message.chat_id}:{message.message_id}"
@@ -414,6 +403,94 @@ class FeishuBot:
         if await self._ensure_auth_orchestration_runner().handle_message(message):
             return True
         return await self._ensure_card_auth_runner().handle_message(message)
+
+    async def _handle_native_tool_command(
+        self,
+        message: FeishuIncomingText,
+        *,
+        reply_to_message_id: str | None,
+    ) -> bool:
+        if self._config.feishu.runtime_mode != "native":
+            return False
+        try:
+            parsed = parse_native_tool_command(message.text)
+        except ValueError as exc:
+            await self._send_plain_text_to_chat_ref(
+                message.chat_id,
+                str(exc),
+                reply_to_message_id=reply_to_message_id,
+            )
+            return True
+        if parsed is None:
+            return False
+        if self._native_tool_executor is None:
+            await self._ensure_session()
+        try:
+            result = await self._ensure_native_tool_executor().execute(
+                parsed.tool_name,
+                parsed.arguments,
+                context=build_feishu_inbound_context(self._config, message),
+            )
+        except FeishuNativeToolAuthRequiredError as exc:
+            await self._handle_native_tool_auth_required(message, exc.contract)
+            return True
+        await self._send_plain_text_to_chat_ref(
+            message.chat_id,
+            format_native_tool_result(parsed.tool_name, result),
+            reply_to_message_id=reply_to_message_id,
+        )
+        return True
+
+    async def _run_streaming_turn(
+        self,
+        message: FeishuIncomingText,
+        *,
+        chat_id: int,
+        topic_id: int | None,
+        progress: _FeishuProgressReporter,
+    ) -> tuple[bool, Any]:
+        try:
+            result = await self._orchestrator.handle_message_streaming(
+                SessionKey.for_transport("fs", chat_id, topic_id),
+                message.text,
+                on_text_delta=progress.on_text_delta,
+                on_tool_activity=progress.on_tool,
+                on_system_status=progress.on_system,
+            )
+        except FeishuNativeToolAuthRequiredError as exc:
+            await self._handle_native_tool_auth_required(message, exc.contract)
+            return True, None
+        return False, result
+
+    async def _deliver_stream_result(
+        self,
+        *,
+        result: Any,
+        chat_ref: str,
+        reply_to_message_id: str | None,
+        progress: _FeishuProgressReporter,
+    ) -> None:
+        result_text = result.text or ""
+        file_tags = extract_file_paths(result_text)
+        visible_text = FILE_PATH_RE.sub("", result_text).strip() if file_tags else result_text
+        progress_text = visible_text or ("已发送附件。" if file_tags else result_text)
+        await progress.finish_success(progress_text)
+        if file_tags:
+            from controlmesh.messenger.feishu.sender import send_files_from_text
+
+            await send_files_from_text(
+                self,
+                chat_ref,
+                result_text,
+                allowed_roots=self.file_roots(self._paths),
+                reply_to_message_id=reply_to_message_id,
+            )
+        if visible_text and not progress.handles_final_response:
+            await self._send_plain_text_to_chat_ref(
+                chat_ref,
+                visible_text,
+                reply_to_message_id=reply_to_message_id,
+            )
 
     def _should_ignore_content_duplicate(self, message: FeishuIncomingText) -> str | bool | None:
         content_key = self._content_dedup_key(message)
@@ -928,6 +1005,18 @@ class FeishuBot:
                 inject_retry=self._inject_auth_synthetic_retry,
             )
         return self._auth_orchestration_runner
+
+    def _ensure_native_tool_executor(self) -> FeishuNativeToolExecutor:
+        if self._native_tool_executor is None:
+            if self._session is None:
+                msg = "Feishu session not initialized"
+                raise RuntimeError(msg)
+            self._native_tool_executor = FeishuNativeToolExecutor(
+                self._config,
+                session=self._session,
+                get_tenant_access_token=self._get_tenant_access_token,
+            )
+        return self._native_tool_executor
 
     async def _reply_card_auth_text(
         self,

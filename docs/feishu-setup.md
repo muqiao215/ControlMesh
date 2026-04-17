@@ -140,6 +140,23 @@ Runtime bridge:
   path should call the same runner from Feishu API/tool error handling when an
   app-scope-missing error is detected.
 
+Native-only OAPI MVP:
+
+- ControlMesh now ships a narrow native-only executor for two read tools:
+  `contact.search_user` and `contact.get_user`.
+- These tools are intentionally scoped to `feishu.runtime_mode=native`.
+  `bridge` does not expose them.
+- Missing app scope, missing user token, and missing user scope are normalized
+  into `FeishuNativeToolAuthRequiredError`, which is already handled by the
+  Feishu bot runtime and routed to permission-card or retryable device-auth
+  flows.
+- Current manual smoke entry:
+
+```bash
+/feishu-native contact.search_user Alice
+/feishu-native contact.get_user ou_xxx
+```
+
 Official Feishu self-built app guide:
 
 - <https://open.feishu.cn/document/home/introduction-to-custom-app-development/self-built-application-development-process>
