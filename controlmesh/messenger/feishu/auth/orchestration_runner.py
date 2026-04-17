@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import shlex
+import tempfile
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -109,6 +111,7 @@ class FeishuAuthOrchestrationRunner:
             trigger_message_id=message.message_id,
         )
         self._store.save(entry)
+        await self._bind_native_continuation(entry, source="controlmesh-feishu-runtime")
         context = build_card_auth_context(self._config, message)
         await self._sender.send_card(context, _feishu_card_from_auth_kit(route["card"]))
         return entry
@@ -166,6 +169,7 @@ class FeishuAuthOrchestrationRunner:
             trigger_message_id=message.message_id,
         )
         self._store.save(entry)
+        await self._bind_native_continuation(entry, source=requirement.source)
         context = build_card_auth_context(self._config, message)
         await self._sender.send_card(context, _feishu_card_from_auth_kit(route["card"]))
         return entry
@@ -205,23 +209,62 @@ class FeishuAuthOrchestrationRunner:
                 parsed.operation_id,
             )
             return
-        artifact = await self._run_json_async(
-            [
-                "orchestration",
-                "retry",
-                "--operation-id",
-                parsed.operation_id,
-                "--text",
-                entry.retry_text,
-                "--continuation-store-path",
-                _continuation_store_path(self._config),
-            ]
-        )
+        resolved = await self._resolve_action_to_retry(parsed)
+        artifact = resolved.get("retry_artifact")
+        if not isinstance(artifact, dict):
+            msg = "auth-kit action-to-retry payload did not include retry_artifact"
+            raise TypeError(msg)
         self._store.remove(parsed.operation_id)
         await self._inject_retry(entry, artifact)
 
     async def _run_json_async(self, args: list[str]) -> dict[str, Any]:
         return await asyncio.to_thread(self._run_json, args)
+
+    async def _bind_native_continuation(
+        self,
+        entry: FeishuAuthContinuationEntry,
+        *,
+        source: str,
+    ) -> dict[str, Any]:
+        return await self._run_json_async(
+            [
+                "agent",
+                "bind-continuation",
+                "--operation-id",
+                entry.operation_id,
+                "--text",
+                entry.retry_text,
+                "--source",
+                source,
+                "--continuation-store-path",
+                _continuation_store_path(self._config),
+            ]
+        )
+
+    async def _resolve_action_to_retry(self, parsed: _ParsedCardAction) -> dict[str, Any]:
+        return await asyncio.to_thread(self._run_action_to_retry_sync, parsed)
+
+    def _run_action_to_retry_sync(self, parsed: _ParsedCardAction) -> dict[str, Any]:
+        args = [
+            "agent",
+            "action-to-retry",
+            "--operation-id",
+            parsed.operation_id,
+            "--action",
+            parsed.action,
+            "--continuation-store-path",
+            _continuation_store_path(self._config),
+        ]
+        if parsed.operator_open_id:
+            args.extend(["--actor-open-id", parsed.operator_open_id])
+        if parsed.message_id:
+            args.extend(["--message-id", parsed.message_id])
+        if not parsed.payload:
+            return self._run_json(args)
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".json") as handle:
+            json.dump(parsed.payload, handle, ensure_ascii=False)
+            handle.flush()
+            return self._run_json([*args, "--payload-file", handle.name])
 
     def _on_task_done(self, task: asyncio.Task[None]) -> None:
         self._tasks.discard(task)
@@ -245,6 +288,8 @@ class _ParsedCardAction:
     action: str
     operation_id: str
     operator_open_id: str | None = None
+    message_id: str | None = None
+    payload: dict[str, Any] | None = None
 
 
 def _parse_permission_command(text: str) -> _ParsedPermissionCommand | None:
@@ -309,10 +354,14 @@ def _parse_card_action(payload: dict[str, Any]) -> _ParsedCardAction | None:
         operator_open_id = operator.get("open_id")
         if not operator_open_id and isinstance(operator.get("operator_id"), dict):
             operator_open_id = operator["operator_id"].get("open_id")
+    message_id = event.get("open_message_id") or event.get("message_id")
+    action_payload = value if isinstance(value, dict) else {}
     return _ParsedCardAction(
         action=str(action),
         operation_id=operation_id,
         operator_open_id=operator_open_id if isinstance(operator_open_id, str) else None,
+        message_id=message_id if isinstance(message_id, str) else None,
+        payload=action_payload,
     )
 
 

@@ -40,7 +40,7 @@ from controlmesh.messenger.feishu.media import resolve_media_text as _resolve_me
 from controlmesh.messenger.feishu.media_meta import parse_mp4_duration, prepare_audio_upload
 from controlmesh.messenger.feishu.message_context import (
     build_feishu_agent_input,
-    extract_feishu_content,
+    extract_feishu_content_from_event,
 )
 from controlmesh.messenger.feishu.native_tools import (
     FeishuNativeToolExecutor,
@@ -1240,7 +1240,11 @@ class FeishuBot:
             "interactive",
             "merge_forward",
         }:
-            parsed_content = extract_feishu_content(message_type, message.get("content"))
+            parsed_content = extract_feishu_content_from_event(
+                payload,
+                message_type,
+                message.get("content"),
+            )
             text = parsed_content.text
         elif isinstance(message_type, str) and is_supported_media_message_type(message_type):
             text = await self._resolve_incoming_media_text(

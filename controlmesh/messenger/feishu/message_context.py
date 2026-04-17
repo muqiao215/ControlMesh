@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from typing import Any
+
+from controlmesh.integrations.feishu_auth_kit import parse_feishu_auth_kit_message_context
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -15,6 +20,26 @@ class ParsedFeishuContent:
     message_type: str
     post_title: str | None = None
     quote_summary: str | None = None
+
+
+def extract_feishu_content_from_event(
+    payload: dict[str, Any],
+    message_type: str,
+    raw_content: object,
+) -> ParsedFeishuContent:
+    """Prefer feishu-auth-kit message context, then enrich with CM-only semantics."""
+    fallback = extract_feishu_content(message_type, raw_content)
+    kit_context = _parse_auth_kit_context(payload)
+    if not kit_context:
+        return fallback
+    kit_text = _kit_prompt_text(kit_context)
+    if message_type == "text" and kit_text:
+        return ParsedFeishuContent(
+            text=kit_text,
+            message_type=message_type,
+            quote_summary=fallback.quote_summary,
+        )
+    return fallback
 
 
 def extract_feishu_content(message_type: str, raw_content: object) -> ParsedFeishuContent:
@@ -258,3 +283,22 @@ def _first_string(value: object, keys: tuple[str, ...]) -> str | None:
         if isinstance(item, str) and item.strip():
             return item.strip()
     return None
+
+
+def _parse_auth_kit_context(payload: dict[str, Any]) -> dict[str, Any] | None:
+    try:
+        context = parse_feishu_auth_kit_message_context(payload)
+    except Exception:
+        logger.debug("feishu-auth-kit parse-inbound unavailable, falling back", exc_info=True)
+        return None
+    return context if isinstance(context, dict) else None
+
+
+def _kit_prompt_text(context: dict[str, Any]) -> str:
+    prompt_text = context.get("prompt_text")
+    if isinstance(prompt_text, str) and prompt_text.strip():
+        return prompt_text.strip()
+    text = context.get("text")
+    if isinstance(text, str):
+        return text.strip()
+    return ""

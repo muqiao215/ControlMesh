@@ -7,6 +7,7 @@ import os
 import shlex
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -83,3 +84,29 @@ def run_feishu_auth_kit_json(
         msg = "feishu-auth-kit returned a non-object JSON payload"
         raise TypeError(msg)
     return payload
+
+
+def run_feishu_auth_kit_json_with_payload_file(
+    args: list[str],
+    *,
+    payload: dict[str, Any],
+    payload_flag: str,
+    extra_env: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Run feishu-auth-kit with a temporary JSON payload file argument."""
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".json") as handle:
+        json.dump(payload, handle, ensure_ascii=False)
+        handle.flush()
+        return run_feishu_auth_kit_json(
+            [*args, payload_flag, handle.name],
+            extra_env=extra_env,
+        )
+
+
+def parse_feishu_auth_kit_message_context(payload: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a Feishu inbound event through feishu-auth-kit's context contract."""
+    return run_feishu_auth_kit_json_with_payload_file(
+        ["agent", "parse-inbound"],
+        payload=payload,
+        payload_flag="--event-file",
+    )

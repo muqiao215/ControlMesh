@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 _SYSTEM_LABELS: dict[str, str] = {
     "thinking": "处理中...",
@@ -19,6 +20,9 @@ _STATUS_LABELS: dict[str, str] = {
     "success": "success",
     "error": "error",
 }
+
+_KIT_SUCCESS_STATES = {"completed", "success", "succeeded"}
+_KIT_ERROR_STATES = {"error", "failed", "failure"}
 
 
 @dataclass(slots=True)
@@ -129,6 +133,38 @@ def render_feishu_streaming_card(
     }
 
 
+def render_feishu_streaming_card_from_single_card_run(
+    run: Mapping[str, Any],
+    *,
+    title: str = "ControlMesh",
+    note: str | None = "feishu-auth-kit cardkit",
+) -> dict[str, object]:
+    """Render a ControlMesh card from feishu-auth-kit SingleCardRun.to_dict()."""
+    return render_feishu_streaming_card(
+        title=title,
+        body=_single_card_run_body(run),
+        note=note,
+        status=_kit_status_to_stream_status(run.get("status")),
+        tool_steps=tuple(_tool_steps_from_single_card_run(run)),
+    )
+
+
+def tool_step_from_auth_kit_agent_event(event: Mapping[str, Any]) -> _ToolStep | None:
+    """Convert feishu-auth-kit AgentEvent.to_dict() into a CM stream tool step."""
+    kind = str(event.get("kind") or "")
+    if kind == "tool_call":
+        return _ToolStep(
+            name=str(event.get("tool_name") or "unknown"),
+            status="running",
+        )
+    if kind == "tool_result":
+        return _ToolStep(
+            name=str(event.get("tool_name") or "unknown"),
+            status=_kit_status_to_tool_status(event.get("state")),
+        )
+    return None
+
+
 def _truncate_summary(text: str, max_chars: int = 50) -> str:
     clean = " ".join((text or "").split())
     if len(clean) <= max_chars:
@@ -188,6 +224,27 @@ class FeishuCardStreamReporter:
             return
         self._mark_tool_running(tool_name)
         await self._set_body(self._body or "处理中...")
+
+    async def on_agent_event(self, event: Mapping[str, Any]) -> None:
+        """Consume a feishu-auth-kit AgentEvent-compatible payload."""
+        step = tool_step_from_auth_kit_agent_event(event)
+        if step is not None:
+            self._append_or_update_tool_step(step)
+            await self._set_body(self._body or "处理中...")
+            return
+        kind = str(event.get("kind") or "")
+        text = event.get("text")
+        if kind == "assistant_message" and isinstance(text, str) and text:
+            await self.on_text_delta(text)
+            return
+        if kind in {"running", "start", "status"} and isinstance(text, str) and text:
+            await self._set_body(text)
+
+    async def finish_with_single_card_run(self, run: Mapping[str, Any]) -> None:
+        """Finalize from a feishu-auth-kit SingleCardRun-compatible payload."""
+        self._status = _kit_status_to_stream_status(run.get("status"))
+        self._tool_steps = _tool_steps_from_single_card_run(run)
+        await self._finalize(_single_card_run_body(run) or "_No output._")
 
     async def on_system(self, status: str | None) -> None:
         if self._saw_text_delta:
@@ -308,6 +365,16 @@ class FeishuCardStreamReporter:
                 )
                 return
 
+    def _append_or_update_tool_step(self, step: _ToolStep) -> None:
+        if step.status == "running":
+            self._mark_tool_running(step.name)
+            return
+        for index in range(len(self._tool_steps) - 1, -1, -1):
+            if self._tool_steps[index].name == step.name:
+                self._tool_steps[index] = step
+                return
+        self._tool_steps.append(step)
+
 
 def _render_streaming_content(
     *,
@@ -326,3 +393,52 @@ def _render_streaming_content(
         f"**输出**\n{body or '处理中...'}\n\n"
         f"**终态**\n- {status_label if status in {'success', 'error'} else 'pending'}"
     )
+
+
+def _single_card_run_body(run: Mapping[str, Any]) -> str:
+    final_text = run.get("final_text")
+    if isinstance(final_text, str) and final_text.strip():
+        return final_text.strip()
+    summary = run.get("summary")
+    if isinstance(summary, str) and summary.strip():
+        return summary.strip()
+    return ""
+
+
+def _tool_steps_from_single_card_run(run: Mapping[str, Any]) -> list[_ToolStep]:
+    raw_steps = run.get("steps")
+    if not isinstance(raw_steps, list):
+        return []
+    steps: list[_ToolStep] = []
+    for raw_step in raw_steps:
+        if not isinstance(raw_step, Mapping):
+            continue
+        title = raw_step.get("title")
+        name = title if isinstance(title, str) and title.strip() else raw_step.get("kind")
+        if not isinstance(name, str) or not name.strip():
+            continue
+        steps.append(
+            _ToolStep(
+                name=name.strip(),
+                status=_kit_status_to_tool_status(raw_step.get("status")),
+            )
+        )
+    return steps
+
+
+def _kit_status_to_stream_status(value: object) -> str:
+    status = str(value or "").lower()
+    if status in _KIT_ERROR_STATES:
+        return "error"
+    if status in _KIT_SUCCESS_STATES:
+        return "success"
+    return "running"
+
+
+def _kit_status_to_tool_status(value: object) -> str:
+    status = str(value or "").lower()
+    if status in _KIT_ERROR_STATES:
+        return "error"
+    if status in _KIT_SUCCESS_STATES:
+        return "success"
+    return "running"

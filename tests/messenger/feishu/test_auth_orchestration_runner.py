@@ -114,6 +114,7 @@ async def test_start_permission_flow_routes_auth_kit_card_and_saves_runtime_cont
     ]
     assert "--continuation-store-path" in calls[0]
     assert "--pending-flow-store-path" in calls[0]
+    assert calls[1][:4] == ["agent", "bind-continuation", "--operation-id", "op_123"]
     assert sender.sent[0][0] == "oc_chat_1"
     assert sender.sent[0][2] == "om_1"
     card = sender.sent[0][1]
@@ -138,10 +139,16 @@ async def test_handle_card_action_builds_retry_artifact_and_injects_synthetic_me
         calls.append(args)
         if args[:2] == ["orchestration", "route"]:
             return _route_payload()
+        if args[:2] == ["agent", "bind-continuation"]:
+            return {"schema": "feishu-auth-kit.native-continuation.v1", "operation_id": "op_123"}
         return {
-            "kind": "synthetic_retry",
-            "operation_id": "op_123",
-            "text": "continue original task",
+            "schema": "feishu-auth-kit.native-action-resolution.v1",
+            "retry_artifact": {
+                "schema": "feishu-auth-kit.synthetic-retry.v1",
+                "kind": "synthetic_retry",
+                "operation_id": "op_123",
+                "text": "continue original task",
+            },
         }
 
     async def _inject_retry(entry: Any, artifact: dict[str, Any]) -> None:
@@ -176,7 +183,14 @@ async def test_handle_card_action_builds_retry_artifact_and_injects_synthetic_me
     )
 
     assert handled is True
-    assert calls[-1][:4] == ["orchestration", "retry", "--operation-id", "op_123"]
+    assert calls[-1][:6] == [
+        "agent",
+        "action-to-retry",
+        "--operation-id",
+        "op_123",
+        "--action",
+        "permissions_granted_continue",
+    ]
     assert injected[0][0].operation_id == "op_123"
     assert injected[0][1]["kind"] == "synthetic_retry"
     assert FeishuAuthRuntimeStore(tmp_path).load("op_123") is None

@@ -130,6 +130,13 @@ Runtime bridge:
   auth-kit-derived permission card, persist continuation metadata, accept
   `card.action.trigger` callbacks, and inject a synthetic retry back into the
   same Feishu chat/session after the user clicks "I have granted permissions".
+- ControlMesh now consumes `feishu-auth-kit` native runtime contracts instead
+  of extending a separate Feishu core:
+  - inbound message normalization first calls `feishu-auth-kit agent parse-inbound`
+  - permission-card continuation now binds a native continuation and resolves
+    card clicks through `feishu-auth-kit agent action-to-retry`
+  - `card_stream` can consume `feishu-auth-kit` `AgentEvent` and
+    `SingleCardRun` payloads
 - For development and live smoke tests, the runner accepts:
 
 ```bash

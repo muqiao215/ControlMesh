@@ -66,6 +66,10 @@ ControlMesh 配置。
 - `card_stream` 已升级为结构化单卡：状态、工具步骤、输出、终态写在同一张 CardKit 卡里
 - Feishu inbound context v1 已补一阶语义：
   `post` 文本提取、`thread/root/parent` 元数据、reply/quote 摘要
+- ControlMesh 现在开始薄接 `feishu-auth-kit` native runtime contract：
+  入站 context 先走 `agent parse-inbound`，授权卡点击后的 retry 走
+  `agent bind-continuation` / `agent action-to-retry`，`card_stream` 兼容
+  `AgentEvent` / `SingleCardRun` 负载
 - 当前 smoke 入口是 `/feishu-native ...`，只在 `runtime_mode=native` 可用
 
 ```bash
@@ -256,6 +260,10 @@ runtime executes it, and the tool result is fed back into the final response
 prompt. `card_stream` now renders a structured single card with status, tool
 steps, output, and terminal state. Inbound Feishu parsing also carries a first
 semantic layer for `post`, reply/quote summary, and thread/root/parent IDs.
+ControlMesh now consumes `feishu-auth-kit` native runtime contracts on three
+seams: `agent parse-inbound` for base message context, `agent action-to-retry`
+for permission-card continuation clicks, and `AgentEvent`/`SingleCardRun`
+compatible card rendering in `card_stream`.
 
 ```bash
 controlmesh auth feishu register-begin
