@@ -53,7 +53,7 @@ def _delete_old_files(directory: Path, max_age_days: int) -> int:
 
 
 class CleanupObserver(BaseObserver):
-    """Runs daily file cleanup for telegram_files, output_to_user, and api_files.
+    """Runs daily file cleanup for transport media dirs, output_to_user, and api_files.
 
     Follows the same lifecycle pattern as HeartbeatObserver:
     ``start()`` / ``stop()`` with an asyncio background task.
@@ -127,16 +127,18 @@ class CleanupObserver(BaseObserver):
             (self._paths.output_to_user_dir, self._cfg.output_to_user_days),
             (self._paths.api_files_dir, self._cfg.api_files_days),
             (self._paths.matrix_files_dir, self._cfg.media_files_days),
+            (self._paths.feishu_files_dir, self._cfg.media_files_days),
         ]
         results = await asyncio.to_thread(_run_cleanup, targets)
 
         if any(results):
             logger.info(
-                "Cleanup complete: telegram=%d, output=%d, api=%d, matrix=%d",
+                "Cleanup complete: telegram=%d, output=%d, api=%d, matrix=%d, feishu=%d",
                 results[0],
                 results[1],
                 results[2],
                 results[3],
+                results[4],
             )
         else:
             logger.debug("Cleanup: nothing to delete")

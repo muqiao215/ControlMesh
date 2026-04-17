@@ -21,6 +21,7 @@ _CONTROLMESH_HOME = Path(
 _MEDIA_DIRS = (
     _CONTROLMESH_HOME / "workspace" / "telegram_files",
     _CONTROLMESH_HOME / "workspace" / "matrix_files",
+    _CONTROLMESH_HOME / "workspace" / "feishu_files",
     _CONTROLMESH_HOME / "workspace" / "api_files",
 )
 

@@ -11,7 +11,9 @@ from controlmesh.messenger.feishu.transport import FeishuTransport
 def _make_transport() -> tuple[FeishuTransport, MagicMock]:
     bot = MagicMock()
     bot.send_text = AsyncMock()
+    bot.send_rich = AsyncMock()
     bot.broadcast_text = AsyncMock()
+    bot.broadcast_rich = AsyncMock()
     return FeishuTransport(bot), bot
 
 
@@ -26,7 +28,7 @@ class TestFeishuTransport:
         transport, _ = _make_transport()
         assert transport.transport_name == "fs"
 
-    async def test_heartbeat_uses_plain_text_send(self) -> None:
+    async def test_heartbeat_uses_rich_send(self) -> None:
         transport, bot = _make_transport()
 
         await transport.deliver(
@@ -37,7 +39,7 @@ class TestFeishuTransport:
             )
         )
 
-        bot.send_text.assert_awaited_once_with(99, "heartbeat")
+        bot.send_rich.assert_awaited_once_with(99, "heartbeat")
 
     async def test_background_result_formats_plain_text(self) -> None:
         transport, bot = _make_transport()
@@ -52,8 +54,8 @@ class TestFeishuTransport:
             )
         )
 
-        bot.send_text.assert_awaited_once()
-        text = bot.send_text.call_args[0][1]
+        bot.send_rich.assert_awaited_once()
+        text = bot.send_rich.call_args[0][1]
         assert "[redowl] Complete" in text
         assert "done" in text
 
@@ -69,7 +71,7 @@ class TestFeishuTransport:
             )
         )
 
-        bot.broadcast_text.assert_awaited_once()
-        text = bot.broadcast_text.call_args[0][0]
+        bot.broadcast_rich.assert_awaited_once()
+        text = bot.broadcast_rich.call_args[0][0]
         assert "**TASK: Sync**" in text
         assert "cron ok" in text

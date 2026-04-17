@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import mimetypes
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
@@ -19,6 +20,7 @@ from controlmesh.bus.envelope import Envelope
 from controlmesh.bus.lock_pool import LockPool
 from controlmesh.config import AgentConfig
 from controlmesh.files.allowed_roots import resolve_allowed_roots
+from controlmesh.files.storage import sanitize_filename as _sanitize_filename
 from controlmesh.log_context import set_log_context
 from controlmesh.messenger.feishu.auth.card_auth_runner import FeishuCardAuthRunner
 from controlmesh.messenger.feishu.auth.feishu_card_sender import (
@@ -27,9 +29,12 @@ from controlmesh.messenger.feishu.auth.feishu_card_sender import (
 )
 from controlmesh.messenger.feishu.auth.orchestration_runner import FeishuAuthOrchestrationRunner
 from controlmesh.messenger.feishu.auth.runtime_auth import resolve_feishu_auth
+from controlmesh.messenger.feishu.media import ResolveMediaRequest, is_supported_media_message_type
+from controlmesh.messenger.feishu.media import resolve_media_text as _resolve_media_text
 from controlmesh.messenger.notifications import NotificationService
 from controlmesh.messenger.telegram.dedup import DedupeCache
 from controlmesh.session.key import SessionKey
+from controlmesh.workspace.paths import ControlMeshPaths
 
 if TYPE_CHECKING:
     from controlmesh.messenger.feishu.inbound import FeishuInboundServer
@@ -37,7 +42,6 @@ if TYPE_CHECKING:
     from controlmesh.multiagent.bus import AsyncInterAgentResult
     from controlmesh.orchestrator.core import Orchestrator
     from controlmesh.tasks.models import TaskResult
-    from controlmesh.workspace.paths import ControlMeshPaths
 
 logger = logging.getLogger(__name__)
 # Feishu long-connection retries can arrive minutes after the first delivery,
@@ -177,6 +181,7 @@ class FeishuBot:
         self._process_start_time = time.time()
         self._shutdown_started = False
         self._exit_code = 0
+        self._paths = ControlMeshPaths(Path(config.controlmesh_home).expanduser())
         self._dedup = DedupeCache(
             ttl_seconds=_FEISHU_DEDUP_TTL_SECONDS,
             max_size=_FEISHU_DEDUP_MAX_SIZE,
@@ -292,7 +297,7 @@ class FeishuBot:
         if self._is_card_action_event(payload):
             self._ensure_auth_orchestration_runner().schedule_card_action(payload)
             return
-        message = self._parse_incoming_text(payload)
+        message = await self._parse_incoming_message(payload)
         if message is None:
             return
         if self._is_old_message(message):
@@ -446,11 +451,37 @@ class FeishuBot:
             return
         await self._send_text_to_chat_ref(chat_ref, text)
 
+    async def send_rich(self, chat_id: int, text: str) -> None:
+        await self.send_text(chat_id, text)
+
     async def broadcast_text(self, text: str) -> None:
         for chat_id in self._id_map.known_chat_ids():
             await self.send_text(chat_id, text)
 
+    async def broadcast_rich(self, text: str) -> None:
+        for chat_id in self._id_map.known_chat_ids():
+            await self.send_rich(chat_id, text)
+
     async def _send_text_to_chat_ref(
+        self,
+        chat_ref: str,
+        text: str,
+        *,
+        reply_to_message_id: str | None = None,
+    ) -> None:
+        from controlmesh.messenger.feishu.sender import send_rich
+
+        if not text:
+            return
+        await send_rich(
+            self,
+            chat_ref,
+            text,
+            allowed_roots=self.file_roots(self._paths),
+            reply_to_message_id=reply_to_message_id,
+        )
+
+    async def _send_plain_text_to_chat_ref(
         self,
         chat_ref: str,
         text: str,
@@ -580,6 +611,121 @@ class FeishuBot:
                     response.status,
                     body[:500],
                 )
+
+    async def _upload_image(self, path: Path) -> str:
+        session = await self._ensure_session()
+        token = await self._get_tenant_access_token()
+        url = f"{self._config.feishu.domain.rstrip('/')}/open-apis/im/v1/images"
+        form = aiohttp.FormData()
+        form.add_field("image_type", "message")
+        with path.open("rb") as file_obj:
+            form.add_field(
+                "image",
+                file_obj,
+                filename=path.name,
+                content_type=mimetypes.guess_type(path.name)[0] or "application/octet-stream",
+            )
+            async with session.post(
+                url,
+                data=form,
+                headers={"Authorization": f"Bearer {token}"},
+            ) as response:
+                data = await response.json(content_type=None)
+        image_key = ""
+        if isinstance(data, dict):
+            raw = data.get("data", {})
+            if isinstance(raw, dict):
+                image_key = str(raw.get("image_key", "") or "")
+        if not image_key:
+            msg = f"Feishu image upload failed: {data}"
+            raise RuntimeError(msg)
+        return image_key
+
+    async def _upload_file(
+        self,
+        path: Path,
+        *,
+        file_type: str,
+        duration_ms: int | None = None,
+    ) -> str:
+        session = await self._ensure_session()
+        token = await self._get_tenant_access_token()
+        url = f"{self._config.feishu.domain.rstrip('/')}/open-apis/im/v1/files"
+        form = aiohttp.FormData()
+        form.add_field("file_type", file_type)
+        form.add_field("file_name", _sanitize_filename(path.name))
+        if duration_ms is not None:
+            form.add_field("duration", str(duration_ms))
+        with path.open("rb") as file_obj:
+            form.add_field(
+                "file",
+                file_obj,
+                filename=path.name,
+                content_type=mimetypes.guess_type(path.name)[0] or "application/octet-stream",
+            )
+            async with session.post(
+                url,
+                data=form,
+                headers={"Authorization": f"Bearer {token}"},
+            ) as response:
+                data = await response.json(content_type=None)
+        file_key = ""
+        if isinstance(data, dict):
+            raw = data.get("data", {})
+            if isinstance(raw, dict):
+                file_key = str(raw.get("file_key", "") or "")
+        if not file_key:
+            msg = f"Feishu file upload failed: {data}"
+            raise RuntimeError(msg)
+        return file_key
+
+    async def _send_local_file_to_chat_ref(
+        self,
+        chat_ref: str,
+        path: Path,
+        *,
+        upload_mode: str,
+        reply_to_message_id: str | None = None,
+    ) -> None:
+        if upload_mode == "image":
+            image_key = await self._upload_image(path)
+            await self._send_message_to_chat_ref(
+                chat_ref,
+                msg_type="image",
+                content={"image_key": image_key},
+                reply_to_message_id=reply_to_message_id,
+            )
+            return
+
+        mime = mimetypes.guess_type(path.name)[0] or ""
+        file_type = self._detect_upload_file_type(path, mime)
+        file_key = await self._upload_file(path, file_type=file_type)
+        msg_type = {"audio": "audio", "video": "media"}.get(upload_mode, "file")
+        await self._send_message_to_chat_ref(
+            chat_ref,
+            msg_type=msg_type,
+            content={"file_key": file_key},
+            reply_to_message_id=reply_to_message_id,
+        )
+
+    @staticmethod
+    def _detect_upload_file_type(path: Path, mime: str) -> str:
+        suffix = path.suffix.lower()
+        suffix_map = {
+            ".ogg": "opus",
+            ".opus": "opus",
+            ".pdf": "pdf",
+            ".doc": "doc",
+            ".docx": "doc",
+            ".xls": "xls",
+            ".xlsx": "xls",
+            ".csv": "xls",
+            ".ppt": "ppt",
+            ".pptx": "ppt",
+        }
+        if mime.startswith("video/") or suffix in {".mp4", ".mov", ".avi", ".mkv", ".webm"}:
+            return "mp4"
+        return suffix_map.get(suffix, "stream")
 
     async def _create_streaming_card(self, card: dict[str, object]) -> str | None:
         session = await self._ensure_session()
@@ -785,7 +931,7 @@ class FeishuBot:
         allow_from = self._config.feishu.allow_from
         return not allow_from or sender_id in allow_from
 
-    def _parse_incoming_text(self, payload: dict[str, Any]) -> FeishuIncomingText | None:
+    async def _parse_incoming_message(self, payload: dict[str, Any]) -> FeishuIncomingText | None:
         header = payload.get("header")
         event = payload.get("event")
         if (
@@ -797,26 +943,25 @@ class FeishuBot:
 
         message = event.get("message")
         sender = event.get("sender")
-        if not isinstance(message, dict) or not isinstance(sender, dict) or message.get(
-            "message_type"
-        ) != "text":
+        if not isinstance(message, dict) or not isinstance(sender, dict):
             return None
 
-        sender_id = self._extract_sender_id(sender)
-        chat_id = message.get("chat_id")
-        message_id = message.get("message_id")
-        if not all(
-            (
-                isinstance(sender_id, str) and sender_id,
-                isinstance(chat_id, str) and chat_id,
-                isinstance(message_id, str) and message_id,
+        parts = self._extract_message_identity(sender, message)
+        if parts is None:
+            return None
+        sender_id, chat_id, message_id = parts
+
+        message_type = message.get("message_type")
+        if message_type == "text":
+            text = self._extract_text(message.get("content"))
+        elif isinstance(message_type, str) and is_supported_media_message_type(message_type):
+            text = await self._resolve_incoming_media_text(
+                message_id=message_id,
+                message_type=message_type,
+                raw_content=message.get("content"),
             )
-        ):
+        else:
             return None
-        assert isinstance(chat_id, str)
-        assert isinstance(message_id, str)
-
-        text = self._extract_text(message.get("content"))
         if not text:
             return None
 
@@ -829,6 +974,46 @@ class FeishuBot:
             text=text,
             thread_id=thread_id if isinstance(thread_id, str) and thread_id else None,
             create_time_ms=create_time_ms,
+        )
+
+    @staticmethod
+    def _extract_message_identity(
+        sender: dict[str, Any],
+        message: dict[str, Any],
+    ) -> tuple[str, str, str] | None:
+        sender_id = FeishuBot._extract_sender_id(sender)
+        chat_id = message.get("chat_id")
+        message_id = message.get("message_id")
+        if not all(
+            (
+                isinstance(sender_id, str) and sender_id,
+                isinstance(chat_id, str) and chat_id,
+                isinstance(message_id, str) and message_id,
+            )
+        ):
+            return None
+        return sender_id, chat_id, message_id
+
+    async def _resolve_incoming_media_text(
+        self,
+        *,
+        message_id: str,
+        message_type: str,
+        raw_content: object,
+    ) -> str | None:
+        session = await self._ensure_session()
+        token = await self._get_tenant_access_token()
+        return await _resolve_media_text(
+            ResolveMediaRequest(
+                session=session,
+                config=self._config.feishu,
+                message_id=message_id,
+                message_type=message_type,
+                raw_content=raw_content,
+                files_dir=self._paths.feishu_files_dir,
+                workspace=self._paths.workspace,
+                tenant_access_token=token,
+            )
         )
 
     @staticmethod

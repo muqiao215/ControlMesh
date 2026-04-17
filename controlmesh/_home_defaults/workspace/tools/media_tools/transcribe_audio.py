@@ -19,9 +19,14 @@ import subprocess
 import sys
 from pathlib import Path
 
-_TELEGRAM_FILES = Path(
+_WORKSPACE = Path(
     os.environ.get("CONTROLMESH_HOME", str(Path.home() / ".controlmesh"))
-).expanduser() / "workspace" / "telegram_files"
+).expanduser() / "workspace"
+_MEDIA_DIRS = (
+    _WORKSPACE / "telegram_files",
+    _WORKSPACE / "matrix_files",
+    _WORKSPACE / "feishu_files",
+)
 
 
 def _transcribe_openai(path: Path) -> dict:
@@ -121,8 +126,8 @@ def main() -> None:
     args = parser.parse_args()
 
     path = Path(args.file).resolve()
-    if not path.is_relative_to(_TELEGRAM_FILES.resolve()):
-        print(json.dumps({"error": f"Path outside telegram_files: {path}"}))
+    if not any(path.is_relative_to(base.resolve()) for base in _MEDIA_DIRS if base.exists()):
+        print(json.dumps({"error": f"Path outside media directories: {path}"}))
         sys.exit(1)
     if not path.exists():
         print(json.dumps({"error": f"File not found: {path}"}))

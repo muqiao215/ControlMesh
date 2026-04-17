@@ -74,11 +74,11 @@ class FeishuTransport:
                     SEP,
                     env.result_text or "_No output._",
                 )
-        await self._bot.send_text(env.chat_id, text)
+        await self._bot.send_rich(env.chat_id, text)
 
     async def _deliver_heartbeat(self, env: Envelope) -> None:
         if env.result_text:
-            await self._bot.send_text(env.chat_id, env.result_text)
+            await self._bot.send_rich(env.chat_id, env.result_text)
 
     async def _deliver_interagent(self, env: Envelope) -> None:
         if env.is_error:
@@ -88,14 +88,14 @@ class FeishuTransport:
                 f"Error: {env.metadata.get('error', 'unknown')}\n"
                 f"Request: _{env.prompt_preview}_"
             )
-            await self._bot.send_text(env.chat_id, text)
+            await self._bot.send_rich(env.chat_id, text)
             return
 
         notice = env.metadata.get("provider_switch_notice", "")
         if notice:
-            await self._bot.send_text(env.chat_id, f"**Provider Switch Detected**\n\n{notice}")
+            await self._bot.send_rich(env.chat_id, f"**Provider Switch Detected**\n\n{notice}")
         if env.result_text:
-            await self._bot.send_text(env.chat_id, env.result_text)
+            await self._bot.send_rich(env.chat_id, env.result_text)
 
     async def _deliver_task_result(self, env: Envelope) -> None:
         name = env.metadata.get("name", env.metadata.get("task_id", "?"))
@@ -111,19 +111,19 @@ class FeishuTransport:
             note = f"**Task `{name}` failed**\nReason: {env.metadata.get('error', 'unknown')}"
 
         if note:
-            await self._bot.send_text(env.chat_id, note)
+            await self._bot.send_rich(env.chat_id, note)
         if env.needs_injection and env.result_text:
-            await self._bot.send_text(env.chat_id, env.result_text)
+            await self._bot.send_rich(env.chat_id, env.result_text)
 
     async def _deliver_task_question(self, env: Envelope) -> None:
         task_id = env.metadata.get("task_id", "?")
-        await self._bot.send_text(env.chat_id, f"**Task `{task_id}` has a question:**\n{env.prompt}")
+        await self._bot.send_rich(env.chat_id, f"**Task `{task_id}` has a question:**\n{env.prompt}")
         if env.result_text:
-            await self._bot.send_text(env.chat_id, env.result_text)
+            await self._bot.send_rich(env.chat_id, env.result_text)
 
     async def _deliver_webhook_wake(self, env: Envelope) -> None:
         if env.result_text:
-            await self._bot.send_text(env.chat_id, env.result_text)
+            await self._bot.send_rich(env.chat_id, env.result_text)
 
     async def _deliver_cron(self, env: Envelope) -> None:
         title = env.metadata.get("title", "?")
@@ -135,7 +135,7 @@ class FeishuTransport:
             if clean_result
             else f"**TASK: {title}**\n\n_{env.status}_"
         )
-        await self._bot.send_text(env.chat_id, text)
+        await self._bot.send_rich(env.chat_id, text)
 
     async def _broadcast_cron(self, env: Envelope) -> None:
         title = env.metadata.get("title", "?")
@@ -147,7 +147,7 @@ class FeishuTransport:
             if clean_result
             else f"**TASK: {title}**\n\n_{env.status}_"
         )
-        await self._bot.broadcast_text(text)
+        await self._bot.broadcast_rich(text)
 
     async def _broadcast_webhook_cron(self, env: Envelope) -> None:
         title = env.metadata.get("hook_title", "?")
@@ -156,7 +156,7 @@ class FeishuTransport:
             if env.result_text
             else f"**WEBHOOK (CRON TASK): {title}**\n\n_{env.status}_"
         )
-        await self._bot.broadcast_text(text)
+        await self._bot.broadcast_rich(text)
 
 
 _Handler = Callable[[FeishuTransport, Envelope], Awaitable[None]]

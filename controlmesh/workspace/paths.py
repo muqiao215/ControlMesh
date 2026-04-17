@@ -88,6 +88,10 @@ class ControlMeshPaths:
         return self.workspace / "matrix_files"
 
     @property
+    def feishu_files_dir(self) -> Path:
+        return self.workspace / "feishu_files"
+
+    @property
     def api_files_dir(self) -> Path:
         return self.workspace / "api_files"
 

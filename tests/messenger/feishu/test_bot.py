@@ -119,6 +119,53 @@ class TestFeishuBotRouting:
             )
         )
 
+    async def test_handle_incoming_event_normalizes_image_payload(self, tmp_path: Path) -> None:
+        bot = _make_bot(tmp_path)
+        bot.handle_incoming_text = AsyncMock()  # type: ignore[method-assign]
+        bot._resolve_incoming_media_text = AsyncMock(  # type: ignore[method-assign]
+            return_value="[INCOMING FILE]\nPath: feishu_files/2026-04-17/photo.webp"
+        )
+        create_time_ms = int(time.time() * 1000)
+
+        payload = {
+            "schema": "2.0",
+            "header": {
+                "event_id": "evt_1",
+                "event_type": "im.message.receive_v1",
+                "create_time": str(create_time_ms),
+                "tenant_key": "tenant_1",
+                "app_id": "cli_123",
+            },
+            "event": {
+                "sender": {"sender_id": {"open_id": "ou_sender"}},
+                "message": {
+                    "message_id": "om_1",
+                    "chat_id": "oc_chat_1",
+                    "thread_id": "omt_1",
+                    "message_type": "image",
+                    "content": '{"image_key":"img_123"}',
+                },
+            },
+        }
+
+        await bot.handle_incoming_event(payload)
+
+        bot._resolve_incoming_media_text.assert_awaited_once_with(
+            message_id="om_1",
+            message_type="image",
+            raw_content='{"image_key":"img_123"}',
+        )
+        bot.handle_incoming_text.assert_awaited_once_with(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="[INCOMING FILE]\nPath: feishu_files/2026-04-17/photo.webp",
+                thread_id="omt_1",
+                create_time_ms=create_time_ms,
+            )
+        )
+
     async def test_handle_incoming_event_ignores_old_message_after_startup(
         self,
         tmp_path: Path,
