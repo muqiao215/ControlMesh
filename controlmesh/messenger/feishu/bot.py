@@ -31,6 +31,7 @@ from controlmesh.messenger.feishu.auth.orchestration_runner import FeishuAuthOrc
 from controlmesh.messenger.feishu.auth.runtime_auth import resolve_feishu_auth
 from controlmesh.messenger.feishu.media import ResolveMediaRequest, is_supported_media_message_type
 from controlmesh.messenger.feishu.media import resolve_media_text as _resolve_media_text
+from controlmesh.messenger.feishu.media_meta import parse_mp4_duration, prepare_audio_upload
 from controlmesh.messenger.notifications import NotificationService
 from controlmesh.messenger.telegram.dedup import DedupeCache
 from controlmesh.session.key import SessionKey
@@ -698,15 +699,46 @@ class FeishuBot:
             return
 
         mime = mimetypes.guess_type(path.name)[0] or ""
+        send_path = path
+        duration_ms: int | None = None
+        if upload_mode == "audio":
+            try:
+                send_path, duration_ms = await asyncio.to_thread(
+                    self._prepare_audio_send_payload,
+                    path,
+                    mime,
+                )
+            except RuntimeError as exc:
+                logger.info(
+                    "Feishu audio upload falling back to document for %s: %s",
+                    path.name,
+                    exc,
+                )
+                upload_mode = "document"
+            if send_path == path and path.suffix.lower() not in {".ogg", ".opus"}:
+                logger.info(
+                    "Feishu audio upload falling back to document for %s because Opus conversion was unavailable",
+                    path.name,
+                )
+                upload_mode = "document"
+        elif upload_mode == "video":
+            duration_ms = await asyncio.to_thread(self._parse_video_duration_ms, path)
         file_type = self._detect_upload_file_type(path, mime)
-        file_key = await self._upload_file(path, file_type=file_type)
+        if upload_mode == "audio":
+            file_type = "opus"
+        file_key = await self._upload_file(send_path, file_type=file_type, duration_ms=duration_ms)
         msg_type = {"audio": "audio", "video": "media"}.get(upload_mode, "file")
-        await self._send_message_to_chat_ref(
-            chat_ref,
-            msg_type=msg_type,
-            content={"file_key": file_key},
-            reply_to_message_id=reply_to_message_id,
-        )
+        try:
+            await self._send_message_to_chat_ref(
+                chat_ref,
+                msg_type=msg_type,
+                content={"file_key": file_key},
+                reply_to_message_id=reply_to_message_id,
+            )
+        finally:
+            if send_path != path:
+                with suppress(OSError):
+                    send_path.unlink()
 
     @staticmethod
     def _detect_upload_file_type(path: Path, mime: str) -> str:
@@ -726,6 +758,18 @@ class FeishuBot:
         if mime.startswith("video/") or suffix in {".mp4", ".mov", ".avi", ".mkv", ".webm"}:
             return "mp4"
         return suffix_map.get(suffix, "stream")
+
+    @staticmethod
+    def _prepare_audio_send_payload(path: Path, mime: str) -> tuple[Path, int | None]:
+        payload = prepare_audio_upload(path, mime)
+        return payload.path, payload.duration_ms
+
+    @staticmethod
+    def _parse_video_duration_ms(path: Path) -> int | None:
+        try:
+            return parse_mp4_duration(path.read_bytes())
+        except OSError:
+            return None
 
     async def _create_streaming_card(self, card: dict[str, object]) -> str | None:
         session = await self._ensure_session()

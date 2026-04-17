@@ -13,7 +13,7 @@ from controlmesh.security.paths import is_path_safe
 logger = logging.getLogger(__name__)
 
 _VIDEO_SUFFIXES = frozenset({".mp4", ".mov", ".avi", ".mkv", ".webm"})
-_AUDIO_SUFFIXES = frozenset({".ogg", ".opus"})
+_AUDIO_SUFFIXES = frozenset({".ogg", ".opus", ".mp3", ".wav", ".m4a"})
 
 
 def select_upload_mode(path: Path, mime: str) -> str:

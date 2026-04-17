@@ -21,6 +21,9 @@ def _bot() -> SimpleNamespace:
     [
         ("photo.jpg", "image/jpeg", "image"),
         ("voice.ogg", "audio/ogg", "audio"),
+        ("voice.mp3", "audio/mpeg", "audio"),
+        ("voice.wav", "audio/wav", "audio"),
+        ("voice.m4a", "audio/mp4", "audio"),
         ("clip.mp4", "video/mp4", "video"),
         ("report.pdf", "application/pdf", "document"),
     ],

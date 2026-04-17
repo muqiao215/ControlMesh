@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Self
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import aiohttp
 import pytest
@@ -886,3 +886,97 @@ async def test_get_tenant_access_token_consumes_runtime_resolver_and_keeps_bot_f
         "app_id": "cli_123",
         "app_secret": "sec_456",
     }
+
+
+@pytest.mark.asyncio
+async def test_send_local_audio_uploads_with_duration_and_audio_message(tmp_path: Path) -> None:
+    bot = _make_bot(tmp_path)
+    path = tmp_path / "voice.ogg"
+    path.write_bytes(b"audio")
+    bot._prepare_audio_send_payload = MagicMock(return_value=(path, 1234))  # type: ignore[method-assign]
+    bot._upload_file = AsyncMock(return_value="file_key_audio")  # type: ignore[method-assign]
+    bot._send_message_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+
+    await bot._send_local_file_to_chat_ref("oc_chat_1", path, upload_mode="audio")
+
+    bot._upload_file.assert_awaited_once_with(path, file_type="opus", duration_ms=1234)
+    bot._send_message_to_chat_ref.assert_awaited_once_with(
+        "oc_chat_1",
+        msg_type="audio",
+        content={"file_key": "file_key_audio"},
+        reply_to_message_id=None,
+    )
+
+
+@pytest.mark.asyncio
+async def test_send_local_video_uploads_with_duration_and_media_message(tmp_path: Path) -> None:
+    bot = _make_bot(tmp_path)
+    path = tmp_path / "clip.mp4"
+    path.write_bytes(b"video")
+    bot._parse_video_duration_ms = MagicMock(return_value=2500)  # type: ignore[method-assign]
+    bot._upload_file = AsyncMock(return_value="file_key_video")  # type: ignore[method-assign]
+    bot._send_message_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+
+    await bot._send_local_file_to_chat_ref("oc_chat_1", path, upload_mode="video")
+
+    bot._upload_file.assert_awaited_once_with(path, file_type="mp4", duration_ms=2500)
+    bot._send_message_to_chat_ref.assert_awaited_once_with(
+        "oc_chat_1",
+        msg_type="media",
+        content={"file_key": "file_key_video"},
+        reply_to_message_id=None,
+    )
+
+
+@pytest.mark.asyncio
+async def test_send_local_common_audio_falls_back_to_document_when_transcode_unavailable(
+    tmp_path: Path,
+) -> None:
+    bot = _make_bot(tmp_path)
+    path = tmp_path / "voice.mp3"
+    path.write_bytes(b"audio")
+    bot._prepare_audio_send_payload = MagicMock(  # type: ignore[method-assign]
+        side_effect=RuntimeError("ffmpeg not available")
+    )
+    bot._upload_file = AsyncMock(return_value="file_key_doc")  # type: ignore[method-assign]
+    bot._send_message_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+
+    await bot._send_local_file_to_chat_ref("oc_chat_1", path, upload_mode="audio")
+
+    bot._upload_file.assert_awaited_once_with(path, file_type="stream", duration_ms=None)
+    bot._send_message_to_chat_ref.assert_awaited_once_with(
+        "oc_chat_1",
+        msg_type="file",
+        content={"file_key": "file_key_doc"},
+        reply_to_message_id=None,
+    )
+
+
+@pytest.mark.asyncio
+async def test_upload_file_includes_duration_field(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import controlmesh.messenger.feishu.bot as bot_mod
+
+    class _FakeFormData:
+        def __init__(self) -> None:
+            self.fields: list[tuple[str, object]] = []
+
+        def add_field(self, name: str, value: object, **_kwargs: object) -> None:
+            self.fields.append((name, value))
+
+    bot = _make_bot(tmp_path)
+    path = tmp_path / "voice.ogg"
+    path.write_bytes(b"audio")
+    form = _FakeFormData()
+    fake_session = _FakeSession(_FakeResponse(200, {"data": {"file_key": "file_key_audio"}}))
+    bot._session = fake_session  # type: ignore[assignment]
+    bot._get_tenant_access_token = AsyncMock(return_value="tenant-token")  # type: ignore[method-assign]
+    monkeypatch.setattr(bot_mod.aiohttp, "FormData", lambda: form)
+
+    assert await bot._upload_file(path, file_type="opus", duration_ms=1234) == "file_key_audio"
+
+    assert ("duration", "1234") in form.fields
+    assert ("file_type", "opus") in form.fields
+    assert ("file_name", "voice.ogg") in form.fields
