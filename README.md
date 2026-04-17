@@ -56,11 +56,16 @@ ControlMesh 配置。
 - 使用 Feishu CardKit 真流式卡片
 - 复用 auth-kit 的权限规划、continuation 和 synthetic retry 原语
 - MVP 已接上 native-only Feishu OAPI tools：
-  `contact.search_user`、`contact.get_user`、`im.get_messages`
+  `contact.search_user`、`contact.get_user`、`im.get_messages`、`drive.list_files`
 - 缺 app scope / user token / user scope 时会抛标准
   `FeishuNativeToolAuthRequiredError`，由 runtime auth seam 路由权限卡或 device auth
 - 新增 `/feishu_auth_all` 飞书内批量授权入口：优先走权限卡/设备授权，
   不再把“去开发者后台”作为唯一交互；当前只覆盖 native-only OAPI MVP
+- native runtime 现在有第一版 agent-selectable Feishu tool seam：
+  模型可先选 `contact` / `im` / `drive` native tools，再由 ControlMesh 执行并把结果回灌同一回答链
+- `card_stream` 已升级为结构化单卡：状态、工具步骤、输出、终态写在同一张 CardKit 卡里
+- Feishu inbound context v1 已补一阶语义：
+  `post` 文本提取、`thread/root/parent` 元数据、reply/quote 摘要
 - 当前 smoke 入口是 `/feishu-native ...`，只在 `runtime_mode=native` 可用
 
 ```bash
@@ -236,14 +241,21 @@ official scan-to-create flow, writes credentials back to ControlMesh config,
 probes readiness, and enables CardKit streaming cards.
 
 The current MVP also wires native-only read OAPI tools:
-`contact.search_user`, `contact.get_user`, and `im.get_messages`. Missing app
-scope, user token, or user scope is surfaced as
+`contact.search_user`, `contact.get_user`, `im.get_messages`, and
+`drive.list_files`. Missing app scope, user token, or user scope is surfaced as
 `FeishuNativeToolAuthRequiredError`, so the runtime can route into permission
 cards or retryable device auth. `/feishu_auth_all` is the current in-chat batch
 auth entry for these native-only tools: app-scope gaps still require app
 owner/admin approval, while user OAuth gaps stay inside Feishu device-auth
 cards with retry. The explicit smoke entry is `/feishu-native ...`, and bridge
 mode does not support either native tool execution or `/feishu_auth_all`.
+
+ControlMesh also now has a first in-runtime agent-selectable Feishu tool seam:
+the model can select one native Feishu read tool before the main answer, the
+runtime executes it, and the tool result is fed back into the final response
+prompt. `card_stream` now renders a structured single card with status, tool
+steps, output, and terminal state. Inbound Feishu parsing also carries a first
+semantic layer for `post`, reply/quote summary, and thread/root/parent IDs.
 
 ```bash
 controlmesh auth feishu register-begin

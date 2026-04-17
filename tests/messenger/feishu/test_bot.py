@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -123,6 +124,101 @@ class TestFeishuBotRouting:
             )
         )
 
+    async def test_handle_incoming_event_extracts_post_and_reply_thread_context(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path)
+        bot.handle_incoming_text = AsyncMock()  # type: ignore[method-assign]
+        create_time_ms = int(time.time() * 1000)
+        post_content = {
+            "zh_cn": {
+                "title": "项目更新",
+                "content": [
+                    [
+                        {"tag": "text", "text": "请看 "},
+                        {"tag": "a", "text": "文档", "href": "https://example.com/doc"},
+                    ],
+                    [{"tag": "at", "user_id": "ou_alice", "user_name": "Alice"}],
+                ],
+            },
+            "quote": {"text": "上一条结论"},
+        }
+
+        payload = {
+            "schema": "2.0",
+            "header": {
+                "event_id": "evt_1",
+                "event_type": "im.message.receive_v1",
+                "create_time": str(create_time_ms),
+                "tenant_key": "tenant_1",
+                "app_id": "cli_123",
+            },
+            "event": {
+                "sender": {"sender_id": {"open_id": "ou_sender"}},
+                "message": {
+                    "message_id": "om_2",
+                    "chat_id": "oc_chat_1",
+                    "thread_id": "omt_thread",
+                    "root_id": "om_root",
+                    "parent_id": "om_parent",
+                    "message_type": "post",
+                    "content": json.dumps(post_content, ensure_ascii=False),
+                },
+            },
+        }
+
+        await bot.handle_incoming_event(payload)
+
+        bot.handle_incoming_text.assert_awaited_once_with(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_2",
+                text="**项目更新**\n\n请看 [文档](https://example.com/doc)\n@Alice",
+                thread_id="omt_thread",
+                create_time_ms=create_time_ms,
+                message_type="post",
+                root_id="om_root",
+                parent_id="om_parent",
+                quote_summary="上一条结论",
+                post_title="项目更新",
+            )
+        )
+
+    async def test_handle_incoming_text_passes_feishu_context_to_orchestrator(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path)
+        bot._orchestrator = SimpleNamespace(
+            handle_message_streaming=AsyncMock(return_value=SimpleNamespace(text="ok"))
+        )
+        bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="继续处理",
+                thread_id="omt_thread",
+                message_type="post",
+                root_id="om_root",
+                parent_id="om_parent",
+                quote_summary="上一条结论",
+                post_title="项目更新",
+            )
+        )
+
+        prompt = bot._orchestrator.handle_message_streaming.await_args.args[1]
+        assert "[Feishu inbound context]" in prompt
+        assert "message_type=post" in prompt
+        assert "root_message_id=om_root" in prompt
+        assert "parent_message_id=om_parent" in prompt
+        assert "quote_summary=上一条结论" in prompt
+        assert prompt.endswith("继续处理")
+
     async def test_handle_incoming_event_normalizes_image_payload(self, tmp_path: Path) -> None:
         bot = _make_bot(tmp_path)
         bot.handle_incoming_text = AsyncMock()  # type: ignore[method-assign]
@@ -167,6 +263,7 @@ class TestFeishuBotRouting:
                 text="[INCOMING FILE]\nPath: feishu_files/2026-04-17/photo.webp",
                 thread_id="omt_1",
                 create_time_ms=create_time_ms,
+                message_type="image",
             )
         )
 
@@ -799,12 +896,11 @@ class TestFeishuBotRouting:
             allowed_roots=None,
             reply_to_message_id="om_1",
         )
-        bot._send_plain_text_to_chat_ref.assert_awaited_once_with(
+        bot._send_text_to_chat_ref.assert_awaited_once_with(
             "oc_chat_1",
             "音频如下",
             reply_to_message_id="om_1",
         )
-        bot._send_text_to_chat_ref.assert_not_awaited()
 
     async def test_handle_incoming_text_card_stream_mode_falls_back_to_text_when_cardkit_unavailable(
         self,
@@ -846,12 +942,11 @@ class TestFeishuBotRouting:
         bot._send_card_to_chat_ref.assert_not_awaited()
         bot._update_streaming_card_content.assert_not_awaited()
         bot._close_streaming_card.assert_not_awaited()
-        bot._send_plain_text_to_chat_ref.assert_awaited_once_with(
+        bot._send_text_to_chat_ref.assert_awaited_once_with(
             "oc_chat_1",
             "你好",
             reply_to_message_id="om_1",
         )
-        bot._send_text_to_chat_ref.assert_not_awaited()
 
     async def test_on_task_result_routes_to_fs_and_delivers(self, tmp_path: Path) -> None:
         bot = _make_bot(tmp_path)

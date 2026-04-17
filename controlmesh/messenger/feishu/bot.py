@@ -18,6 +18,7 @@ import aiohttp
 from controlmesh.bus.bus import MessageBus
 from controlmesh.bus.envelope import Envelope
 from controlmesh.bus.lock_pool import LockPool
+from controlmesh.cli.types import AgentRequest
 from controlmesh.config import AgentConfig
 from controlmesh.files.allowed_roots import resolve_allowed_roots
 from controlmesh.files.storage import sanitize_filename as _sanitize_filename
@@ -37,10 +38,19 @@ from controlmesh.messenger.feishu.auth.runtime_auth import resolve_feishu_auth
 from controlmesh.messenger.feishu.media import ResolveMediaRequest, is_supported_media_message_type
 from controlmesh.messenger.feishu.media import resolve_media_text as _resolve_media_text
 from controlmesh.messenger.feishu.media_meta import parse_mp4_duration, prepare_audio_upload
+from controlmesh.messenger.feishu.message_context import (
+    build_feishu_agent_input,
+    extract_feishu_content,
+)
 from controlmesh.messenger.feishu.native_tools import (
     FeishuNativeToolExecutor,
     format_native_tool_result,
     parse_native_tool_command,
+)
+from controlmesh.messenger.feishu.native_tools.agent_runtime import (
+    build_native_agent_tool_selection_prompt,
+    build_tool_result_followup_prompt,
+    parse_native_agent_tool_selection,
 )
 from controlmesh.messenger.feishu.tool_auth import (
     FeishuNativeToolAuthContract,
@@ -157,6 +167,11 @@ class FeishuIncomingText:
     text: str
     thread_id: str | None = None
     create_time_ms: int | None = None
+    message_type: str = "text"
+    root_id: str | None = None
+    parent_id: str | None = None
+    quote_summary: str | None = None
+    post_title: str | None = None
 
 
 class FeishuNotificationService:
@@ -457,9 +472,15 @@ class FeishuBot:
         progress: _FeishuProgressReporter,
     ) -> tuple[bool, Any]:
         try:
+            prompt_text = await self._prepare_native_agent_prompt(
+                message,
+                chat_id=chat_id,
+                topic_id=topic_id,
+                progress=progress,
+            )
             result = await self._orchestrator.handle_message_streaming(
                 SessionKey.for_transport("fs", chat_id, topic_id),
-                message.text,
+                prompt_text,
                 on_text_delta=progress.on_text_delta,
                 on_tool_activity=progress.on_tool,
                 on_system_status=progress.on_system,
@@ -468,6 +489,61 @@ class FeishuBot:
             await self._handle_native_tool_auth_required(message, exc.contract)
             return True, None
         return False, result
+
+    async def _prepare_native_agent_prompt(
+        self,
+        message: FeishuIncomingText,
+        *,
+        chat_id: int,
+        topic_id: int | None,
+        progress: _FeishuProgressReporter,
+    ) -> str:
+        prompt_text = build_feishu_agent_input(message)
+        if self._config.feishu.runtime_mode != "native" or self._orchestrator is None:
+            return prompt_text
+
+        cli_service = getattr(self._orchestrator, "cli_service", None)
+        execute = getattr(cli_service, "execute", None)
+        if execute is None:
+            return prompt_text
+
+        context = build_feishu_inbound_context(self._config, message)
+        selector_prompt = build_native_agent_tool_selection_prompt(
+            user_text=prompt_text,
+            context=context,
+        )
+        selector_response = await execute(
+            AgentRequest(
+                prompt=selector_prompt,
+                chat_id=chat_id,
+                topic_id=topic_id,
+                process_label="feishu-native-tool-select",
+                timeout_seconds=20.0,
+            )
+        )
+        selection = parse_native_agent_tool_selection(selector_response.result)
+        if selection is None:
+            return prompt_text
+
+        await progress.on_tool(selection.tool_name)
+        if self._native_tool_executor is None:
+            await self._ensure_session()
+        try:
+            tool_result = await self._ensure_native_tool_executor().execute(
+                selection.tool_name,
+                selection.arguments,
+                context=context,
+            )
+        except ValueError:
+            logger.info("Ignoring invalid Feishu native agent tool selection: %s", selection.tool_name)
+            return prompt_text
+
+        return build_tool_result_followup_prompt(
+            original_text=prompt_text,
+            tool_name=selection.tool_name,
+            arguments=selection.arguments,
+            result=tool_result,
+        )
 
     async def _deliver_stream_result(
         self,
@@ -493,7 +569,7 @@ class FeishuBot:
                 reply_to_message_id=reply_to_message_id,
             )
         if visible_text and not progress.handles_final_response:
-            await self._send_plain_text_to_chat_ref(
+            await self._send_text_to_chat_ref(
                 chat_ref,
                 visible_text,
                 reply_to_message_id=reply_to_message_id,
@@ -1157,8 +1233,15 @@ class FeishuBot:
         sender_id, chat_id, message_id = parts
 
         message_type = message.get("message_type")
-        if message_type == "text":
-            text = self._extract_text(message.get("content"))
+        parsed_content = None
+        if isinstance(message_type, str) and message_type in {
+            "text",
+            "post",
+            "interactive",
+            "merge_forward",
+        }:
+            parsed_content = extract_feishu_content(message_type, message.get("content"))
+            text = parsed_content.text
         elif isinstance(message_type, str) and is_supported_media_message_type(message_type):
             text = await self._resolve_incoming_media_text(
                 message_id=message_id,
@@ -1171,6 +1254,8 @@ class FeishuBot:
             return None
 
         thread_id = message.get("thread_id") or message.get("root_id") or message.get("parent_id")
+        root_id = message.get("root_id")
+        parent_id = message.get("parent_id")
         create_time_ms = self._extract_create_time_ms(header.get("create_time"))
         return FeishuIncomingText(
             sender_id=sender_id,
@@ -1179,6 +1264,11 @@ class FeishuBot:
             text=text,
             thread_id=thread_id if isinstance(thread_id, str) and thread_id else None,
             create_time_ms=create_time_ms,
+            message_type=message_type if isinstance(message_type, str) else "text",
+            root_id=root_id if isinstance(root_id, str) and root_id else None,
+            parent_id=parent_id if isinstance(parent_id, str) and parent_id else None,
+            quote_summary=parsed_content.quote_summary if parsed_content else None,
+            post_title=parsed_content.post_title if parsed_content else None,
         )
 
     @staticmethod

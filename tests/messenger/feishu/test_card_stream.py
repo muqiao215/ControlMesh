@@ -24,7 +24,8 @@ def test_render_feishu_streaming_card_enables_cardkit_streaming() -> None:
     assert card["config"]["streaming_mode"] is True
     assert card["config"]["streaming_config"]["print_frequency_ms"]["default"] == 50
     assert card["body"]["elements"][0]["element_id"] == "content"
-    assert card["body"]["elements"][0]["content"] == "处理中..."
+    assert "状态" in card["body"]["elements"][0]["content"]
+    assert "处理中..." in card["body"]["elements"][0]["content"]
     assert card["body"]["elements"][2]["element_id"] == "note"
 
 
@@ -63,5 +64,34 @@ async def test_card_stream_reporter_updates_cardkit_content_and_closes_settings(
     )
     bot._patch_message.assert_not_called()
     assert bot._update_streaming_card_content.await_count >= 1
-    assert bot._update_streaming_card_content.await_args_list[-1].args[1] == "hello, world"
+    final_content = bot._update_streaming_card_content.await_args_list[-1].args[1]
+    assert "hello, world" in final_content
+    assert "状态" in final_content
     bot._close_streaming_card.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_card_stream_reporter_renders_structured_tool_steps_and_terminal_state() -> None:
+    bot = AsyncMock()
+    bot._create_streaming_card.return_value = "card_1"
+    bot._send_card_to_chat_ref.return_value = "om_1"
+
+    reporter = FeishuCardStreamReporter(
+        bot,
+        chat_ref="oc_chat_1",
+        reply_to_message_id="om_source",
+        title="乔乔",
+    )
+
+    reporter.start()
+    await reporter.on_tool("contact.search_user")
+    await reporter.on_text_delta("找到 Alice")
+    await reporter.finish_success("找到 Alice")
+    await reporter.close()
+
+    final_content = bot._update_streaming_card_content.await_args_list[-1].args[1]
+    assert "工具步骤" in final_content
+    assert "contact.search_user" in final_content
+    assert "success" in final_content
+    assert "终态" in final_content
+    assert "success" in final_content

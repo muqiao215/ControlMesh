@@ -47,17 +47,20 @@ IM_GET_MESSAGES_SCOPES = (
     "im:message.group_msg:get_as_user",
     "im:message.p2p_msg:get_as_user",
 )
+DRIVE_LIST_FILES_SCOPES = ("space:document:retrieve",)
 NATIVE_TOOL_AUTH_PREP_SCOPES = (
     _OFFLINE_ACCESS,
     *CONTACT_SEARCH_USER_SCOPES,
     *CONTACT_GET_USER_SCOPES,
     *IM_GET_MESSAGES_SCOPES,
+    *DRIVE_LIST_FILES_SCOPES,
 )
 
 _SUPPORTED_TOOLS = {
     "contact.search_user",
     "contact.get_user",
     "im.get_messages",
+    "drive.list_files",
 }
 
 
@@ -116,6 +119,8 @@ class FeishuNativeToolExecutor:
             return await self._contact_get_user(arguments, context=context)
         if tool_name == "im.get_messages":
             return await self._im_get_messages(arguments, context=context)
+        if tool_name == "drive.list_files":
+            return await self._drive_list_files(arguments, context=context)
         msg = f"Unsupported Feishu native tool: {tool_name}"
         raise ValueError(msg)
 
@@ -217,6 +222,41 @@ class FeishuNativeToolExecutor:
             context=context,
             api_call=lambda token: self._oapi_client.get_json(
                 "/open-apis/im/v1/messages",
+                access_token=token,
+                params=params,
+            ),
+        )
+        data = payload.get("data")
+        return data if isinstance(data, dict) else {}
+
+    async def _drive_list_files(
+        self,
+        arguments: Mapping[str, Any],
+        *,
+        context: FeishuInboundContextV1,
+    ) -> dict[str, Any]:
+        raw_page_size = arguments.get("page_size", 20)
+        page_size = max(1, min(int(raw_page_size), 200))
+        params = {"page_size": str(page_size)}
+        folder_token = str(arguments.get("folder_token") or "").strip()
+        page_token = str(arguments.get("page_token") or "").strip()
+        order_by = str(arguments.get("order_by") or "").strip()
+        direction = str(arguments.get("direction") or "").strip()
+        if folder_token:
+            params["folder_token"] = folder_token
+        if page_token:
+            params["page_token"] = page_token
+        if order_by in {"EditedTime", "CreatedTime"}:
+            params["order_by"] = order_by
+        if direction in {"ASC", "DESC"}:
+            params["direction"] = direction
+
+        payload = await self._call_user_tool(
+            tool_name="drive.list_files",
+            required_scopes=DRIVE_LIST_FILES_SCOPES,
+            context=context,
+            api_call=lambda token: self._oapi_client.get_json(
+                "/open-apis/drive/v1/files",
                 access_token=token,
                 params=params,
             ),
@@ -368,7 +408,7 @@ class FeishuNativeToolExecutor:
             raise RuntimeError(msg)
 
 
-def parse_native_tool_command(text: str) -> NativeToolCommand | None:
+def parse_native_tool_command(text: str) -> NativeToolCommand | None:  # noqa: PLR0911
     """Parse the MVP Feishu native-tool smoke command."""
     try:
         parts = shlex.split(text.strip())
@@ -386,6 +426,8 @@ def parse_native_tool_command(text: str) -> NativeToolCommand | None:
         return _parse_contact_get_user(parts)
     if tool_name == "im.get_messages":
         return _parse_im_get_messages(parts)
+    if tool_name == "drive.list_files":
+        return _parse_drive_list_files(parts)
     return None
 
 
@@ -401,6 +443,10 @@ def format_native_tool_result(tool_name: str, result: Mapping[str, Any]) -> str:
         items = result.get("items")
         count = len(items) if isinstance(items, list) else 0
         return f"Feishu native tool im.get_messages returned {count} message(s).\n```json\n{_json(result)}\n```"
+    if tool_name == "drive.list_files":
+        files = result.get("files")
+        count = len(files) if isinstance(files, list) else 0
+        return f"Feishu native tool drive.list_files returned {count} file(s).\n```json\n{_json(result)}\n```"
     return f"Feishu native tool {tool_name} returned:\n```json\n{_json(result)}\n```"
 
 
@@ -455,3 +501,12 @@ def _parse_im_get_messages(parts: list[str]) -> NativeToolCommand:
     if len(parts) > 3:
         arguments["page_size"] = int(parts[3])
     return NativeToolCommand(tool_name="im.get_messages", arguments=arguments)
+
+
+def _parse_drive_list_files(parts: list[str]) -> NativeToolCommand:
+    arguments: dict[str, Any] = {}
+    if len(parts) > 2:
+        arguments["folder_token"] = parts[2]
+    if len(parts) > 3:
+        arguments["page_size"] = int(parts[3])
+    return NativeToolCommand(tool_name="drive.list_files", arguments=arguments)

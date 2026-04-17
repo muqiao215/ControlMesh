@@ -527,3 +527,102 @@ async def test_im_get_messages_oapi_app_scope_error_is_translated(tmp_path: Any)
         "im:message.group_msg:get_as_user",
         "im:message.p2p_msg:get_as_user",
     )
+
+
+@pytest.mark.asyncio
+async def test_drive_list_files_calls_oapi_client_with_user_token(tmp_path: Any) -> None:
+    config = _make_config(tmp_path)
+    store = FeishuTokenStore(tmp_path)
+    _store_token(store, "space:document:retrieve offline_access")
+    session = _FakeSession(
+        [
+            _FakeResponse(
+                200,
+                {
+                    "code": 0,
+                    "data": {
+                        "app": {
+                            "scopes": [
+                                {"scope": "space:document:retrieve", "token_types": ["user"]},
+                                {"scope": "offline_access", "token_types": ["user"]},
+                            ]
+                        }
+                    },
+                },
+            ),
+            _FakeResponse(
+                200,
+                {
+                    "code": 0,
+                    "data": {
+                        "files": [{"name": "Roadmap", "token": "fldoc_1", "type": "docx"}],
+                        "has_more": False,
+                    },
+                },
+            ),
+        ]
+    )
+    executor = FeishuNativeToolExecutor(
+        config,
+        session=session,
+        token_store=store,
+        app_info_cache=FeishuAppInfoCache(now_ms=lambda: 1_000_000),
+        get_tenant_access_token=lambda: "tenant_token",
+    )
+
+    result = await executor.execute(
+        "drive.list_files",
+        {"folder_token": "fld_root", "page_size": 10},
+        context=_make_context(),
+    )
+
+    assert result["files"][0]["name"] == "Roadmap"
+    assert session.calls[1]["url"].endswith("/open-apis/drive/v1/files")
+    assert session.calls[1]["params"] == {
+        "folder_token": "fld_root",
+        "page_size": "10",
+    }
+    assert session.calls[1]["headers"]["Authorization"] == "Bearer u_token"
+
+
+@pytest.mark.asyncio
+async def test_drive_list_files_missing_user_scope_raises_standard_contract(tmp_path: Any) -> None:
+    config = _make_config(tmp_path)
+    store = FeishuTokenStore(tmp_path)
+    _store_token(store, "offline_access")
+    session = _FakeSession(
+        [
+            _FakeResponse(
+                200,
+                {
+                    "code": 0,
+                    "data": {
+                        "app": {
+                            "scopes": [
+                                {"scope": "space:document:retrieve", "token_types": ["user"]},
+                                {"scope": "offline_access", "token_types": ["user"]},
+                            ]
+                        }
+                    },
+                },
+            )
+        ]
+    )
+    executor = FeishuNativeToolExecutor(
+        config,
+        session=session,
+        token_store=store,
+        app_info_cache=FeishuAppInfoCache(now_ms=lambda: 1_000_000),
+        get_tenant_access_token=lambda: "tenant_token",
+    )
+
+    with pytest.raises(FeishuNativeToolAuthRequiredError) as exc_info:
+        await executor.execute(
+            "drive.list_files",
+            {"folder_token": "fld_root"},
+            context=_make_context(),
+        )
+
+    contract = exc_info.value.contract
+    assert contract.error_kind == "user_scope_insufficient"
+    assert contract.required_scopes == ("space:document:retrieve",)

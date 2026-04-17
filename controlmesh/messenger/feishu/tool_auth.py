@@ -40,6 +40,10 @@ class FeishuInboundContextV1:
     chat_id: str
     message_id: str
     thread_id: str | None = None
+    message_type: str = "text"
+    root_id: str | None = None
+    parent_id: str | None = None
+    quote_summary: str | None = None
     schema: str = "controlmesh.feishu.inbound_context.v1"
 
     def to_dict(self) -> dict[str, Any]:
@@ -112,6 +116,10 @@ def build_feishu_inbound_context(
         chat_id=message.chat_id,
         message_id=message.message_id,
         thread_id=message.thread_id,
+        message_type=message.message_type,
+        root_id=message.root_id,
+        parent_id=message.parent_id,
+        quote_summary=message.quote_summary,
     )
 
 

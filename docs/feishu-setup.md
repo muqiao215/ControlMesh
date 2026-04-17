@@ -143,13 +143,29 @@ Runtime bridge:
 Native-only OAPI MVP:
 
 - ControlMesh now ships a narrow native-only executor for read tools:
-  `contact.search_user`, `contact.get_user`, and `im.get_messages`.
+  `contact.search_user`, `contact.get_user`, `im.get_messages`, and
+  `drive.list_files`.
 - These tools are intentionally scoped to `feishu.runtime_mode=native`.
   `bridge` does not expose them.
 - Missing app scope, missing user token, and missing user scope are normalized
   into `FeishuNativeToolAuthRequiredError`, which is already handled by the
   Feishu bot runtime and routed to permission-card or retryable device-auth
   flows.
+- Native runtime now has a first agent-selectable seam for these tools:
+  ControlMesh asks the model to select at most one Feishu native tool for the
+  current message, executes it inside the Feishu runtime, and feeds the result
+  into the final answer prompt. This is a ControlMesh runtime seam, not full
+  provider-native MCP registration yet.
+- `card_stream` now renders a structured single CardKit card with:
+  - overall status
+  - tool step list (`running` / `success` / `error`)
+  - output body
+  - terminal state
+- Feishu inbound context v1 now adds:
+  - `post` rich-text extraction
+  - `thread_id` / `root_id` / `parent_id`
+  - reply / quote summary when present in inbound content
+  - minimal `interactive` / `merge_forward` text extraction fallback for agent context
 - There is now an explicit native-only auth UX entry for this MVP:
 
 ```bash
@@ -178,6 +194,7 @@ Native-only OAPI MVP:
 /feishu-native contact.search_user Alice
 /feishu-native contact.get_user ou_xxx
 /feishu-native im.get_messages oc_xxx 20
+/feishu-native drive.list_files fld_root 20
 ```
 
 Official Feishu self-built app guide:
