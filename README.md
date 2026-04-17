@@ -272,6 +272,56 @@ native Feishu SDK surface.
 
 `progress_mode=card_stream` requires `runtime_mode=native`.
 
+### Feishu Status Today
+
+The Feishu path is now **usable**, but it is not feature-complete yet.
+
+What is already landed:
+
+- scan-to-create onboarding through `feishu-auth-kit`
+- config write-back, probe, readiness checks
+- native vs bridge runtime split
+- CardKit streaming in native mode
+- native auth seam for app scope, user OAuth, and synthetic retry
+- native-only read tools: `contact.search_user`, `contact.get_user`, `im.get_messages`
+- in-chat batch auth entry: `/feishu_auth_all`
+- media ingress/egress for text, images, files, audio, and video
+
+What is still incomplete:
+
+- native tools are still exposed through explicit smoke commands instead of the
+  general agent tool registry
+- CardKit streaming is still a text-first stream, not yet a fully structured
+  task card with tool steps, confirmations, and rich status blocks
+- Feishu deep message semantics are still partial: `post`, quote/reply context,
+  merge-forward, interactive payloads, and richer thread semantics need more work
+- the native OAPI surface is still MVP-level, not yet comparable to a full
+  Feishu workspace agent
+
+Practical summary: ControlMesh Feishu native is past the “can it work at all”
+stage and now in the “make the native agent experience complete” stage.
+
+### Live Deployment Checklist
+
+When deploying a Feishu native release to a live host, do not treat the git
+checkout alone as sufficient. The release also needs the runtime dependencies
+that the native auth flow expects.
+
+Minimum checks:
+
+- the running service must point to the intended release path and venv
+- `feishu-auth-kit` must be resolvable by ControlMesh
+- if `feishu-auth-kit` is not in `PATH`, set
+  `CONTROLMESH_FEISHU_AUTH_KIT_BIN=/abs/path/to/feishu-auth-kit`
+- if using a sibling checkout instead of an installed binary, make sure the
+  sibling repo and its `uv`-managed environment are present on the live host
+- after cutover, verify that `/feishu-native ...` is handled by the native tool
+  path rather than falling through to the normal model turn
+
+The most common live-host failure mode is not Feishu API breakage, but missing
+runtime wiring after cutover: wrong release path, stale editable install,
+missing `feishu-auth-kit`, or a service environment that cannot resolve it.
+
 ### Quick Start
 
 ```bash
