@@ -41,10 +41,17 @@ CONTACT_GET_USER_SCOPES = (
     "contact:contact.base:readonly",
     "contact:user.base:readonly",
 )
+IM_GET_MESSAGES_SCOPES = (
+    "im:chat:read",
+    "im:message:readonly",
+    "im:message.group_msg:get_as_user",
+    "im:message.p2p_msg:get_as_user",
+)
 
 _SUPPORTED_TOOLS = {
     "contact.search_user",
     "contact.get_user",
+    "im.get_messages",
 }
 
 
@@ -101,6 +108,8 @@ class FeishuNativeToolExecutor:
             return await self._contact_search_user(arguments, context=context)
         if tool_name == "contact.get_user":
             return await self._contact_get_user(arguments, context=context)
+        if tool_name == "im.get_messages":
+            return await self._im_get_messages(arguments, context=context)
         msg = f"Unsupported Feishu native tool: {tool_name}"
         raise ValueError(msg)
 
@@ -160,6 +169,50 @@ class FeishuNativeToolExecutor:
                 f"/open-apis/contact/v3/users/{user_id}",
                 access_token=token,
                 params={"user_id_type": user_id_type},
+            ),
+        )
+        data = payload.get("data")
+        return data if isinstance(data, dict) else {}
+
+    async def _im_get_messages(
+        self,
+        arguments: Mapping[str, Any],
+        *,
+        context: FeishuInboundContextV1,
+    ) -> dict[str, Any]:
+        chat_id = str(arguments.get("chat_id") or "").strip()
+        if not chat_id:
+            msg = "im.get_messages requires chat_id"
+            raise ValueError(msg)
+        raw_page_size = arguments.get("page_size", 20)
+        page_size = max(1, min(int(raw_page_size), 50))
+        sort_rule = str(arguments.get("sort_rule") or "create_time_desc").strip()
+        sort_type = _sort_type(sort_rule)
+        params = {
+            "container_id_type": "chat",
+            "container_id": chat_id,
+            "page_size": str(page_size),
+            "sort_type": sort_type,
+            "card_msg_content_type": "raw_card_content",
+        }
+        page_token = str(arguments.get("page_token") or "").strip()
+        if page_token:
+            params["page_token"] = page_token
+        start_time = str(arguments.get("start_time") or "").strip()
+        end_time = str(arguments.get("end_time") or "").strip()
+        if start_time:
+            params["start_time"] = start_time
+        if end_time:
+            params["end_time"] = end_time
+
+        payload = await self._call_user_tool(
+            tool_name="im.get_messages",
+            required_scopes=IM_GET_MESSAGES_SCOPES,
+            context=context,
+            api_call=lambda token: self._oapi_client.get_json(
+                "/open-apis/im/v1/messages",
+                access_token=token,
+                params=params,
             ),
         )
         data = payload.get("data")
@@ -322,18 +375,11 @@ def parse_native_tool_command(text: str) -> NativeToolCommand | None:
         msg = f"Unsupported Feishu native tool: {tool_name}"
         raise ValueError(msg)
     if tool_name == "contact.search_user":
-        if len(parts) < 3:
-            msg = "Usage: /feishu-native contact.search_user <query>"
-            raise ValueError(msg)
-        return NativeToolCommand(tool_name=tool_name, arguments={"query": " ".join(parts[2:])})
+        return _parse_contact_search_user(parts)
     if tool_name == "contact.get_user":
-        if len(parts) < 3:
-            msg = "Usage: /feishu-native contact.get_user <open_id>"
-            raise ValueError(msg)
-        return NativeToolCommand(
-            tool_name=tool_name,
-            arguments={"user_id": parts[2], "user_id_type": parts[3] if len(parts) > 3 else "open_id"},
-        )
+        return _parse_contact_get_user(parts)
+    if tool_name == "im.get_messages":
+        return _parse_im_get_messages(parts)
     return None
 
 
@@ -345,6 +391,10 @@ def format_native_tool_result(tool_name: str, result: Mapping[str, Any]) -> str:
         return f"Feishu native tool contact.search_user returned {count} user(s).\n```json\n{_json(result)}\n```"
     if tool_name == "contact.get_user":
         return f"Feishu native tool contact.get_user returned:\n```json\n{_json(result)}\n```"
+    if tool_name == "im.get_messages":
+        items = result.get("items")
+        count = len(items) if isinstance(items, list) else 0
+        return f"Feishu native tool im.get_messages returned {count} message(s).\n```json\n{_json(result)}\n```"
     return f"Feishu native tool {tool_name} returned:\n```json\n{_json(result)}\n```"
 
 
@@ -360,3 +410,36 @@ async def _maybe_await(value: Any) -> Any:
     if inspect.isawaitable(value):
         return await value
     return value
+
+
+def _sort_type(rule: str) -> str:
+    if rule == "create_time_asc":
+        return "ByCreateTimeAsc"
+    return "ByCreateTimeDesc"
+
+
+def _parse_contact_search_user(parts: list[str]) -> NativeToolCommand:
+    if len(parts) < 3:
+        msg = "Usage: /feishu-native contact.search_user <query>"
+        raise ValueError(msg)
+    return NativeToolCommand(tool_name="contact.search_user", arguments={"query": " ".join(parts[2:])})
+
+
+def _parse_contact_get_user(parts: list[str]) -> NativeToolCommand:
+    if len(parts) < 3:
+        msg = "Usage: /feishu-native contact.get_user <open_id>"
+        raise ValueError(msg)
+    return NativeToolCommand(
+        tool_name="contact.get_user",
+        arguments={"user_id": parts[2], "user_id_type": parts[3] if len(parts) > 3 else "open_id"},
+    )
+
+
+def _parse_im_get_messages(parts: list[str]) -> NativeToolCommand:
+    if len(parts) < 3:
+        msg = "Usage: /feishu-native im.get_messages <chat_id> [page_size]"
+        raise ValueError(msg)
+    arguments: dict[str, Any] = {"chat_id": parts[2]}
+    if len(parts) > 3:
+        arguments["page_size"] = int(parts[3])
+    return NativeToolCommand(tool_name="im.get_messages", arguments=arguments)

@@ -56,7 +56,7 @@ ControlMesh 配置。
 - 使用 Feishu CardKit 真流式卡片
 - 复用 auth-kit 的权限规划、continuation 和 synthetic retry 原语
 - MVP 已接上 native-only Feishu OAPI tools：
-  `contact.search_user`、`contact.get_user`
+  `contact.search_user`、`contact.get_user`、`im.get_messages`
 - 缺 app scope / user token / user scope 时会抛标准
   `FeishuNativeToolAuthRequiredError`，由 runtime auth seam 路由权限卡或 device auth
 - 当前 smoke 入口是 `/feishu-native ...`，只在 `runtime_mode=native` 可用
@@ -233,11 +233,12 @@ on top.
 official scan-to-create flow, writes credentials back to ControlMesh config,
 probes readiness, and enables CardKit streaming cards.
 
-The current MVP also wires two native-only read OAPI tools:
-`contact.search_user` and `contact.get_user`. Missing app scope, user token, or
-user scope is surfaced as `FeishuNativeToolAuthRequiredError`, so the runtime
-can route into permission cards or retryable device auth. The explicit smoke
-entry is `/feishu-native ...`, and bridge mode does not support it.
+The current MVP also wires native-only read OAPI tools:
+`contact.search_user`, `contact.get_user`, and `im.get_messages`. Missing app
+scope, user token, or user scope is surfaced as
+`FeishuNativeToolAuthRequiredError`, so the runtime can route into permission
+cards or retryable device auth. The explicit smoke entry is
+`/feishu-native ...`, and bridge mode does not support it.
 
 ```bash
 controlmesh auth feishu register-begin

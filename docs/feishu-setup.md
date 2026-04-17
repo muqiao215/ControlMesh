@@ -142,8 +142,8 @@ Runtime bridge:
 
 Native-only OAPI MVP:
 
-- ControlMesh now ships a narrow native-only executor for two read tools:
-  `contact.search_user` and `contact.get_user`.
+- ControlMesh now ships a narrow native-only executor for read tools:
+  `contact.search_user`, `contact.get_user`, and `im.get_messages`.
 - These tools are intentionally scoped to `feishu.runtime_mode=native`.
   `bridge` does not expose them.
 - Missing app scope, missing user token, and missing user scope are normalized
@@ -155,6 +155,7 @@ Native-only OAPI MVP:
 ```bash
 /feishu-native contact.search_user Alice
 /feishu-native contact.get_user ou_xxx
+/feishu-native im.get_messages oc_xxx 20
 ```
 
 Official Feishu self-built app guide:

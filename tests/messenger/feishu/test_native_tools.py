@@ -10,6 +10,7 @@ import pytest
 
 from controlmesh.config import AgentConfig
 from controlmesh.messenger.feishu.auth.app_info import FeishuAppInfoCache
+from controlmesh.messenger.feishu.auth.errors import LARK_ERROR
 from controlmesh.messenger.feishu.auth.token_store import FeishuTokenStore, StoredFeishuToken
 from controlmesh.messenger.feishu.native_tools import FeishuNativeToolExecutor
 from controlmesh.messenger.feishu.tool_auth import (
@@ -293,3 +294,236 @@ async def test_contact_get_missing_user_scope_raises_standard_contract(tmp_path:
     contract = exc_info.value.contract
     assert contract.error_kind == "user_scope_insufficient"
     assert contract.required_scopes == ("contact:user.base:readonly",)
+
+
+@pytest.mark.asyncio
+async def test_im_get_messages_calls_oapi_client_with_user_token(tmp_path: Any) -> None:
+    config = _make_config(tmp_path)
+    store = FeishuTokenStore(tmp_path)
+    _store_token(
+        store,
+        (
+            "im:chat:read im:message:readonly im:message.group_msg:get_as_user "
+            "im:message.p2p_msg:get_as_user offline_access"
+        ),
+    )
+    session = _FakeSession(
+        [
+            _FakeResponse(
+                200,
+                {
+                    "code": 0,
+                    "data": {
+                        "app": {
+                            "scopes": [
+                                {"scope": "im:chat:read", "token_types": ["user"]},
+                                {"scope": "im:message:readonly", "token_types": ["user"]},
+                                {"scope": "im:message.group_msg:get_as_user", "token_types": ["user"]},
+                                {"scope": "im:message.p2p_msg:get_as_user", "token_types": ["user"]},
+                                {"scope": "offline_access", "token_types": ["user"]},
+                            ]
+                        }
+                    },
+                },
+            ),
+            _FakeResponse(
+                200,
+                {
+                    "code": 0,
+                    "data": {
+                        "items": [
+                            {
+                                "message_id": "om_msg_1",
+                                "msg_type": "text",
+                                "chat_id": "oc_chat_1",
+                                "content": '{"text":"hello"}',
+                                "create_time": "1710000000",
+                            }
+                        ],
+                        "has_more": False,
+                    },
+                },
+            ),
+        ]
+    )
+    executor = FeishuNativeToolExecutor(
+        config,
+        session=session,
+        token_store=store,
+        app_info_cache=FeishuAppInfoCache(now_ms=lambda: 1_000_000),
+        get_tenant_access_token=lambda: "tenant_token",
+    )
+
+    result = await executor.execute(
+        "im.get_messages",
+        {"chat_id": "oc_chat_1", "page_size": 10},
+        context=_make_context(),
+    )
+
+    assert result["items"][0]["message_id"] == "om_msg_1"
+    assert session.calls[1]["url"].endswith("/open-apis/im/v1/messages")
+    assert session.calls[1]["params"]["container_id_type"] == "chat"
+    assert session.calls[1]["params"]["container_id"] == "oc_chat_1"
+    assert session.calls[1]["params"]["page_size"] == "10"
+    assert session.calls[1]["headers"]["Authorization"] == "Bearer u_token"
+
+
+@pytest.mark.asyncio
+async def test_im_get_messages_missing_user_token_raises_standard_contract(tmp_path: Any) -> None:
+    config = _make_config(tmp_path)
+    session = _FakeSession(
+        [
+            _FakeResponse(
+                200,
+                {
+                    "code": 0,
+                    "data": {
+                        "app": {
+                            "scopes": [
+                                {"scope": "im:chat:read", "token_types": ["user"]},
+                                {"scope": "im:message:readonly", "token_types": ["user"]},
+                                {"scope": "im:message.group_msg:get_as_user", "token_types": ["user"]},
+                                {"scope": "im:message.p2p_msg:get_as_user", "token_types": ["user"]},
+                                {"scope": "offline_access", "token_types": ["user"]},
+                            ]
+                        }
+                    },
+                },
+            )
+        ]
+    )
+    executor = FeishuNativeToolExecutor(
+        config,
+        session=session,
+        token_store=FeishuTokenStore(tmp_path),
+        app_info_cache=FeishuAppInfoCache(now_ms=lambda: 1_000_000),
+        get_tenant_access_token=lambda: "tenant_token",
+    )
+
+    with pytest.raises(FeishuNativeToolAuthRequiredError) as exc_info:
+        await executor.execute(
+            "im.get_messages",
+            {"chat_id": "oc_chat_1"},
+            context=_make_context(),
+        )
+
+    contract = exc_info.value.contract
+    assert contract.error_kind == "user_auth_required"
+    assert contract.required_scopes == (
+        "im:chat:read",
+        "im:message:readonly",
+        "im:message.group_msg:get_as_user",
+        "im:message.p2p_msg:get_as_user",
+    )
+
+
+@pytest.mark.asyncio
+async def test_im_get_messages_oapi_user_scope_error_is_translated(tmp_path: Any) -> None:
+    config = _make_config(tmp_path)
+    store = FeishuTokenStore(tmp_path)
+    _store_token(
+        store,
+        (
+            "im:chat:read im:message:readonly im:message.group_msg:get_as_user "
+            "im:message.p2p_msg:get_as_user offline_access"
+        ),
+    )
+    session = _FakeSession(
+        [
+            _FakeResponse(
+                200,
+                {
+                    "code": 0,
+                    "data": {
+                        "app": {
+                            "scopes": [
+                                {"scope": "im:chat:read", "token_types": ["user"]},
+                                {"scope": "im:message:readonly", "token_types": ["user"]},
+                                {"scope": "im:message.group_msg:get_as_user", "token_types": ["user"]},
+                                {"scope": "im:message.p2p_msg:get_as_user", "token_types": ["user"]},
+                                {"scope": "offline_access", "token_types": ["user"]},
+                            ]
+                        }
+                    },
+                },
+            ),
+            _FakeResponse(
+                200,
+                {
+                    "code": LARK_ERROR.USER_SCOPE_INSUFFICIENT,
+                    "msg": "scope insufficient",
+                },
+            ),
+        ]
+    )
+    executor = FeishuNativeToolExecutor(
+        config,
+        session=session,
+        token_store=store,
+        app_info_cache=FeishuAppInfoCache(now_ms=lambda: 1_000_000),
+        get_tenant_access_token=lambda: "tenant_token",
+    )
+
+    with pytest.raises(FeishuNativeToolAuthRequiredError) as exc_info:
+        await executor.execute(
+            "im.get_messages",
+            {"chat_id": "oc_chat_1"},
+            context=_make_context(),
+        )
+
+    contract = exc_info.value.contract
+    assert contract.error_kind == "user_scope_insufficient"
+    assert contract.required_scopes == (
+        "im:chat:read",
+        "im:message:readonly",
+        "im:message.group_msg:get_as_user",
+        "im:message.p2p_msg:get_as_user",
+    )
+
+
+@pytest.mark.asyncio
+async def test_im_get_messages_oapi_app_scope_error_is_translated(tmp_path: Any) -> None:
+    config = _make_config(tmp_path)
+    store = FeishuTokenStore(tmp_path)
+    _store_token(
+        store,
+        (
+            "im:chat:read im:message:readonly im:message.group_msg:get_as_user "
+            "im:message.p2p_msg:get_as_user offline_access"
+        ),
+    )
+    session = _FakeSession(
+        [
+            _FakeResponse(403, {"code": 99999, "msg": "cannot inspect app"}),
+            _FakeResponse(
+                200,
+                {
+                    "code": LARK_ERROR.APP_SCOPE_MISSING,
+                    "msg": "app scope missing",
+                },
+            ),
+        ]
+    )
+    executor = FeishuNativeToolExecutor(
+        config,
+        session=session,
+        token_store=store,
+        app_info_cache=FeishuAppInfoCache(now_ms=lambda: 1_000_000),
+        get_tenant_access_token=lambda: "tenant_token",
+    )
+
+    with pytest.raises(FeishuNativeToolAuthRequiredError) as exc_info:
+        await executor.execute(
+            "im.get_messages",
+            {"chat_id": "oc_chat_1"},
+            context=_make_context(),
+        )
+
+    contract = exc_info.value.contract
+    assert contract.error_kind == "app_scope_missing"
+    assert contract.required_scopes == (
+        "im:chat:read",
+        "im:message:readonly",
+        "im:message.group_msg:get_as_user",
+        "im:message.p2p_msg:get_as_user",
+    )
