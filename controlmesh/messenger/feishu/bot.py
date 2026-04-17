@@ -21,6 +21,7 @@ from controlmesh.bus.lock_pool import LockPool
 from controlmesh.config import AgentConfig
 from controlmesh.files.allowed_roots import resolve_allowed_roots
 from controlmesh.files.storage import sanitize_filename as _sanitize_filename
+from controlmesh.files.tags import FILE_PATH_RE, extract_file_paths
 from controlmesh.log_context import set_log_context
 from controlmesh.messenger.feishu.auth.card_auth_runner import FeishuCardAuthRunner
 from controlmesh.messenger.feishu.auth.feishu_card_sender import (
@@ -32,6 +33,11 @@ from controlmesh.messenger.feishu.auth.runtime_auth import resolve_feishu_auth
 from controlmesh.messenger.feishu.media import ResolveMediaRequest, is_supported_media_message_type
 from controlmesh.messenger.feishu.media import resolve_media_text as _resolve_media_text
 from controlmesh.messenger.feishu.media_meta import parse_mp4_duration, prepare_audio_upload
+from controlmesh.messenger.feishu.tool_auth import (
+    FeishuNativeToolAuthContract,
+    FeishuNativeToolAuthRequiredError,
+    build_feishu_inbound_context,
+)
 from controlmesh.messenger.notifications import NotificationService
 from controlmesh.messenger.telegram.dedup import DedupeCache
 from controlmesh.session.key import SessionKey
@@ -328,15 +334,21 @@ class FeishuBot:
         progress.start()
         if content_key:
             self._inflight_content_keys.add(content_key)
+        auth_routed = False
         try:
             async with lock:
-                result = await self._orchestrator.handle_message_streaming(
-                    SessionKey.for_transport("fs", chat_id, topic_id),
-                    message.text,
-                    on_text_delta=progress.on_text_delta,
-                    on_tool_activity=progress.on_tool,
-                    on_system_status=progress.on_system,
-                )
+                try:
+                    result = await self._orchestrator.handle_message_streaming(
+                        SessionKey.for_transport("fs", chat_id, topic_id),
+                        message.text,
+                        on_text_delta=progress.on_text_delta,
+                        on_tool_activity=progress.on_tool,
+                        on_system_status=progress.on_system,
+                    )
+                except FeishuNativeToolAuthRequiredError as exc:
+                    await self._handle_native_tool_auth_required(message, exc.contract)
+                    auth_routed = True
+                    result = None
         except Exception as exc:
             await progress.finish_failure(str(exc))
             raise
@@ -346,9 +358,29 @@ class FeishuBot:
             await progress.close()
         if content_key:
             self._recent_content_dedup.check(content_key)
-        await progress.finish_success(result.text)
-        if result.text and not progress.handles_final_response:
-            await self._send_text_to_chat_ref(message.chat_id, result.text, reply_to_message_id=reply_to)
+        if auth_routed or result is None:
+            return
+        result_text = result.text or ""
+        file_tags = extract_file_paths(result_text)
+        visible_text = FILE_PATH_RE.sub("", result_text).strip() if file_tags else result_text
+        progress_text = visible_text or ("已发送附件。" if file_tags else result_text)
+        await progress.finish_success(progress_text)
+        if file_tags:
+            from controlmesh.messenger.feishu.sender import send_files_from_text
+
+            await send_files_from_text(
+                self,
+                message.chat_id,
+                result_text,
+                allowed_roots=self.file_roots(self._paths),
+                reply_to_message_id=reply_to,
+            )
+        if visible_text and not progress.handles_final_response:
+            await self._send_plain_text_to_chat_ref(
+                message.chat_id,
+                visible_text,
+                reply_to_message_id=reply_to,
+            )
 
     async def _prepare_incoming_message(self, message: FeishuIncomingText) -> str | bool | None:
         dedup_key = f"{message.chat_id}:{message.message_id}"
@@ -880,6 +912,7 @@ class FeishuBot:
                 session_factory=self._ensure_session,
                 sender=sender,
                 text_reply=self._reply_card_auth_text,
+                inject_retry=self._inject_auth_synthetic_retry,
             )
         return self._card_auth_runner
 
@@ -930,6 +963,26 @@ class FeishuBot:
                 text=retry_text,
                 thread_id=entry.thread_id,
             )
+        )
+
+    async def _handle_native_tool_auth_required(
+        self,
+        message: FeishuIncomingText,
+        contract: FeishuNativeToolAuthContract,
+    ) -> None:
+        context = build_feishu_inbound_context(self._config, message)
+        requirement = contract.with_runtime_defaults(context=context, original_text=message.text)
+        if requirement.error_kind == "app_scope_missing":
+            await self._ensure_auth_orchestration_runner().start_auth_requirement(
+                message,
+                requirement,
+            )
+            return
+        await self._ensure_card_auth_runner().start_retryable_auth_flow(
+            message,
+            required_scopes=list(requirement.required_scopes),
+            retry_text=requirement.retry_text,
+            operation_id=requirement.operation_id,
         )
 
     async def _get_tenant_access_token(self) -> str:

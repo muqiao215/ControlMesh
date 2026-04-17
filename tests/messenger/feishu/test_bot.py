@@ -15,6 +15,10 @@ import pytest
 
 from controlmesh.config import AgentConfig
 from controlmesh.messenger.feishu.bot import FeishuBot, FeishuIncomingText
+from controlmesh.messenger.feishu.tool_auth import (
+    FeishuNativeToolAuthContract,
+    FeishuNativeToolAuthRequiredError,
+)
 
 
 @dataclass
@@ -433,6 +437,84 @@ class TestFeishuBotRouting:
             ("oc_chat_1", "pong", "om_1"),
         ]
 
+    async def test_handle_incoming_text_app_scope_missing_routes_to_native_permission_flow(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path)
+        bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+        bot._auth_orchestration_runner = SimpleNamespace(
+            handle_message=AsyncMock(return_value=False),
+            start_auth_requirement=AsyncMock(return_value=True),
+        )
+        bot._orchestrator = SimpleNamespace(
+            handle_message_streaming=AsyncMock(
+                side_effect=FeishuNativeToolAuthRequiredError(
+                    FeishuNativeToolAuthContract(
+                        error_kind="app_scope_missing",
+                        required_scopes=("im:message",),
+                        permission_url="https://open.feishu.cn/perm",
+                        retry_text="继续原来的任务",
+                    )
+                )
+            )
+        )
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="ping",
+                thread_id="omt_1",
+            )
+        )
+
+        bot._auth_orchestration_runner.start_auth_requirement.assert_awaited_once()
+        call = bot._auth_orchestration_runner.start_auth_requirement.await_args
+        assert call.args[0].message_id == "om_1"
+        assert call.args[1].error_kind == "app_scope_missing"
+        bot._send_text_to_chat_ref.assert_not_awaited()
+
+    async def test_handle_incoming_text_user_auth_required_routes_to_retryable_device_flow(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path)
+        bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+        bot._card_auth_runner = SimpleNamespace(
+            handle_message=AsyncMock(return_value=False),
+            start_retryable_auth_flow=AsyncMock(return_value=True),
+        )
+        bot._orchestrator = SimpleNamespace(
+            handle_message_streaming=AsyncMock(
+                side_effect=FeishuNativeToolAuthRequiredError(
+                    FeishuNativeToolAuthContract(
+                        error_kind="user_auth_required",
+                        required_scopes=("offline_access", "im:message"),
+                        retry_text="继续原来的任务",
+                    )
+                )
+            )
+        )
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="ping",
+                thread_id="omt_1",
+            )
+        )
+
+        bot._card_auth_runner.start_retryable_auth_flow.assert_awaited_once()
+        call = bot._card_auth_runner.start_retryable_auth_flow.await_args
+        assert call.args[0].message_id == "om_1"
+        assert call.kwargs["required_scopes"] == ["offline_access", "im:message"]
+        assert call.kwargs["retry_text"] == "继续原来的任务"
+        bot._send_text_to_chat_ref.assert_not_awaited()
+
     async def test_shutdown_awaits_card_auth_runner(self, tmp_path: Path) -> None:
         bot = _make_bot(tmp_path)
         bot._card_auth_runner = SimpleNamespace(shutdown=AsyncMock())
@@ -624,12 +706,113 @@ class TestFeishuBotRouting:
         bot._close_streaming_card.assert_awaited_once()
         bot._send_text_to_chat_ref.assert_not_awaited()
 
+    async def test_handle_incoming_text_card_stream_mode_sends_file_tags_as_attachments(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        bot = _make_bot(tmp_path, runtime_mode="native", progress_mode="card_stream")
+        bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+        bot._send_plain_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+        bot._create_streaming_card = AsyncMock(return_value="card_1")  # type: ignore[attr-defined]
+        bot._send_card_to_chat_ref = AsyncMock(return_value="om_stream")  # type: ignore[attr-defined]
+        bot._update_streaming_card_content = AsyncMock()  # type: ignore[attr-defined]
+        bot._close_streaming_card = AsyncMock()  # type: ignore[attr-defined]
+        send_files = AsyncMock()
+        monkeypatch.setattr(
+            "controlmesh.messenger.feishu.sender.send_files_from_text",
+            send_files,
+        )
+        attachment = tmp_path / "tone.wav"
+        attachment.write_bytes(b"RIFF")
+
+        async def _fake_stream(
+            _key: object,
+            _text: str,
+            *,
+            on_text_delta: AsyncMock | None = None,
+            **_kwargs: object,
+        ) -> SimpleNamespace:
+            assert on_text_delta is not None
+            await on_text_delta("处理中")
+            return SimpleNamespace(text=f"音频如下\n<file:{attachment}>")
+
+        bot._orchestrator = SimpleNamespace(
+            handle_message_streaming=AsyncMock(side_effect=_fake_stream)
+        )
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="ping",
+            )
+        )
+
+        send_files.assert_awaited_once_with(
+            bot,
+            "oc_chat_1",
+            f"音频如下\n<file:{attachment}>",
+            allowed_roots=None,
+            reply_to_message_id="om_1",
+        )
+        bot._close_streaming_card.assert_awaited_once()
+        assert bot._close_streaming_card.await_args.kwargs["summary"].endswith("音频如下")
+        bot._send_text_to_chat_ref.assert_not_awaited()
+        bot._send_plain_text_to_chat_ref.assert_not_awaited()
+
+    async def test_handle_incoming_text_plain_mode_sends_visible_text_and_files_without_duplication(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        bot = _make_bot(tmp_path)
+        bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+        bot._send_plain_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+        send_files = AsyncMock()
+        monkeypatch.setattr(
+            "controlmesh.messenger.feishu.sender.send_files_from_text",
+            send_files,
+        )
+        attachment = tmp_path / "tone.wav"
+        attachment.write_bytes(b"RIFF")
+        bot._orchestrator = SimpleNamespace(
+            handle_message_streaming=AsyncMock(
+                return_value=SimpleNamespace(text=f"音频如下\n<file:{attachment}>")
+            )
+        )
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="ping",
+            )
+        )
+
+        send_files.assert_awaited_once_with(
+            bot,
+            "oc_chat_1",
+            f"音频如下\n<file:{attachment}>",
+            allowed_roots=None,
+            reply_to_message_id="om_1",
+        )
+        bot._send_plain_text_to_chat_ref.assert_awaited_once_with(
+            "oc_chat_1",
+            "音频如下",
+            reply_to_message_id="om_1",
+        )
+        bot._send_text_to_chat_ref.assert_not_awaited()
+
     async def test_handle_incoming_text_card_stream_mode_falls_back_to_text_when_cardkit_unavailable(
         self,
         tmp_path: Path,
     ) -> None:
         bot = _make_bot(tmp_path, runtime_mode="native", progress_mode="card_stream")
         bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+        bot._send_plain_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
         bot._create_streaming_card = AsyncMock(return_value=None)  # type: ignore[attr-defined]
         bot._send_card_to_chat_ref = AsyncMock()  # type: ignore[attr-defined]
         bot._update_streaming_card_content = AsyncMock()  # type: ignore[attr-defined]
@@ -663,11 +846,12 @@ class TestFeishuBotRouting:
         bot._send_card_to_chat_ref.assert_not_awaited()
         bot._update_streaming_card_content.assert_not_awaited()
         bot._close_streaming_card.assert_not_awaited()
-        bot._send_text_to_chat_ref.assert_awaited_once_with(
+        bot._send_plain_text_to_chat_ref.assert_awaited_once_with(
             "oc_chat_1",
             "你好",
             reply_to_message_id="om_1",
         )
+        bot._send_text_to_chat_ref.assert_not_awaited()
 
     async def test_on_task_result_routes_to_fs_and_delivers(self, tmp_path: Path) -> None:
         bot = _make_bot(tmp_path)

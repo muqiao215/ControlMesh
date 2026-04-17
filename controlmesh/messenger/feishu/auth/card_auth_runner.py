@@ -20,7 +20,15 @@ from controlmesh.messenger.feishu.auth.card_auth_context import (
     build_card_auth_context,
 )
 from controlmesh.messenger.feishu.auth.feishu_card_sender import FeishuCardHandle, FeishuCardSender
+from controlmesh.messenger.feishu.auth.runtime_continuation import (
+    FeishuAuthContinuationEntry,
+    FeishuAuthRuntimeStore,
+)
 from controlmesh.messenger.feishu.auth.token_store import FeishuTokenStore
+from controlmesh.messenger.feishu.tool_auth import (
+    build_native_synthetic_retry_artifact,
+    new_feishu_operation_id,
+)
 
 if TYPE_CHECKING:
     from controlmesh.messenger.feishu.bot import FeishuIncomingText
@@ -72,6 +80,8 @@ class FeishuCardAuthRunner:
         complete_auth: Callable[..., Awaitable[DeviceFlowCardAuthResult]] = complete_device_flow_card_auth,
         identity_verifier: Callable[..., Awaitable[str]] | None = None,
         now_ms: Callable[[], int] | None = None,
+        inject_retry: Callable[[FeishuAuthContinuationEntry, dict[str, Any]], Awaitable[None]]
+        | None = None,
     ) -> None:
         self._config = config
         self._session_factory = session_factory
@@ -81,7 +91,9 @@ class FeishuCardAuthRunner:
         self._complete_auth = complete_auth
         self._identity_verifier = identity_verifier
         self._now_ms = now_ms
+        self._inject_retry = inject_retry
         self._token_store = FeishuTokenStore(config.controlmesh_home)
+        self._runtime_store = FeishuAuthRuntimeStore(config.controlmesh_home)
         self._tasks: dict[str, asyncio.Task[None]] = {}
 
     async def handle_message(self, message: FeishuIncomingText) -> bool:
@@ -99,37 +111,47 @@ class FeishuCardAuthRunner:
             )
             return True
 
-        session = await self._session_factory()
-        sent_handle: FeishuCardHandle | None = None
-
-        async def _send_initial_card(*, sender_open_id: str, card: dict[str, Any]) -> None:
-            del sender_open_id
-            nonlocal sent_handle
-            sent_handle = await self._sender.send_card(context, card)
-
-        start_result = await self._start_auth(
-            session,
-            app_id=context.app_id,
-            app_secret=context.app_secret,
-            sender_open_id=context.sender_open_id,
-            brand=context.brand,
-            send_card=_send_initial_card,
-        )
-        if sent_handle is None:
-            msg = "Feishu auth card start did not produce a sent handle"
-            raise RuntimeError(msg)
-
-        task = asyncio.create_task(
-            self._complete_flow(
-                flow_key=flow_key,
-                context=context,
-                handle=sent_handle,
-                authorization=start_result.authorization,
-            )
-        )
-        self._tasks[flow_key] = task
-        task.add_done_callback(lambda _: self._tasks.pop(flow_key, None))
+        await self._start_flow(context=context, flow_key=flow_key)
         return True
+
+    async def start_retryable_auth_flow(
+        self,
+        message: FeishuIncomingText,
+        *,
+        required_scopes: list[str],
+        retry_text: str,
+        operation_id: str = "",
+    ) -> None:
+        if not required_scopes:
+            msg = "required_scopes must not be empty"
+            raise ValueError(msg)
+
+        context = build_card_auth_context(self._config, message)
+        flow_key = self._flow_key(context)
+        active_task = self._tasks.get(flow_key)
+        if active_task is not None and not active_task.done():
+            await self._text_reply(
+                context.chat_id,
+                _DUPLICATE_FLOW_TEXT,
+                context.trigger_message_id,
+            )
+            return
+
+        entry = FeishuAuthContinuationEntry(
+            operation_id=operation_id or new_feishu_operation_id(),
+            chat_id=message.chat_id,
+            sender_open_id=message.sender_id,
+            retry_text=retry_text or message.text,
+            thread_id=message.thread_id,
+            trigger_message_id=message.message_id,
+        )
+        self._runtime_store.save(entry)
+        await self._start_flow(
+            context=context,
+            flow_key=flow_key,
+            scope=" ".join(required_scopes),
+            continuation_entry=entry,
+        )
 
     async def shutdown(self) -> None:
         tasks = [task for task in self._tasks.values() if not task.done()]
@@ -146,6 +168,7 @@ class FeishuCardAuthRunner:
         context: FeishuCardAuthContext,
         handle: FeishuCardHandle,
         authorization: Any,
+        continuation_entry: FeishuAuthContinuationEntry | None = None,
     ) -> None:
         try:
             session = await self._session_factory()
@@ -180,6 +203,15 @@ class FeishuCardAuthRunner:
             if self._now_ms is not None:
                 complete_kwargs["now_ms"] = self._now_ms
             await self._complete_auth(session, **complete_kwargs)
+            if continuation_entry is not None and self._inject_retry is not None:
+                self._runtime_store.remove(continuation_entry.operation_id)
+                await self._inject_retry(
+                    continuation_entry,
+                    build_native_synthetic_retry_artifact(
+                        continuation_entry,
+                        reason="device_flow_authorized",
+                    ),
+                )
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -187,6 +219,47 @@ class FeishuCardAuthRunner:
             await self._sender.update_card(handle, build_auth_failed_card(reason=str(exc)))
         finally:
             self._tasks.pop(flow_key, None)
+
+    async def _start_flow(
+        self,
+        *,
+        context: FeishuCardAuthContext,
+        flow_key: str,
+        scope: str | None = None,
+        continuation_entry: FeishuAuthContinuationEntry | None = None,
+    ) -> None:
+        session = await self._session_factory()
+        sent_handle: FeishuCardHandle | None = None
+
+        async def _send_initial_card(*, sender_open_id: str, card: dict[str, Any]) -> None:
+            del sender_open_id
+            nonlocal sent_handle
+            sent_handle = await self._sender.send_card(context, card)
+
+        start_result = await self._start_auth(
+            session,
+            app_id=context.app_id,
+            app_secret=context.app_secret,
+            sender_open_id=context.sender_open_id,
+            brand=context.brand,
+            scope=scope,
+            send_card=_send_initial_card,
+        )
+        if sent_handle is None:
+            msg = "Feishu auth card start did not produce a sent handle"
+            raise RuntimeError(msg)
+
+        task = asyncio.create_task(
+            self._complete_flow(
+                flow_key=flow_key,
+                context=context,
+                handle=sent_handle,
+                authorization=start_result.authorization,
+                continuation_entry=continuation_entry,
+            )
+        )
+        self._tasks[flow_key] = task
+        task.add_done_callback(lambda _: self._tasks.pop(flow_key, None))
 
     @staticmethod
     def _flow_key(context: FeishuCardAuthContext) -> str:

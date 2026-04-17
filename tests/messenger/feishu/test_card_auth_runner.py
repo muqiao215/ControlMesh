@@ -167,6 +167,64 @@ async def test_runner_starts_auth_updates_same_handle_on_success_and_stores_toke
 
 
 @pytest.mark.asyncio
+async def test_retryable_auth_flow_injects_synthetic_retry_after_success(
+    tmp_path: Path,
+) -> None:
+    sender = _FakeCardSender()
+    injected: list[tuple[Any, dict[str, Any]]] = []
+
+    async def _start_auth(session: object, **kwargs: Any) -> Any:
+        del session
+        await kwargs["send_card"](
+            sender_open_id=kwargs["sender_open_id"],
+            card={"elements": [{"content": "pending"}]},
+        )
+        return type(
+            "StartResult",
+            (),
+            {"authorization": _authorization(), "card": {"elements": [{"content": "pending"}]}},
+        )()
+
+    async def _complete_auth(session: object, **kwargs: Any) -> Any:
+        del session, kwargs
+        return type(
+            "CompleteResult",
+            (),
+            {
+                "status": "authorized",
+                "actual_user_open_id": "ou_sender",
+                "stored_token": None,
+                "card": {"elements": [{"content": "done"}]},
+            },
+        )()
+
+    async def _inject_retry(entry: Any, artifact: dict[str, Any]) -> None:
+        injected.append((entry, artifact))
+
+    runner = FeishuCardAuthRunner(
+        _config(tmp_path),
+        session_factory=lambda: _return(object()),
+        sender=sender,
+        text_reply=lambda *_args: _return(None),
+        start_auth=_start_auth,
+        complete_auth=_complete_auth,
+        inject_retry=_inject_retry,
+    )
+
+    await runner.start_retryable_auth_flow(
+        _message("继续原来的任务"),
+        required_scopes=["offline_access", "im:message"],
+        retry_text="继续原来的任务",
+    )
+    await asyncio.gather(*runner._tasks.values(), return_exceptions=True)
+
+    assert injected[0][0].chat_id == "oc_chat_1"
+    assert injected[0][0].retry_text == "继续原来的任务"
+    assert injected[0][1]["kind"] == "synthetic_retry"
+    assert injected[0][1]["text"] == "继续原来的任务"
+
+
+@pytest.mark.asyncio
 async def test_runner_duplicate_trigger_does_not_start_second_flow(tmp_path: Path) -> None:
     sender = _FakeCardSender()
     duplicate_replies: list[tuple[str, str, str | None]] = []
