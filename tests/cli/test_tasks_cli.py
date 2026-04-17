@@ -69,3 +69,37 @@ def test_tasks_doctor_shows_policy_and_runtime_primitives(monkeypatch, tmp_path:
     assert "/tasks/create" in rendered
     assert "/tasks/list" in rendered
     assert "/interagent/send" in rendered
+
+
+def test_tasks_list_help_prints_usage_without_loading_registry(monkeypatch) -> None:
+    module = _import_tasks_cli_module()
+    console = Console(record=True, width=120)
+
+    def _unexpected_load() -> AgentConfig:
+        raise AssertionError("load_config should not run for --help")
+
+    monkeypatch.setattr(module, "load_config", _unexpected_load, raising=False)
+    monkeypatch.setattr(module, "_console", console, raising=False)
+
+    module.cmd_tasks(["tasks", "list", "--help"])
+
+    rendered = console.export_text()
+    assert "controlmesh tasks list" in rendered
+    assert "local task registry" in rendered
+
+
+def test_tasks_doctor_help_prints_usage_without_loading_registry(monkeypatch) -> None:
+    module = _import_tasks_cli_module()
+    console = Console(record=True, width=120)
+
+    def _unexpected_load() -> AgentConfig:
+        raise AssertionError("load_config should not run for -h")
+
+    monkeypatch.setattr(module, "load_config", _unexpected_load, raising=False)
+    monkeypatch.setattr(module, "_console", console, raising=False)
+
+    module.cmd_tasks(["tasks", "doctor", "-h"])
+
+    rendered = console.export_text()
+    assert "controlmesh tasks doctor" in rendered
+    assert "runtime health" in rendered

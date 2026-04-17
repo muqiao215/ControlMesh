@@ -33,8 +33,6 @@ ControlMesh 是一个开源的 Feishu native task runtime：把官方编码 CLI 
 
 | 能力 | 说明 |
 |---|---|
-| 能力 | 说明 |
-|---|---|
 | Feishu Native Runtime | 扫码创建机器人、CardKit 单卡、权限引导、原生 OAPI 工具 |
 | 后台任务闭环 | `/tasks/create`、`ask_parent`、`resume`、`list` 构成可演示任务 runtime |
 | 官方 CLI worker | 复用 Claude、Codex、Gemini 等官方命令行工具执行任务 |
@@ -151,8 +149,6 @@ the task loop.
 
 ### Features
 
-| Feature | Description |
-|---|---|
 | Feature | Description |
 |---|---|
 | Feishu Native Runtime | Scan-created bot, CardKit cards, permission onboarding, native OAPI tools |

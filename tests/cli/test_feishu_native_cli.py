@@ -6,6 +6,8 @@ import importlib
 import sys
 from types import ModuleType
 
+from rich.console import Console
+
 
 def _import_feishu_cli_module() -> ModuleType:
     return importlib.import_module("controlmesh.cli_commands.feishu")
@@ -44,3 +46,20 @@ def test_main_routes_tasks_list(monkeypatch) -> None:
     main_mod.main()
 
     assert calls == [["tasks", "list"]]
+
+
+def test_feishu_native_bootstrap_help_prints_usage_without_running_auth(monkeypatch) -> None:
+    module = _import_feishu_cli_module()
+    console = Console(record=True, width=120)
+
+    def _unexpected_auth(_args: list[str]) -> None:
+        raise AssertionError("cmd_auth should not run for --help")
+
+    monkeypatch.setattr(module, "cmd_auth", _unexpected_auth, raising=False)
+    monkeypatch.setattr(module, "_console", console, raising=False)
+
+    module.cmd_feishu(["feishu", "native", "bootstrap", "--help"])
+
+    rendered = console.export_text()
+    assert "controlmesh feishu native bootstrap" in rendered
+    assert "bootstrap flow" in rendered

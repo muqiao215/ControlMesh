@@ -18,6 +18,25 @@ from controlmesh.tasks.task_policy import (
 from controlmesh.workspace.paths import resolve_paths
 
 _console = Console()
+_HELP_FLAGS = {"--help", "-h"}
+_TASKS_USAGE = """Usage:
+  controlmesh tasks list
+  controlmesh tasks doctor
+
+Commands:
+  list    List background tasks from the local task registry.
+  doctor  Show task runtime health, policy, and primitive endpoints.
+"""
+_TASKS_LIST_USAGE = """Usage:
+  controlmesh tasks list
+
+List background tasks from the local task registry.
+"""
+_TASKS_DOCTOR_USAGE = """Usage:
+  controlmesh tasks doctor
+
+Show task runtime health, policy, and primitive endpoints.
+"""
 
 
 def load_config() -> AgentConfig:
@@ -30,7 +49,19 @@ def load_config() -> AgentConfig:
 def cmd_tasks(args: Sequence[str]) -> None:
     """Handle `controlmesh tasks ...` commands."""
     action_args = _parse_tasks_command(args)
+    if action_args and action_args[0] in _HELP_FLAGS:
+        _console.print(_TASKS_USAGE)
+        return
+
     action = action_args[0] if action_args else "list"
+    if any(arg in _HELP_FLAGS for arg in action_args[1:]):
+        if action == "list":
+            _console.print(_TASKS_LIST_USAGE)
+            return
+        if action == "doctor":
+            _console.print(_TASKS_DOCTOR_USAGE)
+            return
+
     if action == "list":
         _cmd_tasks_list()
         return
