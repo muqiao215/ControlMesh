@@ -61,6 +61,17 @@ desktop.ini
 !/plans/tasks/_template/
 !/plans/tasks/_template/**
 
+# Local agent/development artifacts (keep out of public releases)
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+TASKMEMORY.md
+**/TASKMEMORY.md
+**/findings.md
+**/progress.md
+**/result.md
+**/task_plan.md
+
 # Local release/certification runtime outputs
 /task_artifacts/**/api_runtime_home/
 /task_artifacts/**/fresh_home*/

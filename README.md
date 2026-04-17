@@ -2,114 +2,62 @@
 
 中文 | [English](#english)
 
-ControlMesh is a runtime-first agent harness for real work over chat.
+ControlMesh turns official coding CLIs into always-on chat agents for real work.
 
-It does not wrap one model API. It runs official coding CLIs such as `claude`,
-`codex`, and `gemini`, then adds chat ingress, persistent workspace state,
-background tasks, sub-agents, runtime controls, and auditable write-back.
+Use Claude, Codex, Gemini, and other local command-line agents from Telegram,
+Matrix, or Feishu. ControlMesh gives them a persistent workspace, long-running
+tasks, file output, Feishu cards, and operator-friendly service controls.
 
-The current spine is **ControlMesh Runtime**.
-
-![ControlMesh runtime and Feishu native/bridge modes](docs/assets/controlmesh-feishu-runtime.svg)
+![ControlMesh chat agent overview](docs/assets/controlmesh-feishu-runtime.svg)
 
 ## 中文
 
 ### 一句话
 
-ControlMesh 把聊天入口变成一个可长期运行的 agent runtime。
+ControlMesh 是一个开源的聊天式 AI 工作台：把官方编码 CLI 接进
+Telegram、Matrix 和 Feishu，让它们像长期在线的工作机器人一样执行任务。
 
-你可以在 Telegram、Matrix、Feishu 等入口里驱动官方 CLI，让长任务、自动化、子代理和同一个工作区协同，而不是只得到一个一次性的聊天壳。
+它不是一次性的聊天壳。它面向真实工作流：持续上下文、后台任务、文件交付、
+服务重启、Feishu 卡片、权限引导，以及可部署到 VPS / 树莓派的常驻运行。
 
-### 现在能做什么
+### 适合谁
 
-| 能力 | 状态 |
+- 想把 Claude、Codex、Gemini 放进 Telegram 或 Feishu 里长期使用的个人和小团队。
+- 想在一台 VPS、NAS 或树莓派上运行 24/7 AI 工作入口的开发者。
+- 需要让 AI 在同一个工作区里读写文件、跑命令、交付结果，而不是只回答文本的人。
+- 需要 Feishu 原生体验：机器人、卡片、权限引导、群消息和文件/媒体回复。
+
+### 产品能力
+
+| 能力 | 说明 |
 |---|---|
-| 官方 CLI 执行 | Claude、Codex、Gemini |
-| 聊天入口 | Telegram、Matrix、Feishu |
-| 上下文隔离 | 单聊、群 topic、room、named session |
-| 长任务 | background task、cron、webhook、heartbeat |
-| 多代理 | sub-agent 和 shared memory |
-| 工作区 | 文件型 runtime state，默认 `~/.controlmesh/` |
-| 控制面 | `signal`、`query`、`update` |
-| Feishu native | 官方扫码创建机器人、CardKit 真流式卡片、权限编排原语 |
-| Feishu bridge | 复用已有 `app_id/app_secret` 的轻量消息桥 |
+| 官方 CLI 接入 | 复用 Claude、Codex、Gemini 等官方命令行工具 |
+| 多聊天入口 | Telegram、Matrix、Feishu |
+| 持久工作区 | 会话、文件、输出和运行状态保存在本机 |
+| 长任务 | 后台任务、定时任务、webhook、运行状态检查 |
+| 多会话 | 单聊、群组、topic、room、named session 隔离上下文 |
+| 文件交付 | 文本、图片、音频、文档等输出可直接发回聊天 |
+| Feishu Native | 扫码创建机器人、CardKit 单卡、权限引导、原生 OAPI 工具 |
+| Feishu Bridge | 复用已有 app credentials，快速接入 Feishu 消息入口 |
+| 运维友好 | systemd、status、doctor、restart、配置校验 |
 
-### Feishu: native 和 bridge
+### Feishu 体验
 
-ControlMesh 现在把 Feishu 拆成两条明确路径。
+ControlMesh 提供两种 Feishu 模式：
 
-#### `native`
+**Native 模式**适合从零创建一个更完整的 Feishu 工作机器人。
 
-适合从 0 开始配一个能直接用的 Feishu 机器人。
+- 通过 [`feishu-auth-kit`](https://github.com/muqiao215/feishu-auth-kit)
+  完成扫码创建、凭证写回和权限引导。
+- 支持 CardKit 单卡展示运行状态、工具步骤和最终结果。
+- 支持 `/feishu_auth_all` 进行当前 MVP 工具所需权限的批量引导。
+- 已接入第一批只读原生工具：联系人搜索、用户读取、群消息读取、Drive 文件列表。
 
-这条线通过独立的 [`feishu-auth-kit`](https://github.com/muqiao215/feishu-auth-kit)
-消费官方 scan-to-create 能力，拿到新 app/bot 的 credentials，并写回
-ControlMesh 配置。
+**Bridge 模式**适合已经有 Feishu app，只想把 Feishu 当作消息入口。
 
-`native` 能力面：
-
-- 官方扫码创建 app/bot
-- 自动写回 `feishu.app_id` 和 `feishu.app_secret`
-- 自动写回 `feishu.runtime_mode=native`
-- 自动启用 `feishu.progress_mode=card_stream`
-- probe app readiness
-- 使用 Feishu CardKit 真流式卡片
-- 复用 auth-kit 的权限规划、continuation 和 synthetic retry 原语
-- MVP 已接上 native-only Feishu OAPI tools：
-  `contact.search_user`、`contact.get_user`、`im.get_messages`、`drive.list_files`
-- 缺 app scope / user token / user scope 时会抛标准
-  `FeishuNativeToolAuthRequiredError`，由 runtime auth seam 路由权限卡或 device auth
-- 新增 `/feishu_auth_all` 飞书内批量授权入口：优先走权限卡/设备授权，
-  不再把“去开发者后台”作为唯一交互；当前只覆盖 native-only OAPI MVP
-- native runtime 现在有第一版 agent-selectable Feishu tool seam：
-  模型可先选 `contact` / `im` / `drive` native tools，再由 ControlMesh 执行并把结果回灌同一回答链
-- `card_stream` 已升级为结构化单卡：状态、工具步骤、输出、终态写在同一张 CardKit 卡里
-- Feishu inbound context v1 已补一阶语义：
-  `post` 文本提取、`thread/root/parent` 元数据、reply/quote 摘要
-- ControlMesh 现在开始薄接 `feishu-auth-kit` native runtime contract：
-  入站 context 先走 `agent parse-inbound`，授权卡点击后的 retry 走
-  `agent bind-continuation` / `agent action-to-retry`，`card_stream` 兼容
-  `AgentEvent` / `SingleCardRun` 负载
-- 当前 smoke 入口是 `/feishu-native ...`，只在 `runtime_mode=native` 可用
-
-```bash
-controlmesh auth feishu register-begin
-controlmesh auth feishu register-poll --device-code "<device_code>" --interval 5 --expires-in 600
-controlmesh auth feishu probe
-```
-
-#### `bridge`
-
-适合你已经有一个 Feishu app，只想把 Feishu 当消息入口。
-
-这条线复用手工配置的 `app_id/app_secret`，保持更小的运行时假设。
-
-`bridge` 能力面：
-
-- 使用已有 app credentials
-- 普通文本回复
-- 单卡 preview 模式
-- 可做基础 auth/status/doctor
-- 不承诺完整 Feishu SDK 能力面
-- 不启用 CardKit 真流式
-
-示例：
-
-```json
-{
-  "transport": "feishu",
-  "feishu": {
-    "mode": "bot_only",
-    "runtime_mode": "bridge",
-    "progress_mode": "card_preview",
-    "brand": "feishu",
-    "app_id": "cli_xxx",
-    "app_secret": "xxx"
-  }
-}
-```
-
-配置校验会拒绝 `runtime_mode=bridge` 和 `progress_mode=card_stream` 的混用。
+- 使用已有 `app_id` / `app_secret`。
+- 更轻量，适合文本回复和基础卡片预览。
+- 不要求从零创建新机器人。
 
 ### 快速开始
 
@@ -118,23 +66,22 @@ pipx install controlmesh
 controlmesh
 ```
 
-首次启动会引导你完成：
-
-- 官方 CLI 检查
-- Telegram 或 Matrix 配置
-- 时区设置
-- 可选 Docker
-- 可选 systemd 服务安装
-
-Matrix 额外依赖：
+从源码运行：
 
 ```bash
-controlmesh install matrix
+git clone https://github.com/muqiao215/ControlMesh.git
+cd ControlMesh
+python -m venv .venv
+. .venv/bin/activate
+pip install -e ".[matrix,api]"
+controlmesh
 ```
 
-### Feishu 从 0 到可用
+首次启动会引导你完成 CLI 检查、聊天入口配置、时区设置和可选服务安装。
 
-如果你没有现成 app，走 native：
+### Feishu 从零配置
+
+Native 模式：
 
 ```bash
 controlmesh auth feishu setup
@@ -144,7 +91,7 @@ controlmesh auth feishu doctor
 controlmesh auth feishu probe
 ```
 
-如果你已经有 app，走 bridge：
+Bridge 模式：
 
 ```bash
 controlmesh auth feishu status
@@ -152,36 +99,7 @@ controlmesh auth feishu doctor
 controlmesh auth feishu login
 ```
 
-`login` 是复用已有 app 做用户 OAuth，不负责创建机器人。
-
-更完整说明见 [`docs/feishu-setup.md`](docs/feishu-setup.md)。
-
-### 核心交互模型
-
-ControlMesh 当前支持五层使用方式：
-
-1. 单聊主代理
-2. 群 topic 或多 room 隔离上下文
-3. named session
-4. background task
-5. sub-agent
-
-它们共享同一个工作区，但不共享同一个对话上下文：
-
-```text
-~/.controlmesh/
-```
-
-### Runtime 控制面
-
-ControlMesh Runtime 已经形成一条可验证的运行时链路：
-
-- execution evidence
-- task summary / line summary
-- controller-approved promotion
-- controlled canonical write-back
-
-控制面入口：
+### 常用命令
 
 ```bash
 controlmesh status
@@ -191,23 +109,12 @@ controlmesh agents add NAME
 controlmesh api enable
 ```
 
-### 当前不是什么
+### 文档
 
-- 不是大而全的云编排平台
-- 不是多 worker 集群调度系统
-- 不是数据库优先的重基础设施框架
-- 不是 UI-first 产品
-- 不是绕过 Feishu/Lark 官方平台规则的工具
-
-当前方向是先把 runtime 语义、控制边界、可审计写回和真实聊天入口做硬，再继续扩展执行面。
-
-### 文档入口
-
-- 安装说明：[`docs/installation.md`](docs/installation.md)
-- 文档总览：[`docs/README.md`](docs/README.md)
+- 安装：[`docs/installation.md`](docs/installation.md)
 - Feishu 设置：[`docs/feishu-setup.md`](docs/feishu-setup.md)
-- Harness / Runtime 设计：[`docs/modules/harness.md`](docs/modules/harness.md)
-- 计划与控制面文件：[`plans/README.md`](plans/README.md)
+- 文档总览：[`docs/README.md`](docs/README.md)
+- 配置示例：[`config.example.json`](config.example.json)
 
 ### 许可证
 
@@ -217,130 +124,48 @@ MIT License. See [`LICENSE`](LICENSE).
 
 ## English
 
-ControlMesh is a runtime-first agent harness.
+ControlMesh is an open-source chat workbench for command-line coding agents.
 
-It runs official coding CLIs as execution units, then layers chat ingress,
-background tasks, shared workspaces, runtime controls, and auditable write-back
-on top.
+It connects official CLIs such as Claude, Codex, and Gemini to Telegram,
+Matrix, and Feishu, then gives them persistent workspaces, long-running jobs,
+file delivery, Feishu cards, and service controls.
 
-### What It Does
+### Who It Is For
 
-| Area | Status |
+- Developers who want Claude, Codex, or Gemini inside Telegram or Feishu.
+- Small teams that want an always-on AI work entrypoint on a VPS, NAS, or Raspberry Pi.
+- Builders who need agents to work with files and commands, not just produce chat text.
+- Feishu users who want native bot onboarding, cards, permission flows, and read-only OAPI tools.
+
+### Features
+
+| Feature | Description |
 |---|---|
-| CLI providers | Claude, Codex, Gemini |
+| Official CLI support | Run Claude, Codex, Gemini, and other local CLI agents |
 | Chat transports | Telegram, Matrix, Feishu |
-| Context isolation | Direct chat, group topics, rooms, named sessions |
-| Long-running work | Background tasks, cron, webhooks, heartbeat |
-| Multi-agent | Sub-agents and shared memory |
-| Runtime state | File-backed workspace under `~/.controlmesh/` |
-| Control plane | `signal`, `query`, `update` |
-| Feishu native | Scan-create bot onboarding, CardKit streaming, auth orchestration primitives |
-| Feishu bridge | Reuse an existing `app_id/app_secret` as a lightweight chat bridge |
+| Persistent workspace | Keep sessions, files, outputs, and runtime state on your machine |
+| Long-running work | Background tasks, cron jobs, webhooks, and health checks |
+| Session isolation | Direct chats, group topics, rooms, and named sessions |
+| File delivery | Return text, images, audio, documents, and generated artifacts |
+| Feishu Native | Scan-created bot, CardKit cards, permission onboarding, native OAPI tools |
+| Feishu Bridge | Reuse an existing Feishu app as a lightweight chat bridge |
+| Operations | systemd service, status, doctor, restart, config validation |
 
-### Feishu Runtime Modes
+### Feishu Modes
 
-`native` is the Feishu-first path. It consumes the standalone
-[`feishu-auth-kit`](https://github.com/muqiao215/feishu-auth-kit), runs the
-official scan-to-create flow, writes credentials back to ControlMesh config,
-probes readiness, and enables CardKit streaming cards.
+**Native mode** is for a full Feishu-first bot experience.
 
-The current MVP also wires native-only read OAPI tools:
-`contact.search_user`, `contact.get_user`, `im.get_messages`, and
-`drive.list_files`. Missing app scope, user token, or user scope is surfaced as
-`FeishuNativeToolAuthRequiredError`, so the runtime can route into permission
-cards or retryable device auth. `/feishu_auth_all` is the current in-chat batch
-auth entry for these native-only tools: app-scope gaps still require app
-owner/admin approval, while user OAuth gaps stay inside Feishu device-auth
-cards with retry. The explicit smoke entry is `/feishu-native ...`, and bridge
-mode does not support either native tool execution or `/feishu_auth_all`.
+- Uses [`feishu-auth-kit`](https://github.com/muqiao215/feishu-auth-kit)
+  for scan-to-create onboarding, credential write-back, and permission flows.
+- Shows status, tool steps, and final output in a single Feishu card.
+- Provides `/feishu_auth_all` for guided authorization of the current MVP tools.
+- Includes first read-only native tools for contacts, users, group messages, and Drive files.
 
-ControlMesh also now has a first in-runtime agent-selectable Feishu tool seam:
-the model can select one native Feishu read tool before the main answer, the
-runtime executes it, and the tool result is fed back into the final response
-prompt. `card_stream` now renders a structured single card with status, tool
-steps, output, and terminal state. Inbound Feishu parsing also carries a first
-semantic layer for `post`, reply/quote summary, and thread/root/parent IDs.
-ControlMesh now consumes `feishu-auth-kit` native runtime contracts on three
-seams: `agent parse-inbound` for base message context, `agent action-to-retry`
-for permission-card continuation clicks, and `AgentEvent`/`SingleCardRun`
-compatible card rendering in `card_stream`.
+**Bridge mode** is for existing Feishu apps.
 
-```bash
-controlmesh auth feishu register-begin
-controlmesh auth feishu register-poll --device-code "<device_code>" --interval 5 --expires-in 600
-controlmesh auth feishu probe
-```
-
-`bridge` is the compatibility path. It reuses a manually managed
-`app_id/app_secret` and treats Feishu mainly as the message bridge. It supports
-ordinary text and single-card preview mode, but it does not claim the full
-native Feishu SDK surface.
-
-```json
-{
-  "transport": "feishu",
-  "feishu": {
-    "mode": "bot_only",
-    "runtime_mode": "bridge",
-    "progress_mode": "card_preview",
-    "brand": "feishu",
-    "app_id": "cli_xxx",
-    "app_secret": "xxx"
-  }
-}
-```
-
-`progress_mode=card_stream` requires `runtime_mode=native`.
-
-### Feishu Status Today
-
-The Feishu path is now **usable**, but it is not feature-complete yet.
-
-What is already landed:
-
-- scan-to-create onboarding through `feishu-auth-kit`
-- config write-back, probe, readiness checks
-- native vs bridge runtime split
-- CardKit streaming in native mode
-- native auth seam for app scope, user OAuth, and synthetic retry
-- native-only read tools: `contact.search_user`, `contact.get_user`, `im.get_messages`
-- in-chat batch auth entry: `/feishu_auth_all`
-- media ingress/egress for text, images, files, audio, and video
-
-What is still incomplete:
-
-- native tools are still exposed through explicit smoke commands instead of the
-  general agent tool registry
-- CardKit streaming is still a text-first stream, not yet a fully structured
-  task card with tool steps, confirmations, and rich status blocks
-- Feishu deep message semantics are still partial: `post`, quote/reply context,
-  merge-forward, interactive payloads, and richer thread semantics need more work
-- the native OAPI surface is still MVP-level, not yet comparable to a full
-  Feishu workspace agent
-
-Practical summary: ControlMesh Feishu native is past the “can it work at all”
-stage and now in the “make the native agent experience complete” stage.
-
-### Live Deployment Checklist
-
-When deploying a Feishu native release to a live host, do not treat the git
-checkout alone as sufficient. The release also needs the runtime dependencies
-that the native auth flow expects.
-
-Minimum checks:
-
-- the running service must point to the intended release path and venv
-- `feishu-auth-kit` must be resolvable by ControlMesh
-- if `feishu-auth-kit` is not in `PATH`, set
-  `CONTROLMESH_FEISHU_AUTH_KIT_BIN=/abs/path/to/feishu-auth-kit`
-- if using a sibling checkout instead of an installed binary, make sure the
-  sibling repo and its `uv`-managed environment are present on the live host
-- after cutover, verify that `/feishu-native ...` is handled by the native tool
-  path rather than falling through to the normal model turn
-
-The most common live-host failure mode is not Feishu API breakage, but missing
-runtime wiring after cutover: wrong release path, stale editable install,
-missing `feishu-auth-kit`, or a service environment that cannot resolve it.
+- Reuses your current `app_id` and `app_secret`.
+- Keeps the runtime lightweight.
+- Works well when Feishu is only one of several chat entrypoints.
 
 ### Quick Start
 
@@ -349,37 +174,43 @@ pipx install controlmesh
 controlmesh
 ```
 
-Requirements:
-
-- Python 3.11+
-- at least one official CLI: `claude`, `codex`, or `gemini`
-- at least one transport: Telegram, Matrix, or Feishu
-
-Install Matrix support:
+Run from source:
 
 ```bash
-controlmesh install matrix
-```
-
-### Common Commands
-
-```bash
+git clone https://github.com/muqiao215/ControlMesh.git
+cd ControlMesh
+python -m venv .venv
+. .venv/bin/activate
+pip install -e ".[matrix,api]"
 controlmesh
-controlmesh status
-controlmesh restart
-controlmesh service install
-controlmesh agents add NAME
-controlmesh api enable
-controlmesh auth feishu setup
 ```
 
-### Docs
+### Feishu Setup
+
+Native mode:
+
+```bash
+controlmesh auth feishu setup
+controlmesh auth feishu register-begin
+controlmesh auth feishu register-poll --device-code "<device_code>" --interval 5 --expires-in 600
+controlmesh auth feishu doctor
+controlmesh auth feishu probe
+```
+
+Bridge mode:
+
+```bash
+controlmesh auth feishu status
+controlmesh auth feishu doctor
+controlmesh auth feishu login
+```
+
+### Documentation
 
 - Installation: [`docs/installation.md`](docs/installation.md)
-- Docs index: [`docs/README.md`](docs/README.md)
 - Feishu setup: [`docs/feishu-setup.md`](docs/feishu-setup.md)
-- Harness / Runtime design: [`docs/modules/harness.md`](docs/modules/harness.md)
-- Plan and control-plane files: [`plans/README.md`](plans/README.md)
+- Documentation index: [`docs/README.md`](docs/README.md)
+- Example config: [`config.example.json`](config.example.json)
 
 ### License
 
