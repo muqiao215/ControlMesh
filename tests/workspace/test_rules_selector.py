@@ -211,6 +211,30 @@ def test_fallback_to_static_template(mock_paths: ControlMeshPaths) -> None:
         assert "Static Template" in deployed.read_text()
 
 
+def test_deploy_expands_task_policy_placeholder(mock_paths: ControlMeshPaths) -> None:
+    workspace_dir = mock_paths.home_defaults / "workspace"
+    workspace_dir.mkdir(parents=True, exist_ok=True)
+    (workspace_dir / "RULES.md").write_text(
+        "# Workspace Rules\n\n{{CONTROLMESH_TASK_DELEGATION_POLICY}}\n",
+        encoding="utf-8",
+    )
+
+    auth = {
+        "claude": AuthResult(provider="claude", status=AuthStatus.AUTHENTICATED),
+        "codex": AuthResult(provider="codex", status=AuthStatus.NOT_FOUND),
+    }
+
+    with patch("controlmesh.cli.auth.check_all_auth", return_value=auth):
+        selector = RulesSelector(mock_paths)
+        selector.deploy_rules()
+
+    deployed = mock_paths.controlmesh_home / "workspace" / "CLAUDE.md"
+    content = deployed.read_text(encoding="utf-8")
+    assert "{{CONTROLMESH_TASK_DELEGATION_POLICY}}" not in content
+    assert "Anything that takes >30 seconds" in content
+    assert "/tasks/create" in content
+
+
 def test_skip_directory_without_templates(mock_paths: ControlMeshPaths) -> None:
     """Test that directories without templates are skipped."""
     # Create directory without any templates

@@ -11,6 +11,7 @@ from typing import Any
 
 from controlmesh.infra.json_store import atomic_json_save, load_json
 from controlmesh.tasks.models import TaskEntry, TaskSubmit
+from controlmesh.tasks.task_policy import build_task_agent_rules
 
 logger = logging.getLogger(__name__)
 
@@ -239,40 +240,6 @@ class TaskRegistry:
 
 # -- Task folder seeding -------------------------------------------------------
 
-_TASK_RULES = """\
-# Task Agent Rules
-
-You are a background task agent. You have NO direct user access.
-
-## MANDATORY: Asking Questions
-
-If you need ANY information to complete your task (missing details,
-clarifications, user preferences), you MUST use this tool:
-
-```bash
-python3 tools/task_tools/ask_parent.py "your question here"
-```
-
-This forwards your question to the parent agent and returns immediately.
-Do NOT write questions in your response — the user cannot see them.
-After asking, finish your current work — you will be resumed with the answer.
-
-## Other Tools (in `tools/task_tools/`)
-
-- `python3 tools/task_tools/list_tasks.py` — List active tasks
-- `python3 tools/task_tools/cancel_task.py TASK_ID` — Cancel a task
-- `python3 tools/task_tools/delete_task.py TASK_ID` — Delete a finished task
-
-## TASKMEMORY.md
-
-Path: `{taskmemory_path}`
-
-Update after completing your work:
-- What you did and key decisions
-- Results, file paths, or findings
-"""
-
-
 def _seed_task_folder(
     folder: Path,
     entry: TaskEntry,
@@ -295,7 +262,7 @@ def _seed_task_folder(
         )
 
     # Deploy rule files for all providers
-    rules_content = _TASK_RULES.format(taskmemory_path=taskmemory)
+    rules_content = build_task_agent_rules(taskmemory)
     for name in ("CLAUDE.md", "AGENTS.md", "GEMINI.md"):
         rules_path = folder / name
         rules_path.write_text(rules_content, encoding="utf-8")

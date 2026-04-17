@@ -185,6 +185,12 @@ def print_usage() -> None:
     table.add_row("controlmesh agents", t_rich("help.agents"))
     table.add_row("controlmesh docker", t_rich("help.docker"))
     table.add_row("controlmesh api", t_rich("help.api"))
+    table.add_row("controlmesh tasks list", "List background tasks from the local task runtime.")
+    table.add_row("controlmesh tasks doctor", "Show task runtime health, policy, and primitive endpoints.")
+    table.add_row(
+        "controlmesh feishu native bootstrap",
+        "Feishu-native product entrypoint for setup/bootstrap guidance.",
+    )
     table.add_row("controlmesh install <extra>", t_rich("help.install"))
     table.add_row("controlmesh status", t_rich("help.status"))
     table.add_row("controlmesh help", t_rich("help.help"))

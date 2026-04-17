@@ -19,6 +19,7 @@ from controlmesh.cli_commands.agents import cmd_agents as _cmd_agents
 from controlmesh.cli_commands.api_cmd import cmd_api as _cmd_api
 from controlmesh.cli_commands.auth import cmd_auth as _cmd_auth
 from controlmesh.cli_commands.docker import cmd_docker as _cmd_docker
+from controlmesh.cli_commands.feishu import cmd_feishu as _cmd_feishu
 from controlmesh.cli_commands.install import cmd_install as _cmd_install
 from controlmesh.cli_commands.lifecycle import (
     cmd_restart as _cmd_restart,
@@ -43,6 +44,7 @@ from controlmesh.cli_commands.status import (
 from controlmesh.cli_commands.status import (
     print_usage as _print_usage,
 )
+from controlmesh.cli_commands.tasks import cmd_tasks as _cmd_tasks
 from controlmesh.config import (
     DEFAULT_EMPTY_GEMINI_API_KEY,
     AgentConfig,
@@ -406,6 +408,8 @@ _COMMANDS: dict[str, str] = {
     "install": "install",
     "auth": "auth",
     "runtime": "runtime",
+    "tasks": "tasks",
+    "feishu": "feishu",
 }
 
 _Action = Callable[[], None]
@@ -443,6 +447,8 @@ def main() -> None:
         "install": lambda: _cmd_install(args),
         "auth": lambda: _cmd_auth(args),
         "runtime": lambda: _cmd_runtime(args),
+        "tasks": lambda: _cmd_tasks(args),
+        "feishu": lambda: _cmd_feishu(args),
     }
 
     handler = dispatch.get(action) if action else None

@@ -1,6 +1,6 @@
 # tasks/
 
-Delegated background task system (`TaskHub`) for long-running autonomous work.
+Delegated background task system (`TaskHub`) for the Feishu native task runtime.
 
 ## Files
 
@@ -13,6 +13,22 @@ Delegated background task system (`TaskHub`) for long-running autonomous work.
 ## Purpose
 
 Run long work asynchronously while keeping parent chat responsive.
+
+The public runtime primitive surface is:
+
+- `POST /tasks/create`
+- `POST /tasks/resume`
+- `POST /tasks/ask_parent`
+- `GET /tasks/list`
+- `POST /interagent/send`
+
+CLI-visible product checks:
+
+- `controlmesh tasks list`
+- `controlmesh tasks doctor`
+
+`controlmesh tasks doctor` renders the shared task policy, including the
+`>30 seconds` delegation threshold from `controlmesh.tasks.task_policy`.
 
 In ControlMesh mode, task agents are execution workers, not judges.
 They should be prompted with the pure automatic worker contract in:
@@ -96,6 +112,7 @@ Tasks preserve topic context:
 - `POST /tasks/resume`
 - `POST /tasks/ask_parent`
 - `GET /tasks/list`
+- `POST /interagent/send`
 - `POST /tasks/cancel`
 - `POST /tasks/delete`
 

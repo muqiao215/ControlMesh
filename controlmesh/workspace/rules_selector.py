@@ -7,10 +7,13 @@ import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from controlmesh.tasks.task_policy import build_root_delegation_rules
+
 if TYPE_CHECKING:
     from controlmesh.workspace.paths import ControlMeshPaths
 
 logger = logging.getLogger(__name__)
+_TASK_POLICY_PLACEHOLDER = "{{CONTROLMESH_TASK_DELEGATION_POLICY}}"
 
 
 class RulesSelector:
@@ -175,21 +178,21 @@ class RulesSelector:
                 # Deploy CLAUDE.md if Claude is authenticated
                 if self._claude_authenticated:
                     claude_dst = dst_dir / "CLAUDE.md"
-                    shutil.copy2(template, claude_dst)
+                    self._deploy_template(template, claude_dst)
                     deployed_count += 1
                     logger.debug("Deployed: %s -> CLAUDE.md", template.name)
 
                 # Deploy AGENTS.md if Codex is authenticated
                 if self._codex_authenticated:
                     agents_dst = dst_dir / "AGENTS.md"
-                    shutil.copy2(template, agents_dst)
+                    self._deploy_template(template, agents_dst)
                     deployed_count += 1
                     logger.debug("Deployed: %s -> AGENTS.md", template.name)
 
                 # Deploy GEMINI.md if Gemini is authenticated
                 if self._gemini_authenticated:
                     gemini_dst = dst_dir / "GEMINI.md"
-                    shutil.copy2(template, gemini_dst)
+                    self._deploy_template(template, gemini_dst)
                     deployed_count += 1
                     logger.debug("Deployed: %s -> GEMINI.md", template.name)
 
@@ -206,6 +209,17 @@ class RulesSelector:
 
         # Cleanup: Remove stale files that don't match current auth status
         self._cleanup_stale_files()
+
+    def _deploy_template(self, template: Path, destination: Path) -> None:
+        """Deploy one rule template, expanding shared task-policy placeholders."""
+        text = template.read_text(encoding="utf-8")
+        if _TASK_POLICY_PLACEHOLDER not in text:
+            shutil.copy2(template, destination)
+            return
+        destination.write_text(
+            text.replace(_TASK_POLICY_PLACEHOLDER, build_root_delegation_rules()),
+            encoding="utf-8",
+        )
 
     def _cleanup_stale_files(self) -> None:
         """Remove rule files that don't match current auth status.

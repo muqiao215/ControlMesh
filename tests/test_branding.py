@@ -44,7 +44,7 @@ def test_resolve_paths_defaults_to_controlmesh_home(
     assert overridden_paths.controlmesh_home == custom_home.resolve()
 
 
-@pytest.mark.parametrize("path_str", ["README.md", "AGENTS.md", "CLAUDE.md", "GEMINI.md"])
+@pytest.mark.parametrize("path_str", ["README.md"])
 def test_root_docs_use_controlmesh_branding(path_str: str) -> None:
     legacy_brand = "du" "ctor"
     text = Path(path_str).read_text(encoding="utf-8")

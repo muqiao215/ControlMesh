@@ -7,6 +7,16 @@ ControlMesh currently supports two distinct Feishu runtime tracks:
 - `bridge`: the compatibility path. Reuse an existing `app_id/app_secret` and
   treat Feishu mainly as the chat interface.
 
+Product-friendly bootstrap alias:
+
+```bash
+controlmesh feishu native bootstrap
+```
+
+This is a real runnable alias for `controlmesh auth feishu setup`. Start here
+if you want the Feishu-native product path first and the lower-level auth
+commands second.
+
 Important boundary:
 
 - `controlmesh auth feishu register-begin` / `register-poll` delegate the
@@ -20,6 +30,7 @@ Important boundary:
 If you have never created a Feishu bot before, try the scan-to-create path first:
 
 ```bash
+controlmesh feishu native bootstrap
 controlmesh auth feishu register-begin
 controlmesh auth feishu register-poll --device-code "<device_code>" --interval 5 --expires-in 600
 ```

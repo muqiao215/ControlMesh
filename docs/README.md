@@ -1,23 +1,27 @@
 # controlmesh Docs
 
-controlmesh routes chat input to official provider CLIs (`claude`, `codex`, `gemini`), streams responses back via Telegram or Matrix, persists session state, and runs cron/heartbeat/webhook/cleanup automation in-process. It also supports a direct WebSocket API transport with authenticated file upload/download.
+ControlMesh's public product path is now Feishu native + background task
+runtime. It routes Feishu chat input to official provider CLIs (`claude`,
+`codex`, `gemini`), runs long work through `/tasks/*` primitives, and returns
+status/results through Feishu cards. Telegram, Matrix, sub-agents, cron,
+webhook, and direct API transports remain compatibility/runtime modules.
 
 ## Onboarding (Read in This Order)
 
-1. `docs/system_overview.md` -- fastest end-to-end mental model.
-2. `docs/developer_quickstart.md` -- shortest path for contributors/junior devs.
-3. `docs/modules/setup_wizard.md` -- CLI commands, onboarding, restart/upgrade lifecycle.
-4. `docs/modules/service_management.md` -- systemd/launchd/Task Scheduler backends and operational behavior.
-5. `docs/architecture.md` -- startup, routing, streaming, callbacks, observers.
-6. `docs/config.md` -- config schema, merge behavior, hot-reload boundaries.
-7. `docs/feishu-setup.md` -- first-time Feishu app-bot setup and auth boundary.
-8. `docs/modules/config_reload.md` -- runtime config reload details.
-9. `docs/modules/orchestrator.md` -- routing core, flows, selectors, lifecycle split.
-10. `docs/modules/bot.md` -- Telegram transport (messenger/telegram/), middleware, topic routing.
+1. `docs/feishu-setup.md` -- Feishu native bootstrap, auth boundary, and OAPI tools.
+2. `docs/modules/tasks.md` -- background task loop and runtime primitives.
+3. `docs/system_overview.md` -- fastest end-to-end mental model.
+4. `docs/developer_quickstart.md` -- shortest path for contributors/junior devs.
+5. `docs/modules/setup_wizard.md` -- CLI commands, onboarding, restart/upgrade lifecycle.
+6. `docs/modules/service_management.md` -- systemd/launchd/Task Scheduler backends and operational behavior.
+7. `docs/architecture.md` -- startup, routing, streaming, callbacks, observers.
+8. `docs/config.md` -- config schema, merge behavior, hot-reload boundaries.
+9. `docs/modules/config_reload.md` -- runtime config reload details.
+10. `docs/modules/orchestrator.md` -- routing core, flows, selectors, lifecycle split.
 11. `docs/modules/bus.md` -- unified Envelope/MessageBus delivery architecture.
 12. `docs/modules/session.md` -- transport-aware `SessionKey(transport, chat_id, topic_id)` isolation model.
-13. `docs/modules/tasks.md` -- delegated task system (`TaskHub`) and `/tasks/*` API.
-14. `docs/modules/api.md` -- direct WebSocket ingress and HTTP file endpoints.
+13. `docs/modules/api.md` -- direct WebSocket ingress and HTTP file endpoints.
+14. `docs/modules/bot.md` -- Telegram compatibility transport (messenger/telegram/), middleware, topic routing.
 15. `docs/modules/cli.md` -- provider wrappers, stream parsing, process control.
 16. `docs/modules/codex-hooks.md` -- Codex-native lifecycle capability matrix and fallback ownership.
 17. `docs/modules/gateways.md` -- transport-neutral gateway config skeleton for future external dispatch.

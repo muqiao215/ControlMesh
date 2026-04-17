@@ -2,11 +2,13 @@
 
 中文 | [English](#english)
 
-ControlMesh turns official coding CLIs into always-on chat agents for real work.
+ControlMesh is a Feishu-native task runtime for official coding CLIs.
 
-Use Claude, Codex, Gemini, and other local command-line agents from Telegram,
-Matrix, or Feishu. ControlMesh gives them a persistent workspace, long-running
-tasks, file output, Feishu cards, and operator-friendly service controls.
+It turns Claude, Codex, Gemini, and other local command-line agents into a
+Feishu bot that can run long background tasks, ask the parent chat for missing
+input, resume the worker, and return results through Feishu cards. Telegram,
+Matrix, sub-agents, cron, and webhooks remain compatible runtime lanes, but the
+public product path is now Feishu native + background task loop.
 
 ![ControlMesh chat agent overview](docs/assets/controlmesh-feishu-runtime.svg)
 
@@ -14,50 +16,58 @@ tasks, file output, Feishu cards, and operator-friendly service controls.
 
 ### 一句话
 
-ControlMesh 是一个开源的聊天式 AI 工作台：把官方编码 CLI 接进
-Telegram、Matrix 和 Feishu，让它们像长期在线的工作机器人一样执行任务。
+ControlMesh 是一个开源的 Feishu native task runtime：把官方编码 CLI 接进飞书，
+让它们像长期在线的任务机器人一样执行工作。
 
-它不是一次性的聊天壳。它面向真实工作流：持续上下文、后台任务、文件交付、
-服务重启、Feishu 卡片、权限引导，以及可部署到 VPS / 树莓派的常驻运行。
+它不是一次性的聊天壳。主线是飞书里的后台任务闭环：创建任务、任务后台执行、
+任务缺信息时通过 `ask_parent` 回问飞书、父会话恢复任务、结果回到同一聊天上下文。
 
 ### 适合谁
 
-- 想把 Claude、Codex、Gemini 放进 Telegram 或 Feishu 里长期使用的个人和小团队。
-- 想在一台 VPS、NAS 或树莓派上运行 24/7 AI 工作入口的开发者。
-- 需要让 AI 在同一个工作区里读写文件、跑命令、交付结果，而不是只回答文本的人。
-- 需要 Feishu 原生体验：机器人、卡片、权限引导、群消息和文件/媒体回复。
+- 想把 Claude、Codex、Gemini 变成飞书里的长期任务机器人。
+- 需要任务超过 30 秒时自动转后台，不阻塞聊天的人。
+- 需要 worker 缺信息时能在飞书里优雅回问并 resume 的团队。
+- 想把机器人部署到 VPS、NAS 或树莓派，做 24/7 Feishu 工作入口的开发者。
 
 ### 产品能力
 
 | 能力 | 说明 |
 |---|---|
-| 官方 CLI 接入 | 复用 Claude、Codex、Gemini 等官方命令行工具 |
-| 多聊天入口 | Telegram、Matrix、Feishu |
-| 持久工作区 | 会话、文件、输出和运行状态保存在本机 |
-| 长任务 | 后台任务、定时任务、webhook、运行状态检查 |
-| 多会话 | 单聊、群组、topic、room、named session 隔离上下文 |
-| 文件交付 | 文本、图片、音频、文档等输出可直接发回聊天 |
-| Feishu Native | 扫码创建机器人、CardKit 单卡、权限引导、原生 OAPI 工具 |
-| Feishu Bridge | 复用已有 app credentials，快速接入 Feishu 消息入口 |
-| 运维友好 | systemd、status、doctor、restart、配置校验 |
+| 能力 | 说明 |
+|---|---|
+| Feishu Native Runtime | 扫码创建机器人、CardKit 单卡、权限引导、原生 OAPI 工具 |
+| 后台任务闭环 | `/tasks/create`、`ask_parent`、`resume`、`list` 构成可演示任务 runtime |
+| 官方 CLI worker | 复用 Claude、Codex、Gemini 等官方命令行工具执行任务 |
+| 持久工作区 | 会话、任务记忆、文件、输出和运行状态保存在本机 |
+| 文件交付 | 文本、图片、音频、文档等输出可直接发回飞书 |
+| 运维友好 | `tasks doctor`、Feishu doctor、systemd、restart、配置校验 |
+| 兼容入口 | Telegram、Matrix、API、sub-agent、cron、webhook 仍可用，但不是首页主线 |
 
 ### Feishu 体验
 
-ControlMesh 提供两种 Feishu 模式：
+ControlMesh 当前公开主线是 Feishu Native 模式。
 
-**Native 模式**适合从零创建一个更完整的 Feishu 工作机器人。
+最小闭环：
 
-- 通过 [`feishu-auth-kit`](https://github.com/muqiao215/feishu-auth-kit)
-  完成扫码创建、凭证写回和权限引导。
-- 支持 CardKit 单卡展示运行状态、工具步骤和最终结果。
-- 支持 `/feishu_auth_all` 进行当前 MVP 工具所需权限的批量引导。
+- `controlmesh feishu native bootstrap` 进入友好的飞书原生启动入口。
+- 通过 [`feishu-auth-kit`](https://github.com/muqiao215/feishu-auth-kit) 完成扫码创建、凭证写回和权限引导。
+- Feishu 卡片展示任务状态、工具步骤和最终结果。
+- 长任务通过 task runtime 后台执行，缺信息时走 `/tasks/ask_parent`，父会话再 `/tasks/resume`。
+- `/feishu_auth_all` 进行当前 MVP 工具所需权限的批量引导。
 - 已接入第一批只读原生工具：联系人搜索、用户读取、群消息读取、Drive 文件列表。
 
-**Bridge 模式**适合已经有 Feishu app，只想把 Feishu 当作消息入口。
+Bridge 模式、Telegram、Matrix、sub-agent、cron 和 webhook 仍是兼容能力；
+它们不再是 README 第一屏的产品主线。
 
-- 使用已有 `app_id` / `app_secret`。
-- 更轻量，适合文本回复和基础卡片预览。
-- 不要求从零创建新机器人。
+### Runtime primitives
+
+任务闭环的稳定 runtime primitives：
+
+- `/tasks/create`
+- `/tasks/resume`
+- `/tasks/ask_parent`
+- `/tasks/list`
+- `/interagent/send`
 
 ### 快速开始
 
@@ -84,6 +94,7 @@ controlmesh
 Native 模式：
 
 ```bash
+controlmesh feishu native bootstrap
 controlmesh auth feishu setup
 controlmesh auth feishu register-begin
 controlmesh auth feishu register-poll --device-code "<device_code>" --interval 5 --expires-in 600
@@ -91,12 +102,11 @@ controlmesh auth feishu doctor
 controlmesh auth feishu probe
 ```
 
-Bridge 模式：
+任务 runtime：
 
 ```bash
-controlmesh auth feishu status
-controlmesh auth feishu doctor
-controlmesh auth feishu login
+controlmesh tasks doctor
+controlmesh tasks list
 ```
 
 ### 常用命令
@@ -105,7 +115,6 @@ controlmesh auth feishu login
 controlmesh status
 controlmesh restart
 controlmesh service install
-controlmesh agents add NAME
 controlmesh api enable
 ```
 
@@ -124,48 +133,59 @@ MIT License. See [`LICENSE`](LICENSE).
 
 ## English
 
-ControlMesh is an open-source chat workbench for command-line coding agents.
+ControlMesh is an open-source Feishu-native task runtime for command-line
+coding agents.
 
-It connects official CLIs such as Claude, Codex, and Gemini to Telegram,
-Matrix, and Feishu, then gives them persistent workspaces, long-running jobs,
-file delivery, Feishu cards, and service controls.
+It turns official CLIs such as Claude, Codex, and Gemini into a Feishu bot
+that can spawn long background tasks, ask the parent chat for missing context,
+resume the worker, and return results through cards. Telegram, Matrix, and
+other transports remain compatible, but the product path is Feishu native plus
+the task loop.
 
 ### Who It Is For
 
-- Developers who want Claude, Codex, or Gemini inside Telegram or Feishu.
-- Small teams that want an always-on AI work entrypoint on a VPS, NAS, or Raspberry Pi.
+- Developers who want Claude, Codex, or Gemini as long-running Feishu workers.
+- Teams that need a task loop: create, ask-parent, resume, return.
 - Builders who need agents to work with files and commands, not just produce chat text.
-- Feishu users who want native bot onboarding, cards, permission flows, and read-only OAPI tools.
+- Operators who want an always-on Feishu task entrypoint on a VPS, NAS, or Raspberry Pi.
 
 ### Features
 
 | Feature | Description |
 |---|---|
-| Official CLI support | Run Claude, Codex, Gemini, and other local CLI agents |
-| Chat transports | Telegram, Matrix, Feishu |
-| Persistent workspace | Keep sessions, files, outputs, and runtime state on your machine |
-| Long-running work | Background tasks, cron jobs, webhooks, and health checks |
-| Session isolation | Direct chats, group topics, rooms, and named sessions |
+| Feature | Description |
+|---|---|
+| Feishu Native Runtime | Scan-created bot, CardKit cards, permission onboarding, native OAPI tools |
+| Background task loop | `/tasks/create`, `ask_parent`, `resume`, and `list` form the runtime loop |
+| Official CLI workers | Run Claude, Codex, Gemini, and other local CLI agents |
+| Persistent workspace | Keep sessions, task memory, files, outputs, and runtime state on your machine |
 | File delivery | Return text, images, audio, documents, and generated artifacts |
-| Feishu Native | Scan-created bot, CardKit cards, permission onboarding, native OAPI tools |
-| Feishu Bridge | Reuse an existing Feishu app as a lightweight chat bridge |
-| Operations | systemd service, status, doctor, restart, config validation |
+| Operations | `tasks doctor`, Feishu doctor, systemd service, restart, config validation |
+| Compatibility lanes | Telegram, Matrix, API, sub-agents, cron, and webhooks remain available |
 
 ### Feishu Modes
 
-**Native mode** is for a full Feishu-first bot experience.
+**Native mode** is the primary product path.
 
+- `controlmesh feishu native bootstrap` is the product-friendly entrypoint.
 - Uses [`feishu-auth-kit`](https://github.com/muqiao215/feishu-auth-kit)
   for scan-to-create onboarding, credential write-back, and permission flows.
 - Shows status, tool steps, and final output in a single Feishu card.
 - Provides `/feishu_auth_all` for guided authorization of the current MVP tools.
 - Includes first read-only native tools for contacts, users, group messages, and Drive files.
+- Pairs with the background task runtime so long work can ask the parent chat
+  for missing input and then resume cleanly.
 
-**Bridge mode** is for existing Feishu apps.
+Bridge mode and non-Feishu transports remain compatibility options, not the
+front-page product narrative.
 
-- Reuses your current `app_id` and `app_secret`.
-- Keeps the runtime lightweight.
-- Works well when Feishu is only one of several chat entrypoints.
+### Runtime primitives
+
+- `/tasks/create`
+- `/tasks/resume`
+- `/tasks/ask_parent`
+- `/tasks/list`
+- `/interagent/send`
 
 ### Quick Start
 
@@ -190,6 +210,7 @@ controlmesh
 Native mode:
 
 ```bash
+controlmesh feishu native bootstrap
 controlmesh auth feishu setup
 controlmesh auth feishu register-begin
 controlmesh auth feishu register-poll --device-code "<device_code>" --interval 5 --expires-in 600
@@ -197,12 +218,11 @@ controlmesh auth feishu doctor
 controlmesh auth feishu probe
 ```
 
-Bridge mode:
+Task runtime:
 
 ```bash
-controlmesh auth feishu status
-controlmesh auth feishu doctor
-controlmesh auth feishu login
+controlmesh tasks doctor
+controlmesh tasks list
 ```
 
 ### Documentation
