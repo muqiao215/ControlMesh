@@ -41,6 +41,7 @@ dependencies = [
     "questionary>=2.1.1",
     "filetype>=1.2.0",
     "Pillow>=10.0.0",
+    "requests>=2.32.0",
     "tzdata>=2024.1",
 ]
 
@@ -94,7 +95,11 @@ include = [
 [tool.ruff]
 target-version = "py311"
 line-length = 100
-extend-exclude = ["controlmesh/_home_defaults", ".claude"]
+extend-exclude = [
+    "controlmesh/_home_defaults",
+    "controlmesh/_plugins/feishu_auth_kit/feishu_auth_kit",
+    ".claude",
+]
 
 [tool.ruff.lint]
 select = ["ALL"]

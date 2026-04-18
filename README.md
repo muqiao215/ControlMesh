@@ -33,7 +33,7 @@ ControlMesh 是一个开源的 Feishu native task runtime：把官方编码 CLI 
 
 | 能力 | 说明 |
 |---|---|
-| Feishu Native Runtime | 扫码创建机器人、CardKit 单卡、权限引导、原生 OAPI 工具 |
+| Feishu Native Runtime | 内置 `feishu-auth-kit` 插件，提供扫码创建机器人、CardKit 单卡、权限引导、原生 OAPI 工具 |
 | 后台任务闭环 | `/tasks/create`、`ask_parent`、`resume`、`list` 构成可演示任务 runtime |
 | 官方 CLI worker | 复用 Claude、Codex、Gemini 等官方命令行工具执行任务 |
 | 持久工作区 | 会话、任务记忆、文件、输出和运行状态保存在本机 |
@@ -48,7 +48,8 @@ ControlMesh 当前公开主线是 Feishu Native 模式。
 最小闭环：
 
 - `controlmesh feishu native bootstrap` 进入友好的飞书原生启动入口。
-- 通过 [`feishu-auth-kit`](https://github.com/muqiao215/feishu-auth-kit) 完成扫码创建、凭证写回和权限引导。
+- 内置 [`feishu-auth-kit`](https://github.com/muqiao215/feishu-auth-kit) 作为 Feishu native plugin，完成扫码创建、凭证写回、权限引导、消息上下文、CardKit 和 retry contract。
+- `feishu-auth-kit` 的公开仓库是上游元能力仓库；ControlMesh 发布包必须包含这套插件，外部 CLI 只作为开发覆盖或故障 fallback。
 - Feishu 卡片展示任务状态、工具步骤和最终结果。
 - 长任务通过 task runtime 后台执行，缺信息时走 `/tasks/ask_parent`，父会话再 `/tasks/resume`。
 - `/feishu_auth_all` 进行当前 MVP 工具所需权限的批量引导。
@@ -152,7 +153,7 @@ the task loop.
 
 | Feature | Description |
 |---|---|
-| Feishu Native Runtime | Scan-created bot, CardKit cards, permission onboarding, native OAPI tools |
+| Feishu Native Runtime | Bundled `feishu-auth-kit` plugin for scan-created bots, CardKit cards, permission onboarding, and native OAPI tools |
 | Background task loop | `/tasks/create`, `ask_parent`, `resume`, and `list` form the runtime loop |
 | Official CLI workers | Run Claude, Codex, Gemini, and other local CLI agents |
 | Persistent workspace | Keep sessions, task memory, files, outputs, and runtime state on your machine |
@@ -165,8 +166,12 @@ the task loop.
 **Native mode** is the primary product path.
 
 - `controlmesh feishu native bootstrap` is the product-friendly entrypoint.
-- Uses [`feishu-auth-kit`](https://github.com/muqiao215/feishu-auth-kit)
-  for scan-to-create onboarding, credential write-back, and permission flows.
+- Bundles [`feishu-auth-kit`](https://github.com/muqiao215/feishu-auth-kit)
+  as the Feishu native plugin for scan-to-create onboarding, credential
+  write-back, permission flows, message context, CardKit, and retry contracts.
+- The standalone `feishu-auth-kit` repo is the upstream reusable capability
+  source. ControlMesh includes a vendored plugin copy; external CLI resolution
+  is a development override or fallback, not the product dependency.
 - Shows status, tool steps, and final output in a single Feishu card.
 - Provides `/feishu_auth_all` for guided authorization of the current MVP tools.
 - Includes first read-only native tools for contacts, users, group messages, and Drive files.

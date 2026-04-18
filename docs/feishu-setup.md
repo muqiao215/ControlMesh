@@ -19,9 +19,11 @@ commands second.
 
 Important boundary:
 
-- `controlmesh auth feishu register-begin` / `register-poll` delegate the
-  official Feishu/Lark scan-to-create app registration flow to the standalone
-  `feishu-auth-kit`.
+- ControlMesh includes `feishu-auth-kit` as its bundled Feishu native plugin.
+  The standalone repository remains the upstream source of this reusable
+  capability, but a ControlMesh release must contain the plugin.
+- `controlmesh auth feishu register-begin` / `register-poll` run the official
+  Feishu/Lark scan-to-create app registration flow through that plugin.
 - This is an official `accounts` registration flow. It does not bypass tenant
   approval, publishing, or Feishu/Lark platform policy.
 - `controlmesh auth feishu login` still only runs optional device-flow user auth
@@ -35,8 +37,9 @@ controlmesh auth feishu register-begin
 controlmesh auth feishu register-poll --device-code "<device_code>" --interval 5 --expires-in 600
 ```
 
-`register-begin` prints JSON from `feishu-auth-kit register scan-create --no-poll --json`,
-including `qr_url`, `device_code`, `user_code`, `interval`, and `expires_in`.
+`register-begin` prints JSON equivalent to
+`feishu-auth-kit register scan-create --no-poll --json`, including `qr_url`,
+`device_code`, `user_code`, `interval`, and `expires_in`.
 Render or open the QR URL for the user to scan with Feishu/Lark, then call
 `register-poll` until it returns `status=success` with `app_id`, `app_secret`,
 `domain`, and optionally `open_id`.
@@ -98,29 +101,40 @@ controlmesh auth feishu login
 
 Use them like this:
 
-- `setup`: prints the zero-app prerequisite and the next steps. When the standalone
-  `feishu-auth-kit` CLI is available, ControlMesh reuses its setup guidance
-  instead of maintaining a separate copy only.
-- `register-begin`: delegates to `feishu-auth-kit register scan-create --no-poll --json`
+Plugin resolution order:
+
+1. `CONTROLMESH_FEISHU_AUTH_KIT_BIN` for explicit local override.
+2. ControlMesh bundled plugin:
+   `python -m controlmesh._plugins.feishu_auth_kit.runner`.
+3. `feishu-auth-kit` from `PATH`.
+4. Sibling development repo `.venv/bin/feishu-auth-kit`.
+5. Sibling development repo through `uv run feishu-auth-kit`.
+
+This makes Feishu native auth/runtime a contained ControlMesh capability while
+still allowing upstream `feishu-auth-kit` development to override the bundled
+snapshot deliberately.
+
+- `setup`: prints the zero-app prerequisite and the next steps through the
+  bundled plugin guidance.
+- `register-begin`: runs `feishu-auth-kit register scan-create --no-poll --json`
   and exposes the official from-zero QR/link onboarding payload.
-- `register-poll`: delegates to `feishu-auth-kit register poll --json`, writes
+- `register-poll`: runs `feishu-auth-kit register poll --json`, writes
   the successful credentials back into ControlMesh config as the `native`
   runtime path, auto-runs probe, and tells you whether Feishu transport is
   ready to start.
-- `doctor`: delegates app credential and scope diagnostics to the standalone
-  `feishu-auth-kit` repo/CLI while keeping ControlMesh itself independent from
-  Feishu onboarding internals.
-- `probe`: delegates to `feishu-auth-kit register probe --json`, validating
+- `doctor`: delegates app credential and scope diagnostics to the bundled
+  plugin contract while preserving the upstream kit as the reusable source.
+- `probe`: runs `feishu-auth-kit register probe --json`, validating
   configured credentials and registering/checking the app as an AI agent through
   the official OpenClaw bot ping endpoint.
-- `plan`: delegates to `feishu-auth-kit orchestration plan` and produces an
+- `plan`: runs `feishu-auth-kit orchestration plan` and produces an
   OpenClaw-style missing-scope/batch authorization plan from explicit scope
   inputs.
-- `route`: delegates to `feishu-auth-kit orchestration route` and stores generic
+- `route`: runs `feishu-auth-kit orchestration route` and stores generic
   continuation state under `feishu_store/auth/` for permission-missing or
   user-auth-required flows. ControlMesh still owns the actual Feishu card send
   and callback ingress.
-- `retry`: delegates to `feishu-auth-kit orchestration retry` and turns a saved
+- `retry`: runs `feishu-auth-kit orchestration retry` and turns a saved
   continuation into a messenger-agnostic synthetic retry artifact.
 - `status`: shows whether `app_id/app_secret` are configured and whether device-flow auth is active.
 - `login`: runs device-flow auth against the already-configured app. It does not replace app creation; this is primarily the `bridge` companion path when you already manage the app manually.
@@ -132,8 +146,10 @@ This is the ControlMesh side of the OpenClaw-style auth split:
 - ControlMesh owns Feishu transport delivery, card action callbacks, session
   binding, and reinjecting a synthetic retry into the ControlMesh runtime.
 
-The current integration is intentionally narrow: it consumes the standalone kit
-through its CLI and does not copy the OpenClaw implementation into ControlMesh.
+The current integration is intentionally narrow: ControlMesh contains the
+`feishu-auth-kit` plugin snapshot and talks to it through the same CLI contract
+used by the standalone upstream repo. It still does not copy the OpenClaw
+implementation wholesale into ControlMesh.
 
 Runtime bridge:
 
