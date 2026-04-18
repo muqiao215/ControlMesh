@@ -26,7 +26,9 @@ from .native_agent_tools import (
     FeishuNativeAgentToolSpec,
     build_native_agent_tool_selection_prompt,
     build_tool_result_followup_prompt,
+    get_native_agent_tool_spec,
     native_agent_tool_specs,
+    native_user_auth_scopes,
     parse_native_agent_tool_selection,
 )
 from .native_contract import (
@@ -140,9 +142,11 @@ __all__ = [
     "build_tool_result_followup_prompt",
     "check_owner_policy",
     "cli",
+    "get_native_agent_tool_spec",
     "load_auth_continuation",
     "load_native_continuation",
     "native_agent_tool_specs",
+    "native_user_auth_scopes",
     "parse_feishu_message_context",
     "parse_native_agent_tool_selection",
     "plan_scope_authorization",

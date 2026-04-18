@@ -5,7 +5,9 @@ from controlmesh._plugins.feishu_auth_kit.feishu_auth_kit.native_agent_tools imp
     FeishuNativeAgentToolSpec,
     build_native_agent_tool_selection_prompt,
     build_tool_result_followup_prompt,
+    get_native_agent_tool_spec,
     native_agent_tool_specs,
+    native_user_auth_scopes,
     parse_native_agent_tool_selection,
 )
 
@@ -14,6 +16,8 @@ __all__ = [
     "FeishuNativeAgentToolSpec",
     "build_native_agent_tool_selection_prompt",
     "build_tool_result_followup_prompt",
+    "get_native_agent_tool_spec",
     "native_agent_tool_specs",
+    "native_user_auth_scopes",
     "parse_native_agent_tool_selection",
 ]

@@ -10,10 +10,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from controlmesh.config import AgentConfig
-from controlmesh.messenger.feishu.auth.app_info import (
-    FeishuAppInfoCache,
-    missing_scopes,
-)
+from controlmesh.messenger.feishu.auth.app_info import FeishuAppInfoCache, missing_scopes
 from controlmesh.messenger.feishu.auth.brand import open_platform_domain
 from controlmesh.messenger.feishu.auth.errors import (
     LARK_ERROR,
@@ -22,6 +19,11 @@ from controlmesh.messenger.feishu.auth.errors import (
 )
 from controlmesh.messenger.feishu.auth.token_store import FeishuTokenStore
 from controlmesh.messenger.feishu.auth.uat_client import FeishuUATClient, UATClientConfig
+from controlmesh.messenger.feishu.native_tools.agent_runtime import (
+    FeishuNativeAgentToolSpec,
+    get_native_agent_tool_spec,
+    native_user_auth_scopes,
+)
 from controlmesh.messenger.feishu.native_tools.client import (
     FeishuNativeOAPIClient,
     FeishuOAPIError,
@@ -33,35 +35,7 @@ from controlmesh.messenger.feishu.tool_auth import (
     new_feishu_operation_id,
 )
 
-_OFFLINE_ACCESS = "offline_access"
 _USER_AUTH_KIND = "user"
-
-CONTACT_SEARCH_USER_SCOPES = ("contact:user:search",)
-CONTACT_GET_USER_SCOPES = (
-    "contact:contact.base:readonly",
-    "contact:user.base:readonly",
-)
-IM_GET_MESSAGES_SCOPES = (
-    "im:chat:read",
-    "im:message:readonly",
-    "im:message.group_msg:get_as_user",
-    "im:message.p2p_msg:get_as_user",
-)
-DRIVE_LIST_FILES_SCOPES = ("space:document:retrieve",)
-NATIVE_TOOL_AUTH_PREP_SCOPES = (
-    _OFFLINE_ACCESS,
-    *CONTACT_SEARCH_USER_SCOPES,
-    *CONTACT_GET_USER_SCOPES,
-    *IM_GET_MESSAGES_SCOPES,
-    *DRIVE_LIST_FILES_SCOPES,
-)
-
-_SUPPORTED_TOOLS = {
-    "contact.search_user",
-    "contact.get_user",
-    "im.get_messages",
-    "drive.list_files",
-}
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,14 +87,31 @@ class FeishuNativeToolExecutor:
     ) -> dict[str, Any]:
         """Execute a native tool using the Feishu sender as user identity."""
         self._ensure_native_context(context)
+        spec = _require_native_tool_spec(tool_name)
         if tool_name == "contact.search_user":
-            return await self._contact_search_user(arguments, context=context)
+            return await self._contact_search_user(
+                arguments,
+                context=context,
+                required_scopes=spec.required_scopes,
+            )
         if tool_name == "contact.get_user":
-            return await self._contact_get_user(arguments, context=context)
+            return await self._contact_get_user(
+                arguments,
+                context=context,
+                required_scopes=spec.required_scopes,
+            )
         if tool_name == "im.get_messages":
-            return await self._im_get_messages(arguments, context=context)
+            return await self._im_get_messages(
+                arguments,
+                context=context,
+                required_scopes=spec.required_scopes,
+            )
         if tool_name == "drive.list_files":
-            return await self._drive_list_files(arguments, context=context)
+            return await self._drive_list_files(
+                arguments,
+                context=context,
+                required_scopes=spec.required_scopes,
+            )
         msg = f"Unsupported Feishu native tool: {tool_name}"
         raise ValueError(msg)
 
@@ -129,6 +120,7 @@ class FeishuNativeToolExecutor:
         arguments: Mapping[str, Any],
         *,
         context: FeishuInboundContextV1,
+        required_scopes: tuple[str, ...],
     ) -> dict[str, Any]:
         query = str(arguments.get("query") or "").strip()
         if not query:
@@ -146,7 +138,7 @@ class FeishuNativeToolExecutor:
 
         payload = await self._call_user_tool(
             tool_name="contact.search_user",
-            required_scopes=CONTACT_SEARCH_USER_SCOPES,
+            required_scopes=required_scopes,
             context=context,
             api_call=lambda token: self._oapi_client.get_json(
                 "/open-apis/search/v1/user",
@@ -162,6 +154,7 @@ class FeishuNativeToolExecutor:
         arguments: Mapping[str, Any],
         *,
         context: FeishuInboundContextV1,
+        required_scopes: tuple[str, ...],
     ) -> dict[str, Any]:
         user_id = str(arguments.get("user_id") or "").strip()
         if not user_id:
@@ -174,7 +167,7 @@ class FeishuNativeToolExecutor:
 
         payload = await self._call_user_tool(
             tool_name="contact.get_user",
-            required_scopes=CONTACT_GET_USER_SCOPES,
+            required_scopes=required_scopes,
             context=context,
             api_call=lambda token: self._oapi_client.get_json(
                 f"/open-apis/contact/v3/users/{user_id}",
@@ -190,6 +183,7 @@ class FeishuNativeToolExecutor:
         arguments: Mapping[str, Any],
         *,
         context: FeishuInboundContextV1,
+        required_scopes: tuple[str, ...],
     ) -> dict[str, Any]:
         chat_id = str(arguments.get("chat_id") or "").strip()
         if not chat_id:
@@ -218,7 +212,7 @@ class FeishuNativeToolExecutor:
 
         payload = await self._call_user_tool(
             tool_name="im.get_messages",
-            required_scopes=IM_GET_MESSAGES_SCOPES,
+            required_scopes=required_scopes,
             context=context,
             api_call=lambda token: self._oapi_client.get_json(
                 "/open-apis/im/v1/messages",
@@ -234,6 +228,7 @@ class FeishuNativeToolExecutor:
         arguments: Mapping[str, Any],
         *,
         context: FeishuInboundContextV1,
+        required_scopes: tuple[str, ...],
     ) -> dict[str, Any]:
         raw_page_size = arguments.get("page_size", 20)
         page_size = max(1, min(int(raw_page_size), 200))
@@ -253,7 +248,7 @@ class FeishuNativeToolExecutor:
 
         payload = await self._call_user_tool(
             tool_name="drive.list_files",
-            required_scopes=DRIVE_LIST_FILES_SCOPES,
+            required_scopes=required_scopes,
             context=context,
             api_call=lambda token: self._oapi_client.get_json(
                 "/open-apis/drive/v1/files",
@@ -310,7 +305,7 @@ class FeishuNativeToolExecutor:
         business_scopes: tuple[str, ...],
         context: FeishuInboundContextV1,
     ) -> None:
-        app_check_scopes = (*business_scopes, _OFFLINE_ACCESS)
+        app_check_scopes = tuple(dict.fromkeys((*business_scopes, "offline_access")))
         try:
             tenant_access_token = await _maybe_await(self._get_tenant_access_token())
             app_scopes = await self._app_info_cache.get_granted_scopes(
@@ -417,9 +412,7 @@ def parse_native_tool_command(text: str) -> NativeToolCommand | None:  # noqa: P
     if len(parts) < 2 or parts[0] not in {"/feishu-native", "/feishu_native"}:
         return None
     tool_name = parts[1]
-    if tool_name not in _SUPPORTED_TOOLS:
-        msg = f"Unsupported Feishu native tool: {tool_name}"
-        raise ValueError(msg)
+    _require_native_tool_spec(tool_name)
     if tool_name == "contact.search_user":
         return _parse_contact_search_user(parts)
     if tool_name == "contact.get_user":
@@ -460,8 +453,7 @@ def _json(value: Mapping[str, Any]) -> str:
 
 def all_native_user_auth_scopes() -> tuple[str, ...]:
     """Return the deduped user-scope set needed by current native Feishu tools."""
-    deduped = dict.fromkeys(NATIVE_TOOL_AUTH_PREP_SCOPES)
-    return tuple(deduped)
+    return native_user_auth_scopes()
 
 
 async def _maybe_await(value: Any) -> Any:
@@ -474,6 +466,14 @@ def _sort_type(rule: str) -> str:
     if rule == "create_time_asc":
         return "ByCreateTimeAsc"
     return "ByCreateTimeDesc"
+
+
+def _require_native_tool_spec(tool_name: str) -> FeishuNativeAgentToolSpec:
+    spec = get_native_agent_tool_spec(tool_name)
+    if spec is None:
+        msg = f"Unsupported Feishu native tool: {tool_name}"
+        raise ValueError(msg)
+    return spec
 
 
 def _parse_contact_search_user(parts: list[str]) -> NativeToolCommand:

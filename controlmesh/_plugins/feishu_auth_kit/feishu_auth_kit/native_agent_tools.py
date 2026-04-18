@@ -14,6 +14,7 @@ class FeishuNativeAgentToolSpec:
     name: str
     description: str
     parameters: dict[str, Any]
+    required_scopes: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,16 +33,27 @@ def native_agent_tool_specs() -> tuple[FeishuNativeAgentToolSpec, ...]:
             name="contact.search_user",
             description="Search Feishu contacts by a human query.",
             parameters={"query": "string", "page_size": "integer optional"},
+            required_scopes=("contact:user:search",),
         ),
         FeishuNativeAgentToolSpec(
             name="contact.get_user",
             description="Read one Feishu user's profile by open_id, union_id, or user_id.",
             parameters={"user_id": "string", "user_id_type": "open_id|union_id|user_id optional"},
+            required_scopes=(
+                "contact:contact.base:readonly",
+                "contact:user.base:readonly",
+            ),
         ),
         FeishuNativeAgentToolSpec(
             name="im.get_messages",
             description="Read recent messages from a known Feishu chat_id.",
             parameters={"chat_id": "string", "page_size": "integer optional"},
+            required_scopes=(
+                "im:chat:read",
+                "im:message:readonly",
+                "im:message.group_msg:get_as_user",
+                "im:message.p2p_msg:get_as_user",
+            ),
         ),
         FeishuNativeAgentToolSpec(
             name="drive.list_files",
@@ -51,8 +63,26 @@ def native_agent_tool_specs() -> tuple[FeishuNativeAgentToolSpec, ...]:
                 "page_size": "integer optional",
                 "page_token": "string optional",
             },
+            required_scopes=("space:document:retrieve",),
         ),
     )
+
+
+def get_native_agent_tool_spec(tool_name: str) -> FeishuNativeAgentToolSpec | None:
+    """Return one native tool spec by name."""
+    for spec in native_agent_tool_specs():
+        if spec.name == tool_name:
+            return spec
+    return None
+
+
+def native_user_auth_scopes() -> tuple[str, ...]:
+    """Return the deduped user-scope set needed by current native Feishu tools."""
+    deduped: dict[str, None] = {"offline_access": None}
+    for spec in native_agent_tool_specs():
+        for scope in spec.required_scopes:
+            deduped.setdefault(scope, None)
+    return tuple(deduped)
 
 
 def build_native_agent_tool_selection_prompt(
