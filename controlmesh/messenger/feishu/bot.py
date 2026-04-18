@@ -559,7 +559,7 @@ class FeishuBot:
         context = build_feishu_inbound_context(self._config, message)
         selector_prompt = build_native_agent_tool_selection_prompt(
             user_text=prompt_text,
-            context=context,
+            inbound_context=context.to_dict(),
         )
         selector_response = await execute(
             AgentRequest(
