@@ -50,6 +50,7 @@ ControlMesh 当前公开主线是 Feishu Native 模式。
 - `controlmesh feishu native bootstrap` 进入友好的飞书原生启动入口。
 - 内置 [`feishu-auth-kit`](https://github.com/muqiao215/feishu-auth-kit) 作为 Feishu native plugin，完成扫码创建、凭证写回、权限引导、消息上下文、CardKit 和 retry contract。
 - `feishu-auth-kit` 的公开仓库是上游元能力仓库；ControlMesh 发布包必须包含这套插件，外部 CLI 只作为开发覆盖或故障 fallback。
+- 当 Feishu native 使用 Codex provider 时，agent turn 主路径直接消费内置 plugin 的 `CodexCliRunner`、`AgentEvent` 和 `SingleCardRun`，再由 ControlMesh 负责飞书发送与卡片更新。
 - Feishu 卡片展示任务状态、工具步骤和最终结果。
 - 长任务通过 task runtime 后台执行，缺信息时走 `/tasks/ask_parent`，父会话再 `/tasks/resume`。
 - `/feishu_auth_all` 进行当前 MVP 工具所需权限的批量引导。

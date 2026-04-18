@@ -164,6 +164,11 @@ Runtime bridge:
     card clicks through `feishu-auth-kit agent action-to-retry`
   - `card_stream` can consume `feishu-auth-kit` `AgentEvent` and
     `SingleCardRun` payloads
+- When Feishu `native` mode resolves the active provider to Codex, ControlMesh
+  now runs the agent turn through the bundled plugin's `CodexCliRunner`,
+  forwards its `AgentEvent` payloads into `card_stream`, finalizes from the
+  plugin `SingleCardRun`, and leaves only Feishu transport/rendering glue in
+  ControlMesh.
 - For development and live smoke tests, the runner accepts:
 
 ```bash

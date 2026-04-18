@@ -35,6 +35,11 @@ from controlmesh.messenger.feishu.auth.native_auth_all_runner import (
 )
 from controlmesh.messenger.feishu.auth.orchestration_runner import FeishuAuthOrchestrationRunner
 from controlmesh.messenger.feishu.auth.runtime_auth import resolve_feishu_auth
+from controlmesh.messenger.feishu.bundled_runtime import (
+    BundledCodexRuntimeConfig,
+    BundledFeishuRuntimeTurn,
+    run_bundled_codex_turn,
+)
 from controlmesh.messenger.feishu.media import ResolveMediaRequest, is_supported_media_message_type
 from controlmesh.messenger.feishu.media import resolve_media_text as _resolve_media_text
 from controlmesh.messenger.feishu.media_meta import parse_mp4_duration, prepare_audio_upload
@@ -137,6 +142,12 @@ class _FeishuProgressReporter:
         return None
 
     async def finish_failure(self, _error_text: str) -> None:
+        return None
+
+    async def on_agent_event(self, _event: dict[str, Any]) -> None:
+        return None
+
+    async def finish_with_single_card_run(self, _run: dict[str, Any]) -> None:
         return None
 
     async def _send_delayed_ack(self) -> None:
@@ -478,6 +489,15 @@ class FeishuBot:
                 topic_id=topic_id,
                 progress=progress,
             )
+            if self._should_use_bundled_native_runtime():
+                turn = await self._run_bundled_native_runtime_turn(
+                    message,
+                    prompt_text=prompt_text,
+                )
+                for event in turn.events:
+                    await progress.on_agent_event(event)
+                await progress.finish_with_single_card_run(turn.card)
+                return False, turn
             result = await self._orchestrator.handle_message_streaming(
                 SessionKey.for_transport("fs", chat_id, topic_id),
                 prompt_text,
@@ -489,6 +509,35 @@ class FeishuBot:
             await self._handle_native_tool_auth_required(message, exc.contract)
             return True, None
         return False, result
+
+    def _should_use_bundled_native_runtime(self) -> bool:
+        if self._config.feishu.runtime_mode != "native" or self._orchestrator is None:
+            return False
+        resolve_runtime_target = getattr(self._orchestrator, "resolve_runtime_target", None)
+        if resolve_runtime_target is None:
+            return False
+        _model, provider = resolve_runtime_target(self._config.model)
+        return provider == "codex"
+
+    async def _run_bundled_native_runtime_turn(
+        self,
+        message: FeishuIncomingText,
+        *,
+        prompt_text: str,
+    ) -> BundledFeishuRuntimeTurn:
+        model = self._config.model
+        if self._orchestrator is not None:
+            model, _provider = self._orchestrator.resolve_runtime_target(self._config.model)
+        return await asyncio.to_thread(
+            run_bundled_codex_turn,
+            message,
+            prompt_text=prompt_text,
+            runtime_config=BundledCodexRuntimeConfig(
+                model=model,
+                cwd=self._paths.workspace,
+                cli_args=list(self._config.cli_parameters.codex),
+            ),
+        )
 
     async def _prepare_native_agent_prompt(
         self,
@@ -553,7 +602,20 @@ class FeishuBot:
         reply_to_message_id: str | None,
         progress: _FeishuProgressReporter,
     ) -> None:
-        result_text = result.text or ""
+        result_text = getattr(result, "text", None)
+        if not isinstance(result_text, str):
+            result_text = getattr(result, "output_text", "")
+        status = getattr(result, "status", "completed")
+        if status != "completed":
+            error_text = result_text or "处理失败"
+            await progress.finish_failure(error_text)
+            if error_text:
+                await self._send_text_to_chat_ref(
+                    chat_ref,
+                    error_text,
+                    reply_to_message_id=reply_to_message_id,
+                )
+            return
         file_tags = extract_file_paths(result_text)
         visible_text = FILE_PATH_RE.sub("", result_text).strip() if file_tags else result_text
         progress_text = visible_text or ("已发送附件。" if file_tags else result_text)

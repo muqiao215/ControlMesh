@@ -16,6 +16,7 @@ import pytest
 
 from controlmesh.config import AgentConfig
 from controlmesh.messenger.feishu.bot import FeishuBot, FeishuIncomingText
+from controlmesh.messenger.feishu.bundled_runtime import BundledFeishuRuntimeTurn
 from controlmesh.messenger.feishu.tool_auth import (
     FeishuNativeToolAuthContract,
     FeishuNativeToolAuthRequiredError,
@@ -41,7 +42,13 @@ class _FakeTaskResult:
     thread_id: int | None = None
 
 
-def _make_bot(tmp_path: Path, **feishu_overrides: object) -> FeishuBot:
+def _make_bot(
+    tmp_path: Path,
+    *,
+    provider: str = "claude",
+    model: str = "sonnet",
+    **feishu_overrides: object,
+) -> FeishuBot:
     feishu_config: dict[str, object] = {
         "mode": "bot_only",
         "brand": "feishu",
@@ -53,6 +60,8 @@ def _make_bot(tmp_path: Path, **feishu_overrides: object) -> FeishuBot:
         transport="feishu",
         transports=["feishu"],
         controlmesh_home=str(tmp_path),
+        provider=provider,
+        model=model,
         feishu=feishu_config,
     )
     bot = FeishuBot(config)
@@ -945,6 +954,117 @@ class TestFeishuBotRouting:
         bot._send_text_to_chat_ref.assert_awaited_once_with(
             "oc_chat_1",
             "你好",
+            reply_to_message_id="om_1",
+        )
+
+    async def test_handle_incoming_text_native_codex_card_stream_uses_bundled_runtime(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(
+            tmp_path,
+            provider="codex",
+            model="gpt-5.4",
+            runtime_mode="native",
+            progress_mode="card_stream",
+        )
+        bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+        bot._create_streaming_card = AsyncMock(return_value="card_1")  # type: ignore[attr-defined]
+        bot._send_card_to_chat_ref = AsyncMock(return_value="om_stream")  # type: ignore[attr-defined]
+        bot._update_streaming_card_content = AsyncMock()  # type: ignore[attr-defined]
+        bot._close_streaming_card = AsyncMock()  # type: ignore[attr-defined]
+        bot._orchestrator = SimpleNamespace(
+            handle_message_streaming=AsyncMock(),
+            resolve_runtime_target=lambda _model=None: ("gpt-5.4", "codex"),
+            cli_service=None,
+        )
+        bot._run_bundled_native_runtime_turn = AsyncMock(  # type: ignore[method-assign]
+            return_value=BundledFeishuRuntimeTurn(
+                text="来自 bundled runtime 的回复",
+                status="completed",
+                events=[
+                    {"kind": "start", "text": "Codex thread started", "status": "start"},
+                    {
+                        "kind": "assistant_message",
+                        "text": "来自 bundled runtime 的回复",
+                        "status": "completed",
+                    },
+                ],
+                card={
+                    "status": "completed",
+                    "final_text": "来自 bundled runtime 的回复",
+                    "summary": "来自 bundled runtime 的回复",
+                    "steps": [
+                        {
+                            "id": "step-1",
+                            "kind": "assistant_message",
+                            "title": "Assistant response",
+                            "status": "completed",
+                            "detail": "来自 bundled runtime 的回复",
+                        }
+                    ],
+                },
+                metadata={},
+            )
+        )
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="ping",
+            )
+        )
+
+        bot._run_bundled_native_runtime_turn.assert_awaited_once()
+        bot._orchestrator.handle_message_streaming.assert_not_awaited()
+        bot._create_streaming_card.assert_awaited_once()
+        bot._send_card_to_chat_ref.assert_awaited_once()
+        bot._close_streaming_card.assert_awaited_once()
+        bot._send_text_to_chat_ref.assert_not_awaited()
+
+    async def test_handle_incoming_text_native_codex_plain_mode_uses_bundled_runtime(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(
+            tmp_path,
+            provider="codex",
+            model="gpt-5.4",
+            runtime_mode="native",
+            progress_mode="text",
+        )
+        bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+        bot._orchestrator = SimpleNamespace(
+            handle_message_streaming=AsyncMock(),
+            resolve_runtime_target=lambda _model=None: ("gpt-5.4", "codex"),
+            cli_service=None,
+        )
+        bot._run_bundled_native_runtime_turn = AsyncMock(  # type: ignore[method-assign]
+            return_value=BundledFeishuRuntimeTurn(
+                text="bundled plain reply",
+                status="completed",
+                events=[],
+                card={},
+                metadata={},
+            )
+        )
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="ping",
+            )
+        )
+
+        bot._run_bundled_native_runtime_turn.assert_awaited_once()
+        bot._orchestrator.handle_message_streaming.assert_not_awaited()
+        bot._send_text_to_chat_ref.assert_awaited_once_with(
+            "oc_chat_1",
+            "bundled plain reply",
             reply_to_message_id="om_1",
         )
 
