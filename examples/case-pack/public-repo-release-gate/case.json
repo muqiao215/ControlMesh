@@ -1,0 +1,259 @@
+{
+  "case_id": "public-repo-release-gate-release",
+  "title": "Public Repo Release Gate Release",
+  "summary": "A sanitized real case covering the successful public release of the public-repo-release-gate skill as a standalone GitHub repository.",
+  "messages": [
+    {
+      "id": "msg-release-request",
+      "author": "user",
+      "role": "request",
+      "ts": "2026-04-18T03:49:20Z",
+      "summary": "User asks to publish the existing public-repo-release-gate skill as a standalone public GitHub repository without carrying private residue."
+    },
+    {
+      "id": "msg-release-result",
+      "author": "agent",
+      "role": "result",
+      "ts": "2026-04-18T03:54:00Z",
+      "summary": "Agent reports the repo was created, validated, pushed to GitHub, and released as v0.1.0."
+    }
+  ],
+  "links": [
+    {
+      "id": "github-repo",
+      "label": "public-repo-release-gate",
+      "url": "https://github.com/muqiao215/public-repo-release-gate",
+      "summary": "Public GitHub repository created for the skill."
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "artifact-readme",
+      "label": "README.md",
+      "kind": "markdown",
+      "locator": "public-repo-release-gate/README.md",
+      "summary": "Public-facing README explaining product purpose, installation, usage, checklist, boundaries, and license.",
+      "evidence_refs": [
+        "link:github-repo"
+      ]
+    },
+    {
+      "id": "artifact-skill",
+      "label": "SKILL.md",
+      "kind": "markdown",
+      "locator": "public-repo-release-gate/SKILL.md",
+      "summary": "Agent skill workflow preserved as a public package artifact.",
+      "evidence_refs": [
+        "link:github-repo"
+      ]
+    },
+    {
+      "id": "artifact-checker",
+      "label": "scripts/public_release_gate.py",
+      "kind": "python",
+      "locator": "public-repo-release-gate/scripts/public_release_gate.py",
+      "summary": "Static release hygiene checker included with the public repo.",
+      "evidence_refs": [
+        "link:github-repo"
+      ]
+    }
+  ],
+  "events": [
+    {
+      "id": "event-scope",
+      "title": "Release scope is constrained",
+      "summary": "The work is scoped to a standalone public repository and explicitly excludes private sync repos and private workflow residue.",
+      "evidence_refs": [
+        "msg:msg-release-request"
+      ]
+    },
+    {
+      "id": "event-public-surface",
+      "title": "Public surface is assembled",
+      "summary": "README, license, skill metadata, and checker script are arranged into a public repository shape.",
+      "evidence_refs": [
+        "artifact:artifact-readme",
+        "artifact:artifact-skill",
+        "artifact:artifact-checker"
+      ]
+    },
+    {
+      "id": "event-published",
+      "title": "Repository and release are published",
+      "summary": "The repository is pushed to GitHub and v0.1.0 is cut after validation.",
+      "evidence_refs": [
+        "msg:msg-release-result",
+        "link:github-repo"
+      ]
+    }
+  ],
+  "tool_events": [
+    {
+      "id": "tool-public-gate",
+      "tool": "scripts/public_release_gate.py",
+      "action": "final release hygiene check",
+      "summary": "The checker ran in final mode and left only one reviewed WARN from intentional examples in SKILL.md.",
+      "kept": true,
+      "linked_event_ids": [
+        "event-public-surface"
+      ],
+      "why_it_matters": "It proves the public surface was checked for release-blocking residue before publish.",
+      "evidence_refs": [
+        "artifact:artifact-checker",
+        "artifact:artifact-skill"
+      ]
+    },
+    {
+      "id": "tool-git-push",
+      "tool": "git",
+      "action": "commit and push",
+      "summary": "Commit 0b3dd36 was pushed to the public repository main branch.",
+      "kept": true,
+      "linked_event_ids": [
+        "event-published"
+      ],
+      "why_it_matters": "It is the durable publication point for the public repo case.",
+      "evidence_refs": [
+        "link:github-repo",
+        "msg:msg-release-result"
+      ]
+    }
+  ],
+  "timeline": [
+    {
+      "id": "timeline-1",
+      "order": 1,
+      "kind": "event",
+      "ref_id": "event-scope",
+      "title": "Public release request lands",
+      "summary": "The task defines a standalone public repo with no private sync dependency.",
+      "evidence_refs": [
+        "event:event-scope",
+        "msg:msg-release-request"
+      ]
+    },
+    {
+      "id": "timeline-2",
+      "order": 2,
+      "kind": "event",
+      "ref_id": "event-public-surface",
+      "title": "Repository public surface is built",
+      "summary": "The repo receives a README, LICENSE, skill file, metadata, checker script, and gitignore.",
+      "evidence_refs": [
+        "event:event-public-surface",
+        "artifact:artifact-readme",
+        "artifact:artifact-checker"
+      ]
+    },
+    {
+      "id": "timeline-3",
+      "order": 3,
+      "kind": "tool_event",
+      "ref_id": "tool-public-gate",
+      "title": "Release gate verifies hygiene",
+      "summary": "The public release gate runs and leaves no release-blocking findings.",
+      "evidence_refs": [
+        "tool:tool-public-gate",
+        "artifact:artifact-checker"
+      ]
+    },
+    {
+      "id": "timeline-4",
+      "order": 4,
+      "kind": "tool_event",
+      "ref_id": "tool-git-push",
+      "title": "Repo is pushed and released",
+      "summary": "Commit 0b3dd36 lands on GitHub and v0.1.0 is published.",
+      "evidence_refs": [
+        "tool:tool-git-push",
+        "link:github-repo"
+      ]
+    }
+  ],
+  "turning_points": [
+    {
+      "id": "turning-private-to-public",
+      "title": "Private skill becomes a public repo",
+      "summary": "The key transition is from local skill material to a self-contained public repository with its own README and license.",
+      "event_ids": [
+        "event-public-surface"
+      ],
+      "tool_event_ids": [
+        "tool-public-gate"
+      ],
+      "evidence_refs": [
+        "event:event-public-surface",
+        "tool:tool-public-gate"
+      ]
+    },
+    {
+      "id": "turning-release-proof",
+      "title": "Release proof becomes durable",
+      "summary": "The push and v0.1.0 release turn the work from local packaging into a public artifact.",
+      "event_ids": [
+        "event-published"
+      ],
+      "tool_event_ids": [
+        "tool-git-push"
+      ],
+      "evidence_refs": [
+        "event:event-published",
+        "tool:tool-git-push"
+      ]
+    }
+  ],
+  "lifted_view": {
+    "questions": [
+      {
+        "id": "question-public-ready",
+        "title": "What makes a repository public-ready?",
+        "summary": "The case shows that public readiness includes README positioning, root hygiene, license, metadata, and a clean validation path.",
+        "timeline_refs": [
+          "timeline-1",
+          "timeline-2"
+        ],
+        "turning_point_refs": [
+          "turning-private-to-public"
+        ],
+        "evidence_refs": [
+          "msg:msg-release-request",
+          "artifact:artifact-readme"
+        ]
+      }
+    ],
+    "misconceptions": [
+      {
+        "id": "misconception-push-is-enough",
+        "title": "A public release is not just git push",
+        "summary": "The release gate and README cleanup mattered because the public first impression is part of the product surface.",
+        "timeline_refs": [
+          "timeline-3"
+        ],
+        "turning_point_refs": [
+          "turning-private-to-public"
+        ],
+        "evidence_refs": [
+          "tool:tool-public-gate"
+        ]
+      }
+    ],
+    "resolutions": [
+      {
+        "id": "resolution-gate-before-release",
+        "title": "Gate the public surface before publishing",
+        "summary": "Run a conservative release gate, review warnings, then publish the repository and release only after blockers are gone.",
+        "timeline_refs": [
+          "timeline-3",
+          "timeline-4"
+        ],
+        "turning_point_refs": [
+          "turning-release-proof"
+        ],
+        "evidence_refs": [
+          "tool:tool-public-gate",
+          "tool:tool-git-push"
+        ]
+      }
+    ]
+  }
+}

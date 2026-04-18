@@ -120,6 +120,7 @@ controlmesh api enable
 
 - 安装：[`docs/installation.md`](docs/installation.md)
 - Feishu 设置：[`docs/feishu-setup.md`](docs/feishu-setup.md)
+- Case-pack contract：[`docs/case-pack/README.md`](docs/case-pack/README.md)
 - 文档总览：[`docs/README.md`](docs/README.md)
 - 配置示例：[`config.example.json`](config.example.json)
 
@@ -225,6 +226,7 @@ controlmesh tasks list
 
 - Installation: [`docs/installation.md`](docs/installation.md)
 - Feishu setup: [`docs/feishu-setup.md`](docs/feishu-setup.md)
+- Case-pack contract: [`docs/case-pack/README.md`](docs/case-pack/README.md)
 - Documentation index: [`docs/README.md`](docs/README.md)
 - Example config: [`config.example.json`](config.example.json)
 

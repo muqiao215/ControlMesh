@@ -1,0 +1,169 @@
+{
+  "case_id": "minimal-case",
+  "title": "Minimal Case",
+  "summary": "A compact case-pack proving that case.json can lint and render two derived views.",
+  "messages": [
+    {
+      "id": "msg-user-request",
+      "author": "user",
+      "role": "request",
+      "ts": "2026-04-18T00:00:00Z",
+      "summary": "User asks for a stable case-pack contract."
+    },
+    {
+      "id": "msg-agent-result",
+      "author": "agent",
+      "role": "result",
+      "ts": "2026-04-18T00:05:00Z",
+      "summary": "Agent returns linted and rendered case-pack views."
+    }
+  ],
+  "links": [
+    {
+      "id": "docs-case-pack",
+      "label": "Case-pack contract",
+      "url": "docs/case-pack/README.md",
+      "summary": "ControlMesh case-pack contract documentation."
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "artifact-case-json",
+      "label": "case.json",
+      "kind": "json",
+      "locator": "examples/case-pack/minimal/case.json",
+      "summary": "Minimal case-pack source.",
+      "evidence_refs": [
+        "msg:msg-user-request"
+      ]
+    }
+  ],
+  "events": [
+    {
+      "id": "event-request",
+      "title": "User asks for a case-pack contract",
+      "summary": "The conversation starts with a request to make case-pack lintable and renderable.",
+      "evidence_refs": [
+        "msg:msg-user-request"
+      ]
+    },
+    {
+      "id": "event-contract-set",
+      "title": "Single source of truth is fixed",
+      "summary": "case.json is treated as canonical while timeline and lifted views are renderer outputs.",
+      "evidence_refs": [
+        "artifact:artifact-case-json",
+        "link:docs-case-pack"
+      ]
+    }
+  ],
+  "tool_events": [
+    {
+      "id": "tool-render",
+      "tool": "controlmesh.case_pack",
+      "action": "render",
+      "summary": "Renderer emits timeline and lifted markdown from the same case.json.",
+      "kept": true,
+      "linked_event_ids": [
+        "event-contract-set"
+      ],
+      "why_it_matters": "It proves the markdown views are derived, not manually edited facts.",
+      "evidence_refs": [
+        "artifact:artifact-case-json"
+      ]
+    }
+  ],
+  "timeline": [
+    {
+      "id": "timeline-1",
+      "order": 1,
+      "kind": "event",
+      "ref_id": "event-request",
+      "title": "Request arrives",
+      "summary": "The case begins with a request for a stable case-pack intermediate format.",
+      "evidence_refs": [
+        "event:event-request",
+        "msg:msg-user-request"
+      ]
+    },
+    {
+      "id": "timeline-2",
+      "order": 2,
+      "kind": "tool_event",
+      "ref_id": "tool-render",
+      "title": "Derived views render",
+      "summary": "The renderer produces timeline and lifted markdown from case.json.",
+      "evidence_refs": [
+        "tool:tool-render",
+        "artifact:artifact-case-json"
+      ]
+    }
+  ],
+  "turning_points": [
+    {
+      "id": "turning-derived-views",
+      "title": "Derived views stop being manual facts",
+      "summary": "The decisive move is to make rendered markdown reproducible from case.json.",
+      "event_ids": [
+        "event-contract-set"
+      ],
+      "tool_event_ids": [
+        "tool-render"
+      ],
+      "evidence_refs": [
+        "event:event-contract-set",
+        "tool:tool-render"
+      ]
+    }
+  ],
+  "lifted_view": {
+    "questions": [
+      {
+        "id": "question-source-of-truth",
+        "title": "What is the source of truth?",
+        "summary": "case.json must own facts while markdown files remain derived views.",
+        "timeline_refs": [
+          "timeline-1"
+        ],
+        "turning_point_refs": [
+          "turning-derived-views"
+        ],
+        "evidence_refs": [
+          "event:event-request"
+        ]
+      }
+    ],
+    "misconceptions": [
+      {
+        "id": "misconception-markdown-is-source",
+        "title": "Markdown views are not canonical",
+        "summary": "timeline.md and lifted.md should not become parallel fact stores.",
+        "timeline_refs": [
+          "timeline-2"
+        ],
+        "turning_point_refs": [
+          "turning-derived-views"
+        ],
+        "evidence_refs": [
+          "tool:tool-render"
+        ]
+      }
+    ],
+    "resolutions": [
+      {
+        "id": "resolution-render-from-json",
+        "title": "Render views from the JSON source",
+        "summary": "Lint the anchors first, then render stable markdown views from case.json.",
+        "timeline_refs": [
+          "timeline-2"
+        ],
+        "turning_point_refs": [
+          "turning-derived-views"
+        ],
+        "evidence_refs": [
+          "artifact:artifact-case-json"
+        ]
+      }
+    ]
+  }
+}

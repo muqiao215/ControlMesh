@@ -10,28 +10,29 @@ webhook, and direct API transports remain compatibility/runtime modules.
 
 1. `docs/feishu-setup.md` -- Feishu native bootstrap, auth boundary, and OAPI tools.
 2. `docs/modules/tasks.md` -- background task loop and runtime primitives.
-3. `docs/system_overview.md` -- fastest end-to-end mental model.
-4. `docs/developer_quickstart.md` -- shortest path for contributors/junior devs.
-5. `docs/modules/setup_wizard.md` -- CLI commands, onboarding, restart/upgrade lifecycle.
-6. `docs/modules/service_management.md` -- systemd/launchd/Task Scheduler backends and operational behavior.
-7. `docs/architecture.md` -- startup, routing, streaming, callbacks, observers.
-8. `docs/config.md` -- config schema, merge behavior, hot-reload boundaries.
-9. `docs/modules/config_reload.md` -- runtime config reload details.
-10. `docs/modules/orchestrator.md` -- routing core, flows, selectors, lifecycle split.
-11. `docs/modules/bus.md` -- unified Envelope/MessageBus delivery architecture.
-12. `docs/modules/session.md` -- transport-aware `SessionKey(transport, chat_id, topic_id)` isolation model.
-13. `docs/modules/api.md` -- direct WebSocket ingress and HTTP file endpoints.
-14. `docs/modules/bot.md` -- Telegram compatibility transport (messenger/telegram/), middleware, topic routing.
-15. `docs/modules/cli.md` -- provider wrappers, stream parsing, process control.
-16. `docs/modules/codex-hooks.md` -- Codex-native lifecycle capability matrix and fallback ownership.
-17. `docs/modules/gateways.md` -- transport-neutral gateway config skeleton for future external dispatch.
-18. `docs/modules/team.md` -- additive team state layer, read-only API envelope, and phase machine.
-19. `docs/modules/harness.md` -- file-driven control plane, controller/worker boundaries, automatic adjudication, and TDD/live/checkpoint governance.
-20. `docs/modules/cli_commands.md` -- CLI command split from `__main__.py`.
-21. `docs/modules/workspace.md` -- `~/.controlmesh` seeding, rules sync, skill sync.
-22. `docs/modules/memory_v2.md` -- additive `MEMORY.md` / daily memory / dreaming-state substrate.
-23. `docs/modules/multiagent.md` -- supervisor, bus bridge, sub-agent runtime.
-24. Remaining module docs (`background`, `cron`, `webhook`, `heartbeat`, `cleanup`, `infra`, `supervisor`, `security`, `logging`, `files`, `text`, `skill_system`).
+3. `docs/case-pack/README.md` -- case-pack canonical source, semantic lint, and renderer contract.
+4. `docs/system_overview.md` -- fastest end-to-end mental model.
+5. `docs/developer_quickstart.md` -- shortest path for contributors/junior devs.
+6. `docs/modules/setup_wizard.md` -- CLI commands, onboarding, restart/upgrade lifecycle.
+7. `docs/modules/service_management.md` -- systemd/launchd/Task Scheduler backends and operational behavior.
+8. `docs/architecture.md` -- startup, routing, streaming, callbacks, observers.
+9. `docs/config.md` -- config schema, merge behavior, hot-reload boundaries.
+10. `docs/modules/config_reload.md` -- runtime config reload details.
+11. `docs/modules/orchestrator.md` -- routing core, flows, selectors, lifecycle split.
+12. `docs/modules/bus.md` -- unified Envelope/MessageBus delivery architecture.
+13. `docs/modules/session.md` -- transport-aware `SessionKey(transport, chat_id, topic_id)` isolation model.
+14. `docs/modules/api.md` -- direct WebSocket ingress and HTTP file endpoints.
+15. `docs/modules/bot.md` -- Telegram compatibility transport (messenger/telegram/), middleware, topic routing.
+16. `docs/modules/cli.md` -- provider wrappers, stream parsing, process control.
+17. `docs/modules/codex-hooks.md` -- Codex-native lifecycle capability matrix and fallback ownership.
+18. `docs/modules/gateways.md` -- transport-neutral gateway config skeleton for future external dispatch.
+19. `docs/modules/team.md` -- additive team state layer, read-only API envelope, and phase machine.
+20. `docs/modules/harness.md` -- file-driven control plane, controller/worker boundaries, automatic adjudication, and TDD/live/checkpoint governance.
+21. `docs/modules/cli_commands.md` -- CLI command split from `__main__.py`.
+22. `docs/modules/workspace.md` -- `~/.controlmesh` seeding, rules sync, skill sync.
+23. `docs/modules/memory_v2.md` -- additive `MEMORY.md` / daily memory / dreaming-state substrate.
+24. `docs/modules/multiagent.md` -- supervisor, bus bridge, sub-agent runtime.
+25. Remaining module docs (`background`, `cron`, `webhook`, `heartbeat`, `cleanup`, `infra`, `supervisor`, `security`, `logging`, `files`, `text`, `skill_system`).
 
 ## System in 60 Seconds
 
@@ -66,6 +67,7 @@ Runtime behavior notes:
 - [Installation](installation.md)
 - [Matrix Setup](matrix-setup.md)
 - [Feishu Setup](feishu-setup.md)
+- [Case-Pack](case-pack/README.md)
 - [Automation Quickstart](automation.md)
 - [Developer Quickstart](developer_quickstart.md)
 - [Configuration](config.md)
