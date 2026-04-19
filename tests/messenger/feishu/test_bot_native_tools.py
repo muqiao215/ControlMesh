@@ -32,7 +32,11 @@ class TestFeishuBotNativeTools:
                     FeishuNativeToolAuthContract(
                         error_kind="app_scope_missing",
                         required_scopes=("contact:user:search",),
-                        permission_url="https://open.feishu.cn/app/cli_123/permission",
+                        permission_url=(
+                            "https://open.feishu.cn/app/cli_123/auth?"
+                            "q=contact%3Auser%3Asearch&"
+                            "op_from=controlmesh-feishu-native-tool&token_type=user"
+                        ),
                     )
                 )
             )

@@ -27,7 +27,9 @@ def resolve_feishu_auth_kit_command() -> tuple[list[str], Path | None]:
     """Resolve the command used to invoke ControlMesh's Feishu native plugin."""
     configured = os.getenv("CONTROLMESH_FEISHU_AUTH_KIT_BIN", "").strip()
     if configured:
-        return shlex.split(configured), None
+        configured_command = shlex.split(configured)
+        if _command_available(configured_command):
+            return configured_command, None
 
     if _bundled_plugin_available():
         return [sys.executable, "-m", _BUNDLED_RUNNER], None
@@ -51,6 +53,16 @@ def resolve_feishu_auth_kit_command() -> tuple[list[str], Path | None]:
         "install feishu-auth-kit in PATH, or keep the sibling repo with uv available."
     )
     raise FileNotFoundError(msg)
+
+
+def _command_available(command: list[str]) -> bool:
+    if not command:
+        return False
+    executable = command[0]
+    path = Path(executable).expanduser()
+    if path.is_absolute() or os.sep in executable:
+        return path.exists()
+    return shutil.which(executable) is not None
 
 
 def _bundled_plugin_available() -> bool:

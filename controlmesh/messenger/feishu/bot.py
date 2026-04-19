@@ -23,6 +23,7 @@ from controlmesh.config import AgentConfig
 from controlmesh.files.allowed_roots import resolve_allowed_roots
 from controlmesh.files.storage import sanitize_filename as _sanitize_filename
 from controlmesh.files.tags import FILE_PATH_RE, extract_file_paths
+from controlmesh.infra.json_store import atomic_json_save, load_json
 from controlmesh.log_context import set_log_context
 from controlmesh.messenger.feishu.auth.card_auth_runner import FeishuCardAuthRunner
 from controlmesh.messenger.feishu.auth.feishu_card_sender import (
@@ -84,6 +85,19 @@ _FEISHU_CONTENT_DEDUP_MAX_SIZE = 4000
 _FEISHU_OLD_MESSAGE_GRACE_SECONDS = 2.0
 _FEISHU_PROGRESS_ACK_DELAY_SECONDS = 1.5
 _FEISHU_PROGRESS_MAX_MESSAGES = 8
+_FEISHU_COMMAND_GUIDE_VERSION = 1
+_FEISHU_COMMAND_GUIDE_TEXT = (
+    "ControlMesh 已接入。\n\n"
+    "常用命令：\n"
+    "/help — 查看命令\n"
+    "/status — 查看当前状态\n"
+    "/model — 切换模型\n"
+    "/feishu_auth_all — 批量补齐飞书原生权限\n"
+    "/claude_native on — 打开 Claude 原生命令模式\n"
+    "/claude_native off — 关闭 Claude 原生命令模式\n"
+    "/cm /status — 强制走 ControlMesh 命令\n\n"
+    "不知道发什么时，直接说需求也可以。"
+)
 
 
 class _FeishuProgressReporter:
@@ -249,6 +263,7 @@ class FeishuBot:
         self._native_tool_executor: FeishuNativeToolExecutor | None = None
         self._notification_service: NotificationService = FeishuNotificationService(self)
         self._bus.register_transport(FeishuTransport(self))
+        self._command_guide_path = store_path / "command_guide_sent.json"
 
     @property
     def _orch(self) -> Orchestrator:
@@ -365,6 +380,7 @@ class FeishuBot:
             if self._config.feishu.thread_isolation and message.thread_id
             else None
         )
+        await self._maybe_send_command_guide(message, reply_to_message_id=reply_to)
         set_log_context(operation="feishu-msg", chat_id=chat_id)
         lock = self._lock_pool.get((chat_id, topic_id))
         progress = self._build_progress_reporter(message.chat_id, reply_to)
@@ -751,6 +767,48 @@ class FeishuBot:
             content={"text": text},
             reply_to_message_id=reply_to_message_id,
         )
+
+    async def _maybe_send_command_guide(
+        self,
+        message: FeishuIncomingText,
+        *,
+        reply_to_message_id: str | None,
+    ) -> None:
+        if self._config.feishu.runtime_mode != "native":
+            return
+        if message.text.strip().startswith("/"):
+            return
+        guide_key = self._command_guide_key(message.chat_id)
+        if self._command_guide_sent(guide_key):
+            return
+        try:
+            await self._send_plain_text_to_chat_ref(
+                message.chat_id,
+                _FEISHU_COMMAND_GUIDE_TEXT,
+                reply_to_message_id=reply_to_message_id,
+            )
+        except Exception:
+            logger.warning("Failed to send Feishu command guide chat_id=%s", message.chat_id, exc_info=True)
+            return
+        self._mark_command_guide_sent(guide_key)
+
+    def _command_guide_key(self, chat_ref: str) -> str:
+        app_id = self._config.feishu.app_id or "unknown-app"
+        return f"v{_FEISHU_COMMAND_GUIDE_VERSION}:{app_id}:{chat_ref}"
+
+    def _command_guide_sent(self, key: str) -> bool:
+        raw = load_json(self._command_guide_path) or {}
+        sent = raw.get("sent")
+        return isinstance(sent, list) and key in sent
+
+    def _mark_command_guide_sent(self, key: str) -> None:
+        raw = load_json(self._command_guide_path) or {}
+        sent_raw = raw.get("sent")
+        sent = [str(item) for item in sent_raw] if isinstance(sent_raw, list) else []
+        if key in sent:
+            return
+        sent.append(key)
+        atomic_json_save(self._command_guide_path, {"sent": sent})
 
     async def _send_card_to_chat_ref(
         self,

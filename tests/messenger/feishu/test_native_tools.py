@@ -191,7 +191,10 @@ async def test_contact_search_missing_app_scope_raises_standard_contract(tmp_pat
     contract = exc_info.value.contract
     assert contract.error_kind == "app_scope_missing"
     assert contract.required_scopes == ("contact:user:search",)
-    assert contract.permission_url == "https://open.feishu.cn/app/cli_123/permission"
+    assert (
+        contract.permission_url
+        == "https://open.feishu.cn/app/cli_123/auth?q=contact%3Auser%3Asearch&op_from=controlmesh-feishu-native-tool&token_type=user"
+    )
     assert contract.token_type == "user"
 
 

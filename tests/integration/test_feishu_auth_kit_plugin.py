@@ -4,16 +4,33 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from pathlib import Path
 
 from controlmesh.integrations import feishu_auth_kit
 
 
-def test_env_override_still_wins(monkeypatch) -> None:
-    monkeypatch.setenv("CONTROLMESH_FEISHU_AUTH_KIT_BIN", "/opt/bin/feishu-auth-kit --flag")
+def test_env_override_still_wins_when_executable_exists(monkeypatch, tmp_path: Path) -> None:
+    binary = tmp_path / "feishu-auth-kit"
+    binary.write_text("#!/bin/sh\n", encoding="utf-8")
+    monkeypatch.setenv("CONTROLMESH_FEISHU_AUTH_KIT_BIN", f"{binary} --flag")
 
     command, cwd = feishu_auth_kit.resolve_feishu_auth_kit_command()
 
-    assert command == ["/opt/bin/feishu-auth-kit", "--flag"]
+    assert command == [str(binary), "--flag"]
+    assert cwd is None
+
+
+def test_stale_env_override_falls_back_to_bundled_plugin(monkeypatch) -> None:
+    monkeypatch.setenv("CONTROLMESH_FEISHU_AUTH_KIT_BIN", "/missing/feishu-auth-kit")
+    monkeypatch.setattr(feishu_auth_kit, "_bundled_plugin_available", lambda: True)
+
+    command, cwd = feishu_auth_kit.resolve_feishu_auth_kit_command()
+
+    assert command == [
+        sys.executable,
+        "-m",
+        "controlmesh._plugins.feishu_auth_kit.runner",
+    ]
     assert cwd is None
 
 

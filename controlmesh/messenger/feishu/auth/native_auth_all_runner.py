@@ -11,7 +11,7 @@ from typing import Any
 from controlmesh.config import AgentConfig
 from controlmesh.integrations.feishu_auth_kit import run_feishu_auth_kit_json
 from controlmesh.messenger.feishu.auth.app_info import FeishuAppInfoCache
-from controlmesh.messenger.feishu.auth.brand import open_platform_domain
+from controlmesh.messenger.feishu.auth.brand import build_permission_url
 from controlmesh.messenger.feishu.auth.errors import AppInfoAccessError
 from controlmesh.messenger.feishu.auth.token_store import FeishuTokenStore
 from controlmesh.messenger.feishu.native_tools import all_native_user_auth_scopes
@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 _AUTH_ALL_COMMANDS = frozenset(
     {
         "/feishu_auth_all",
+        "feishu_auth_all",
         "feishu auth all",
         "飞书全部授权",
         "飞书原生授权",
@@ -89,10 +90,19 @@ class FeishuNativeAuthAllRunner:
 
         unavailable_scopes = _string_list(plan.get("unavailable_scopes"))
         if unavailable_scopes:
+            permission_url = _permission_url(self._config, unavailable_scopes)
+            await self._text_reply(
+                message.chat_id,
+                _render_app_scope_missing_text(
+                    unavailable_scopes=unavailable_scopes,
+                    permission_url=permission_url,
+                ),
+                message.message_id if self._config.feishu.reply_to_trigger else None,
+            )
             await self._start_app_permission_flow(
                 message,
                 required_scopes=unavailable_scopes,
-                permission_url=_permission_url(self._config),
+                permission_url=permission_url,
                 retry_text=message.text,
             )
             return True
@@ -100,6 +110,15 @@ class FeishuNativeAuthAllRunner:
         batches = _list_of_string_lists(plan.get("batches"))
         next_batch = batches[0] if batches else _string_list(plan.get("missing_user_scopes"))
         if next_batch:
+            await self._text_reply(
+                message.chat_id,
+                _render_user_scope_batch_text(
+                    scopes=next_batch,
+                    batch_index=1,
+                    total_batches=len(batches) if batches else 1,
+                ),
+                message.message_id if self._config.feishu.reply_to_trigger else None,
+            )
             await self._start_user_auth_flow(
                 message,
                 required_scopes=next_batch,
@@ -170,8 +189,14 @@ async def _maybe_await(value: Any) -> Any:
     return value
 
 
-def _permission_url(config: AgentConfig) -> str:
-    return f"{open_platform_domain(config.feishu.brand)}/app/{config.feishu.app_id}/permission"
+def _permission_url(config: AgentConfig, scopes: list[str]) -> str:
+    return build_permission_url(
+        app_id=config.feishu.app_id,
+        scopes=scopes,
+        brand=config.feishu.brand,
+        token_type="user",
+        op_from="controlmesh-feishu-auth-all",
+    )
 
 
 def _string_list(value: Any) -> list[str]:
@@ -190,3 +215,25 @@ def _list_of_string_lists(value: Any) -> list[list[str]]:
             if batch:
                 batches.append(batch)
     return batches
+
+
+def _render_app_scope_missing_text(*, unavailable_scopes: list[str], permission_url: str) -> str:
+    scope_lines = "\n".join(f"- {scope}" for scope in unavailable_scopes)
+    return (
+        "批量授权需要先补齐应用权限。\n\n"
+        "请打开下面的飞书快捷授权页。页面会直接带上这次缺少的权限，不用再去开发者后台慢慢找：\n"
+        f"{permission_url}\n\n"
+        "缺少的应用权限：\n"
+        f"{scope_lines}\n\n"
+        "权限保存后，点卡片里的继续，或重新发 `/feishu_auth_all`。"
+    )
+
+
+def _render_user_scope_batch_text(*, scopes: list[str], batch_index: int, total_batches: int) -> str:
+    scope_lines = "\n".join(f"- {scope}" for scope in scopes)
+    return (
+        f"开始飞书原生用户授权，第 {batch_index}/{total_batches} 批。\n\n"
+        "这一步会发一张授权卡，请按卡片完成授权。\n\n"
+        "本批权限：\n"
+        f"{scope_lines}"
+    )

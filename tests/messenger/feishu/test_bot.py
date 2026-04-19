@@ -347,6 +347,7 @@ class TestFeishuBotRouting:
         bot._orchestrator = SimpleNamespace(
             handle_message_streaming=AsyncMock(return_value=SimpleNamespace(text="pong"))
         )
+        bot._send_plain_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
         bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
 
         await bot.handle_incoming_text(
@@ -364,6 +365,43 @@ class TestFeishuBotRouting:
             "pong",
             reply_to_message_id="om_1",
         )
+
+    async def test_handle_incoming_text_native_mode_sends_command_guide_once_per_chat(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path, provider="codex", model="gpt-5.4", runtime_mode="native")
+        bot._orchestrator = SimpleNamespace(
+            handle_message_streaming=AsyncMock(return_value=SimpleNamespace(text="pong"))
+        )
+        bot._send_plain_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+        bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="ping",
+            )
+        )
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_2",
+                text="second ping",
+            )
+        )
+
+        bot._send_plain_text_to_chat_ref.assert_awaited_once()
+        first_call = bot._send_plain_text_to_chat_ref.await_args_list[0]
+        assert first_call.args[0] == "oc_chat_1"
+        assert "/feishu_auth_all" in first_call.args[1]
+        assert first_call.kwargs == {"reply_to_message_id": "om_1"}
+        assert bot._send_text_to_chat_ref.await_count == 2
+        assert bot._send_text_to_chat_ref.await_args_list[0].args[1] == "pong"
+        assert bot._send_text_to_chat_ref.await_args_list[1].args[1] == "pong"
 
     async def test_non_auth_message_still_routes_to_orchestrator_when_card_auth_runner_exists(
         self,
@@ -866,7 +904,8 @@ class TestFeishuBotRouting:
         bot._close_streaming_card.assert_awaited_once()
         assert bot._close_streaming_card.await_args.kwargs["summary"].endswith("音频如下")
         bot._send_text_to_chat_ref.assert_not_awaited()
-        bot._send_plain_text_to_chat_ref.assert_not_awaited()
+        bot._send_plain_text_to_chat_ref.assert_awaited_once()
+        assert "/feishu_auth_all" in bot._send_plain_text_to_chat_ref.await_args.args[1]
 
     async def test_handle_incoming_text_plain_mode_sends_visible_text_and_files_without_duplication(
         self,

@@ -6,6 +6,9 @@ import asyncio
 import base64
 import contextlib
 import functools
+import os
+import subprocess
+import sys
 import json
 import logging
 import time
@@ -93,8 +96,9 @@ def _cmd_feishu_auth(action: str, action_args: Sequence[str] = ()) -> None:
     handlers: dict[str, Callable[[], None]] = {
         "setup": _cmd_feishu_setup,
         "doctor": _cmd_feishu_doctor,
-        "register-begin": _cmd_feishu_register_begin,
+        "register-begin": functools.partial(_cmd_feishu_register_begin, action_args),
         "register-poll": functools.partial(_cmd_feishu_register_poll, action_args),
+        "register-complete": functools.partial(_cmd_feishu_register_complete, action_args),
         "probe": _cmd_feishu_probe,
         "plan": functools.partial(_cmd_feishu_orchestration_plan, action_args),
         "route": functools.partial(_cmd_feishu_orchestration_route, action_args),
@@ -167,12 +171,25 @@ def _cmd_feishu_doctor() -> None:
         raise SystemExit(result.returncode)
 
 
-def _cmd_feishu_register_begin() -> None:
+def _cmd_feishu_register_begin(action_args: Sequence[str]) -> None:
     config = load_config()
+    parsed = _parse_kv_args(
+        action_args,
+        flags={"no-auto-complete", "no-start-service"},
+    )
     payload = _run_feishu_auth_kit_json(
         ["register", "scan-create", "--brand", config.feishu.brand, "--no-poll", "--json"]
     )
     _render_json_payload(payload)
+    if "no-auto-complete" in parsed.flags:
+        return
+    pending_path = _save_feishu_registration_pending(
+        config=config,
+        payload=payload,
+        start_service="no-start-service" not in parsed.flags,
+    )
+    _spawn_feishu_registration_completion(config=config, pending_path=pending_path)
+    _console.print(f"Feishu auto-complete armed: {pending_path}")
 
 
 def _cmd_feishu_register_poll(action_args: Sequence[str]) -> None:
@@ -246,6 +263,210 @@ def _cmd_feishu_register_poll(action_args: Sequence[str]) -> None:
         _console.print(
             "Config has been written, but this registration domain is not fully supported by the current ControlMesh Feishu runtime."
         )
+
+
+def _cmd_feishu_register_complete(action_args: Sequence[str]) -> None:
+    config = load_config()
+    parsed = _parse_kv_args(
+        action_args,
+        optional={"pending-file"},
+    )
+    pending_path = Path(
+        parsed.values.get("pending-file") or _feishu_registration_pending_path(config)
+    ).expanduser()
+    pending = json.loads(pending_path.read_text(encoding="utf-8"))
+    if not isinstance(pending, dict):
+        _console.print(f"Invalid Feishu pending registration file: {pending_path}")
+        raise SystemExit(1)
+
+    device_code = str(pending.get("device_code") or "")
+    if not device_code:
+        _console.print(f"Feishu pending registration file has no device_code: {pending_path}")
+        raise SystemExit(1)
+
+    args = [
+        "register",
+        "poll",
+        "--brand",
+        str(pending.get("brand") or config.feishu.brand),
+        "--device-code",
+        device_code,
+        "--json",
+    ]
+    for key in ("interval", "expires-in", "poll-timeout", "tp"):
+        value = pending.get(key)
+        if value is not None:
+            args.extend([f"--{key}", str(value)])
+
+    payload = _run_feishu_auth_kit_json(args)
+    if payload.get("status") != "success":
+        _render_json_payload(payload)
+        return
+
+    _finish_feishu_registration(
+        config=config,
+        payload=payload,
+        start_service=bool(pending.get("start_service", True)),
+    )
+    pending_path.unlink(missing_ok=True)
+
+
+def _finish_feishu_registration(
+    *,
+    config: AgentConfig,
+    payload: dict[str, object],
+    start_service: bool = False,
+) -> None:
+    write_result = _write_feishu_registration_to_config(config=config, payload=payload)
+    probe_payload = _run_feishu_auth_kit_json(
+        ["register", "probe", "--brand", write_result.probe_brand, "--json"],
+        extra_env={
+            "FEISHU_APP_ID": write_result.app_id,
+            "FEISHU_APP_SECRET": write_result.app_secret,
+            "FEISHU_BRAND": write_result.probe_brand,
+        },
+    )
+    readiness = _feishu_registration_readiness(
+        registration_domain=write_result.registration_domain,
+        probe_payload=probe_payload,
+    )
+    _render_feishu_registration_completion(
+        write_result=write_result,
+        probe_payload=probe_payload,
+        readiness=readiness,
+        start_service=start_service,
+    )
+    if start_service and readiness == "ready":
+        _start_feishu_registration_service()
+
+
+def _render_feishu_registration_completion(
+    *,
+    write_result: _FeishuRegistrationWriteResult,
+    probe_payload: dict[str, object],
+    readiness: str,
+    start_service: bool,
+) -> None:
+    _console.print("Feishu registration completed.")
+    _console.print(f"ControlMesh config updated: {write_result.config_path}")
+    _console.print(f"Feishu app_id: {write_result.app_id}")
+    _console.print(f"Feishu registration domain: {write_result.registration_domain}")
+    if write_result.allow_from_initialized and write_result.owner_open_id:
+        _console.print(
+            f"Feishu allow_from initialized from owner open_id: {write_result.owner_open_id}"
+        )
+    elif write_result.owner_open_id:
+        _console.print(
+            "Feishu owner open_id returned by registration, but existing allow_from was preserved."
+        )
+    _console.print(f"Feishu AI agent probe: {'OK' if probe_payload.get('ok') else 'FAILED'}")
+    if probe_payload.get("bot_name"):
+        _console.print(f"Feishu bot name: {probe_payload['bot_name']}")
+    if probe_payload.get("bot_open_id"):
+        _console.print(f"Feishu bot open_id: {probe_payload['bot_open_id']}")
+    if probe_payload.get("error"):
+        _console.print(f"Feishu probe error: {probe_payload['error']}")
+    _console.print(f"Feishu transport readiness: {readiness}")
+    if readiness == "ready":
+        if start_service:
+            _console.print("Starting ControlMesh service so Feishu chat is live immediately.")
+        else:
+            _console.print(
+                "Next step: restart ControlMesh or start the Feishu transport so it reloads the new config."
+            )
+    elif readiness == "config-written-probe-failed":
+        _console.print(
+            "Config has been written, but probe failed. Fix the probe issue or rerun `controlmesh auth feishu probe` before starting the transport."
+        )
+    else:
+        _console.print(
+            "Config has been written, but this registration domain is not fully supported by the current ControlMesh Feishu runtime."
+        )
+
+
+def _start_feishu_registration_service() -> None:
+    try:
+        from controlmesh.infra.service import (
+            is_service_installed,
+            is_service_running,
+            start_service,
+            stop_service,
+        )
+    except Exception as exc:  # pragma: no cover - platform import guard
+        _console.print(f"ControlMesh service start unavailable: {exc}")
+        return
+
+    if not is_service_installed():
+        _console.print("ControlMesh service not installed; skipping automatic service start.")
+        return
+    if is_service_running():
+        stop_service(_console)
+    start_service(_console)
+
+
+def _feishu_registration_pending_path(config: AgentConfig) -> Path:
+    return resolve_paths(controlmesh_home=config.controlmesh_home).config_dir / (
+        "feishu_registration_pending.json"
+    )
+
+
+def _save_feishu_registration_pending(
+    *,
+    config: AgentConfig,
+    payload: dict[str, object],
+    start_service: bool,
+) -> Path:
+    path = _feishu_registration_pending_path(config)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pending = {
+        "schema": "controlmesh.feishu-registration-pending.v1",
+        "brand": config.feishu.brand,
+        "device_code": payload.get("device_code"),
+        "user_code": payload.get("user_code"),
+        "verification_uri_complete": payload.get("verification_uri_complete"),
+        "interval": payload.get("interval", 5),
+        "expires-in": payload.get("expires_in", 3600),
+        "poll-timeout": payload.get("expires_in", 3600),
+        "tp": "ob_app",
+        "start_service": start_service,
+        "created_at": int(time.time()),
+    }
+    atomic_json_save(path, pending)
+    return path
+
+
+def _spawn_feishu_registration_completion(
+    *,
+    config: AgentConfig,
+    pending_path: Path,
+) -> None:
+    paths = resolve_paths(controlmesh_home=config.controlmesh_home)
+    paths.logs_dir.mkdir(parents=True, exist_ok=True)
+    log_path = paths.logs_dir / "feishu_registration_autocomplete.log"
+    env = dict(os.environ)
+    env["CONTROLMESH_HOME"] = str(paths.controlmesh_home)
+    command = [
+        sys.executable,
+        "-m",
+        "controlmesh",
+        "auth",
+        "feishu",
+        "register-complete",
+        "--pending-file",
+        str(pending_path),
+    ]
+    log_file = log_path.open("ab")
+    try:
+        subprocess.Popen(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            env=env,
+            start_new_session=True,
+        )
+    finally:
+        log_file.close()
 
 
 def _cmd_feishu_probe() -> None:
@@ -570,9 +791,8 @@ def _write_feishu_registration_to_config(
     allow_from_initialized = False
     if owner_open_id:
         existing_allow_from = next_feishu.get("allow_from")
-        if not isinstance(existing_allow_from, list) or not existing_allow_from:
-            next_feishu["allow_from"] = [owner_open_id]
-            allow_from_initialized = True
+        if not isinstance(existing_allow_from, list):
+            next_feishu["allow_from"] = []
 
     raw["feishu"] = next_feishu
     atomic_json_save(config_path, raw)

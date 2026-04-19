@@ -11,7 +11,7 @@ from typing import Any
 
 from controlmesh.config import AgentConfig
 from controlmesh.messenger.feishu.auth.app_info import FeishuAppInfoCache, missing_scopes
-from controlmesh.messenger.feishu.auth.brand import open_platform_domain
+from controlmesh.messenger.feishu.auth.brand import build_permission_url
 from controlmesh.messenger.feishu.auth.errors import (
     LARK_ERROR,
     AppInfoAccessError,
@@ -387,7 +387,7 @@ class FeishuNativeToolExecutor:
             FeishuNativeToolAuthContract(
                 error_kind=error_kind,  # type: ignore[arg-type]
                 required_scopes=required_scopes,
-                permission_url=_permission_url(self._config),
+                permission_url=_permission_url(self._config, required_scopes),
                 user_open_id=context.sender_open_id,
                 operation_id=new_feishu_operation_id(),
                 token_type=_USER_AUTH_KIND,
@@ -443,8 +443,14 @@ def format_native_tool_result(tool_name: str, result: Mapping[str, Any]) -> str:
     return f"Feishu native tool {tool_name} returned:\n```json\n{_json(result)}\n```"
 
 
-def _permission_url(config: AgentConfig) -> str:
-    return f"{open_platform_domain(config.feishu.brand)}/app/{config.feishu.app_id}/permission"
+def _permission_url(config: AgentConfig, scopes: tuple[str, ...]) -> str:
+    return build_permission_url(
+        app_id=config.feishu.app_id,
+        scopes=scopes,
+        brand=config.feishu.brand,
+        token_type=_USER_AUTH_KIND,
+        op_from="controlmesh-feishu-native-tool",
+    )
 
 
 def _json(value: Mapping[str, Any]) -> str:

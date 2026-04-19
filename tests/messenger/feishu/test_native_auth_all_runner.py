@@ -40,8 +40,9 @@ def _message(text: str = "/feishu_auth_all") -> FeishuIncomingText:
     )
 
 
-def test_is_native_auth_all_command_accepts_slash_and_chinese_aliases() -> None:
+def test_is_native_auth_all_command_accepts_slash_underscore_and_chinese_aliases() -> None:
     assert is_native_auth_all_command("/feishu_auth_all") is True
+    assert is_native_auth_all_command("feishu_auth_all") is True
     assert is_native_auth_all_command(" feishu auth all ") is True
     assert is_native_auth_all_command("飞书全部授权") is True
     assert is_native_auth_all_command("ping") is False
@@ -51,6 +52,7 @@ def test_is_native_auth_all_command_accepts_slash_and_chinese_aliases() -> None:
 async def test_auth_all_routes_missing_app_scopes_to_permission_card(tmp_path: Path) -> None:
     app_permission_calls: list[dict[str, Any]] = []
     user_auth_calls: list[dict[str, Any]] = []
+    replies: list[tuple[str, str, str | None]] = []
 
     def _run_json(args: list[str]) -> dict[str, Any]:
         assert args[:2] == ["orchestration", "plan"]
@@ -104,16 +106,25 @@ async def test_auth_all_routes_missing_app_scopes_to_permission_card(tmp_path: P
         get_user_scopes=lambda _open_id: [],
         start_app_permission_flow=_start_app_permission_flow,
         start_user_auth_flow=_start_user_auth_flow,
-        text_reply=lambda *_args: _return(None),
+        text_reply=lambda chat_id, text, reply_to: _record_reply(replies, chat_id, text, reply_to),
         run_json=_run_json,
     )
 
     handled = await runner.handle_message(_message())
 
     assert handled is True
+    assert replies[0][0] == "oc_chat_1"
+    assert "批量授权需要先补齐应用权限" in replies[0][1]
+    assert "/auth?q=contact%3Auser%3Asearch" in replies[0][1]
+    assert "开发者后台" in replies[0][1]
+    assert "contact:user:search" in replies[0][1]
+    assert replies[0][2] == "om_1"
     assert app_permission_calls[0]["required_scopes"] == ["contact:user:search"]
     assert app_permission_calls[0]["retry_text"] == "/feishu_auth_all"
-    assert app_permission_calls[0]["permission_url"] == "https://open.feishu.cn/app/cli_app/permission"
+    assert (
+        app_permission_calls[0]["permission_url"]
+        == "https://open.feishu.cn/app/cli_app/auth?q=contact%3Auser%3Asearch&op_from=controlmesh-feishu-auth-all&token_type=user"
+    )
     assert user_auth_calls == []
 
 
@@ -164,9 +175,12 @@ async def test_auth_all_starts_first_user_scope_batch_when_app_scopes_are_ready(
     handled = await runner.handle_message(_message())
 
     assert handled is True
+    assert replies[0][0] == "oc_chat_1"
+    assert "开始飞书原生用户授权，第 1/2 批" in replies[0][1]
+    assert "contact:user:search" in replies[0][1]
+    assert replies[0][2] == "om_1"
     assert user_auth_calls[0]["required_scopes"] == ["contact:user:search"]
     assert user_auth_calls[0]["retry_text"] == "/feishu_auth_all"
-    assert replies == []
 
 
 @pytest.mark.asyncio

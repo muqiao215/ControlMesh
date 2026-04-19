@@ -154,6 +154,7 @@ def test_cmd_auth_feishu_register_begin_delegates_to_scan_create_no_poll(
     config = _feishu_config_without_app(tmp_path)
     console_lines: list[str] = []
     calls: list[list[str]] = []
+    spawned: list[Path] = []
 
     class _FakeConsole:
         def print(self, *args: object, **kwargs: object) -> None:
@@ -178,6 +179,12 @@ def test_cmd_auth_feishu_register_begin_delegates_to_scan_create_no_poll(
         _fake_run_feishu_auth_kit_json,
         raising=False,
     )
+    monkeypatch.setattr(
+        module,
+        "_spawn_feishu_registration_completion",
+        lambda *, config, pending_path: spawned.append(pending_path),
+        raising=False,
+    )
 
     module.cmd_auth(["auth", "feishu", "register-begin"])
 
@@ -188,6 +195,50 @@ def test_cmd_auth_feishu_register_begin_delegates_to_scan_create_no_poll(
     assert '"status": "authorization_required"' in rendered
     assert "dev_123" in rendered
     assert "oc_onboard" in rendered
+    assert "Feishu auto-complete armed:" in rendered
+    assert len(spawned) == 1
+    pending = json.loads(spawned[0].read_text(encoding="utf-8"))
+    assert pending["device_code"] == "dev_123"
+    assert pending["start_service"] is True
+
+
+def test_cmd_auth_feishu_register_begin_can_skip_auto_complete(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _import_auth_cli_module()
+    config = _feishu_config_without_app(tmp_path)
+    spawned: list[Path] = []
+
+    class _FakeConsole:
+        def print(self, *args: object, **kwargs: object) -> None:
+            return None
+
+    monkeypatch.setattr(module, "_console", _FakeConsole(), raising=False)
+    monkeypatch.setattr(module, "load_config", lambda: config, raising=False)
+    monkeypatch.setattr(
+        module,
+        "run_feishu_auth_kit_json",
+        lambda args: {
+            "status": "authorization_required",
+            "device_code": "dev_123",
+            "user_code": "ABCD-EFGH",
+            "interval": 5,
+            "expires_in": 600,
+        },
+        raising=False,
+    )
+    monkeypatch.setattr(
+        module,
+        "_spawn_feishu_registration_completion",
+        lambda *, config, pending_path: spawned.append(pending_path),
+        raising=False,
+    )
+
+    module.cmd_auth(["auth", "feishu", "register-begin", "--no-auto-complete"])
+
+    assert spawned == []
+    assert not module._feishu_registration_pending_path(config).exists()
 
 
 def test_cmd_auth_feishu_register_poll_writes_config_probes_and_reports_readiness(
@@ -296,7 +347,7 @@ def test_cmd_auth_feishu_register_poll_writes_config_probes_and_reports_readines
     assert saved["feishu"]["app_secret"] == "secret-new"
     assert saved["feishu"]["brand"] == "feishu"
     assert saved["feishu"]["domain"] == "https://open.feishu.cn"
-    assert saved["feishu"]["allow_from"] == ["ou_owner"]
+    assert saved["feishu"]["allow_from"] == []
     assert saved["feishu"]["group_reply_all"] is True
     rendered = "\n".join(console_lines)
     assert "Feishu registration completed." in rendered
@@ -304,6 +355,96 @@ def test_cmd_auth_feishu_register_poll_writes_config_probes_and_reports_readines
     assert "Feishu AI agent probe: OK" in rendered
     assert "Feishu transport readiness: ready" in rendered
     assert "restart ControlMesh" in rendered
+
+
+def test_cmd_auth_feishu_register_complete_polls_writes_config_and_starts_service(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _import_auth_cli_module()
+    config = _feishu_config_without_app(tmp_path)
+    config_path = _write_config_file(tmp_path, {"transport": "feishu", "feishu": {}})
+    pending_path = module._feishu_registration_pending_path(config)
+    pending_path.parent.mkdir(parents=True, exist_ok=True)
+    pending_path.write_text(
+        json.dumps(
+            {
+                "device_code": "dev_123",
+                "brand": "feishu",
+                "interval": 5,
+                "expires-in": 600,
+                "poll-timeout": 600,
+                "start_service": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+    console_lines: list[str] = []
+    calls: list[tuple[list[str], dict[str, str]]] = []
+    service_starts: list[bool] = []
+
+    class _FakeConsole:
+        def print(self, *args: object, **kwargs: object) -> None:
+            console_lines.append(" ".join(str(arg) for arg in args))
+
+    def _fake_run_feishu_auth_kit_json(
+        args: list[str],
+        *,
+        extra_env: dict[str, str] | None = None,
+    ) -> dict[str, object]:
+        calls.append((args, extra_env or {}))
+        if args[:2] == ["register", "probe"]:
+            return {"ok": True, "app_id": "cli_new"}
+        return {
+            "status": "success",
+            "app_id": "cli_new",
+            "app_secret": "secret-new",
+            "domain": "feishu",
+            "open_id": "ou_owner",
+        }
+
+    monkeypatch.setattr(module, "_console", _FakeConsole(), raising=False)
+    monkeypatch.setattr(module, "load_config", lambda: config, raising=False)
+    monkeypatch.setattr(
+        module,
+        "run_feishu_auth_kit_json",
+        _fake_run_feishu_auth_kit_json,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        module,
+        "_start_feishu_registration_service",
+        lambda: service_starts.append(True),
+        raising=False,
+    )
+
+    module.cmd_auth(["auth", "feishu", "register-complete"])
+
+    assert calls[0] == (
+        [
+            "register",
+            "poll",
+            "--brand",
+            "feishu",
+            "--device-code",
+            "dev_123",
+            "--json",
+            "--interval",
+            "5",
+            "--expires-in",
+            "600",
+            "--poll-timeout",
+            "600",
+        ],
+        {},
+    )
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    assert saved["feishu"]["app_id"] == "cli_new"
+    assert saved["feishu"]["app_secret"] == "secret-new"
+    assert saved["feishu"]["allow_from"] == []
+    assert service_starts == [True]
+    assert not pending_path.exists()
+    assert "Starting ControlMesh service" in "\n".join(console_lines)
 
 
 def test_cmd_auth_feishu_register_poll_preserves_existing_allowlist(
