@@ -84,6 +84,29 @@ def test_tokens_property_per_provider() -> None:
     assert session.total_tokens == 456
 
 
+def test_native_commands_property_per_provider() -> None:
+    session = SessionData(
+        chat_id=1,
+        provider="claude",
+        provider_sessions={
+            "claude": ProviderSessionData(native_commands_enabled=True),
+            "codex": ProviderSessionData(native_commands_enabled=False),
+        },
+    )
+    assert session.native_commands_enabled is True
+
+    session.provider = "codex"
+    assert session.native_commands_enabled is False
+
+
+def test_native_commands_setter_writes_to_current_provider() -> None:
+    session = SessionData(chat_id=1, provider="claude", provider_sessions={})
+
+    session.native_commands_enabled = True
+
+    assert session.provider_sessions["claude"].native_commands_enabled is True
+
+
 def test_clear_all_sessions() -> None:
     session = SessionData(
         chat_id=1,
@@ -159,3 +182,4 @@ def test_asdict_contains_provider_sessions_not_session_id() -> None:
     assert "provider_sessions" in serialized
     assert "session_id" not in serialized
     assert serialized["provider_sessions"]["claude"]["session_id"] == "sid"
+    assert serialized["provider_sessions"]["claude"]["native_commands_enabled"] is False

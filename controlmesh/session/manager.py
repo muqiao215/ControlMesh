@@ -82,6 +82,7 @@ class ProviderSessionData:
     message_count: int = 0
     total_cost_usd: float = 0.0
     total_tokens: int = 0
+    native_commands_enabled: bool = False
 
 
 @dataclass(init=False)
@@ -191,6 +192,16 @@ class SessionData:
     def total_tokens(self, value: int) -> None:
         self._current_provider_data().total_tokens = value
 
+    @property
+    def native_commands_enabled(self) -> bool:
+        """Whether provider-native slash commands are enabled for the active provider."""
+        current = self.provider_sessions.get(self.provider)
+        return current.native_commands_enabled if current is not None else False
+
+    @native_commands_enabled.setter
+    def native_commands_enabled(self, value: bool) -> None:
+        self._current_provider_data().native_commands_enabled = bool(value)
+
     def _current_provider_data(self) -> ProviderSessionData:
         """Get/create provider-local state for the active provider."""
         current = self.provider_sessions.get(self.provider)
@@ -226,6 +237,9 @@ class SessionData:
                 message_count=SessionData._safe_int(value.get("message_count", 0)),
                 total_cost_usd=SessionData._safe_float(value.get("total_cost_usd", 0.0)),
                 total_tokens=SessionData._safe_int(value.get("total_tokens", 0)),
+                native_commands_enabled=SessionData._safe_bool(
+                    value.get("native_commands_enabled", False)
+                ),
             )
         return out
 
@@ -256,6 +270,17 @@ class SessionData:
             return float(str(value))
         except (TypeError, ValueError):
             return 0.0
+
+    @staticmethod
+    def _safe_bool(value: object) -> bool:
+        """Best-effort bool conversion for legacy/corrupt payloads."""
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return bool(value)
+        if isinstance(value, str):
+            return value.strip().lower() in {"1", "true", "yes", "on"}
+        return False
 
 
 TopicNameResolver = Callable[[int, int], str]
@@ -462,6 +487,7 @@ class SessionManager:
                 message_count=data.message_count,
                 total_cost_usd=data.total_cost_usd,
                 total_tokens=data.total_tokens,
+                native_commands_enabled=data.native_commands_enabled,
             )
             for provider, data in provider_sessions.items()
         }
@@ -477,6 +503,7 @@ class SessionManager:
                     message_count=data.message_count,
                     total_cost_usd=data.total_cost_usd,
                     total_tokens=data.total_tokens,
+                    native_commands_enabled=data.native_commands_enabled,
                 )
                 continue
             if data.session_id:
@@ -484,6 +511,31 @@ class SessionManager:
             existing.message_count = max(existing.message_count, data.message_count)
             existing.total_cost_usd = max(existing.total_cost_usd, data.total_cost_usd)
             existing.total_tokens = max(existing.total_tokens, data.total_tokens)
+
+    async def sync_provider_native_commands(self, session: SessionData, *, enabled: bool) -> None:
+        """Persist provider-native command mode without incrementing activity counters."""
+        async with self._lock:
+            sessions = await self._load()
+            skey = session.session_key.storage_key
+            current = sessions.get(skey)
+            if current is None:
+                current = session
+            else:
+                self._merge_provider_sessions(current, session)
+                current.provider = session.provider
+                current.model = session.model
+                if session.topic_name and not current.topic_name:
+                    current.topic_name = session.topic_name
+
+            current.native_commands_enabled = enabled
+            current.last_active = datetime.now(UTC).isoformat()
+            sessions[skey] = current
+            await self._save(sessions)
+
+            session.provider = current.provider
+            session.model = current.model
+            session.last_active = current.last_active
+            session.provider_sessions = self._clone_provider_sessions(current.provider_sessions)
 
     async def sync_session_target(
         self,

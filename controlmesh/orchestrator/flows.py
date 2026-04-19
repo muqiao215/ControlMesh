@@ -38,6 +38,39 @@ class StreamingCallbacks:
     on_system_status: Callable[[str | None], Awaitable[None]] | None = field(default=None)
 
 
+@dataclass(frozen=True, slots=True)
+class PromptPolicy:
+    """How ControlMesh should shape a prompt before sending it to a provider."""
+
+    apply_hooks: bool = True
+    include_append_prompt: bool = True
+
+
+DEFAULT_PROMPT_POLICY = PromptPolicy()
+NATIVE_COMMAND_PROMPT_POLICY = PromptPolicy(
+    apply_hooks=False,
+    include_append_prompt=False,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class NormalFlowOptions:
+    """Options for one non-streaming normal flow execution."""
+
+    model_override: str | None = None
+    is_recovery: bool = False
+    prompt_policy: PromptPolicy = DEFAULT_PROMPT_POLICY
+
+
+@dataclass(frozen=True, slots=True)
+class StreamingFlowOptions:
+    """Options for one streaming normal flow execution."""
+
+    model_override: str | None = None
+    cbs: StreamingCallbacks | None = None
+    prompt_policy: PromptPolicy = DEFAULT_PROMPT_POLICY
+
+
 def _make_timeout_controller(orch: Orchestrator, kind: str) -> TimeoutController | None:
     """Create a TimeoutController when extended timeout features are configured."""
     cfg = orch._config.timeouts
@@ -60,6 +93,7 @@ async def _prepare_normal(
     text: str,
     *,
     model_override: str | None = None,
+    prompt_policy: PromptPolicy = DEFAULT_PROMPT_POLICY,
 ) -> tuple[AgentRequest, SessionData]:
     """Shared setup for normal() and normal_streaming().
 
@@ -91,7 +125,7 @@ async def _prepare_normal(
     )
 
     append_prompt = None
-    if is_new:
+    if is_new and prompt_policy.include_append_prompt:
         mainmemory = await asyncio.to_thread(read_mainmemory, orch.paths)
         if mainmemory.strip():
             append_prompt = mainmemory
@@ -107,7 +141,7 @@ async def _prepare_normal(
         provider=req_provider,
         model=req_model,
     )
-    prompt = orch._hook_registry.apply(text, hook_ctx)
+    prompt = orch._hook_registry.apply(text, hook_ctx) if prompt_policy.apply_hooks else text
 
     timeout_secs = resolve_timeout(orch._config, "normal")
     request = AgentRequest(
@@ -228,6 +262,7 @@ class _RecoveryContext:
     model_override: str | None
     streaming: bool = False
     cbs: StreamingCallbacks = field(default_factory=StreamingCallbacks)
+    prompt_policy: PromptPolicy = DEFAULT_PROMPT_POLICY
 
 
 async def _recover_session(
@@ -253,7 +288,13 @@ async def _recover_session(
     elif cb.on_system_status is not None:
         await cb.on_system_status("recovering")
 
-    request, session = await _prepare_normal(orch, key, text, model_override=ctx.model_override)
+    request, session = await _prepare_normal(
+        orch,
+        key,
+        text,
+        model_override=ctx.model_override,
+        prompt_policy=ctx.prompt_policy,
+    )
     if ctx.streaming:
         response = await orch._cli_service.execute_streaming(
             request,
@@ -325,14 +366,35 @@ async def normal(
     is_recovery: bool = False,
 ) -> OrchestratorResult:
     """Handle normal conversation with session resume."""
+    return await _normal_with_options(
+        orch,
+        key,
+        text,
+        NormalFlowOptions(model_override=model_override, is_recovery=is_recovery),
+    )
+
+
+async def _normal_with_options(
+    orch: Orchestrator,
+    key: SessionKey,
+    text: str,
+    options: NormalFlowOptions,
+) -> OrchestratorResult:
+    """Handle non-streaming conversation with explicit flow options."""
     logger.info("Normal flow starting")
-    request, session = await _prepare_normal(orch, key, text, model_override=model_override)
+    request, session = await _prepare_normal(
+        orch,
+        key,
+        text,
+        model_override=options.model_override,
+        prompt_policy=options.prompt_policy,
+    )
     warning = await _gemini_missing_config_key_warning(orch, request)
     if warning is not None:
         logger.warning("Gemini API-key mode without configured controlmesh key")
         return warning
 
-    _begin_inflight(orch, request, session, is_recovery=is_recovery)
+    _begin_inflight(orch, request, session, is_recovery=options.is_recovery)
     try:
         response = await orch._cli_service.execute(request)
         session_recovered = False
@@ -344,7 +406,11 @@ async def normal(
         ):
             session_recovered = _is_invalid_session(response)
             reason = "invalid_session" if session_recovered else "sigkill"
-            ctx = _RecoveryContext(reason=reason, model_override=model_override)
+            ctx = _RecoveryContext(
+                reason=reason,
+                model_override=options.model_override,
+                prompt_policy=options.prompt_policy,
+            )
             request, session, response = await _recover_session(orch, key, text, ctx)
         if _reg.was_aborted(key.chat_id) or _reg.was_interrupted(key.chat_id):
             _reg.clear_interrupt(key.chat_id)
@@ -386,8 +452,58 @@ async def normal_streaming(
     cbs: StreamingCallbacks | None = None,
 ) -> OrchestratorResult:
     """Handle normal conversation with streaming output."""
+    return await _normal_streaming_with_options(
+        orch,
+        key,
+        text,
+        StreamingFlowOptions(model_override=model_override, cbs=cbs),
+    )
+
+
+async def provider_native_command(
+    orch: Orchestrator,
+    key: SessionKey,
+    text: str,
+) -> OrchestratorResult:
+    """Send a provider-native command without ControlMesh prompt shaping."""
+    return await _normal_with_options(
+        orch,
+        key,
+        text,
+        NormalFlowOptions(prompt_policy=NATIVE_COMMAND_PROMPT_POLICY),
+    )
+
+
+async def provider_native_command_streaming(
+    orch: Orchestrator,
+    key: SessionKey,
+    text: str,
+    cbs: StreamingCallbacks,
+) -> OrchestratorResult:
+    """Stream a provider-native command without ControlMesh prompt shaping."""
+    return await _normal_streaming_with_options(
+        orch,
+        key,
+        text,
+        StreamingFlowOptions(cbs=cbs, prompt_policy=NATIVE_COMMAND_PROMPT_POLICY),
+    )
+
+
+async def _normal_streaming_with_options(
+    orch: Orchestrator,
+    key: SessionKey,
+    text: str,
+    options: StreamingFlowOptions,
+) -> OrchestratorResult:
+    """Handle streaming conversation with explicit flow options."""
     logger.info("Streaming flow starting")
-    request, session = await _prepare_normal(orch, key, text, model_override=model_override)
+    request, session = await _prepare_normal(
+        orch,
+        key,
+        text,
+        model_override=options.model_override,
+        prompt_policy=options.prompt_policy,
+    )
     warning = await _gemini_missing_config_key_warning(orch, request)
     if warning is not None:
         logger.warning("Gemini API-key mode without configured controlmesh key")
@@ -395,7 +511,7 @@ async def normal_streaming(
 
     _begin_inflight(orch, request, session, is_recovery=False)
     try:
-        cb = cbs or StreamingCallbacks()
+        cb = options.cbs or StreamingCallbacks()
         response = await orch._cli_service.execute_streaming(
             request,
             on_text_delta=cb.on_text_delta,
@@ -410,7 +526,11 @@ async def normal_streaming(
         ):
             reason = "invalid_session" if _is_invalid_session(response) else "sigkill"
             ctx = _RecoveryContext(
-                reason=reason, model_override=model_override, streaming=True, cbs=cb
+                reason=reason,
+                model_override=options.model_override,
+                streaming=True,
+                cbs=cb,
+                prompt_policy=options.prompt_policy,
             )
             request, session, response = await _recover_session(orch, key, text, ctx)
         if _reg.was_aborted(key.chat_id) or _reg.was_interrupted(key.chat_id):

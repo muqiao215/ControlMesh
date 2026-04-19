@@ -75,6 +75,35 @@ async def test_status_command(orch: Orchestrator) -> None:
     assert "Model:" in result.text
 
 
+async def test_claude_native_mode_routes_slash_commands_to_claude(orch: Orchestrator) -> None:
+    key = SessionKey(chat_id=1)
+    session, _ = await orch._sessions.resolve_session(key, provider="claude", model="opus")
+    session.native_commands_enabled = True
+    await orch._sessions.sync_provider_native_commands(session, enabled=True)
+
+    mock_execute = AsyncMock(return_value=_mock_response(result="Native Claude response"))
+    object.__setattr__(orch._cli_service, "execute", mock_execute)
+
+    result = await orch.handle_message(key, "/compact")
+
+    assert result.text == "Native Claude response"
+    request = mock_execute.call_args[0][0]
+    assert request.prompt == "/compact"
+    assert request.append_system_prompt is None
+    assert request.provider_override == "claude"
+
+
+async def test_claude_native_mode_cm_escape_still_hits_controlmesh(orch: Orchestrator) -> None:
+    key = SessionKey(chat_id=1)
+    session, _ = await orch._sessions.resolve_session(key, provider="claude", model="opus")
+    session.native_commands_enabled = True
+    await orch._sessions.sync_provider_native_commands(session, enabled=True)
+
+    result = await orch.handle_message(key, "/cm /status")
+
+    assert "Model:" in result.text
+
+
 # -- normal flow routing --
 
 

@@ -37,6 +37,8 @@ from controlmesh.history.index import HistoryIndex
 from controlmesh.infra.docker import DockerManager
 from controlmesh.infra.inflight import InflightTracker
 from controlmesh.orchestrator.commands import (
+    cmd_claude_native,
+    cmd_controlmesh,
     cmd_cron,
     cmd_diagnose,
     cmd_history,
@@ -56,6 +58,8 @@ from controlmesh.orchestrator.flows import (
     named_session_streaming,
     normal,
     normal_streaming,
+    provider_native_command,
+    provider_native_command_streaming,
 )
 from controlmesh.orchestrator.hooks import (
     DELEGATION_BRIEF,
@@ -351,7 +355,9 @@ class Orchestrator:
         head, *tail = normalized.split(None, 1)
         head = head.split("@", 1)[0]
         rebuilt = head if not tail else f"{head} {tail[0]}"
-        return rebuilt == "/history" or rebuilt.startswith("/history ")
+        return rebuilt in {"/history", "/cm /history"} or rebuilt.startswith(
+            ("/history ", "/cm /history ")
+        )
 
     async def _record_frontstage_user_turn(self, key: SessionKey, text: str) -> None:
         """Persist the user's visible frontstage turn."""
@@ -427,6 +433,9 @@ class Orchestrator:
         return await asyncio.to_thread(self._transcripts.read_recent, key, limit=limit)
 
     async def _route_message(self, dispatch: _MessageDispatch) -> OrchestratorResult:
+        if await self._should_route_to_claude_native_mode(dispatch):
+            return await self._route_provider_native_message(dispatch)
+
         result = await self._command_registry.dispatch(
             dispatch.cmd,
             self,
@@ -436,6 +445,13 @@ class Orchestrator:
         if result is not None:
             return result
 
+        return await self._route_non_command_message(dispatch)
+
+    async def _route_non_command_message(
+        self,
+        dispatch: _MessageDispatch,
+    ) -> OrchestratorResult:
+        """Route a message that was not claimed by ControlMesh commands."""
         await self._ensure_docker()
 
         directives = parse_directives(dispatch.text, self._providers._known_model_ids)
@@ -491,6 +507,10 @@ class Orchestrator:
         reg.register_async("/memory", cmd_memory)
         reg.register_async("/history", cmd_history)
         reg.register_async("/history ", cmd_history)
+        reg.register_async("/claude_native", cmd_claude_native)
+        reg.register_async("/claude_native ", cmd_claude_native)
+        reg.register_async("/cm", cmd_controlmesh)
+        reg.register_async("/cm ", cmd_controlmesh)
         reg.register_async("/cron", cmd_cron)
         reg.register_async("/diagnose", cmd_diagnose)
         reg.register_async("/upgrade", cmd_upgrade)
@@ -565,6 +585,48 @@ class Orchestrator:
     def resolve_runtime_target(self, requested_model: str | None = None) -> tuple[str, str]:
         """Resolve requested model to the effective ``(model, provider)`` pair."""
         return self._providers.resolve_runtime_target(requested_model)
+
+    async def dispatch_controlmesh_command(self, key: SessionKey, text: str) -> OrchestratorResult:
+        """Dispatch a nested ControlMesh slash command directly."""
+        result = await self._command_registry.dispatch(text.strip().lower(), self, key, text)
+        if result is not None:
+            return result
+        head = text.strip().split(None, 1)[0] if text.strip() else "/"
+        return OrchestratorResult(text=f"Unknown ControlMesh command: {head}")
+
+    async def _should_route_to_claude_native_mode(self, dispatch: _MessageDispatch) -> bool:
+        """Return True when this slash command should bypass CM and hit Claude directly."""
+        normalized = dispatch.cmd.strip()
+        if not normalized.startswith("/"):
+            return False
+
+        head = normalized.split(None, 1)[0].split("@", 1)[0]
+        if head in {"/claude_native", "/cm"}:
+            return False
+
+        session = await self._sessions.get_active(dispatch.key)
+        if session is None:
+            return False
+        return session.provider == "claude" and session.native_commands_enabled
+
+    async def _route_provider_native_message(
+        self,
+        dispatch: _MessageDispatch,
+    ) -> OrchestratorResult:
+        """Send the raw message to the active provider without CM slash dispatch."""
+        if dispatch.streaming:
+            return await provider_native_command_streaming(
+                self,
+                dispatch.key,
+                dispatch.text,
+                dispatch.streaming_callbacks(),
+            )
+
+        return await provider_native_command(
+            self,
+            dispatch.key,
+            dispatch.text,
+        )
 
     def wire_observers_to_bus(
         self,

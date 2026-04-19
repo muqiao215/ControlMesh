@@ -84,6 +84,67 @@ async def cmd_model(orch: Orchestrator, key: SessionKey, text: str) -> Orchestra
     return OrchestratorResult(text=result_text)
 
 
+async def cmd_claude_native(orch: Orchestrator, key: SessionKey, text: str) -> OrchestratorResult:
+    """Handle /claude_native [on|off|status]."""
+    parts = text.strip().split(None, 1)
+    action = parts[1].strip().lower() if len(parts) > 1 else "status"
+    if action not in {"on", "off", "status"}:
+        return OrchestratorResult(text="Usage: /claude_native [on|off|status]")
+
+    active = await orch._sessions.get_active(key)
+    if active is not None:
+        provider = active.provider
+        model = active.model
+    else:
+        model, provider = orch.resolve_runtime_target(orch._config.model)
+
+    if provider != "claude":
+        return OrchestratorResult(
+            text=(
+                "Claude native command mode is only available when the active provider is Claude.\n"
+                "Switch to a Claude model first, then retry."
+            )
+        )
+
+    session, _is_new = await orch._sessions.resolve_session(
+        key,
+        provider=provider,
+        model=model,
+        preserve_existing_target=False,
+    )
+
+    if action == "status":
+        mode = "on" if session.native_commands_enabled else "off"
+        return OrchestratorResult(
+            text=(
+                f"Claude native command mode: {mode}\n"
+                "When on, subsequent /xxx messages go to Claude first.\n"
+                "Use /cm /status or /cm /model ... to force ControlMesh commands."
+            )
+        )
+
+    enabled = action == "on"
+    await orch._sessions.sync_provider_native_commands(session, enabled=enabled)
+    mode = "on" if enabled else "off"
+    return OrchestratorResult(
+        text=(
+            f"Claude native command mode: {mode}\n"
+            "Use /cm /status or /cm /model ... to force ControlMesh commands."
+        )
+    )
+
+
+async def cmd_controlmesh(orch: Orchestrator, key: SessionKey, text: str) -> OrchestratorResult:
+    """Handle /cm <controlmesh-command> as an escape hatch from native mode."""
+    parts = text.strip().split(None, 1)
+    if len(parts) < 2 or not parts[1].strip():
+        return OrchestratorResult(text="Usage: /cm /status")
+    nested = parts[1].strip()
+    if not nested.startswith("/"):
+        return OrchestratorResult(text="Usage: /cm /status")
+    return await orch.dispatch_controlmesh_command(key, nested)
+
+
 async def cmd_memory(orch: Orchestrator, _key: SessionKey, _text: str) -> OrchestratorResult:
     """Handle /memory."""
     logger.info("Memory requested")
@@ -450,6 +511,7 @@ async def _build_status(orch: Orchestrator, key: SessionKey) -> str:
             f"{t('status.messages_line', count=session.message_count)}\n"
             f"{t('status.tokens_line', tokens=f'{session.total_tokens:,}')}\n"
             f"{t('status.cost_line', cost=f'{session.total_cost_usd:.4f}')}\n"
+            f"Claude native mode: {'on' if session.native_commands_enabled else 'off'}\n"
             f"{_model_line(session.model)}"
         )
     else:

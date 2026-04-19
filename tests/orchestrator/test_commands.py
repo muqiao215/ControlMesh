@@ -9,6 +9,7 @@ from controlmesh.cli.auth import AuthResult, AuthStatus
 from controlmesh.history import TranscriptAttachment, TranscriptTurn
 from controlmesh.orchestrator.commands import (
     HistoryRequestKind,
+    cmd_claude_native,
     cmd_cron,
     cmd_diagnose,
     cmd_history,
@@ -113,6 +114,35 @@ async def test_status_prefers_session_model_over_config(orch: Orchestrator) -> N
     with patch("controlmesh.orchestrator.commands.check_all_auth", return_value={}):
         result = await cmd_status(orch, SessionKey(chat_id=1), "/status")
     assert "Model: gpt-5.2-codex (configured: opus)" in result.text
+
+
+async def test_claude_native_on_requires_claude_provider(orch: Orchestrator) -> None:
+    await orch._sessions.resolve_session(
+        SessionKey(chat_id=1), provider="codex", model="gpt-5.2-codex"
+    )
+
+    result = await cmd_claude_native(orch, SessionKey(chat_id=1), "/claude_native on")
+
+    assert "only available when the active provider is Claude" in result.text
+
+
+async def test_claude_native_on_off_updates_provider_local_mode(orch: Orchestrator) -> None:
+    key = SessionKey(chat_id=1)
+
+    enabled = await cmd_claude_native(orch, key, "/claude_native on")
+    assert "Claude native command mode: on" in enabled.text
+
+    session = await orch._sessions.get_active(key)
+    assert session is not None
+    assert session.provider == "claude"
+    assert session.native_commands_enabled is True
+
+    disabled = await cmd_claude_native(orch, key, "/claude_native off")
+    assert "Claude native command mode: off" in disabled.text
+
+    session = await orch._sessions.get_active(key)
+    assert session is not None
+    assert session.native_commands_enabled is False
 
 
 # -- cmd_memory --
