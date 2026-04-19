@@ -92,15 +92,14 @@ def render_feishu_streaming_card(
     tool_steps: tuple[_ToolStep, ...] = (),
 ) -> dict[str, object]:
     """Render a CardKit streaming card shell."""
-    content = _render_streaming_content(
-        body=body,
-        status=status,
-        tool_steps=tool_steps,
-    )
     elements: list[dict[str, object]] = [
         {
             "tag": "markdown",
-            "content": content,
+            "content": _render_streaming_content(
+                body=body,
+                status=status,
+                tool_steps=tool_steps,
+            ),
             "element_id": "content",
         }
     ]
@@ -223,14 +222,15 @@ class FeishuCardStreamReporter:
         if not tool_name or self._saw_text_delta:
             return
         self._mark_tool_running(tool_name)
-        await self._set_body(self._body or "处理中...")
+        await self._set_body(f"[TOOL: {tool_name}]")
 
     async def on_agent_event(self, event: Mapping[str, Any]) -> None:
         """Consume a feishu-auth-kit AgentEvent-compatible payload."""
         step = tool_step_from_auth_kit_agent_event(event)
         if step is not None:
             self._append_or_update_tool_step(step)
-            await self._set_body(self._body or "处理中...")
+            if step.status == "running" and not self._saw_text_delta:
+                await self._set_body(f"[TOOL: {step.name}]")
             return
         kind = str(event.get("kind") or "")
         text = event.get("text")
@@ -347,7 +347,7 @@ class FeishuCardStreamReporter:
         self._sequence += 1
         await self._bot._close_streaming_card(
             self._card_id,
-            summary=_truncate_summary(f"{_STATUS_LABELS.get(self._status, self._status)} {final_text}"),
+            summary=_truncate_summary(final_text),
             sequence=self._sequence,
             uuid=f"c_{self._card_id}_{self._sequence}",
         )
@@ -382,17 +382,8 @@ def _render_streaming_content(
     status: str,
     tool_steps: tuple[_ToolStep, ...],
 ) -> str:
-    status_label = _STATUS_LABELS.get(status, status)
-    tool_lines = "\n".join(
-        f"- {step.name}: {step.status}"
-        for step in tool_steps
-    ) or "- none"
-    return (
-        f"**状态**\n- {status_label}\n\n"
-        f"**工具步骤**\n{tool_lines}\n\n"
-        f"**输出**\n{body or '处理中...'}\n\n"
-        f"**终态**\n- {status_label if status in {'success', 'error'} else 'pending'}"
-    )
+    del status, tool_steps
+    return body or "处理中..."
 
 
 def _single_card_run_body(run: Mapping[str, Any]) -> str:

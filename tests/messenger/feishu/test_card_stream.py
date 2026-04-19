@@ -26,7 +26,6 @@ def test_render_feishu_streaming_card_enables_cardkit_streaming() -> None:
     assert card["config"]["streaming_mode"] is True
     assert card["config"]["streaming_config"]["print_frequency_ms"]["default"] == 50
     assert card["body"]["elements"][0]["element_id"] == "content"
-    assert "状态" in card["body"]["elements"][0]["content"]
     assert "处理中..." in card["body"]["elements"][0]["content"]
     assert card["body"]["elements"][2]["element_id"] == "note"
 
@@ -68,7 +67,7 @@ async def test_card_stream_reporter_updates_cardkit_content_and_closes_settings(
     assert bot._update_streaming_card_content.await_count >= 1
     final_content = bot._update_streaming_card_content.await_args_list[-1].args[1]
     assert "hello, world" in final_content
-    assert "状态" in final_content
+    assert "状态" not in final_content
     bot._close_streaming_card.assert_awaited_once()
 
 
@@ -92,11 +91,10 @@ async def test_card_stream_reporter_renders_structured_tool_steps_and_terminal_s
     await reporter.close()
 
     final_content = bot._update_streaming_card_content.await_args_list[-1].args[1]
-    assert "工具步骤" in final_content
-    assert "contact.search_user" in final_content
-    assert "success" in final_content
-    assert "终态" in final_content
-    assert "success" in final_content
+    first_update = bot._update_streaming_card_content.await_args_list[0].args[1]
+    assert "[TOOL: contact.search_user]" in first_update
+    assert "找到 Alice" in final_content
+    assert "工具步骤" not in final_content
 
 
 def test_card_stream_converts_auth_kit_agent_event_tool_steps() -> None:
@@ -146,8 +144,7 @@ def test_card_stream_renders_auth_kit_single_card_run_contract() -> None:
 
     content = card["body"]["elements"][0]["content"]
     assert "列出 2 个文件" in content
-    assert "Tool: drive.list_files" in content
-    assert "success" in content
+    assert "状态" not in content
 
 
 @pytest.mark.asyncio
@@ -188,6 +185,5 @@ async def test_card_stream_reporter_consumes_auth_kit_events_and_single_card_run
     await reporter.close()
 
     final_content = bot._update_streaming_card_content.await_args_list[-1].args[1]
-    assert "Tool: drive.list_files" in final_content
     assert "列出 2 个文件" in final_content
-    assert "终态" in final_content
+    assert "终态" not in final_content
