@@ -8,9 +8,11 @@
    - Claude Code CLI: `npm install -g @anthropic-ai/claude-code && claude auth`
    - Codex CLI: `npm install -g @openai/codex && codex auth`
    - Gemini CLI: `npm install -g @google/gemini-cli` and authenticate in `gemini`
-4. One of these messaging transports:
-   - **Telegram**: Bot token from [@BotFather](https://t.me/BotFather) + user ID from [@userinfobot](https://t.me/userinfobot)
-   - **Matrix**: install Matrix support first (`controlmesh install matrix` or `pip install \"controlmesh[matrix]\"`), then provide homeserver URL, user ID, and password/access token
+4. One chat entrypoint:
+   - **Feishu**: native/runtime-first path; see [Feishu Setup](feishu-setup.md)
+   - **Telegram**: mature token-based path; use a bot token from [@BotFather](https://t.me/BotFather) + user ID from [@userinfobot](https://t.me/userinfobot)
+   - **WeChat / Weixin**: QR-login path through Weixin iLink; see [Weixin Setup](weixin-setup.md)
+   - **Matrix**: optional secondary compatibility transport; install Matrix support first (`controlmesh install matrix` or `pip install "controlmesh[matrix]"`)
 5. Docker optional (recommended for sandboxing)
 
 ## Install
@@ -45,16 +47,16 @@ controlmesh
 On first run, onboarding does:
 
 - checks Claude/Codex/Gemini auth status,
-- asks which transport to use (Telegram or Matrix),
+- asks which transport to use for the wizard-supported setup path,
 - collects transport credentials,
 - asks timezone,
 - offers Docker sandboxing (with optional AI/ML package selection),
 - offers service install,
 - writes config and seeds `~/.controlmesh/`.
 
-Multiple transports can run in parallel (e.g. Telegram + Matrix
-simultaneously). After initial setup, configure the `transports` array
-in `config.json`. See [config.md](config.md) for details.
+Multiple transports can run in parallel (for example Feishu + Telegram, or
+Telegram + WeChat). After initial setup, configure the `transports` array in
+`config.json`. See [config.md](config.md) for details.
 
 If service install succeeds, onboarding returns without starting foreground bot.
 

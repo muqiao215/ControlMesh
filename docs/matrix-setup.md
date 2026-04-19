@@ -1,6 +1,9 @@
 # Matrix Setup Guide
 
-controlmesh's primary transport is Telegram. Matrix is an optional second transport you can add at any time — either as the only transport or running alongside Telegram.
+ControlMesh's primary public chat entrypoints are Feishu native, Telegram, and
+WeChat/Weixin. Matrix is an optional secondary compatibility transport you can
+add at any time — either as the only transport or running alongside the other
+entrypoints.
 
 ## 1. Install Matrix support
 
