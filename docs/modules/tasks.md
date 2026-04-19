@@ -56,8 +56,8 @@ Main-home task data:
 
 Task folder seeds include:
 
-- `TASKMEMORY.md`
-- `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`
+- task memory metadata
+- provider runtime instruction files
 
 Startup/maintenance behavior:
 
@@ -102,7 +102,7 @@ Resume behavior:
 Tasks preserve topic context:
 
 - `TaskEntry.thread_id` stores origin topic/thread
-- `create_task.py` forwards `CONTROLMESH_CHAT_ID` and `CONTROLMESH_TOPIC_ID` to `/tasks/create`
+- the task creation helper forwards `CONTROLMESH_CHAT_ID` and `CONTROLMESH_TOPIC_ID` to `/tasks/create`
 - result/question envelopes map `thread_id -> topic_id`
 - parent-session injection resumes the correct topic session
 
@@ -147,10 +147,10 @@ Bulk cleanup path:
 
 From task agent context:
 
-- `create_task.py`
-- `resume_task.py`
-- `ask_parent.py`
-- `list_tasks.py`
+- create task
+- resume task
+- ask parent
+- list tasks
 - `cancel_task.py`
 - `delete_task.py`
 

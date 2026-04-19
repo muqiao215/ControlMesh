@@ -11,31 +11,32 @@ secondary compatibility/runtime modules.
 
 1. `docs/feishu-setup.md` -- Feishu native bootstrap, auth boundary, and OAPI tools.
 2. `docs/modules/tasks.md` -- background task loop and runtime primitives.
-3. `docs/installation.md` -- install path, Telegram basics, and transport choices.
-4. `docs/weixin-setup.md` -- WeChat/Weixin QR login and reply readiness.
-5. `docs/case-pack/README.md` -- case-pack canonical source, semantic lint, and renderer contract.
-6. `docs/system_overview.md` -- fastest end-to-end mental model.
-7. `docs/developer_quickstart.md` -- shortest path for contributors/junior devs.
-8. `docs/modules/setup_wizard.md` -- CLI commands, onboarding, restart/upgrade lifecycle.
-9. `docs/modules/service_management.md` -- systemd/launchd/Task Scheduler backends and operational behavior.
-10. `docs/architecture.md` -- startup, routing, streaming, callbacks, observers.
-11. `docs/config.md` -- config schema, merge behavior, hot-reload boundaries.
-12. `docs/modules/config_reload.md` -- runtime config reload details.
-13. `docs/modules/orchestrator.md` -- routing core, flows, selectors, lifecycle split.
-14. `docs/modules/bus.md` -- unified Envelope/MessageBus delivery architecture.
-15. `docs/modules/session.md` -- transport-aware `SessionKey(transport, chat_id, topic_id)` isolation model.
-16. `docs/modules/api.md` -- direct WebSocket ingress and HTTP file endpoints.
-17. `docs/modules/bot.md` -- Telegram transport (messenger/telegram/), middleware, topic routing.
-18. `docs/modules/cli.md` -- provider wrappers, stream parsing, process control.
-19. `docs/modules/codex-hooks.md` -- Codex-native lifecycle capability matrix and fallback ownership.
-20. `docs/modules/gateways.md` -- transport-neutral gateway config skeleton for future external dispatch.
-21. `docs/modules/team.md` -- additive team state layer, read-only API envelope, and phase machine.
-22. `docs/modules/harness.md` -- file-driven control plane, controller/worker boundaries, automatic adjudication, and TDD/live/checkpoint governance.
-23. `docs/modules/cli_commands.md` -- CLI command split from `__main__.py`.
-24. `docs/modules/workspace.md` -- `~/.controlmesh` seeding, rules sync, skill sync.
-25. `docs/modules/memory_v2.md` -- additive `MEMORY.md` / daily memory / dreaming-state substrate.
-26. `docs/modules/multiagent.md` -- supervisor, bus bridge, sub-agent runtime.
-27. Remaining module docs (`matrix`, `background`, `cron`, `webhook`, `heartbeat`, `cleanup`, `infra`, `supervisor`, `security`, `logging`, `files`, `text`, `skill_system`).
+3. `docs/telegram-setup.md` -- Telegram bot token setup, allowlists, and everyday runtime usage.
+4. `docs/installation.md` -- install path and transport choices.
+5. `docs/weixin-setup.md` -- WeChat/Weixin QR login and reply readiness.
+6. `docs/case-pack/README.md` -- case-pack canonical source, semantic lint, and renderer contract.
+7. `docs/system_overview.md` -- fastest end-to-end mental model.
+8. `docs/developer_quickstart.md` -- shortest path for contributors/junior devs.
+9. `docs/modules/setup_wizard.md` -- CLI commands, onboarding, restart/upgrade lifecycle.
+10. `docs/modules/service_management.md` -- systemd/launchd/Task Scheduler backends and operational behavior.
+11. `docs/architecture.md` -- startup, routing, streaming, callbacks, observers.
+12. `docs/config.md` -- config schema, merge behavior, hot-reload boundaries.
+13. `docs/modules/config_reload.md` -- runtime config reload details.
+14. `docs/modules/orchestrator.md` -- routing core, flows, selectors, lifecycle split.
+15. `docs/modules/bus.md` -- unified Envelope/MessageBus delivery architecture.
+16. `docs/modules/session.md` -- transport-aware `SessionKey(transport, chat_id, topic_id)` isolation model.
+17. `docs/modules/api.md` -- direct WebSocket ingress and HTTP file endpoints.
+18. `docs/modules/bot.md` -- Telegram transport (messenger/telegram/), middleware, topic routing.
+19. `docs/modules/cli.md` -- provider wrappers, stream parsing, process control.
+20. `docs/modules/codex-hooks.md` -- Codex-native lifecycle capability matrix and fallback ownership.
+21. `docs/modules/gateways.md` -- transport-neutral gateway config skeleton for future external dispatch.
+22. `docs/modules/team.md` -- additive team state layer, read-only API envelope, and phase machine.
+23. `docs/modules/harness.md` -- file-driven control plane, controller/worker boundaries, automatic adjudication, and TDD/live/checkpoint governance.
+24. `docs/modules/cli_commands.md` -- CLI command split from `__main__.py`.
+25. `docs/modules/workspace.md` -- `~/.controlmesh` seeding, rules sync, skill sync.
+26. `docs/modules/memory_v2.md` -- additive `MEMORY.md` / daily memory / dreaming-state substrate.
+27. `docs/modules/multiagent.md` -- supervisor, bus bridge, sub-agent runtime.
+28. Remaining module docs (`matrix`, `background`, `cron`, `webhook`, `heartbeat`, `cleanup`, `infra`, `supervisor`, `security`, `logging`, `files`, `text`, `skill_system`).
 
 ## System in 60 Seconds
 
@@ -69,6 +70,7 @@ Runtime behavior notes:
 - [System Overview](system_overview.md)
 - [Installation](installation.md)
 - [Feishu Setup](feishu-setup.md)
+- [Telegram Setup](telegram-setup.md)
 - [WeChat / Weixin Setup](weixin-setup.md)
 - [Matrix Setup](matrix-setup.md)
 - [Case-Pack](case-pack/README.md)

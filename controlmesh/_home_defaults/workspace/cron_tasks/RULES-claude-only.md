@@ -1,7 +1,7 @@
 # Cron Tasks
 
 This directory contains isolated task folders used by scheduled jobs.
-For cron tool commands (add/edit/remove/list), see `tools/cron_tools/CLAUDE.md`.
+For cron tool commands (add/edit/remove/list), see the cron tools guide.
 
 ## ⚠️ MANDATORY WORKFLOW: Creating Cron Jobs
 
@@ -41,7 +41,7 @@ That sub-agent has no Telegram chat history and no main-session context.
 
 ```text
 cron_tasks/<name>/
-  CLAUDE.md            # fixed task rules (do not edit)
+  provider-rule file   # fixed task rules (do not edit)
   TASK_DESCRIPTION.md  # task instructions (edit this)
   <name>_MEMORY.md     # task-local memory
   scripts/             # task-specific helpers
@@ -51,7 +51,7 @@ cron_tasks/<name>/
 
 - Edit behavior in `TASK_DESCRIPTION.md`.
 - Keep jobs edited in place (`cron_edit.py`), do not recreate unless required.
-- Do not edit task-folder `CLAUDE.md` manually.
+- Do not edit task-folder provider rule files manually.
 - Do not manually delete task folders; use `cron_remove.py`.
 
 ## Memory During Setup

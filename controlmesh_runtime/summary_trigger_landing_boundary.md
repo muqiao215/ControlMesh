@@ -131,15 +131,15 @@ artifact.
 
 Typed summaries may later become inputs to:
 
-- `findings.md`
-- `progress.md`
+- canonical findings
+- canonical progress
 - review submission
 - handoff preparation
 
 They must not:
 
-- overwrite `findings.md` automatically
-- overwrite `progress.md` automatically
+- overwrite canonical findings automatically
+- overwrite canonical progress automatically
 - overwrite canonical state
 - overwrite review truth
 

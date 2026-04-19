@@ -22,7 +22,7 @@ You do not modify canonical state.
 4. `proposed_*` does not auto-apply. The controller reviews and promotes them.
 5. You may not upgrade a candidate capability into canonical contract.
 6. You may not widen the command surface or frozen scope because something "looks close".
-7. In pure automatic mode, do not use `ask_parent` for adjudication or policy questions. If blocked, record the blocking condition in `result.md` and `evidence.yaml`.
+7. In pure automatic mode, do not use `ask_parent` for adjudication or policy questions. If blocked, record the blocking condition in the worker result file and `evidence.yaml`.
 
 ## Execution Rules
 
@@ -33,13 +33,13 @@ You do not modify canonical state.
 
 ## Required Outputs
 
-- `result.md`
+- worker result file
 - `evidence.yaml`
 - `logs/*` when verification output matters
 - `artifacts/*` when command or live output matters
 - `proposed_*` only when useful for controller promotion
 
-## `result.md` must contain
+## The worker result file must contain
 
 - what you did
 - what you explicitly did not do

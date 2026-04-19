@@ -238,4 +238,4 @@ Native-only OAPI MVP:
 
 Official Feishu self-built app guide:
 
-- <https://open.feishu.cn/document/home/introduction-to-custom-app-development/self-built-application-development-process>
+- Search the Feishu Open Platform docs for "self-built application development process".

@@ -269,7 +269,7 @@ Behavior notes:
 
 ### `mount_host_cache`
 
-Mounts the host's platform-specific cache directory into the container at `/home/node/.cache`:
+Mounts the host's platform-specific cache directory into a fixed cache path inside the container:
 
 | Platform | Host path |
 |---|---|
@@ -286,7 +286,7 @@ Disabled by default because it exposes the host cache directory to the sandbox.
 User-defined directory mounts for project/data access inside Docker sandbox.
 
 - each entry is expanded (`~`, env vars), resolved, and validated as an existing directory
-- each entry is just a host directory path (for example `"/home/you/projects"`), not Docker `host:container[:mode]` syntax
+- each entry is just a host directory path (for example `"~/projects"`), not Docker `host:container[:mode]` syntax
 - invalid or missing entries are skipped with warnings
 - container target path is derived from host basename: `/mnt/<sanitized-name>`
 - duplicate target names are disambiguated as `/mnt/name_2`, `/mnt/name_3`, ...

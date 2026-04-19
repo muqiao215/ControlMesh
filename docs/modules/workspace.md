@@ -59,7 +59,7 @@ Directory creation note:
 
 ### Zone 2 (always overwritten)
 
-- `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`
+- provider runtime instruction files
 - `.py` files in:
   - `workspace/tools/cron_tools/`
   - `workspace/tools/webhook_tools/`
@@ -68,7 +68,7 @@ Directory creation note:
 
 Special case:
 
-- when copying a template `CLAUDE.md`, init also writes mirrored `AGENTS.md` and `GEMINI.md` in same target dir.
+- when copying a provider template, init also writes mirrored provider files in the same target dir.
 
 ### Zone 3 (seed once)
 
@@ -101,9 +101,9 @@ Variant selection:
 
 Deployment outputs per authenticated provider:
 
-- Claude -> `CLAUDE.md`
-- Codex -> `AGENTS.md`
-- Gemini -> `GEMINI.md`
+- Claude -> Claude provider instruction file
+- Codex -> Codex provider instruction file
+- Gemini -> Gemini provider instruction file
 
 Cleanup removes stale provider files for unauthenticated providers, except inside `workspace/cron_tasks/` (user-owned task rules).
 
@@ -111,9 +111,7 @@ Cleanup removes stale provider files for unauthenticated providers, except insid
 
 Recursive mtime-based sync for:
 
-- `CLAUDE.md`
-- `AGENTS.md`
-- `GEMINI.md`
+- provider runtime instruction files
 
 Per directory:
 
@@ -130,7 +128,7 @@ Watcher detail per cycle:
 
 ## Runtime environment injection
 
-`inject_runtime_environment(paths, docker_container=...)` appends two sections to each existing workspace rule file (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`):
+`inject_runtime_environment(paths, docker_container=...)` appends two sections to each existing workspace provider instruction file:
 
 - `## Multi-Agent Identity` (main/sub-agent context + communication hints)
 - Docker mode notice (`/controlmesh` mount)
@@ -144,15 +142,13 @@ Duplicate prevention: injection is skipped when either marker already exists (`#
 
 ```text
 cron_tasks/<safe_name>/
-  CLAUDE.md    # only if Claude authenticated
-  AGENTS.md    # only if Codex authenticated
-  GEMINI.md    # only if Gemini authenticated
+  provider-rule files
   TASK_DESCRIPTION.md
   <safe_name>_MEMORY.md
   scripts/
 ```
 
-Rule file selection is based on which provider rule files exist in the parent `cron_tasks/` directory (deployed by `RulesSelector` during workspace init). Falls back to `CLAUDE.md` when no parent rule files are found.
+Rule file selection is based on which provider rule files exist in the parent `cron_tasks/` directory (deployed by `RulesSelector` during workspace init). It falls back to the default provider template when no parent rule files are found.
 
 Path traversal protection is enforced for create/delete operations.
 

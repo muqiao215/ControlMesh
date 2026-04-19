@@ -81,7 +81,7 @@ The wizard prompts for: homeserver URL, bot user ID, password, and allowed users
 Runtime support for Matrix sub-agents is built in, but there is one CLI caveat:
 
 - `controlmesh agents add <name>` currently scaffolds Telegram sub-agents only
-- Matrix sub-agents are added through `agents.json` or `create_agent.py --transport matrix` (see agent tools `RULES.md`)
+- Matrix sub-agents are added through `agents.json` or the agent creation tool.
 
 ## Configuration
 

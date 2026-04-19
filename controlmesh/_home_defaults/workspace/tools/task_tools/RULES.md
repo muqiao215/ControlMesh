@@ -17,9 +17,7 @@ separate CLI session while you keep chatting with the user.
 
 ## Creating a task
 
-```bash
-python3 tools/task_tools/create_task.py --name "Flugsuche Paris" "Suche verfügbare Flüge nach Paris für 2 Personen im Juni. Vergleiche Preise und Airlines."
-```
+Use the task creation tool with a short name and a complete prompt.
 
 Options:
 - `--name NAME` — human-readable task name (recommended)
@@ -57,9 +55,8 @@ Resume continues the task's CLI session — the agent keeps its full context
 from the previous run. Use this instead of creating a new task when you want
 to build on existing work.
 
-```bash
-python3 tools/task_tools/resume_task.py TASK_ID "jetzt nur 2-Wochen-Reisen suchen"
-```
+Example: resume the same task with a short follow-up prompt such as
+"jetzt nur 2-Wochen-Reisen suchen".
 
 Runs on the **original provider/model**, regardless of current chat provider.
 
@@ -71,13 +68,13 @@ Runs on the **original provider/model**, regardless of current chat provider.
 ### Resume examples
 
 1. Task searched Python best practices → user wants more on testing
-   → `resume_task.py TASK_ID "Jetzt speziell Testing best practices vertiefen"`
+→ resume the same task with the testing follow-up
 
 2. Task asked "Für wann?" via ask_parent → user says "Juni"
-   → `resume_task.py TASK_ID "Reisezeitraum: Juni 2026, ab Frankfurt FRA"`
+→ resume the same task with the missing travel details
 
 3. Task found flight options → user wants cheaper alternatives
-   → `resume_task.py TASK_ID "Günstigere Alternativen suchen, Budget max 300€"`
+→ resume the same task with the cheaper-alternatives request
 
 ## Inside a task (for task agents only)
 
@@ -89,7 +86,7 @@ python3 tools/task_tools/ask_parent.py "your question"
 
 This forwards your question and returns immediately. The parent agent
 will resume your task with the answer. After calling this, finish your
-current work and update TASKMEMORY.md — you will be resumed.
+current work and update the task memory file — you will be resumed.
 
 In pure automatic harness mode, do not use `ask_parent.py` for scope, policy,
 acceptance, or exception decisions. Record the blocking condition instead and

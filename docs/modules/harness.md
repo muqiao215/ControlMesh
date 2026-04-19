@@ -54,13 +54,13 @@ This is the file-backed external state machine.
 
 Core files:
 
-- `task_plan.md`
-- `findings.md`
-- `progress.md`
+- plan file
+- findings file
+- progress file
 
 These are not narrative docs. They have distinct responsibilities.
 
-### `task_plan.md`
+### Plan file
 
 Answers:
 
@@ -70,7 +70,7 @@ Answers:
 - what is explicitly out of scope
 - what are the completion conditions
 
-### `findings.md`
+### Findings file
 
 Answers:
 
@@ -79,7 +79,7 @@ Answers:
 - which risks remain
 - why something is deferred, split, stopped, or accepted
 
-### `progress.md`
+### Progress file
 
 Answers:
 
@@ -91,13 +91,13 @@ Answers:
 
 In short:
 
-- `task_plan.md` = plan
-- `findings.md` = facts
-- `progress.md` = state
+- plan file = plan
+- findings file = facts
+- progress file = state
 
 ## Template shapes
 
-### `progress.md`
+### Progress file
 
 ```md
 # Latest Completed
@@ -116,7 +116,7 @@ checkpoint-source-family-cut-1
 No new scope opened.
 ```
 
-### `result.md`
+### Worker result file
 
 Written by a worker.
 
@@ -172,7 +172,7 @@ This is the hardest rule in the harness.
 
 Workers may write:
 
-- `result.md`
+- worker result file
 - `evidence.yaml`
 - `logs/`
 - `artifacts/`
@@ -182,12 +182,12 @@ Workers may write:
 
 Only the controller may write:
 
-- `_program/task_plan.md`
-- `_program/findings.md`
-- `_program/progress.md`
-- product-line `task_plan.md`
-- product-line `findings.md`
-- product-line `progress.md`
+- program plan file
+- program findings file
+- program progress file
+- product-line plan file
+- product-line findings file
+- product-line progress file
 - checkpoint notes
 - stopline notes
 - split-scope notes
@@ -551,23 +551,23 @@ Runtime is for diagnosis.
 plans/
   README.md
   _program/
-    task_plan.md
-    findings.md
-    progress.md
+    plan file
+    findings file
+    progress file
   <line>/
-    task_plan.md
-    findings.md
-    progress.md
+    plan file
+    findings file
+    progress file
   tasks/
     README.md
     <task-id>/
       task_brief.md
       acceptance.yaml
       deliverables.yaml
-      result.md
+      worker result file
       evidence.yaml
-      proposed_progress_update.md
-      proposed_findings_update.md
+      proposed progress update
+      proposed findings update
       proposed_plan_delta.md
       logs/
       artifacts/
@@ -580,7 +580,7 @@ plans/
 
 ## Minimal templates
 
-### `task_plan.md`
+### Plan file
 
 ```md
 # Current Goal
@@ -613,7 +613,7 @@ active_primary
 - checkpoint note written
 ```
 
-### `findings.md`
+### Findings file
 
 ```md
 # Confirmed Facts
@@ -635,7 +635,7 @@ active_primary
 - accepted as pass_with_notes on 2026-xx-xx
 ```
 
-### `progress.md`
+### Progress file
 
 ```md
 # Recent Activity

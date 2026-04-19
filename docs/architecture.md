@@ -258,14 +258,14 @@ Source: `controlmesh/_home_defaults/`.
 Zone rules (`workspace/init.py`):
 
 - Zone 2 overwrite:
-  - `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`
+  - provider runtime instruction files
   - tool scripts under `workspace/tools/{cron,webhook,agent,task}_tools/*.py`
 - Zone 3 seed-once for other files
 - `RULES*.md` templates are selected/deployed by `RulesSelector`
 
 Rule sync:
 
-- recursive mtime sync for `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`
+- recursive mtime sync for provider runtime instruction files
 - task-folder provider rules backfilled by `ensure_task_rule_files(...)`
 
 ## Multi-Agent Notes

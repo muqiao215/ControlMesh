@@ -53,7 +53,7 @@ Result flow:
 
 - task completion/failure is posted to the chat
 - result is injected into parent agent's current active session (`handle_task_result`)
-- task questions (`ask_parent.py`) are posted and injected via `handle_task_question`
+- task questions are posted and injected via `handle_task_question`
 - forum-topic tasks route back to the originating topic via `thread_id` / `CONTROLMESH_TOPIC_ID`
 
 ## Cron jobs
@@ -66,18 +66,17 @@ Typical task folder:
 
 ```text
 ~/.controlmesh/workspace/cron_tasks/weather-report/
-  CLAUDE.md
-  AGENTS.md
+  provider-rule files
   TASK_DESCRIPTION.md
   weather-report_MEMORY.md
   scripts/
 ```
 
-Rule files are kept in sync automatically (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`) based on newest mtime per directory.
+Provider rule files are kept in sync automatically based on newest mtime per directory.
 
 Rule-file sync behavior (all workspace directories, recursive):
 
-- files: `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`
+- files: provider runtime instruction files
 - source of truth per directory: newest file by mtime
 - sync runs at init (`sync_rule_files`) and continuously (`watch_rule_files`, every 10s)
 - result: edits are propagated to older existing sibling rule files

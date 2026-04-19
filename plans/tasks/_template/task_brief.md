@@ -38,7 +38,7 @@ Describe the exact bounded cut.
 - explicit things this task must not broaden into
 
 # Required Outputs
-- `result.md`
+- worker result file
 - `evidence.yaml`
 - `logs/*` when verification produces meaningful output
 - `artifacts/*` when command or live outputs matter

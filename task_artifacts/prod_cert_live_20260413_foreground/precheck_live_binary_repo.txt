@@ -1,9 +1,9 @@
 === timestamp ===
 2026-04-13T15:13:10+00:00
 === binary path ===
-/root/.local/share/uv/tools/controlmesh/bin/controlmesh
+<home>/.local/share/uv/tools/controlmesh/bin/controlmesh
 === binary shebang/head ===
-#!/root/.local/share/uv/tools/controlmesh/bin/python
+#!<home>/.local/share/uv/tools/controlmesh/bin/python
 # -*- coding: utf-8 -*-
 import sys
 from controlmesh.__main__ import main
@@ -14,15 +14,15 @@ if __name__ == "__main__":
         sys.argv[0] = sys.argv[0][:-4]
     sys.exit(main())
 === uv tool python ===
-/root/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/bin/python3.12
+<home>/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/bin/python3.12
 === import paths ===
-python= /root/.local/share/uv/tools/controlmesh/bin/python
-controlmesh= /root/.controlmesh/analysis/controlmesh-src/controlmesh/__init__.py
-cli.service= /root/.controlmesh/analysis/controlmesh-src/controlmesh/cli/service.py
+python= <home>/.local/share/uv/tools/controlmesh/bin/python
+controlmesh= <home>/.controlmesh/analysis/controlmesh-src/controlmesh/__init__.py
+cli.service= <home>/.controlmesh/analysis/controlmesh-src/controlmesh/cli/service.py
 server.health import error= ModuleNotFoundError("No module named 'controlmesh.server'")
 === repo head/status ===
 068dda516eeade8d44a8670219e931b55d8e47e6
- D GEMINI.md
+ D provider runtime instruction file
  M task_artifacts/prod_cert_live_20260411/live_restart_api_drill.sh
 ?? task_artifacts/prod_cert_live_20260411/live_drill_attempt2/
 ?? task_artifacts/prod_cert_live_20260411/live_drill_attempt3/

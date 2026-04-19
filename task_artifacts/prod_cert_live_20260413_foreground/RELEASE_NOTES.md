@@ -8,9 +8,9 @@ Release anchor:
 
 Canonical references:
 - checkpoint: `task_artifacts/prod_cert_live_20260413_foreground/CHECKPOINT.md`
-- program progress: `plans/_program/progress.md`
-- program findings: `plans/_program/findings.md`
-- program task plan: `plans/_program/task_plan.md`
+- program progress file: `plans/_program/<progress-file>`
+- program findings file: `plans/_program/<findings-file>`
+- program plan file: `plans/_program/<plan-file>`
 
 Evidence bundle:
 - `task_artifacts/prod_cert_live_20260413_foreground/deployment_consistency.log`

@@ -92,7 +92,7 @@ Use `cron_edit.py` for in-place updates (title/description/schedule/timezone/mod
 
 Each job owns `cron_tasks/<name>/TASK_DESCRIPTION.md`.
 Edit that file to change task behavior.
-Do not edit task-folder `CLAUDE.md` manually.
+Do not edit task-folder provider rule files manually.
 
 ## After Cron Setup
 

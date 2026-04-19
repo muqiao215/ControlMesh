@@ -7,10 +7,10 @@ The main Telegram assistant usually runs with cwd `workspace/`.
 
 Read in this order:
 
-1. `workspace/CLAUDE.md` (main behavior + Telegram rules)
-2. `workspace/tools/CLAUDE.md` (tool routing)
+1. the workspace runtime guide (main behavior + Telegram rules)
+2. the workspace tools guide (tool routing)
 3. `workspace/memory_system/MAINMEMORY.md` (long-term context)
-4. `config/CLAUDE.md` (only for config changes)
+4. the config guide (only for config changes)
 
 ## Top-Level Layout
 
@@ -49,7 +49,8 @@ python3 workspace/tools/agent_tools/ask_agent_async.py TARGET_AGENT "Your messag
 ```
 
 Use async for tasks that may take longer. Use sync for quick lookups.
-See `workspace/tools/agent_tools/CLAUDE.md` for all agent management tools.
+See the provider-specific agent tool guide under `workspace/tools/agent_tools/`
+for the full agent management command set.
 
 ### Shared Knowledge
 

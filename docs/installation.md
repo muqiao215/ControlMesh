@@ -10,7 +10,7 @@
    - Gemini CLI: `npm install -g @google/gemini-cli` and authenticate in `gemini`
 4. One chat entrypoint:
    - **Feishu**: native/runtime-first path; see [Feishu Setup](feishu-setup.md)
-   - **Telegram**: mature token-based path; use a bot token from [@BotFather](https://t.me/BotFather) + user ID from [@userinfobot](https://t.me/userinfobot)
+   - **Telegram**: mature token-based path; see [Telegram Setup](telegram-setup.md)
    - **WeChat / Weixin**: QR-login path through Weixin iLink; see [Weixin Setup](weixin-setup.md)
    - **Matrix**: optional secondary compatibility transport; install Matrix support first (`controlmesh install matrix` or `pip install "controlmesh[matrix]"`)
 5. Docker optional (recommended for sandboxing)

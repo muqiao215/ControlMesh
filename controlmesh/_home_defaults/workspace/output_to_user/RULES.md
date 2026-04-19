@@ -15,6 +15,6 @@ Use this directory for user-facing final deliverables.
 4. Keep temporary/intermediate build files elsewhere.
 
 Prefer top-level files in this directory.
-Auto-cleanup removes files older than `cleanup.output_to_user_days` (see `config/CLAUDE.md`).
+Auto-cleanup removes files older than `cleanup.output_to_user_days` (see the config guide).
 Cleanup is non-recursive and targets top-level files only.
 If you create subdirectories, clean them manually when no longer needed.

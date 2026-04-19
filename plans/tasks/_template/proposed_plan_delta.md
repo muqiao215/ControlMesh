@@ -1,3 +1,3 @@
 # Proposed Plan Delta
 
-- Replace with the suggested `task_plan.md` delta.
+- Replace with the suggested plan delta.

@@ -135,6 +135,7 @@ controlmesh api enable
 
 - 安装：[`docs/installation.md`](docs/installation.md)
 - Feishu 设置：[`docs/feishu-setup.md`](docs/feishu-setup.md)
+- Telegram 设置：[`docs/telegram-setup.md`](docs/telegram-setup.md)
 - 微信/WeChat 设置：[`docs/weixin-setup.md`](docs/weixin-setup.md)
 - Case-pack contract：[`docs/case-pack/README.md`](docs/case-pack/README.md)
 - 文档总览：[`docs/README.md`](docs/README.md)
@@ -262,6 +263,7 @@ controlmesh tasks list
 
 - Installation: [`docs/installation.md`](docs/installation.md)
 - Feishu setup: [`docs/feishu-setup.md`](docs/feishu-setup.md)
+- Telegram setup: [`docs/telegram-setup.md`](docs/telegram-setup.md)
 - WeChat/Weixin setup: [`docs/weixin-setup.md`](docs/weixin-setup.md)
 - Case-pack contract: [`docs/case-pack/README.md`](docs/case-pack/README.md)
 - Documentation index: [`docs/README.md`](docs/README.md)

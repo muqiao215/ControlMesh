@@ -33,7 +33,7 @@ Tool scripts require absolute paths (`--file /absolute/path/...`).
 
 - Do not manually edit `_index.yaml`.
 - Do not move/delete files unless user requested it.
-- Auto-cleanup removes files older than `cleanup.media_files_days` (see `config/CLAUDE.md`).
+- Auto-cleanup removes files older than `cleanup.media_files_days` (see the config guide).
   Cleanup is non-recursive (top-level date folders are not auto-pruned).
 
 ## Memory

@@ -45,9 +45,9 @@ Partially proven, but not enough for prod certification.
 
 Proven live:
 
-- The real user-systemd service is installed and active: `systemctl_show.log` records `ActiveState=active`, `SubState=running`, `ExecMainPID=503798`, `Restart=always`, `RestartUSec=5s`, `FragmentPath=/root/.config/systemd/user/controlmesh.service`, and `ActiveEnterTimestamp=Sat 2026-04-11 04:40:52 UTC`.
-- The intended supervisor environment is present: `Environment=... HOME=/root IS_SANDBOX=1 CONTROLMESH_SUPERVISOR=1`.
-- `controlmesh_status.log` reports the live process running with `pid=503798`, provider `codex (gpt-5.4)`, `Errors: 0`, and the real home/config/workspace/log paths under `/root/.controlmesh`.
+- The real user-systemd service is installed and active: `systemctl_show.log` records `ActiveState=active`, `SubState=running`, `ExecMainPID=503798`, `Restart=always`, `RestartUSec=5s`, `FragmentPath=<user-config>/controlmesh.service`, and `ActiveEnterTimestamp=Sat 2026-04-11 04:40:52 UTC`.
+- The intended supervisor environment is present: `Environment=... HOME=<home> IS_SANDBOX=1 CONTROLMESH_SUPERVISOR=1`.
+- `controlmesh_status.log` reports the live process running with `pid=503798`, provider `codex (gpt-5.4)`, `Errors: 0`, and the real home/config/workspace/log paths under `<home>/.controlmesh`.
 - `agent_log_tail.log` shows the runtime startup path completing: workspace init, internal agent API, TaskHub, `AgentStack`, Telegram long-polling, provider auth, and bot online.
 
 Not fully proven:
@@ -72,7 +72,7 @@ Evidence:
 
 - `agent_log_tail.log` shows `[main] Bot online: @V_YueBot (id=8515961362)` and `Run polling for bot @V_YueBot id=8515961362`.
 - `agent_log_tail.log` shows real provider authentication: `[main] Provider [claude]: authenticated` and `[main] Provider [codex]: authenticated`.
-- `agent_log_tail.log` shows real Telegram ingress and provider execution: `Message received text=返回了吗`, `Codex CLI wrapper: cwd=/root/.controlmesh/workspace, model=gpt-5.4`, `Codex subprocess starting`, and `Streaming flow completed`.
+- `agent_log_tail.log` shows real Telegram ingress and provider execution: `Message received text=返回了吗`, `Codex CLI wrapper: cwd=<home>/.controlmesh/workspace, model=gpt-5.4`, `Codex subprocess starting`, and `Streaming flow completed`.
 - The current certification task itself was submitted through the real task/runtime path: `Task submitted id=c1296fd4 name='ControlMesh Prod Certification and Live Deployment Evidence' parent=main provider=(parent default)`, followed by a Codex subprocess start.
 - `internal_health.json` returned `{"agents":{"main":{"status":"running","uptime":"21m","restart_count":0,"last_crash_error":null}}}` from the live internal supervisor API at `127.0.0.1:8799`.
 
@@ -88,7 +88,7 @@ No.
 
 Proven:
 
-- File logs are available at `/root/.controlmesh/logs/agent.log`; `agent_log_tail.log` contains startup, transport, provider, task, and failure-localization evidence.
+- File logs are available at `<home>/.controlmesh/logs/agent.log`; `agent_log_tail.log` contains startup, transport, provider, task, and failure-localization evidence.
 - `systemctl status` exposes recent service logs and live process tree; see `systemctl_status.log` and `controlmesh_service_status.log`.
 - The internal supervisor health endpoint responds; see `internal_health.json`.
 
@@ -108,7 +108,7 @@ Minimal fix made in repo:
 
 Still insufficient:
 
-- The fix has not been deployed into the currently running `/root/.local/bin/controlmesh` service binary.
+- The fix has not been deployed into the currently running installed service binary.
 - A live rollback drill was not executed.
 - Public direct API health/catalog smoke was not executed because `api.enabled=false` and enabling it requires a service restart.
 - After the follow-up drill, a rollback path is now partially evidenced: `live_drill/drill.log` shows the attempt exited with `rc=127`, restored the prior config snapshot, and `live_drill/final_restore_show.log` plus `live_drill/final_restore_status.log` show the service came back running on the restored config.

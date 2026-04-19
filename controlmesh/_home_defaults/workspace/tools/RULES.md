@@ -7,16 +7,16 @@ This is the navigation index for workspace tools.
 - Prefer these tool scripts over manual JSON/file surgery.
 - Run with `python3`.
 - Normal successful runs are JSON-oriented; tutorial/help output may be plain text.
-- Open the matching subfolder `CLAUDE.md` before non-trivial changes.
+- Open the matching subfolder guide before non-trivial changes.
 
 ## Routing
 
-- recurring tasks / schedules -> `cron_tools/CLAUDE.md`
-- incoming HTTP triggers -> `webhook_tools/CLAUDE.md`
-- file/media processing -> `media_tools/CLAUDE.md`
-- sub-agent management (create/remove/list/ask) -> `agent_tools/CLAUDE.md`
-- background tasks (delegate, list, cancel) -> `task_tools/CLAUDE/GEMINI/AGENTS.md`
-- custom user scripts -> `user_tools/CLAUDE.md`
+- recurring tasks / schedules -> `cron_tools/` guide
+- incoming HTTP triggers -> `webhook_tools/` guide
+- file/media processing -> `media_tools/` guide
+- sub-agent management (create/remove/list/ask) -> `agent_tools/` guide
+- background tasks (delegate, list, cancel) -> `task_tools/` guide
+- custom user scripts -> `user_tools/` guide
 
 ## External API Secrets
 

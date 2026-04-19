@@ -5,10 +5,10 @@ Conclusion: prod-ready
 Facts:
 - External takeover completed from meiren over the existing reverse SSH path using the dedicated meiren-to-moonrise key.
 - Live controlmesh binary loads the current repo code directly:
-  - controlmesh: /root/.controlmesh/analysis/controlmesh-src/controlmesh/__init__.py
-  - cli.service: /root/.controlmesh/analysis/controlmesh-src/controlmesh/cli/service.py
-  - service_logs: /root/.controlmesh/analysis/controlmesh-src/controlmesh/infra/service_logs.py
-  - service_linux: /root/.controlmesh/analysis/controlmesh-src/controlmesh/infra/service_linux.py
+  - controlmesh: <home>/.controlmesh/analysis/controlmesh-src/controlmesh/__init__.py
+  - cli.service: <home>/.controlmesh/analysis/controlmesh-src/controlmesh/cli/service.py
+  - service_logs: <home>/.controlmesh/analysis/controlmesh-src/controlmesh/infra/service_logs.py
+  - service_linux: <home>/.controlmesh/analysis/controlmesh-src/controlmesh/infra/service_linux.py
 - Controlled restart drill succeeded:
   - pre-restart ExecMainPID=545767
   - post-restart ExecMainPID=546069

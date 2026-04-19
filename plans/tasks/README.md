@@ -12,7 +12,7 @@ Workers may write:
 - `task_brief.md`
 - `acceptance.yaml`
 - `deliverables.yaml`
-- `result.md`
+- worker result file
 - `evidence.yaml`
 - `proposed_*`
 - `logs/*`

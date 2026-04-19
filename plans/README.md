@@ -18,24 +18,24 @@ The operating rule is:
 plans/
   README.md
   _program/
-    task_plan.md
-    findings.md
-    progress.md
+    canonical plan file
+    canonical findings file
+    canonical progress file
   _line_template/
-    task_plan.md
-    findings.md
-    progress.md
+    plan template
+    findings template
+    progress template
   tasks/
     README.md
     _template/
       task_brief.md
       acceptance.yaml
       deliverables.yaml
-      result.md
+      worker result file
       evidence.yaml
-      proposed_progress_update.md
-      proposed_findings_update.md
-      proposed_plan_delta.md
+      proposed progress update
+      proposed findings update
+      proposed plan delta
       logs/README.md
       artifacts/README.md
   eval/
@@ -50,7 +50,7 @@ plans/
 - `_program/` is canonical program truth.
 - Product lines get their own sibling directories copied from `_line_template/`.
 - `tasks/<task-id>/` is task-local evidence space, not canonical truth.
-- Background workers may write only task-local outputs and `proposed_*` updates.
+- Background workers may write only task-local outputs and proposed updates.
 - Canonical files are promoted only by the controller after adjudication.
 
 ## Standard Progression
