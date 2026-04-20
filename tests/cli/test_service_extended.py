@@ -253,3 +253,45 @@ async def test_execute_streaming_ignores_tool_result_events_in_callback_contract
     assert response.result == "done"
     assert tool_events == []
     assert system_events == []
+
+
+async def test_execute_streaming_dispatches_structured_tool_events(tmp_path: Path) -> None:
+    svc = _make_service(tmp_path, default_model="gpt-5.4", provider="openai_agents")
+
+    class FakeCLI:
+        async def send_streaming(self, **_kwargs: Any) -> Any:
+            yield ToolUseEvent(
+                type="assistant",
+                tool_name="Bash",
+                parameters={"command": "printf hi"},
+            )
+            yield ToolResultEvent(
+                type="tool_result",
+                tool_id="tool-1",
+                tool_name="Bash",
+                status="exit 0",
+                output="hi",
+            )
+            yield ResultEvent(type="result", result="done", is_error=False, returncode=0)
+
+    with patch("controlmesh.cli.service.create_cli", return_value=FakeCLI()):
+        tool_names: list[str] = []
+        tool_events: list[ToolUseEvent | ToolResultEvent] = []
+
+        async def on_tool(name: str) -> None:
+            tool_names.append(name)
+
+        async def on_tool_event(event: ToolUseEvent | ToolResultEvent) -> None:
+            tool_events.append(event)
+
+        response = await svc.execute_streaming(
+            AgentRequest(prompt="test", chat_id=1),
+            on_tool_activity=on_tool,
+            on_tool_event=on_tool_event,
+        )
+
+    assert response.result == "done"
+    assert tool_names == ["Bash"]
+    assert [type(event) for event in tool_events] == [ToolUseEvent, ToolResultEvent]
+    assert tool_events[0].tool_name == "Bash"
+    assert tool_events[1].output == "hi"

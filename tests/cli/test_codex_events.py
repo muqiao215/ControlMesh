@@ -10,6 +10,7 @@ from controlmesh.cli.stream_events import (
     ResultEvent,
     SystemInitEvent,
     ThinkingEvent,
+    ToolResultEvent,
     ToolUseEvent,
 )
 
@@ -163,13 +164,34 @@ def test_stream_command_execution() -> None:
     line = json.dumps(
         {
             "type": "item.started",
-            "item": {"type": "command_execution"},
+            "item": {"type": "command_execution", "command": "ls -la"},
         }
     )
     events = parse_codex_stream_event(line)
     assert len(events) == 1
     assert isinstance(events[0], ToolUseEvent)
     assert events[0].tool_name == "Bash"
+    assert events[0].parameters == {"command": "ls -la"}
+
+
+def test_stream_command_execution_result() -> None:
+    line = json.dumps(
+        {
+            "type": "item.completed",
+            "item": {
+                "type": "command_execution",
+                "command": "printf hi",
+                "aggregated_output": "hi\n",
+                "exit_code": 0,
+            },
+        }
+    )
+    events = parse_codex_stream_event(line)
+    assert len(events) == 1
+    assert isinstance(events[0], ToolResultEvent)
+    assert events[0].tool_name == "Bash"
+    assert events[0].status == "exit 0"
+    assert events[0].output == "hi"
 
 
 def test_stream_file_change() -> None:

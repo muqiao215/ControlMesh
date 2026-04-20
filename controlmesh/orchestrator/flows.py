@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from controlmesh.cli.stream_events import ToolResultEvent, ToolUseEvent
 from controlmesh.cli.timeout_controller import TimeoutConfig as TCConfig
 from controlmesh.cli.timeout_controller import TimeoutController
 from controlmesh.cli.types import AgentRequest, AgentResponse
@@ -35,6 +36,9 @@ class StreamingCallbacks:
 
     on_text_delta: Callable[[str], Awaitable[None]] | None = field(default=None)
     on_tool_activity: Callable[[str], Awaitable[None]] | None = field(default=None)
+    on_tool_event: Callable[[ToolUseEvent | ToolResultEvent], Awaitable[None]] | None = field(
+        default=None
+    )
     on_system_status: Callable[[str | None], Awaitable[None]] | None = field(default=None)
 
 
@@ -313,6 +317,7 @@ async def _recover_session(
             request,
             on_text_delta=cb.on_text_delta,
             on_tool_activity=cb.on_tool_activity,
+            on_tool_event=cb.on_tool_event,
             on_system_status=cb.on_system_status,
         )
     else:
@@ -557,6 +562,7 @@ async def _normal_streaming_with_options(
             request,
             on_text_delta=cb.on_text_delta,
             on_tool_activity=cb.on_tool_activity,
+            on_tool_event=cb.on_tool_event,
             on_system_status=cb.on_system_status,
         )
         _reg = orch._process_registry
@@ -792,6 +798,7 @@ async def named_session_streaming(
         request,
         on_text_delta=_tagged_text_delta,
         on_tool_activity=cb.on_tool_activity,
+        on_tool_event=cb.on_tool_event,
         on_system_status=cb.on_system_status,
     )
 

@@ -15,6 +15,7 @@ from controlmesh.background import (
 from controlmesh.bus.envelope import Envelope, Origin
 from controlmesh.cli.process_registry import ProcessRegistry
 from controlmesh.cli.service import CLIService, CLIServiceConfig
+from controlmesh.cli.stream_events import ToolResultEvent, ToolUseEvent
 from controlmesh.config import AgentConfig
 from controlmesh.cron.manager import CronManager
 from controlmesh.errors import (
@@ -93,6 +94,7 @@ logger = logging.getLogger(__name__)
 
 _TextCallback = Callable[[str], Awaitable[None]]
 _SystemStatusCallback = Callable[[str | None], Awaitable[None]]
+_ToolEventCallback = Callable[[ToolUseEvent | ToolResultEvent], Awaitable[None]]
 
 
 @dataclass(slots=True)
@@ -115,6 +117,7 @@ class _MessageDispatch:
     streaming: bool = False
     on_text_delta: _TextCallback | None = None
     on_tool_activity: _TextCallback | None = None
+    on_tool_event: _ToolEventCallback | None = None
     on_system_status: _SystemStatusCallback | None = None
 
     def streaming_callbacks(self) -> StreamingCallbacks:
@@ -122,6 +125,7 @@ class _MessageDispatch:
         return StreamingCallbacks(
             on_text_delta=self.on_text_delta,
             on_tool_activity=self.on_tool_activity,
+            on_tool_event=self.on_tool_event,
             on_system_status=self.on_system_status,
         )
 
@@ -308,13 +312,14 @@ class Orchestrator:
         dispatch = _MessageDispatch(key=key, text=text, cmd=text.strip().lower())
         return await self._handle_message_impl(dispatch)
 
-    async def handle_message_streaming(
+    async def handle_message_streaming(  # noqa: PLR0913
         self,
         key: SessionKey,
         text: str,
         *,
         on_text_delta: _TextCallback | None = None,
         on_tool_activity: _TextCallback | None = None,
+        on_tool_event: _ToolEventCallback | None = None,
         on_system_status: _SystemStatusCallback | None = None,
     ) -> OrchestratorResult:
         """Main entry point with streaming support."""
@@ -325,6 +330,7 @@ class Orchestrator:
             streaming=True,
             on_text_delta=on_text_delta,
             on_tool_activity=on_tool_activity,
+            on_tool_event=on_tool_event,
             on_system_status=on_system_status,
         )
         return await self._handle_message_impl(dispatch)

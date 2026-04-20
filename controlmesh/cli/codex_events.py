@@ -12,6 +12,7 @@ from controlmesh.cli.stream_events import (
     StreamEvent,
     SystemInitEvent,
     ThinkingEvent,
+    ToolResultEvent,
     ToolUseEvent,
 )
 
@@ -236,14 +237,45 @@ def _parse_codex_item(data: dict[str, Any]) -> list[StreamEvent]:
 
 
 def _parse_tool_item(item: dict[str, Any], item_type: str, event_type: str) -> list[StreamEvent]:
-    """Extract tool indicator from a Codex item (``item.started`` only)."""
+    """Extract tool events from a Codex item."""
+    if item_type == "command_execution" and event_type == "item.completed":
+        output = str(item.get("aggregated_output") or "").rstrip()
+        exit_code = item.get("exit_code")
+        status = ""
+        if isinstance(exit_code, int):
+            status = f"exit {exit_code}"
+        elif item.get("status") is not None:
+            status = str(item.get("status"))
+        return [
+            ToolResultEvent(
+                type="tool_result",
+                tool_id=str(item.get("id") or ""),
+                tool_name="Bash",
+                status=status,
+                output=output,
+            )
+        ]
     if event_type != "item.started":
         return []
     if item_type == "mcp_tool_call":
         name = item.get("name") or item.get("tool_name") or "MCP"
-        return [ToolUseEvent(type="assistant", tool_name=str(name))]
+        params = item.get("arguments") or item.get("parameters") or item.get("input")
+        return [
+            ToolUseEvent(
+                type="assistant",
+                tool_name=str(name),
+                parameters=params if isinstance(params, dict) else None,
+            )
+        ]
     tool_name = _CODEX_ITEM_TOOL_MAP.get(item_type)
-    return [ToolUseEvent(type="assistant", tool_name=tool_name)] if tool_name else []
+    if not tool_name:
+        return []
+    params: dict[str, Any] | None = None
+    if item_type == "command_execution":
+        command = item.get("command")
+        if isinstance(command, str) and command.strip():
+            params = {"command": command}
+    return [ToolUseEvent(type="assistant", tool_name=tool_name, parameters=params)]
 
 
 class CodexThinkingFilter:

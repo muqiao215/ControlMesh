@@ -52,6 +52,7 @@ class StreamingConfig(BaseModel):
     """Settings for streaming response output."""
 
     output_mode: Literal["full", "tools", "conversation", "off"] = "full"
+    tool_display: Literal["name", "details"] = "name"
     enabled: bool = True
     min_chars: int = 200
     max_chars: int = 4000

@@ -80,6 +80,7 @@
 
     "streaming": {
         "output_mode": "full",
+        "tool_display": "name",
         "enabled": true,
         "min_chars": 200,
         "max_chars": 4000,

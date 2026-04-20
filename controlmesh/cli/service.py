@@ -22,6 +22,7 @@ from controlmesh.cli.stream_events import (
     SystemInitEvent,
     SystemStatusEvent,
     ThinkingEvent,
+    ToolResultEvent,
     ToolUseEvent,
 )
 from controlmesh.cli.types import AgentRequest, AgentResponse, CLIResponse
@@ -35,6 +36,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_ToolEventCallback = Callable[[ToolUseEvent | ToolResultEvent], Awaitable[None]]
+
 
 class _StreamCallbacks:
     """Dispatch stream events to the appropriate callbacks."""
@@ -43,10 +46,12 @@ class _StreamCallbacks:
         self,
         on_text: Callable[[str], Awaitable[None]] | None,
         on_tool: Callable[[str], Awaitable[None]] | None,
+        on_tool_event: _ToolEventCallback | None,
         on_status: Callable[[str | None], Awaitable[None]] | None,
     ) -> None:
         self._on_text = on_text
         self._on_tool = on_tool
+        self._on_tool_event = on_tool_event
         self._on_status = on_status
         self.init_session_id: str | None = None
 
@@ -59,10 +64,17 @@ class _StreamCallbacks:
             if self._on_text is not None:
                 await self._on_text(event.text)
             return event.text, None
+        result = await self._dispatch_non_text(event)
+        return "", result
+
+    async def _dispatch_non_text(self, event: StreamEvent) -> ResultEvent | None:
+        """Handle non-text stream events."""
         if isinstance(event, ThinkingEvent) and self._on_status is not None:
             await self._on_status("thinking")
-        elif isinstance(event, ToolUseEvent) and self._on_tool is not None:
-            await self._on_tool(event.tool_name)
+        elif isinstance(event, ToolUseEvent):
+            await self._dispatch_tool_use(event)
+        elif isinstance(event, ToolResultEvent) and self._on_tool_event is not None:
+            await self._on_tool_event(event)
         elif isinstance(event, SystemStatusEvent) and self._on_status is not None:
             await self._on_status(event.status)
         elif isinstance(event, CompactBoundaryEvent):
@@ -74,8 +86,15 @@ class _StreamCallbacks:
             if self._on_status is not None:
                 await self._on_status(None)
         elif isinstance(event, ResultEvent):
-            return "", event
-        return "", None
+            return event
+        return None
+
+    async def _dispatch_tool_use(self, event: ToolUseEvent) -> None:
+        """Handle a tool-use event through legacy and structured callbacks."""
+        if self._on_tool is not None:
+            await self._on_tool(event.tool_name)
+        if self._on_tool_event is not None:
+            await self._on_tool_event(event)
 
 
 @dataclass(frozen=True, slots=True)
@@ -192,6 +211,7 @@ class CLIService:
         request: AgentRequest,
         on_text_delta: Callable[[str], Awaitable[None]] | None = None,
         on_tool_activity: Callable[[str], Awaitable[None]] | None = None,
+        on_tool_event: _ToolEventCallback | None = None,
         on_system_status: Callable[[str | None], Awaitable[None]] | None = None,
     ) -> AgentResponse:
         """Execute a streaming CLI call with automatic fallback to non-streaming."""
@@ -206,7 +226,7 @@ class CLIService:
         result_event: ResultEvent | None = None
         stream_error = False
 
-        callbacks = _StreamCallbacks(on_text_delta, on_tool_activity, on_system_status)
+        callbacks = _StreamCallbacks(on_text_delta, on_tool_activity, on_tool_event, on_system_status)
 
         try:
             async for event in cli.send_streaming(

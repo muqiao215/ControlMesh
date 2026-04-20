@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from controlmesh.cli.coalescer import CoalesceConfig, StreamCoalescer
+from controlmesh.cli.stream_events import ToolResultEvent, ToolUseEvent
 from controlmesh.messenger.telegram.sender import (
     SendRichOpts,
     send_files_from_text,
@@ -18,6 +19,7 @@ from controlmesh.messenger.telegram.streaming import create_stream_editor
 from controlmesh.messenger.telegram.typing import TypingContext
 from controlmesh.orchestrator.registry import OrchestratorResult
 from controlmesh.session.key import SessionKey
+from controlmesh.text.tool_event_format import format_tool_event_text
 
 if TYPE_CHECKING:
     from aiogram import Bot
@@ -30,25 +32,32 @@ logger = logging.getLogger(__name__)
 
 _TextStreamCallback = Callable[[str], Awaitable[None]]
 _StatusStreamCallback = Callable[[str | None], Awaitable[None]]
+_ToolEventStreamCallback = Callable[[ToolUseEvent | ToolResultEvent], Awaitable[None]]
 
 
 def _stream_callbacks_for_mode(
     mode: str,
     *,
     on_text: _TextStreamCallback,
-    on_tool: _TextStreamCallback,
+    on_tool: _TextStreamCallback | None,
+    on_tool_event: _ToolEventStreamCallback | None,
     on_system: _StatusStreamCallback,
-) -> tuple[_TextStreamCallback | None, _TextStreamCallback | None, _StatusStreamCallback | None]:
+) -> tuple[
+    _TextStreamCallback | None,
+    _TextStreamCallback | None,
+    _ToolEventStreamCallback | None,
+    _StatusStreamCallback | None,
+]:
     """Map Telegram streaming output mode to the enabled callbacks."""
     if mode == "full":
-        return on_text, on_tool, on_system
+        return on_text, on_tool, on_tool_event, on_system
     if mode == "tools":
-        return on_text, on_tool, None
+        return on_text, on_tool, on_tool_event, None
     if mode == "conversation":
-        return on_text, None, None
+        return on_text, None, None, None
     if mode == "off":
-        return None, None, None
-    return on_text, on_tool, on_system
+        return None, None, None, None
+    return on_text, on_tool, on_tool_event, on_system
 
 
 def _build_footer(result: OrchestratorResult, scene: SceneConfig | None) -> str:
@@ -167,10 +176,21 @@ async def run_streaming_message(
         await coalescer.flush(force=True)
         await editor.append_system(label)
 
-    text_cb, tool_cb, system_cb = _stream_callbacks_for_mode(
+    async def on_tool_event(event: ToolUseEvent | ToolResultEvent) -> None:
+        await coalescer.flush(force=True)
+        await editor.append_text(format_tool_event_text(event))
+
+    tool_cb_input: _TextStreamCallback | None = on_tool
+    tool_event_input: _ToolEventStreamCallback | None = None
+    if dispatch.streaming_cfg.tool_display == "details":
+        tool_cb_input = None
+        tool_event_input = on_tool_event
+
+    text_cb, tool_cb, tool_event_cb, system_cb = _stream_callbacks_for_mode(
         dispatch.streaming_cfg.output_mode,
         on_text=on_text,
-        on_tool=on_tool,
+        on_tool=tool_cb_input,
+        on_tool_event=tool_event_input,
         on_system=on_system,
     )
 
@@ -180,6 +200,7 @@ async def run_streaming_message(
             dispatch.text,
             on_text_delta=text_cb,
             on_tool_activity=tool_cb,
+            on_tool_event=tool_event_cb,
             on_system_status=system_cb,
         )
 

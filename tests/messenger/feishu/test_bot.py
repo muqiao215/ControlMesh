@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock, MagicMock
 import aiohttp
 import pytest
 
+from controlmesh.cli.stream_events import ToolResultEvent, ToolUseEvent
 from controlmesh.config import AgentConfig
 from controlmesh.messenger.feishu.bot import FeishuBot, FeishuIncomingText
 from controlmesh.messenger.feishu.bundled_runtime import BundledFeishuRuntimeTurn
@@ -48,6 +49,7 @@ def _make_bot(
     provider: str = "claude",
     model: str = "sonnet",
     output_mode: str = "full",
+    tool_display: str = "name",
     **feishu_overrides: object,
 ) -> FeishuBot:
     feishu_config: dict[str, object] = {
@@ -63,7 +65,7 @@ def _make_bot(
         controlmesh_home=str(tmp_path),
         provider=provider,
         model=model,
-        streaming={"output_mode": output_mode},
+        streaming={"output_mode": output_mode, "tool_display": tool_display},
         feishu=feishu_config,
     )
     bot = FeishuBot(config)
@@ -605,6 +607,7 @@ class TestFeishuBotRouting:
             on_text_delta: AsyncMock | None = None,
             on_tool_activity: AsyncMock | None = None,
             on_system_status: AsyncMock | None = None,
+            **_kwargs: object,
         ) -> SimpleNamespace:
             assert on_text_delta is not None
             assert on_tool_activity is not None
@@ -653,6 +656,7 @@ class TestFeishuBotRouting:
             on_text_delta: AsyncMock | None = None,
             on_tool_activity: AsyncMock | None = None,
             on_system_status: AsyncMock | None = None,
+            **_kwargs: object,
         ) -> SimpleNamespace:
             assert on_text_delta is not None
             assert on_tool_activity is None
@@ -692,6 +696,7 @@ class TestFeishuBotRouting:
             on_text_delta: AsyncMock | None = None,
             on_tool_activity: AsyncMock | None = None,
             on_system_status: AsyncMock | None = None,
+            **_kwargs: object,
         ) -> SimpleNamespace:
             assert on_text_delta is None
             assert on_tool_activity is None
@@ -718,6 +723,71 @@ class TestFeishuBotRouting:
             "pong",
             reply_to_message_id="om_1",
         )
+
+    async def test_handle_incoming_text_tool_details_renders_command_and_output(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path, output_mode="tools", tool_display="details")
+        sent: list[tuple[str, str, str | None]] = []
+
+        async def _fake_send(
+            chat_ref: str,
+            text: str,
+            *,
+            reply_to_message_id: str | None = None,
+        ) -> None:
+            sent.append((chat_ref, text, reply_to_message_id))
+
+        async def _fake_stream(
+            _key: object,
+            _text: str,
+            *,
+            on_text_delta: AsyncMock | None = None,
+            on_tool_activity: AsyncMock | None = None,
+            on_system_status: AsyncMock | None = None,
+            on_tool_event: AsyncMock | None = None,
+        ) -> SimpleNamespace:
+            assert on_text_delta is not None
+            assert on_tool_activity is None
+            assert on_system_status is None
+            assert on_tool_event is not None
+            await on_tool_event(
+                ToolUseEvent(
+                    type="assistant",
+                    tool_name="Bash",
+                    parameters={"command": "printf hi"},
+                )
+            )
+            await on_tool_event(
+                ToolResultEvent(
+                    type="tool_result",
+                    tool_id="tool-1",
+                    tool_name="Bash",
+                    status="exit 0",
+                    output="hi",
+                )
+            )
+            return SimpleNamespace(text="pong")
+
+        bot._orchestrator = SimpleNamespace(
+            handle_message_streaming=AsyncMock(side_effect=_fake_stream)
+        )
+        bot._send_text_to_chat_ref = AsyncMock(side_effect=_fake_send)  # type: ignore[method-assign]
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="ping",
+            )
+        )
+
+        combined = "\n".join(text for _chat, text, _reply in sent)
+        assert "printf hi" in combined
+        assert "hi" in combined
+        assert sent[-1] == ("oc_chat_1", "pong", "om_1")
 
     async def test_handle_incoming_text_app_scope_missing_routes_to_native_permission_flow(
         self,
