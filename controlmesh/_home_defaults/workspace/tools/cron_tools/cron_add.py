@@ -316,6 +316,20 @@ def main() -> None:
         print(json.dumps({"error": f"Folder '{name}' already exists in cron_tasks/"}))
         sys.exit(1)
 
+    cli_params = None
+    if args.cli_parameters:
+        try:
+            parsed_cli_params = json.loads(args.cli_parameters)
+            if not isinstance(parsed_cli_params, list) or not all(
+                isinstance(item, str) for item in parsed_cli_params
+            ):
+                print(json.dumps({"error": "--cli-parameters must be a JSON array of strings"}))
+                sys.exit(1)
+            cli_params = parsed_cli_params
+        except json.JSONDecodeError as e:
+            print(json.dumps({"error": f"Invalid --cli-parameters JSON: {e}"}))
+            sys.exit(1)
+
     # 1) Create the cron_task folder
     task_dir = _create_task_folder(name, args.title, args.description)
     publish_enabled = None
@@ -366,17 +380,8 @@ def main() -> None:
         job["model"] = args.model
     if args.reasoning_effort:
         job["reasoning_effort"] = args.reasoning_effort
-    if args.cli_parameters:
-        try:
-            cli_params = json.loads(args.cli_parameters)
-            if isinstance(cli_params, list):
-                job["cli_parameters"] = cli_params
-            else:
-                print(json.dumps({"error": "--cli-parameters must be a JSON array"}))
-                sys.exit(1)
-        except json.JSONDecodeError as e:
-            print(json.dumps({"error": f"Invalid --cli-parameters JSON: {e}"}))
-            sys.exit(1)
+    if cli_params is not None:
+        job["cli_parameters"] = cli_params
     if args.quiet_start is not None:
         job["quiet_start"] = args.quiet_start
     if args.quiet_end is not None:

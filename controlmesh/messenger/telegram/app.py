@@ -122,31 +122,40 @@ def _rebuild_commands() -> None:
     _CMD_DESC.update({**dict(cmd_defs), **dict(ma_defs)})
 
 
+def _bot_commands_for_agent(agent_name: str) -> list[BotCommand]:
+    """Return the Telegram popup commands applicable to one agent."""
+    if agent_name == "main":
+        return _BOT_COMMANDS
+    return [command for command in _BOT_COMMANDS if command.command != "agents"]
+
+
 def _help_line(command: str) -> str:
     """Return one command line for the help panel."""
     description = _CMD_DESC.get(command, "")
     return f"/{command} -- {description}" if description else f"/{command}"
 
 
-def _build_help_text() -> str:
+def _build_help_text(agent_name: str = "main") -> str:
+    capability_lines = [
+        f"- {t('help.cap_model')}",
+        f"- {t('help.cap_takeover')}",
+        f"- {t('help.cap_tasks')}",
+        f"- {t('help.cap_cron')}",
+        f"- {t('help.cap_memory')}",
+    ]
+    start_here_commands = ["model", "mode", "cm", "tasks", "cron"]
+    advanced_commands = ["showfiles", "info", "diagnose", "upgrade", "restart"]
+    if agent_name == "main":
+        capability_lines.insert(3, f"- {t('help.cap_agents')}")
+        start_here_commands.insert(4, "agents")
+        advanced_commands[2:2] = ["agent_start", "agent_stop", "agent_restart", "stop_all"]
     return fmt(
         t("help.overview_header"),
         t("help.overview_intro"),
         SEP,
-        f"{t('help.capabilities_header')}\n"
-        f"- {t('help.cap_model')}\n"
-        f"- {t('help.cap_takeover')}\n"
-        f"- {t('help.cap_tasks')}\n"
-        f"- {t('help.cap_agents')}\n"
-        f"- {t('help.cap_cron')}\n"
-        f"- {t('help.cap_memory')}",
+        f"{t('help.capabilities_header')}\n" + "\n".join(capability_lines),
         f"{t('help.start_here_header')}\n"
-        f"{_help_line('model')}\n"
-        f"{_help_line('mode')}\n"
-        f"{_help_line('cm')}\n"
-        f"{_help_line('tasks')}\n"
-        f"{_help_line('agents')}\n"
-        f"{_help_line('cron')}",
+        + "\n".join(_help_line(command) for command in start_here_commands),
         f"{t('help.daily_controls_header')}\n"
         f"{_help_line('new')}\n"
         f"{_help_line('session')}\n"
@@ -156,15 +165,7 @@ def _build_help_text() -> str:
         f"{_help_line('interrupt')}\n"
         f"{_help_line('help')}",
         f"{t('help.advanced_header')}\n"
-        f"{_help_line('showfiles')}\n"
-        f"{_help_line('info')}\n"
-        f"{_help_line('agent_start')}\n"
-        f"{_help_line('agent_stop')}\n"
-        f"{_help_line('agent_restart')}\n"
-        f"{_help_line('stop_all')}\n"
-        f"{_help_line('diagnose')}\n"
-        f"{_help_line('upgrade')}\n"
-        f"{_help_line('restart')}",
+        + "\n".join(_help_line(command) for command in advanced_commands),
         SEP,
         t("help.footer"),
     )
@@ -680,7 +681,7 @@ class TelegramBot:
         await send_rich(
             self._bot,
             message.chat.id,
-            _build_help_text(),
+            _build_help_text(self._agent_name),
             SendRichOpts(reply_to_message_id=message.message_id, thread_id=get_thread_id(message)),
         )
 
@@ -692,6 +693,16 @@ class TelegramBot:
             return
         chat_id = message.chat.id
         thread_id = get_thread_id(message)
+
+        if self._agent_name != "main":
+            text = fmt(t("agents.system_header"), SEP, t("agents.telegram_explanation"))
+            await send_rich(
+                self._bot,
+                chat_id,
+                text,
+                SendRichOpts(reply_to_message_id=message.message_id, thread_id=thread_id),
+            )
+            return
 
         lines = [
             t("agents.telegram_explanation"),
@@ -1478,7 +1489,7 @@ class TelegramBot:
     async def _sync_commands(self) -> None:
         from aiogram.types import BotCommandScopeAllGroupChats, BotCommandScopeAllPrivateChats
 
-        desired = _BOT_COMMANDS
+        desired = _bot_commands_for_agent(self._agent_name)
 
         # Clear legacy scoped commands (previous versions set per-scope lists).
         # Telegram keeps scoped commands independently — they must be deleted

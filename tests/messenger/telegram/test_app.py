@@ -317,6 +317,34 @@ class TestOnHelp:
             assert f"/{command}" in text
 
     @patch("controlmesh.messenger.telegram.app.send_rich", new_callable=AsyncMock)
+    async def test_worker_help_hides_main_only_multiagent_commands(
+        self, mock_send: AsyncMock
+    ) -> None:
+        from controlmesh.messenger.telegram.app import TelegramBot
+
+        cfg = _make_config()
+        bot_instance = MagicMock()
+        bot_instance.edit_message_reply_markup = AsyncMock()
+        bot_instance.edit_message_text = AsyncMock()
+        bot_instance.send_message = AsyncMock()
+        bot_instance.send_photo = AsyncMock()
+        bot_instance.send_chat_action = AsyncMock()
+        bot_instance.delete_webhook = AsyncMock()
+
+        with patch("controlmesh.messenger.telegram.app.Bot", return_value=bot_instance):
+            tg_bot = TelegramBot(cfg, agent_name="worker")
+        msg = _make_message(chat_id=42)
+
+        await tg_bot._on_help(msg)
+
+        text = mock_send.call_args[0][2]
+        assert "/agents" not in text
+        assert "/agent_start" not in text
+        assert "/agent_stop" not in text
+        assert "/agent_restart" not in text
+        assert "/stop_all" not in text
+
+    @patch("controlmesh.messenger.telegram.app.send_rich", new_callable=AsyncMock)
     async def test_help_passes_reply_to(self, mock_send: AsyncMock) -> None:
         tg_bot, _ = _make_tg_bot()
         msg = _make_message()
@@ -1281,6 +1309,58 @@ class TestSyncCommands:
         await tg_bot._sync_commands()
 
         bot_instance.set_my_commands.assert_called_once_with(_BOT_COMMANDS)
+
+    async def test_secondary_agent_menu_excludes_multiagent_popup_commands(self) -> None:
+        from controlmesh.messenger.telegram.app import TelegramBot
+
+        cfg = _make_config()
+        bot_instance = MagicMock()
+        bot_instance.edit_message_reply_markup = AsyncMock()
+        bot_instance.edit_message_text = AsyncMock()
+        bot_instance.send_message = AsyncMock()
+        bot_instance.send_photo = AsyncMock()
+        bot_instance.send_chat_action = AsyncMock()
+        bot_instance.delete_webhook = AsyncMock()
+        bot_instance.get_my_commands = AsyncMock(return_value=[])
+        bot_instance.set_my_commands = AsyncMock()
+        bot_instance.delete_my_commands = AsyncMock()
+
+        with patch("controlmesh.messenger.telegram.app.Bot", return_value=bot_instance):
+            tg_bot = TelegramBot(cfg, agent_name="worker")
+
+        await tg_bot._sync_commands()
+
+        desired = bot_instance.set_my_commands.call_args.args[0]
+        command_names = [command.command for command in desired]
+        assert "agents" not in command_names
+        assert "new" in command_names
+
+
+class TestAgentCommands:
+    @patch("controlmesh.messenger.telegram.app.send_rich", new_callable=AsyncMock)
+    async def test_worker_agent_commands_reports_unavailable(self, mock_send: AsyncMock) -> None:
+        from controlmesh.messenger.telegram.app import TelegramBot
+
+        cfg = _make_config()
+        bot_instance = MagicMock()
+        bot_instance.edit_message_reply_markup = AsyncMock()
+        bot_instance.edit_message_text = AsyncMock()
+        bot_instance.send_message = AsyncMock()
+        bot_instance.send_photo = AsyncMock()
+        bot_instance.send_chat_action = AsyncMock()
+        bot_instance.delete_webhook = AsyncMock()
+
+        with patch("controlmesh.messenger.telegram.app.Bot", return_value=bot_instance):
+            tg_bot = TelegramBot(cfg, agent_name="worker")
+        msg = _make_message(chat_id=42)
+
+        await tg_bot._on_agent_commands(msg)
+
+        text = mock_send.call_args[0][2]
+        assert "/agents" not in text
+        assert "/agent_start" not in text
+        assert "/agent_stop" not in text
+        assert "/agent_restart" not in text
 
 
 # ---------------------------------------------------------------------------

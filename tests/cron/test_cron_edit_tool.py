@@ -200,6 +200,140 @@ def test_cron_edit_updates_task_config_without_recreating_job(tmp_path: Path) ->
     }
 
 
+def test_cron_edit_rename_rolls_back_when_followup_validation_fails(tmp_path: Path) -> None:
+    _add_job(tmp_path, "rename-rollback")
+    old_dir = tmp_path / "workspace" / "cron_tasks" / "rename-rollback"
+
+    result = _run(
+        tmp_path,
+        TOOL_EDIT,
+        [
+            "rename-rollback",
+            "--name",
+            "rename-new",
+            "--title",
+            "",
+        ],
+    )
+
+    assert result.returncode == 1
+    output = json.loads(result.stdout)
+    assert output["error"] == "Title must not be empty"
+
+    assert old_dir.is_dir()
+    assert not (tmp_path / "workspace" / "cron_tasks" / "rename-new").exists()
+
+    job = _job(tmp_path, "rename-rollback")
+    assert job["id"] == "rename-rollback"
+    assert job["task_folder"] == "rename-rollback"
+
+
+def test_cron_edit_rename_updates_gemini_rule_file_memory_reference(tmp_path: Path) -> None:
+    cron_tasks_dir = tmp_path / "workspace" / "cron_tasks"
+    cron_tasks_dir.mkdir(parents=True, exist_ok=True)
+    (cron_tasks_dir / "CLAUDE.md").write_text("parent", encoding="utf-8")
+    (cron_tasks_dir / "AGENTS.md").write_text("parent", encoding="utf-8")
+    (cron_tasks_dir / "GEMINI.md").write_text("parent", encoding="utf-8")
+    _add_job(tmp_path, "gemini-old")
+
+    result = _run(tmp_path, TOOL_EDIT, ["gemini-old", "--name", "gemini-new"])
+
+    assert result.returncode == 0
+    new_dir = tmp_path / "workspace" / "cron_tasks" / "gemini-new"
+    gemini = (new_dir / "GEMINI.md").read_text(encoding="utf-8")
+    assert "gemini-new_MEMORY.md" in gemini
+    assert "gemini-old_MEMORY.md" not in gemini
+
+
+def test_cron_edit_rename_restores_memory_and_rules_when_policy_validation_fails(
+    tmp_path: Path,
+) -> None:
+    cron_tasks_dir = tmp_path / "workspace" / "cron_tasks"
+    cron_tasks_dir.mkdir(parents=True, exist_ok=True)
+    (cron_tasks_dir / "CLAUDE.md").write_text("parent", encoding="utf-8")
+    (cron_tasks_dir / "AGENTS.md").write_text("parent", encoding="utf-8")
+    (cron_tasks_dir / "GEMINI.md").write_text("parent", encoding="utf-8")
+    _add_job(tmp_path, "rollback-policy-old")
+
+    result = _run(
+        tmp_path,
+        TOOL_EDIT,
+        [
+            "rollback-policy-old",
+            "--name",
+            "rollback-policy-new",
+            "--delivery-primary",
+            "   ",
+        ],
+    )
+
+    assert result.returncode == 1
+    output = json.loads(result.stdout)
+    assert output["error"] == "delivery.primary must not be empty"
+
+    restored_dir = tmp_path / "workspace" / "cron_tasks" / "rollback-policy-old"
+    assert restored_dir.is_dir()
+    assert not (tmp_path / "workspace" / "cron_tasks" / "rollback-policy-new").exists()
+    assert (restored_dir / "rollback-policy-old_MEMORY.md").exists()
+    assert not (restored_dir / "rollback-policy-new_MEMORY.md").exists()
+    assert "rollback-policy-old_MEMORY.md" in (restored_dir / "CLAUDE.md").read_text(
+        encoding="utf-8"
+    )
+    assert "rollback-policy-old_MEMORY.md" in (restored_dir / "GEMINI.md").read_text(
+        encoding="utf-8"
+    )
+
+
+def test_cron_edit_rename_restores_legacy_id_memory_reference_on_policy_failure(
+    tmp_path: Path,
+) -> None:
+    cron_tasks_dir = tmp_path / "workspace" / "cron_tasks"
+    cron_tasks_dir.mkdir(parents=True, exist_ok=True)
+    (cron_tasks_dir / "CLAUDE.md").write_text("parent", encoding="utf-8")
+    (cron_tasks_dir / "AGENTS.md").write_text("parent", encoding="utf-8")
+    (cron_tasks_dir / "GEMINI.md").write_text("parent", encoding="utf-8")
+    _add_job(tmp_path, "legacy-folder")
+
+    data = json.loads((tmp_path / "cron_jobs.json").read_text(encoding="utf-8"))
+    data["jobs"][0]["id"] = "legacy-job-id"
+    data["jobs"][0]["task_folder"] = "legacy-folder"
+    (tmp_path / "cron_jobs.json").write_text(json.dumps(data), encoding="utf-8")
+
+    task_dir = tmp_path / "workspace" / "cron_tasks" / "legacy-folder"
+    (task_dir / "legacy-folder_MEMORY.md").rename(task_dir / "legacy-job-id_MEMORY.md")
+    rule_text = (task_dir / "CLAUDE.md").read_text(encoding="utf-8").replace(
+        "legacy-folder_MEMORY.md",
+        "legacy-job-id_MEMORY.md",
+    )
+    for filename in ("CLAUDE.md", "AGENTS.md", "GEMINI.md"):
+        (task_dir / filename).write_text(rule_text, encoding="utf-8")
+
+    result = _run(
+        tmp_path,
+        TOOL_EDIT,
+        [
+            "legacy-job-id",
+            "--name",
+            "new-folder",
+            "--delivery-primary",
+            "   ",
+        ],
+    )
+
+    assert result.returncode == 1
+    output = json.loads(result.stdout)
+    assert output["error"] == "delivery.primary must not be empty"
+
+    restored_dir = tmp_path / "workspace" / "cron_tasks" / "legacy-folder"
+    assert restored_dir.is_dir()
+    assert (restored_dir / "legacy-job-id_MEMORY.md").exists()
+    assert not (restored_dir / "legacy-folder_MEMORY.md").exists()
+    for filename in ("CLAUDE.md", "AGENTS.md", "GEMINI.md"):
+        text = (restored_dir / filename).read_text(encoding="utf-8")
+        assert "legacy-job-id_MEMORY.md" in text
+        assert "legacy-folder_MEMORY.md" not in text
+
+
 def test_cron_edit_legacy_metadata_update_preserves_cron_jobs_schema(
     tmp_path: Path,
 ) -> None:

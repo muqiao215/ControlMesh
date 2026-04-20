@@ -7,7 +7,7 @@ global cron registry so scheduling metadata stays stable and narrow.
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -98,6 +98,22 @@ def _load_dataclass(cls: type[T], raw: Any) -> T:
     if not isinstance(raw, dict):
         return base
 
-    allowed = set(base.__dataclass_fields__)  # type: ignore[attr-defined]
-    values = {key: value for key, value in raw.items() if key in allowed}
+    values: dict[str, Any] = {}
+    for item in fields(base):
+        key = item.name
+        if key not in raw:
+            continue
+        value = raw[key]
+        default = getattr(base, key)
+        if _matches_default_type(value, default):
+            values[key] = value
     return cls(**values)
+
+
+def _matches_default_type(value: Any, default: Any) -> bool:
+    """Return whether a JSON value has the same narrow type as a default field."""
+    if isinstance(default, bool):
+        return isinstance(value, bool)
+    if isinstance(default, str):
+        return isinstance(value, str) and bool(value.strip())
+    return isinstance(value, type(default))

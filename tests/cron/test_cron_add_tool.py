@@ -256,3 +256,39 @@ def test_cron_add_rolls_back_task_folder_when_policy_validation_fails(tmp_path: 
     assert output["error"] == "delivery.primary must not be empty"
     assert not (tmp_path / "workspace" / "cron_tasks" / "policy-invalid").exists()
     assert not (tmp_path / "cron_jobs.json").exists()
+
+
+def test_cron_add_rolls_back_task_folder_when_cli_parameters_json_is_invalid(
+    tmp_path: Path,
+) -> None:
+    result = _run_tool(
+        tmp_path,
+        [
+            *_full_args("bad-cli-json"),
+            "--cli-parameters",
+            "{bad",
+        ],
+    )
+
+    assert result.returncode == 1
+    output = json.loads(result.stdout)
+    assert "Invalid --cli-parameters JSON" in output["error"]
+    assert not (tmp_path / "workspace" / "cron_tasks" / "bad-cli-json").exists()
+    assert not (tmp_path / "cron_jobs.json").exists()
+
+
+def test_cron_add_rejects_non_string_cli_parameters(tmp_path: Path) -> None:
+    result = _run_tool(
+        tmp_path,
+        [
+            *_full_args("bad-cli-types"),
+            "--cli-parameters",
+            '[1, {"k": 2}, null]',
+        ],
+    )
+
+    assert result.returncode == 1
+    output = json.loads(result.stdout)
+    assert output["error"] == "--cli-parameters must be a JSON array of strings"
+    assert not (tmp_path / "workspace" / "cron_tasks" / "bad-cli-types").exists()
+    assert not (tmp_path / "cron_jobs.json").exists()

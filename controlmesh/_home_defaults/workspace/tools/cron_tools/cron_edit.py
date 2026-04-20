@@ -187,6 +187,7 @@ def _rename_task_folder(
     old_task_folder: str,
     old_id: str,
     new_name: str,
+    memory_name: str | None = None,
 ) -> tuple[bool, bool, list[str]]:
     notes: list[str] = []
     old_folder = safe_task_dir(old_task_folder)
@@ -205,6 +206,7 @@ def _rename_task_folder(
     old_folder.rename(new_folder)
 
     memory_renamed = False
+    target_memory_name = memory_name or new_name
     memory_candidates = [f"{old_task_folder}_MEMORY.md", f"{old_id}_MEMORY.md"]
     seen: set[str] = set()
     for candidate in memory_candidates:
@@ -213,17 +215,19 @@ def _rename_task_folder(
         seen.add(candidate)
         source = new_folder / candidate
         if source.exists():
-            source.rename(new_folder / f"{new_name}_MEMORY.md")
+            source.rename(new_folder / f"{target_memory_name}_MEMORY.md")
             memory_renamed = True
             break
 
     if not memory_renamed:
         notes.append("No legacy memory file found to rename.")
 
-    rule_content = render_cron_task_claude_md(new_name)
-    (new_folder / "CLAUDE.md").write_text(rule_content, encoding="utf-8")
-    (new_folder / "AGENTS.md").write_text(rule_content, encoding="utf-8")
-    notes.append("Updated CLAUDE.md/AGENTS.md for renamed memory file reference.")
+    rule_content = render_cron_task_claude_md(target_memory_name)
+    for filename in ("CLAUDE.md", "AGENTS.md", "GEMINI.md"):
+        path = new_folder / filename
+        if filename in {"CLAUDE.md", "AGENTS.md"} or path.exists():
+            path.write_text(rule_content, encoding="utf-8")
+    notes.append("Updated provider rule files for renamed memory file reference.")
 
     return True, memory_renamed, notes
 
@@ -367,6 +371,7 @@ def main() -> None:
     notes: list[str] = []
     folder_renamed = False
     memory_file_renamed = False
+    new_name: str | None = None
 
     if args.name is not None:
         raw_new_name = args.name.strip()
@@ -378,22 +383,6 @@ def main() -> None:
             print(json.dumps({"error": f"Job '{new_name}' already exists"}))
             sys.exit(1)
 
-        if new_name != old_id:
-            try:
-                folder_renamed, memory_file_renamed, rename_notes = _rename_task_folder(
-                    old_task_folder=old_task_folder,
-                    old_id=old_id,
-                    new_name=new_name,
-                )
-            except (ValueError, FileExistsError) as exc:
-                print(json.dumps({"error": str(exc)}))
-                sys.exit(1)
-
-            notes.extend(rename_notes)
-            job["id"] = new_name
-            job["task_folder"] = new_name
-            updated_fields.extend(["id", "task_folder"])
-
     try:
         meta_updates, meta_notes = _apply_updates(args, job)
     except ValueError as exc:
@@ -402,6 +391,23 @@ def main() -> None:
 
     updated_fields.extend(meta_updates)
     notes.extend(meta_notes)
+
+    if new_name is not None and new_name != old_id:
+        try:
+            folder_renamed, memory_file_renamed, rename_notes = _rename_task_folder(
+                old_task_folder=old_task_folder,
+                old_id=old_id,
+                new_name=new_name,
+                memory_name=new_name,
+            )
+        except (ValueError, FileExistsError) as exc:
+            print(json.dumps({"error": str(exc)}))
+            sys.exit(1)
+
+        notes.extend(rename_notes)
+        job["id"] = new_name
+        job["task_folder"] = new_name
+        updated_fields.extend(["id", "task_folder"])
 
     # Keep order stable but unique
     seen_fields: set[str] = set()
@@ -430,6 +436,16 @@ def main() -> None:
                 publish_require_review=_publish_require_review_value(args),
             )
         except (FileNotFoundError, ValueError) as exc:
+            if folder_renamed:
+                try:
+                    _rename_task_folder(
+                        old_task_folder=task_folder,
+                        old_id=task_folder,
+                        new_name=old_task_folder,
+                        memory_name=old_id,
+                    )
+                except (ValueError, FileExistsError):
+                    pass
             print(json.dumps({"error": str(exc)}))
             sys.exit(1)
 

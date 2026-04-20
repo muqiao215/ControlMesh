@@ -90,3 +90,27 @@ def test_enrich_instruction_allows_explicit_publish_target(tmp_path: Path) -> No
     assert "publish.enabled=true" in enriched
     assert "publish target: feishu_bitable" in enriched
     assert "publish mode: upsert" in enriched
+
+
+def test_invalid_publish_enabled_type_falls_back_to_safe_non_publish_mode(tmp_path: Path) -> None:
+    """Malformed booleans must not silently enable publish behavior."""
+    (tmp_path / "task.config.json").write_text(
+        json.dumps(
+            {
+                "publish": {
+                    "enabled": "false",
+                    "target": "feishu_bitable",
+                    "mode": "upsert",
+                    "require_review": False,
+                },
+            },
+        ),
+        encoding="utf-8",
+    )
+
+    policy = load_task_policy(tmp_path)
+    enriched = enrich_instruction("Run the task", "daily", policy=policy)
+
+    assert policy.publish.enabled is False
+    assert "publish.enabled=false" in enriched
+    assert "publish.enabled=true" not in enriched
