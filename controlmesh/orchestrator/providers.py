@@ -152,9 +152,13 @@ class ProviderManager:
                     if m.is_default:
                         return m.id
             return ""
-        if provider == "gemini":
-            return ""
-        return ""
+        if provider == "openai_agents":
+            return (
+                self._config.model
+                if self._config.provider == "openai_agents"
+                else self._config.agent_graph.openai_agents_model
+            )
+        return {"gemini": ""}.get(provider, "")
 
     def resolve_session_directive(self, key: str) -> tuple[str, str] | None:
         """Resolve a ``@key`` directive to ``(provider, model)`` or ``None``.

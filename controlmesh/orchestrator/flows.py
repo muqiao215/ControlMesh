@@ -58,6 +58,7 @@ class NormalFlowOptions:
     """Options for one non-streaming normal flow execution."""
 
     model_override: str | None = None
+    provider_override: str | None = None
     is_recovery: bool = False
     prompt_policy: PromptPolicy = DEFAULT_PROMPT_POLICY
 
@@ -67,6 +68,7 @@ class StreamingFlowOptions:
     """Options for one streaming normal flow execution."""
 
     model_override: str | None = None
+    provider_override: str | None = None
     cbs: StreamingCallbacks | None = None
     prompt_policy: PromptPolicy = DEFAULT_PROMPT_POLICY
 
@@ -87,12 +89,13 @@ def _make_timeout_controller(orch: Orchestrator, kind: str) -> TimeoutController
     )
 
 
-async def _prepare_normal(
+async def _prepare_normal(  # noqa: PLR0913
     orch: Orchestrator,
     key: SessionKey,
     text: str,
     *,
     model_override: str | None = None,
+    provider_override: str | None = None,
     prompt_policy: PromptPolicy = DEFAULT_PROMPT_POLICY,
 ) -> tuple[AgentRequest, SessionData]:
     """Shared setup for normal() and normal_streaming().
@@ -100,7 +103,15 @@ async def _prepare_normal(
     Returns (request, session) so the caller can update the session after the CLI call.
     """
     requested_model = model_override or orch._config.model
-    req_model, req_provider = orch.resolve_runtime_target(requested_model)
+    if provider_override is not None:
+        req_provider = provider_override
+        req_model = (
+            model_override
+            or orch._providers.default_model_for_provider(provider_override)
+            or requested_model
+        )
+    else:
+        req_model, req_provider = orch.resolve_runtime_target(requested_model)
 
     session, is_new = await orch._sessions.resolve_session(
         key,
@@ -260,6 +271,7 @@ class _RecoveryContext:
 
     reason: str
     model_override: str | None
+    provider_override: str | None = None
     streaming: bool = False
     cbs: StreamingCallbacks = field(default_factory=StreamingCallbacks)
     prompt_policy: PromptPolicy = DEFAULT_PROMPT_POLICY
@@ -277,7 +289,7 @@ async def _recover_session(
     """
     logger.warning("recovery.%s chat=%s action=retry", ctx.reason, key.chat_id)
     model_name = ctx.model_override or orch._config.model
-    provider_name = orch.models.provider_for(model_name)
+    provider_name = ctx.provider_override or orch.models.provider_for(model_name)
     await orch._process_registry.kill_all(key.chat_id)
     orch._process_registry.clear_abort(key.chat_id)
     await orch._sessions.reset_provider_session(key, provider=provider_name, model=model_name)
@@ -293,6 +305,7 @@ async def _recover_session(
         key,
         text,
         model_override=ctx.model_override,
+        provider_override=ctx.provider_override,
         prompt_policy=ctx.prompt_policy,
     )
     if ctx.streaming:
@@ -357,12 +370,13 @@ async def _gemini_missing_config_key_warning(
     return OrchestratorResult(text=t("gemini.missing_key"))
 
 
-async def normal(
+async def normal(  # noqa: PLR0913
     orch: Orchestrator,
     key: SessionKey,
     text: str,
     *,
     model_override: str | None = None,
+    provider_override: str | None = None,
     is_recovery: bool = False,
 ) -> OrchestratorResult:
     """Handle normal conversation with session resume."""
@@ -370,7 +384,11 @@ async def normal(
         orch,
         key,
         text,
-        NormalFlowOptions(model_override=model_override, is_recovery=is_recovery),
+        NormalFlowOptions(
+            model_override=model_override,
+            provider_override=provider_override,
+            is_recovery=is_recovery,
+        ),
     )
 
 
@@ -387,6 +405,7 @@ async def _normal_with_options(
         key,
         text,
         model_override=options.model_override,
+        provider_override=options.provider_override,
         prompt_policy=options.prompt_policy,
     )
     warning = await _gemini_missing_config_key_warning(orch, request)
@@ -409,6 +428,7 @@ async def _normal_with_options(
             ctx = _RecoveryContext(
                 reason=reason,
                 model_override=options.model_override,
+                provider_override=options.provider_override,
                 prompt_policy=options.prompt_policy,
             )
             request, session, response = await _recover_session(orch, key, text, ctx)
@@ -443,12 +463,13 @@ async def _normal_with_options(
         orch._inflight_tracker.complete(key.chat_id)
 
 
-async def normal_streaming(
+async def normal_streaming(  # noqa: PLR0913
     orch: Orchestrator,
     key: SessionKey,
     text: str,
     *,
     model_override: str | None = None,
+    provider_override: str | None = None,
     cbs: StreamingCallbacks | None = None,
 ) -> OrchestratorResult:
     """Handle normal conversation with streaming output."""
@@ -456,7 +477,11 @@ async def normal_streaming(
         orch,
         key,
         text,
-        StreamingFlowOptions(model_override=model_override, cbs=cbs),
+        StreamingFlowOptions(
+            model_override=model_override,
+            provider_override=provider_override,
+            cbs=cbs,
+        ),
     )
 
 
@@ -502,6 +527,7 @@ async def _normal_streaming_with_options(
         key,
         text,
         model_override=options.model_override,
+        provider_override=options.provider_override,
         prompt_policy=options.prompt_policy,
     )
     warning = await _gemini_missing_config_key_warning(orch, request)
@@ -528,6 +554,7 @@ async def _normal_streaming_with_options(
             ctx = _RecoveryContext(
                 reason=reason,
                 model_override=options.model_override,
+                provider_override=options.provider_override,
                 streaming=True,
                 cbs=cb,
                 prompt_policy=options.prompt_policy,

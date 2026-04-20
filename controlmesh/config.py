@@ -309,6 +309,13 @@ class CodexHooksConfig(BaseModel):
     manage_project_hooks: bool = False
 
 
+class AgentGraphConfig(BaseModel):
+    """Feature gate for optional orchestrator backend routing."""
+
+    enabled: bool = False
+    openai_agents_model: str = "gpt-5.4"
+
+
 class ApiConfig(BaseModel):
     """Settings for the direct WebSocket API server.
 
@@ -404,6 +411,7 @@ class AgentConfig(BaseModel):
     tasks: TasksConfig = Field(default_factory=TasksConfig)
     scene: SceneConfig = Field(default_factory=SceneConfig)
     codex_hooks: CodexHooksConfig = Field(default_factory=CodexHooksConfig)
+    agent_graph: AgentGraphConfig = Field(default_factory=AgentGraphConfig)
     gateways: GatewayDispatchConfig = Field(default_factory=GatewayDispatchConfig)
     user_timezone: str = ""
     language: str = "en"

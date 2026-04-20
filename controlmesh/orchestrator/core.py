@@ -50,7 +50,7 @@ from controlmesh.orchestrator.commands import (
     cmd_tasks,
     cmd_upgrade,
 )
-from controlmesh.orchestrator.directives import parse_directives
+from controlmesh.orchestrator.directives import ParsedDirectives, parse_directives
 from controlmesh.orchestrator.flows import (
     StreamingCallbacks,
     heartbeat_flow,
@@ -70,6 +70,7 @@ from controlmesh.orchestrator.hooks import (
 from controlmesh.orchestrator.observers import ObserverManager
 from controlmesh.orchestrator.providers import ProviderManager
 from controlmesh.orchestrator.registry import CommandRegistry, OrchestratorResult
+from controlmesh.orchestrator.selectors.agent_router import RouteDecisionKind, decide_backend_route
 from controlmesh.security import detect_suspicious_patterns
 from controlmesh.session import SessionKey, SessionManager
 from controlmesh.session.manager import SessionData
@@ -479,6 +480,9 @@ class Orchestrator:
             )
 
         prompt_text = directives.cleaned or dispatch.text
+        routed = await self._route_with_backend_decision(dispatch, prompt_text, directives)
+        if routed is not None:
+            return routed
 
         if dispatch.streaming:
             return await normal_streaming(
@@ -494,6 +498,45 @@ class Orchestrator:
             dispatch.key,
             prompt_text,
             model_override=directives.model,
+        )
+
+    async def _route_with_backend_decision(
+        self,
+        dispatch: _MessageDispatch,
+        prompt_text: str,
+        directives: ParsedDirectives,
+    ) -> OrchestratorResult | None:
+        """Apply router-only backend decisions before legacy normal-flow dispatch."""
+        route = decide_backend_route(self._config, directives)
+
+        if route.kind is RouteDecisionKind.LEGACY_CLI:
+            return None
+
+        if route.kind is RouteDecisionKind.OPENAI_AGENTS:
+            if dispatch.streaming:
+                return await normal_streaming(
+                    self,
+                    dispatch.key,
+                    prompt_text,
+                    model_override=route.model_override,
+                    provider_override=route.provider_override,
+                    cbs=dispatch.streaming_callbacks(),
+                )
+
+            return await normal(
+                self,
+                dispatch.key,
+                prompt_text,
+                model_override=route.model_override,
+                provider_override=route.provider_override,
+            )
+
+        if route.kind in {RouteDecisionKind.CLARIFY, RouteDecisionKind.REJECT} and route.message:
+            return OrchestratorResult(text=route.message)
+
+        logger.info("Agent router decision deferred kind=%s", route.kind.value)
+        return OrchestratorResult(
+            text="That route is recognized but not wired yet. Please use the legacy path."
         )
 
     def _register_commands(self) -> None:
