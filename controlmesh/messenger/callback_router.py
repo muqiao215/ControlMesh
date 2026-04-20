@@ -41,6 +41,7 @@ async def route_callback(
 
     * ``ms:`` -- model selector
     * ``crn:`` -- cron selector
+    * ``st:`` -- advanced settings selector
     * ``nsc:`` -- session selector
     * ``tsc:`` -- task selector
 
@@ -66,6 +67,10 @@ async def route_callback(
         handle_session_callback,
         is_session_selector_callback,
     )
+    from controlmesh.orchestrator.selectors.settings_selector import (
+        handle_settings_callback,
+        is_settings_selector_callback,
+    )
     from controlmesh.orchestrator.selectors.task_selector import (
         handle_task_callback,
         is_task_selector_callback,
@@ -73,22 +78,21 @@ async def route_callback(
 
     if is_model_selector_callback(callback_data):
         resp = await handle_model_callback(orch, key, callback_data)
-        return CallbackResult(text=resp.text, buttons=resp.buttons)
-
-    if is_cron_selector_callback(callback_data):
+    elif is_cron_selector_callback(callback_data):
         resp = await handle_cron_callback(orch, callback_data)
-        return CallbackResult(text=resp.text, buttons=resp.buttons)
-
-    if is_session_selector_callback(callback_data):
+    elif is_settings_selector_callback(callback_data):
+        resp = await handle_settings_callback(orch, callback_data)
+    elif is_session_selector_callback(callback_data):
         resp = await handle_session_callback(orch, key.chat_id, callback_data)
-        return CallbackResult(text=resp.text, buttons=resp.buttons)
-
-    if is_task_selector_callback(callback_data):
+    elif is_task_selector_callback(callback_data):
         hub = orch.task_hub
         if hub is None:
             return CallbackResult(text="Task system not available.", buttons=None)
         resp = await handle_task_callback(hub, key.chat_id, callback_data)
-        return CallbackResult(text=resp.text, buttons=resp.buttons)
+    else:
+        resp = None
 
-    # Transport-specific prefixes -- signal the caller to handle them.
-    return CallbackResult(handled=False)
+    if resp is None:
+        # Transport-specific prefixes -- signal the caller to handle them.
+        return CallbackResult(handled=False)
+    return CallbackResult(text=resp.text, buttons=resp.buttons)

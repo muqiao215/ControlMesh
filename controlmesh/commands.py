@@ -26,6 +26,7 @@ def get_bot_commands() -> list[tuple[str, str]]:
         ("cron", t_cmd("bot.cron")),
         ("status", t_cmd("bot.status")),
         ("memory", t_cmd("bot.memory")),
+        ("settings", t_cmd("bot.settings")),
         # Execution control
         ("stop", t_cmd("bot.stop")),
         ("interrupt", t_cmd("bot.interrupt")),

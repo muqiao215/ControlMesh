@@ -16,6 +16,7 @@ from controlmesh.orchestrator.commands import (
     cmd_memory,
     cmd_mode,
     cmd_model,
+    cmd_settings,
     cmd_status,
     parse_history_request,
 )
@@ -171,6 +172,42 @@ async def test_claude_native_on_off_updates_provider_local_mode(orch: Orchestrat
     assert session.native_commands_enabled is False
     assert session.command_mode == "cm"
     assert session.command_mode_model is None
+
+
+# -- cmd_settings --
+
+
+async def test_settings_status_returns_keyboard(orch: Orchestrator) -> None:
+    result = await cmd_settings(orch, SessionKey(chat_id=1), "/settings")
+
+    assert result.buttons is not None
+    assert "Advanced Settings" in result.text
+    assert "Streaming output" in result.text
+    assert "Tool event display" in result.text
+
+
+async def test_settings_output_switch_persists_to_config(orch: Orchestrator) -> None:
+    result = await cmd_settings(orch, SessionKey(chat_id=1), "/settings output tools")
+
+    assert "Streaming output updated" in result.text
+    assert orch._config.streaming.output_mode == "tools"
+    saved = json.loads(orch.paths.config_path.read_text(encoding="utf-8"))
+    assert saved["streaming"]["output_mode"] == "tools"
+
+
+async def test_settings_tool_display_switch_persists_to_config(orch: Orchestrator) -> None:
+    result = await cmd_settings(orch, SessionKey(chat_id=1), "/settings tools details")
+
+    assert "Tool event display updated" in result.text
+    assert orch._config.streaming.tool_display == "details"
+    saved = json.loads(orch.paths.config_path.read_text(encoding="utf-8"))
+    assert saved["streaming"]["tool_display"] == "details"
+
+
+async def test_settings_rejects_unknown_values(orch: Orchestrator) -> None:
+    result = await cmd_settings(orch, SessionKey(chat_id=1), "/settings output verbose")
+
+    assert "Usage: /settings" in result.text
 
 
 # -- cmd_memory --

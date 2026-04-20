@@ -314,7 +314,7 @@ class TestOnHelp:
 
         text = mock_send.call_args[0][2]
         assert "Advanced commands" in text
-        for command in ("showfiles", "info", "diagnose", "upgrade", "restart"):
+        for command in ("settings", "showfiles", "info", "diagnose", "upgrade", "restart"):
             assert f"/{command}" in text
 
     @patch("controlmesh.messenger.telegram.app.send_rich", new_callable=AsyncMock)
@@ -867,6 +867,32 @@ class TestCallbackQueryHandler:
         bot_instance.edit_message_text.assert_called_once()
         orch.handle_message_streaming.assert_not_called()
 
+    async def test_settings_selector_callback_edits_message(self) -> None:
+        tg_bot, bot_instance = _make_tg_bot()
+        orch = _make_orchestrator()
+        tg_bot._orchestrator = orch
+
+        from controlmesh.orchestrator.selectors.models import (
+            Button,
+            ButtonGrid,
+            SelectorResponse,
+        )
+
+        resp = SelectorResponse(
+            text="Advanced Settings",
+            buttons=ButtonGrid(rows=[[Button(text="Tools only", callback_data="st:o:tools")]]),
+        )
+        with patch(
+            "controlmesh.orchestrator.selectors.settings_selector.handle_settings_callback",
+            new_callable=AsyncMock,
+            return_value=resp,
+        ):
+            cb = _make_callback_query(data="st:o:tools", message_id=57)
+            await tg_bot._on_callback_query(cb)
+
+        bot_instance.edit_message_text.assert_called_once()
+        orch.handle_message_streaming.assert_not_called()
+
     async def test_non_model_selector_callback_routes_normally(self) -> None:
         tg_bot, _ = _make_tg_bot()
         orch = _make_orchestrator()
@@ -1080,6 +1106,39 @@ class TestHandleCronSelector:
         # Should not raise
 
 
+class TestHandleSettingsSelector:
+    async def test_edits_message_in_place(self) -> None:
+        from controlmesh.orchestrator.selectors.models import (
+            Button,
+            ButtonGrid,
+            SelectorResponse,
+        )
+
+        tg_bot, bot_instance = _make_tg_bot()
+        tg_bot._orchestrator = _make_orchestrator()
+        grid = ButtonGrid(rows=[[Button(text="Command + output", callback_data="st:t:details")]])
+        resp = SelectorResponse(text="Advanced Settings", buttons=grid)
+
+        with patch(
+            "controlmesh.orchestrator.selectors.settings_selector.handle_settings_callback",
+            new_callable=AsyncMock,
+            return_value=resp,
+        ):
+            await tg_bot._handle_settings_selector(chat_id=1, message_id=61, data="st:t:details")
+
+        from aiogram.enums import ParseMode
+
+        call_kwargs = bot_instance.edit_message_text.call_args
+        assert call_kwargs is not None
+        assert call_kwargs.kwargs["text"] == "Advanced Settings"
+        assert call_kwargs.kwargs["chat_id"] == 1
+        assert call_kwargs.kwargs["message_id"] == 61
+        assert call_kwargs.kwargs["parse_mode"] == ParseMode.HTML
+        markup = call_kwargs.kwargs["reply_markup"]
+        assert markup is not None
+        assert markup.inline_keyboard[0][0].text == "Command + output"
+
+
 # ---------------------------------------------------------------------------
 # _on_stop / _on_command / _on_new / _on_abort / _on_quick_command
 # ---------------------------------------------------------------------------
@@ -1289,6 +1348,7 @@ class TestSyncCommands:
         command_names = [command.command for command in _BOT_COMMANDS]
         assert "cm" in command_names
         assert "agents" in command_names
+        assert "settings" in command_names
         assert "agent_commands" not in command_names
         assert "showfiles" not in command_names
         assert "diagnose" not in command_names

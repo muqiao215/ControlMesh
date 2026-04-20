@@ -144,7 +144,7 @@ def _build_help_text(agent_name: str = "main") -> str:
         f"- {t('help.cap_memory')}",
     ]
     start_here_commands = ["model", "mode", "cm", "tasks", "cron"]
-    advanced_commands = ["showfiles", "info", "diagnose", "upgrade", "restart"]
+    advanced_commands = ["settings", "showfiles", "info", "diagnose", "upgrade", "restart"]
     if agent_name == "main":
         capability_lines.insert(3, f"- {t('help.cap_agents')}")
         start_here_commands.insert(4, "agents")
@@ -352,7 +352,18 @@ class TelegramBot:
         r.message(Command("tasks", ignore_case=True))(self._on_tasks)
         r.message(Command("showfiles", ignore_case=True))(self._on_showfiles)
         r.message(Command("agent_commands", ignore_case=True))(self._on_agent_commands)
-        base_cmds = ["status", "memory", "history", "model", "mode", "cm", "cron", "diagnose", "upgrade"]
+        base_cmds = [
+            "status",
+            "memory",
+            "history",
+            "model",
+            "mode",
+            "cm",
+            "settings",
+            "cron",
+            "diagnose",
+            "upgrade",
+        ]
         if self._agent_name == "main":
             base_cmds += ["agents", "agent_start", "agent_stop", "agent_restart"]
         for cmd in base_cmds:
@@ -1154,6 +1165,14 @@ class TelegramBot:
             await self._handle_cron_selector(key.chat_id, message_id, data)
             return True
 
+        from controlmesh.orchestrator.selectors.settings_selector import (
+            is_settings_selector_callback,
+        )
+
+        if is_settings_selector_callback(data):
+            await self._handle_settings_selector(key.chat_id, message_id, data)
+            return True
+
         if is_file_browser_callback(data):
             await self._handle_file_browser(key, message_id, data, thread_id=thread_id)
             return True
@@ -1204,6 +1223,14 @@ class TelegramBot:
 
         async with self._sequential.get_lock(chat_id):
             resp = await handle_cron_callback(self._orch, data)
+        await edit_selector_response(self._bot, chat_id, message_id, resp)
+
+    async def _handle_settings_selector(self, chat_id: int, message_id: int, data: str) -> None:
+        """Handle settings selector wizard by editing the message in-place."""
+        from controlmesh.orchestrator.selectors.settings_selector import handle_settings_callback
+
+        async with self._sequential.get_lock(chat_id):
+            resp = await handle_settings_callback(self._orch, data)
         await edit_selector_response(self._bot, chat_id, message_id, resp)
 
     async def _handle_session_selector(self, chat_id: int, message_id: int, data: str) -> None:

@@ -23,6 +23,12 @@ from controlmesh.orchestrator.selectors.cron_selector import cron_selector_start
 from controlmesh.orchestrator.selectors.model_selector import model_selector_start, switch_model
 from controlmesh.orchestrator.selectors.models import Button, ButtonGrid
 from controlmesh.orchestrator.selectors.session_selector import session_selector_start
+from controlmesh.orchestrator.selectors.settings_selector import (
+    set_streaming_output_mode,
+    set_tool_display_mode,
+    settings_selector_start,
+    settings_usage_text,
+)
 from controlmesh.orchestrator.selectors.task_selector import task_selector_start
 from controlmesh.text.response_format import SEP, fmt, new_session_text
 from controlmesh.workspace.loader import read_mainmemory
@@ -231,6 +237,29 @@ async def cmd_claude_native(orch: Orchestrator, key: SessionKey, text: str) -> O
             "Use /cm /status or /cm /model ... to force ControlMesh commands."
         )
     )
+
+
+async def cmd_settings(orch: Orchestrator, _key: SessionKey, text: str) -> OrchestratorResult:
+    """Handle /settings: advanced runtime output settings."""
+    parts = text.strip().split()
+    if len(parts) == 1 or (len(parts) == 2 and parts[1].lower() == "status"):
+        resp = await settings_selector_start(orch)
+        return OrchestratorResult(text=resp.text, buttons=resp.buttons)
+
+    if len(parts) < 3:
+        return OrchestratorResult(text=settings_usage_text())
+
+    section = parts[1].lower().replace("-", "_")
+    value = parts[2].lower()
+    if section in {"output", "streaming"} and value in {"full", "tools", "conversation", "off"}:
+        resp = await set_streaming_output_mode(orch, value)  # type: ignore[arg-type]
+        return OrchestratorResult(text=resp.text, buttons=resp.buttons)
+
+    if section in {"tools", "tool_display", "tool_output"} and value in {"name", "details"}:
+        resp = await set_tool_display_mode(orch, value)  # type: ignore[arg-type]
+        return OrchestratorResult(text=resp.text, buttons=resp.buttons)
+
+    return OrchestratorResult(text=settings_usage_text())
 
 
 async def cmd_controlmesh(orch: Orchestrator, key: SessionKey, text: str) -> OrchestratorResult:
