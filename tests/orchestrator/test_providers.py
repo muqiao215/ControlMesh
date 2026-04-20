@@ -63,6 +63,12 @@ class TestResolveRuntimeTarget:
         assert model == "haiku"
         assert provider == "claude"
 
+    def test_openai_agents_provider_config(self) -> None:
+        pm = _pm(model="gpt-5.4", provider="openai_agents")
+        model, provider = pm.resolve_runtime_target()
+        assert model == "gpt-5.4"
+        assert provider == "openai_agents"
+
 
 # ---------------------------------------------------------------------------
 # resolve_session_directive
@@ -250,6 +256,10 @@ class TestActiveProviderName:
     def test_codex(self) -> None:
         pm = _pm(model="o3-mini", provider="codex")
         assert pm.active_provider_name == "Codex"
+
+    def test_openai_agents(self) -> None:
+        pm = _pm(model="gpt-5.4", provider="openai_agents")
+        assert pm.active_provider_name == "OpenAI Agents"
 
 
 # ---------------------------------------------------------------------------

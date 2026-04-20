@@ -73,6 +73,8 @@ class ProviderManager:
             return "Claude Code"
         if provider == "gemini":
             return "Gemini"
+        if provider == "openai_agents":
+            return "OpenAI Agents"
         return "Codex"
 
     # -- Auth / init ----------------------------------------------------------
@@ -126,6 +128,10 @@ class ProviderManager:
     def resolve_runtime_target(self, requested_model: str | None = None) -> tuple[str, str]:
         """Resolve requested model to the effective ``(model, provider)`` pair."""
         model_name = requested_model or self._config.model
+        if self._config.provider == "openai_agents" and (
+            requested_model is None or requested_model == self._config.model
+        ):
+            return model_name, "openai_agents"
         return model_name, self._models.provider_for(model_name)
 
     def is_known_model(self, candidate: str) -> bool:
@@ -179,6 +185,7 @@ class ProviderManager:
             "claude": ("Claude Code", "#F97316"),
             "gemini": ("Gemini", "#8B5CF6"),
             "codex": ("Codex", "#10B981"),
+            "openai_agents": ("OpenAI Agents", "#2563EB"),
         }
         providers: list[dict[str, object]] = []
         for pid in sorted(self._available_providers):
@@ -192,6 +199,8 @@ class ProviderManager:
             elif pid == "codex":
                 cache = codex_cache_obs.get_cache() if codex_cache_obs else None
                 models = [m.id for m in cache.models] if cache and cache.models else []
+            elif pid == "openai_agents":
+                models = [self._config.model] if self._config.provider == "openai_agents" else []
             else:
                 models = []
             providers.append({"id": pid, "name": name, "color": color, "models": models})

@@ -63,6 +63,9 @@ api = [
 matrix = [
     "matrix-nio>=0.25.0",
 ]
+openai-agents = [
+    "openai-agents",
+]
 dev = ["controlmesh[test,lint,api,matrix]"]
 
 [project.urls]

@@ -77,6 +77,16 @@ class TestBuildProviderInfo:
         info = pm.build_provider_info(obs)
         assert info[0]["models"] == []
 
+    def test_openai_agents_provider_info(self) -> None:
+        pm, obs = _make_provider_manager(frozenset({"openai_agents"}))
+        pm._config.provider = "openai_agents"
+        pm._config.model = "gpt-5.4"
+        info = pm.build_provider_info(obs)
+        assert info[0]["id"] == "openai_agents"
+        assert info[0]["name"] == "OpenAI Agents"
+        assert info[0]["color"] == "#2563EB"
+        assert info[0]["models"] == ["gpt-5.4"]
+
     def test_empty_providers(self) -> None:
         pm, obs = _make_provider_manager(frozenset())
         info = pm.build_provider_info(obs)

@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import subprocess
+from importlib.util import find_spec
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum, unique
@@ -162,6 +163,27 @@ def check_codex_auth() -> AuthResult:
     result = AuthResult("codex", AuthStatus.NOT_FOUND)
     logger.debug("Auth check provider=%s status=%s", result.provider, result.status)
     return result
+
+
+def check_openai_agents_auth() -> AuthResult:
+    """Check optional OpenAI Agents SDK backend availability and API-key auth."""
+    if not _openai_agents_sdk_installed():
+        result = AuthResult("openai_agents", AuthStatus.NOT_FOUND)
+        logger.debug("Auth check provider=%s status=%s", result.provider, result.status)
+        return result
+
+    if _has_nonempty_env("OPENAI_API_KEY"):
+        result = AuthResult("openai_agents", AuthStatus.AUTHENTICATED)
+        logger.debug("Auth check provider=%s status=%s (env key)", result.provider, result.status)
+        return result
+
+    result = AuthResult("openai_agents", AuthStatus.INSTALLED)
+    logger.debug("Auth check provider=%s status=%s", result.provider, result.status)
+    return result
+
+
+def _openai_agents_sdk_installed() -> bool:
+    return find_spec("agents") is not None
 
 
 def check_gemini_auth() -> AuthResult:
@@ -400,6 +422,7 @@ def _normalize_key_like_value(raw: str) -> str:
 _CHECKERS: dict[str, Callable[[], AuthResult]] = {
     "claude": check_claude_auth,
     "codex": check_codex_auth,
+    "openai_agents": check_openai_agents_auth,
     "gemini": check_gemini_auth,
 }
 

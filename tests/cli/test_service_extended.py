@@ -43,6 +43,17 @@ def test_make_cli_default_provider(tmp_path: Path) -> None:
     assert call_args.model == "opus"
 
 
+def test_make_cli_respects_openai_agents_service_provider(tmp_path: Path) -> None:
+    svc = _make_service(tmp_path, default_model="gpt-5.4", provider="openai_agents")
+    with patch("controlmesh.cli.service.create_cli") as mock_create:
+        mock_create.return_value = MagicMock()
+        svc._make_cli(AgentRequest(prompt="test", chat_id=1))
+
+    call_args = mock_create.call_args[0][0]
+    assert call_args.provider == "openai_agents"
+    assert call_args.model == "gpt-5.4"
+
+
 def test_make_cli_with_model_override(tmp_path: Path) -> None:
     svc = _make_service(tmp_path)
     with patch("controlmesh.cli.service.create_cli") as mock_create:
@@ -62,6 +73,36 @@ def test_make_cli_with_provider_override(tmp_path: Path) -> None:
 
     call_args = mock_create.call_args[0][0]
     assert call_args.provider == "codex"
+
+
+def test_make_cli_with_openai_agents_provider_override(tmp_path: Path) -> None:
+    svc = _make_service(tmp_path, default_model="sonnet")
+    svc.update_config(
+        CLIServiceConfig(
+            working_dir=str(tmp_path),
+            default_model="sonnet",
+            provider="claude",
+            max_turns=None,
+            max_budget_usd=None,
+            permission_mode="bypassPermissions",
+            claude_cli_parameters=("--claude-flag", "claude-value"),
+        )
+    )
+    with patch("controlmesh.cli.service.create_cli") as mock_create:
+        mock_create.return_value = MagicMock()
+        svc._make_cli(
+            AgentRequest(
+                prompt="test",
+                provider_override="openai_agents",
+                model_override="gpt-5.4",
+                chat_id=1,
+            )
+        )
+
+    call_args = mock_create.call_args[0][0]
+    assert call_args.provider == "openai_agents"
+    assert call_args.model == "gpt-5.4"
+    assert call_args.cli_parameters == []
 
 
 def test_make_cli_does_not_auto_fallback_provider(tmp_path: Path) -> None:

@@ -9,6 +9,7 @@ from controlmesh.cli.claude_provider import ClaudeCodeCLI
 from controlmesh.cli.codex_provider import CodexCLI
 from controlmesh.cli.factory import create_cli
 from controlmesh.cli.gemini_provider import GeminiCLI
+from controlmesh.cli.openai_agents_provider import OpenAIAgentsCLI
 
 
 def test_create_cli_returns_claude_by_default() -> None:
@@ -28,6 +29,11 @@ def test_create_cli_returns_gemini() -> None:
     ):
         cli = create_cli(CLIConfig(provider="gemini"))
     assert isinstance(cli, GeminiCLI)
+
+
+def test_create_cli_returns_openai_agents() -> None:
+    cli = create_cli(CLIConfig(provider="openai_agents"))
+    assert isinstance(cli, OpenAIAgentsCLI)
 
 
 def test_create_cli_unknown_provider_returns_claude() -> None:

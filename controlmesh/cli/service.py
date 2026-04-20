@@ -101,7 +101,9 @@ class CLIServiceConfig:
             return list(self.codex_cli_parameters)
         if provider == "gemini":
             return list(self.gemini_cli_parameters)
-        return list(self.claude_cli_parameters)
+        if provider == "claude":
+            return list(self.claude_cli_parameters)
+        return []
 
 
 class CLIService:
@@ -300,6 +302,8 @@ class CLIService:
         """Return ``(provider, model)`` that would be used for *request*."""
         if request.provider_override:
             return request.provider_override, request.model_override or ""
+        if self._config.provider == "openai_agents":
+            return "openai_agents", request.model_override or self._config.default_model
         model = request.model_override or self._config.default_model
         return self._models.provider_for(model), model
 

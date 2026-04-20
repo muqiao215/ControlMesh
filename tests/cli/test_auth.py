@@ -11,6 +11,7 @@ from controlmesh.cli.auth import (
     check_claude_auth,
     check_codex_auth,
     check_gemini_auth,
+    check_openai_agents_auth,
     format_age,
     gemini_uses_api_key_mode,
 )
@@ -225,6 +226,45 @@ def test_check_codex_auth_config_toml_installed(
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     result = check_codex_auth()
     assert result.status == AuthStatus.INSTALLED
+
+
+# -- OpenAI Agents auth --
+
+
+def test_check_openai_agents_auth_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
+    import controlmesh.cli.auth as _auth_mod
+
+    monkeypatch.setattr(_auth_mod, "_openai_agents_sdk_installed", lambda: False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    result = check_openai_agents_auth()
+
+    assert result.provider == "openai_agents"
+    assert result.status == AuthStatus.NOT_FOUND
+
+
+def test_check_openai_agents_auth_installed(monkeypatch: pytest.MonkeyPatch) -> None:
+    import controlmesh.cli.auth as _auth_mod
+
+    monkeypatch.setattr(_auth_mod, "_openai_agents_sdk_installed", lambda: True)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    result = check_openai_agents_auth()
+
+    assert result.provider == "openai_agents"
+    assert result.status == AuthStatus.INSTALLED
+
+
+def test_check_openai_agents_auth_env_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    import controlmesh.cli.auth as _auth_mod
+
+    monkeypatch.setattr(_auth_mod, "_openai_agents_sdk_installed", lambda: True)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-key")
+
+    result = check_openai_agents_auth()
+
+    assert result.provider == "openai_agents"
+    assert result.status == AuthStatus.AUTHENTICATED
 
 
 # -- Gemini auth --
