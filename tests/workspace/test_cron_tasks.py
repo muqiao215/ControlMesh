@@ -120,6 +120,18 @@ def test_create_cron_task_creates_scripts_dir(tmp_path: Path) -> None:
     assert (task_path / "scripts").is_dir()
 
 
+def test_create_cron_task_creates_default_task_config(tmp_path: Path) -> None:
+    paths = _make_paths(tmp_path)
+    task_path = create_cron_task(paths, "my-feature", "My Feature", "Build the login page")
+    task_config = task_path / "task.config.json"
+
+    assert task_config.exists()
+    content = task_config.read_text(encoding="utf-8")
+    assert '"primary": "feishu"' in content
+    assert '"mode": "local"' in content
+    assert '"enabled": false' in content
+
+
 def test_create_cron_task_no_venv_by_default(tmp_path: Path) -> None:
     paths = _make_paths(tmp_path)
     task_path = create_cron_task(paths, "my-feature", "My Feature", "desc")

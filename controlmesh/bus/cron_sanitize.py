@@ -6,7 +6,10 @@ transport-level acknowledgement lines from cron output.
 
 from __future__ import annotations
 
+import re
+
 _CRON_ACK_MARKERS = ("message sent successfully", "delivered to telegram")
+_ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 
 
 def is_cron_transport_ack_line(line: str) -> bool:
@@ -19,5 +22,6 @@ def sanitize_cron_result_text(result: str) -> str:
     """Strip transport ack lines from a cron result."""
     if not result:
         return ""
-    lines = [line for line in result.splitlines() if not is_cron_transport_ack_line(line)]
+    clean = _ANSI_RE.sub("", result)
+    lines = [line for line in clean.splitlines() if not is_cron_transport_ack_line(line)]
     return "\n".join(lines).strip()

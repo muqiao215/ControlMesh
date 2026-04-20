@@ -14,6 +14,7 @@ from controlmesh.cli.codex_events import parse_codex_jsonl
 from controlmesh.cli.gemini_events import parse_gemini_json
 from controlmesh.cli.gemini_utils import find_gemini_cli
 from controlmesh.cli.param_resolver import TaskExecutionConfig
+from controlmesh.cron.policy import CronTaskPolicy
 from controlmesh.infra.platform import CREATION_FLAGS as _CREATION_FLAGS
 from controlmesh.infra.process_tree import force_kill_process_tree
 
@@ -34,19 +35,56 @@ def build_cmd(exec_config: TaskExecutionConfig, prompt: str) -> OneShotCommand |
     return builder(exec_config, prompt)
 
 
-def enrich_instruction(instruction: str, task_folder: str) -> str:
+def enrich_instruction(
+    instruction: str,
+    task_folder: str,
+    *,
+    policy: CronTaskPolicy | None = None,
+) -> str:
     """Append memory file instructions to the agent instruction."""
+    policy = policy or CronTaskPolicy()
     memory_file = f"{task_folder}_MEMORY.md"
+    policy_block = _render_policy_instruction(policy)
     return (
         f"{instruction}\n\n"
         f"IMPORTANT:\n"
         f"- Read the {memory_file} file (it contains important information!)\n"
         f"- When finished, update {memory_file} with DATE + TIME and what you have done.\n"
+        f"{policy_block}\n"
         "- The final answer is delivered to Telegram automatically by controlmesh.\n"
         "- Return only the user-facing result text.\n"
         "- Do not include transport/debug/tool confirmations "
         '(for example: "Message sent successfully").'
     )
+
+
+def _render_policy_instruction(policy: CronTaskPolicy) -> str:
+    """Describe artifact/notify/publish boundaries inside the task prompt."""
+    lines = [
+        "- Cron delivery policy:",
+        f"  - notify primary: {policy.delivery.primary}",
+        f"  - notify format: {policy.delivery.format}",
+        f"  - local artifact path: {policy.artifact.path}",
+        f"  - artifact mode: {policy.artifact.mode}",
+    ]
+    if policy.publish.enabled:
+        lines.extend(
+            [
+                "  - publish.enabled=true",
+                f"  - publish target: {policy.publish.target}",
+                f"  - publish mode: {policy.publish.mode}",
+            ],
+        )
+        if policy.publish.require_review:
+            lines.append("  - external publish still requires review before finalizing")
+    else:
+        lines.extend(
+            [
+                "  - publish.enabled=false",
+                "  - Do not write to external publishing targets, docs, tables, wikis, or APIs.",
+            ],
+        )
+    return "\n".join(lines)
 
 
 def parse_claude_result(stdout: bytes) -> str:

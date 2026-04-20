@@ -92,6 +92,7 @@ async def execute_in_task_folder(  # noqa: PLR0913
     """
     from controlmesh.cron.dependency_queue import get_dependency_queue
     from controlmesh.cron.execution import enrich_instruction
+    from controlmesh.cron.policy import load_task_policy
 
     dep_queue = get_dependency_queue()
 
@@ -105,7 +106,8 @@ async def execute_in_task_folder(  # noqa: PLR0913
             )
 
         exec_config = observer.resolve_execution_config(overrides)
-        enriched = enrich_instruction(instruction, task_folder)
+        policy = load_task_policy(folder)
+        enriched = enrich_instruction(instruction, task_folder, policy=policy)
 
         logger.debug(
             "%s cwd=%s provider=%s model=%s timeout=%.0fs",

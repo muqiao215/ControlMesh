@@ -8,6 +8,7 @@ import shutil
 import venv
 from pathlib import Path
 
+from controlmesh.cron.policy import write_default_task_policy
 from controlmesh.workspace.paths import ControlMeshPaths
 
 logger = logging.getLogger(__name__)
@@ -154,6 +155,7 @@ def create_cron_task(
         encoding="utf-8",
     )
     (task_dir / "scripts").mkdir(exist_ok=True)
+    write_default_task_policy(task_dir)
 
     if with_venv:
         _create_venv(task_dir / ".venv")
