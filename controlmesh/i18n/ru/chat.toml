@@ -307,6 +307,18 @@ matrix_description = "ИИ-агенты для кода (Claude, Codex, Gemini) 
 
 [help]
 header = "**Справка по командам**"
+overview_header = "**Карта возможностей ControlMesh**"
+overview_intro = "ControlMesh - слой оркестрации для маршрутизации моделей, CLI-takeover, автономной работы, флота агентов, расписаний и постоянной памяти."
+capabilities_header = "**Что умеет ControlMesh**"
+cap_model = "Маршрутизация моделей - выбирай Claude-compatible, Codex, Gemini или SDK-каналы через `/model`."
+cap_takeover = "CLI-takeover - отправляй slash-команды в provider-канал через `/mode` и возвращайся через `/cm`."
+cap_tasks = "Автономные фоновые задачи - делегируй долгую работу через `/tasks` и продолжай чат."
+cap_agents = "Флот агентов - смотри и управляй sub-agent через `/agents` и agent-команды."
+cap_cron = "Автоматизация по расписанию - управляй повторяющимися jobs через `/cron`."
+cap_memory = "Память и сессии - возвращай контекст через `/session` и смотри основную память через `/memory`."
+start_here_header = "**Начни здесь**"
+daily_controls_header = "**Ежедневные команды**"
+advanced_header = "**Продвинутые команды**"
 cat_daily = "Ежедневное"
 cat_automation = "Автоматизация"
 cat_multiagent = "Multi-Agent"

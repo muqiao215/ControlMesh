@@ -284,8 +284,12 @@ class TestOnHelp:
         assert call_kwargs[0][0] is bot_instance
         assert call_kwargs[0][1] == 42
         text = call_kwargs[0][2]
-        assert "Command Reference" in text
+        assert "Capability Map" in text
+        assert "Model routing" in text
+        assert "Autonomous background tasks" in text
+        assert "Agent fleet" in text
         assert "/help" in text
+        assert "Command Reference" not in text
 
     @patch("controlmesh.messenger.telegram.app.send_rich", new_callable=AsyncMock)
     async def test_help_lists_all_registered_commands(self, mock_send: AsyncMock) -> None:
@@ -298,6 +302,18 @@ class TestOnHelp:
 
         text = mock_send.call_args[0][2]
         for command, _desc in BOT_COMMANDS:
+            assert f"/{command}" in text
+
+    @patch("controlmesh.messenger.telegram.app.send_rich", new_callable=AsyncMock)
+    async def test_help_keeps_advanced_commands_discoverable(self, mock_send: AsyncMock) -> None:
+        tg_bot, _bot_instance = _make_tg_bot()
+        msg = _make_message(chat_id=42)
+
+        await tg_bot._on_help(msg)
+
+        text = mock_send.call_args[0][2]
+        assert "Advanced commands" in text
+        for command in ("showfiles", "info", "diagnose", "upgrade", "restart"):
             assert f"/{command}" in text
 
     @patch("controlmesh.messenger.telegram.app.send_rich", new_callable=AsyncMock)

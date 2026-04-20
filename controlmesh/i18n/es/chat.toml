@@ -307,6 +307,18 @@ matrix_description = "Agentes de código IA (Claude, Codex, Gemini) en Matrix.\n
 
 [help]
 header = "**Referencia de comandos**"
+overview_header = "**Mapa de capacidades de ControlMesh**"
+overview_intro = "ControlMesh es la capa de orquestación para enrutar modelos, tomar control CLI, trabajo autónomo, flotas de agentes, automatización programada y memoria persistente."
+capabilities_header = "**Qué puede hacer ControlMesh**"
+cap_model = "Enrutamiento de modelos - elige canales Claude-compatible, Codex, Gemini o SDK con `/model`."
+cap_takeover = "Takeover CLI - envía comandos slash a un canal proveedor con `/mode` y vuelve con `/cm`."
+cap_tasks = "Tareas autónomas en segundo plano - delega trabajo largo con `/tasks` y sigue chateando."
+cap_agents = "Flota de agentes - inspecciona y dirige sub-agentes con `/agents` y controles de agente."
+cap_cron = "Automatizaciones programadas - gestiona trabajos recurrentes con `/cron`."
+cap_memory = "Memoria y sesiones - retoma contexto con `/session` y revisa memoria principal con `/memory`."
+start_here_header = "**Empieza aquí**"
+daily_controls_header = "**Controles diarios**"
+advanced_header = "**Comandos avanzados**"
 cat_daily = "Diario"
 cat_automation = "Automatización"
 cat_multiagent = "Multi-agente"

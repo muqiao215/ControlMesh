@@ -306,6 +306,18 @@ matrix_description = "AI coding agents (Claude, Codex, Gemini) on Matrix.\nNamed
 
 [help]
 header = "**Command Reference**"
+overview_header = "**ControlMesh Capability Map**"
+overview_intro = "ControlMesh is the orchestration layer for model routing, CLI takeover, autonomous work, agent fleets, scheduled automation, and persistent memory."
+capabilities_header = "**What ControlMesh can do**"
+cap_model = "Model routing - choose Claude-compatible, Codex, Gemini, or SDK-backed channels with `/model`."
+cap_takeover = "CLI takeover - hand slash commands to a provider channel with `/mode`, then return with `/cm`."
+cap_tasks = "Autonomous background tasks - delegate long work with `/tasks` and keep chatting."
+cap_agents = "Agent fleet - inspect and steer sub-agents with `/agents` and agent controls."
+cap_cron = "Timed automations - manage recurring jobs with `/cron`."
+cap_memory = "Memory and sessions - resume context with `/session` and inspect main memory with `/memory`."
+start_here_header = "**Start here**"
+daily_controls_header = "**Daily controls**"
+advanced_header = "**Advanced commands**"
 cat_daily = "Daily"
 cat_automation = "Automation"
 cat_multiagent = "Multi-Agent"

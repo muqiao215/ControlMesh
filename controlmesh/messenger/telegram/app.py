@@ -130,15 +130,41 @@ def _help_line(command: str) -> str:
 
 def _build_help_text() -> str:
     return fmt(
-        t("help.header"),
+        t("help.overview_header"),
+        t("help.overview_intro"),
         SEP,
-        f"{t('help.cat_daily')}\n{_help_line('new')}\n{_help_line('model')}\n{_help_line('mode')}\n{_help_line('cm')}\n"
-        f"{_help_line('status')}\n{_help_line('memory')}\n{_help_line('stop')}\n{_help_line('interrupt')}",
-        f"{t('help.cat_automation')}\n{_help_line('session')}\n{_help_line('tasks')}\n{_help_line('cron')}",
-        f"{t('help.cat_multiagent')}\n{_help_line('agents')}\n{_help_line('agent_start')}\n{_help_line('agent_stop')}\n{_help_line('agent_restart')}",
-        f"{t('help.cat_browse')}\n{_help_line('where')}\n{_help_line('leave')}\n"
-        f"{_help_line('showfiles')}\n{_help_line('info')}\n{_help_line('help')}",
-        f"{t('help.cat_maintenance')}\n{_help_line('stop_all')}\n{_help_line('diagnose')}\n{_help_line('upgrade')}\n{_help_line('restart')}",
+        f"{t('help.capabilities_header')}\n"
+        f"- {t('help.cap_model')}\n"
+        f"- {t('help.cap_takeover')}\n"
+        f"- {t('help.cap_tasks')}\n"
+        f"- {t('help.cap_agents')}\n"
+        f"- {t('help.cap_cron')}\n"
+        f"- {t('help.cap_memory')}",
+        f"{t('help.start_here_header')}\n"
+        f"{_help_line('model')}\n"
+        f"{_help_line('mode')}\n"
+        f"{_help_line('cm')}\n"
+        f"{_help_line('tasks')}\n"
+        f"{_help_line('agents')}\n"
+        f"{_help_line('cron')}",
+        f"{t('help.daily_controls_header')}\n"
+        f"{_help_line('new')}\n"
+        f"{_help_line('session')}\n"
+        f"{_help_line('status')}\n"
+        f"{_help_line('memory')}\n"
+        f"{_help_line('stop')}\n"
+        f"{_help_line('interrupt')}\n"
+        f"{_help_line('help')}",
+        f"{t('help.advanced_header')}\n"
+        f"{_help_line('showfiles')}\n"
+        f"{_help_line('info')}\n"
+        f"{_help_line('agent_start')}\n"
+        f"{_help_line('agent_stop')}\n"
+        f"{_help_line('agent_restart')}\n"
+        f"{_help_line('stop_all')}\n"
+        f"{_help_line('diagnose')}\n"
+        f"{_help_line('upgrade')}\n"
+        f"{_help_line('restart')}",
         SEP,
         t("help.footer"),
     )

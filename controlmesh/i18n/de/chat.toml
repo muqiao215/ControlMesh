@@ -307,6 +307,18 @@ matrix_description = "KI-Coding-Agents (Claude, Codex, Gemini) auf Matrix.\nBena
 
 [help]
 header = "**Befehlsübersicht**"
+overview_header = "**ControlMesh Capability Map**"
+overview_intro = "ControlMesh ist die Orchestrierungsschicht für Modell-Routing, CLI-Übernahme, autonome Arbeit, Agent-Flotten, geplante Automatisierung und persistentes Gedächtnis."
+capabilities_header = "**Was ControlMesh kann**"
+cap_model = "Modell-Routing - wähle Claude-kompatible, Codex-, Gemini- oder SDK-Kanäle mit `/model`."
+cap_takeover = "CLI-Übernahme - leite Slash-Befehle mit `/mode` an einen Provider-Kanal und kehre mit `/cm` zurück."
+cap_tasks = "Autonome Hintergrundaufgaben - delegiere lange Arbeit mit `/tasks` und chatte weiter."
+cap_agents = "Agent-Flotte - inspiziere und steuere Sub-Agents mit `/agents` und Agent-Befehlen."
+cap_cron = "Zeitgesteuerte Automationen - verwalte wiederkehrende Jobs mit `/cron`."
+cap_memory = "Gedächtnis und Sessions - nimm Kontext mit `/session` wieder auf und prüfe Hauptspeicher mit `/memory`."
+start_here_header = "**Hier starten**"
+daily_controls_header = "**Tägliche Steuerung**"
+advanced_header = "**Erweiterte Befehle**"
 cat_daily = "Alltag"
 cat_automation = "Automatisierung"
 cat_multiagent = "Multi-Agent"

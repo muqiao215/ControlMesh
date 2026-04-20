@@ -307,6 +307,18 @@ matrix_description = "AI-coding-agents (Claude, Codex, Gemini) op Matrix.\nBenoe
 
 [help]
 header = "**Commandooverzicht**"
+overview_header = "**ControlMesh Capability Map**"
+overview_intro = "ControlMesh is de orchestratielaag voor modelrouting, CLI-overname, autonoom werk, agent-vloten, geplande automatisering en persistent geheugen."
+capabilities_header = "**Wat ControlMesh kan doen**"
+cap_model = "Modelrouting - kies Claude-compatible, Codex-, Gemini- of SDK-kanalen met `/model`."
+cap_takeover = "CLI-overname - stuur slash-commando's naar een providerkanaal met `/mode` en keer terug met `/cm`."
+cap_tasks = "Autonome achtergrondtaken - delegeer lang werk met `/tasks` en chat verder."
+cap_agents = "Agent-vloot - inspecteer en stuur sub-agents met `/agents` en agentcommando's."
+cap_cron = "Geplande automatisering - beheer terugkerende jobs met `/cron`."
+cap_memory = "Geheugen en sessies - hervat context met `/session` en bekijk hoofdgeheugen met `/memory`."
+start_here_header = "**Begin hier**"
+daily_controls_header = "**Dagelijkse bediening**"
+advanced_header = "**Geavanceerde commando's**"
 cat_daily = "Dagelijks"
 cat_automation = "Automatisering"
 cat_multiagent = "Multi-Agent"
