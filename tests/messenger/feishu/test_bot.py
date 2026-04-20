@@ -47,6 +47,7 @@ def _make_bot(
     *,
     provider: str = "claude",
     model: str = "sonnet",
+    output_mode: str = "full",
     **feishu_overrides: object,
 ) -> FeishuBot:
     feishu_config: dict[str, object] = {
@@ -62,6 +63,7 @@ def _make_bot(
         controlmesh_home=str(tmp_path),
         provider=provider,
         model=model,
+        streaming={"output_mode": output_mode},
         feishu=feishu_config,
     )
     bot = FeishuBot(config)
@@ -580,6 +582,142 @@ class TestFeishuBotRouting:
             ("oc_chat_1", "[TOOL: Shell]", "om_1"),
             ("oc_chat_1", "pong", "om_1"),
         ]
+
+    async def test_handle_incoming_text_output_tools_hides_system_progress(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path, output_mode="tools")
+        sent: list[tuple[str, str, str | None]] = []
+
+        async def _fake_send(
+            chat_ref: str,
+            text: str,
+            *,
+            reply_to_message_id: str | None = None,
+        ) -> None:
+            sent.append((chat_ref, text, reply_to_message_id))
+
+        async def _fake_stream(
+            _key: object,
+            _text: str,
+            *,
+            on_text_delta: AsyncMock | None = None,
+            on_tool_activity: AsyncMock | None = None,
+            on_system_status: AsyncMock | None = None,
+        ) -> SimpleNamespace:
+            assert on_text_delta is not None
+            assert on_tool_activity is not None
+            assert on_system_status is None
+            await on_tool_activity("Shell")
+            return SimpleNamespace(text="pong")
+
+        bot._orchestrator = SimpleNamespace(
+            handle_message_streaming=AsyncMock(side_effect=_fake_stream)
+        )
+        bot._send_text_to_chat_ref = AsyncMock(side_effect=_fake_send)  # type: ignore[method-assign]
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="ping",
+            )
+        )
+
+        assert sent == [
+            ("oc_chat_1", "[TOOL: Shell]", "om_1"),
+            ("oc_chat_1", "pong", "om_1"),
+        ]
+
+    async def test_handle_incoming_text_output_conversation_hides_tool_and_system_progress(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path, output_mode="conversation")
+        sent: list[tuple[str, str, str | None]] = []
+
+        async def _fake_send(
+            chat_ref: str,
+            text: str,
+            *,
+            reply_to_message_id: str | None = None,
+        ) -> None:
+            sent.append((chat_ref, text, reply_to_message_id))
+
+        async def _fake_stream(
+            _key: object,
+            _text: str,
+            *,
+            on_text_delta: AsyncMock | None = None,
+            on_tool_activity: AsyncMock | None = None,
+            on_system_status: AsyncMock | None = None,
+        ) -> SimpleNamespace:
+            assert on_text_delta is not None
+            assert on_tool_activity is None
+            assert on_system_status is None
+            await on_text_delta("ignored by text progress reporter")
+            return SimpleNamespace(text="pong")
+
+        bot._orchestrator = SimpleNamespace(
+            handle_message_streaming=AsyncMock(side_effect=_fake_stream)
+        )
+        bot._send_text_to_chat_ref = AsyncMock(side_effect=_fake_send)  # type: ignore[method-assign]
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="ping",
+            )
+        )
+
+        assert sent == [("oc_chat_1", "pong", "om_1")]
+
+    async def test_handle_incoming_text_output_off_skips_card_preview_progress(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path, output_mode="off", progress_mode="card_preview")
+        bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+        bot._send_card_to_chat_ref = AsyncMock(return_value="om_preview")  # type: ignore[attr-defined]
+        bot._patch_message = AsyncMock()  # type: ignore[attr-defined]
+
+        async def _fake_stream(
+            _key: object,
+            _text: str,
+            *,
+            on_text_delta: AsyncMock | None = None,
+            on_tool_activity: AsyncMock | None = None,
+            on_system_status: AsyncMock | None = None,
+        ) -> SimpleNamespace:
+            assert on_text_delta is None
+            assert on_tool_activity is None
+            assert on_system_status is None
+            return SimpleNamespace(text="pong")
+
+        bot._orchestrator = SimpleNamespace(
+            handle_message_streaming=AsyncMock(side_effect=_fake_stream)
+        )
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="ping",
+            )
+        )
+
+        bot._send_card_to_chat_ref.assert_not_awaited()
+        bot._patch_message.assert_not_awaited()
+        bot._send_text_to_chat_ref.assert_awaited_once_with(
+            "oc_chat_1",
+            "pong",
+            reply_to_message_id="om_1",
+        )
 
     async def test_handle_incoming_text_app_scope_missing_routes_to_native_permission_flow(
         self,

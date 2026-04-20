@@ -85,10 +85,12 @@ _FEISHU_CONTENT_DEDUP_MAX_SIZE = 4000
 _FEISHU_OLD_MESSAGE_GRACE_SECONDS = 2.0
 _FEISHU_PROGRESS_ACK_DELAY_SECONDS = 1.5
 _FEISHU_PROGRESS_MAX_MESSAGES = 8
+_TextStreamCallback = Callable[[str], Awaitable[None]]
+_StatusStreamCallback = Callable[[str | None], Awaitable[None]]
 _FEISHU_COMMAND_GUIDE_VERSION = 1
 _FEISHU_COMMAND_GUIDE_TEXT = (
     "ControlMesh 已接入。\n\n"
-    "常用命令：\n"
+    "常用命令:\n"
     "/help — 查看命令\n"
     "/status — 查看当前状态\n"
     "/model — 切换模型\n"
@@ -96,8 +98,27 @@ _FEISHU_COMMAND_GUIDE_TEXT = (
     "/claude_native on — 打开 Claude 原生命令模式\n"
     "/claude_native off — 关闭 Claude 原生命令模式\n"
     "/cm /status — 强制走 ControlMesh 命令\n\n"
-    "不知道发什么时，直接说需求也可以。"
+    "不知道发什么时, 直接说需求也可以。"
 )
+
+
+def _stream_callbacks_for_output_mode(
+    mode: str,
+    *,
+    on_text: _TextStreamCallback,
+    on_tool: _TextStreamCallback,
+    on_system: _StatusStreamCallback,
+) -> tuple[_TextStreamCallback | None, _TextStreamCallback | None, _StatusStreamCallback | None]:
+    """Map output mode to Feishu streaming callbacks."""
+    if mode == "full":
+        return on_text, on_tool, on_system
+    if mode == "tools":
+        return on_text, on_tool, None
+    if mode == "conversation":
+        return on_text, None, None
+    if mode == "off":
+        return None, None, None
+    return on_text, on_tool, on_system
 
 
 class _FeishuProgressReporter:
@@ -391,7 +412,8 @@ class FeishuBot:
                     if content_key:
                         self._recent_content_dedup.check(content_key)
                     return
-                progress.start()
+                if self._should_start_progress():
+                    progress.start()
                 if content_key:
                     self._inflight_content_keys.add(content_key)
                 auth_routed, result = await self._run_streaming_turn(
@@ -514,12 +536,18 @@ class FeishuBot:
                     await progress.on_agent_event(event)
                 await progress.finish_with_single_card_run(turn.card)
                 return False, turn
+            text_cb, tool_cb, system_cb = _stream_callbacks_for_output_mode(
+                self._config.streaming.output_mode,
+                on_text=progress.on_text_delta,
+                on_tool=progress.on_tool,
+                on_system=progress.on_system,
+            )
             result = await self._orchestrator.handle_message_streaming(
                 SessionKey.for_transport("fs", chat_id, topic_id),
                 prompt_text,
-                on_text_delta=progress.on_text_delta,
-                on_tool_activity=progress.on_tool,
-                on_system_status=progress.on_system,
+                on_text_delta=text_cb,
+                on_tool_activity=tool_cb,
+                on_system_status=system_cb,
             )
         except FeishuNativeToolAuthRequiredError as exc:
             await self._handle_native_tool_auth_required(message, exc.contract)
@@ -534,6 +562,10 @@ class FeishuBot:
             return False
         _model, provider = resolve_runtime_target(self._config.model)
         return provider == "codex"
+
+    def _should_start_progress(self) -> bool:
+        """Return True when Feishu should emit non-conversation progress UI."""
+        return self._config.streaming.output_mode in {"full", "tools"}
 
     async def _run_bundled_native_runtime_turn(
         self,
@@ -676,6 +708,12 @@ class FeishuBot:
         chat_ref: str,
         reply_to_message_id: str | None,
     ) -> _FeishuProgressReporter:
+        if self._config.streaming.output_mode == "off":
+            return _FeishuProgressReporter(
+                self,
+                chat_ref=chat_ref,
+                reply_to_message_id=reply_to_message_id,
+            )
         if self._config.feishu.progress_mode == "card_stream":
             from controlmesh.messenger.feishu.card_stream import FeishuCardStreamReporter
 
