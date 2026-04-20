@@ -26,6 +26,7 @@ from _shared import (
     safe_task_dir,
     sanitize_name,
     save_jobs,
+    update_task_policy,
 )
 
 _TUTORIAL = """\
@@ -50,6 +51,18 @@ CHANGES:
   --clear-dependency         Remove dependency (allow parallel execution)
   --enable                   Set enabled=true
   --disable                  Set enabled=false
+
+TASK POLICY SIDECAR:
+  --delivery-primary "<name>"       Set task.config.json delivery.primary
+  --delivery-format "<format>"      Set task.config.json delivery.format
+  --artifact-mode "<mode>"          Set task.config.json artifact.mode
+  --artifact-path "<path>"          Set task.config.json artifact.path
+  --publish-enabled                Set task.config.json publish.enabled=true
+  --publish-disabled               Set task.config.json publish.enabled=false
+  --publish-target "<target>"       Set task.config.json publish.target
+  --publish-mode "<mode>"           Set task.config.json publish.mode
+  --publish-require-review         Set task.config.json publish.require_review=true
+  --publish-no-review              Set task.config.json publish.require_review=false
 
 EXAMPLES:
   python tools/cron_tools/cron_edit.py "weather-check" --schedule "30 8 * * *"
@@ -105,7 +118,68 @@ def _parse_args() -> argparse.Namespace:
     enabled_group = parser.add_mutually_exclusive_group()
     enabled_group.add_argument("--enable", action="store_true", help="Enable the job")
     enabled_group.add_argument("--disable", action="store_true", help="Disable the job")
+    parser.add_argument("--delivery-primary", help="task.config.json delivery.primary value")
+    parser.add_argument("--delivery-format", help="task.config.json delivery.format value")
+    parser.add_argument("--artifact-mode", help="task.config.json artifact.mode value")
+    parser.add_argument("--artifact-path", help="task.config.json artifact.path value")
+    publish_enabled_group = parser.add_mutually_exclusive_group()
+    publish_enabled_group.add_argument(
+        "--publish-enabled",
+        action="store_true",
+        help="Set task.config.json publish.enabled=true",
+    )
+    publish_enabled_group.add_argument(
+        "--publish-disabled",
+        action="store_true",
+        help="Set task.config.json publish.enabled=false",
+    )
+    parser.add_argument("--publish-target", help="task.config.json publish.target value")
+    parser.add_argument("--publish-mode", help="task.config.json publish.mode value")
+    publish_review_group = parser.add_mutually_exclusive_group()
+    publish_review_group.add_argument(
+        "--publish-require-review",
+        action="store_true",
+        help="Set task.config.json publish.require_review=true",
+    )
+    publish_review_group.add_argument(
+        "--publish-no-review",
+        action="store_true",
+        help="Set task.config.json publish.require_review=false",
+    )
     return parser.parse_args()
+
+
+def _has_policy_changes(args: argparse.Namespace) -> bool:
+    return any(
+        [
+            args.delivery_primary is not None,
+            args.delivery_format is not None,
+            args.artifact_mode is not None,
+            args.artifact_path is not None,
+            args.publish_enabled,
+            args.publish_disabled,
+            args.publish_target is not None,
+            args.publish_mode is not None,
+            args.publish_require_review,
+            args.publish_no_review,
+        ]
+    )
+
+
+def _publish_enabled_value(args: argparse.Namespace) -> bool | None:
+    if args.publish_enabled:
+        return True
+    if args.publish_disabled:
+        return False
+    return None
+
+
+def _publish_require_review_value(args: argparse.Namespace) -> bool | None:
+    if args.publish_require_review:
+        return True
+    if args.publish_no_review:
+        return False
+    return None
 
 
 def _rename_task_folder(
@@ -248,6 +322,7 @@ def main() -> None:
             args.clear_dependency,
             args.enable,
             args.disable,
+            _has_policy_changes(args),
         ]
     )
     if not has_changes:
@@ -337,7 +412,28 @@ def main() -> None:
         seen_fields.add(field)
         unique_fields.append(field)
 
-    if not unique_fields:
+    policy_updated_fields: list[str] = []
+    policy_config_created = False
+    task_config_path = None
+    if _has_policy_changes(args):
+        task_folder = str(job.get("task_folder", job["id"]))
+        try:
+            task_config_path, policy_updated_fields, policy_config_created = update_task_policy(
+                safe_task_dir(task_folder),
+                delivery_primary=args.delivery_primary,
+                delivery_format=args.delivery_format,
+                artifact_mode=args.artifact_mode,
+                artifact_path=args.artifact_path,
+                publish_enabled=_publish_enabled_value(args),
+                publish_target=args.publish_target,
+                publish_mode=args.publish_mode,
+                publish_require_review=_publish_require_review_value(args),
+            )
+        except (FileNotFoundError, ValueError) as exc:
+            print(json.dumps({"error": str(exc)}))
+            sys.exit(1)
+
+    if not unique_fields and not policy_updated_fields and not policy_config_created:
         print(
             json.dumps(
                 {
@@ -349,10 +445,12 @@ def main() -> None:
         )
         return
 
-    save_jobs(JOBS_PATH, data)
+    if unique_fields:
+        save_jobs(JOBS_PATH, data)
 
     current_id = str(job["id"])
     task_folder = str(job.get("task_folder", current_id))
+    policy_updated = bool(policy_updated_fields or policy_config_created)
     result: dict[str, Any] = {
         "job_id": current_id,
         "updated": True,
@@ -362,8 +460,13 @@ def main() -> None:
         "task_folder": f"cron_tasks/{task_folder}",
         "folder_renamed": folder_renamed,
         "memory_file_renamed": memory_file_renamed,
+        "policy_updated": policy_updated,
+        "policy_updated_fields": policy_updated_fields,
+        "task_config_created": policy_config_created,
         "notes": notes,
     }
+    if task_config_path is not None:
+        result["task_config_path"] = f"cron_tasks/{task_folder}/task.config.json"
 
     if args.job_id != old_id:
         result["matched_via"] = "task_folder"

@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -29,6 +30,7 @@ from _shared import (
     render_cron_task_claude_md,
     sanitize_name,
     save_jobs,
+    update_task_policy,
 )
 
 _DEFAULT_INSTRUCTION = (
@@ -76,6 +78,18 @@ DEPENDENCIES (optional, prevent concurrent resource conflicts):
                       Use this when jobs share resources that can't be used concurrently.
                       Examples: --dependency chrome_browser (multiple browser automation jobs)
                                 --dependency api_rate_limit (API calls with rate limiting)
+
+TASK POLICY SIDECAR (optional, writes cron_tasks/<name>/task.config.json):
+  --delivery-primary       Notification transport label (default: feishu)
+  --delivery-format        Notification format label (default: markdown_text)
+  --artifact-mode          Artifact storage mode (default: local)
+  --artifact-path          Artifact path hint for the task (default: output)
+  --publish-enabled        Allow the task to publish/write to an external target
+  --publish-disabled       Explicitly keep external publishing disabled
+  --publish-target         External target label (e.g. feishu_bitable)
+  --publish-mode           External write mode (e.g. upsert, append)
+  --publish-require-review Require review before finalizing an external publish
+  --publish-no-review      Mark the external publish as not review-gated
 
 TIMEZONE REMINDER:
   Hours in cron expressions are interpreted in the user's timezone.
@@ -250,6 +264,34 @@ def main() -> None:
         help="Resource dependency (e.g. 'chrome_browser'). "
         "Jobs with same dependency run sequentially, different dependencies run in parallel.",
     )
+    parser.add_argument("--delivery-primary", help="task.config.json delivery.primary value")
+    parser.add_argument("--delivery-format", help="task.config.json delivery.format value")
+    parser.add_argument("--artifact-mode", help="task.config.json artifact.mode value")
+    parser.add_argument("--artifact-path", help="task.config.json artifact.path value")
+    publish_enabled_group = parser.add_mutually_exclusive_group()
+    publish_enabled_group.add_argument(
+        "--publish-enabled",
+        action="store_true",
+        help="Set task.config.json publish.enabled=true",
+    )
+    publish_enabled_group.add_argument(
+        "--publish-disabled",
+        action="store_true",
+        help="Set task.config.json publish.enabled=false",
+    )
+    parser.add_argument("--publish-target", help="task.config.json publish.target value")
+    parser.add_argument("--publish-mode", help="task.config.json publish.mode value")
+    publish_review_group = parser.add_mutually_exclusive_group()
+    publish_review_group.add_argument(
+        "--publish-require-review",
+        action="store_true",
+        help="Set task.config.json publish.require_review=true",
+    )
+    publish_review_group.add_argument(
+        "--publish-no-review",
+        action="store_true",
+        help="Set task.config.json publish.require_review=false",
+    )
     args = parser.parse_args()
 
     missing = [p for p in ("name", "title", "description", "schedule") if not getattr(args, p)]
@@ -275,7 +317,33 @@ def main() -> None:
         sys.exit(1)
 
     # 1) Create the cron_task folder
-    _create_task_folder(name, args.title, args.description)
+    task_dir = _create_task_folder(name, args.title, args.description)
+    publish_enabled = None
+    if args.publish_enabled:
+        publish_enabled = True
+    elif args.publish_disabled:
+        publish_enabled = False
+    publish_require_review = None
+    if args.publish_require_review:
+        publish_require_review = True
+    elif args.publish_no_review:
+        publish_require_review = False
+    try:
+        task_config_path, policy_updated_fields, task_config_created = update_task_policy(
+            task_dir,
+            delivery_primary=args.delivery_primary,
+            delivery_format=args.delivery_format,
+            artifact_mode=args.artifact_mode,
+            artifact_path=args.artifact_path,
+            publish_enabled=publish_enabled,
+            publish_target=args.publish_target,
+            publish_mode=args.publish_mode,
+            publish_require_review=publish_require_review,
+        )
+    except (FileNotFoundError, ValueError) as exc:
+        shutil.rmtree(task_dir, ignore_errors=True)
+        print(json.dumps({"error": str(exc)}))
+        sys.exit(1)
 
     # 2) Add job to JSON
     job: dict = {
@@ -337,6 +405,9 @@ def main() -> None:
         "task_folder": task_path,
         "folder_created": True,
         "json_entry_created": True,
+        "task_config_path": f"{task_path}/task.config.json",
+        "task_config_created": task_config_created,
+        "policy_updated_fields": policy_updated_fields,
         "action_required": [
             f"Open {task_path}/TASK_DESCRIPTION.md and fill in the Assignment and Output sections NOW.",
             "TASK_DESCRIPTION.md is the cron agent's task file. "
@@ -370,6 +441,8 @@ def main() -> None:
             f"Name was sanitized: '{args.name.strip()}' -> '{name}'. "
             f"Use '{name}' as the job ID for all future operations (list, remove)."
         )
+    if task_config_path != task_dir / "task.config.json":
+        result["task_config_path"] = str(task_config_path)
     print(json.dumps(result))
 
 

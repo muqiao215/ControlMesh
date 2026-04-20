@@ -158,3 +158,101 @@ def test_cron_add_no_venv_by_default(tmp_path: Path) -> None:
     assert result.returncode == 0
     task_dir = tmp_path / "workspace" / "cron_tasks" / "venv-test"
     assert not (task_dir / ".venv").exists()
+
+
+def test_cron_add_creates_default_task_config(tmp_path: Path) -> None:
+    result = _run_tool(tmp_path, _full_args("policy-default"))
+    assert result.returncode == 0
+
+    task_config = (
+        tmp_path / "workspace" / "cron_tasks" / "policy-default" / "task.config.json"
+    )
+    assert task_config.exists()
+
+    policy = json.loads(task_config.read_text(encoding="utf-8"))
+    assert policy == {
+        "delivery": {
+            "primary": "feishu",
+            "format": "markdown_text",
+        },
+        "artifact": {
+            "mode": "local",
+            "path": "output",
+        },
+        "publish": {
+            "enabled": False,
+            "target": "none",
+            "mode": "none",
+            "require_review": True,
+        },
+    }
+
+
+def test_cron_add_accepts_explicit_publish_policy_without_changing_job_schema(
+    tmp_path: Path,
+) -> None:
+    result = _run_tool(
+        tmp_path,
+        [
+            *_full_args("policy-explicit"),
+            "--delivery-primary",
+            "matrix",
+            "--delivery-format",
+            "markdown_file",
+            "--artifact-mode",
+            "shared",
+            "--artifact-path",
+            "artifacts/daily.md",
+            "--publish-enabled",
+            "--publish-target",
+            "feishu_bitable",
+            "--publish-mode",
+            "upsert",
+            "--publish-no-review",
+        ],
+    )
+    assert result.returncode == 0
+
+    task_config = (
+        tmp_path / "workspace" / "cron_tasks" / "policy-explicit" / "task.config.json"
+    )
+    policy = json.loads(task_config.read_text(encoding="utf-8"))
+    assert policy == {
+        "delivery": {
+            "primary": "matrix",
+            "format": "markdown_file",
+        },
+        "artifact": {
+            "mode": "shared",
+            "path": "artifacts/daily.md",
+        },
+        "publish": {
+            "enabled": True,
+            "target": "feishu_bitable",
+            "mode": "upsert",
+            "require_review": False,
+        },
+    }
+
+    data = json.loads((tmp_path / "cron_jobs.json").read_text(encoding="utf-8"))
+    job = next(j for j in data["jobs"] if j["id"] == "policy-explicit")
+    assert "delivery" not in job
+    assert "artifact" not in job
+    assert "publish" not in job
+
+
+def test_cron_add_rolls_back_task_folder_when_policy_validation_fails(tmp_path: Path) -> None:
+    result = _run_tool(
+        tmp_path,
+        [
+            *_full_args("policy-invalid"),
+            "--delivery-primary",
+            "   ",
+        ],
+    )
+
+    assert result.returncode == 1
+    output = json.loads(result.stdout)
+    assert output["error"] == "delivery.primary must not be empty"
+    assert not (tmp_path / "workspace" / "cron_tasks" / "policy-invalid").exists()
+    assert not (tmp_path / "cron_jobs.json").exists()

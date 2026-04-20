@@ -145,3 +145,73 @@ def test_cron_edit_nonexistent_exits_1(tmp_path: Path) -> None:
     assert result.returncode == 1
     output = json.loads(result.stdout)
     assert "not found" in output["error"]
+
+
+def test_cron_edit_updates_task_config_without_recreating_job(tmp_path: Path) -> None:
+    _add_job(tmp_path, "policy-edit")
+    before_job = _job(tmp_path, "policy-edit").copy()
+    task_dir = tmp_path / "workspace" / "cron_tasks" / "policy-edit"
+    memory_before = (task_dir / "policy-edit_MEMORY.md").read_text(encoding="utf-8")
+
+    result = _run(
+        tmp_path,
+        TOOL_EDIT,
+        [
+            "policy-edit",
+            "--delivery-primary",
+            "telegram",
+            "--artifact-path",
+            "output/report.md",
+            "--publish-enabled",
+            "--publish-target",
+            "feishu_doc",
+            "--publish-mode",
+            "append",
+            "--publish-no-review",
+        ],
+    )
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    assert output["updated"] is True
+    assert output["policy_updated"] is True
+    assert output["policy_updated_fields"] == [
+        "delivery.primary",
+        "artifact.path",
+        "publish.enabled",
+        "publish.target",
+        "publish.mode",
+        "publish.require_review",
+    ]
+
+    after_job = _job(tmp_path, "policy-edit")
+    assert after_job == before_job
+    assert (task_dir / "policy-edit_MEMORY.md").read_text(encoding="utf-8") == memory_before
+
+    policy = json.loads((task_dir / "task.config.json").read_text(encoding="utf-8"))
+    assert policy["delivery"]["primary"] == "telegram"
+    assert policy["delivery"]["format"] == "markdown_text"
+    assert policy["artifact"]["mode"] == "local"
+    assert policy["artifact"]["path"] == "output/report.md"
+    assert policy["publish"] == {
+        "enabled": True,
+        "target": "feishu_doc",
+        "mode": "append",
+        "require_review": False,
+    }
+
+
+def test_cron_edit_legacy_metadata_update_preserves_cron_jobs_schema(
+    tmp_path: Path,
+) -> None:
+    _add_job(tmp_path, "legacy-edit")
+    before_keys = set(_job(tmp_path, "legacy-edit"))
+
+    result = _run(tmp_path, TOOL_EDIT, ["legacy-edit", "--schedule", "15 8 * * *"])
+    assert result.returncode == 0
+
+    job = _job(tmp_path, "legacy-edit")
+    assert set(job) == before_keys
+    assert job["schedule"] == "15 8 * * *"
+    assert "delivery" not in job
+    assert "artifact" not in job
+    assert "publish" not in job

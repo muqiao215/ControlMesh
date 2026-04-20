@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from controlmesh.cron.policy import default_task_policy, load_task_policy, task_policy_path
 from controlmesh._home_defaults.workspace.tools._tool_shared import (
     available_ids,
     find_by_id,
@@ -117,3 +118,116 @@ def safe_task_dir(task_folder: str) -> Path:
 def save_jobs(jobs_path: Path, data: dict[str, Any]) -> None:
     """Persist cron jobs JSON with stable formatting."""
     save_collection(jobs_path, data)
+
+
+def update_task_policy(
+    task_dir: Path,
+    *,
+    delivery_primary: str | None = None,
+    delivery_format: str | None = None,
+    artifact_mode: str | None = None,
+    artifact_path: str | None = None,
+    publish_enabled: bool | None = None,
+    publish_target: str | None = None,
+    publish_mode: str | None = None,
+    publish_require_review: bool | None = None,
+    create_if_missing: bool = True,
+) -> tuple[Path, list[str], bool]:
+    """Create or update the task-local cron policy sidecar.
+
+    Returns ``(path, updated_fields, created)``. ``updated_fields`` uses dotted
+    field names matching the sidecar structure.
+    """
+    path = task_policy_path(task_dir)
+    if not task_dir.is_dir():
+        msg = f"Cron task folder does not exist: {task_dir}"
+        raise FileNotFoundError(msg)
+
+    requested_updates = any(
+        value is not None
+        for value in (
+            delivery_primary,
+            delivery_format,
+            artifact_mode,
+            artifact_path,
+            publish_enabled,
+            publish_target,
+            publish_mode,
+            publish_require_review,
+        )
+    )
+    created = False
+    if path.exists():
+        policy = load_task_policy(task_dir)
+    else:
+        if not create_if_missing and not requested_updates:
+            return path, [], False
+        policy = default_task_policy()
+        created = True
+
+    updated_fields: list[str] = []
+    if delivery_primary is not None:
+        value = delivery_primary.strip()
+        if not value:
+            msg = "delivery.primary must not be empty"
+            raise ValueError(msg)
+        if policy.delivery.primary != value:
+            policy.delivery.primary = value
+            updated_fields.append("delivery.primary")
+    if delivery_format is not None:
+        value = delivery_format.strip()
+        if not value:
+            msg = "delivery.format must not be empty"
+            raise ValueError(msg)
+        if policy.delivery.format != value:
+            policy.delivery.format = value
+            updated_fields.append("delivery.format")
+    if artifact_mode is not None:
+        value = artifact_mode.strip()
+        if not value:
+            msg = "artifact.mode must not be empty"
+            raise ValueError(msg)
+        if policy.artifact.mode != value:
+            policy.artifact.mode = value
+            updated_fields.append("artifact.mode")
+    if artifact_path is not None:
+        value = artifact_path.strip()
+        if not value:
+            msg = "artifact.path must not be empty"
+            raise ValueError(msg)
+        if policy.artifact.path != value:
+            policy.artifact.path = value
+            updated_fields.append("artifact.path")
+    if publish_enabled is not None and policy.publish.enabled != publish_enabled:
+        policy.publish.enabled = publish_enabled
+        updated_fields.append("publish.enabled")
+    if publish_target is not None:
+        value = publish_target.strip()
+        if not value:
+            msg = "publish.target must not be empty"
+            raise ValueError(msg)
+        if policy.publish.target != value:
+            policy.publish.target = value
+            updated_fields.append("publish.target")
+    if publish_mode is not None:
+        value = publish_mode.strip()
+        if not value:
+            msg = "publish.mode must not be empty"
+            raise ValueError(msg)
+        if policy.publish.mode != value:
+            policy.publish.mode = value
+            updated_fields.append("publish.mode")
+    if (
+        publish_require_review is not None
+        and policy.publish.require_review != publish_require_review
+    ):
+        policy.publish.require_review = publish_require_review
+        updated_fields.append("publish.require_review")
+
+    if created or updated_fields:
+        path.write_text(
+            json.dumps(policy.to_dict(), ensure_ascii=True, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+    return path, updated_fields, created
