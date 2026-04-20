@@ -79,7 +79,7 @@ Changelog = "https://github.com/muqiao215/ControlMesh/releases"
 controlmesh = "controlmesh.__main__:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["controlmesh"]
+packages = ["controlmesh", "controlmesh_runtime"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "config.example.json" = "controlmesh/_config_example.json"
