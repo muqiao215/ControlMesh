@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from controlmesh.infra.service_linux import (
+    _LEGACY_SERVICE_FILE,
     _SERVICE_NAME,
     _generate_service_unit,
     is_service_available,
@@ -33,6 +34,10 @@ class TestGenerateServiceUnit:
         assert "[Service]" in unit
         assert "[Unit]" in unit
         assert "[Install]" in unit
+
+    def test_installs_legacy_ductor_alias(self) -> None:
+        unit = _generate_service_unit("controlmesh")
+        assert f"Alias={_LEGACY_SERVICE_FILE}" in unit
 
     def test_includes_all_nvm_bins(self, tmp_path: Path) -> None:
         (tmp_path / ".nvm" / "versions" / "node" / "v24.0.0" / "bin").mkdir(parents=True)

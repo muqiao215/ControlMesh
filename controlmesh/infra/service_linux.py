@@ -33,6 +33,8 @@ logger = logging.getLogger(__name__)
 
 _SERVICE_NAME = "controlmesh"
 _SERVICE_FILE = f"{_SERVICE_NAME}.service"
+_LEGACY_SERVICE_NAME = "ductor"
+_LEGACY_SERVICE_FILE = f"{_LEGACY_SERVICE_NAME}.service"
 
 
 def _systemd_user_dir() -> Path:
@@ -41,6 +43,10 @@ def _systemd_user_dir() -> Path:
 
 def _service_path() -> Path:
     return _systemd_user_dir() / _SERVICE_FILE
+
+
+def _legacy_service_path() -> Path:
+    return _systemd_user_dir() / _LEGACY_SERVICE_FILE
 
 
 def _has_systemd() -> bool:
@@ -98,6 +104,7 @@ Environment=CONTROLMESH_SUPERVISOR=1
 
 [Install]
 WantedBy=default.target
+Alias={_LEGACY_SERVICE_FILE}
 """
 
 
@@ -187,6 +194,7 @@ def uninstall_service(console: Console | None = None) -> bool:
     _run_systemctl("stop", _SERVICE_NAME)
     _run_systemctl("disable", _SERVICE_NAME)
     _service_path().unlink(missing_ok=True)
+    _legacy_service_path().unlink(missing_ok=True)
     _run_systemctl("daemon-reload")
 
     print_removed(console)
