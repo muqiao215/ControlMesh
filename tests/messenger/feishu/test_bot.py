@@ -9,13 +9,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Self
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
 import pytest
 
 from controlmesh.cli.stream_events import ToolResultEvent, ToolUseEvent
 from controlmesh.config import AgentConfig
+from controlmesh.infra.version import VersionInfo
 from controlmesh.messenger.feishu.bot import FeishuBot, FeishuIncomingText
 from controlmesh.messenger.feishu.bundled_runtime import BundledFeishuRuntimeTurn
 from controlmesh.messenger.feishu.tool_auth import (
@@ -72,6 +73,16 @@ def _make_bot(
     bot.send_text = AsyncMock()  # type: ignore[method-assign]
     bot.broadcast_text = AsyncMock()  # type: ignore[method-assign]
     return bot
+
+
+def _make_settings_orchestrator(bot: FeishuBot, tmp_path: Path) -> SimpleNamespace:
+    config_path = tmp_path / "config.json"
+    config_path.write_text(bot._config.model_dump_json(), encoding="utf-8")
+    return SimpleNamespace(
+        _config=bot._config,
+        paths=SimpleNamespace(config_path=config_path),
+        handle_message_streaming=AsyncMock(return_value=SimpleNamespace(text="pong")),
+    )
 
 
 class TestFeishuBotRouting:
@@ -342,6 +353,151 @@ class TestFeishuBotRouting:
 
         assert routed == [payload]
         bot.handle_incoming_text.assert_not_awaited()
+
+    async def test_handle_incoming_text_settings_command_sends_interactive_card(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path)
+        bot._orchestrator = _make_settings_orchestrator(bot, tmp_path)
+        bot._send_card_to_chat_ref = AsyncMock(return_value="om_settings")  # type: ignore[method-assign]
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="/settings feishu",
+            )
+        )
+
+        bot._send_card_to_chat_ref.assert_awaited_once()
+        send_args = bot._send_card_to_chat_ref.await_args
+        assert send_args.args[0] == "oc_chat_1"
+        assert send_args.kwargs["reply_to_message_id"] == "om_1"
+        card = send_args.args[1]
+        assert card["header"]["title"]["content"] == "ControlMesh Advanced Settings"
+        assert card["elements"][0]["actions"][1]["text"]["content"] == "Feishu"
+        assert card["elements"][0]["actions"][1]["type"] == "primary"
+        bot._orchestrator.handle_message_streaming.assert_not_awaited()
+
+    async def test_handle_incoming_event_routes_settings_card_action_before_auth_runner(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path)
+        bot._orchestrator = _make_settings_orchestrator(bot, tmp_path)
+        bot.handle_incoming_text = AsyncMock()  # type: ignore[method-assign]
+        bot._update_interactive_card = AsyncMock()  # type: ignore[method-assign]
+        routed: list[dict[str, object]] = []
+        bot._auth_orchestration_runner = SimpleNamespace(
+            schedule_card_action=lambda payload: routed.append(payload) or True
+        )
+
+        payload = {
+            "schema": "2.0",
+            "header": {"event_type": "card.action.trigger"},
+            "event": {
+                "open_message_id": "om_settings",
+                "operator": {"open_id": "ou_sender"},
+                "action": {
+                    "value": {
+                        "cm_action": "settings_tab",
+                        "tab": "feishu",
+                    }
+                },
+            },
+        }
+
+        await bot.handle_incoming_event(payload)
+
+        assert routed == []
+        bot.handle_incoming_text.assert_not_awaited()
+        bot._update_interactive_card.assert_awaited_once()
+        updated_card = bot._update_interactive_card.await_args.args[1]
+        assert updated_card["elements"][0]["actions"][1]["type"] == "primary"
+
+    async def test_handle_incoming_event_settings_apply_updates_config_and_card(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path)
+        bot._orchestrator = _make_settings_orchestrator(bot, tmp_path)
+        bot._update_interactive_card = AsyncMock()  # type: ignore[method-assign]
+
+        payload = {
+            "schema": "2.0",
+            "header": {"event_type": "card.action.trigger"},
+            "event": {
+                "open_message_id": "om_settings",
+                "operator": {"open_id": "ou_sender"},
+                "action": {
+                    "value": {
+                        "cm_action": "settings_apply",
+                        "tab": "streaming",
+                        "callback_data": "st:t:details",
+                    }
+                },
+            },
+        }
+
+        await bot.handle_incoming_event(payload)
+
+        assert bot._config.streaming.tool_display == "details"
+        saved = json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))
+        assert saved["streaming"]["tool_display"] == "details"
+        updated_card = bot._update_interactive_card.await_args.args[1]
+        markdown_blocks = [
+            element["content"]
+            for element in updated_card["elements"]
+            if element.get("tag") == "markdown"
+        ]
+        assert any("Tool event display updated: details" in block for block in markdown_blocks)
+
+    async def test_handle_incoming_event_settings_version_refresh_updates_card(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path)
+        bot._orchestrator = _make_settings_orchestrator(bot, tmp_path)
+        bot._update_interactive_card = AsyncMock()  # type: ignore[method-assign]
+        info = VersionInfo(
+            current="0.15.0",
+            latest="0.16.0",
+            update_available=True,
+            summary="release",
+            source="github",
+        )
+
+        payload = {
+            "schema": "2.0",
+            "header": {"event_type": "card.action.trigger"},
+            "event": {
+                "open_message_id": "om_settings",
+                "operator": {"open_id": "ou_sender"},
+                "action": {
+                    "value": {
+                        "cm_action": "settings_version_refresh",
+                        "tab": "version",
+                    }
+                },
+            },
+        }
+
+        with patch(
+            "controlmesh.messenger.feishu.bot.check_latest_version",
+            new=AsyncMock(return_value=info),
+        ):
+            await bot.handle_incoming_event(payload)
+
+        updated_card = bot._update_interactive_card.await_args.args[1]
+        markdown_blocks = [
+            element["content"]
+            for element in updated_card["elements"]
+            if element.get("tag") == "markdown"
+        ]
+        assert any("Version status refreshed." in block for block in markdown_blocks)
+        assert any("Latest: `0.16.0`" in block for block in markdown_blocks)
 
     async def test_handle_incoming_text_routes_to_orchestrator_and_replies(
         self,

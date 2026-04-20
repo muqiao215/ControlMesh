@@ -25,6 +25,7 @@ from controlmesh.files.allowed_roots import resolve_allowed_roots
 from controlmesh.files.storage import sanitize_filename as _sanitize_filename
 from controlmesh.files.tags import FILE_PATH_RE, extract_file_paths
 from controlmesh.infra.json_store import atomic_json_save, load_json
+from controlmesh.infra.version import VersionInfo, check_latest_version
 from controlmesh.log_context import set_log_context
 from controlmesh.messenger.feishu.auth.card_auth_runner import FeishuCardAuthRunner
 from controlmesh.messenger.feishu.auth.feishu_card_sender import (
@@ -59,6 +60,11 @@ from controlmesh.messenger.feishu.native_tools.agent_runtime import (
     build_tool_result_followup_prompt,
     parse_native_agent_tool_selection,
 )
+from controlmesh.messenger.feishu.settings_card import (
+    build_settings_card,
+    parse_settings_card_action,
+    resolve_initial_settings_tab,
+)
 from controlmesh.messenger.feishu.tool_auth import (
     FeishuNativeToolAuthContract,
     FeishuNativeToolAuthRequiredError,
@@ -66,6 +72,7 @@ from controlmesh.messenger.feishu.tool_auth import (
 )
 from controlmesh.messenger.notifications import NotificationService
 from controlmesh.messenger.telegram.dedup import DedupeCache
+from controlmesh.orchestrator.selectors.settings_selector import handle_settings_callback
 from controlmesh.session.key import SessionKey
 from controlmesh.text.tool_event_format import format_tool_event_text
 from controlmesh.workspace.paths import ControlMeshPaths
@@ -384,6 +391,8 @@ class FeishuBot:
 
     async def handle_incoming_event(self, payload: dict[str, Any]) -> None:
         if self._is_card_action_event(payload):
+            if await self._handle_settings_card_action_event(payload):
+                return
             self._ensure_auth_orchestration_runner().schedule_card_action(payload)
             return
         message = await self._parse_incoming_message(payload)
@@ -417,9 +426,11 @@ class FeishuBot:
         auth_routed = False
         try:
             async with lock:
-                if await self._handle_native_tool_command(message, reply_to_message_id=reply_to):
-                    if content_key:
-                        self._recent_content_dedup.check(content_key)
+                if await self._handle_pre_stream_shortcuts(
+                    message,
+                    reply_to_message_id=reply_to,
+                    content_key=content_key,
+                ):
                     return
                 if self._should_start_progress():
                     progress.start()
@@ -476,6 +487,92 @@ class FeishuBot:
             message.message_id,
         )
         return content_key
+
+    async def _handle_pre_stream_shortcuts(
+        self,
+        message: FeishuIncomingText,
+        *,
+        reply_to_message_id: str | None,
+        content_key: str | None,
+    ) -> bool:
+        if await self._handle_native_tool_command(message, reply_to_message_id=reply_to_message_id):
+            if content_key:
+                self._recent_content_dedup.check(content_key)
+            return True
+        if await self._handle_settings_panel_command(
+            message,
+            reply_to_message_id=reply_to_message_id,
+        ):
+            if content_key:
+                self._recent_content_dedup.check(content_key)
+            return True
+        return False
+
+    async def _handle_settings_panel_command(
+        self,
+        message: FeishuIncomingText,
+        *,
+        reply_to_message_id: str | None,
+    ) -> bool:
+        initial_tab = resolve_initial_settings_tab(message.text)
+        if initial_tab is None or self._orchestrator is None:
+            return False
+
+        version_info: VersionInfo | None = None
+        note: str | None = None
+        if initial_tab == "version":
+            version_info = await check_latest_version(fresh=True)
+            if version_info is None:
+                note = "Version check failed."
+
+        await self._send_card_to_chat_ref(
+            message.chat_id,
+            build_settings_card(
+                self._orchestrator._config,
+                selected_tab=initial_tab,
+                note=note,
+                version_info=version_info,
+            ),
+            reply_to_message_id=reply_to_message_id,
+        )
+        return True
+
+    async def _handle_settings_card_action_event(self, payload: dict[str, Any]) -> bool:
+        parsed = parse_settings_card_action(payload)
+        if parsed is None:
+            return False
+        if self._orchestrator is None:
+            logger.warning("Ignoring Feishu settings card action before startup")
+            return True
+
+        version_info: VersionInfo | None = None
+        note: str | None = None
+        if parsed.kind == "apply":
+            if parsed.callback_data:
+                resp = await handle_settings_callback(self._orchestrator, parsed.callback_data)
+                note = self._extract_settings_panel_note(resp.text)
+            else:
+                note = "Missing settings action."
+        elif parsed.kind == "version_refresh":
+            version_info = await check_latest_version(fresh=True)
+            note = "Version status refreshed." if version_info is not None else "Version check failed."
+        elif parsed.kind == "upgrade_hint":
+            note = "Use `/settings upgrade` to run the verified self-upgrade flow."
+
+        if not parsed.message_id:
+            logger.warning("Ignoring Feishu settings card action without message id")
+            return True
+
+        await self._update_interactive_card(
+            FeishuCardHandle(chat_id="", message_id=parsed.message_id),
+            build_settings_card(
+                self._orchestrator._config,
+                selected_tab=parsed.tab,
+                note=note,
+                version_info=version_info,
+            ),
+        )
+        return True
 
     async def _handle_auth_message(self, message: FeishuIncomingText) -> bool:
         if is_native_auth_all_command(message.text) and await self._ensure_native_auth_all_runner().handle_message(message):
@@ -1541,6 +1638,14 @@ class FeishuBot:
             return raw_content.strip()
         value = content.get("text") if isinstance(content, dict) else None
         return value.strip() if isinstance(value, str) else ""
+
+    @staticmethod
+    def _extract_settings_panel_note(text: str) -> str | None:
+        sections = [section.strip() for section in text.split("\n\n") if section.strip()]
+        if len(sections) < 2 or "Advanced Settings" not in sections[0]:
+            return None
+        note = sections[1]
+        return None if note.startswith("**") else note
 
     @staticmethod
     def _extract_create_time_ms(raw_create_time: object) -> int | None:
