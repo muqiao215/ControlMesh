@@ -20,13 +20,14 @@ from controlmesh.config import AgentConfig, StreamingConfig
 def _make_config(
     *,
     streaming_enabled: bool = True,
+    output_mode: str = "full",
     user_ids: list[int] | None = None,
     group_mention_only: bool = False,
 ) -> AgentConfig:
     return AgentConfig(
         telegram_token="test:token",
         allowed_user_ids=user_ids or [100],
-        streaming=StreamingConfig(enabled=streaming_enabled),
+        streaming=StreamingConfig(enabled=streaming_enabled, output_mode=output_mode),
         group_mention_only=group_mention_only,
     )
 
@@ -676,6 +677,29 @@ class TestHandleStreaming:
         assert dispatch.text == "test"
         assert dispatch.message is msg
 
+    async def test_on_message_output_mode_off_routes_non_streaming(self) -> None:
+        config = _make_config(output_mode="off")
+        tg_bot, _ = _make_tg_bot(config)
+        orch = _make_orchestrator(handle_message_text="Final reply")
+        tg_bot._orchestrator = orch
+
+        msg = _make_message(text="Hello")
+
+        with (
+            patch(
+                "controlmesh.messenger.telegram.app.run_streaming_message", new_callable=AsyncMock
+            ) as mock_stream,
+            patch(
+                "controlmesh.messenger.telegram.app.run_non_streaming_message",
+                new_callable=AsyncMock,
+            ) as mock_non_stream,
+        ):
+            mock_non_stream.return_value = "Final reply"
+            await tg_bot._on_message(msg)
+
+        mock_stream.assert_not_awaited()
+        mock_non_stream.assert_awaited_once()
+
     async def test_streaming_success_sends_files_only(self) -> None:
         tg_bot, _ = _make_tg_bot()
         orch = _make_orchestrator(
@@ -883,6 +907,29 @@ class TestCallbackQueryHandler:
         dispatch = mock_run.call_args.args[0]
         assert dispatch.key.chat_id == 1
         assert dispatch.text == "Approve"
+
+    async def test_callback_output_mode_off_routes_to_non_streaming(self) -> None:
+        config = _make_config(output_mode="off")
+        tg_bot, _ = _make_tg_bot(config)
+        orch = _make_orchestrator(handle_message_text="Non-streamed")
+        tg_bot._orchestrator = orch
+
+        cb = _make_callback_query(data="Approve")
+
+        with (
+            patch(
+                "controlmesh.messenger.telegram.app.run_streaming_message", new_callable=AsyncMock
+            ) as mock_stream,
+            patch(
+                "controlmesh.messenger.telegram.app.run_non_streaming_message",
+                new_callable=AsyncMock,
+            ) as mock_non_stream,
+        ):
+            mock_non_stream.return_value = "Non-streamed"
+            await tg_bot._on_callback_query(cb)
+
+        mock_stream.assert_not_awaited()
+        mock_non_stream.assert_awaited_once()
 
     async def test_welcome_callback_resolves_to_prompt(self) -> None:
         tg_bot, _ = _make_tg_bot()

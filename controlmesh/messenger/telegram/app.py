@@ -1130,7 +1130,7 @@ class TelegramBot:
         await self._mark_button_choice(chat_id, msg, display_label)
 
         async with self._sequential.get_lock(key.lock_key):
-            if self._config.streaming.enabled:
+            if self._use_streaming_output():
                 await self._handle_streaming(msg, key, data, thread_id=thread_id)
             else:
                 await self._handle_non_streaming(msg, key, data, thread_id=thread_id)
@@ -1234,7 +1234,7 @@ class TelegramBot:
         session_name, label = parsed
 
         async with self._sequential.get_lock(key.lock_key):
-            if self._config.streaming.enabled:
+            if self._use_streaming_output():
                 from controlmesh.orchestrator.flows import named_session_streaming
 
                 result = await named_session_streaming(self._orch, key, session_name, label)
@@ -1268,7 +1268,7 @@ class TelegramBot:
                     chat_id=chat_id, message_id=message_id, reply_markup=None
                 )
             async with self._sequential.get_lock(key.lock_key):
-                if self._config.streaming.enabled:
+                if self._use_streaming_output():
                     fake_msg = await self._bot.send_message(
                         chat_id,
                         prompt,
@@ -1316,7 +1316,7 @@ class TelegramBot:
         if self._config.scene.seen_reaction:
             await self._set_seen_reaction(message)
 
-        if self._config.streaming.enabled:
+        if self._use_streaming_output():
             await self._handle_streaming(message, key, text, thread_id=thread_id)
         else:
             await self._handle_non_streaming(message, key, text, thread_id=thread_id)
@@ -1359,6 +1359,10 @@ class TelegramBot:
             if self._config.group_mention_only and not self._is_addressed(message):
                 return None
         return strip_mention(message.text, self._bot_username)
+
+    def _use_streaming_output(self) -> bool:
+        """Return True when Telegram should emit incremental streaming output."""
+        return self._config.streaming.enabled and self._config.streaming.output_mode != "off"
 
     async def _handle_streaming(
         self, message: Message, key: SessionKey, text: str, *, thread_id: int | None = None

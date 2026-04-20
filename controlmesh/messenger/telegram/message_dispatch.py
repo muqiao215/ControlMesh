@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -26,6 +27,28 @@ if TYPE_CHECKING:
     from controlmesh.orchestrator.core import Orchestrator
 
 logger = logging.getLogger(__name__)
+
+_TextStreamCallback = Callable[[str], Awaitable[None]]
+_StatusStreamCallback = Callable[[str | None], Awaitable[None]]
+
+
+def _stream_callbacks_for_mode(
+    mode: str,
+    *,
+    on_text: _TextStreamCallback,
+    on_tool: _TextStreamCallback,
+    on_system: _StatusStreamCallback,
+) -> tuple[_TextStreamCallback | None, _TextStreamCallback | None, _StatusStreamCallback | None]:
+    """Map Telegram streaming output mode to the enabled callbacks."""
+    if mode == "full":
+        return on_text, on_tool, on_system
+    if mode == "tools":
+        return on_text, on_tool, None
+    if mode == "conversation":
+        return on_text, None, None
+    if mode == "off":
+        return None, None, None
+    return on_text, on_tool, on_system
 
 
 def _build_footer(result: OrchestratorResult, scene: SceneConfig | None) -> str:
@@ -144,13 +167,20 @@ async def run_streaming_message(
         await coalescer.flush(force=True)
         await editor.append_system(label)
 
+    text_cb, tool_cb, system_cb = _stream_callbacks_for_mode(
+        dispatch.streaming_cfg.output_mode,
+        on_text=on_text,
+        on_tool=on_tool,
+        on_system=on_system,
+    )
+
     async with TypingContext(dispatch.bot, dispatch.key.chat_id, thread_id=dispatch.thread_id):
         result = await dispatch.orchestrator.handle_message_streaming(
             dispatch.key,
             dispatch.text,
-            on_text_delta=on_text,
-            on_tool_activity=on_tool,
-            on_system_status=on_system,
+            on_text_delta=text_cb,
+            on_tool_activity=tool_cb,
+            on_system_status=system_cb,
         )
 
     await coalescer.flush(force=True)

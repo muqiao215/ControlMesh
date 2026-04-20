@@ -63,6 +63,7 @@ def test_agent_config_normalizes_nullish_gemini_api_key() -> None:
 def test_agent_config_streaming_defaults() -> None:
     cfg = AgentConfig()
     assert cfg.streaming.enabled is True
+    assert cfg.streaming.output_mode == "full"
     assert cfg.streaming.min_chars == 200
     assert cfg.streaming.max_chars == 4000
 
@@ -141,9 +142,15 @@ def test_registry_provider_for_gemini_prefix() -> None:
 
 
 def test_streaming_config_fields() -> None:
-    s = StreamingConfig(enabled=False, min_chars=100)
+    s = StreamingConfig(enabled=False, output_mode="conversation", min_chars=100)
     assert s.enabled is False
+    assert s.output_mode == "conversation"
     assert s.min_chars == 100
+
+
+def test_streaming_config_rejects_unknown_output_mode() -> None:
+    with pytest.raises(ValidationError, match="output_mode"):
+        StreamingConfig(output_mode="verbose")  # type: ignore[arg-type]
 
 
 def test_docker_config_fields() -> None:
