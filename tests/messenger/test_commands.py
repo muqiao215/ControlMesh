@@ -71,6 +71,26 @@ class TestCommandSetIntegrity:
         assert "cm" in command_names
         assert "agents" in command_names
         assert "agent_commands" not in command_names
-        assert command_names.index("mode") < command_names.index("diagnose")
-        assert command_names.index("tasks") < command_names.index("diagnose")
-        assert command_names.index("agents") < command_names.index("diagnose")
+        assert command_names[:8] == [
+            "new",
+            "model",
+            "mode",
+            "cm",
+            "tasks",
+            "session",
+            "agents",
+            "cron",
+        ]
+
+    def test_telegram_menu_hides_rare_maintenance_commands(self) -> None:
+        """Rare/admin commands should stay callable but not occupy the popup menu."""
+        command_names = {cmd_name for cmd_name, _desc in get_bot_commands()}
+
+        assert "help" in command_names
+        assert not {
+            "showfiles",
+            "info",
+            "diagnose",
+            "upgrade",
+            "restart",
+        } & command_names

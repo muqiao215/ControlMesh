@@ -29,14 +29,8 @@ def get_bot_commands() -> list[tuple[str, str]]:
         # Execution control
         ("stop", t_cmd("bot.stop")),
         ("interrupt", t_cmd("bot.interrupt")),
-        # Browse & reference
-        ("showfiles", t_cmd("bot.showfiles")),
-        ("info", t_cmd("bot.info")),
+        # One escape hatch for discoverability
         ("help", t_cmd("bot.help")),
-        # Maintenance (rare)
-        ("diagnose", t_cmd("bot.diagnose")),
-        ("upgrade", t_cmd("bot.upgrade")),
-        ("restart", t_cmd("bot.restart")),
     ]
 
 
