@@ -105,6 +105,22 @@ def test_make_cli_with_openai_agents_provider_override(tmp_path: Path) -> None:
     assert call_args.cli_parameters == []
 
 
+def test_make_cli_passes_runtime_dependencies_to_openai_agents(tmp_path: Path) -> None:
+    svc = _make_service(tmp_path, default_model="gpt-5.4", provider="openai_agents")
+    task_hub = MagicMock()
+    interagent_bus = MagicMock()
+    svc.update_runtime_dependencies(task_hub=task_hub, interagent_bus=interagent_bus)
+
+    with patch("controlmesh.cli.service.create_cli") as mock_create:
+        mock_create.return_value = MagicMock()
+        svc._make_cli(AgentRequest(prompt="test", chat_id=1, topic_id=2))
+
+    call_args = mock_create.call_args[0][0]
+    assert call_args.provider == "openai_agents"
+    assert call_args.task_hub is task_hub
+    assert call_args.interagent_bus is interagent_bus
+
+
 def test_make_cli_does_not_auto_fallback_provider(tmp_path: Path) -> None:
     """Native model/provider mapping should be preserved even if unavailable."""
     svc = _make_service(tmp_path, available_providers=frozenset({"codex"}))

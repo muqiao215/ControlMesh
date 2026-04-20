@@ -19,6 +19,8 @@ from controlmesh.cli.types import CLIResponse
 if TYPE_CHECKING:
     from controlmesh.cli.process_registry import ProcessRegistry
     from controlmesh.cli.timeout_controller import TimeoutController
+    from controlmesh.multiagent.bus import InterAgentBus
+    from controlmesh.tasks.hub import TaskHub
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +104,8 @@ class CLIConfig:
     # Multi-agent identification:
     agent_name: str = "main"
     interagent_port: int = 8799
+    task_hub: TaskHub | None = None
+    interagent_bus: InterAgentBus | None = None
 
 
 _CONTAINER_CONTROLMESH_MOUNT = "/controlmesh"

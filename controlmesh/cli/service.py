@@ -30,6 +30,8 @@ if TYPE_CHECKING:
     from controlmesh.cli.base import BaseCLI
     from controlmesh.cli.process_registry import ProcessRegistry
     from controlmesh.config import ModelRegistry
+    from controlmesh.multiagent.bus import InterAgentBus
+    from controlmesh.tasks.hub import TaskHub
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +96,8 @@ class CLIServiceConfig:
     gemini_cli_parameters: tuple[str, ...] = ()
     agent_name: str = "main"
     interagent_port: int = 8799
+    task_hub: TaskHub | None = None
+    interagent_bus: InterAgentBus | None = None
 
     def cli_parameters_for_provider(self, provider: str) -> list[str]:
         """Return CLI parameters for the given provider."""
@@ -140,6 +144,19 @@ class CLIService:
     def update_docker_container(self, container: str) -> None:
         """Switch Docker container (empty string = host execution)."""
         self._config = replace(self._config, docker_container=container)
+
+    def update_runtime_dependencies(
+        self,
+        *,
+        task_hub: TaskHub | None = None,
+        interagent_bus: InterAgentBus | None = None,
+    ) -> None:
+        """Inject ControlMesh-owned runtime seams for the optional agents backend."""
+        self._config = replace(
+            self._config,
+            task_hub=task_hub,
+            interagent_bus=interagent_bus,
+        )
 
     def _resolve_model(self, request: AgentRequest) -> str:
         """Resolve the effective model for logging and metadata."""
@@ -331,6 +348,8 @@ class CLIService:
                 cli_parameters=self._config.cli_parameters_for_provider(provider),
                 agent_name=self._config.agent_name,
                 interagent_port=self._config.interagent_port,
+                task_hub=self._config.task_hub,
+                interagent_bus=self._config.interagent_bus,
             )
         )
 

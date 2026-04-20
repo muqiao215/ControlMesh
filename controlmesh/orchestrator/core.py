@@ -258,10 +258,18 @@ class Orchestrator:
     @supervisor.setter
     def supervisor(self, value: AgentSupervisor | None) -> None:
         self._supervisor = value
+        self._cli_service.update_runtime_dependencies(
+            task_hub=self._task_hub,
+            interagent_bus=value.bus if value is not None else None,
+        )
 
     def set_task_hub(self, hub: TaskHub) -> None:
         """Inject the task hub (called by supervisor or startup wiring)."""
         self._task_hub = hub
+        self._cli_service.update_runtime_dependencies(
+            task_hub=hub,
+            interagent_bus=self._supervisor.bus if self._supervisor is not None else None,
+        )
         hub.start_maintenance()
 
     @classmethod
@@ -886,6 +894,10 @@ class Orchestrator:
                     claude_cli_parameters=tuple(config.cli_parameters.claude),
                     codex_cli_parameters=tuple(config.cli_parameters.codex),
                     gemini_cli_parameters=tuple(config.cli_parameters.gemini),
+                    agent_name=self._cli_service._config.agent_name,
+                    interagent_port=self._cli_service._config.interagent_port,
+                    task_hub=self._cli_service._config.task_hub,
+                    interagent_bus=self._cli_service._config.interagent_bus,
                 )
             )
 

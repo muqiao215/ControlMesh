@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+from unittest.mock import MagicMock
 
 from controlmesh.cli.base import CLIConfig
 from controlmesh.cli.openai_agents_provider import OpenAIAgentsCLI
@@ -57,6 +58,56 @@ async def test_missing_sdk_returns_not_installed_error(monkeypatch: Any) -> None
     assert response.is_error is True
     assert response.returncode == 1
     assert "install controlmesh[openai-agents]" in response.result
+
+
+async def test_send_builds_sdk_agent_with_runtime_tools(monkeypatch: Any) -> None:
+    created_agents: list[dict[str, Any]] = []
+
+    class FakeAgent:
+        def __init__(self, **kwargs: Any) -> None:
+            created_agents.append(kwargs)
+
+    class FakeRunner:
+        @staticmethod
+        async def run(_agent: Any, _prompt: str) -> _FakeRunResult:
+            return _FakeRunResult("planned answer")
+
+    wrapped_tools: list[Any] = []
+
+    def fake_function_tool(func: Any) -> Any:
+        wrapped_tools.append(func)
+        return {"tool_name": func.__name__}
+
+    monkeypatch.setattr(
+        "controlmesh.cli.openai_agents_provider._load_agents_sdk",
+        lambda: (FakeAgent, FakeRunner, fake_function_tool),
+    )
+
+    cli = OpenAIAgentsCLI(
+        CLIConfig(
+            provider="openai_agents",
+            model="gpt-5.4",
+            agent_name="main",
+            chat_id=42,
+            topic_id=9,
+            process_label="task:feedbeef",
+            task_hub=MagicMock(),
+            interagent_bus=MagicMock(),
+        )
+    )
+
+    response = await cli.send("route this turn")
+
+    assert response.result == "planned answer"
+    assert len(created_agents) == 1
+    tools = created_agents[0]["tools"]
+    assert {tool["tool_name"] for tool in tools} == {
+        "create_background_task",
+        "resume_background_task",
+        "ask_parent",
+        "send_async_to_agent",
+    }
+    assert len(wrapped_tools) == 4
 
 
 def _fake_run_sdk(result: _FakeRunResult) -> Any:

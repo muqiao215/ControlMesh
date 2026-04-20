@@ -7,8 +7,14 @@ import logging
 from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any
 
+from controlmesh.agents_runtime.manager import AgentsRuntimeManager
 from controlmesh.cli.base import BaseCLI, CLIConfig
-from controlmesh.cli.stream_events import AssistantTextDelta, ResultEvent, StreamEvent, SystemInitEvent
+from controlmesh.cli.stream_events import (
+    AssistantTextDelta,
+    ResultEvent,
+    StreamEvent,
+    SystemInitEvent,
+)
 from controlmesh.cli.types import CLIResponse
 
 if TYPE_CHECKING:
@@ -116,7 +122,7 @@ class OpenAIAgentsCLI(BaseCLI):
 
     async def _run_sdk(self, prompt: str) -> Any:
         """Run the real SDK lazily so importing this module stays optional."""
-        agent_cls, runner_cls = _load_agents_sdk()
+        agent_cls, runner_cls, function_tool = _load_agents_sdk()
         instructions = self._compose_instructions()
         agent_kwargs: dict[str, Any] = {
             "name": "ControlMesh OpenAI Agents Backend",
@@ -124,6 +130,9 @@ class OpenAIAgentsCLI(BaseCLI):
         }
         if self._config.model:
             agent_kwargs["model"] = self._config.model
+        runtime_tools = AgentsRuntimeManager.from_cli_config(self._config).build_sdk_tools(function_tool)
+        if runtime_tools:
+            agent_kwargs["tools"] = runtime_tools
 
         agent = agent_cls(**agent_kwargs)
         result = runner_cls.run(agent, prompt)
@@ -141,11 +150,11 @@ class OpenAIAgentsCLI(BaseCLI):
         return "\n\n".join(parts)
 
 
-def _load_agents_sdk() -> tuple[type[Any], type[Any]]:
+def _load_agents_sdk() -> tuple[type[Any], type[Any], Any]:
     """Load SDK classes lazily; the dependency is optional."""
-    from agents import Agent, Runner
+    from agents import Agent, Runner, function_tool
 
-    return Agent, Runner
+    return Agent, Runner, function_tool
 
 
 async def _wait_for(awaitable: Any, *, timeout_seconds: float) -> Any:
