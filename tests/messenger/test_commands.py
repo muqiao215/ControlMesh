@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from controlmesh.commands import BOT_COMMANDS, MULTIAGENT_SUB_COMMANDS
+from controlmesh.commands import BOT_COMMANDS, MULTIAGENT_SUB_COMMANDS, get_bot_commands
 from controlmesh.messenger.commands import (
     DIRECT_COMMANDS,
     MULTIAGENT_COMMANDS,
@@ -63,3 +63,14 @@ class TestCommandSetIntegrity:
             assert result != "unknown", (
                 f"MULTIAGENT_SUB_COMMANDS entry {cmd_name!r} is not classified"
             )
+
+    def test_telegram_menu_highlights_controlmesh_orchestration(self) -> None:
+        """The popup menu should lead with ControlMesh orchestration primitives."""
+        command_names = [cmd_name for cmd_name, _desc in get_bot_commands()]
+
+        assert "cm" in command_names
+        assert "agents" in command_names
+        assert "agent_commands" not in command_names
+        assert command_names.index("mode") < command_names.index("diagnose")
+        assert command_names.index("tasks") < command_names.index("diagnose")
+        assert command_names.index("agents") < command_names.index("diagnose")

@@ -1,7 +1,7 @@
 """Bot command definitions shared across layers.
 
-Commands are ordered by usage frequency (most used first).
-Descriptions are kept ≤22 chars so mobile clients don't truncate.
+Commands are ordered to foreground ControlMesh orchestration primitives.
+Descriptions are kept concise so mobile clients do not truncate them.
 """
 
 from __future__ import annotations
@@ -15,20 +15,21 @@ from controlmesh.i18n import t_cmd
 def get_bot_commands() -> list[tuple[str, str]]:
     """Return bot commands with translated descriptions."""
     return [
-        # Daily
+        # Core ControlMesh workflow
         ("new", t_cmd("bot.new")),
-        ("stop", t_cmd("bot.stop")),
-        ("interrupt", t_cmd("bot.interrupt")),
         ("model", t_cmd("bot.model")),
         ("mode", t_cmd("bot.mode")),
+        ("cm", t_cmd("bot.cm")),
+        ("tasks", t_cmd("bot.tasks")),
+        ("session", t_cmd("bot.session")),
+        ("agents", t_cmd("multiagent.agents")),
+        ("cron", t_cmd("bot.cron")),
         ("status", t_cmd("bot.status")),
         ("memory", t_cmd("bot.memory")),
-        # Automation & multi-agent
-        ("session", t_cmd("bot.session")),
-        ("tasks", t_cmd("bot.tasks")),
-        ("cron", t_cmd("bot.cron")),
-        ("agent_commands", t_cmd("bot.agent_commands")),
-        # Browse & info
+        # Execution control
+        ("stop", t_cmd("bot.stop")),
+        ("interrupt", t_cmd("bot.interrupt")),
+        # Browse & reference
         ("showfiles", t_cmd("bot.showfiles")),
         ("info", t_cmd("bot.info")),
         ("help", t_cmd("bot.help")),

@@ -1192,6 +1192,14 @@ class TestWatchRestartMarker:
 
 
 class TestSyncCommands:
+    async def test_command_menu_contains_cm_and_agents_not_legacy_agent_commands(self) -> None:
+        from controlmesh.messenger.telegram.app import _BOT_COMMANDS
+
+        command_names = [command.command for command in _BOT_COMMANDS]
+        assert "cm" in command_names
+        assert "agents" in command_names
+        assert "agent_commands" not in command_names
+
     async def test_sets_commands_when_different(self) -> None:
         from controlmesh.messenger.telegram.app import _BOT_COMMANDS
 

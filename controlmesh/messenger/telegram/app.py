@@ -132,13 +132,13 @@ def _build_help_text() -> str:
     return fmt(
         t("help.header"),
         SEP,
-        f"{t('help.cat_daily')}\n{_help_line('new')}\n{_help_line('stop')}\n{_help_line('interrupt')}\n{_help_line('stop_all')}\n"
-        f"{_help_line('model')}\n{_help_line('status')}\n{_help_line('memory')}",
+        f"{t('help.cat_daily')}\n{_help_line('new')}\n{_help_line('model')}\n{_help_line('mode')}\n{_help_line('cm')}\n"
+        f"{_help_line('status')}\n{_help_line('memory')}\n{_help_line('stop')}\n{_help_line('interrupt')}",
         f"{t('help.cat_automation')}\n{_help_line('session')}\n{_help_line('tasks')}\n{_help_line('cron')}",
-        f"{t('help.cat_multiagent')}\n{_help_line('agent_commands')}",
+        f"{t('help.cat_multiagent')}\n{_help_line('agents')}\n{_help_line('agent_start')}\n{_help_line('agent_stop')}\n{_help_line('agent_restart')}",
         f"{t('help.cat_browse')}\n{_help_line('where')}\n{_help_line('leave')}\n"
         f"{_help_line('showfiles')}\n{_help_line('info')}\n{_help_line('help')}",
-        f"{t('help.cat_maintenance')}\n{_help_line('diagnose')}\n{_help_line('upgrade')}\n{_help_line('restart')}",
+        f"{t('help.cat_maintenance')}\n{_help_line('stop_all')}\n{_help_line('diagnose')}\n{_help_line('upgrade')}\n{_help_line('restart')}",
         SEP,
         t("help.footer"),
     )
@@ -325,7 +325,7 @@ class TelegramBot:
         r.message(Command("tasks", ignore_case=True))(self._on_tasks)
         r.message(Command("showfiles", ignore_case=True))(self._on_showfiles)
         r.message(Command("agent_commands", ignore_case=True))(self._on_agent_commands)
-        base_cmds = ["status", "memory", "history", "model", "cron", "diagnose", "upgrade"]
+        base_cmds = ["status", "memory", "history", "model", "mode", "cm", "cron", "diagnose", "upgrade"]
         if self._agent_name == "main":
             base_cmds += ["agents", "agent_start", "agent_stop", "agent_restart"]
         for cmd in base_cmds:
