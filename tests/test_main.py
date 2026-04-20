@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -120,6 +121,34 @@ class TestLoadConfig:
         assert config.gemini_api_key is None
         merged = json.loads((config_dir / "config.json").read_text(encoding="utf-8"))
         assert merged["gemini_api_key"] == "null"
+
+    def test_persists_resolved_home_when_env_selected_legacy_config_lacks_field(
+        self, tmp_path: Path
+    ) -> None:
+        from controlmesh.__main__ import load_config
+
+        home = tmp_path / ".ductor"
+        config_dir = home / "config"
+        config_dir.mkdir(parents=True)
+        fw = tmp_path / "framework"
+        fw.mkdir()
+        legacy_cfg = {"telegram_token": "TOKEN", "provider": "codex"}
+        (config_dir / "config.json").write_text(json.dumps(legacy_cfg), encoding="utf-8")
+
+        with (
+            patch.dict(os.environ, {"CONTROLMESH_HOME": str(home)}),
+            patch("controlmesh.__main__.resolve_paths") as mock_paths,
+        ):
+            paths = ControlMeshPaths(
+                controlmesh_home=home, home_defaults=fw / "workspace", framework_root=fw
+            )
+            mock_paths.return_value = paths
+            with patch("controlmesh.__main__.init_workspace"):
+                config = load_config()
+
+        assert Path(config.controlmesh_home).resolve() == home.resolve()
+        merged = json.loads((config_dir / "config.json").read_text(encoding="utf-8"))
+        assert Path(merged["controlmesh_home"]).resolve() == home.resolve()
 
 
 class TestIsConfigured:

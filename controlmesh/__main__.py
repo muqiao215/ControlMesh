@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import shutil
 import signal
 import sys
@@ -120,7 +121,10 @@ def _is_configured_weixin(data: dict[str, object]) -> bool:
     if not bool(wx.get("enabled", False)):
         return False
 
-    raw_home = data.get("controlmesh_home", "~/.controlmesh")
+    raw_home = data.get("controlmesh_home") or os.environ.get(
+        "CONTROLMESH_HOME",
+        "~/.controlmesh",
+    )
     controlmesh_home = Path(str(raw_home)).expanduser()
     relative_path = str(wx.get("credentials_path", "weixin_store/credentials.json"))
     from controlmesh.messenger.weixin.auth_store import WeixinCredentialStore
@@ -185,6 +189,14 @@ def load_config() -> AgentConfig:
     defaults.pop("api", None)  # Beta: only written by `controlmesh api enable`
     merged, changed = deep_merge_config(user_data, defaults)
     changed = changed or normalized_existing
+    configured_home = user_data.get("controlmesh_home")
+    default_home = defaults.get("controlmesh_home")
+    env_selected_home = os.environ.get("CONTROLMESH_HOME")
+    if not configured_home or (env_selected_home and configured_home == default_home):
+        resolved_home = str(paths.controlmesh_home)
+        if merged.get("controlmesh_home") != resolved_home:
+            merged["controlmesh_home"] = resolved_home
+            changed = True
 
     if changed:
         atomic_json_save(config_path, merged)
