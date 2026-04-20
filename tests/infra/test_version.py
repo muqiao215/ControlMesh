@@ -10,6 +10,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from controlmesh.infra.version import (
     VersionInfo,
     _parse_version,
+    check_github_release,
+    check_latest_version,
     check_pypi,
     fetch_changelog,
     get_current_version,
@@ -192,6 +194,82 @@ class TestCheckPypi:
         info = VersionInfo(current="1.0.0", latest="2.0.0", update_available=True, summary="test")
         assert info.current == "1.0.0"
         assert info.update_available is True
+
+
+class TestCheckGithubRelease:
+    """Test GitHub latest-release response handling."""
+
+    async def test_returns_version_info_from_latest_release(self) -> None:
+        mock = _mock_pypi_session(
+            json_data={"tag_name": "v2.0.0", "name": "ControlMesh 2.0.0"}
+        )
+
+        with (
+            patch("controlmesh.infra.version.get_current_version", return_value="1.0.0"),
+            patch("controlmesh.infra.version.aiohttp.ClientSession", mock),
+        ):
+            result = await check_github_release()
+
+        assert result is not None
+        assert result.current == "1.0.0"
+        assert result.latest == "2.0.0"
+        assert result.update_available is True
+        assert result.summary == "ControlMesh 2.0.0"
+        assert result.source == "github"
+
+    async def test_returns_none_when_latest_release_has_no_tag(self) -> None:
+        mock = _mock_pypi_session(json_data={"name": "No tag"})
+
+        with patch("controlmesh.infra.version.aiohttp.ClientSession", mock):
+            result = await check_github_release()
+
+        assert result is None
+
+
+class TestCheckLatestVersion:
+    """Test latest-version source preference."""
+
+    async def test_prefers_github_release_over_pypi(self) -> None:
+        github_info = VersionInfo(
+            current="1.0.0",
+            latest="2.0.0",
+            update_available=True,
+            summary="GitHub",
+            source="github",
+        )
+        pypi_info = VersionInfo(
+            current="1.0.0",
+            latest="1.5.0",
+            update_available=True,
+            summary="PyPI",
+            source="pypi",
+        )
+
+        with (
+            patch("controlmesh.infra.version.check_github_release", return_value=github_info),
+            patch("controlmesh.infra.version.check_pypi", return_value=pypi_info) as mock_pypi,
+        ):
+            result = await check_latest_version()
+
+        assert result == github_info
+        mock_pypi.assert_not_called()
+
+    async def test_falls_back_to_pypi_when_github_unreachable(self) -> None:
+        pypi_info = VersionInfo(
+            current="1.0.0",
+            latest="1.5.0",
+            update_available=True,
+            summary="PyPI",
+            source="pypi",
+        )
+
+        with (
+            patch("controlmesh.infra.version.check_github_release", return_value=None),
+            patch("controlmesh.infra.version.check_pypi", return_value=pypi_info),
+        ):
+            result = await check_latest_version()
+
+        assert result == pypi_info
 
 
 class TestFetchChangelog:

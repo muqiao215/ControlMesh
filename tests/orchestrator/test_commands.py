@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 from controlmesh.cli.auth import AuthResult, AuthStatus
 from controlmesh.history import TranscriptAttachment, TranscriptTurn
+from controlmesh.infra.version import VersionInfo
 from controlmesh.orchestrator.commands import (
     HistoryRequestKind,
     cmd_claude_native,
@@ -202,6 +203,71 @@ async def test_settings_tool_display_switch_persists_to_config(orch: Orchestrato
     assert orch._config.streaming.tool_display == "details"
     saved = json.loads(orch.paths.config_path.read_text(encoding="utf-8"))
     assert saved["streaming"]["tool_display"] == "details"
+
+
+async def test_settings_feishu_runtime_switch_persists_to_config(orch: Orchestrator) -> None:
+    result = await cmd_settings(orch, SessionKey(chat_id=1), "/settings feishu runtime native")
+
+    assert "Feishu runtime updated" in result.text
+    assert orch._config.feishu.runtime_mode == "native"
+    saved = json.loads(orch.paths.config_path.read_text(encoding="utf-8"))
+    assert saved["feishu"]["runtime_mode"] == "native"
+
+
+async def test_settings_feishu_progress_switch_persists_to_config(orch: Orchestrator) -> None:
+    orch._config.feishu.runtime_mode = "native"
+    result = await cmd_settings(orch, SessionKey(chat_id=1), "/settings feishu progress card_stream")
+
+    assert "Feishu progress updated" in result.text
+    assert orch._config.feishu.progress_mode == "card_stream"
+    saved = json.loads(orch.paths.config_path.read_text(encoding="utf-8"))
+    assert saved["feishu"]["progress_mode"] == "card_stream"
+
+
+async def test_settings_feishu_card_stream_requires_native_runtime(orch: Orchestrator) -> None:
+    result = await cmd_settings(orch, SessionKey(chat_id=1), "/settings feishu progress card_stream")
+
+    assert "requires `native` runtime mode" in result.text
+    assert orch._config.feishu.progress_mode == "text"
+
+
+async def test_settings_version_refresh_shows_latest_release(orch: Orchestrator) -> None:
+    info = VersionInfo(
+        current="0.15.0",
+        latest="0.16.0",
+        update_available=True,
+        summary="release",
+        source="github",
+    )
+    with (
+        patch("controlmesh.orchestrator.commands.detect_install_mode", return_value="pipx"),
+        patch("controlmesh.orchestrator.commands.check_latest_version", new=AsyncMock(return_value=info)),
+        patch("controlmesh.orchestrator.commands.get_current_version", return_value="0.15.0"),
+    ):
+        result = await cmd_settings(orch, SessionKey(chat_id=1), "/settings version")
+
+    assert "Version & upgrade" in result.text
+    assert "0.16.0" in result.text
+    assert "github" in result.text.lower()
+    assert result.buttons is not None
+
+
+async def test_settings_upgrade_delegates_to_upgrade_flow(orch: Orchestrator) -> None:
+    info = VersionInfo(
+        current="0.15.0",
+        latest="0.16.0",
+        update_available=True,
+        summary="release",
+        source="github",
+    )
+    with (
+        patch("controlmesh.orchestrator.commands.detect_install_mode", return_value="pipx"),
+        patch("controlmesh.orchestrator.commands.check_latest_version", new=AsyncMock(return_value=info)),
+    ):
+        result = await cmd_settings(orch, SessionKey(chat_id=1), "/settings upgrade")
+
+    assert "Update Available" in result.text
+    assert result.buttons is not None
 
 
 async def test_settings_rejects_unknown_values(orch: Orchestrator) -> None:

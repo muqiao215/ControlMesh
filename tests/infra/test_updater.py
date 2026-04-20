@@ -150,7 +150,7 @@ class TestUpdateObserver:
         observer = UpdateObserver(notify=notify)
 
         with (
-            patch("controlmesh.infra.updater.check_pypi", return_value=info),
+            patch("controlmesh.infra.updater.check_latest_version", return_value=info),
             patch("controlmesh.infra.updater._INITIAL_DELAY_S", 0),
             patch("controlmesh.infra.updater._CHECK_INTERVAL_S", 0.01),
         ):
@@ -166,7 +166,7 @@ class TestUpdateObserver:
         observer = UpdateObserver(notify=notify)
 
         with (
-            patch("controlmesh.infra.updater.check_pypi", return_value=info),
+            patch("controlmesh.infra.updater.check_latest_version", return_value=info),
             patch("controlmesh.infra.updater._INITIAL_DELAY_S", 0),
             patch("controlmesh.infra.updater._CHECK_INTERVAL_S", 0.01),
         ):
@@ -182,7 +182,7 @@ class TestUpdateObserver:
         observer = UpdateObserver(notify=notify)
 
         with (
-            patch("controlmesh.infra.updater.check_pypi", return_value=info),
+            patch("controlmesh.infra.updater.check_latest_version", return_value=info),
             patch("controlmesh.infra.updater._INITIAL_DELAY_S", 0),
             patch("controlmesh.infra.updater._CHECK_INTERVAL_S", 0.01),
         ):
@@ -199,7 +199,10 @@ class TestUpdateObserver:
         observer = UpdateObserver(notify=notify)
 
         with (
-            patch("controlmesh.infra.updater.check_pypi", side_effect=RuntimeError("network")),
+            patch(
+                "controlmesh.infra.updater.check_latest_version",
+                side_effect=RuntimeError("network"),
+            ),
             patch("controlmesh.infra.updater._INITIAL_DELAY_S", 0),
             patch("controlmesh.infra.updater._CHECK_INTERVAL_S", 0.01),
         ):
@@ -209,12 +212,12 @@ class TestUpdateObserver:
 
         notify.assert_not_called()
 
-    async def test_handles_none_from_check_pypi(self) -> None:
+    async def test_handles_none_from_check_latest_version(self) -> None:
         notify = AsyncMock()
         observer = UpdateObserver(notify=notify)
 
         with (
-            patch("controlmesh.infra.updater.check_pypi", return_value=None),
+            patch("controlmesh.infra.updater.check_latest_version", return_value=None),
             patch("controlmesh.infra.updater._INITIAL_DELAY_S", 0),
             patch("controlmesh.infra.updater._CHECK_INTERVAL_S", 0.01),
         ):
@@ -245,7 +248,7 @@ class TestUpdateObserver:
         observer = UpdateObserver(notify=notify)
 
         with (
-            patch("controlmesh.infra.updater.check_pypi", side_effect=mock_check),
+            patch("controlmesh.infra.updater.check_latest_version", side_effect=mock_check),
             patch("controlmesh.infra.updater._INITIAL_DELAY_S", 0),
             patch("controlmesh.infra.updater._CHECK_INTERVAL_S", 0.01),
         ):

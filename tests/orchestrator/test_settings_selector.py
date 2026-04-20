@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+from unittest.mock import AsyncMock, patch
 
+from controlmesh.infra.version import VersionInfo
 from controlmesh.orchestrator.core import Orchestrator
 from controlmesh.orchestrator.selectors.settings_selector import (
     handle_settings_callback,
@@ -19,15 +21,29 @@ def test_settings_callback_prefix_detection() -> None:
 
 
 async def test_settings_selector_start_groups_streaming_controls(orch: Orchestrator) -> None:
-    resp = await settings_selector_start(orch)
+    with (
+        patch(
+            "controlmesh.orchestrator.selectors.settings_selector.detect_install_mode",
+            return_value="pipx",
+        ),
+        patch(
+            "controlmesh.orchestrator.selectors.settings_selector.get_current_version",
+            return_value="0.15.0",
+        ),
+    ):
+        resp = await settings_selector_start(orch)
 
     assert "Advanced Settings" in resp.text
     assert "Streaming output" in resp.text
+    assert "Feishu runtime" in resp.text
+    assert "Version & upgrade" in resp.text
     assert "Tool event display" in resp.text
     assert resp.buttons is not None
     labels = [button.text for row in resp.buttons.rows for button in row]
     assert any("Tools only" in label for label in labels)
     assert any("Command + output" in label for label in labels)
+    assert any("Native plugin" in label for label in labels)
+    assert any("Check latest" in label for label in labels)
 
 
 async def test_settings_output_callback_updates_config(orch: Orchestrator) -> None:
@@ -48,3 +64,55 @@ async def test_settings_tool_display_callback_updates_config(orch: Orchestrator)
     saved = json.loads(orch.paths.config_path.read_text(encoding="utf-8"))
     assert saved["streaming"]["tool_display"] == "details"
     assert resp.buttons is not None
+
+
+async def test_settings_feishu_runtime_callback_updates_config(orch: Orchestrator) -> None:
+    resp = await handle_settings_callback(orch, "st:f:r:native")
+
+    assert "Feishu runtime updated" in resp.text
+    assert orch._config.feishu.runtime_mode == "native"
+    saved = json.loads(orch.paths.config_path.read_text(encoding="utf-8"))
+    assert saved["feishu"]["runtime_mode"] == "native"
+
+
+async def test_settings_feishu_progress_callback_updates_config(orch: Orchestrator) -> None:
+    orch._config.feishu.runtime_mode = "native"
+
+    resp = await handle_settings_callback(orch, "st:f:p:card_stream")
+
+    assert "Feishu progress updated" in resp.text
+    assert orch._config.feishu.progress_mode == "card_stream"
+    saved = json.loads(orch.paths.config_path.read_text(encoding="utf-8"))
+    assert saved["feishu"]["progress_mode"] == "card_stream"
+
+
+async def test_settings_version_refresh_callback_shows_upgrade_actions(orch: Orchestrator) -> None:
+    info = VersionInfo(
+        current="0.15.0",
+        latest="0.16.0",
+        update_available=True,
+        summary="release",
+        source="github",
+    )
+    with (
+        patch(
+            "controlmesh.orchestrator.selectors.settings_selector.detect_install_mode",
+            return_value="pipx",
+        ),
+        patch(
+            "controlmesh.orchestrator.selectors.settings_selector.get_current_version",
+            return_value="0.15.0",
+        ),
+        patch(
+            "controlmesh.orchestrator.selectors.settings_selector.check_latest_version",
+            new=AsyncMock(return_value=info),
+        ),
+    ):
+        resp = await handle_settings_callback(orch, "st:v:refresh")
+
+    assert "0.16.0" in resp.text
+    assert "github" in resp.text.lower()
+    assert resp.buttons is not None
+    callback_values = [button.callback_data for row in resp.buttons.rows for button in row]
+    assert "upg:cl:0.16.0" in callback_values
+    assert "upg:yes:0.16.0" in callback_values

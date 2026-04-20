@@ -17,13 +17,16 @@ from controlmesh.history.catalog import (
     render_task_result,
 )
 from controlmesh.i18n import t
-from controlmesh.infra.version import check_pypi, get_current_version
+from controlmesh.infra.install import detect_install_mode
+from controlmesh.infra.version import check_latest_version, get_current_version
 from controlmesh.orchestrator.registry import OrchestratorResult
 from controlmesh.orchestrator.selectors.cron_selector import cron_selector_start
 from controlmesh.orchestrator.selectors.model_selector import model_selector_start, switch_model
-from controlmesh.orchestrator.selectors.models import Button, ButtonGrid
+from controlmesh.orchestrator.selectors.models import Button, ButtonGrid, SelectorResponse
 from controlmesh.orchestrator.selectors.session_selector import session_selector_start
 from controlmesh.orchestrator.selectors.settings_selector import (
+    set_feishu_progress_mode,
+    set_feishu_runtime_mode,
     set_streaming_output_mode,
     set_tool_display_mode,
     settings_selector_start,
@@ -242,24 +245,63 @@ async def cmd_claude_native(orch: Orchestrator, key: SessionKey, text: str) -> O
 async def cmd_settings(orch: Orchestrator, _key: SessionKey, text: str) -> OrchestratorResult:
     """Handle /settings: advanced runtime output settings."""
     parts = text.strip().split()
+    result: OrchestratorResult | None = None
     if len(parts) == 1 or (len(parts) == 2 and parts[1].lower() == "status"):
         resp = await settings_selector_start(orch)
-        return OrchestratorResult(text=resp.text, buttons=resp.buttons)
+        result = OrchestratorResult(text=resp.text, buttons=resp.buttons)
+    elif parts[1].lower().replace("-", "_") == "version":
+        resp = await settings_selector_start(
+            orch,
+            note="Version status refreshed.",
+            version_info=await check_latest_version(fresh=True),
+        )
+        result = OrchestratorResult(text=resp.text, buttons=resp.buttons)
+    elif parts[1].lower().replace("-", "_") == "upgrade":
+        result = await cmd_upgrade(orch, _key, "/upgrade")
+    elif len(parts) >= 3:
+        result = await _cmd_settings_update(orch, parts)
 
-    if len(parts) < 3:
-        return OrchestratorResult(text=settings_usage_text())
+    return result or OrchestratorResult(text=settings_usage_text())
 
+
+async def _cmd_settings_update(
+    orch: Orchestrator,
+    parts: list[str],
+) -> OrchestratorResult | None:
     section = parts[1].lower().replace("-", "_")
     value = parts[2].lower()
     if section in {"output", "streaming"} and value in {"full", "tools", "conversation", "off"}:
         resp = await set_streaming_output_mode(orch, value)  # type: ignore[arg-type]
-        return OrchestratorResult(text=resp.text, buttons=resp.buttons)
-
-    if section in {"tools", "tool_display", "tool_output"} and value in {"name", "details"}:
+    elif section in {"tools", "tool_display", "tool_output"} and value in {"name", "details"}:
         resp = await set_tool_display_mode(orch, value)  # type: ignore[arg-type]
-        return OrchestratorResult(text=resp.text, buttons=resp.buttons)
+    elif section == "feishu":
+        resp = await _cmd_settings_feishu_update(orch, parts)
+    else:
+        resp = None
 
-    return OrchestratorResult(text=settings_usage_text())
+    if resp is None:
+        return None
+    return OrchestratorResult(text=resp.text, buttons=resp.buttons)
+
+
+async def _cmd_settings_feishu_update(
+    orch: Orchestrator,
+    parts: list[str],
+) -> SelectorResponse | None:
+    if len(parts) < 4:
+        return None
+
+    feishu_section = parts[2].lower()
+    feishu_value = parts[3].lower()
+    if feishu_section in {"runtime", "mode"} and feishu_value in {"bridge", "native"}:
+        return await set_feishu_runtime_mode(orch, feishu_value)  # type: ignore[arg-type]
+    if feishu_section in {"progress", "stream"} and feishu_value in {
+        "text",
+        "card_preview",
+        "card_stream",
+    }:
+        return await set_feishu_progress_mode(orch, feishu_value)  # type: ignore[arg-type]
+    return None
 
 
 async def cmd_controlmesh(orch: Orchestrator, key: SessionKey, text: str) -> OrchestratorResult:
@@ -343,8 +385,6 @@ async def cmd_upgrade(_orch: Orchestrator, _key: SessionKey, _text: str) -> Orch
     """Handle /upgrade: check for updates and offer upgrade."""
     logger.info("Upgrade check requested")
 
-    from controlmesh.infra.install import detect_install_mode
-
     if detect_install_mode() == "dev":
         return OrchestratorResult(
             text=fmt(
@@ -354,7 +394,7 @@ async def cmd_upgrade(_orch: Orchestrator, _key: SessionKey, _text: str) -> Orch
             ),
         )
 
-    info = await check_pypi(fresh=True)
+    info = await check_latest_version(fresh=True)
 
     if info is None:
         return OrchestratorResult(

@@ -11,7 +11,7 @@ import sys
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
-from controlmesh.infra.version import VersionInfo, _parse_version, check_pypi
+from controlmesh.infra.version import VersionInfo, _parse_version, check_latest_version
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ _UPGRADE_SENTINEL_NAME = "upgrade-sentinel.json"
 
 
 class UpdateObserver:
-    """Background task that checks PyPI for new versions periodically."""
+    """Background task that checks the latest public release periodically."""
 
     def __init__(self, *, notify: VersionCallback) -> None:
         self._notify = notify
@@ -45,7 +45,7 @@ class UpdateObserver:
         await asyncio.sleep(_INITIAL_DELAY_S)
         while True:
             try:
-                info = await check_pypi()
+                info = await check_latest_version()
                 if info and info.update_available and info.latest != self._last_notified:
                     self._last_notified = info.latest
                     await self._notify(info)
@@ -202,7 +202,7 @@ async def _resolve_retry_target(current_version: str, target_version: str | None
     if normalized_target and _is_newer_version(normalized_target, current_version):
         return normalized_target
 
-    info = await check_pypi(fresh=True)
+    info = await check_latest_version(fresh=True)
     if info and _is_newer_version(info.latest, current_version):
         return info.latest
     return None

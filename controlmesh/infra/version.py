@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 _PYPI_URL = "https://pypi.org/pypi/controlmesh/json"
 _GITHUB_RELEASES_URL = "https://api.github.com/repos/muqiao215/ControlMesh/releases"
+_GITHUB_LATEST_RELEASE_URL = f"{_GITHUB_RELEASES_URL}/latest"
 _PACKAGE_NAME = "controlmesh"
 _TIMEOUT = aiohttp.ClientTimeout(total=10)
 
@@ -38,12 +39,13 @@ def _parse_version(v: str) -> tuple[int, ...]:
 
 @dataclass(frozen=True, slots=True)
 class VersionInfo:
-    """Result of a PyPI version check."""
+    """Result of a version check."""
 
     current: str
     latest: str
     update_available: bool
     summary: str
+    source: str = "pypi"
 
 
 async def check_pypi(*, fresh: bool = False) -> VersionInfo | None:
@@ -83,7 +85,62 @@ async def check_pypi(*, fresh: bool = False) -> VersionInfo | None:
         latest=latest,
         update_available=update_available,
         summary=summary,
+        source="pypi",
     )
+
+
+def _normalize_release_version(tag: str) -> str:
+    """Normalize GitHub release tags like ``v1.2.3`` to ``1.2.3``."""
+    normalized = tag.strip()
+    if normalized.lower().startswith("v"):
+        normalized = normalized[1:]
+    return normalized
+
+
+async def check_github_release(*, fresh: bool = False) -> VersionInfo | None:
+    """Check GitHub Releases for the latest public release."""
+    current = get_current_version()
+    headers = {"Accept": "application/vnd.github+json"}
+    params = None
+    if fresh:
+        headers.update({"Cache-Control": "no-cache", "Pragma": "no-cache"})
+        params = {"_": str(time.time_ns())}
+
+    try:
+        async with (
+            aiohttp.ClientSession(timeout=_TIMEOUT, headers=headers) as session,
+            session.get(_GITHUB_LATEST_RELEASE_URL, params=params) as resp,
+        ):
+            if resp.status != 200:
+                return None
+            data = await resp.json()
+    except (aiohttp.ClientError, TimeoutError, ValueError):
+        logger.debug("GitHub latest release check failed", exc_info=True)
+        return None
+
+    tag = data.get("tag_name", "")
+    latest = _normalize_release_version(tag) if isinstance(tag, str) else ""
+    if not latest:
+        return None
+
+    name = data.get("name", "")
+    summary = name if isinstance(name, str) else ""
+    update_available = _parse_version(latest) > _parse_version(current)
+    return VersionInfo(
+        current=current,
+        latest=latest,
+        update_available=update_available,
+        summary=summary,
+        source="github",
+    )
+
+
+async def check_latest_version(*, fresh: bool = False) -> VersionInfo | None:
+    """Check the latest version, preferring GitHub Releases over PyPI metadata."""
+    github = await check_github_release(fresh=fresh)
+    if github is not None:
+        return github
+    return await check_pypi(fresh=fresh)
 
 
 async def fetch_changelog(version: str) -> str | None:
