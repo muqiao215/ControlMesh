@@ -43,6 +43,7 @@ from controlmesh.orchestrator.commands import (
     cmd_diagnose,
     cmd_history,
     cmd_memory,
+    cmd_mode,
     cmd_model,
     cmd_reset,
     cmd_sessions,
@@ -442,8 +443,10 @@ class Orchestrator:
         return await asyncio.to_thread(self._transcripts.read_recent, key, limit=limit)
 
     async def _route_message(self, dispatch: _MessageDispatch) -> OrchestratorResult:
-        if await self._should_route_to_claude_native_mode(dispatch):
-            return await self._route_provider_native_message(dispatch)
+        native_target = await self._native_mode_target(dispatch)
+        if native_target is not None:
+            provider, model = native_target
+            return await self._route_provider_native_message(dispatch, provider=provider, model=model)
 
         result = await self._command_registry.dispatch(
             dispatch.cmd,
@@ -555,6 +558,8 @@ class Orchestrator:
         reg.register_async("/status", cmd_status)
         reg.register_async("/model", cmd_model)
         reg.register_async("/model ", cmd_model)
+        reg.register_async("/mode", cmd_mode)
+        reg.register_async("/mode ", cmd_mode)
         reg.register_async("/memory", cmd_memory)
         reg.register_async("/history", cmd_history)
         reg.register_async("/history ", cmd_history)
@@ -645,39 +650,68 @@ class Orchestrator:
         head = text.strip().split(None, 1)[0] if text.strip() else "/"
         return OrchestratorResult(text=f"Unknown ControlMesh command: {head}")
 
-    async def _should_route_to_claude_native_mode(self, dispatch: _MessageDispatch) -> bool:
-        """Return True when this slash command should bypass CM and hit Claude directly."""
+    async def _native_mode_target(  # noqa: PLR0911
+        self, dispatch: _MessageDispatch
+    ) -> tuple[str, str] | None:
+        """Return the selected provider-native target for this slash command, if any."""
         normalized = dispatch.cmd.strip()
         if not normalized.startswith("/"):
-            return False
+            return None
 
         head = normalized.split(None, 1)[0].split("@", 1)[0]
-        if head in {"/claude_native", "/cm"}:
-            return False
+        if head in {"/claude_native", "/mode", "/cm"}:
+            return None
 
         session = await self._sessions.get_active(dispatch.key)
         if session is None:
-            return False
-        return session.provider == "claude" and session.native_commands_enabled
+            return None
+        if session.command_mode == "cm":
+            return None
+        if session.command_mode not in {"claude", "codex", "gemini"}:
+            return None
+        if not session.command_mode_model:
+            return None
+        return session.command_mode, session.command_mode_model
 
     async def _route_provider_native_message(
         self,
         dispatch: _MessageDispatch,
+        *,
+        provider: str,
+        model: str,
     ) -> OrchestratorResult:
         """Send the raw message to the active provider without CM slash dispatch."""
-        if dispatch.streaming:
-            return await provider_native_command_streaming(
+        session = await self._sessions.get_active(dispatch.key)
+        restore_target: tuple[str, str] | None = None
+        if session is not None:
+            restore_target = (session.provider, session.model)
+
+        try:
+            if dispatch.streaming:
+                return await provider_native_command_streaming(
+                    self,
+                    dispatch.key,
+                    dispatch.text,
+                    dispatch.streaming_callbacks(),
+                    provider_override=provider,
+                    model_override=model,
+                )
+
+            return await provider_native_command(
                 self,
                 dispatch.key,
                 dispatch.text,
-                dispatch.streaming_callbacks(),
+                provider_override=provider,
+                model_override=model,
             )
-
-        return await provider_native_command(
-            self,
-            dispatch.key,
-            dispatch.text,
-        )
+        finally:
+            if session is not None and restore_target is not None:
+                restore_provider, restore_model = restore_target
+                await self._sessions.sync_session_target(
+                    session,
+                    provider=restore_provider,
+                    model=restore_model,
+                )
 
     def wire_observers_to_bus(
         self,

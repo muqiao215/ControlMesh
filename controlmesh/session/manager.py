@@ -95,6 +95,8 @@ class SessionData:
     topic_name: str | None
     provider: str
     model: str
+    command_mode: str
+    command_mode_model: str | None
     created_at: str
     last_active: str
     provider_sessions: dict[str, ProviderSessionData] = field(default_factory=dict)
@@ -106,6 +108,8 @@ class SessionData:
         topic_name = _as_optional_str(raw.pop("topic_name", None))
         provider = _as_str(raw.pop("provider", "claude"), default="claude")
         model = _as_str(raw.pop("model", "opus"), default="opus")
+        command_mode = _as_str(raw.pop("command_mode", "cm"), default="cm")
+        command_mode_model = _as_optional_str(raw.pop("command_mode_model", None))
         created_at = _as_str(raw.pop("created_at", ""), default="")
         last_active = _as_str(raw.pop("last_active", ""), default="")
         provider_sessions = _as_mapping(raw.pop("provider_sessions", None))
@@ -122,6 +126,8 @@ class SessionData:
         self.topic_name = topic_name
         self.provider = provider
         self.model = model
+        self.command_mode = command_mode
+        self.command_mode_model = command_mode_model
 
         now = datetime.now(UTC).isoformat()
         self.created_at = created_at or now
@@ -139,6 +145,7 @@ class SessionData:
                 total_tokens=total_tokens or 0,
             )
         self.provider_sessions = migrated
+        self._normalize_command_mode()
 
         if raw:
             logger.warning("SessionData: unknown keys ignored: %s", list(raw.keys()))
@@ -195,12 +202,11 @@ class SessionData:
     @property
     def native_commands_enabled(self) -> bool:
         """Whether provider-native slash commands are enabled for the active provider."""
-        current = self.provider_sessions.get(self.provider)
-        return current.native_commands_enabled if current is not None else False
+        return self.command_mode == self.provider and self.command_mode != "cm"
 
     @native_commands_enabled.setter
     def native_commands_enabled(self, value: bool) -> None:
-        self._current_provider_data().native_commands_enabled = bool(value)
+        self.set_command_mode(self.provider if value else "cm", model=self.model if value else None)
 
     def _current_provider_data(self) -> ProviderSessionData:
         """Get/create provider-local state for the active provider."""
@@ -217,6 +223,37 @@ class SessionData:
     def clear_provider_session(self, provider: str) -> None:
         """Drop one provider-local session and metrics."""
         self.provider_sessions.pop(provider, None)
+        if self.command_mode == provider:
+            self.set_command_mode("cm", model=None)
+
+    def set_command_mode(self, mode: str, *, model: str | None) -> None:
+        """Update the explicit takeover mode and mirror legacy provider flags."""
+        normalized = mode.strip().lower() if mode else "cm"
+        if normalized not in {"cm", "claude", "codex", "gemini"}:
+            normalized = "cm"
+        self.command_mode = normalized
+        self.command_mode_model = (model or None) if normalized != "cm" else None
+
+        for provider, data in self.provider_sessions.items():
+            data.native_commands_enabled = normalized != "cm" and provider == normalized
+
+        if normalized != "cm" and normalized not in self.provider_sessions:
+            self.provider_sessions[normalized] = ProviderSessionData(native_commands_enabled=True)
+
+    def _normalize_command_mode(self) -> None:
+        """Backfill generic command mode from legacy provider-local native flags."""
+        if self.command_mode not in {"cm", "claude", "codex", "gemini"}:
+            self.command_mode = "cm"
+        if self.command_mode != "cm" and not self.command_mode_model:
+            self.command_mode_model = self.model if self.provider == self.command_mode else None
+
+        if self.command_mode == "cm":
+            current = self.provider_sessions.get(self.provider)
+            if current is not None and current.native_commands_enabled:
+                self.command_mode = self.provider
+                self.command_mode_model = self.model
+
+        self.set_command_mode(self.command_mode, model=self.command_mode_model)
 
     @staticmethod
     def _coerce_provider_sessions(
@@ -511,9 +548,26 @@ class SessionManager:
             existing.message_count = max(existing.message_count, data.message_count)
             existing.total_cost_usd = max(existing.total_cost_usd, data.total_cost_usd)
             existing.total_tokens = max(existing.total_tokens, data.total_tokens)
+            existing.native_commands_enabled = (
+                existing.native_commands_enabled or data.native_commands_enabled
+            )
 
     async def sync_provider_native_commands(self, session: SessionData, *, enabled: bool) -> None:
         """Persist provider-native command mode without incrementing activity counters."""
+        await self.sync_command_mode(
+            session,
+            mode=session.provider if enabled else "cm",
+            model=session.model if enabled else None,
+        )
+
+    async def sync_command_mode(
+        self,
+        session: SessionData,
+        *,
+        mode: str,
+        model: str | None,
+    ) -> None:
+        """Persist the explicit slash-command takeover mode without touching counters."""
         async with self._lock:
             sessions = await self._load()
             skey = session.session_key.storage_key
@@ -527,13 +581,15 @@ class SessionManager:
                 if session.topic_name and not current.topic_name:
                     current.topic_name = session.topic_name
 
-            current.native_commands_enabled = enabled
+            current.set_command_mode(mode, model=model)
             current.last_active = datetime.now(UTC).isoformat()
             sessions[skey] = current
             await self._save(sessions)
 
             session.provider = current.provider
             session.model = current.model
+            session.command_mode = current.command_mode
+            session.command_mode_model = current.command_mode_model
             session.last_active = current.last_active
             session.provider_sessions = self._clone_provider_sessions(current.provider_sessions)
 

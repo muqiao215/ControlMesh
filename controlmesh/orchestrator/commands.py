@@ -35,6 +35,15 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_HISTORY_LIMIT = 6
 _MAX_HISTORY_LIMIT = 20
+_CONTROL_MODE = "cm"
+_PROVIDER_MODES = frozenset({"claude", "codex", "gemini"})
+_MODE_USAGE = "Usage: /mode [status|cm|claude|codex|gemini]"
+_MODE_LABELS = {
+    "cm": "ControlMesh",
+    "claude": "Claude-compatible channel",
+    "codex": "Codex",
+    "gemini": "Gemini",
+}
 
 
 class HistoryRequestKind(StrEnum):
@@ -84,6 +93,90 @@ async def cmd_model(orch: Orchestrator, key: SessionKey, text: str) -> Orchestra
     return OrchestratorResult(text=result_text)
 
 
+def _mode_label(mode: str) -> str:
+    """Return an accurate user-facing label for a command mode."""
+    return _MODE_LABELS.get(mode, mode)
+
+
+def _mode_status_text(mode: str, model: str | None = None) -> str:
+    """Render the session-local takeover mode status."""
+    if mode == _CONTROL_MODE:
+        return (
+            "Takeover mode: ControlMesh\n"
+            "ControlMesh handles slash commands normally."
+        )
+
+    model_line = f"\nTarget model: {model}" if model else ""
+    return (
+        f"Takeover mode: {_mode_label(mode)}\n"
+        f"Target channel: {mode}{model_line}\n"
+        "Subsequent /xxx messages route to this CLI channel first.\n"
+        "Use /cm /status for ControlMesh commands, or /mode cm to exit takeover mode."
+    )
+
+
+async def _resolve_command_mode_model(
+    orch: Orchestrator,
+    key: SessionKey,
+    provider: str,
+) -> str | None:
+    """Resolve the model to pin for a provider takeover mode."""
+    active = await orch._sessions.get_active(key)
+    if active is not None and active.provider == provider and active.model.strip():
+        return active.model
+
+    configured_model, configured_provider = orch.resolve_runtime_target(orch._config.model)
+    if configured_provider == provider and configured_model.strip():
+        return configured_model
+
+    default_model = orch._providers.default_model_for_provider(provider).strip()
+    return default_model or None
+
+
+async def cmd_mode(orch: Orchestrator, key: SessionKey, text: str) -> OrchestratorResult:
+    """Handle /mode [status|cm|claude|codex|gemini]."""
+    parts = text.strip().split(None, 1)
+    action = parts[1].strip().lower() if len(parts) > 1 else "status"
+    if action == "status":
+        session = await orch._sessions.get_active(key)
+        if session is None:
+            return OrchestratorResult(text=_mode_status_text(_CONTROL_MODE))
+        return OrchestratorResult(
+            text=_mode_status_text(session.command_mode, session.command_mode_model)
+        )
+
+    if action == _CONTROL_MODE:
+        session = await orch._sessions.get_active(key)
+        if session is not None:
+            await orch._sessions.sync_command_mode(session, mode=_CONTROL_MODE, model=None)
+        return OrchestratorResult(text=_mode_status_text(_CONTROL_MODE))
+
+    if action not in _PROVIDER_MODES:
+        return OrchestratorResult(text=_MODE_USAGE)
+
+    model = await _resolve_command_mode_model(orch, key, action)
+    if model is None:
+        return OrchestratorResult(
+            text=(
+                f"Cannot enable {_mode_label(action)} takeover mode yet: no default model "
+                f"is known for channel '{action}'.\n"
+                "Select that provider with /model first, then retry."
+            )
+        )
+
+    session = await orch._sessions.get_active(key)
+    if session is None:
+        configured_model, configured_provider = orch.resolve_runtime_target(orch._config.model)
+        session, _is_new = await orch._sessions.resolve_session(
+            key,
+            provider=configured_provider,
+            model=configured_model,
+        )
+
+    await orch._sessions.sync_command_mode(session, mode=action, model=model)
+    return OrchestratorResult(text=_mode_status_text(action, model))
+
+
 async def cmd_claude_native(orch: Orchestrator, key: SessionKey, text: str) -> OrchestratorResult:
     """Handle /claude_native [on|off|status]."""
     parts = text.strip().split(None, 1)
@@ -114,21 +207,27 @@ async def cmd_claude_native(orch: Orchestrator, key: SessionKey, text: str) -> O
     )
 
     if action == "status":
-        mode = "on" if session.native_commands_enabled else "off"
+        mode = "on" if session.command_mode == "claude" else "off"
         return OrchestratorResult(
             text=(
                 f"Claude native command mode: {mode}\n"
-                "When on, subsequent /xxx messages go to Claude first.\n"
+                "When on, subsequent /xxx messages go to the claude channel first.\n"
+                "Provider labels are channels; the configured backend may vary.\n"
                 "Use /cm /status or /cm /model ... to force ControlMesh commands."
             )
         )
 
     enabled = action == "on"
-    await orch._sessions.sync_provider_native_commands(session, enabled=enabled)
+    await orch._sessions.sync_command_mode(
+        session,
+        mode="claude" if enabled else _CONTROL_MODE,
+        model=model if enabled else None,
+    )
     mode = "on" if enabled else "off"
     return OrchestratorResult(
         text=(
             f"Claude native command mode: {mode}\n"
+            "This uses the claude channel; the configured backend may vary.\n"
             "Use /cm /status or /cm /model ... to force ControlMesh commands."
         )
     )
@@ -511,7 +610,7 @@ async def _build_status(orch: Orchestrator, key: SessionKey) -> str:
             f"{t('status.messages_line', count=session.message_count)}\n"
             f"{t('status.tokens_line', tokens=f'{session.total_tokens:,}')}\n"
             f"{t('status.cost_line', cost=f'{session.total_cost_usd:.4f}')}\n"
-            f"Claude native mode: {'on' if session.native_commands_enabled else 'off'}\n"
+            f"Takeover mode: {_mode_label(session.command_mode)}\n"
             f"{_model_line(session.model)}"
         )
     else:

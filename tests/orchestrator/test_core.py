@@ -78,8 +78,9 @@ async def test_status_command(orch: Orchestrator) -> None:
 async def test_claude_native_mode_routes_slash_commands_to_claude(orch: Orchestrator) -> None:
     key = SessionKey(chat_id=1)
     session, _ = await orch._sessions.resolve_session(key, provider="claude", model="opus")
-    session.native_commands_enabled = True
-    await orch._sessions.sync_provider_native_commands(session, enabled=True)
+    session.command_mode = "claude"
+    session.command_mode_model = "opus"
+    await orch._sessions.sync_command_mode(session, mode="claude", model="opus")
 
     mock_execute = AsyncMock(return_value=_mock_response(result="Native Claude response"))
     object.__setattr__(orch._cli_service, "execute", mock_execute)
@@ -96,12 +97,81 @@ async def test_claude_native_mode_routes_slash_commands_to_claude(orch: Orchestr
 async def test_claude_native_mode_cm_escape_still_hits_controlmesh(orch: Orchestrator) -> None:
     key = SessionKey(chat_id=1)
     session, _ = await orch._sessions.resolve_session(key, provider="claude", model="opus")
-    session.native_commands_enabled = True
-    await orch._sessions.sync_provider_native_commands(session, enabled=True)
+    session.command_mode = "codex"
+    session.command_mode_model = "gpt-5.2-codex"
+    await orch._sessions.sync_command_mode(session, mode="codex", model="gpt-5.2-codex")
 
     result = await orch.handle_message(key, "/cm /status")
 
     assert "Model:" in result.text
+
+
+async def test_mode_command_still_hits_controlmesh_during_takeover(orch: Orchestrator) -> None:
+    key = SessionKey(chat_id=1)
+    session, _ = await orch._sessions.resolve_session(key, provider="claude", model="opus")
+    session.command_mode = "codex"
+    session.command_mode_model = "gpt-5.2-codex"
+    await orch._sessions.sync_command_mode(session, mode="codex", model="gpt-5.2-codex")
+
+    result = await orch.handle_message(key, "/mode status")
+
+    assert "Takeover mode: Codex" in result.text
+
+
+async def test_mode_off_keeps_controlmesh_command_routing(orch: Orchestrator) -> None:
+    mock_execute = AsyncMock(return_value=_mock_response())
+    object.__setattr__(orch._cli_service, "execute", mock_execute)
+
+    result = await orch.handle_message(SessionKey(chat_id=1), "/status")
+
+    assert "Model:" in result.text
+    mock_execute.assert_not_awaited()
+
+
+async def test_takeover_mode_routes_slash_commands_to_selected_provider(orch: Orchestrator) -> None:
+    key = SessionKey(chat_id=1)
+    session, _ = await orch._sessions.resolve_session(key, provider="claude", model="opus")
+    session.command_mode = "codex"
+    session.command_mode_model = "gpt-5.2-codex"
+    await orch._sessions.sync_command_mode(session, mode="codex", model="gpt-5.2-codex")
+
+    mock_execute = AsyncMock(return_value=_mock_response(result="Native Codex response"))
+    object.__setattr__(orch._cli_service, "execute", mock_execute)
+
+    result = await orch.handle_message(key, "/review")
+
+    assert result.text == "Native Codex response"
+    request = mock_execute.call_args[0][0]
+    assert request.prompt == "/review"
+    assert request.append_system_prompt is None
+    assert request.provider_override == "codex"
+    assert request.model_override == "gpt-5.2-codex"
+
+
+async def test_takeover_slash_does_not_retarget_normal_session(orch: Orchestrator) -> None:
+    key = SessionKey(chat_id=1)
+    session, _ = await orch._sessions.resolve_session(key, provider="claude", model="opus")
+    await orch._sessions.sync_command_mode(session, mode="codex", model="gpt-5.2-codex")
+
+    mock_execute = AsyncMock(return_value=_mock_response(result="Native Codex response"))
+    object.__setattr__(orch._cli_service, "execute", mock_execute)
+
+    await orch.handle_message(key, "/review")
+
+    active = await orch._sessions.get_active(key)
+    assert active is not None
+    assert active.provider == "claude"
+    assert active.model == "opus"
+    assert active.command_mode == "codex"
+    assert active.command_mode_model == "gpt-5.2-codex"
+    assert active.provider_sessions["codex"].session_id == "sess-abc"
+
+    await orch.handle_message(key, "ordinary follow-up")
+
+    request = mock_execute.call_args[0][0]
+    assert request.prompt.startswith("ordinary follow-up")
+    assert request.provider_override == "claude"
+    assert request.model_override == "opus"
 
 
 # -- normal flow routing --
@@ -127,6 +197,26 @@ async def test_directive_with_text(orch: Orchestrator) -> None:
     request = mock_execute.call_args[0][0]
     assert request.model_override == "sonnet"
     assert request.prompt.startswith("Hello")
+
+
+async def test_provider_directive_still_overrides_with_takeover_mode_enabled(
+    orch: Orchestrator,
+) -> None:
+    key = SessionKey(chat_id=1)
+    session, _ = await orch._sessions.resolve_session(key, provider="claude", model="opus")
+    session.command_mode = "codex"
+    session.command_mode_model = "gpt-5.2-codex"
+    await orch._sessions.sync_command_mode(session, mode="codex", model="gpt-5.2-codex")
+
+    mock_execute = AsyncMock(return_value=_mock_response())
+    object.__setattr__(orch._cli_service, "execute", mock_execute)
+
+    await orch.handle_message(key, "@sonnet Hello")
+
+    request = mock_execute.call_args[0][0]
+    assert request.prompt.startswith("Hello")
+    assert request.provider_override == "claude"
+    assert request.model_override == "sonnet"
 
 
 # -- streaming --

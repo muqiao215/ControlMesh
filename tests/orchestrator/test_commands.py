@@ -14,6 +14,7 @@ from controlmesh.orchestrator.commands import (
     cmd_diagnose,
     cmd_history,
     cmd_memory,
+    cmd_mode,
     cmd_model,
     cmd_status,
     parse_history_request,
@@ -116,6 +117,29 @@ async def test_status_prefers_session_model_over_config(orch: Orchestrator) -> N
     assert "Model: gpt-5.2-codex (configured: opus)" in result.text
 
 
+async def test_mode_status_defaults_to_controlmesh(orch: Orchestrator) -> None:
+    result = await cmd_mode(orch, SessionKey(chat_id=1), "/mode status")
+
+    assert "Takeover mode: ControlMesh" in result.text
+
+
+async def test_mode_switch_sets_session_local_takeover_target(orch: Orchestrator) -> None:
+    key = SessionKey(chat_id=1)
+
+    with patch.object(orch._providers, "default_model_for_provider", return_value="gpt-5.2-codex"):
+        result = await cmd_mode(orch, key, "/mode codex")
+
+    assert "Takeover mode: Codex" in result.text
+    assert "gpt-5.2-codex" in result.text
+
+    session = await orch._sessions.get_active(key)
+    assert session is not None
+    assert session.provider == "claude"
+    assert session.model == "opus"
+    assert session.command_mode == "codex"
+    assert session.command_mode_model == "gpt-5.2-codex"
+
+
 async def test_claude_native_on_requires_claude_provider(orch: Orchestrator) -> None:
     await orch._sessions.resolve_session(
         SessionKey(chat_id=1), provider="codex", model="gpt-5.2-codex"
@@ -136,6 +160,8 @@ async def test_claude_native_on_off_updates_provider_local_mode(orch: Orchestrat
     assert session is not None
     assert session.provider == "claude"
     assert session.native_commands_enabled is True
+    assert session.command_mode == "claude"
+    assert session.command_mode_model == "opus"
 
     disabled = await cmd_claude_native(orch, key, "/claude_native off")
     assert "Claude native command mode: off" in disabled.text
@@ -143,6 +169,8 @@ async def test_claude_native_on_off_updates_provider_local_mode(orch: Orchestrat
     session = await orch._sessions.get_active(key)
     assert session is not None
     assert session.native_commands_enabled is False
+    assert session.command_mode == "cm"
+    assert session.command_mode_model is None
 
 
 # -- cmd_memory --

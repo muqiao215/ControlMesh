@@ -70,8 +70,9 @@ async def test_claude_native_mode_still_wins_over_router(orch: Orchestrator) -> 
     key = SessionKey(chat_id=1)
     orch._config.agent_graph.enabled = True
     session, _ = await orch._sessions.resolve_session(key, provider="claude", model="opus")
-    session.native_commands_enabled = True
-    await orch._sessions.sync_provider_native_commands(session, enabled=True)
+    session.command_mode = "claude"
+    session.command_mode_model = "opus"
+    await orch._sessions.sync_command_mode(session, mode="claude", model="opus")
 
     mock_execute = AsyncMock(return_value=_mock_response(result="Native Claude response"))
     object.__setattr__(orch._cli_service, "execute", mock_execute)

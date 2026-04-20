@@ -489,28 +489,43 @@ async def provider_native_command(
     orch: Orchestrator,
     key: SessionKey,
     text: str,
+    *,
+    model_override: str | None = None,
+    provider_override: str | None = None,
 ) -> OrchestratorResult:
     """Send a provider-native command without ControlMesh prompt shaping."""
     return await _normal_with_options(
         orch,
         key,
         text,
-        NormalFlowOptions(prompt_policy=NATIVE_COMMAND_PROMPT_POLICY),
+        NormalFlowOptions(
+            model_override=model_override,
+            provider_override=provider_override,
+            prompt_policy=NATIVE_COMMAND_PROMPT_POLICY,
+        ),
     )
 
 
-async def provider_native_command_streaming(
+async def provider_native_command_streaming(  # noqa: PLR0913
     orch: Orchestrator,
     key: SessionKey,
     text: str,
     cbs: StreamingCallbacks,
+    *,
+    model_override: str | None = None,
+    provider_override: str | None = None,
 ) -> OrchestratorResult:
     """Stream a provider-native command without ControlMesh prompt shaping."""
     return await _normal_streaming_with_options(
         orch,
         key,
         text,
-        StreamingFlowOptions(cbs=cbs, prompt_policy=NATIVE_COMMAND_PROMPT_POLICY),
+        StreamingFlowOptions(
+            model_override=model_override,
+            provider_override=provider_override,
+            cbs=cbs,
+            prompt_policy=NATIVE_COMMAND_PROMPT_POLICY,
+        ),
     )
 
 
