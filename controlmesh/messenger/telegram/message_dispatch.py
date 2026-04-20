@@ -132,6 +132,11 @@ async def run_streaming_message(
             "recovering": "Please wait, recovering...",
             "timeout_warning": "TIMEOUT APPROACHING",
             "timeout_extended": "TIMEOUT EXTENDED",
+            "background_task_created": "BACKGROUND TASK CREATED",
+            "async_agent_task_created": "BACKGROUND AGENT TASK CREATED",
+            "handoff_requested": "HANDOFF REQUESTED",
+            "handoff_accepted": "HANDOFF ACCEPTED",
+            "guardrail_blocked": "GUARDRAIL BLOCKED",
         }
         label = system_map.get(status or "")
         if label is None:

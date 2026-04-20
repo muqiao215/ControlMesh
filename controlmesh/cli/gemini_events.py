@@ -142,6 +142,7 @@ def _parse_gemini_tool_result(data: dict[str, Any]) -> list[StreamEvent]:
         ToolResultEvent(
             type="tool_result",
             tool_id=str(data.get("tool_id", "")),
+            tool_name=str(data.get("tool_name") or data.get("name") or ""),
             status=str(data.get("status", "")),
             output=str(data.get("output", "")),
         ),

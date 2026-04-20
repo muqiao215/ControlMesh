@@ -11,6 +11,11 @@ _SYSTEM_LABELS: dict[str, str] = {
     "recovering": "恢复会话后继续...",
     "timeout_warning": "处理时间较长, 继续执行中...",
     "timeout_extended": "已延长处理时间, 继续执行中...",
+    "background_task_created": "已创建后台任务, 稍后继续返回结果。",
+    "async_agent_task_created": "已创建后台代理任务, 稍后继续返回结果。",
+    "handoff_requested": "正在切换到更合适的执行路径...",
+    "handoff_accepted": "已切换执行路径, 继续处理中...",
+    "guardrail_blocked": "当前请求触发保护规则, 已改用保守处理。",
 }
 
 _STATUS_TITLES: dict[str, str] = {

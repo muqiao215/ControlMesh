@@ -9,6 +9,14 @@ from unittest.mock import MagicMock, patch
 from controlmesh.cli.base import CLIConfig
 from controlmesh.cli.process_registry import ProcessRegistry
 from controlmesh.cli.service import CLIService, CLIServiceConfig
+from controlmesh.cli.stream_events import (
+    AssistantTextDelta,
+    ResultEvent,
+    SystemInitEvent,
+    SystemStatusEvent,
+    ToolResultEvent,
+    ToolUseEvent,
+)
 from controlmesh.cli.types import AgentRequest
 from controlmesh.config import ModelRegistry
 
@@ -171,3 +179,77 @@ def test_make_cli_passes_gemini_api_key(tmp_path: Path) -> None:
     call_args = mock_create.call_args[0][0]
     assert call_args.provider == "gemini"
     assert call_args.gemini_api_key == "cfg-key-123"
+
+
+async def test_execute_streaming_openai_agents_dispatches_progress_callbacks(tmp_path: Path) -> None:
+    svc = _make_service(tmp_path, default_model="gpt-5.4", provider="openai_agents")
+
+    class FakeCLI:
+        async def send_streaming(self, **_kwargs: Any) -> Any:
+            yield SystemInitEvent(type="system", subtype="init")
+            yield ToolUseEvent(type="assistant", tool_name="create_background_task")
+            yield SystemStatusEvent(type="system", subtype="status", status="background_task_created")
+            yield AssistantTextDelta(type="assistant", text="queued task")
+            yield ResultEvent(type="result", result="queued task", is_error=False, returncode=0)
+
+    with patch("controlmesh.cli.service.create_cli", return_value=FakeCLI()):
+        text_events: list[str] = []
+        tool_events: list[str] = []
+        system_events: list[str | None] = []
+
+        async def on_text(delta: str) -> None:
+            text_events.append(delta)
+
+        async def on_tool(name: str) -> None:
+            tool_events.append(name)
+
+        async def on_system(status: str | None) -> None:
+            system_events.append(status)
+
+        response = await svc.execute_streaming(
+            AgentRequest(prompt="test", chat_id=1),
+            on_text_delta=on_text,
+            on_tool_activity=on_tool,
+            on_system_status=on_system,
+        )
+
+    assert response.result == "queued task"
+    assert text_events == ["queued task"]
+    assert tool_events == ["create_background_task"]
+    assert system_events == ["background_task_created"]
+
+
+async def test_execute_streaming_ignores_tool_result_events_in_callback_contract(tmp_path: Path) -> None:
+    svc = _make_service(tmp_path, default_model="gpt-5.4", provider="openai_agents")
+
+    class FakeCLI:
+        async def send_streaming(self, **_kwargs: Any) -> Any:
+            yield SystemInitEvent(type="system", subtype="init")
+            yield ToolResultEvent(
+                type="tool_result",
+                tool_id="tool-1",
+                tool_name="create_background_task",
+                status="success",
+                output="created",
+            )
+            yield ResultEvent(type="result", result="done", is_error=False, returncode=0)
+
+    with patch("controlmesh.cli.service.create_cli", return_value=FakeCLI()):
+        tool_events: list[str] = []
+        system_events: list[str | None] = []
+
+        async def on_tool(name: str) -> None:
+            tool_events.append(name)
+
+        async def on_system(status: str | None) -> None:
+            system_events.append(status)
+
+        response = await svc.execute_streaming(
+            AgentRequest(prompt="test", chat_id=1),
+            on_tool_activity=on_tool,
+            on_system_status=on_system,
+        )
+
+    assert response.result == "done"
+    assert tool_events == []
+    assert system_events == []

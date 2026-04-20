@@ -57,6 +57,7 @@ class ToolResultEvent(StreamEvent):
     """Tool execution result (emitted by Gemini CLI)."""
 
     tool_id: str = ""
+    tool_name: str = ""
     status: str = ""
     output: str = ""
 
