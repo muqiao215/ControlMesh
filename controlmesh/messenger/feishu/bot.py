@@ -25,7 +25,9 @@ from controlmesh.files.allowed_roots import resolve_allowed_roots
 from controlmesh.files.storage import sanitize_filename as _sanitize_filename
 from controlmesh.files.tags import FILE_PATH_RE, extract_file_paths
 from controlmesh.infra.json_store import atomic_json_save, load_json
-from controlmesh.infra.version import VersionInfo, check_latest_version
+from controlmesh.infra.restart import EXIT_RESTART
+from controlmesh.infra.updater import perform_upgrade_pipeline, write_upgrade_sentinel
+from controlmesh.infra.version import VersionInfo, check_latest_version, get_current_version
 from controlmesh.log_context import set_log_context
 from controlmesh.messenger.feishu.auth.card_auth_runner import FeishuCardAuthRunner
 from controlmesh.messenger.feishu.auth.feishu_card_sender import (
@@ -61,6 +63,7 @@ from controlmesh.messenger.feishu.native_tools.agent_runtime import (
     parse_native_agent_tool_selection,
 )
 from controlmesh.messenger.feishu.settings_card import (
+    ParsedSettingsCardAction,
     build_settings_card,
     parse_settings_card_action,
     resolve_initial_settings_tab,
@@ -274,6 +277,9 @@ class FeishuBot:
         self._process_start_time = time.time()
         self._shutdown_started = False
         self._exit_code = 0
+        self._upgrade_lock = asyncio.Lock()
+        self._upgrade_task: asyncio.Task[None] | None = None
+        self._background_tasks: set[asyncio.Task[None]] = set()
         self._paths = ControlMeshPaths(Path(config.controlmesh_home).expanduser())
         self._dedup = DedupeCache(
             ttl_seconds=_FEISHU_DEDUP_TTL_SECONDS,
@@ -381,6 +387,8 @@ class FeishuBot:
         if self._inbound_server is not None:
             await self._inbound_server.stop()
 
+        await self._cancel_background_tasks()
+
         if self._session is not None and not self._session.closed:
             await self._session.close()
 
@@ -388,6 +396,14 @@ class FeishuBot:
             shutdown = getattr(self._orchestrator, "shutdown", None)
             if shutdown is not None:
                 await shutdown()
+
+    async def _cancel_background_tasks(self) -> None:
+        background_tasks = list(self._background_tasks)
+        for task in background_tasks:
+            task.cancel()
+        for task in background_tasks:
+            with suppress(asyncio.CancelledError):
+                await task
 
     async def handle_incoming_event(self, payload: dict[str, Any]) -> None:
         if self._is_card_action_event(payload):
@@ -544,6 +560,12 @@ class FeishuBot:
         if self._orchestrator is None:
             logger.warning("Ignoring Feishu settings card action before startup")
             return True
+        if not parsed.operator_open_id or not self._sender_allowed(parsed.operator_open_id):
+            logger.info(
+                "Ignoring Feishu settings card action from unauthorized operator=%s",
+                parsed.operator_open_id,
+            )
+            return True
 
         version_info: VersionInfo | None = None
         note: str | None = None
@@ -556,6 +578,9 @@ class FeishuBot:
         elif parsed.kind == "version_refresh":
             version_info = await check_latest_version(fresh=True)
             note = "Version status refreshed." if version_info is not None else "Version check failed."
+        elif parsed.kind == "upgrade":
+            version_info = self._settings_upgrade_version_info(parsed.target_version)
+            note = await self._start_settings_upgrade(parsed, version_info=version_info)
         elif parsed.kind == "upgrade_hint":
             note = "Use `/settings upgrade` to run the verified self-upgrade flow."
 
@@ -564,7 +589,7 @@ class FeishuBot:
             return True
 
         await self._update_interactive_card(
-            FeishuCardHandle(chat_id="", message_id=parsed.message_id),
+            FeishuCardHandle(chat_id=parsed.chat_id or "", message_id=parsed.message_id),
             build_settings_card(
                 self._orchestrator._config,
                 selected_tab=parsed.tab,
@@ -573,6 +598,108 @@ class FeishuBot:
             ),
         )
         return True
+
+    async def _start_settings_upgrade(
+        self,
+        parsed: ParsedSettingsCardAction,
+        *,
+        version_info: VersionInfo | None,
+    ) -> str:
+        if self._upgrade_task is not None and not self._upgrade_task.done():
+            return "Upgrade already in progress."
+        target_version = parsed.target_version or (
+            version_info.latest if version_info is not None and version_info.update_available else None
+        )
+        if not target_version:
+            return "No newer version available. Refresh version status first."
+        if not parsed.message_id:
+            return "Upgrade action missing message id."
+        if not parsed.chat_id:
+            return "Upgrade action missing chat id."
+
+        handle = FeishuCardHandle(chat_id=parsed.chat_id, message_id=parsed.message_id)
+        self._upgrade_task = self._spawn_background_task(
+            self._run_settings_upgrade(handle=handle, target_version=target_version)
+        )
+        return f"Upgrade started: `{target_version}`. ControlMesh will restart after verification passes."
+
+    @staticmethod
+    def _settings_upgrade_version_info(target_version: str | None) -> VersionInfo | None:
+        if not target_version:
+            return None
+        current = get_current_version()
+        return VersionInfo(
+            current=current,
+            latest=target_version,
+            update_available=target_version != current,
+            summary="pending",
+            source="github",
+        )
+
+    async def _run_settings_upgrade(
+        self,
+        *,
+        handle: FeishuCardHandle,
+        target_version: str,
+    ) -> None:
+        async with self._upgrade_lock:
+            installed_before = get_current_version()
+            changed, installed_version, output = await perform_upgrade_pipeline(
+                current_version=installed_before,
+                target_version=target_version,
+            )
+
+            if not changed:
+                version_info = await check_latest_version(fresh=True)
+                await self._update_interactive_card(
+                    handle,
+                    build_settings_card(
+                        self._orchestrator._config,
+                        selected_tab="version",
+                        note=f"Upgrade verification failed. Still at `{installed_version}`.",
+                        version_info=version_info,
+                    ),
+                )
+                tail = output.strip()[-1200:]
+                if tail:
+                    await self._send_plain_text_to_chat_ref(
+                        handle.chat_id,
+                        f"Upgrade output tail:\n```text\n{tail}\n```",
+                    )
+                return
+
+            chat_id_int = self._id_map.chat_to_int(handle.chat_id)
+            await asyncio.to_thread(
+                write_upgrade_sentinel,
+                self._paths.controlmesh_home,
+                chat_id=chat_id_int,
+                old_version=installed_before,
+                new_version=installed_version,
+                transport="feishu",
+            )
+            await self._update_interactive_card(
+                handle,
+                build_settings_card(
+                    self._orchestrator._config,
+                    selected_tab="version",
+                    note=f"Upgrade installed: `{installed_version}`. Restarting ControlMesh...",
+                    version_info=VersionInfo(
+                        current=installed_before,
+                        latest=installed_version,
+                        update_available=False,
+                        summary="installed",
+                        source="github",
+                    ),
+                ),
+            )
+            self._exit_code = EXIT_RESTART
+            self._stop_event.set()
+
+    def _spawn_background_task(self, coro: Awaitable[None]) -> asyncio.Task[None]:
+        task = asyncio.create_task(coro)
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+        return task
 
     async def _handle_auth_message(self, message: FeishuIncomingText) -> bool:
         if is_native_auth_all_command(message.text) and await self._ensure_native_auth_all_runner().handle_message(message):

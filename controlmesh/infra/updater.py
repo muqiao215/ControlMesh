@@ -273,18 +273,28 @@ def write_upgrade_sentinel(
     chat_id: int,
     old_version: str,
     new_version: str,
+    transport: str | None = None,
 ) -> None:
     """Write sentinel so the bot can notify the user after upgrade restart."""
     from controlmesh.infra.atomic_io import atomic_bytes_save
 
     path = sentinel_dir / _UPGRADE_SENTINEL_NAME
-    content = json.dumps(
-        {"chat_id": chat_id, "old_version": old_version, "new_version": new_version}
-    )
+    payload: dict[str, str | int] = {
+        "chat_id": chat_id,
+        "old_version": old_version,
+        "new_version": new_version,
+    }
+    if transport:
+        payload["transport"] = transport
+    content = json.dumps(payload)
     atomic_bytes_save(path, content.encode())
 
 
-def consume_upgrade_sentinel(sentinel_dir: Path) -> dict[str, str | int] | None:
+def consume_upgrade_sentinel(
+    sentinel_dir: Path,
+    *,
+    transport: str | None = None,
+) -> dict[str, str | int] | None:
     """Read and delete the upgrade sentinel. Returns None if absent."""
     path = sentinel_dir / _UPGRADE_SENTINEL_NAME
     if not path.exists():
@@ -295,9 +305,16 @@ def consume_upgrade_sentinel(sentinel_dir: Path) -> dict[str, str | int] | None:
         logger.exception("Failed to read upgrade sentinel")
         path.unlink(missing_ok=True)
         return None
-    else:
-        path.unlink(missing_ok=True)
-        logger.info(
-            "Upgrade sentinel consumed: %s -> %s", data.get("old_version"), data.get("new_version")
-        )
-        return data
+    sentinel_transport = data.get("transport")
+    if (
+        transport
+        and isinstance(sentinel_transport, str)
+        and sentinel_transport
+        and sentinel_transport != transport
+    ):
+        return None
+    path.unlink(missing_ok=True)
+    logger.info(
+        "Upgrade sentinel consumed: %s -> %s", data.get("old_version"), data.get("new_version")
+    )
+    return data

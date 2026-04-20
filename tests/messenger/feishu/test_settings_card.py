@@ -68,6 +68,31 @@ def test_parse_settings_card_action_normalizes_payload() -> None:
     assert parsed.operator_open_id == "ou_user"
 
 
+def test_parse_settings_card_action_normalizes_upgrade_payload() -> None:
+    parsed = parse_settings_card_action(
+        {
+            "event": {
+                "open_chat_id": "oc_chat",
+                "open_message_id": "om_card",
+                "action": {
+                    "value": {
+                        "cm_action": "settings_upgrade",
+                        "tab": "version",
+                        "target_version": "0.16.0",
+                    }
+                },
+            }
+        }
+    )
+
+    assert parsed is not None
+    assert parsed.kind == "upgrade"
+    assert parsed.tab == "version"
+    assert parsed.target_version == "0.16.0"
+    assert parsed.chat_id == "oc_chat"
+    assert parsed.message_id == "om_card"
+
+
 def test_parse_settings_card_action_ignores_non_settings_payload() -> None:
     assert (
         parse_settings_card_action(
@@ -124,4 +149,4 @@ def test_build_settings_card_marks_selected_tab_and_contains_version_actions() -
     ]
     assert "Check latest" in action_labels
     assert "GitHub Releases" in action_labels
-    assert "Upgrade help" in action_labels
+    assert "Upgrade now" in action_labels

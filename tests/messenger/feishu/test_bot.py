@@ -16,6 +16,7 @@ import pytest
 
 from controlmesh.cli.stream_events import ToolResultEvent, ToolUseEvent
 from controlmesh.config import AgentConfig
+from controlmesh.infra.restart import EXIT_RESTART
 from controlmesh.infra.version import VersionInfo
 from controlmesh.messenger.feishu.bot import FeishuBot, FeishuIncomingText
 from controlmesh.messenger.feishu.bundled_runtime import BundledFeishuRuntimeTurn
@@ -417,6 +418,41 @@ class TestFeishuBotRouting:
         updated_card = bot._update_interactive_card.await_args.args[1]
         assert updated_card["elements"][0]["actions"][1]["type"] == "primary"
 
+    async def test_handle_incoming_event_rejects_unauthorized_settings_card_operator(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path, allow_from=["ou_allowed"])
+        bot._orchestrator = _make_settings_orchestrator(bot, tmp_path)
+        bot._update_interactive_card = AsyncMock()  # type: ignore[method-assign]
+        routed: list[dict[str, object]] = []
+        bot._auth_orchestration_runner = SimpleNamespace(
+            schedule_card_action=lambda payload: routed.append(payload) or True
+        )
+
+        payload = {
+            "schema": "2.0",
+            "header": {"event_type": "card.action.trigger"},
+            "event": {
+                "open_chat_id": "oc_chat_1",
+                "open_message_id": "om_settings",
+                "operator": {"open_id": "ou_intruder"},
+                "action": {
+                    "value": {
+                        "cm_action": "settings_apply",
+                        "tab": "streaming",
+                        "callback_data": "st:t:details",
+                    }
+                },
+            },
+        }
+
+        await bot.handle_incoming_event(payload)
+
+        assert bot._config.streaming.tool_display == "name"
+        assert routed == []
+        bot._update_interactive_card.assert_not_awaited()
+
     async def test_handle_incoming_event_settings_apply_updates_config_and_card(
         self,
         tmp_path: Path,
@@ -498,6 +534,127 @@ class TestFeishuBotRouting:
         ]
         assert any("Version status refreshed." in block for block in markdown_blocks)
         assert any("Latest: `0.16.0`" in block for block in markdown_blocks)
+
+    async def test_handle_incoming_event_settings_upgrade_starts_background_task(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path)
+        bot._orchestrator = _make_settings_orchestrator(bot, tmp_path)
+        bot._update_interactive_card = AsyncMock()  # type: ignore[method-assign]
+        captured: list[object] = []
+
+        def _capture_upgrade(coro: object) -> None:
+            captured.append(coro)
+            close = getattr(coro, "close", None)
+            if close:
+                close()
+
+        bot._spawn_background_task = _capture_upgrade  # type: ignore[method-assign]
+        info = VersionInfo(
+            current="0.15.0",
+            latest="0.16.0",
+            update_available=True,
+            summary="release",
+            source="github",
+        )
+
+        payload = {
+            "schema": "2.0",
+            "header": {"event_type": "card.action.trigger"},
+            "event": {
+                "open_chat_id": "oc_chat_1",
+                "open_message_id": "om_settings",
+                "operator": {"open_id": "ou_sender"},
+                "action": {
+                    "value": {
+                        "cm_action": "settings_upgrade",
+                        "tab": "version",
+                        "target_version": "0.16.0",
+                    }
+                },
+            },
+        }
+
+        with patch(
+            "controlmesh.messenger.feishu.bot.check_latest_version",
+            new=AsyncMock(return_value=info),
+        ):
+            await bot.handle_incoming_event(payload)
+
+        assert captured
+        updated_card = bot._update_interactive_card.await_args.args[1]
+        markdown_blocks = [
+            element["content"]
+            for element in updated_card["elements"]
+            if element.get("tag") == "markdown"
+        ]
+        assert any("Upgrade started: `0.16.0`" in block for block in markdown_blocks)
+
+    async def test_run_settings_upgrade_success_writes_sentinel_and_requests_restart(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path)
+        bot._orchestrator = _make_settings_orchestrator(bot, tmp_path)
+        bot._update_interactive_card = AsyncMock()  # type: ignore[method-assign]
+        handle = SimpleNamespace(chat_id="oc_chat_1", message_id="om_settings")
+
+        with (
+            patch("controlmesh.messenger.feishu.bot.get_current_version", return_value="0.15.0"),
+            patch(
+                "controlmesh.messenger.feishu.bot.perform_upgrade_pipeline",
+                new=AsyncMock(return_value=(True, "0.16.0", "ok")),
+            ),
+        ):
+            await bot._run_settings_upgrade(handle=handle, target_version="0.16.0")  # type: ignore[arg-type]
+
+        assert bot._exit_code == EXIT_RESTART
+        assert bot._stop_event.is_set()
+        sentinel = (tmp_path / "upgrade-sentinel.json").read_text(encoding="utf-8")
+        assert "0.15.0" in sentinel
+        assert "0.16.0" in sentinel
+        updated_card = bot._update_interactive_card.await_args.args[1]
+        markdown_blocks = [
+            element["content"]
+            for element in updated_card["elements"]
+            if element.get("tag") == "markdown"
+        ]
+        assert any("Restarting ControlMesh" in block for block in markdown_blocks)
+
+    async def test_run_settings_upgrade_failure_updates_card_without_restart(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path)
+        bot._orchestrator = _make_settings_orchestrator(bot, tmp_path)
+        bot._update_interactive_card = AsyncMock()  # type: ignore[method-assign]
+        bot._send_plain_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+        handle = SimpleNamespace(chat_id="oc_chat_1", message_id="om_settings")
+
+        with (
+            patch("controlmesh.messenger.feishu.bot.get_current_version", return_value="0.15.0"),
+            patch(
+                "controlmesh.messenger.feishu.bot.perform_upgrade_pipeline",
+                new=AsyncMock(return_value=(False, "0.15.0", "pip failed")),
+            ),
+            patch(
+                "controlmesh.messenger.feishu.bot.check_latest_version",
+                new=AsyncMock(return_value=None),
+            ),
+        ):
+            await bot._run_settings_upgrade(handle=handle, target_version="0.16.0")  # type: ignore[arg-type]
+
+        assert bot._exit_code == 0
+        assert not bot._stop_event.is_set()
+        updated_card = bot._update_interactive_card.await_args.args[1]
+        markdown_blocks = [
+            element["content"]
+            for element in updated_card["elements"]
+            if element.get("tag") == "markdown"
+        ]
+        assert any("Upgrade verification failed" in block for block in markdown_blocks)
+        bot._send_plain_text_to_chat_ref.assert_awaited_once()
 
     async def test_handle_incoming_text_routes_to_orchestrator_and_replies(
         self,

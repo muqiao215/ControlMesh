@@ -32,7 +32,11 @@ async def _handle_restart_sentinel(bot: TelegramBot) -> dict[str, object] | None
 
 async def _handle_recovery(bot: TelegramBot, sentinel: dict[str, object] | None) -> None:
     """Handle upgrade sentinel, startup lifecycle, and auto-recovery of interrupted work."""
-    upgrade = await asyncio.to_thread(consume_upgrade_sentinel, bot._orch.paths.controlmesh_home)
+    upgrade = await asyncio.to_thread(
+        consume_upgrade_sentinel,
+        bot._orch.paths.controlmesh_home,
+        transport="telegram",
+    )
     if upgrade:
         uid = int(upgrade.get("chat_id", 0))
         old_v = upgrade.get("old_version", "?")

@@ -66,6 +66,22 @@ class TestUpgradeSentinel:
         data = json.loads(raw)
         assert data == {"chat_id": 99, "old_version": "1.0.0", "new_version": "1.1.0"}
 
+    def test_transport_mismatch_does_not_consume(self, tmp_path: Path) -> None:
+        write_upgrade_sentinel(
+            tmp_path,
+            chat_id=99,
+            old_version="1.0.0",
+            new_version="1.1.0",
+            transport="feishu",
+        )
+
+        assert consume_upgrade_sentinel(tmp_path, transport="telegram") is None
+        assert (tmp_path / "upgrade-sentinel.json").exists()
+
+        data = consume_upgrade_sentinel(tmp_path, transport="feishu")
+        assert data is not None
+        assert data["transport"] == "feishu"
+
 
 class TestPerformUpgradePipeline:
     """Test upgrade pipeline behavior (verification + retry)."""

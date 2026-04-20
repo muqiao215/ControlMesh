@@ -17,9 +17,11 @@ _TABS: tuple[SettingsTab, ...] = ("streaming", "feishu", "version")
 class ParsedSettingsCardAction:
     """Normalized settings card action payload."""
 
-    kind: Literal["tab", "apply", "version_refresh", "upgrade_hint"]
+    kind: Literal["tab", "apply", "version_refresh", "upgrade_hint", "upgrade"]
     tab: SettingsTab
     callback_data: str | None = None
+    target_version: str | None = None
+    chat_id: str | None = None
     message_id: str | None = None
     operator_open_id: str | None = None
 
@@ -56,6 +58,7 @@ def parse_settings_card_action(payload: dict[str, Any]) -> ParsedSettingsCardAct
         "settings_apply": "apply",
         "settings_version_refresh": "version_refresh",
         "settings_upgrade_hint": "upgrade_hint",
+        "settings_upgrade": "upgrade",
     }
     kind = kind_map.get(raw_kind) if raw_tab in _TABS else None
     if kind is None or raw_tab not in _TABS:
@@ -63,6 +66,9 @@ def parse_settings_card_action(payload: dict[str, Any]) -> ParsedSettingsCardAct
 
     callback_data = value.get("callback_data")
     if callback_data is not None and not isinstance(callback_data, str):
+        return None
+    target_version = value.get("target_version")
+    if target_version is not None and not isinstance(target_version, str):
         return None
 
     operator = event.get("operator")
@@ -72,11 +78,14 @@ def parse_settings_card_action(payload: dict[str, Any]) -> ParsedSettingsCardAct
         if not operator_open_id and isinstance(operator.get("operator_id"), dict):
             operator_open_id = operator["operator_id"].get("open_id")
 
+    chat_id = event.get("open_chat_id") or event.get("chat_id")
     message_id = event.get("open_message_id") or event.get("message_id")
     return ParsedSettingsCardAction(
         kind=kind,
         tab=raw_tab,
         callback_data=callback_data,
+        target_version=target_version,
+        chat_id=chat_id if isinstance(chat_id, str) else None,
         message_id=message_id if isinstance(message_id, str) else None,
         operator_open_id=operator_open_id if isinstance(operator_open_id, str) else None,
     )
@@ -273,6 +282,43 @@ def _version_tab(version_info: VersionInfo | None) -> list[dict[str, Any]]:
     else:
         latest_line = f"Latest: `{version_info.latest}`"
         source_line = f"Source: `{version_info.source}`"
+    actions = [
+        _action_button(
+            "Check latest",
+            selected=False,
+            value={"cm_action": "settings_version_refresh", "tab": "version"},
+        ),
+        {
+            "tag": "button",
+            "text": {"tag": "plain_text", "content": "GitHub Releases"},
+            "multi_url": {
+                "url": "https://github.com/muqiao215/ControlMesh/releases",
+                "pc_url": "https://github.com/muqiao215/ControlMesh/releases",
+                "android_url": "https://github.com/muqiao215/ControlMesh/releases",
+                "ios_url": "https://github.com/muqiao215/ControlMesh/releases",
+            },
+        },
+    ]
+    if version_info is not None and version_info.update_available:
+        actions.append(
+            _action_button(
+                "Upgrade now",
+                selected=False,
+                value={
+                    "cm_action": "settings_upgrade",
+                    "tab": "version",
+                    "target_version": version_info.latest,
+                },
+            )
+        )
+    else:
+        actions.append(
+            _action_button(
+                "Upgrade help",
+                selected=False,
+                value={"cm_action": "settings_upgrade_hint", "tab": "version"},
+            )
+        )
     return [
         {
             "tag": "markdown",
@@ -288,28 +334,7 @@ def _version_tab(version_info: VersionInfo | None) -> list[dict[str, Any]]:
         },
         {
             "tag": "action",
-            "actions": [
-                _action_button(
-                    "Check latest",
-                    selected=False,
-                    value={"cm_action": "settings_version_refresh", "tab": "version"},
-                ),
-                {
-                    "tag": "button",
-                    "text": {"tag": "plain_text", "content": "GitHub Releases"},
-                    "multi_url": {
-                        "url": "https://github.com/muqiao215/ControlMesh/releases",
-                        "pc_url": "https://github.com/muqiao215/ControlMesh/releases",
-                        "android_url": "https://github.com/muqiao215/ControlMesh/releases",
-                        "ios_url": "https://github.com/muqiao215/ControlMesh/releases",
-                    },
-                },
-                _action_button(
-                    "Upgrade help",
-                    selected=False,
-                    value={"cm_action": "settings_upgrade_hint", "tab": "version"},
-                ),
-            ],
+            "actions": actions,
         },
     ]
 

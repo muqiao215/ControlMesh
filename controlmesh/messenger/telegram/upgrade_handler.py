@@ -132,6 +132,7 @@ async def handle_upgrade_callback(
             chat_id=chat_id,
             old_version=current_version,
             new_version=installed_version,
+            transport="telegram",
         )
 
         await bot.bot_instance.send_message(
