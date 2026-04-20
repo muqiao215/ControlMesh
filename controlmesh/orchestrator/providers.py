@@ -13,6 +13,10 @@ from controlmesh.config import (
     get_gemini_models,
     set_gemini_models,
 )
+from controlmesh.orchestrator.selectors.capability_registry import (
+    CapabilityRegistry,
+    default_capability_registry,
+)
 
 if TYPE_CHECKING:
     from controlmesh.cli.auth import AuthResult, AuthStatus
@@ -38,6 +42,7 @@ class ProviderManager:
     ) -> None:
         self._config = config
         self._models = ModelRegistry()
+        self._capabilities = default_capability_registry()
         self._known_model_ids: frozenset[str] = frozenset()
         self._available_providers: frozenset[str] = frozenset()
         self._gemini_api_key_mode: bool | None = None
@@ -50,6 +55,11 @@ class ProviderManager:
     def models(self) -> ModelRegistry:
         """Public access to the model registry."""
         return self._models
+
+    @property
+    def capabilities(self) -> CapabilityRegistry:
+        """Public access to conservative channel capability metadata."""
+        return self._capabilities
 
     @property
     def available_providers(self) -> frozenset[str]:
