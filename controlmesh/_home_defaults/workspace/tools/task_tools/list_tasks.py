@@ -11,6 +11,9 @@ import os
 import sys
 
 
+_HELP_FLAGS = {"--help", "-h"}
+
+
 def _load_shared() -> tuple[object, object, object]:
     tools_dir = os.path.dirname(__file__)
     if tools_dir not in sys.path:
@@ -21,6 +24,11 @@ def _load_shared() -> tuple[object, object, object]:
 
 
 def main() -> None:
+    args = sys.argv[1:]
+    if args and args[0] in _HELP_FLAGS:
+        print((__doc__ or "").strip())
+        return
+
     get_api_url, get_json, detect_agent_name = _load_shared()
     sender = detect_agent_name()
     path = f"/tasks/list?from={sender}" if sender else "/tasks/list"

@@ -11,6 +11,9 @@ import os
 import sys
 
 
+_HELP_FLAGS = {"--help", "-h"}
+
+
 def _load_shared() -> tuple[object, object, object]:
     tools_dir = os.path.dirname(__file__)
     if tools_dir not in sys.path:
@@ -21,8 +24,12 @@ def _load_shared() -> tuple[object, object, object]:
 
 
 def main() -> None:
-    get_api_url, post_json, detect_agent_name = _load_shared()
     args = sys.argv[1:]
+    if args and args[0] in _HELP_FLAGS:
+        print((__doc__ or "").strip())
+        return
+
+    get_api_url, post_json, detect_agent_name = _load_shared()
     if not args:
         print("Usage: python3 delete_task.py TASK_ID", file=sys.stderr)
         sys.exit(1)
