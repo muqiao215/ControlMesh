@@ -88,6 +88,7 @@ packages = ["controlmesh", "controlmesh_runtime"]
 [tool.hatch.build.targets.sdist]
 include = [
     "controlmesh/",
+    "controlmesh_runtime/",
     "config.example.json",
     "Dockerfile.sandbox",
     "LICENSE",

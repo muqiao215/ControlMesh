@@ -36,6 +36,42 @@ jobs:
         run: pip install build
       - name: Build package
         run: python -m build
+      - name: Verify dist contents
+        run: |
+          python - <<'PY'
+          import tarfile
+          import zipfile
+          from pathlib import Path
+
+          dist = Path("dist")
+          pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
+          project_version = next(
+              line.split("=", 1)[1].strip().strip('"')
+              for line in pyproject.splitlines()
+              if line.startswith("version = ")
+          )
+          wheel = dist / f"controlmesh-{project_version}-py3-none-any.whl"
+          sdist = dist / f"controlmesh-{project_version}.tar.gz"
+
+          if not wheel.exists() or not sdist.exists():
+              raise SystemExit(f"Missing expected dist files: wheel={wheel.exists()} sdist={sdist.exists()}")
+
+          with zipfile.ZipFile(wheel) as zf:
+              wheel_hits = [name for name in zf.namelist() if name.startswith("controlmesh_runtime/")]
+          with tarfile.open(sdist) as tf:
+              sdist_hits = [name for name in tf.getnames() if "controlmesh_runtime/" in name]
+
+          if not wheel_hits or not sdist_hits:
+              raise SystemExit(
+                  "Built distributions are missing controlmesh_runtime. "
+                  f"wheel_hits={len(wheel_hits)} sdist_hits={len(sdist_hits)}"
+              )
+
+          print(
+              "Dist contents verified: "
+              f"wheel_hits={len(wheel_hits)} sdist_hits={len(sdist_hits)}"
+          )
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: dist

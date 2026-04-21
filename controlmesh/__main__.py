@@ -9,7 +9,7 @@ import os
 import shutil
 import signal
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from rich.console import Console
@@ -37,7 +37,6 @@ from controlmesh.cli_commands.lifecycle import (
 from controlmesh.cli_commands.lifecycle import (
     upgrade as _upgrade,
 )
-from controlmesh.cli_commands.runtime import cmd_runtime as _cmd_runtime
 from controlmesh.cli_commands.service import cmd_service as _cmd_service
 from controlmesh.cli_commands.status import (
     print_status as _print_status,
@@ -65,6 +64,13 @@ _console = Console()
 # ---------------------------------------------------------------------------
 # Config helpers
 # ---------------------------------------------------------------------------
+
+
+def _cmd_runtime(args: Sequence[str]) -> None:
+    """Load the runtime ingress CLI only when the subcommand is invoked."""
+    from controlmesh.cli_commands.runtime import cmd_runtime
+
+    cmd_runtime(args)
 
 
 def _is_configured() -> bool:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import builtins
+import importlib
 import json
 import sys
 from pathlib import Path
@@ -10,6 +12,25 @@ from controlmesh_runtime.worker_state import WorkerStatus
 
 if TYPE_CHECKING:
     import pytest
+
+
+def test_importing_main_does_not_require_runtime_ingress_module(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_import = builtins.__import__
+
+    def guarded_import(name, module_globals=None, module_locals=None, fromlist=(), level=0):  # type: ignore[no-untyped-def]
+        if name == "controlmesh.cli_commands.runtime":
+            raise ModuleNotFoundError("runtime ingress unavailable")
+        return original_import(name, module_globals, module_locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", guarded_import)
+    sys.modules.pop("controlmesh.__main__", None)
+    sys.modules.pop("controlmesh.cli_commands.runtime", None)
+
+    main_mod = importlib.import_module("controlmesh.__main__")
+
+    assert hasattr(main_mod, "main")
 
 
 def test_main_routes_runtime_ingress_to_runtime_command(monkeypatch: pytest.MonkeyPatch) -> None:
