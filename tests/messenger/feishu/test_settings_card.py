@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 from controlmesh.config import AgentConfig
 from controlmesh.infra.version import VersionInfo
 from controlmesh.messenger.feishu.settings_card import (
@@ -120,12 +122,18 @@ def test_build_settings_card_marks_selected_tab_and_contains_version_actions() -
         source="github",
     )
 
-    card = build_settings_card(
-        _config(),
-        selected_tab="version",
-        note="Version status refreshed.",
-        version_info=info,
-    )
+    with (
+        patch("controlmesh.messenger.feishu.settings_card.detect_install_mode", return_value="pipx"),
+        patch("controlmesh.messenger.feishu.settings_card.detect_install_info") as mock_info,
+    ):
+        mock_info.return_value.source = "github"
+        mock_info.return_value.requested_revision = "main"
+        card = build_settings_card(
+            _config(),
+            selected_tab="version",
+            note="Version status refreshed.",
+            version_info=info,
+        )
 
     assert card["header"]["title"]["content"] == "ControlMesh Advanced Settings"
     tab_actions = card["elements"][0]["actions"]
@@ -139,7 +147,8 @@ def test_build_settings_card_marks_selected_tab_and_contains_version_actions() -
     ]
     assert any("Version status refreshed." in block for block in markdown_blocks)
     assert any("Latest: `0.16.0`" in block for block in markdown_blocks)
-    assert any("Source: `github`" in block for block in markdown_blocks)
+    assert any("Install source: `github@main`" in block for block in markdown_blocks)
+    assert any("Metadata source: `github`" in block for block in markdown_blocks)
 
     action_labels = [
         action["text"]["content"]
@@ -149,4 +158,4 @@ def test_build_settings_card_marks_selected_tab_and_contains_version_actions() -
     ]
     assert "Check latest" in action_labels
     assert "GitHub Releases" in action_labels
-    assert "Upgrade now" in action_labels
+    assert "Upgrade github@main" in action_labels

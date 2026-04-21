@@ -7,8 +7,12 @@ import json
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+from controlmesh.infra.install import InstallInfo
 from controlmesh.infra.updater import (
+    InstalledState,
     UpdateObserver,
+    _build_package_spec,
+    _build_upgrade_command,
     consume_upgrade_sentinel,
     perform_upgrade_pipeline,
     write_upgrade_sentinel,
@@ -93,8 +97,12 @@ class TestPerformUpgradePipeline:
                 new=AsyncMock(return_value=(True, "first-pass")),
             ) as mock_upgrade,
             patch(
-                "controlmesh.infra.updater._wait_for_version_change",
-                new=AsyncMock(return_value="2.0.0"),
+                "controlmesh.infra.updater.detect_install_info",
+                return_value=InstallInfo(mode="pipx", source="pypi"),
+            ),
+            patch(
+                "controlmesh.infra.updater._wait_for_install_change",
+                new=AsyncMock(return_value=InstalledState(version="2.0.0")),
             ),
         ):
             changed, version, output = await perform_upgrade_pipeline(current_version="1.0.0")
@@ -111,8 +119,17 @@ class TestPerformUpgradePipeline:
                 new=AsyncMock(side_effect=[(True, "first-pass"), (True, "retry-pass")]),
             ) as mock_upgrade,
             patch(
-                "controlmesh.infra.updater._wait_for_version_change",
-                new=AsyncMock(side_effect=["1.0.0", "2.0.0"]),
+                "controlmesh.infra.updater.detect_install_info",
+                return_value=InstallInfo(mode="pip", source="pypi"),
+            ),
+            patch(
+                "controlmesh.infra.updater._wait_for_install_change",
+                new=AsyncMock(
+                    side_effect=[
+                        InstalledState(version="1.0.0"),
+                        InstalledState(version="2.0.0"),
+                    ]
+                ),
             ),
         ):
             changed, version, output = await perform_upgrade_pipeline(
@@ -137,8 +154,12 @@ class TestPerformUpgradePipeline:
                 new=AsyncMock(return_value=(True, "first-pass")),
             ),
             patch(
-                "controlmesh.infra.updater._wait_for_version_change",
-                new=AsyncMock(return_value="1.0.0"),
+                "controlmesh.infra.updater.detect_install_info",
+                return_value=InstallInfo(mode="pip", source="pypi"),
+            ),
+            patch(
+                "controlmesh.infra.updater._wait_for_install_change",
+                new=AsyncMock(return_value=InstalledState(version="1.0.0")),
             ),
             patch(
                 "controlmesh.infra.updater._resolve_retry_target",
@@ -150,6 +171,164 @@ class TestPerformUpgradePipeline:
         assert changed is False
         assert version == "1.0.0"
         assert "first-pass" in output
+
+    async def test_github_branch_change_detected_by_commit_id(self) -> None:
+        with (
+            patch(
+                "controlmesh.infra.updater.detect_install_info",
+                return_value=InstallInfo(
+                    mode="pipx",
+                    source="github",
+                    url="https://github.com/muqiao215/ControlMesh.git",
+                    vcs="git",
+                    requested_revision="main",
+                    commit_id="old123",
+                ),
+            ),
+            patch(
+                "controlmesh.infra.updater._perform_upgrade_impl",
+                new=AsyncMock(return_value=(True, "first-pass")),
+            ),
+            patch(
+                "controlmesh.infra.updater._wait_for_install_change",
+                new=AsyncMock(return_value=InstalledState(version="1.0.0", commit_id="new456")),
+            ),
+        ):
+            changed, version, output = await perform_upgrade_pipeline(current_version="1.0.0")
+
+        assert changed is True
+        assert version == "1.0.0"
+        assert "first-pass" in output
+
+    async def test_github_retry_preserves_branch_target(self) -> None:
+        with (
+            patch(
+                "controlmesh.infra.updater.detect_install_info",
+                return_value=InstallInfo(
+                    mode="pipx",
+                    source="github",
+                    url="https://github.com/muqiao215/ControlMesh.git",
+                    vcs="git",
+                    requested_revision="main",
+                    commit_id="old123",
+                ),
+            ),
+            patch(
+                "controlmesh.infra.updater._perform_upgrade_impl",
+                new=AsyncMock(side_effect=[(True, "first-pass"), (True, "retry-pass")]),
+            ) as mock_upgrade,
+            patch(
+                "controlmesh.infra.updater._wait_for_install_change",
+                new=AsyncMock(
+                    side_effect=[
+                        InstalledState(version="1.0.0", commit_id="old123"),
+                        InstalledState(version="1.0.0", commit_id="new456"),
+                    ]
+                ),
+            ),
+        ):
+            changed, version, output = await perform_upgrade_pipeline(
+                current_version="1.0.0",
+                target_version="2.0.0",
+            )
+
+        assert changed is True
+        assert version == "1.0.0"
+        assert "retry-pass" in output
+        assert mock_upgrade.call_args_list[1].kwargs == {
+            "target_version": "2.0.0",
+            "force_reinstall": True,
+        }
+
+    async def test_github_retry_runs_even_without_explicit_target(self) -> None:
+        with (
+            patch(
+                "controlmesh.infra.updater.detect_install_info",
+                return_value=InstallInfo(
+                    mode="pipx",
+                    source="github",
+                    url="https://github.com/muqiao215/ControlMesh.git",
+                    vcs="git",
+                    requested_revision="main",
+                    commit_id="old123",
+                ),
+            ),
+            patch(
+                "controlmesh.infra.updater._perform_upgrade_impl",
+                new=AsyncMock(side_effect=[(True, "first-pass"), (True, "retry-pass")]),
+            ) as mock_upgrade,
+            patch(
+                "controlmesh.infra.updater._wait_for_install_change",
+                new=AsyncMock(
+                    side_effect=[
+                        InstalledState(version="1.0.0", commit_id="old123"),
+                        InstalledState(version="1.0.0", commit_id="new456"),
+                    ]
+                ),
+            ),
+        ):
+            changed, version, output = await perform_upgrade_pipeline(current_version="1.0.0")
+
+        assert changed is True
+        assert version == "1.0.0"
+        assert "retry-pass" in output
+        assert mock_upgrade.call_args_list[1].kwargs == {
+            "target_version": "latest",
+            "force_reinstall": True,
+        }
+
+
+class TestBuildUpgradeCommand:
+    """Test source-aware upgrade command construction."""
+
+    def test_pipx_github_install_uses_runpip_direct_url(self) -> None:
+        cmd = _build_upgrade_command(
+            mode="pipx",
+            package_spec="controlmesh @ git+https://github.com/muqiao215/ControlMesh.git@v0.16.0",
+            target_version="0.16.0",
+            force_reinstall=True,
+        )
+
+        assert cmd == [
+            "pipx",
+            "runpip",
+            "controlmesh",
+            "install",
+            "--upgrade",
+            "--no-cache-dir",
+            "--force-reinstall",
+            "controlmesh @ git+https://github.com/muqiao215/ControlMesh.git@v0.16.0",
+        ]
+
+
+class TestBuildPackageSpec:
+    """Test source-aware package spec selection."""
+
+    def test_github_main_preserves_requested_revision(self) -> None:
+        spec = _build_package_spec(
+            InstallInfo(
+                mode="pipx",
+                source="github",
+                url="https://github.com/muqiao215/ControlMesh.git",
+                vcs="git",
+                requested_revision="main",
+            ),
+            target_version="0.16.0",
+        )
+
+        assert spec == "controlmesh @ git+https://github.com/muqiao215/ControlMesh.git@main"
+
+    def test_non_github_direct_url_does_not_switch_to_vcs_spec(self) -> None:
+        spec = _build_package_spec(
+            InstallInfo(
+                mode="pip",
+                source="other",
+                url="https://example.com/packages/controlmesh.whl",
+            ),
+            target_version="0.16.0",
+        )
+
+        assert spec == "controlmesh==0.16.0"
 
 
 # ---------------------------------------------------------------------------

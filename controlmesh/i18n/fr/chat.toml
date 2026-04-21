@@ -126,7 +126,7 @@ time = "Durée : {secs}s"
 [upgrade]
 dev_header = "**Installation source**"
 dev_body = "La mise à jour automatique n'est pas disponible pour les installations de développement.\nMets à jour avec `git pull` dans ton répertoire de projet."
-pypi_unreachable = "Impossible de joindre PyPI pour vérifier les mises à jour. Réessaie plus tard."
+pypi_unreachable = "Impossible de joindre le service de mise à jour pour vérifier les mises à jour. Réessaie plus tard."
 up_to_date_header = "**Déjà à jour**"
 up_to_date_body = "Installé : `{current}`\nDernier :  `{latest}`\n\nTu as la dernière version."
 available_header = "**Mise à jour disponible**"

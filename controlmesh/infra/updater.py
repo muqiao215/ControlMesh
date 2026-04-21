@@ -9,8 +9,10 @@ import logging
 import os
 import sys
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from pathlib import Path
 
+from controlmesh.infra.install import InstallInfo, detect_install_info
 from controlmesh.infra.version import VersionInfo, _parse_version, check_latest_version
 
 logger = logging.getLogger(__name__)
@@ -22,6 +24,14 @@ _VERIFY_DELAYS_S: tuple[float, ...] = (0.15, 0.35, 0.75, 1.5)
 VersionCallback = Callable[[VersionInfo], Awaitable[None]]
 
 _UPGRADE_SENTINEL_NAME = "upgrade-sentinel.json"
+
+
+@dataclass(frozen=True, slots=True)
+class InstalledState:
+    """Freshly observed installed package state."""
+
+    version: str
+    commit_id: str | None = None
 
 
 class UpdateObserver:
@@ -74,32 +84,56 @@ def _is_newer_version(candidate: str, current: str) -> bool:
     return _parse_version(candidate) > _parse_version(current)
 
 
+def _github_ref_for_target(info: InstallInfo, target_version: str | None) -> str:
+    """Resolve the Git ref that a GitHub direct install should track."""
+    if info.requested_revision:
+        return info.requested_revision
+    if target_version:
+        return f"v{target_version}"
+    return "main"
+
+
+def _build_package_spec(info: InstallInfo, target_version: str | None) -> str:
+    """Build the package spec for the active installation source."""
+    if info.source == "github" and info.url:
+        if info.vcs == "git":
+            url = info.url if info.url.startswith("git+") else f"git+{info.url}"
+            return f"controlmesh @ {url}@{_github_ref_for_target(info, target_version)}"
+        return info.url
+
+    return f"controlmesh=={target_version}" if target_version else "controlmesh"
+
+
 def _build_upgrade_command(
     *,
     mode: str,
+    package_spec: str,
     target_version: str | None,
     force_reinstall: bool,
 ) -> list[str]:
     """Build provider-specific upgrade command."""
     if mode == "pipx":
         # On non-Windows, prefer `pipx upgrade` for plain upgrades (no pin).
-        if target_version is None and not force_reinstall and sys.platform != "win32":
+        if (
+            package_spec == "controlmesh"
+            and target_version is None
+            and not force_reinstall
+            and sys.platform != "win32"
+        ):
             return ["pipx", "upgrade", "--force", "controlmesh"]
         # `pipx runpip` upgrades inside the venv.  On Windows this is
         # required because `pipx upgrade` tries to overwrite the global
         # controlmesh.exe which the running process holds locked.
-        spec = f"controlmesh=={target_version}" if target_version else "controlmesh"
         cmd = ["pipx", "runpip", "controlmesh", "install", "--upgrade", "--no-cache-dir"]
         if force_reinstall:
             cmd.append("--force-reinstall")
-        cmd.append(spec)
+        cmd.append(package_spec)
         return cmd
 
-    spec = f"controlmesh=={target_version}" if target_version else "controlmesh"
     cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "--no-cache-dir"]
     if force_reinstall:
         cmd.append("--force-reinstall")
-    cmd.append(spec)
+    cmd.append(package_spec)
     return cmd
 
 
@@ -130,16 +164,16 @@ async def _perform_upgrade_impl(
     Refuses to upgrade dev/editable installs -- those should use ``git pull``.
     Sets ``PIP_NO_CACHE_DIR=1`` to avoid stale local wheel cache.
     """
-    from controlmesh.infra.install import detect_install_mode
-
-    mode = detect_install_mode()
-    if mode == "dev":
+    install_info = detect_install_info()
+    if install_info.mode == "dev":
         return False, "Running from source (editable install). Use `git pull` to update."
 
     normalized_target = _normalize_target_version(target_version)
     env = {**os.environ, "PIP_NO_CACHE_DIR": "1"}
+    package_spec = _build_package_spec(install_info, normalized_target)
     cmd = _build_upgrade_command(
-        mode=mode,
+        mode=install_info.mode,
+        package_spec=package_spec,
         target_version=normalized_target,
         force_reinstall=force_reinstall,
     )
@@ -151,7 +185,12 @@ async def _perform_upgrade_impl(
     # Fall back to plain pipx upgrade so we keep behavior resilient.
     # On Windows the fallback would hit the same PermissionError on the
     # locked exe, so skip it there.
-    if mode == "pipx" and normalized_target is not None and sys.platform != "win32":
+    if (
+        install_info.mode == "pipx"
+        and install_info.source == "pypi"
+        and normalized_target is not None
+        and sys.platform != "win32"
+    ):
         fallback_cmd = ["pipx", "upgrade", "--force", "controlmesh"]
         fb_ok, fb_output = await _run_upgrade_command(fallback_cmd, env=env)
         combined = "\n\n".join(part for part in (output.strip(), fb_output.strip()) if part)
@@ -177,17 +216,63 @@ async def get_installed_version() -> str:
     return stdout.decode().strip() if stdout else "0.0.0"
 
 
-async def _wait_for_version_change(previous_version: str) -> str:
-    """Wait briefly for package metadata to settle, then return installed version."""
-    installed = await get_installed_version()
-    if installed != previous_version:
+async def get_installed_state() -> InstalledState:
+    """Read installed package version and VCS commit in a fresh subprocess."""
+    proc = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-c",
+        (
+            "import json; "
+            "from importlib.metadata import distribution, version; "
+            "commit_id = None; "
+            "dist = distribution('controlmesh'); "
+            "direct_url = dist.read_text('direct_url.json'); "
+            "data = json.loads(direct_url) if direct_url else {}; "
+            "vcs = data.get('vcs_info') or {}; "
+            "commit_id = vcs.get('commit_id'); "
+            "print(json.dumps({'version': version('controlmesh'), 'commit_id': commit_id}))"
+        ),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    stdout, _ = await proc.communicate()
+    if not stdout:
+        return InstalledState(version="0.0.0")
+    try:
+        data = json.loads(stdout.decode())
+    except json.JSONDecodeError:
+        return InstalledState(version="0.0.0")
+    version = data.get("version")
+    commit_id = data.get("commit_id")
+    return InstalledState(
+        version=version if isinstance(version, str) else "0.0.0",
+        commit_id=commit_id if isinstance(commit_id, str) else None,
+    )
+
+
+def _state_changed(current: InstalledState, previous: InstalledState) -> bool:
+    """Return True when the installed package identity changed."""
+    return (
+        current.version != previous.version
+        or (
+            previous.commit_id is not None
+            and current.commit_id is not None
+            and current.commit_id != previous.commit_id
+        )
+    )
+
+
+async def _wait_for_install_change(previous: InstalledState) -> InstalledState:
+    """Wait briefly for package metadata to settle, then return installed state."""
+    installed = await get_installed_state()
+    if _state_changed(installed, previous):
         return installed
     for delay in _VERIFY_DELAYS_S:
         await asyncio.sleep(delay)
-        installed = await get_installed_version()
-        if installed != previous_version:
+        installed = await get_installed_state()
+        if _state_changed(installed, previous):
             return installed
-    return previous_version
+    return installed
 
 
 def _combine_outputs(outputs: list[str]) -> str:
@@ -196,8 +281,15 @@ def _combine_outputs(outputs: list[str]) -> str:
     return "\n\n".join(parts)
 
 
-async def _resolve_retry_target(current_version: str, target_version: str | None) -> str | None:
+async def _resolve_retry_target(
+    current_version: str,
+    target_version: str | None,
+    install_info: InstallInfo,
+) -> str | None:
     """Resolve retry target version for forced second attempt."""
+    if install_info.source == "github":
+        return target_version if target_version is not None else "latest"
+
     normalized_target = _normalize_target_version(target_version)
     if normalized_target and _is_newer_version(normalized_target, current_version):
         return normalized_target
@@ -225,6 +317,11 @@ async def perform_upgrade_pipeline(
         ``(changed, installed_version, output)``
     """
     outputs: list[str] = []
+    install_info = detect_install_info()
+    previous_state = InstalledState(
+        version=current_version,
+        commit_id=install_info.commit_id if install_info.source == "github" else None,
+    )
 
     _ok, output = await _perform_upgrade_impl(target_version=None, force_reinstall=False)
     outputs.append(output)
@@ -232,11 +329,11 @@ async def perform_upgrade_pipeline(
     # Always verify version regardless of the command exit code.  On
     # Windows, pipx may report failure (exe file lock) even though the
     # package was upgraded successfully inside the venv.
-    installed = await _wait_for_version_change(current_version)
-    if installed != current_version:
-        return True, installed, _combine_outputs(outputs)
+    installed_state = await _wait_for_install_change(previous_state)
+    if _state_changed(installed_state, previous_state):
+        return True, installed_state.version, _combine_outputs(outputs)
 
-    retry_target = await _resolve_retry_target(current_version, target_version)
+    retry_target = await _resolve_retry_target(current_version, target_version, install_info)
     if retry_target is None:
         return False, current_version, _combine_outputs(outputs)
 
@@ -246,9 +343,9 @@ async def perform_upgrade_pipeline(
     )
     outputs.append(retry_output)
 
-    installed = await _wait_for_version_change(current_version)
-    if installed != current_version:
-        return True, installed, _combine_outputs(outputs)
+    installed_state = await _wait_for_install_change(previous_state)
+    if _state_changed(installed_state, previous_state):
+        return True, installed_state.version, _combine_outputs(outputs)
 
     # Detect PyPI CDN propagation delay — the JSON API may announce a
     # version before the package index used by pip has it available.

@@ -89,6 +89,13 @@ pipx install controlmesh
 controlmesh
 ```
 
+如果你想直接跟踪 GitHub 最新 `main`，不用等下一次 PyPI 发布：
+
+```bash
+pipx install "git+https://github.com/muqiao215/ControlMesh.git@main"
+controlmesh
+```
+
 从源码运行：
 
 ```bash
@@ -225,6 +232,13 @@ entrypoints.
 
 ```bash
 pipx install controlmesh
+controlmesh
+```
+
+To track the latest GitHub `main` directly instead of waiting for the next PyPI release:
+
+```bash
+pipx install "git+https://github.com/muqiao215/ControlMesh.git@main"
 controlmesh
 ```
 

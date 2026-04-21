@@ -126,7 +126,7 @@ time = "Tijd: {secs}s"
 [upgrade]
 dev_header = "**Broncode-installatie**"
 dev_body = "Self-upgrade is niet beschikbaar voor dev-installaties.\nUpdate met `git pull` in je projectmap."
-pypi_unreachable = "Kon PyPI niet bereiken om op updates te controleren. Probeer het later opnieuw."
+pypi_unreachable = "Kon de updatebron niet bereiken om op updates te controleren. Probeer het later opnieuw."
 up_to_date_header = "**Al up-to-date**"
 up_to_date_body = "Geïnstalleerd: `{current}`\nNieuwste:      `{latest}`\n\nJe draait de nieuwste versie."
 available_header = "**Update beschikbaar**"

@@ -84,4 +84,4 @@ TASKMEMORY.md
 # Personal / dev-only (not part of the project)
 start_bot.sh
 python_best_practice.md
-run.py
+/run.py

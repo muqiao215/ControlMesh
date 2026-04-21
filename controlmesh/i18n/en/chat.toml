@@ -125,7 +125,7 @@ time = "Time: {secs}s"
 [upgrade]
 dev_header = "**Running From Source**"
 dev_body = "Self-upgrade is not available for development installs.\nUpdate with `git pull` in your project directory."
-pypi_unreachable = "Could not reach PyPI to check for updates. Try again later."
+pypi_unreachable = "Could not reach update metadata to check for updates. Try again later."
 up_to_date_header = "**Already Up to Date**"
 up_to_date_body = "Installed: `{current}`\nLatest:    `{latest}`\n\nYou're running the latest version."
 available_header = "**Update Available**"

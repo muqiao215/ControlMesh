@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from controlmesh.config import AgentConfig
-from controlmesh.infra.install import detect_install_mode
+from controlmesh.infra.install import detect_install_info, detect_install_mode
 from controlmesh.infra.version import VersionInfo, get_current_version
 
 SettingsTab = Literal["streaming", "feishu", "version"]
@@ -276,12 +276,14 @@ def _feishu_tab(config: AgentConfig) -> list[dict[str, Any]]:
 def _version_tab(version_info: VersionInfo | None) -> list[dict[str, Any]]:
     current = get_current_version()
     install_mode = detect_install_mode()
+    install_info = detect_install_info()
+    install_source = _format_install_source(install_info)
     if version_info is None:
         latest_line = "Latest: `not checked`"
-        source_line = "Source: `not checked`"
+        metadata_source_line = "Metadata source: `not checked`"
     else:
         latest_line = f"Latest: `{version_info.latest}`"
-        source_line = f"Source: `{version_info.source}`"
+        metadata_source_line = f"Metadata source: `{version_info.source}`"
     actions = [
         _action_button(
             "Check latest",
@@ -300,9 +302,14 @@ def _version_tab(version_info: VersionInfo | None) -> list[dict[str, Any]]:
         },
     ]
     if version_info is not None and version_info.update_available:
+        upgrade_label = (
+            f"Upgrade {install_source}"
+            if str(getattr(install_info, "source", "")) == "github"
+            else "Upgrade now"
+        )
         actions.append(
             _action_button(
-                "Upgrade now",
+                upgrade_label,
                 selected=False,
                 value={
                     "cm_action": "settings_upgrade",
@@ -326,9 +333,11 @@ def _version_tab(version_info: VersionInfo | None) -> list[dict[str, Any]]:
                 "**Version & upgrade**\n"
                 f"Installed: `{current}`\n"
                 f"Install mode: `{install_mode}`\n"
+                f"Install source: `{install_source}`\n"
                 f"{latest_line}\n"
-                f"{source_line}\n\n"
-                "Refresh checks GitHub Releases first, then falls back to PyPI.\n"
+                f"{metadata_source_line}\n\n"
+                "Refresh checks public release metadata.\n"
+                "GitHub direct installs upgrade from their tracked ref.\n"
                 "Use `/settings upgrade` to run the verified self-upgrade flow."
             ),
         },
@@ -337,6 +346,14 @@ def _version_tab(version_info: VersionInfo | None) -> list[dict[str, Any]]:
             "actions": actions,
         },
     ]
+
+
+def _format_install_source(install_info: object) -> str:
+    source = getattr(install_info, "source", "unknown")
+    requested_revision = getattr(install_info, "requested_revision", None)
+    if source == "github" and isinstance(requested_revision, str) and requested_revision:
+        return f"github@{requested_revision}"
+    return str(source)
 
 
 def _settings_button(

@@ -35,6 +35,7 @@ ORCHESTRATOR_COMMANDS: frozenset[str] = frozenset(
         "history",
         "cron",
         "diagnose",
+        "settings",
         "upgrade",
         "sessions",
         "tasks",

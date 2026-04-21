@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Literal
 
 from controlmesh.config import update_config_file_async
-from controlmesh.infra.install import detect_install_mode
+from controlmesh.infra.install import detect_install_info, detect_install_mode
 from controlmesh.infra.version import VersionInfo, check_latest_version, get_current_version
 from controlmesh.orchestrator.selectors.models import Button, ButtonGrid, SelectorResponse
 
@@ -179,6 +179,7 @@ def _render_settings_panel(
     feishu_runtime = orch._config.feishu.runtime_mode
     feishu_progress = orch._config.feishu.progress_mode
     current_version = get_current_version()
+    install_info = detect_install_info()
     install_mode = detect_install_mode()
 
     lines = ["**Advanced Settings**"]
@@ -209,9 +210,11 @@ def _render_settings_panel(
             "**Version & upgrade**",
             f"Installed: `{current_version}`",
             f"Install mode: `{install_mode}`",
+            f"Install source: `{_format_install_source(install_info)}`",
             _version_status_line(version_info),
-            "- Refresh checks the latest GitHub release first, then falls back to PyPI.",
-            "- Upgrade follows that latest release version and verifies the installed version after update.",
+            "- Refresh checks public release metadata (GitHub Releases first, then PyPI).",
+            "- Upgrade follows the active install source; GitHub direct installs stay on their tracked ref.",
+            "- GitHub branch installs verify commit changes as well as version changes after update.",
             "",
             settings_usage_text(),
         ]
@@ -269,7 +272,7 @@ def _render_settings_panel(
             ),
         ],
         [Button(text="Check latest", callback_data="st:v:refresh")],
-        *_version_action_rows(version_info, install_mode),
+        *_version_action_rows(version_info, install_mode, install_info),
         [Button(text="Refresh", callback_data="st:r:root")],
     ]
     return SelectorResponse(text="\n".join(lines), buttons=ButtonGrid(rows=rows))
@@ -287,9 +290,18 @@ def _version_status_line(version_info: VersionInfo | None) -> str:
     return f"Latest: `{version_info.latest}` ({version_info.source}, {state})"
 
 
+def _format_install_source(install_info: object) -> str:
+    source = getattr(install_info, "source", "unknown")
+    requested_revision = getattr(install_info, "requested_revision", None)
+    if source == "github" and isinstance(requested_revision, str) and requested_revision:
+        return f"github@{requested_revision}"
+    return str(source)
+
+
 def _version_action_rows(
     version_info: VersionInfo | None,
     install_mode: str,
+    install_info: object,
 ) -> list[list[Button]]:
     if version_info is None:
         return []
@@ -303,10 +315,15 @@ def _version_action_rows(
         ]
     ]
     if version_info.update_available and install_mode != "dev":
+        source_label = _format_install_source(install_info)
+        if str(getattr(install_info, "source", "")) == "github":
+            action_label = f"Upgrade {source_label}"
+        else:
+            action_label = f"Upgrade to {version_info.latest}"
         rows.append(
             [
                 Button(
-                    text=f"Upgrade to {version_info.latest}",
+                    text=action_label,
                     callback_data=f"upg:yes:{version_info.latest}",
                 )
             ]

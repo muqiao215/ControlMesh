@@ -17,6 +17,12 @@
 
 ## Install
 
+Choose one lane:
+
+- **PyPI stable**: easiest upgrades, best default for most servers
+- **GitHub latest**: track the repository directly when you want newer code before the next PyPI release
+- **from source**: local development or repo hacking
+
 ### pipx (recommended)
 
 ```bash
@@ -29,11 +35,30 @@ pipx install controlmesh
 pip install controlmesh
 ```
 
+### GitHub latest
+
+Install the latest `main` branch directly from GitHub without cloning locally:
+
+```bash
+# pipx
+pipx install "git+https://github.com/muqiao215/ControlMesh.git@main"
+
+# pip
+pip install "controlmesh @ git+https://github.com/muqiao215/ControlMesh.git@main"
+```
+
+Notes:
+
+- this tracks GitHub instead of PyPI.
+- future self-upgrades will keep following the same GitHub source.
+- for branch installs such as `@main`, upgrades verify commit changes even when the package version has not changed yet.
+- use this when you need a just-merged fix before the next PyPI release.
+
 ### from source
 
 ```bash
 git clone https://github.com/muqiao215/ControlMesh.git
-cd controlmesh
+cd ControlMesh
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 ```
@@ -59,6 +84,15 @@ Telegram + WeChat). After initial setup, configure the `transports` array in
 `config.json`. See [config.md](config.md) for details.
 
 If service install succeeds, onboarding returns without starting foreground bot.
+
+## Upgrade behavior
+
+`/upgrade`, `/settings version`, and `controlmesh upgrade` follow the active install source:
+
+- PyPI installs (`pipx install controlmesh`, `pip install controlmesh`) upgrade from PyPI
+- GitHub direct installs (`git+https://...`) upgrade from the same GitHub source
+- editable/source installs still require `git pull` + reinstall
+- version refresh still checks public release metadata; GitHub branch installs use commit-aware verification during the actual upgrade step
 
 ## Platform notes
 
@@ -261,7 +295,7 @@ Security basics:
 - keep SSH key-only auth
 - enable Docker sandboxing for unattended automation
 - keep `allowed_user_ids` restricted
-- use `/upgrade` or `pipx upgrade controlmesh`
+- use `/upgrade` or `controlmesh upgrade`
 
 ## Troubleshooting
 
@@ -303,7 +337,14 @@ Then validate `docker.enabled` + image/container names in config.
 Upgrade:
 
 ```bash
+# preferred: follows the active install source
+controlmesh upgrade
+
+# if installed from PyPI via pipx and the bot is offline
 pipx upgrade controlmesh
+
+# if installed from GitHub main via pipx and the bot is offline
+pipx install --force "git+https://github.com/muqiao215/ControlMesh.git@main"
 ```
 
 Uninstall:

@@ -27,10 +27,15 @@ async def test_settings_selector_start_groups_streaming_controls(orch: Orchestra
             return_value="pipx",
         ),
         patch(
+            "controlmesh.orchestrator.selectors.settings_selector.detect_install_info",
+        ) as mock_install_info,
+        patch(
             "controlmesh.orchestrator.selectors.settings_selector.get_current_version",
             return_value="0.15.0",
         ),
     ):
+        mock_install_info.return_value.source = "github"
+        mock_install_info.return_value.requested_revision = "main"
         resp = await settings_selector_start(orch)
 
     assert "Advanced Settings" in resp.text
@@ -38,6 +43,8 @@ async def test_settings_selector_start_groups_streaming_controls(orch: Orchestra
     assert "Feishu runtime" in resp.text
     assert "Version & upgrade" in resp.text
     assert "Tool event display" in resp.text
+    assert "Install source" in resp.text
+    assert "github" in resp.text.lower()
     assert resp.buttons is not None
     labels = [button.text for row in resp.buttons.rows for button in row]
     assert any("Tools only" in label for label in labels)
@@ -100,6 +107,9 @@ async def test_settings_version_refresh_callback_shows_upgrade_actions(orch: Orc
             return_value="pipx",
         ),
         patch(
+            "controlmesh.orchestrator.selectors.settings_selector.detect_install_info",
+        ) as mock_install_info,
+        patch(
             "controlmesh.orchestrator.selectors.settings_selector.get_current_version",
             return_value="0.15.0",
         ),
@@ -108,6 +118,8 @@ async def test_settings_version_refresh_callback_shows_upgrade_actions(orch: Orc
             new=AsyncMock(return_value=info),
         ),
     ):
+        mock_install_info.return_value.source = "github"
+        mock_install_info.return_value.requested_revision = "main"
         resp = await handle_settings_callback(orch, "st:v:refresh")
 
     assert "0.16.0" in resp.text
@@ -116,3 +128,5 @@ async def test_settings_version_refresh_callback_shows_upgrade_actions(orch: Orc
     callback_values = [button.callback_data for row in resp.buttons.rows for button in row]
     assert "upg:cl:0.16.0" in callback_values
     assert "upg:yes:0.16.0" in callback_values
+    labels = [button.text for row in resp.buttons.rows for button in row]
+    assert any("github@main" in label for label in labels)
