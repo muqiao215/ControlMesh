@@ -38,6 +38,10 @@ from controlmesh.messenger.feishu.auth.native_auth_all_runner import (
     FeishuNativeAuthAllRunner,
     is_native_auth_all_command,
 )
+from controlmesh.messenger.feishu.auth.native_auth_useful_runner import (
+    FeishuNativeAuthUsefulRunner,
+    is_native_auth_useful_command,
+)
 from controlmesh.messenger.feishu.auth.orchestration_runner import FeishuAuthOrchestrationRunner
 from controlmesh.messenger.feishu.auth.runtime_auth import resolve_feishu_auth
 from controlmesh.messenger.feishu.bundled_runtime import (
@@ -108,6 +112,7 @@ _FEISHU_COMMAND_GUIDE_TEXT = (
     "/status — 查看当前状态\n"
     "/model — 切换模型\n"
     "/feishu_auth_all — 批量补齐飞书原生权限\n"
+    "/feishu_auth_useful — 除黑名单外批量补齐应用已开放权限\n"
     "/claude_native on — 打开 Claude 原生命令模式\n"
     "/claude_native off — 关闭 Claude 原生命令模式\n"
     "/cm /status — 强制走 ControlMesh 命令\n\n"
@@ -303,6 +308,7 @@ class FeishuBot:
         self._card_auth_runner: FeishuCardAuthRunner | None = None
         self._auth_orchestration_runner: FeishuAuthOrchestrationRunner | None = None
         self._native_auth_all_runner: FeishuNativeAuthAllRunner | None = None
+        self._native_auth_useful_runner: FeishuNativeAuthUsefulRunner | None = None
         self._native_tool_executor: FeishuNativeToolExecutor | None = None
         self._notification_service: NotificationService = FeishuNotificationService(self)
         self._bus.register_transport(FeishuTransport(self))
@@ -702,6 +708,8 @@ class FeishuBot:
         return task
 
     async def _handle_auth_message(self, message: FeishuIncomingText) -> bool:
+        if is_native_auth_useful_command(message.text) and await self._ensure_native_auth_useful_runner().handle_message(message):
+            return True
         if is_native_auth_all_command(message.text) and await self._ensure_native_auth_all_runner().handle_message(message):
             return True
         if await self._ensure_auth_orchestration_runner().handle_message(message):
@@ -1516,6 +1524,17 @@ class FeishuBot:
                 text_reply=self._reply_card_auth_text,
             )
         return self._native_auth_all_runner
+
+    def _ensure_native_auth_useful_runner(self) -> FeishuNativeAuthUsefulRunner:
+        if self._native_auth_useful_runner is None:
+            self._native_auth_useful_runner = FeishuNativeAuthUsefulRunner(
+                self._config,
+                session_factory=self._ensure_session,
+                get_tenant_access_token=self._get_tenant_access_token,
+                start_user_auth_flow=self._ensure_card_auth_runner().start_retryable_auth_flow,
+                text_reply=self._reply_card_auth_text,
+            )
+        return self._native_auth_useful_runner
 
     def _ensure_native_tool_executor(self) -> FeishuNativeToolExecutor:
         if self._native_tool_executor is None:

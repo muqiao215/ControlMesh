@@ -217,6 +217,14 @@ Implementation status note:
 | `enabled` | `bool` | `true` | Enables shared delegated task system (`TaskHub`) |
 | `max_parallel` | `int` | `5` | Max concurrent running tasks per chat in `TaskHub` |
 | `timeout_seconds` | `float` | `3600.0` | Timeout per delegated task run |
+| `default_topology` | `str \\| null` | `null` | Optional default topology for delegated tasks; must be one of `pipeline`, `fanout_merge`, `director_worker`, `debate_judge` |
+
+Behavior notes:
+
+- `default_topology` is only a validated default for delegated background tasks.
+- Explicit task submissions can still override it with their own `topology`.
+- `/tasks topology` reads or updates the same setting in `config.json`.
+- Selection stays explicit; ControlMesh does not infer a topology automatically.
 
 ## Task-Level Automation Overrides
 

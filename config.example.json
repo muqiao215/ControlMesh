@@ -231,7 +231,8 @@
     "tasks": {
         "enabled": true,
         "max_parallel": 5,
-        "timeout_seconds": 3600.0
+        "timeout_seconds": 3600.0,
+        "default_topology": "pipeline"
     },
 
     "interagent_port": 8799
