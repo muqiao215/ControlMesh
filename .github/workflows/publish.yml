@@ -96,6 +96,7 @@ jobs:
     needs: publish-pypi
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - name: Wait for PyPI JSON to show the tagged version
         env:
           EXPECTED_VERSION: ${{ github.ref_name }}
