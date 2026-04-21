@@ -1381,8 +1381,8 @@ class TestSyncCommands:
         bot_instance.set_my_commands.assert_not_called()
 
     async def test_clears_legacy_scoped_commands(self) -> None:
-        """Old scoped commands (private/group) are deleted on sync."""
-        from aiogram.types import BotCommand
+        """Old scoped commands (private/group/chat) are deleted on sync."""
+        from aiogram.types import BotCommand, BotCommandScopeChat
 
         from controlmesh.messenger.telegram.app import _BOT_COMMANDS
 
@@ -1400,7 +1400,11 @@ class TestSyncCommands:
 
         await tg_bot._sync_commands()
 
-        assert bot_instance.delete_my_commands.call_count == 2
+        assert bot_instance.delete_my_commands.call_count == 3
+        assert any(
+            isinstance(call.kwargs.get("scope"), BotCommandScopeChat)
+            for call in bot_instance.delete_my_commands.call_args_list
+        )
         bot_instance.set_my_commands.assert_not_called()
 
     async def test_updates_when_order_changes(self) -> None:

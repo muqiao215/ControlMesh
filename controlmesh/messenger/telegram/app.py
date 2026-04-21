@@ -1518,14 +1518,26 @@ class TelegramBot:
         await handle_upgrade_callback(self, chat_id, message_id, data, thread_id=thread_id)
 
     async def _sync_commands(self) -> None:
-        from aiogram.types import BotCommandScopeAllGroupChats, BotCommandScopeAllPrivateChats
+        from aiogram.types import (
+            BotCommandScopeAllGroupChats,
+            BotCommandScopeAllPrivateChats,
+            BotCommandScopeChat,
+        )
 
         desired = _bot_commands_for_agent(self._agent_name)
 
         # Clear legacy scoped commands (previous versions set per-scope lists).
         # Telegram keeps scoped commands independently — they must be deleted
         # explicitly or they shadow the default-scope list.
-        for scope in (BotCommandScopeAllPrivateChats(), BotCommandScopeAllGroupChats()):
+        scoped_chat_ids = list(
+            dict.fromkeys([*self._config.allowed_user_ids, *self._config.allowed_group_ids]),
+        )
+        scopes = [
+            BotCommandScopeAllPrivateChats(),
+            BotCommandScopeAllGroupChats(),
+            *(BotCommandScopeChat(chat_id=chat_id) for chat_id in scoped_chat_ids),
+        ]
+        for scope in scopes:
             try:
                 scoped = await self._bot.get_my_commands(scope=scope)
                 if scoped:
