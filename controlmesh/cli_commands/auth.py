@@ -6,11 +6,11 @@ import asyncio
 import base64
 import contextlib
 import functools
+import json
+import logging
 import os
 import subprocess
 import sys
-import json
-import logging
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
@@ -754,6 +754,27 @@ class _FeishuRegistrationWriteResult:
     allow_from_initialized: bool
 
 
+def _enable_primary_transport(raw: dict[str, object], transport: str) -> None:
+    existing_transports = raw.get("transports")
+    normalized_transports: list[str] = []
+    if isinstance(existing_transports, list):
+        for item in existing_transports:
+            if isinstance(item, str) and item and item not in normalized_transports:
+                normalized_transports.append(item)
+    else:
+        existing_transport = raw.get("transport")
+        if isinstance(existing_transport, str) and existing_transport:
+            normalized_transports.append(existing_transport)
+
+    deduped_transports: list[str] = []
+    for item in [transport, *normalized_transports]:
+        if item not in deduped_transports:
+            deduped_transports.append(item)
+
+    raw["transport"] = transport
+    raw["transports"] = deduped_transports
+
+
 def _write_feishu_registration_to_config(
     *,
     config: AgentConfig,
@@ -794,6 +815,7 @@ def _write_feishu_registration_to_config(
         if not isinstance(existing_allow_from, list):
             next_feishu["allow_from"] = []
 
+    _enable_primary_transport(raw, "feishu")
     raw["feishu"] = next_feishu
     atomic_json_save(config_path, raw)
     return _FeishuRegistrationWriteResult(

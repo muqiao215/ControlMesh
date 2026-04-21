@@ -182,7 +182,7 @@ def test_cmd_auth_feishu_register_begin_delegates_to_scan_create_no_poll(
     monkeypatch.setattr(
         module,
         "_spawn_feishu_registration_completion",
-        lambda *, config, pending_path: spawned.append(pending_path),
+        lambda *, pending_path, **_kwargs: spawned.append(pending_path),
         raising=False,
     )
 
@@ -219,7 +219,7 @@ def test_cmd_auth_feishu_register_begin_can_skip_auto_complete(
     monkeypatch.setattr(
         module,
         "run_feishu_auth_kit_json",
-        lambda args: {
+        lambda _args: {
             "status": "authorization_required",
             "device_code": "dev_123",
             "user_code": "ABCD-EFGH",
@@ -231,7 +231,7 @@ def test_cmd_auth_feishu_register_begin_can_skip_auto_complete(
     monkeypatch.setattr(
         module,
         "_spawn_feishu_registration_completion",
-        lambda *, config, pending_path: spawned.append(pending_path),
+        lambda *, pending_path, **_kwargs: spawned.append(pending_path),
         raising=False,
     )
 
@@ -500,6 +500,75 @@ def test_cmd_auth_feishu_register_poll_preserves_existing_allowlist(
     assert saved["feishu"]["allow_from"] == ["ou_existing"]
     assert saved["feishu"]["runtime_mode"] == "native"
     assert saved["feishu"]["progress_mode"] == "card_stream"
+    assert saved["transport"] == "feishu"
+    assert saved["transports"] == ["feishu"]
+
+
+def test_cmd_auth_feishu_register_poll_enables_feishu_transport_and_preserves_existing_others(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _import_auth_cli_module()
+    config = AgentConfig(
+        controlmesh_home=str(tmp_path),
+        transport="telegram",
+        transports=["telegram"],
+        telegram_token="tok",
+        allowed_user_ids=[1],
+        feishu={
+            "mode": "bot_only",
+            "brand": "feishu",
+        },
+    )
+    config_path = _write_config_file(
+        tmp_path,
+        {
+            "transport": "telegram",
+            "transports": ["telegram"],
+            "telegram_token": "tok",
+            "allowed_user_ids": [1],
+            "feishu": {
+                "mode": "bot_only",
+                "brand": "feishu",
+            },
+        },
+    )
+
+    class _FakeConsole:
+        def print(self, *args: object, **kwargs: object) -> None:
+            return None
+
+    def _fake_run_feishu_auth_kit_json(
+        args: list[str],
+        *,
+        extra_env: dict[str, str] | None = None,
+    ) -> dict[str, object]:
+        _ = extra_env
+        if args[:2] == ["register", "probe"]:
+            return {"ok": True, "app_id": "cli_new"}
+        return {
+            "status": "success",
+            "app_id": "cli_new",
+            "app_secret": "secret-new",
+            "domain": "feishu",
+        }
+
+    monkeypatch.setattr(module, "_console", _FakeConsole(), raising=False)
+    monkeypatch.setattr(module, "load_config", lambda: config, raising=False)
+    monkeypatch.setattr(
+        module,
+        "run_feishu_auth_kit_json",
+        _fake_run_feishu_auth_kit_json,
+        raising=False,
+    )
+
+    module.cmd_auth(["auth", "feishu", "register-poll", "--device-code", "dev_123"])
+
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    assert saved["transport"] == "feishu"
+    assert saved["transports"] == ["feishu", "telegram"]
+    assert saved["feishu"]["app_id"] == "cli_new"
+    assert saved["feishu"]["runtime_mode"] == "native"
 
 
 def test_cmd_auth_feishu_register_poll_writes_config_even_when_probe_fails(
