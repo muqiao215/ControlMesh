@@ -1,25 +1,26 @@
 # Package Manifest
 
-This package contains the file-based planning artifacts for the ControlMesh
+This folder preserves the planning references for the ControlMesh
 `orchestration-topology-pack` line.
 
-## Included Files
+## Included References
 
-- `task_plan.md`
-- `findings.md`
-- `progress.md`
 - `architecture_v1.md`
+- `architecture_v2.md`
+- `architecture_v3.md`
+- `execution_plan.md`
 - `package_manifest.md`
 
 ## Purpose
 
-These files define the bounded product and architecture plan for:
+These references define the bounded product and architecture line for:
 
 - explicit selectable orchestration topologies
 - structured worker/reducer intermediate results
 - runtime ownership split across `team/`, `tasks/`, `multiagent/`, and `orchestrator/`
-- MVP implementation order and test gates
+- implementation order and convergence gates for the approved topology pack
 
 ## Packaging Note
 
-The planning package intentionally excludes code changes. It is a design handoff bundle.
+This manifest documents the planning references kept in-repo. It does not
+describe shipped runtime code by itself.
