@@ -56,6 +56,110 @@ TEAM_DISPATCH_RESULT_OUTCOMES: tuple[str, ...] = (
     "failed",
     "needs_repair",
 )
+TEAM_TOPOLOGIES: tuple[str, ...] = (
+    "pipeline",
+    "fanout_merge",
+    "director_worker",
+    "debate_judge",
+)
+TEAM_PIPELINE_SUBSTAGES: tuple[str, ...] = (
+    "planning",
+    "worker_running",
+    "review_running",
+    "completed",
+    "failed",
+    "waiting_parent",
+    "repairing",
+)
+TEAM_FANOUT_MERGE_SUBSTAGES: tuple[str, ...] = (
+    "planning",
+    "dispatching",
+    "collecting",
+    "reducing",
+    "completed",
+    "failed",
+    "waiting_parent",
+    "repairing",
+)
+TEAM_DIRECTOR_WORKER_SUBSTAGES: tuple[str, ...] = (
+    "planning",
+    "dispatching",
+    "collecting",
+    "director_deciding",
+    "waiting_parent",
+    "repairing",
+    "completed",
+    "failed",
+)
+TEAM_DEBATE_JUDGE_SUBSTAGES: tuple[str, ...] = (
+    "planning",
+    "candidate_round",
+    "collecting",
+    "judging",
+    "waiting_parent",
+    "repairing",
+    "completed",
+    "failed",
+)
+TEAM_TOPOLOGY_SUBSTAGES: Mapping[str, tuple[str, ...]] = {
+    "pipeline": TEAM_PIPELINE_SUBSTAGES,
+    "fanout_merge": TEAM_FANOUT_MERGE_SUBSTAGES,
+    "director_worker": TEAM_DIRECTOR_WORKER_SUBSTAGES,
+    "debate_judge": TEAM_DEBATE_JUDGE_SUBSTAGES,
+}
+TEAM_RESULT_SCHEMA_VERSION: int = 1
+TEAM_EXECUTION_SCHEMA_VERSION: int = 1
+TEAM_DECISION_SCHEMA_VERSION: int = TEAM_RESULT_SCHEMA_VERSION
+TEAM_RESULT_STATUSES: tuple[str, ...] = (
+    "completed",
+    "failed",
+    "blocked",
+    "needs_parent_input",
+    "needs_repair",
+)
+TEAM_RESULT_ITEM_KINDS: tuple[str, ...] = (
+    "message",
+    "tool_call",
+    "tool_result",
+    "interrupt",
+    "dispatch",
+    "phase_transition",
+    "repair_note",
+)
+TEAM_PROGRESS_STATUSES: tuple[str, ...] = (
+    "pending",
+    "in_progress",
+    "blocked",
+    "completed",
+    "failed",
+)
+TEAM_DIRECTOR_DECISIONS: tuple[str, ...] = (
+    "dispatch_workers",
+    "complete",
+    "needs_parent_input",
+    "needs_repair",
+    "failed",
+)
+TEAM_JUDGE_DECISIONS: tuple[str, ...] = (
+    "select_winner",
+    "advance_round",
+    "needs_parent_input",
+    "needs_repair",
+    "failed",
+)
+TEAM_DIRECTOR_STOP_REASONS: tuple[str, ...] = (
+    "budget_exhausted",
+    "no_viable_path",
+    "repair_exhausted",
+    "parent_decision_required",
+)
+TEAM_JUDGE_STOP_REASONS: tuple[str, ...] = (
+    "final_round_tie",
+    "insufficient_evidence",
+    "no_viable_candidate",
+    "parent_decision_required",
+)
+TEAM_INTERRUPTION_STATUSES: tuple[str, ...] = ("idle", "waiting_parent")
 TEAM_DISPATCH_TRANSITION_METADATA_FIELDS: tuple[str, ...] = (
     "execution_id",
     "runtime_lease_id",
@@ -102,6 +206,34 @@ def ensure_safe_identifier(pattern: re.Pattern[str], value: str, label: str) -> 
         msg = f"{label} must match the safe team identifier pattern"
         raise ValueError(msg)
     return normalized
+
+
+def ensure_allowed_text(value: str, allowed: tuple[str, ...], label: str) -> str:
+    """Normalize a text field and ensure it matches an allowed contract value."""
+    normalized = value.strip()
+    if normalized not in allowed:
+        msg = f"{label} must be one of: {', '.join(allowed)}"
+        raise ValueError(msg)
+    return normalized
+
+
+def ensure_team_topology(value: str, label: str = "topology") -> str:
+    """Validate a topology identifier against the supported contract set."""
+    return ensure_allowed_text(value, TEAM_TOPOLOGIES, label)
+
+
+def ensure_team_topology_substage(topology: str, value: str, label: str = "substage") -> str:
+    """Validate a topology-local substage against the selected topology."""
+    normalized_topology = ensure_team_topology(topology)
+    allowed_substages = TEAM_TOPOLOGY_SUBSTAGES[normalized_topology]
+    normalized_value = value.strip()
+    if normalized_value not in allowed_substages:
+        msg = (
+            f"{label} must be one of: {', '.join(allowed_substages)} "
+            f"for topology '{normalized_topology}'"
+        )
+        raise ValueError(msg)
+    return normalized_value
 
 
 def normalize_team_task(task: TeamTask) -> TeamTask:

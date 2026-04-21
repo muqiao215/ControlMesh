@@ -41,6 +41,7 @@ async def test_settings_selector_start_groups_streaming_controls(orch: Orchestra
     assert "Advanced Settings" in resp.text
     assert "Streaming output" in resp.text
     assert "Feishu runtime" in resp.text
+    assert "Messaging interfaces" in resp.text
     assert "Version & upgrade" in resp.text
     assert "Tool event display" in resp.text
     assert "Install source" in resp.text
@@ -50,6 +51,9 @@ async def test_settings_selector_start_groups_streaming_controls(orch: Orchestra
     assert any("Tools only" in label for label in labels)
     assert any("Command + output" in label for label in labels)
     assert any("Native plugin" in label for label in labels)
+    assert "Telegram bot" in labels
+    assert "Feishu app" in labels
+    assert "Weixin iLink" in labels
     assert any("Check latest" in label for label in labels)
 
 
@@ -91,6 +95,13 @@ async def test_settings_feishu_progress_callback_updates_config(orch: Orchestrat
     assert orch._config.feishu.progress_mode == "card_stream"
     saved = json.loads(orch.paths.config_path.read_text(encoding="utf-8"))
     assert saved["feishu"]["progress_mode"] == "card_stream"
+
+
+async def test_settings_messaging_callback_shows_telegram_help(orch: Orchestrator) -> None:
+    resp = await handle_settings_callback(orch, "st:m:telegram")
+
+    assert "Telegram setup" in resp.text
+    assert "/settings messaging telegram token <BOT_TOKEN>" in resp.text
 
 
 async def test_settings_version_refresh_callback_shows_upgrade_actions(orch: Orchestrator) -> None:

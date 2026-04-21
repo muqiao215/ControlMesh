@@ -6,9 +6,13 @@ import logging
 import time
 from typing import TYPE_CHECKING
 
+from pydantic import ValidationError
+
 from controlmesh.i18n import t, t_plural
 from controlmesh.orchestrator.selectors.models import Button, ButtonGrid, SelectorResponse
 from controlmesh.orchestrator.selectors.utils import format_age
+from controlmesh.team.models import TeamTopologyExecutionState
+from controlmesh.team.presentation import render_topology_progress_lines
 from controlmesh.text.response_format import SEP, fmt
 
 if TYPE_CHECKING:
@@ -100,9 +104,9 @@ def _build_page(
     rows: list[list[Button]] = []
     now = time.time()
 
-    _append_running(running, lines, rows, now)
-    _append_waiting(waiting, lines, now, has_prev=bool(running))
-    _append_finished(finished, lines, now, has_running=bool(running or waiting))
+    _append_running(hub, running, lines, rows, now)
+    _append_waiting(hub, waiting, lines, now, has_prev=bool(running))
+    _append_finished(hub, finished, lines, now, has_running=bool(running or waiting))
     _append_nav(rows, finished)
 
     summary = _summary_line(running, waiting, finished)
@@ -111,6 +115,7 @@ def _build_page(
 
 
 def _append_running(
+    hub: TaskHub,
     running: list[TaskEntry],
     lines: list[str],
     rows: list[list[Button]],
@@ -121,6 +126,7 @@ def _append_running(
     lines.append(t("tasks.running_header"))
     for entry in running:
         lines.append(_format_entry(entry, now))
+        _append_topology_progress(hub, entry, lines)
         rows.append(
             [
                 Button(
@@ -134,6 +140,7 @@ def _append_running(
 
 
 def _append_waiting(
+    hub: TaskHub,
     waiting: list[TaskEntry],
     lines: list[str],
     now: float,
@@ -147,11 +154,13 @@ def _append_waiting(
     lines.append(t("tasks.waiting_header"))
     for entry in waiting:
         lines.append(_format_entry(entry, now))
+        _append_topology_progress(hub, entry, lines)
         if entry.last_question:
             lines.append(f"  ↳ {entry.last_question[:80]}")
 
 
 def _append_finished(
+    hub: TaskHub,
     finished: list[TaskEntry],
     lines: list[str],
     now: float,
@@ -163,7 +172,9 @@ def _append_finished(
     if has_running:
         lines.append("")
     lines.append(t("tasks.finished_header"))
-    lines.extend(_format_entry(entry, now) for entry in finished)
+    for entry in finished:
+        lines.append(_format_entry(entry, now))
+        _append_topology_progress(hub, entry, lines)
 
 
 def _append_nav(
@@ -210,6 +221,22 @@ def _format_entry(entry: TaskEntry, now: float) -> str:
     if entry.error:
         parts.append(entry.error[:80])
     return " · ".join(parts)
+
+
+def _append_topology_progress(hub: TaskHub, entry: TaskEntry, lines: list[str]) -> None:
+    raw = hub.read_topology_state(entry.task_id)
+    if raw is None:
+        if entry.topology:
+            lines.append(f"  ↳ topology selection: {entry.topology}")
+        return
+    try:
+        state = TeamTopologyExecutionState.model_validate(raw)
+    except ValidationError:
+        logger.warning("Skipping invalid topology state for task %s in selector render", entry.task_id)
+        if entry.topology:
+            lines.append(f"  ↳ topology selection: {entry.topology}")
+        return
+    lines.extend(f"  ↳ {line}" for line in render_topology_progress_lines(state.progress_summary))
 
 
 def _status_icon(status: str) -> str:

@@ -21,6 +21,7 @@ class TaskSubmit:
     provider_override: str = ""
     model_override: str = ""
     thinking_override: str = ""
+    topology: str = ""
 
 
 @dataclass(slots=True)
@@ -35,6 +36,7 @@ class TaskEntry:
     provider: str
     model: str
     status: str  # "running" | "done" | "failed" | "cancelled" | "waiting"
+    topology: str = ""
     session_id: str = ""
     created_at: float = field(default_factory=time.time)
     completed_at: float = 0.0
@@ -58,6 +60,7 @@ class TaskEntry:
             "prompt_preview": self.prompt_preview,
             "provider": self.provider,
             "model": self.model,
+            "topology": self.topology,
             "status": self.status,
             "session_id": self.session_id,
             "created_at": self.created_at,
@@ -85,6 +88,7 @@ class TaskEntry:
             prompt_preview=d.get("prompt_preview", ""),
             provider=d.get("provider", ""),
             model=d.get("model", ""),
+            topology=d.get("topology", ""),
             status=d.get("status", "running"),
             session_id=d.get("session_id", ""),
             created_at=d.get("created_at", 0.0),

@@ -23,6 +23,7 @@ from controlmesh.gateways.config import (
     GatewayEventRuleConfig,
     GatewayTargetConfig,
 )
+from controlmesh.team.contracts import TEAM_TOPOLOGIES
 
 # -- AgentConfig defaults --
 
@@ -212,6 +213,18 @@ def test_feishu_card_stream_requires_native_runtime_mode() -> None:
             transport="feishu",
             feishu={"runtime_mode": "bridge", "progress_mode": "card_stream"},
         )
+
+
+@pytest.mark.parametrize("topology", TEAM_TOPOLOGIES)
+def test_tasks_default_topology_accepts_approved_values(topology: str) -> None:
+    cfg = AgentConfig(tasks={"default_topology": topology})
+
+    assert cfg.tasks.default_topology == topology
+
+
+def test_tasks_default_topology_rejects_unapproved_values() -> None:
+    with pytest.raises(ValidationError, match="default_topology"):
+        AgentConfig(tasks={"default_topology": "auto"})
 
 
 def test_transport_weixin_backward_compat() -> None:

@@ -7,11 +7,13 @@ import contextlib
 import logging
 import time
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+from controlmesh.infra.json_store import atomic_json_save, load_json
 from controlmesh.runtime import RuntimeEvent, RuntimeEventStore
 from controlmesh.session import SessionKey
 from controlmesh.tasks.models import TaskEntry, TaskInFlight, TaskResult, TaskSubmit
+from controlmesh.team.contracts import ensure_team_topology
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -26,6 +28,7 @@ logger = logging.getLogger(__name__)
 _FINISHED = frozenset({"done", "failed", "cancelled"})
 _RESUMABLE = frozenset({"done", "failed", "cancelled", "waiting"})
 _MAINTENANCE_INTERVAL = 5 * 3600  # 5 hours
+_TOPOLOGY_STATE_FILENAME = "topology_execution.json"
 
 TaskResultCallback = Callable[[TaskResult], Awaitable[None]]
 QuestionHandler = Callable[[str, str, str, int, int | None], Awaitable[None]]
@@ -148,6 +151,13 @@ class TaskHub:
         provider = submit.provider_override or ""
         model = submit.model_override or ""
         thinking = submit.thinking_override or ""
+        default_topology = getattr(self._config, "default_topology", None)
+        if not isinstance(default_topology, str):
+            default_topology = None
+        topology = submit.topology or default_topology or ""
+        if topology:
+            topology = ensure_team_topology(topology, "topology")
+        submit.topology = topology
 
         # Resolve per-agent tasks_dir for folder isolation
         agent_tasks_dir = self._agent_tasks_dirs.get(submit.parent_agent)
@@ -341,6 +351,31 @@ class TaskHub:
         if chat_id is not None:
             entries = [e for e in entries if e.chat_id == chat_id]
         return entries
+
+    def topology_state_path(self, task_id: str) -> Path:
+        """Return the TaskHub-backed topology execution state path for one task."""
+        entry = self._registry.get(task_id)
+        if entry is None:
+            msg = f"Task '{task_id}' not found"
+            raise ValueError(msg)
+        return self._registry.task_folder(task_id) / _TOPOLOGY_STATE_FILENAME
+
+    def read_topology_state(self, task_id: str) -> dict[str, Any] | None:
+        """Read the persisted topology execution state for one task."""
+        raw = load_json(self.topology_state_path(task_id))
+        if raw is None:
+            return None
+        if not isinstance(raw, dict):
+            msg = f"Topology state for task '{task_id}' must be a JSON object"
+            raise TypeError(msg)
+        return raw
+
+    def write_topology_state(self, task_id: str, payload: dict[str, Any]) -> Path:
+        """Persist the topology execution state inside the task folder."""
+        path = self.topology_state_path(task_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_json_save(path, payload)
+        return path
 
     async def shutdown(self) -> None:
         """Cancel all in-flight tasks and clean up."""

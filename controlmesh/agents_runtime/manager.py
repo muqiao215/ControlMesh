@@ -50,12 +50,13 @@ class AgentsRuntimeManager:
         tools: list[Any] = []
 
         if self._ctx.task_hub is not None:
-            async def create_background_task(
+            async def create_background_task(  # noqa: PLR0913
                 prompt: str,
                 name: str = "",
                 provider_override: str = "",
                 model_override: str = "",
                 thinking_override: str = "",
+                topology: str = "",
             ) -> dict[str, Any]:
                 """Create a ControlMesh background task through the existing TaskHub."""
                 result = await create_background_task_tool(
@@ -65,6 +66,7 @@ class AgentsRuntimeManager:
                     provider_override=provider_override,
                     model_override=model_override,
                     thinking_override=thinking_override,
+                    topology=topology,
                 )
                 return result.model_dump(mode="json")
 

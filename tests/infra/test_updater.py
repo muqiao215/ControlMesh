@@ -172,6 +172,44 @@ class TestPerformUpgradePipeline:
         assert version == "1.0.0"
         assert "first-pass" in output
 
+    async def test_missing_distribution_reports_broken_publish_when_github_release_exists(self) -> None:
+        with (
+            patch(
+                "controlmesh.infra.updater._perform_upgrade_impl",
+                new=AsyncMock(return_value=(False, "ERROR: No matching distribution found for controlmesh==2.0.0")),
+            ),
+            patch(
+                "controlmesh.infra.updater.detect_install_info",
+                return_value=InstallInfo(mode="pip", source="pypi"),
+            ),
+            patch(
+                "controlmesh.infra.updater._wait_for_install_change",
+                new=AsyncMock(return_value=InstalledState(version="1.0.0")),
+            ),
+            patch(
+                "controlmesh.infra.updater._resolve_retry_target",
+                new=AsyncMock(return_value=None),
+            ),
+            patch("controlmesh.infra.updater.check_pypi", new=AsyncMock(return_value=None)),
+            patch(
+                "controlmesh.infra.updater.check_github_release",
+                new=AsyncMock(
+                    return_value=VersionInfo(
+                        current="1.0.0",
+                        latest="2.0.0",
+                        update_available=True,
+                        summary="GitHub release",
+                        source="github",
+                    )
+                ),
+            ),
+        ):
+            changed, version, output = await perform_upgrade_pipeline(current_version="1.0.0")
+
+        assert changed is False
+        assert version == "1.0.0"
+        assert "GitHub already shows release 2.0.0" in output
+
     async def test_github_branch_change_detected_by_commit_id(self) -> None:
         with (
             patch(

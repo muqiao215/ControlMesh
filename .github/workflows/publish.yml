@@ -14,6 +14,24 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Verify version consistency
+        run: |
+          python - <<'PY'
+          import pathlib, re, sys
+          pyproject = pathlib.Path("pyproject.toml").read_text(encoding="utf-8")
+          init_py = pathlib.Path("controlmesh/__init__.py").read_text(encoding="utf-8")
+          project_match = re.search(r'^version = "([^"]+)"', pyproject, re.MULTILINE)
+          init_match = re.search(r'^__version__ = "([^"]+)"', init_py, re.MULTILINE)
+          if not project_match or not init_match:
+              raise SystemExit("Failed to read version from pyproject.toml or controlmesh/__init__.py")
+          project_version = project_match.group(1)
+          init_version = init_match.group(1)
+          if project_version != init_version:
+              raise SystemExit(
+                  f"Version mismatch: pyproject.toml={project_version} vs controlmesh/__init__.py={init_version}"
+              )
+          print(f"Version OK: {project_version}")
+          PY
       - name: Install build
         run: pip install build
       - name: Build package
@@ -27,6 +45,7 @@ jobs:
     name: Publish to TestPyPI
     needs: build
     runs-on: ubuntu-latest
+    continue-on-error: true
     environment: testpypi
     permissions:
       id-token: write
@@ -41,7 +60,7 @@ jobs:
 
   publish-pypi:
     name: Publish to PyPI
-    needs: [build, publish-testpypi]
+    needs: build
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -52,3 +71,27 @@ jobs:
           name: dist
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
+
+  verify-pypi:
+    name: Verify PyPI visibility
+    needs: publish-pypi
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for PyPI JSON to show the tagged version
+        env:
+          EXPECTED_VERSION: ${{ github.ref_name }}
+        run: |
+          expected="${EXPECTED_VERSION#v}"
+          echo "Expecting PyPI version: ${expected}"
+          for attempt in $(seq 1 12); do
+            body="$(curl -fsS https://pypi.org/pypi/controlmesh/json || true)"
+            version="$(printf '%s' "$body" | python -c 'import json, sys; raw = sys.stdin.read().strip(); print(json.loads(raw).get(\"info\", {}).get(\"version\", \"\") if raw else \"\")' 2>/dev/null || true)"
+            if [ "$version" = "$expected" ]; then
+              echo "PyPI now reports controlmesh==$expected"
+              exit 0
+            fi
+            echo "Attempt $attempt/12: PyPI reports '${version:-<missing>}'"
+            sleep 15
+          done
+          echo "PyPI never reported controlmesh==$expected after publish."
+          exit 1

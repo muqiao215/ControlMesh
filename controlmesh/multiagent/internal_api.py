@@ -284,6 +284,7 @@ class InternalAgentAPI:
             provider_override=data.get("provider") or "",
             model_override=data.get("model") or "",
             thinking_override=data.get("thinking") or "",
+            topology=data.get("topology") or "",
         )
 
         try:

@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 
 from controlmesh.gateways.config import GatewayDispatchConfig
+from controlmesh.team.contracts import TEAM_TOPOLOGIES
 
 logger = logging.getLogger(__name__)
 NULLISH_TEXT_VALUES: frozenset[str] = frozenset({"null", "none"})
@@ -269,6 +270,20 @@ class TasksConfig(BaseModel):
     enabled: bool = True
     max_parallel: int = 5
     timeout_seconds: float = 3600.0
+    default_topology: str | None = None
+
+    @field_validator("default_topology")
+    @classmethod
+    def _validate_default_topology(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            return None
+        if normalized not in TEAM_TOPOLOGIES:
+            msg = f"default_topology must be one of: {', '.join(TEAM_TOPOLOGIES)}"
+            raise ValueError(msg)
+        return normalized
 
 
 class TimeoutConfig(BaseModel):

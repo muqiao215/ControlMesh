@@ -9,8 +9,10 @@ from controlmesh.config import AgentConfig
 from controlmesh.infra.install import detect_install_info, detect_install_mode
 from controlmesh.infra.version import VersionInfo, get_current_version
 
-SettingsTab = Literal["streaming", "feishu", "version"]
-_TABS: tuple[SettingsTab, ...] = ("streaming", "feishu", "version")
+SettingsTab = Literal["streaming", "feishu", "messaging", "version"]
+_TABS: tuple[SettingsTab, ...] = ("streaming", "feishu", "messaging", "version")
+_FEISHU_APP_CONSOLE_URL = "https://open.feishu.cn/app"
+_WEIXIN_ILINK_URL = "https://ilinkai.weixin.qq.com"
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,13 +36,18 @@ def resolve_initial_settings_tab(text: str) -> SettingsTab | None:
     if len(parts) == 1 or parts[1].lower() == "status":
         return "streaming"
     head = parts[1].lower().replace("-", "_")
-    if head in {"streaming", "output", "tools"} and len(parts) == 2:
-        return "streaming"
-    if head == "feishu" and len(parts) == 2:
-        return "feishu"
-    if head == "version" and len(parts) == 2:
-        return "version"
-    return None
+    if len(parts) != 2:
+        return None
+
+    tab_aliases: dict[str, SettingsTab] = {
+        "streaming": "streaming",
+        "output": "streaming",
+        "tools": "streaming",
+        "feishu": "feishu",
+        "messaging": "messaging",
+        "version": "version",
+    }
+    return tab_aliases.get(head)
 
 
 def parse_settings_card_action(payload: dict[str, Any]) -> ParsedSettingsCardAction | None:
@@ -127,6 +134,8 @@ def _tab_body(
         return _streaming_tab(config)
     if selected_tab == "feishu":
         return _feishu_tab(config)
+    if selected_tab == "messaging":
+        return _messaging_tab(config)
     return _version_tab(version_info)
 
 
@@ -143,6 +152,11 @@ def _tab_row(selected_tab: SettingsTab) -> dict[str, Any]:
                 "Feishu",
                 selected=selected_tab == "feishu",
                 value={"cm_action": "settings_tab", "tab": "feishu"},
+            ),
+            _action_button(
+                "Messaging",
+                selected=selected_tab == "messaging",
+                value={"cm_action": "settings_tab", "tab": "messaging"},
             ),
             _action_button(
                 "Version",
@@ -336,7 +350,7 @@ def _version_tab(version_info: VersionInfo | None) -> list[dict[str, Any]]:
                 f"Install source: `{install_source}`\n"
                 f"{latest_line}\n"
                 f"{metadata_source_line}\n\n"
-                "Refresh checks public release metadata.\n"
+                "Refresh checks the newest version this install source can actually upgrade to.\n"
                 "GitHub direct installs upgrade from their tracked ref.\n"
                 "Use `/settings upgrade` to run the verified self-upgrade flow."
             ),
@@ -344,6 +358,91 @@ def _version_tab(version_info: VersionInfo | None) -> list[dict[str, Any]]:
         {
             "tag": "action",
             "actions": actions,
+        },
+    ]
+
+
+def _messaging_tab(config: AgentConfig) -> list[dict[str, Any]]:
+    telegram_state = "configured" if config.telegram_token.strip() else "missing token"
+    feishu_state = (
+        "configured"
+        if config.feishu.app_id.strip() and config.feishu.app_secret.strip()
+        else "missing app_id/app_secret"
+    )
+    weixin_state = "enabled" if config.weixin.enabled else "auth flow available"
+    return [
+        {
+            "tag": "markdown",
+            "content": (
+                "**Messaging interfaces**\n"
+                f"Telegram bot: `{telegram_state}`\n"
+                f"Feishu app: `{feishu_state}`\n"
+                f"Weixin iLink: `{weixin_state}`\n\n"
+                "Telegram supports bot token setup.\n"
+                "Feishu supports app id/app secret and official console links.\n"
+                "Weixin uses QR/link-based auth instead of a static bot token.\n\n"
+                "Commands:\n"
+                "- `/settings messaging telegram token <BOT_TOKEN>`\n"
+                "- `/settings messaging feishu app <APP_ID> <APP_SECRET>`\n"
+                "- `controlmesh auth weixin login`"
+            ),
+        },
+        {
+            "tag": "action",
+            "actions": [
+                _action_button(
+                    "Telegram bot",
+                    selected=False,
+                    value={
+                        "cm_action": "settings_apply",
+                        "callback_data": "st:m:telegram",
+                        "tab": "messaging",
+                    },
+                ),
+                _action_button(
+                    "Feishu app",
+                    selected=False,
+                    value={
+                        "cm_action": "settings_apply",
+                        "callback_data": "st:m:feishu",
+                        "tab": "messaging",
+                    },
+                ),
+                _action_button(
+                    "Weixin iLink",
+                    selected=False,
+                    value={
+                        "cm_action": "settings_apply",
+                        "callback_data": "st:m:weixin",
+                        "tab": "messaging",
+                    },
+                ),
+            ],
+        },
+        {
+            "tag": "action",
+            "actions": [
+                {
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": "Feishu Console"},
+                    "multi_url": {
+                        "url": _FEISHU_APP_CONSOLE_URL,
+                        "pc_url": _FEISHU_APP_CONSOLE_URL,
+                        "android_url": _FEISHU_APP_CONSOLE_URL,
+                        "ios_url": _FEISHU_APP_CONSOLE_URL,
+                    },
+                },
+                {
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": "Weixin iLink"},
+                    "multi_url": {
+                        "url": _WEIXIN_ILINK_URL,
+                        "pc_url": _WEIXIN_ILINK_URL,
+                        "android_url": _WEIXIN_ILINK_URL,
+                        "ios_url": _WEIXIN_ILINK_URL,
+                    },
+                },
+            ],
         },
     ]
 

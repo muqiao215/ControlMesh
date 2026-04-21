@@ -116,6 +116,7 @@ class TaskRegistry:
             prompt_preview=submit.prompt[:_PROMPT_PREVIEW_LEN],
             provider=provider,
             model=model,
+            topology=submit.topology,
             status="running",
             original_prompt=submit.prompt,
             thinking=thinking,

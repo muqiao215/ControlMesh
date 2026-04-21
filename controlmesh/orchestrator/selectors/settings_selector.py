@@ -16,6 +16,7 @@ _OUTPUT_MODES: tuple[str, ...] = ("full", "tools", "conversation", "off")
 _TOOL_DISPLAYS: tuple[str, ...] = ("name", "details")
 _FEISHU_RUNTIME_MODES: tuple[str, ...] = ("bridge", "native")
 _FEISHU_PROGRESS_MODES: tuple[str, ...] = ("text", "card_preview", "card_stream")
+_MESSAGING_TARGETS: tuple[str, ...] = ("telegram", "feishu", "weixin")
 _PREFIX = "st:"
 
 _OUTPUT_LABELS: dict[str, str] = {
@@ -110,6 +111,54 @@ async def refresh_version_info(orch: Orchestrator) -> SelectorResponse:
     return _render_settings_panel(orch, note=note, version_info=info)
 
 
+async def show_messaging_help(
+    orch: Orchestrator,
+    target: Literal["telegram", "feishu", "weixin"],
+) -> SelectorResponse:
+    """Render the settings panel with one transport-specific setup note."""
+    return _render_settings_panel(orch, note=_messaging_help_note(orch, target))
+
+
+async def set_telegram_bot_token(orch: Orchestrator, token: str) -> SelectorResponse:
+    """Persist the Telegram bot token and advise restart."""
+    cleaned = token.strip()
+    if not cleaned:
+        return _render_settings_panel(orch, note="Telegram bot token cannot be empty.")
+    orch._config.telegram_token = cleaned
+    await update_config_file_async(orch.paths.config_path, telegram_token=cleaned)
+    return _render_settings_panel(
+        orch,
+        note=(
+            "Telegram bot token saved. This is a transport-level change, so run `/restart` "
+            "to apply it."
+        ),
+    )
+
+
+async def set_feishu_app_credentials(
+    orch: Orchestrator,
+    app_id: str,
+    app_secret: str,
+) -> SelectorResponse:
+    """Persist Feishu app credentials and advise restart."""
+    cleaned_app_id = app_id.strip()
+    cleaned_app_secret = app_secret.strip()
+    if not cleaned_app_id or not cleaned_app_secret:
+        return _render_settings_panel(
+            orch,
+            note="Feishu app_id and app_secret must both be provided.",
+        )
+    orch._config.feishu.app_id = cleaned_app_id
+    orch._config.feishu.app_secret = cleaned_app_secret
+    await _persist_feishu_config(orch)
+    return _render_settings_panel(
+        orch,
+        note=(
+            "Feishu app_id/app_secret saved. Restart ControlMesh to reload the Feishu transport."
+        ),
+    )
+
+
 async def handle_settings_callback(orch: Orchestrator, data: str) -> SelectorResponse:
     """Handle one settings selector callback."""
     resp: SelectorResponse | None = None
@@ -123,6 +172,8 @@ async def handle_settings_callback(orch: Orchestrator, data: str) -> SelectorRes
             resp = await set_streaming_output_mode(orch, parts[2])  # type: ignore[arg-type]
         elif len(parts) == 3 and parts[1] == "t" and parts[2] in _TOOL_DISPLAYS:
             resp = await set_tool_display_mode(orch, parts[2])  # type: ignore[arg-type]
+        elif len(parts) == 3 and parts[1] == "m" and parts[2] in _MESSAGING_TARGETS:
+            resp = await show_messaging_help(orch, parts[2])  # type: ignore[arg-type]
         elif (
             len(parts) == 4
             and parts[1] == "f"
@@ -149,6 +200,10 @@ def settings_usage_text() -> str:
         "       /settings tools <name|details>\n"
         "       /settings feishu runtime <bridge|native>\n"
         "       /settings feishu progress <text|card_preview|card_stream>\n"
+        "       /settings messaging\n"
+        "       /settings messaging telegram [token <BOT_TOKEN>]\n"
+        "       /settings messaging feishu [app <APP_ID> <APP_SECRET>]\n"
+        "       /settings messaging weixin\n"
         "       /settings version\n"
         "       /settings upgrade"
     )
@@ -207,12 +262,31 @@ def _render_settings_panel(
             "- `bridge`: reuse app credentials mainly as the chat bridge",
             "- `card_stream`: streaming cards, requires `native`",
             "",
+            "**Messaging interfaces**",
+            _messaging_status_line(
+                "Telegram bot",
+                "configured" if orch._config.telegram_token.strip() else "missing token",
+            ),
+            _messaging_status_line(
+                "Feishu app",
+                "configured"
+                if orch._config.feishu.app_id.strip() and orch._config.feishu.app_secret.strip()
+                else "missing app_id/app_secret",
+            ),
+            _messaging_status_line(
+                "Weixin iLink",
+                "enabled" if orch._config.weixin.enabled else "auth flow available",
+            ),
+            "- Telegram supports bot token config here.",
+            "- Feishu supports app id/app secret and official console links.",
+            "- Weixin uses QR/link-based auth flow rather than static secret fields.",
+            "",
             "**Version & upgrade**",
             f"Installed: `{current_version}`",
             f"Install mode: `{install_mode}`",
             f"Install source: `{_format_install_source(install_info)}`",
             _version_status_line(version_info),
-            "- Refresh checks public release metadata (GitHub Releases first, then PyPI).",
+            "- Refresh checks the newest version your current install source can actually upgrade to.",
             "- Upgrade follows the active install source; GitHub direct installs stay on their tracked ref.",
             "- GitHub branch installs verify commit changes as well as version changes after update.",
             "",
@@ -271,6 +345,11 @@ def _render_settings_panel(
                 callback_data="st:f:p:card_stream",
             ),
         ],
+        [
+            Button(text="Telegram bot", callback_data="st:m:telegram"),
+            Button(text="Feishu app", callback_data="st:m:feishu"),
+            Button(text="Weixin iLink", callback_data="st:m:weixin"),
+        ],
         [Button(text="Check latest", callback_data="st:v:refresh")],
         *_version_action_rows(version_info, install_mode, install_info),
         [Button(text="Refresh", callback_data="st:r:root")],
@@ -285,9 +364,37 @@ def _button_label(current: str, value: str, labels: dict[str, str]) -> str:
 
 def _version_status_line(version_info: VersionInfo | None) -> str:
     if version_info is None:
-        return "Latest: `not checked`"
+        return "Latest: `not available from current install source`"
     state = "update available" if version_info.update_available else "up to date"
     return f"Latest: `{version_info.latest}` ({version_info.source}, {state})"
+
+
+def _messaging_status_line(label: str, state: str) -> str:
+    return f"- {label}: `{state}`"
+
+
+def _messaging_help_note(orch: Orchestrator, target: str) -> str:
+    if target == "telegram":
+        return (
+            "Telegram setup:\n"
+            "- Save token: `/settings messaging telegram token <BOT_TOKEN>`\n"
+            "- This requires `/restart` to swap the live Telegram bot token."
+        )
+    if target == "feishu":
+        return (
+            "Feishu setup:\n"
+            "- Save app credentials: `/settings messaging feishu app <APP_ID> <APP_SECRET>`\n"
+            "- Official console: https://open.feishu.cn/app\n"
+            "- Restart after saving credentials to reload the Feishu transport.\n"
+            f"- Current runtime mode: `{orch._config.feishu.runtime_mode}`"
+        )
+    return (
+        "Weixin setup:\n"
+        "- Login flow: `controlmesh auth weixin login`\n"
+        "- Reauth: `controlmesh auth weixin reauth`\n"
+        f"- Service URL: `{orch._config.weixin.base_url}`\n"
+        "- Weixin uses QR/link-based auth instead of a static bot token."
+    )
 
 
 def _format_install_source(install_info: object) -> str:

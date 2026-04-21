@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from controlmesh.cli.auth import check_all_auth
+from controlmesh.config import update_config_file_async
 from controlmesh.history.catalog import (
     HistoryCatalog,
     render_search_result,
@@ -25,14 +26,18 @@ from controlmesh.orchestrator.selectors.model_selector import model_selector_sta
 from controlmesh.orchestrator.selectors.models import Button, ButtonGrid, SelectorResponse
 from controlmesh.orchestrator.selectors.session_selector import session_selector_start
 from controlmesh.orchestrator.selectors.settings_selector import (
+    set_feishu_app_credentials,
     set_feishu_progress_mode,
     set_feishu_runtime_mode,
     set_streaming_output_mode,
+    set_telegram_bot_token,
     set_tool_display_mode,
     settings_selector_start,
     settings_usage_text,
+    show_messaging_help,
 )
 from controlmesh.orchestrator.selectors.task_selector import task_selector_start
+from controlmesh.team.contracts import TEAM_TOPOLOGIES, ensure_team_topology
 from controlmesh.text.response_format import SEP, fmt, new_session_text
 from controlmesh.workspace.loader import read_mainmemory
 
@@ -47,6 +52,7 @@ _MAX_HISTORY_LIMIT = 20
 _CONTROL_MODE = "cm"
 _PROVIDER_MODES = frozenset({"claude", "codex", "gemini"})
 _MODE_USAGE = "Usage: /mode [status|cm|claude|codex|gemini]"
+_TASKS_TOPOLOGY_OFF_TOKENS = frozenset({"off", "none", "manual", "unset"})
 _MODE_LABELS = {
     "cm": "ControlMesh",
     "claude": "Claude-compatible channel",
@@ -256,6 +262,12 @@ async def cmd_settings(orch: Orchestrator, _key: SessionKey, text: str) -> Orche
             version_info=await check_latest_version(fresh=True),
         )
         result = OrchestratorResult(text=resp.text, buttons=resp.buttons)
+    elif parts[1].lower().replace("-", "_") == "messaging":
+        if len(parts) == 2:
+            resp = await settings_selector_start(orch)
+            result = OrchestratorResult(text=resp.text, buttons=resp.buttons)
+        else:
+            result = await _cmd_settings_update(orch, parts)
     elif parts[1].lower().replace("-", "_") == "upgrade":
         result = await cmd_upgrade(orch, _key, "/upgrade")
     elif len(parts) >= 3:
@@ -276,6 +288,8 @@ async def _cmd_settings_update(
         resp = await set_tool_display_mode(orch, value)  # type: ignore[arg-type]
     elif section == "feishu":
         resp = await _cmd_settings_feishu_update(orch, parts)
+    elif section == "messaging":
+        resp = await _cmd_settings_messaging_update(orch, parts)
     else:
         resp = None
 
@@ -301,6 +315,27 @@ async def _cmd_settings_feishu_update(
         "card_stream",
     }:
         return await set_feishu_progress_mode(orch, feishu_value)  # type: ignore[arg-type]
+    return None
+
+
+async def _cmd_settings_messaging_update(
+    orch: Orchestrator,
+    parts: list[str],
+) -> SelectorResponse | None:
+    target = parts[2].lower()
+    if target not in {"telegram", "feishu", "weixin"}:
+        return None
+    if len(parts) == 3:
+        return await show_messaging_help(orch, target)  # type: ignore[arg-type]
+
+    action = parts[3].lower()
+    if target == "telegram" and action == "token" and len(parts) >= 5:
+        token = " ".join(parts[4:]).strip()
+        return await set_telegram_bot_token(orch, token)
+    if target == "feishu" and action == "app" and len(parts) >= 6:
+        return await set_feishu_app_credentials(orch, parts[4], parts[5])
+    if target == "weixin":
+        return await show_messaging_help(orch, "weixin")
     return None
 
 
@@ -365,6 +400,10 @@ async def cmd_sessions(orch: Orchestrator, key: SessionKey, _text: str) -> Orche
 async def cmd_tasks(orch: Orchestrator, key: SessionKey, _text: str) -> OrchestratorResult:
     """Handle /tasks."""
     logger.info("Tasks requested")
+    parts = _text.strip().split()
+    if len(parts) >= 2 and parts[1].lower() == "topology":
+        return await _cmd_tasks_topology(orch, parts[2:])
+
     hub = orch.task_hub
     if hub is None:
         return OrchestratorResult(
@@ -372,6 +411,54 @@ async def cmd_tasks(orch: Orchestrator, key: SessionKey, _text: str) -> Orchestr
         )
     resp = task_selector_start(hub, key.chat_id)
     return OrchestratorResult(text=resp.text, buttons=resp.buttons)
+
+
+async def _cmd_tasks_topology(
+    orch: Orchestrator,
+    args: list[str],
+) -> OrchestratorResult:
+    if not args or args[0].lower() == "status":
+        return OrchestratorResult(text=_tasks_topology_status_text(orch._config.tasks.default_topology))
+
+    if len(args) > 1:
+        return OrchestratorResult(text=_tasks_topology_usage_text())
+
+    requested = args[0].lower()
+    if requested in _TASKS_TOPOLOGY_OFF_TOKENS:
+        topology: str | None = None
+    else:
+        try:
+            topology = ensure_team_topology(requested, "topology")
+        except ValueError:
+            return OrchestratorResult(text=_tasks_topology_usage_text())
+
+    orch._config.tasks.default_topology = topology
+    await update_config_file_async(
+        orch.paths.config_path,
+        tasks=orch._config.tasks.model_dump(mode="json"),
+    )
+    return OrchestratorResult(text=_tasks_topology_status_text(topology, updated=True))
+
+
+def _tasks_topology_usage_text() -> str:
+    options = "|".join(("status", *TEAM_TOPOLOGIES, "off"))
+    supported = ", ".join(TEAM_TOPOLOGIES)
+    return f"Usage: /tasks topology [{options}]\nApproved topologies: {supported}"
+
+
+def _tasks_topology_status_text(topology: str | None, *, updated: bool = False) -> str:
+    selected = topology or "manual"
+    action_line = (
+        f"Background topology default updated: {selected}"
+        if updated
+        else f"Background topology default: {selected}"
+    )
+    supported = ", ".join(TEAM_TOPOLOGIES)
+    return (
+        f"{action_line}\n"
+        f"Approved topologies: {supported}\n"
+        "Selection stays explicit. ControlMesh will not infer a topology automatically."
+    )
 
 
 async def cmd_cron(orch: Orchestrator, _key: SessionKey, _text: str) -> OrchestratorResult:

@@ -9,6 +9,8 @@ from dataclasses import dataclass
 
 import aiohttp
 
+from controlmesh.infra.install import detect_install_info
+
 logger = logging.getLogger(__name__)
 
 _PYPI_URL = "https://pypi.org/pypi/controlmesh/json"
@@ -136,11 +138,27 @@ async def check_github_release(*, fresh: bool = False) -> VersionInfo | None:
 
 
 async def check_latest_version(*, fresh: bool = False) -> VersionInfo | None:
-    """Check the latest version, preferring GitHub Releases over PyPI metadata."""
-    github = await check_github_release(fresh=fresh)
-    if github is not None:
-        return github
-    return await check_pypi(fresh=fresh)
+    """Check the latest installable version for the active installation source.
+
+    GitHub direct installs can upgrade against GitHub Releases immediately.
+    PyPI installs must only trust PyPI metadata; otherwise a freshly-tagged
+    GitHub release can be announced before any installable wheel/sdist exists.
+    """
+    install_info = detect_install_info()
+    if install_info.source == "github":
+        github = await check_github_release(fresh=fresh)
+        if github is not None:
+            return github
+        return await check_pypi(fresh=fresh)
+
+    pypi = await check_pypi(fresh=fresh)
+    if pypi is not None:
+        return pypi
+
+    if install_info.source == "pypi":
+        return None
+
+    return await check_github_release(fresh=fresh)
 
 
 async def fetch_changelog(version: str) -> str | None:

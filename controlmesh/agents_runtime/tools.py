@@ -16,6 +16,7 @@ async def create_background_task(  # noqa: PLR0913
     provider_override: str = "",
     model_override: str = "",
     thinking_override: str = "",
+    topology: str = "",
 ) -> ToolResultEnvelope:
     """Create a background task via the existing TaskHub."""
     if ctx.task_hub is None:
@@ -37,6 +38,7 @@ async def create_background_task(  # noqa: PLR0913
                 provider_override=provider_override,
                 model_override=model_override,
                 thinking_override=thinking_override,
+                topology=topology,
             )
         )
     except Exception as exc:

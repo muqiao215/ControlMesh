@@ -229,7 +229,7 @@ class TestCheckGithubRelease:
 class TestCheckLatestVersion:
     """Test latest-version source preference."""
 
-    async def test_prefers_github_release_over_pypi(self) -> None:
+    async def test_prefers_github_release_for_github_installs(self) -> None:
         github_info = VersionInfo(
             current="1.0.0",
             latest="2.0.0",
@@ -246,15 +246,17 @@ class TestCheckLatestVersion:
         )
 
         with (
+            patch("controlmesh.infra.version.detect_install_info") as mock_install_info,
             patch("controlmesh.infra.version.check_github_release", return_value=github_info),
             patch("controlmesh.infra.version.check_pypi", return_value=pypi_info) as mock_pypi,
         ):
+            mock_install_info.return_value.source = "github"
             result = await check_latest_version()
 
         assert result == github_info
         mock_pypi.assert_not_called()
 
-    async def test_falls_back_to_pypi_when_github_unreachable(self) -> None:
+    async def test_prefers_pypi_for_pypi_installs(self) -> None:
         pypi_info = VersionInfo(
             current="1.0.0",
             latest="1.5.0",
@@ -264,12 +266,33 @@ class TestCheckLatestVersion:
         )
 
         with (
-            patch("controlmesh.infra.version.check_github_release", return_value=None),
+            patch("controlmesh.infra.version.detect_install_info") as mock_install_info,
+            patch("controlmesh.infra.version.check_github_release", return_value=VersionInfo(
+                current="1.0.0",
+                latest="2.0.0",
+                update_available=True,
+                summary="GitHub",
+                source="github",
+            )) as mock_github,
             patch("controlmesh.infra.version.check_pypi", return_value=pypi_info),
         ):
+            mock_install_info.return_value.source = "pypi"
             result = await check_latest_version()
 
         assert result == pypi_info
+        mock_github.assert_not_called()
+
+    async def test_returns_none_for_pypi_install_when_pypi_has_no_distribution(self) -> None:
+        with (
+            patch("controlmesh.infra.version.detect_install_info") as mock_install_info,
+            patch("controlmesh.infra.version.check_pypi", return_value=None),
+            patch("controlmesh.infra.version.check_github_release") as mock_github,
+        ):
+            mock_install_info.return_value.source = "pypi"
+            result = await check_latest_version()
+
+        assert result is None
+        mock_github.assert_not_called()
 
 
 class TestFetchChangelog:

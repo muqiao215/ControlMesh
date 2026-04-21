@@ -19,19 +19,33 @@ from controlmesh.session.key import SessionKey
 from controlmesh.team.contracts import (
     EVENT_ID_SAFE_PATTERN,
     TASK_ID_SAFE_PATTERN,
+    TEAM_DECISION_SCHEMA_VERSION,
+    TEAM_DIRECTOR_DECISIONS,
+    TEAM_DIRECTOR_STOP_REASONS,
     TEAM_DISPATCH_REQUEST_KINDS,
     TEAM_DISPATCH_REQUEST_STATUSES,
     TEAM_DISPATCH_RESULT_OUTCOMES,
     TEAM_EVENT_TYPES,
+    TEAM_EXECUTION_SCHEMA_VERSION,
+    TEAM_INTERRUPTION_STATUSES,
+    TEAM_JUDGE_DECISIONS,
+    TEAM_JUDGE_STOP_REASONS,
     TEAM_MAILBOX_MESSAGE_STATUSES,
     TEAM_NAME_SAFE_PATTERN,
     TEAM_PHASES,
+    TEAM_PROGRESS_STATUSES,
+    TEAM_RESULT_ITEM_KINDS,
+    TEAM_RESULT_SCHEMA_VERSION,
+    TEAM_RESULT_STATUSES,
     TEAM_STATE_SCHEMA_VERSION,
     TEAM_TASK_STATUSES,
     TEAM_TERMINAL_PHASES,
     TEAM_WORKER_RUNTIME_STATUSES,
     WORKER_NAME_SAFE_PATTERN,
+    ensure_allowed_text,
     ensure_safe_identifier,
+    ensure_team_topology,
+    ensure_team_topology_substage,
 )
 
 
@@ -57,6 +71,621 @@ def _normalize_optional_timestamp(value: str | None, *, label: str) -> str | Non
         msg = f"{label} must be a valid ISO-8601 timestamp"
         raise ValueError(msg) from exc
     return normalized
+
+
+def _validate_schema_version(value: int, *, expected: int, label: str = "schema_version") -> int:
+    """Reject payloads that do not match the current schema version."""
+    if value != expected:
+        msg = f"{label} must be {expected}"
+        raise ValueError(msg)
+    return value
+
+
+def _validate_round_metadata(round_index: int | None, round_limit: int | None) -> None:
+    """Validate the shared loop-aware round contract."""
+    if (round_index is None) != (round_limit is None):
+        raise ValueError("round_index and round_limit must either both be set or both be omitted")
+    if round_index is None:
+        return
+    if round_index < 1:
+        raise ValueError("round_index must be greater than or equal to 1")
+    if round_limit is None or round_limit <= 0:
+        raise ValueError("round_limit must be greater than 0")
+    if round_index > round_limit:
+        raise ValueError("round_index must not exceed round_limit")
+
+
+class TeamResultItemRef(BaseModel):
+    """Neutral runtime item reference preserved inside structured team results."""
+
+    kind: str
+    ref: str
+    summary: str | None = None
+
+    @field_validator("kind")
+    @classmethod
+    def _validate_kind(cls, value: str) -> str:
+        return ensure_allowed_text(value, TEAM_RESULT_ITEM_KINDS, "kind")
+
+    @field_validator("ref", "summary")
+    @classmethod
+    def _validate_text_fields(cls, value: str | None, info: ValidationInfo) -> str | None:
+        return _normalize_optional_text(value, label=info.field_name or "field")
+
+
+class TeamEvidenceRef(BaseModel):
+    """Pointer to evidence selected from ControlMesh-owned runtime truth."""
+
+    ref: str
+    kind: str = "event"
+    summary: str | None = None
+
+    @field_validator("ref", "kind", "summary")
+    @classmethod
+    def _validate_text_fields(cls, value: str | None, info: ValidationInfo) -> str | None:
+        return _normalize_optional_text(value, label=info.field_name or "field")
+
+
+class TeamArtifactRef(BaseModel):
+    """Pointer to an artifact owned by ControlMesh task/runtime storage."""
+
+    ref: str
+    kind: str = "file"
+    label: str | None = None
+    summary: str | None = None
+
+    @field_validator("ref", "kind", "label", "summary")
+    @classmethod
+    def _validate_text_fields(cls, value: str | None, info: ValidationInfo) -> str | None:
+        return _normalize_optional_text(value, label=info.field_name or "field")
+
+
+class TeamStructuredResult(BaseModel):
+    """Schema-versioned worker result envelope for topology execution."""
+
+    schema_version: int = TEAM_RESULT_SCHEMA_VERSION
+    status: str
+    topology: str
+    substage: str
+    worker_role: str
+    result_items: list[TeamResultItemRef] = Field(default_factory=list)
+    summary: str
+    evidence: list[TeamEvidenceRef] = Field(default_factory=list)
+    confidence: float | None = None
+    artifacts: list[TeamArtifactRef] = Field(default_factory=list)
+    next_action: str | None = None
+    needs_parent_input: bool = False
+    repair_hint: str | None = None
+
+    @field_validator("status")
+    @classmethod
+    def _validate_status(cls, value: str) -> str:
+        return ensure_allowed_text(value, TEAM_RESULT_STATUSES, "status")
+
+    @field_validator("schema_version")
+    @classmethod
+    def _validate_schema_version_field(cls, value: int) -> int:
+        return _validate_schema_version(value, expected=TEAM_RESULT_SCHEMA_VERSION)
+
+    @field_validator("topology")
+    @classmethod
+    def _validate_topology(cls, value: str) -> str:
+        return ensure_team_topology(value)
+
+    @field_validator("worker_role", "summary", "next_action", "repair_hint")
+    @classmethod
+    def _validate_text_fields(cls, value: str | None, info: ValidationInfo) -> str | None:
+        return _normalize_optional_text(value, label=info.field_name or "field")
+
+    @field_validator("confidence")
+    @classmethod
+    def _validate_confidence(cls, value: float | None) -> float | None:
+        if value is None:
+            return value
+        if value < 0 or value > 1:
+            raise ValueError("confidence must be between 0 and 1")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_result_shape(self) -> TeamStructuredResult:
+        self.substage = ensure_team_topology_substage(self.topology, self.substage)
+        if self.topology in {"director_worker", "debate_judge"} and self.needs_parent_input:
+            raise ValueError(
+                f"topology '{self.topology}' cannot request parent input through TeamStructuredResult"
+            )
+        if self.topology in {"director_worker", "debate_judge"}:
+            if self.substage != "collecting":
+                raise ValueError(
+                    f"structured results for topology '{self.topology}' must use substage 'collecting'"
+                )
+            if self.status not in {"completed", "failed", "needs_repair"}:
+                raise ValueError(
+                    f"structured results for topology '{self.topology}' must use status completed, failed, or needs_repair"
+                )
+        if self.status == "needs_parent_input" and not self.needs_parent_input:
+            raise ValueError("needs_parent_input must be true when status is needs_parent_input")
+        if self.needs_parent_input and self.status != "needs_parent_input":
+            raise ValueError("status must be needs_parent_input when needs_parent_input is true")
+        if self.status == "needs_repair" and self.repair_hint is None:
+            raise ValueError("repair_hint is required when status is needs_repair")
+        return self
+
+
+class TeamReducedTopologyResult(BaseModel):
+    """Reduced topology boundary kept separate from worker-level envelopes."""
+
+    schema_version: int = TEAM_RESULT_SCHEMA_VERSION
+    topology: str
+    final_status: str
+    reduced_summary: str
+    selected_evidence: list[TeamEvidenceRef] = Field(default_factory=list)
+    selected_artifacts: list[TeamArtifactRef] = Field(default_factory=list)
+    next_action: str | None = None
+
+    @field_validator("topology")
+    @classmethod
+    def _validate_topology(cls, value: str) -> str:
+        return ensure_team_topology(value)
+
+    @field_validator("schema_version")
+    @classmethod
+    def _validate_schema_version_field(cls, value: int) -> int:
+        return _validate_schema_version(value, expected=TEAM_RESULT_SCHEMA_VERSION)
+
+    @field_validator("final_status")
+    @classmethod
+    def _validate_final_status(cls, value: str) -> str:
+        return ensure_allowed_text(value, TEAM_RESULT_STATUSES, "final_status")
+
+    @field_validator("reduced_summary", "next_action")
+    @classmethod
+    def _validate_text_fields(cls, value: str | None, info: ValidationInfo) -> str | None:
+        return _normalize_optional_text(value, label=info.field_name or "field")
+
+
+class _TeamControlDecisionBase(BaseModel):
+    """Shared typed control-decision boundary for deferred topologies."""
+
+    schema_version: int = TEAM_DECISION_SCHEMA_VERSION
+    topology: str
+    round_index: int
+    decision: str
+    summary: str
+    evidence: list[TeamEvidenceRef] = Field(default_factory=list)
+    confidence: float | None = None
+    artifacts: list[TeamArtifactRef] = Field(default_factory=list)
+    next_action: str | None = None
+    repair_hint: str | None = None
+    stop_reason: str | None = None
+
+    @field_validator("schema_version")
+    @classmethod
+    def _validate_schema_version_field(cls, value: int) -> int:
+        return _validate_schema_version(value, expected=TEAM_DECISION_SCHEMA_VERSION)
+
+    @field_validator("round_index")
+    @classmethod
+    def _validate_round_index(cls, value: int) -> int:
+        _validate_round_metadata(value, value)
+        return value
+
+    @field_validator("summary", "next_action", "repair_hint", "stop_reason")
+    @classmethod
+    def _validate_text_fields(cls, value: str | None, info: ValidationInfo) -> str | None:
+        return _normalize_optional_text(value, label=info.field_name or "field")
+
+    @field_validator("confidence")
+    @classmethod
+    def _validate_confidence(cls, value: float | None) -> float | None:
+        if value is None:
+            return value
+        if value < 0 or value > 1:
+            raise ValueError("confidence must be between 0 and 1")
+        return value
+
+
+class TeamDirectorDecision(_TeamControlDecisionBase):
+    """Typed director control decision for director_worker loops."""
+
+    topology: str = "director_worker"
+    decision: str
+    dispatch_roles: list[str] = Field(default_factory=list)
+
+    @field_validator("topology")
+    @classmethod
+    def _validate_topology(cls, value: str) -> str:
+        if value != "director_worker":
+            raise ValueError("topology must be director_worker")
+        return value
+
+    @field_validator("decision")
+    @classmethod
+    def _validate_decision(cls, value: str) -> str:
+        return ensure_allowed_text(value, TEAM_DIRECTOR_DECISIONS, "decision")
+
+    @field_validator("dispatch_roles")
+    @classmethod
+    def _validate_dispatch_roles(cls, value: list[str]) -> list[str]:
+        return [_normalize_optional_text(item, label="dispatch_roles") or "" for item in value]
+
+    @field_validator("stop_reason")
+    @classmethod
+    def _validate_stop_reason(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        return ensure_allowed_text(value, TEAM_DIRECTOR_STOP_REASONS, "stop_reason")
+
+    @model_validator(mode="after")
+    def _validate_decision_shape(self) -> TeamDirectorDecision:
+        if self.decision == "dispatch_workers":
+            if not self.dispatch_roles:
+                raise ValueError("dispatch_roles are required when decision is dispatch_workers")
+        elif self.dispatch_roles:
+            raise ValueError("dispatch_roles are only allowed when decision is dispatch_workers")
+        if self.decision == "needs_repair":
+            if self.repair_hint is None:
+                raise ValueError("repair_hint is required when decision is needs_repair")
+        elif self.repair_hint is not None:
+            raise ValueError("repair_hint is only allowed when decision is needs_repair")
+        if self.decision in {"needs_parent_input", "failed"}:
+            if self.stop_reason is None:
+                raise ValueError(f"stop_reason is required when decision is {self.decision}")
+        elif self.stop_reason is not None:
+            raise ValueError("stop_reason is only allowed when decision is needs_parent_input or failed")
+        return self
+
+
+class TeamJudgeDecision(_TeamControlDecisionBase):
+    """Typed judge control decision for debate_judge rounds."""
+
+    topology: str = "debate_judge"
+    decision: str
+    winner_role: str | None = None
+    next_candidate_roles: list[str] = Field(default_factory=list)
+
+    @field_validator("topology")
+    @classmethod
+    def _validate_topology(cls, value: str) -> str:
+        if value != "debate_judge":
+            raise ValueError("topology must be debate_judge")
+        return value
+
+    @field_validator("decision")
+    @classmethod
+    def _validate_decision(cls, value: str) -> str:
+        return ensure_allowed_text(value, TEAM_JUDGE_DECISIONS, "decision")
+
+    @field_validator("winner_role")
+    @classmethod
+    def _validate_winner_role(cls, value: str | None) -> str | None:
+        return _normalize_optional_text(value, label="winner_role")
+
+    @field_validator("next_candidate_roles")
+    @classmethod
+    def _validate_next_candidate_roles(cls, value: list[str]) -> list[str]:
+        return [_normalize_optional_text(item, label="next_candidate_roles") or "" for item in value]
+
+    @field_validator("stop_reason")
+    @classmethod
+    def _validate_stop_reason(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        return ensure_allowed_text(value, TEAM_JUDGE_STOP_REASONS, "stop_reason")
+
+    @model_validator(mode="after")
+    def _validate_resolution_fields(self) -> TeamJudgeDecision:
+        if self.decision == "select_winner":
+            if self.winner_role is None:
+                raise ValueError("winner_role is required when decision is select_winner")
+        elif self.winner_role is not None:
+            raise ValueError("winner_role is only allowed when decision is select_winner")
+        return self
+
+    @model_validator(mode="after")
+    def _validate_round_fields(self) -> TeamJudgeDecision:
+        if self.decision == "advance_round":
+            if not self.next_candidate_roles:
+                raise ValueError("next_candidate_roles are required when decision is advance_round")
+        elif self.next_candidate_roles:
+            raise ValueError("next_candidate_roles are only allowed when decision is advance_round")
+        return self
+
+    @model_validator(mode="after")
+    def _validate_repair_fields(self) -> TeamJudgeDecision:
+        if self.decision == "needs_repair":
+            if self.repair_hint is None:
+                raise ValueError("repair_hint is required when decision is needs_repair")
+        elif self.repair_hint is not None:
+            raise ValueError("repair_hint is only allowed when decision is needs_repair")
+        return self
+
+    @model_validator(mode="after")
+    def _validate_stop_fields(self) -> TeamJudgeDecision:
+        if self.decision in {"needs_parent_input", "failed"}:
+            if self.stop_reason is None:
+                raise ValueError(f"stop_reason is required when decision is {self.decision}")
+        elif self.stop_reason is not None:
+            raise ValueError("stop_reason is only allowed when decision is needs_parent_input or failed")
+        return self
+
+    @model_validator(mode="after")
+    def _validate_final_round_tie_escalation(self) -> TeamJudgeDecision:
+        if self.stop_reason == "final_round_tie" and self.decision != "needs_parent_input":
+            raise ValueError("final_round_tie requires decision needs_parent_input")
+        return self
+
+
+class TeamTopologyProgressSummary(BaseModel):
+    """Compressed progress payload shared across topology-aware transports."""
+
+    schema_version: int = TEAM_RESULT_SCHEMA_VERSION
+    topology: str
+    substage: str
+    phase_status: str
+    active_roles: list[str] = Field(default_factory=list)
+    completed_roles: list[str] = Field(default_factory=list)
+    waiting_on: str | None = None
+    latest_summary: str | None = None
+    artifact_count: int = 0
+    needs_parent_input: bool = False
+    repair_state: str | None = None
+    round_index: int | None = None
+    round_limit: int | None = None
+
+    @field_validator("topology")
+    @classmethod
+    def _validate_topology(cls, value: str) -> str:
+        return ensure_team_topology(value)
+
+    @field_validator("schema_version")
+    @classmethod
+    def _validate_schema_version_field(cls, value: int) -> int:
+        return _validate_schema_version(value, expected=TEAM_RESULT_SCHEMA_VERSION)
+
+    @field_validator("phase_status")
+    @classmethod
+    def _validate_phase_status(cls, value: str) -> str:
+        return ensure_allowed_text(value, TEAM_PROGRESS_STATUSES, "phase_status")
+
+    @field_validator("active_roles", "completed_roles")
+    @classmethod
+    def _validate_role_lists(cls, value: list[str], info: ValidationInfo) -> list[str]:
+        normalized: list[str] = []
+        for item in value:
+            normalized_item = _normalize_optional_text(item, label=info.field_name or "field")
+            assert normalized_item is not None
+            normalized.append(normalized_item)
+        return normalized
+
+    @field_validator("waiting_on", "latest_summary", "repair_state")
+    @classmethod
+    def _validate_text_fields(cls, value: str | None, info: ValidationInfo) -> str | None:
+        return _normalize_optional_text(value, label=info.field_name or "field")
+
+    @field_validator("artifact_count")
+    @classmethod
+    def _validate_artifact_count(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("artifact_count must be greater than or equal to 0")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_progress_shape(self) -> TeamTopologyProgressSummary:
+        self.substage = ensure_team_topology_substage(self.topology, self.substage)
+        _validate_round_metadata(self.round_index, self.round_limit)
+        if self.needs_parent_input and self.waiting_on is None:
+            raise ValueError("waiting_on is required when needs_parent_input is true")
+        return self
+
+
+class TeamTopologyCheckpoint(BaseModel):
+    """One persisted topology execution checkpoint."""
+
+    checkpoint_id: str
+    topology: str
+    substage: str
+    phase_status: str
+    active_roles: list[str] = Field(default_factory=list)
+    completed_roles: list[str] = Field(default_factory=list)
+    latest_summary: str | None = None
+    waiting_on: str | None = None
+    artifact_count: int = 0
+    needs_parent_input: bool = False
+    repair_state: str | None = None
+    round_index: int | None = None
+    round_limit: int | None = None
+    result: TeamStructuredResult | None = None
+    reduced_result: TeamReducedTopologyResult | None = None
+    recorded_at: str | None = None
+
+    @field_validator("checkpoint_id")
+    @classmethod
+    def _validate_checkpoint_id(cls, value: str) -> str:
+        return ensure_safe_identifier(TASK_ID_SAFE_PATTERN, value, "checkpoint_id")
+
+    @field_validator("topology")
+    @classmethod
+    def _validate_topology(cls, value: str) -> str:
+        return ensure_team_topology(value)
+
+    @field_validator("phase_status")
+    @classmethod
+    def _validate_phase_status(cls, value: str) -> str:
+        return ensure_allowed_text(value, TEAM_PROGRESS_STATUSES, "phase_status")
+
+    @field_validator("active_roles", "completed_roles")
+    @classmethod
+    def _validate_role_lists(cls, value: list[str], info: ValidationInfo) -> list[str]:
+        normalized: list[str] = []
+        for item in value:
+            normalized_item = _normalize_optional_text(item, label=info.field_name or "field")
+            assert normalized_item is not None
+            normalized.append(normalized_item)
+        return normalized
+
+    @field_validator("latest_summary", "waiting_on", "repair_state")
+    @classmethod
+    def _validate_text_fields(cls, value: str | None, info: ValidationInfo) -> str | None:
+        return _normalize_optional_text(value, label=info.field_name or "field")
+
+    @field_validator("artifact_count")
+    @classmethod
+    def _validate_artifact_count(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("artifact_count must be greater than or equal to 0")
+        return value
+
+    @field_validator("recorded_at")
+    @classmethod
+    def _validate_recorded_at(cls, value: str | None) -> str | None:
+        return _normalize_optional_timestamp(value, label="recorded_at")
+
+    @model_validator(mode="after")
+    def _validate_checkpoint_shape(self) -> TeamTopologyCheckpoint:
+        self.substage = ensure_team_topology_substage(self.topology, self.substage)
+        _validate_round_metadata(self.round_index, self.round_limit)
+        if self.needs_parent_input and self.waiting_on is None:
+            raise ValueError("waiting_on is required when needs_parent_input is true")
+        if self.result is not None and self.result.topology != self.topology:
+            raise ValueError("result topology must match checkpoint topology")
+        if self.reduced_result is not None and self.reduced_result.topology != self.topology:
+            raise ValueError("reduced_result topology must match checkpoint topology")
+        return self
+
+
+class TeamTopologyInterruptionState(BaseModel):
+    """Interruption/resume boundary carried by the execution seam from day one."""
+
+    status: str = "idle"
+    requested_by_role: str | None = None
+    question: str | None = None
+    waiting_on: str | None = None
+    raised_at: str | None = None
+    resume_substage: str | None = None
+    resume_phase_status: str | None = "in_progress"
+    resume_count: int = 0
+    last_parent_input: str | None = None
+    last_resumed_at: str | None = None
+
+    @field_validator("status")
+    @classmethod
+    def _validate_status(cls, value: str) -> str:
+        return ensure_allowed_text(value, TEAM_INTERRUPTION_STATUSES, "status")
+
+    @field_validator("requested_by_role", "question", "waiting_on", "resume_substage", "last_parent_input")
+    @classmethod
+    def _validate_text_fields(cls, value: str | None, info: ValidationInfo) -> str | None:
+        return _normalize_optional_text(value, label=info.field_name or "field")
+
+    @field_validator("raised_at", "last_resumed_at")
+    @classmethod
+    def _validate_timestamp_fields(cls, value: str | None, info: ValidationInfo) -> str | None:
+        return _normalize_optional_timestamp(value, label=info.field_name or "field")
+
+    @field_validator("resume_phase_status")
+    @classmethod
+    def _validate_resume_phase_status(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        return ensure_allowed_text(value, TEAM_PROGRESS_STATUSES, "resume_phase_status")
+
+    @field_validator("resume_count")
+    @classmethod
+    def _validate_resume_count(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("resume_count must be greater than or equal to 0")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_interruption_shape(self) -> TeamTopologyInterruptionState:
+        if self.status == "waiting_parent":
+            required = {
+                "requested_by_role": self.requested_by_role,
+                "question": self.question,
+                "waiting_on": self.waiting_on,
+                "raised_at": self.raised_at,
+                "resume_substage": self.resume_substage,
+            }
+            missing = [field for field, value in required.items() if value is None]
+            if missing:
+                raise ValueError(f"waiting_parent interruptions require: {', '.join(missing)}")
+        return self
+
+
+class TeamTopologyExecutionState(BaseModel):
+    """TaskHub-backed persisted execution state for the topology seam."""
+
+    schema_version: int = TEAM_EXECUTION_SCHEMA_VERSION
+    task_id: str
+    execution_id: str
+    topology: str
+    checkpoints: list[TeamTopologyCheckpoint] = Field(default_factory=list)
+    interruption: TeamTopologyInterruptionState = Field(default_factory=TeamTopologyInterruptionState)
+    created_at: str | None = None
+    updated_at: str | None = None
+
+    @field_validator("task_id", "execution_id")
+    @classmethod
+    def _validate_identifiers(cls, value: str, info: ValidationInfo) -> str:
+        return ensure_safe_identifier(TASK_ID_SAFE_PATTERN, value, info.field_name or "identifier")
+
+    @field_validator("schema_version")
+    @classmethod
+    def _validate_schema_version_field(cls, value: int) -> int:
+        return _validate_schema_version(value, expected=TEAM_EXECUTION_SCHEMA_VERSION)
+
+    @field_validator("topology")
+    @classmethod
+    def _validate_topology(cls, value: str) -> str:
+        return ensure_team_topology(value)
+
+    @field_validator("created_at", "updated_at")
+    @classmethod
+    def _validate_timestamp_fields(cls, value: str | None, info: ValidationInfo) -> str | None:
+        return _normalize_optional_timestamp(value, label=info.field_name or "field")
+
+    @model_validator(mode="after")
+    def _validate_state_shape(self) -> TeamTopologyExecutionState:
+        if not self.checkpoints:
+            raise ValueError("checkpoints must not be empty")
+        for checkpoint in self.checkpoints:
+            if checkpoint.topology != self.topology:
+                raise ValueError("checkpoint topology must match execution topology")
+        if self.interruption.resume_substage is not None:
+            self.interruption.resume_substage = ensure_team_topology_substage(
+                self.topology,
+                self.interruption.resume_substage,
+                "resume_substage",
+            )
+        if self.current_checkpoint.substage == "waiting_parent" and self.interruption.status != "waiting_parent":
+            raise ValueError("waiting_parent checkpoints require a waiting_parent interruption state")
+        if self.interruption.status == "waiting_parent" and self.current_checkpoint.substage != "waiting_parent":
+            raise ValueError("waiting_parent interruptions require the current checkpoint to be waiting_parent")
+        return self
+
+    @property
+    def current_checkpoint(self) -> TeamTopologyCheckpoint:
+        """Return the latest persisted checkpoint."""
+        return self.checkpoints[-1]
+
+    @property
+    def progress_summary(self) -> TeamTopologyProgressSummary:
+        """Project the latest checkpoint into the shared progress payload."""
+        checkpoint = self.current_checkpoint
+        return TeamTopologyProgressSummary(
+            topology=self.topology,
+            substage=checkpoint.substage,
+            phase_status=checkpoint.phase_status,
+            active_roles=checkpoint.active_roles,
+            completed_roles=checkpoint.completed_roles,
+            waiting_on=checkpoint.waiting_on,
+            latest_summary=checkpoint.latest_summary,
+            artifact_count=checkpoint.artifact_count,
+            needs_parent_input=checkpoint.needs_parent_input,
+            repair_state=checkpoint.repair_state,
+            round_index=checkpoint.round_index,
+            round_limit=checkpoint.round_limit,
+        )
 
 
 class TeamSessionRef(BaseModel):

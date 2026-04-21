@@ -108,6 +108,44 @@ class TestSubmit:
 
         await hub.shutdown()
 
+    async def test_persists_explicit_topology_selection(self, registry: TaskRegistry, tmp_path: Path) -> None:
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=_make_cli_service(),
+            config=_make_config(),
+        )
+
+        submit = _submit(name="Pipeline Task")
+        submit.topology = "pipeline"
+        task_id = hub.submit(submit)
+
+        entry = registry.get(task_id)
+        assert entry is not None
+        assert entry.topology == "pipeline"
+
+        await hub.shutdown()
+
+    async def test_applies_default_topology_when_submit_request_omits_one(
+        self,
+        registry: TaskRegistry,
+        tmp_path: Path,
+    ) -> None:
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=_make_cli_service(),
+            config=_make_config(default_topology="fanout_merge"),
+        )
+
+        task_id = hub.submit(_submit(name="Default Topology Task"))
+
+        entry = registry.get(task_id)
+        assert entry is not None
+        assert entry.topology == "fanout_merge"
+
+        await hub.shutdown()
+
 
 class TestRunAndDeliver:
     async def test_delivers_success_result(self, registry: TaskRegistry, tmp_path: Path) -> None:

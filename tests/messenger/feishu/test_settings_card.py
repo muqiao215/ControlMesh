@@ -35,6 +35,7 @@ def test_resolve_initial_settings_tab_accepts_read_only_entries() -> None:
     assert resolve_initial_settings_tab("/settings output") == "streaming"
     assert resolve_initial_settings_tab("/settings tools") == "streaming"
     assert resolve_initial_settings_tab("/settings feishu") == "feishu"
+    assert resolve_initial_settings_tab("/settings messaging") == "messaging"
     assert resolve_initial_settings_tab("/settings version") == "version"
 
 
@@ -137,8 +138,8 @@ def test_build_settings_card_marks_selected_tab_and_contains_version_actions() -
 
     assert card["header"]["title"]["content"] == "ControlMesh Advanced Settings"
     tab_actions = card["elements"][0]["actions"]
-    assert tab_actions[2]["text"]["content"] == "Version"
-    assert tab_actions[2]["type"] == "primary"
+    assert tab_actions[3]["text"]["content"] == "Version"
+    assert tab_actions[3]["type"] == "primary"
 
     markdown_blocks = [
         element["content"]
@@ -159,3 +160,32 @@ def test_build_settings_card_marks_selected_tab_and_contains_version_actions() -
     assert "Check latest" in action_labels
     assert "GitHub Releases" in action_labels
     assert "Upgrade github@main" in action_labels
+
+
+def test_build_settings_card_messaging_tab_contains_transport_setup_actions() -> None:
+    card = build_settings_card(_config(), selected_tab="messaging")
+
+    tab_actions = card["elements"][0]["actions"]
+    assert tab_actions[2]["text"]["content"] == "Messaging"
+    assert tab_actions[2]["type"] == "primary"
+
+    markdown_blocks = [
+        element["content"]
+        for element in card["elements"]
+        if element.get("tag") == "markdown"
+    ]
+    assert any("Messaging interfaces" in block for block in markdown_blocks)
+    assert any("/settings messaging telegram token <BOT_TOKEN>" in block for block in markdown_blocks)
+    assert any("controlmesh auth weixin login" in block for block in markdown_blocks)
+
+    action_labels = [
+        action["text"]["content"]
+        for element in card["elements"]
+        if element.get("tag") == "action"
+        for action in element["actions"]
+        if isinstance(action, dict) and action.get("text")
+    ]
+    assert "Telegram bot" in action_labels
+    assert "Feishu app" in action_labels
+    assert "Weixin iLink" in action_labels
+    assert "Feishu Console" in action_labels

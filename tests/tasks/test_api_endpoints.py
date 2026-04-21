@@ -52,6 +52,23 @@ class TestTaskCreate:
         assert data["success"] is True
         assert data["task_id"] == "abc123"
 
+    async def test_forwards_explicit_topology_to_task_submit(self, api_client: TestClient) -> None:
+        hub = api_client.app["_test_hub"]
+
+        resp = await api_client.post(
+            "/tasks/create",
+            json={
+                "from": "main",
+                "prompt": "build website",
+                "name": "Website",
+                "topology": "pipeline",
+            },
+        )
+
+        assert resp.status == 200
+        submit = hub.submit.call_args.args[0]
+        assert submit.topology == "pipeline"
+
     async def test_missing_prompt(self, api_client: TestClient) -> None:
         resp = await api_client.post("/tasks/create", json={"from": "main"})
         assert resp.status == 400

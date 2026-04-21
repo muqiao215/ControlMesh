@@ -19,6 +19,7 @@ from controlmesh.orchestrator.commands import (
     cmd_model,
     cmd_settings,
     cmd_status,
+    cmd_tasks,
     parse_history_request,
 )
 from controlmesh.orchestrator.core import Orchestrator
@@ -229,6 +230,88 @@ async def test_settings_feishu_card_stream_requires_native_runtime(orch: Orchest
 
     assert "requires `native` runtime mode" in result.text
     assert orch._config.feishu.progress_mode == "text"
+
+
+async def test_settings_messaging_telegram_token_persists_to_config(orch: Orchestrator) -> None:
+    result = await cmd_settings(
+        orch,
+        SessionKey(chat_id=1),
+        "/settings messaging telegram token 123456:ABCDEF_token",
+    )
+
+    assert "Telegram bot token saved" in result.text
+    assert orch._config.telegram_token == "123456:ABCDEF_token"
+    saved = json.loads(orch.paths.config_path.read_text(encoding="utf-8"))
+    assert saved["telegram_token"] == "123456:ABCDEF_token"
+
+
+async def test_settings_messaging_feishu_app_persists_to_config(orch: Orchestrator) -> None:
+    result = await cmd_settings(
+        orch,
+        SessionKey(chat_id=1),
+        "/settings messaging feishu app cli_app secret_value",
+    )
+
+    assert "Feishu app_id/app_secret saved" in result.text
+    assert orch._config.feishu.app_id == "cli_app"
+    assert orch._config.feishu.app_secret == "secret_value"
+    saved = json.loads(orch.paths.config_path.read_text(encoding="utf-8"))
+    assert saved["feishu"]["app_id"] == "cli_app"
+    assert saved["feishu"]["app_secret"] == "secret_value"
+
+
+async def test_tasks_topology_status_reports_manual_default(orch: Orchestrator) -> None:
+    result = await cmd_tasks(orch, SessionKey(chat_id=1), "/tasks topology status")
+
+    assert "Background topology default: manual" in result.text
+    assert "pipeline, fanout_merge, director_worker, debate_judge" in result.text
+    assert "will not infer a topology automatically" in result.text
+
+
+async def test_tasks_topology_update_persists_to_config(orch: Orchestrator) -> None:
+    result = await cmd_tasks(orch, SessionKey(chat_id=1), "/tasks topology pipeline")
+
+    assert "Background topology default updated: pipeline" in result.text
+    assert orch._config.tasks.default_topology == "pipeline"
+    saved = json.loads(orch.paths.config_path.read_text(encoding="utf-8"))
+    assert saved["tasks"]["default_topology"] == "pipeline"
+
+
+async def test_tasks_topology_off_clears_default(orch: Orchestrator) -> None:
+    orch._config.tasks.default_topology = "pipeline"
+    result = await cmd_tasks(orch, SessionKey(chat_id=1), "/tasks topology off")
+
+    assert "Background topology default updated: manual" in result.text
+    assert orch._config.tasks.default_topology is None
+    saved = json.loads(orch.paths.config_path.read_text(encoding="utf-8"))
+    assert saved["tasks"]["default_topology"] is None
+
+
+async def test_tasks_topology_update_accepts_director_worker(orch: Orchestrator) -> None:
+    result = await cmd_tasks(orch, SessionKey(chat_id=1), "/tasks topology director_worker")
+
+    assert "Background topology default updated: director_worker" in result.text
+    assert orch._config.tasks.default_topology == "director_worker"
+    saved = json.loads(orch.paths.config_path.read_text(encoding="utf-8"))
+    assert saved["tasks"]["default_topology"] == "director_worker"
+
+
+async def test_tasks_topology_update_accepts_debate_judge(orch: Orchestrator) -> None:
+    result = await cmd_tasks(orch, SessionKey(chat_id=1), "/tasks topology debate_judge")
+
+    assert "Background topology default updated: debate_judge" in result.text
+    assert orch._config.tasks.default_topology == "debate_judge"
+    saved = json.loads(orch.paths.config_path.read_text(encoding="utf-8"))
+    assert saved["tasks"]["default_topology"] == "debate_judge"
+
+
+async def test_tasks_topology_rejects_unknown_topology(orch: Orchestrator) -> None:
+    result = await cmd_tasks(orch, SessionKey(chat_id=1), "/tasks topology swarm")
+
+    assert "Usage: /tasks topology" in result.text
+    assert "director_worker" in result.text
+    assert "debate_judge" in result.text
+    assert orch._config.tasks.default_topology is None
 
 
 async def test_settings_version_refresh_shows_latest_release(orch: Orchestrator) -> None:

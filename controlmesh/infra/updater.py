@@ -13,7 +13,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from controlmesh.infra.install import InstallInfo, detect_install_info
-from controlmesh.infra.version import VersionInfo, _parse_version, check_latest_version
+from controlmesh.infra.version import (
+    VersionInfo,
+    _parse_version,
+    check_github_release,
+    check_latest_version,
+    check_pypi,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -281,6 +287,31 @@ def _combine_outputs(outputs: list[str]) -> str:
     return "\n\n".join(parts)
 
 
+async def _append_missing_distribution_guidance(
+    outputs: list[str],
+    *,
+    current_version: str,
+) -> list[str]:
+    """Append missing-distribution guidance when pip cannot find a target version."""
+    combined = _combine_outputs(outputs)
+    if "No matching distribution found" not in combined:
+        return outputs
+    return [*outputs, await _missing_distribution_guidance(current_version)]
+
+
+async def _missing_distribution_guidance(current_version: str) -> str:
+    """Explain whether a missing distribution is propagation or a broken release."""
+    pypi = await check_pypi(fresh=True)
+    github = await check_github_release(fresh=True)
+    if pypi is None and github is not None and _is_newer_version(github.latest, current_version):
+        return (
+            f"GitHub already shows release {github.latest}, but PyPI has no installable "
+            "`controlmesh` distribution yet. Treat this as a failed or incomplete "
+            "publish workflow, not a mirror-delay success."
+        )
+    return "The new version may not have propagated to all PyPI mirrors yet. Please try again in a few minutes."
+
+
 async def _resolve_retry_target(
     current_version: str,
     target_version: str | None,
@@ -335,6 +366,10 @@ async def perform_upgrade_pipeline(
 
     retry_target = await _resolve_retry_target(current_version, target_version, install_info)
     if retry_target is None:
+        outputs = await _append_missing_distribution_guidance(
+            outputs,
+            current_version=current_version,
+        )
         return False, current_version, _combine_outputs(outputs)
 
     _retry_ok, retry_output = await _perform_upgrade_impl(
@@ -349,12 +384,10 @@ async def perform_upgrade_pipeline(
 
     # Detect PyPI CDN propagation delay — the JSON API may announce a
     # version before the package index used by pip has it available.
-    combined = _combine_outputs(outputs)
-    if "No matching distribution found" in combined:
-        outputs.append(
-            "The new version may not have propagated to all PyPI mirrors yet. "
-            "Please try again in a few minutes."
-        )
+    outputs = await _append_missing_distribution_guidance(
+        outputs,
+        current_version=current_version,
+    )
 
     return False, current_version, _combine_outputs(outputs)
 
