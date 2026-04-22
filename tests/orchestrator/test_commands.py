@@ -11,6 +11,7 @@ from controlmesh.infra.version import VersionInfo
 from controlmesh.orchestrator.commands import (
     HistoryRequestKind,
     cmd_claude_native,
+    cmd_controlmesh,
     cmd_cron,
     cmd_diagnose,
     cmd_history,
@@ -126,6 +127,29 @@ async def test_mode_status_defaults_to_controlmesh(orch: Orchestrator) -> None:
     assert "Takeover mode: ControlMesh" in result.text
 
 
+async def test_mode_without_args_returns_takeover_selector_buttons(orch: Orchestrator) -> None:
+    result = await cmd_mode(orch, SessionKey(chat_id=1), "/mode")
+
+    assert "Takeover mode: ControlMesh" in result.text
+    assert result.buttons is not None
+    rows = result.buttons.rows
+    assert rows[0][0].callback_data == "/mode cm"
+    assert rows[0][1].callback_data == "/mode claude"
+    assert rows[0][2].callback_data == "/mode codex"
+    assert rows[0][3].callback_data == "/mode gemini"
+
+
+async def test_mode_without_args_appends_runtime_buttons_when_available(orch: Orchestrator) -> None:
+    orch._providers._available_providers = frozenset({"claude", "codex", "gemini", "claw", "opencode"})
+
+    result = await cmd_mode(orch, SessionKey(chat_id=1), "/mode")
+
+    assert result.buttons is not None
+    rows = result.buttons.rows
+    assert rows[1][0].callback_data == "/mode claw"
+    assert rows[1][1].callback_data == "/mode opencode"
+
+
 async def test_mode_switch_sets_session_local_takeover_target(orch: Orchestrator) -> None:
     key = SessionKey(chat_id=1)
 
@@ -141,6 +165,21 @@ async def test_mode_switch_sets_session_local_takeover_target(orch: Orchestrator
     assert session.model == "opus"
     assert session.command_mode == "codex"
     assert session.command_mode_model == "gpt-5.2-codex"
+
+
+async def test_mode_switch_supports_opencode_runtime_channel(orch: Orchestrator) -> None:
+    key = SessionKey(chat_id=1)
+
+    with patch.object(orch._providers, "default_model_for_provider", return_value="openai/gpt-4.1"):
+        result = await cmd_mode(orch, key, "/mode opencode")
+
+    assert "Takeover mode: OpenCode" in result.text
+    assert "openai/gpt-4.1" in result.text
+
+    session = await orch._sessions.get_active(key)
+    assert session is not None
+    assert session.command_mode == "opencode"
+    assert session.command_mode_model == "openai/gpt-4.1"
 
 
 async def test_claude_native_on_requires_claude_provider(orch: Orchestrator) -> None:
@@ -172,6 +211,21 @@ async def test_claude_native_on_off_updates_provider_local_mode(orch: Orchestrat
     session = await orch._sessions.get_active(key)
     assert session is not None
     assert session.native_commands_enabled is False
+    assert session.command_mode == "cm"
+    assert session.command_mode_model is None
+
+
+async def test_cm_without_nested_command_exits_takeover_mode(orch: Orchestrator) -> None:
+    key = SessionKey(chat_id=1)
+    session, _ = await orch._sessions.resolve_session(key, provider="claude", model="opus")
+    await orch._sessions.sync_command_mode(session, mode="codex", model="gpt-5.2-codex")
+
+    result = await cmd_controlmesh(orch, key, "/cm")
+
+    assert "Takeover mode: ControlMesh" in result.text
+
+    session = await orch._sessions.get_active(key)
+    assert session is not None
     assert session.command_mode == "cm"
     assert session.command_mode_model is None
 

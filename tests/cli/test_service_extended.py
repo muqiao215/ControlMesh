@@ -62,6 +62,28 @@ def test_make_cli_respects_openai_agents_service_provider(tmp_path: Path) -> Non
     assert call_args.model == "gpt-5.4"
 
 
+def test_make_cli_respects_claw_service_provider(tmp_path: Path) -> None:
+    svc = _make_service(tmp_path, default_model="sonnet", provider="claw")
+    with patch("controlmesh.cli.service.create_cli") as mock_create:
+        mock_create.return_value = MagicMock()
+        svc._make_cli(AgentRequest(prompt="test", chat_id=1))
+
+    call_args = mock_create.call_args[0][0]
+    assert call_args.provider == "claw"
+    assert call_args.model == "sonnet"
+
+
+def test_make_cli_respects_opencode_service_provider(tmp_path: Path) -> None:
+    svc = _make_service(tmp_path, default_model="openai/gpt-4.1", provider="opencode")
+    with patch("controlmesh.cli.service.create_cli") as mock_create:
+        mock_create.return_value = MagicMock()
+        svc._make_cli(AgentRequest(prompt="test", chat_id=1))
+
+    call_args = mock_create.call_args[0][0]
+    assert call_args.provider == "opencode"
+    assert call_args.model == "openai/gpt-4.1"
+
+
 def test_make_cli_with_model_override(tmp_path: Path) -> None:
     svc = _make_service(tmp_path)
     with patch("controlmesh.cli.service.create_cli") as mock_create:

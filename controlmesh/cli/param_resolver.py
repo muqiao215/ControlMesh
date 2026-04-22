@@ -13,6 +13,8 @@ if TYPE_CHECKING:
 
 from controlmesh.config import _GEMINI_ALIASES, CLAUDE_MODELS, get_gemini_models
 
+_EXPLICIT_RUNTIME_PROVIDERS = frozenset({"openai_agents", "claw", "opencode"})
+
 
 def _looks_like_gemini_model(model: str) -> bool:
     return model.startswith(("gemini-", "auto-gemini-"))
@@ -98,13 +100,16 @@ def resolve_cli_config(
             raise ControlMeshError(msg)
     elif provider == "gemini":
         _validate_gemini_model(model)
-    else:  # codex
+    elif provider == "codex":
         if codex_cache is None:
             msg = "Codex cache is required for Codex model validation"
             raise ControlMeshError(msg)
         if not codex_cache.validate_model(model):
             msg = f"Invalid Codex model: {model}"
             raise ControlMeshError(msg)
+    elif provider not in _EXPLICIT_RUNTIME_PROVIDERS:
+        msg = f"Unknown provider: {provider}"
+        raise ControlMeshError(msg)
 
     # 4. Resolve reasoning effort (Codex only)
     reasoning_effort = ""

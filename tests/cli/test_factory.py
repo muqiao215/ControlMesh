@@ -6,10 +6,12 @@ from unittest.mock import patch
 
 from controlmesh.cli.base import CLIConfig
 from controlmesh.cli.claude_provider import ClaudeCodeCLI
+from controlmesh.cli.claw_provider import ClawCLI
 from controlmesh.cli.codex_provider import CodexCLI
 from controlmesh.cli.factory import create_cli
 from controlmesh.cli.gemini_provider import GeminiCLI
 from controlmesh.cli.openai_agents_provider import OpenAIAgentsCLI
+from controlmesh.cli.opencode_provider import OpenCodeCLI
 
 
 def test_create_cli_returns_claude_by_default() -> None:
@@ -34,6 +36,18 @@ def test_create_cli_returns_gemini() -> None:
 def test_create_cli_returns_openai_agents() -> None:
     cli = create_cli(CLIConfig(provider="openai_agents"))
     assert isinstance(cli, OpenAIAgentsCLI)
+
+
+def test_create_cli_returns_claw() -> None:
+    with patch("controlmesh.cli.claw_provider.which", return_value="/usr/bin/claw"):
+        cli = create_cli(CLIConfig(provider="claw"))
+    assert isinstance(cli, ClawCLI)
+
+
+def test_create_cli_returns_opencode() -> None:
+    with patch("controlmesh.cli.opencode_provider.which", return_value="/usr/bin/opencode"):
+        cli = create_cli(CLIConfig(provider="opencode"))
+    assert isinstance(cli, OpenCodeCLI)
 
 
 def test_create_cli_unknown_provider_returns_claude() -> None:

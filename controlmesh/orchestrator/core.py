@@ -92,6 +92,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_NATIVE_COMMAND_MODE_PROVIDERS = frozenset({"claude", "codex", "gemini", "claw", "opencode"})
+
 
 _TextCallback = Callable[[str], Awaitable[None]]
 _SystemStatusCallback = Callable[[str | None], Awaitable[None]]
@@ -676,7 +678,7 @@ class Orchestrator:
             return None
         if session.command_mode == "cm":
             return None
-        if session.command_mode not in {"claude", "codex", "gemini"}:
+        if session.command_mode not in _NATIVE_COMMAND_MODE_PROVIDERS:
             return None
         if not session.command_mode_model:
             return None

@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum, unique
 from pathlib import Path
+from shutil import which
 from typing import TYPE_CHECKING
 
 from controlmesh.cli.gemini_utils import find_gemini_cli
@@ -29,6 +30,33 @@ _GEMINI_SELECTED_AUTH_TYPES = frozenset(
 )
 _GEMINI_NON_API_KEY_AUTH_TYPES = frozenset(
     {"oauth-personal", "vertex-ai", "compute-default-credentials", "cloud-shell"}
+)
+_CLAW_AUTH_ENV_KEYS = frozenset(
+    {
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_AUTH_TOKEN",
+        "OPENAI_API_KEY",
+        "XAI_API_KEY",
+        "DASHSCOPE_API_KEY",
+    }
+)
+_OPENCODE_AUTH_ENV_KEYS = frozenset(
+    {
+        "ANTHROPIC_API_KEY",
+        "OPENAI_API_KEY",
+        "GEMINI_API_KEY",
+        "GITHUB_TOKEN",
+        "VERTEXAI_PROJECT",
+        "VERTEXAI_LOCATION",
+        "GROQ_API_KEY",
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_REGION",
+        "AZURE_OPENAI_ENDPOINT",
+        "AZURE_OPENAI_API_KEY",
+        "AZURE_OPENAI_API_VERSION",
+        "LOCAL_ENDPOINT",
+    }
 )
 
 
@@ -182,8 +210,87 @@ def check_openai_agents_auth() -> AuthResult:
     return result
 
 
+def check_claw_auth() -> AuthResult:
+    """Check claw-code runtime availability and minimal auth presence."""
+    if which("claw") is None:
+        result = AuthResult("claw", AuthStatus.NOT_FOUND)
+        logger.debug("Auth check provider=%s status=%s", result.provider, result.status)
+        return result
+
+    if any(_has_nonempty_env(name) for name in _CLAW_AUTH_ENV_KEYS):
+        result = AuthResult("claw", AuthStatus.AUTHENTICATED)
+        logger.debug("Auth check provider=%s status=%s (env key)", result.provider, result.status)
+        return result
+
+    result = AuthResult("claw", AuthStatus.INSTALLED)
+    logger.debug("Auth check provider=%s status=%s", result.provider, result.status)
+    return result
+
+
+def check_opencode_auth() -> AuthResult:
+    """Check opencode runtime availability and common auth/config surfaces."""
+    if which("opencode") is None:
+        result = AuthResult("opencode", AuthStatus.NOT_FOUND)
+        logger.debug("Auth check provider=%s status=%s", result.provider, result.status)
+        return result
+
+    if any(_has_nonempty_env(name) for name in _OPENCODE_AUTH_ENV_KEYS):
+        result = AuthResult("opencode", AuthStatus.AUTHENTICATED)
+        logger.debug("Auth check provider=%s status=%s (env key)", result.provider, result.status)
+        return result
+
+    config_file = _find_opencode_config_file()
+    if config_file is not None:
+        auth_file, auth_age = _read_opencode_config_auth(config_file)
+        if auth_file is not None:
+            result = AuthResult("opencode", AuthStatus.AUTHENTICATED, auth_file, auth_age)
+            logger.debug(
+                "Auth check provider=%s status=%s (config key)",
+                result.provider,
+                result.status,
+            )
+            return result
+        result = AuthResult("opencode", AuthStatus.INSTALLED, config_file, auth_age)
+        logger.debug("Auth check provider=%s status=%s", result.provider, result.status)
+        return result
+
+    result = AuthResult("opencode", AuthStatus.INSTALLED)
+    logger.debug("Auth check provider=%s status=%s", result.provider, result.status)
+    return result
+
+
 def _openai_agents_sdk_installed() -> bool:
     return find_spec("agents") is not None
+
+
+def _find_opencode_config_file() -> Path | None:
+    home = Path.home()
+    xdg = Path(os.environ.get("XDG_CONFIG_HOME", home / ".config"))
+    candidates = [
+        home / ".opencode.json",
+        xdg / "opencode" / ".opencode.json",
+    ]
+    for path in candidates:
+        if path.is_file():
+            return path
+    return None
+
+
+def _read_opencode_config_auth(config_file: Path) -> tuple[Path | None, datetime | None]:
+    try:
+        data = json.loads(config_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, TypeError):
+        return None, None
+    providers = data.get("providers")
+    if not isinstance(providers, dict):
+        return None, None
+    for provider_cfg in providers.values():
+        if not isinstance(provider_cfg, dict):
+            continue
+        api_key = _normalize_key_like_value(str(provider_cfg.get("apiKey", "")))
+        if api_key:
+            return config_file, datetime.fromtimestamp(config_file.stat().st_mtime, tz=UTC)
+    return None, None
 
 
 def check_gemini_auth() -> AuthResult:
@@ -423,6 +530,8 @@ _CHECKERS: dict[str, Callable[[], AuthResult]] = {
     "claude": check_claude_auth,
     "codex": check_codex_auth,
     "openai_agents": check_openai_agents_auth,
+    "claw": check_claw_auth,
+    "opencode": check_opencode_auth,
     "gemini": check_gemini_auth,
 }
 

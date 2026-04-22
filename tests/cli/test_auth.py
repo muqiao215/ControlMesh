@@ -9,9 +9,11 @@ from controlmesh.cli.auth import (
     AuthResult,
     AuthStatus,
     check_claude_auth,
+    check_claw_auth,
     check_codex_auth,
     check_gemini_auth,
     check_openai_agents_auth,
+    check_opencode_auth,
     format_age,
     gemini_uses_api_key_mode,
 )
@@ -265,6 +267,89 @@ def test_check_openai_agents_auth_env_key(monkeypatch: pytest.MonkeyPatch) -> No
 
     assert result.provider == "openai_agents"
     assert result.status == AuthStatus.AUTHENTICATED
+
+
+# -- claw auth --
+
+
+def test_check_claw_auth_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
+    import controlmesh.cli.auth as _auth_mod
+
+    monkeypatch.setattr(_auth_mod, "which", lambda _name: None)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    result = check_claw_auth()
+
+    assert result.provider == "claw"
+    assert result.status == AuthStatus.NOT_FOUND
+
+
+def test_check_claw_auth_env_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    import controlmesh.cli.auth as _auth_mod
+
+    monkeypatch.setattr(_auth_mod, "which", lambda _name: "/usr/bin/claw")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+
+    result = check_claw_auth()
+
+    assert result.provider == "claw"
+    assert result.status == AuthStatus.AUTHENTICATED
+
+
+def test_check_claw_auth_installed(monkeypatch: pytest.MonkeyPatch) -> None:
+    import controlmesh.cli.auth as _auth_mod
+
+    monkeypatch.setattr(_auth_mod, "which", lambda _name: "/usr/bin/claw")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    result = check_claw_auth()
+
+    assert result.provider == "claw"
+    assert result.status == AuthStatus.INSTALLED
+
+
+# -- opencode auth --
+
+
+def test_check_opencode_auth_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
+    import controlmesh.cli.auth as _auth_mod
+
+    monkeypatch.setattr(_auth_mod, "which", lambda _name: None)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    result = check_opencode_auth()
+
+    assert result.provider == "opencode"
+    assert result.status == AuthStatus.NOT_FOUND
+
+
+def test_check_opencode_auth_env_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    import controlmesh.cli.auth as _auth_mod
+
+    monkeypatch.setattr(_auth_mod, "which", lambda _name: "/usr/bin/opencode")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+
+    result = check_opencode_auth()
+
+    assert result.provider == "opencode"
+    assert result.status == AuthStatus.AUTHENTICATED
+
+
+def test_check_opencode_auth_config_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import controlmesh.cli.auth as _auth_mod
+
+    monkeypatch.setattr(_auth_mod, "which", lambda _name: "/usr/bin/opencode")
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    for env_name in _auth_mod._OPENCODE_AUTH_ENV_KEYS:
+        monkeypatch.delenv(env_name, raising=False)
+    config_file = tmp_path / ".opencode.json"
+    config_file.write_text('{"providers":{"openai":{"apiKey":"sk-config"}}}')
+
+    result = check_opencode_auth()
+
+    assert result.provider == "opencode"
+    assert result.status == AuthStatus.AUTHENTICATED
+    assert result.auth_file == config_file
 
 
 # -- Gemini auth --

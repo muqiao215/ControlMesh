@@ -16,6 +16,8 @@ from controlmesh.session.key import SessionKey
 
 logger = logging.getLogger(__name__)
 
+_COMMAND_MODE_PROVIDERS = frozenset({"claude", "codex", "gemini", "claw", "opencode"})
+
 
 def _as_mapping(value: object) -> Mapping[str, object] | None:
     """Return value as string-key mapping when possible."""
@@ -229,7 +231,7 @@ class SessionData:
     def set_command_mode(self, mode: str, *, model: str | None) -> None:
         """Update the explicit takeover mode and mirror legacy provider flags."""
         normalized = mode.strip().lower() if mode else "cm"
-        if normalized not in {"cm", "claude", "codex", "gemini"}:
+        if normalized not in {"cm", *_COMMAND_MODE_PROVIDERS}:
             normalized = "cm"
         self.command_mode = normalized
         self.command_mode_model = (model or None) if normalized != "cm" else None
@@ -242,7 +244,7 @@ class SessionData:
 
     def _normalize_command_mode(self) -> None:
         """Backfill generic command mode from legacy provider-local native flags."""
-        if self.command_mode not in {"cm", "claude", "codex", "gemini"}:
+        if self.command_mode not in {"cm", *_COMMAND_MODE_PROVIDERS}:
             self.command_mode = "cm"
         if self.command_mode != "cm" and not self.command_mode_model:
             self.command_mode_model = self.model if self.provider == self.command_mode else None

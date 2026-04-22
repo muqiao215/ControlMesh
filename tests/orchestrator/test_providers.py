@@ -69,6 +69,18 @@ class TestResolveRuntimeTarget:
         assert model == "gpt-5.4"
         assert provider == "openai_agents"
 
+    def test_claw_provider_config(self) -> None:
+        pm = _pm(model="sonnet", provider="claw")
+        model, provider = pm.resolve_runtime_target()
+        assert model == "sonnet"
+        assert provider == "claw"
+
+    def test_opencode_provider_config(self) -> None:
+        pm = _pm(model="openai/gpt-4.1", provider="opencode")
+        model, provider = pm.resolve_runtime_target()
+        assert model == "openai/gpt-4.1"
+        assert provider == "opencode"
+
 
 # ---------------------------------------------------------------------------
 # resolve_session_directive
@@ -95,6 +107,18 @@ class TestResolveSessionDirective:
         result = pm.resolve_session_directive("codex")
         assert result is not None
         assert result[0] == "codex"
+
+    def test_provider_name_claw(self) -> None:
+        pm = _pm(model="sonnet", provider="claw")
+        result = pm.resolve_session_directive("claw")
+        assert result is not None
+        assert result == ("claw", "sonnet")
+
+    def test_provider_name_opencode(self) -> None:
+        pm = _pm(model="openai/gpt-4.1", provider="opencode")
+        result = pm.resolve_session_directive("opencode")
+        assert result is not None
+        assert result == ("opencode", "openai/gpt-4.1")
 
     def test_known_model(self) -> None:
         pm = _pm()
@@ -181,6 +205,14 @@ class TestDefaultModelForProvider:
         pm = _pm()
         assert pm.default_model_for_provider("gemini") == ""
 
+    def test_claw(self) -> None:
+        pm = _pm(model="sonnet", provider="claw")
+        assert pm.default_model_for_provider("claw") == "sonnet"
+
+    def test_opencode(self) -> None:
+        pm = _pm(model="openai/gpt-4.1", provider="opencode")
+        assert pm.default_model_for_provider("opencode") == "openai/gpt-4.1"
+
     def test_unknown_provider(self) -> None:
         pm = _pm()
         assert pm.default_model_for_provider("unknown") == ""
@@ -260,6 +292,14 @@ class TestActiveProviderName:
     def test_openai_agents(self) -> None:
         pm = _pm(model="gpt-5.4", provider="openai_agents")
         assert pm.active_provider_name == "OpenAI Agents"
+
+    def test_claw(self) -> None:
+        pm = _pm(model="sonnet", provider="claw")
+        assert pm.active_provider_name == "Claw"
+
+    def test_opencode(self) -> None:
+        pm = _pm(model="openai/gpt-4.1", provider="opencode")
+        assert pm.active_provider_name == "OpenCode"
 
 
 # ---------------------------------------------------------------------------

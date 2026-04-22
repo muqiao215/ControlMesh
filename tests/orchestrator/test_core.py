@@ -148,6 +148,22 @@ async def test_takeover_mode_routes_slash_commands_to_selected_provider(orch: Or
     assert request.model_override == "gpt-5.2-codex"
 
 
+async def test_takeover_mode_routes_slash_commands_to_opencode_channel(orch: Orchestrator) -> None:
+    key = SessionKey(chat_id=1)
+    session, _ = await orch._sessions.resolve_session(key, provider="claude", model="opus")
+    await orch._sessions.sync_command_mode(session, mode="opencode", model="openai/gpt-4.1")
+
+    mock_execute = AsyncMock(return_value=_mock_response(result="Native OpenCode response"))
+    object.__setattr__(orch._cli_service, "execute", mock_execute)
+
+    result = await orch.handle_message(key, "/review")
+
+    assert result.text == "Native OpenCode response"
+    request = mock_execute.call_args[0][0]
+    assert request.provider_override == "opencode"
+    assert request.model_override == "openai/gpt-4.1"
+
+
 async def test_takeover_slash_does_not_retarget_normal_session(orch: Orchestrator) -> None:
     key = SessionKey(chat_id=1)
     session, _ = await orch._sessions.resolve_session(key, provider="claude", model="opus")

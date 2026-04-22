@@ -50,15 +50,27 @@ logger = logging.getLogger(__name__)
 _DEFAULT_HISTORY_LIMIT = 6
 _MAX_HISTORY_LIMIT = 20
 _CONTROL_MODE = "cm"
-_PROVIDER_MODES = frozenset({"claude", "codex", "gemini"})
-_MODE_USAGE = "Usage: /mode [status|cm|claude|codex|gemini]"
+_PROVIDER_MODES = frozenset({"claude", "codex", "gemini", "claw", "opencode"})
+_MODE_USAGE = "Usage: /mode [status|cm|claude|codex|gemini|claw|opencode]"
 _TASKS_TOPOLOGY_OFF_TOKENS = frozenset({"off", "none", "manual", "unset"})
 _MODE_LABELS = {
     "cm": "ControlMesh",
     "claude": "Claude-compatible channel",
     "codex": "Codex",
     "gemini": "Gemini",
+    "claw": "Claw",
+    "opencode": "OpenCode",
 }
+_CORE_MODE_BUTTONS: tuple[tuple[str, str], ...] = (
+    ("cm", "CM"),
+    ("claude", "CLAUDE"),
+    ("codex", "CODEX"),
+    ("gemini", "GEMINI"),
+)
+_OPTIONAL_MODE_BUTTONS: tuple[tuple[str, str], ...] = (
+    ("claw", "CLAW"),
+    ("opencode", "OPENCODE"),
+)
 
 
 class HistoryRequestKind(StrEnum):
@@ -126,8 +138,40 @@ def _mode_status_text(mode: str, model: str | None = None) -> str:
         f"Takeover mode: {_mode_label(mode)}\n"
         f"Target channel: {mode}{model_line}\n"
         "Subsequent /xxx messages route to this CLI channel first.\n"
-        "Use /cm /status for ControlMesh commands, or /mode cm to exit takeover mode."
+        "Use /cm to exit takeover mode, or /cm /status for ControlMesh commands."
     )
+
+
+def _mode_selector_buttons(
+    current_mode: str,
+    available_providers: frozenset[str],
+) -> ButtonGrid:
+    """Return the Telegram-friendly takeover selector keyboard."""
+    rows: list[list[Button]] = [
+        [
+            Button(
+                text=f"• {label}" if mode == current_mode else label,
+                callback_data=f"/mode {mode}",
+            )
+            for mode, label in _CORE_MODE_BUTTONS
+        ]
+    ]
+    optional_modes = [
+        (mode, label)
+        for mode, label in _OPTIONAL_MODE_BUTTONS
+        if mode in available_providers or current_mode == mode
+    ]
+    if optional_modes:
+        rows.append(
+            [
+                Button(
+                    text=f"• {label}" if mode == current_mode else label,
+                    callback_data=f"/mode {mode}",
+                )
+                for mode, label in optional_modes
+            ]
+        )
+    return ButtonGrid(rows=rows)
 
 
 async def _resolve_command_mode_model(
@@ -152,12 +196,26 @@ async def cmd_mode(orch: Orchestrator, key: SessionKey, text: str) -> Orchestrat
     """Handle /mode [status|cm|claude|codex|gemini]."""
     parts = text.strip().split(None, 1)
     action = parts[1].strip().lower() if len(parts) > 1 else "status"
+    show_selector = len(parts) == 1
     if action == "status":
         session = await orch._sessions.get_active(key)
+        current_mode = session.command_mode if session is not None else _CONTROL_MODE
         if session is None:
-            return OrchestratorResult(text=_mode_status_text(_CONTROL_MODE))
+            return OrchestratorResult(
+                text=_mode_status_text(_CONTROL_MODE),
+                buttons=(
+                    _mode_selector_buttons(_CONTROL_MODE, orch.available_providers)
+                    if show_selector
+                    else None
+                ),
+            )
         return OrchestratorResult(
-            text=_mode_status_text(session.command_mode, session.command_mode_model)
+            text=_mode_status_text(session.command_mode, session.command_mode_model),
+            buttons=(
+                _mode_selector_buttons(current_mode, orch.available_providers)
+                if show_selector
+                else None
+            ),
         )
 
     if action == _CONTROL_MODE:
@@ -175,7 +233,7 @@ async def cmd_mode(orch: Orchestrator, key: SessionKey, text: str) -> Orchestrat
             text=(
                 f"Cannot enable {_mode_label(action)} takeover mode yet: no default model "
                 f"is known for channel '{action}'.\n"
-                "Select that provider with /model first, then retry."
+                "Make that runtime the active provider first, then retry."
             )
         )
 
@@ -343,7 +401,10 @@ async def cmd_controlmesh(orch: Orchestrator, key: SessionKey, text: str) -> Orc
     """Handle /cm <controlmesh-command> as an escape hatch from native mode."""
     parts = text.strip().split(None, 1)
     if len(parts) < 2 or not parts[1].strip():
-        return OrchestratorResult(text="Usage: /cm /status")
+        session = await orch._sessions.get_active(key)
+        if session is not None:
+            await orch._sessions.sync_command_mode(session, mode=_CONTROL_MODE, model=None)
+        return OrchestratorResult(text=_mode_status_text(_CONTROL_MODE))
     nested = parts[1].strip()
     if not nested.startswith("/"):
         return OrchestratorResult(text="Usage: /cm /status")

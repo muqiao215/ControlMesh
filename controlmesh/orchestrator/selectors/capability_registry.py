@@ -195,6 +195,39 @@ def default_capability_registry() -> CapabilityRegistry:
                 }
             ),
         ),
+        "claw": CapabilityProfile(
+            profile_id="claw",
+            display_name="Claw runtime",
+            notes=(
+                "Treat claw as an external coding runtime channel. "
+                "Prefer conservative routing until its JSON/session contract is hardened."
+            ),
+            confidences=MappingProxyType(
+                {
+                    Capability.BASIC_SUMMARIZE: CapabilityConfidence.MEDIUM,
+                    Capability.CODE_EDIT: CapabilityConfidence.LOW,
+                    Capability.REPO_REVIEW: CapabilityConfidence.LOW,
+                    Capability.POLISH: CapabilityConfidence.LOW,
+                    Capability.RESEARCH: CapabilityConfidence.LOW,
+                }
+            ),
+        ),
+        "opencode": CapabilityProfile(
+            profile_id="opencode",
+            display_name="OpenCode runtime",
+            notes=(
+                "Treat opencode as an external runtime channel with its own provider/model routing."
+            ),
+            confidences=MappingProxyType(
+                {
+                    Capability.BASIC_SUMMARIZE: CapabilityConfidence.MEDIUM,
+                    Capability.CODE_EDIT: CapabilityConfidence.LOW,
+                    Capability.REPO_REVIEW: CapabilityConfidence.LOW,
+                    Capability.POLISH: CapabilityConfidence.LOW,
+                    Capability.RESEARCH: CapabilityConfidence.LOW,
+                }
+            ),
+        ),
         "taskhub": CapabilityProfile(
             profile_id="taskhub",
             display_name="TaskHub",
@@ -222,11 +255,22 @@ def default_capability_registry() -> CapabilityRegistry:
         "codex": "codex",
         "gemini": "gemini",
         "openai_agents": "openai_agents",
+        "claw": "claw",
+        "opencode": "opencode",
         "taskhub": "taskhub",
         "feishu_native": "feishu_native",
     }
     return CapabilityRegistry(
         profiles=profiles,
         aliases=aliases,
-        channels=("claude", "codex", "gemini", "openai_agents", "taskhub", "feishu_native"),
+        channels=(
+            "claude",
+            "codex",
+            "gemini",
+            "claw",
+            "opencode",
+            "openai_agents",
+            "taskhub",
+            "feishu_native",
+        ),
     )

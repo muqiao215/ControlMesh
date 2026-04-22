@@ -36,6 +36,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_EXPLICIT_RUNTIME_PROVIDERS = frozenset({"openai_agents", "claw", "opencode"})
+
 _ToolEventCallback = Callable[[ToolUseEvent | ToolResultEvent], Awaitable[None]]
 
 
@@ -339,8 +341,8 @@ class CLIService:
         """Return ``(provider, model)`` that would be used for *request*."""
         if request.provider_override:
             return request.provider_override, request.model_override or ""
-        if self._config.provider == "openai_agents":
-            return "openai_agents", request.model_override or self._config.default_model
+        if self._config.provider in _EXPLICIT_RUNTIME_PROVIDERS:
+            return self._config.provider, request.model_override or self._config.default_model
         model = request.model_override or self._config.default_model
         return self._models.provider_for(model), model
 

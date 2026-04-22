@@ -22,6 +22,16 @@ def create_cli(config: CLIConfig) -> BaseCLI:
 
         return CodexCLI(config)
 
+    if config.provider == "claw":
+        from controlmesh.cli.claw_provider import ClawCLI
+
+        return ClawCLI(config)
+
+    if config.provider == "opencode":
+        from controlmesh.cli.opencode_provider import OpenCodeCLI
+
+        return OpenCodeCLI(config)
+
     if config.provider == "openai_agents":
         from controlmesh.cli.openai_agents_provider import OpenAIAgentsCLI
 

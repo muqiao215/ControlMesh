@@ -87,6 +87,26 @@ class TestBuildProviderInfo:
         assert info[0]["color"] == "#2563EB"
         assert info[0]["models"] == ["gpt-5.4"]
 
+    def test_claw_provider_info(self) -> None:
+        pm, obs = _make_provider_manager(frozenset({"claw"}))
+        pm._config.provider = "claw"
+        pm._config.model = "sonnet"
+        info = pm.build_provider_info(obs)
+        assert info[0]["id"] == "claw"
+        assert info[0]["name"] == "Claw"
+        assert info[0]["color"] == "#C084FC"
+        assert info[0]["models"] == ["sonnet"]
+
+    def test_opencode_provider_info(self) -> None:
+        pm, obs = _make_provider_manager(frozenset({"opencode"}))
+        pm._config.provider = "opencode"
+        pm._config.model = "openai/gpt-4.1"
+        info = pm.build_provider_info(obs)
+        assert info[0]["id"] == "opencode"
+        assert info[0]["name"] == "OpenCode"
+        assert info[0]["color"] == "#06B6D4"
+        assert info[0]["models"] == ["openai/gpt-4.1"]
+
     def test_empty_providers(self) -> None:
         pm, obs = _make_provider_manager(frozenset())
         info = pm.build_provider_info(obs)
