@@ -382,6 +382,129 @@ class TestFeishuBotRouting:
         assert card["elements"][0]["actions"][1]["type"] == "primary"
         bot._orchestrator.handle_message_streaming.assert_not_awaited()
 
+    async def test_handle_incoming_text_help_command_sends_command_center_card(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path)
+        bot._orchestrator = _make_settings_orchestrator(bot, tmp_path)
+        bot._send_card_to_chat_ref = AsyncMock(return_value="om_help")  # type: ignore[method-assign]
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="/help",
+            )
+        )
+
+        bot._send_card_to_chat_ref.assert_awaited_once()
+        send_args = bot._send_card_to_chat_ref.await_args
+        assert send_args.args[0] == "oc_chat_1"
+        card = send_args.args[1]
+        assert card["header"]["title"]["content"] == "ControlMesh Command Center"
+        markdown_blocks = [
+            element["content"]
+            for element in card["elements"]
+            if element.get("tag") == "markdown"
+        ]
+        assert any("`/settings`" in block for block in markdown_blocks)
+        assert any("`/feishu_auth_useful`" in block for block in markdown_blocks)
+        bot._orchestrator.handle_message_streaming.assert_not_awaited()
+
+    async def test_handle_incoming_event_welcome_event_sends_command_center_card(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path)
+        bot._orchestrator = _make_settings_orchestrator(bot, tmp_path)
+        bot._send_message_to_receive_ref = AsyncMock(return_value="om_help")  # type: ignore[method-assign]
+
+        payload = {
+            "schema": "2.0",
+            "header": {
+                "event_id": "evt_welcome",
+                "event_type": "im.chat.access_event.bot_p2p_chat_entered_v1",
+            },
+            "event": {
+                "open_chat_id": "och_welcome_1",
+                "operator": {"open_id": "ou_sender"},
+            },
+        }
+
+        await bot.handle_incoming_event(payload)
+
+        bot._send_message_to_receive_ref.assert_awaited_once()
+        call = bot._send_message_to_receive_ref.await_args
+        assert call.args[0] == "och_welcome_1"
+        assert call.kwargs["receive_id_type"] == "open_chat_id"
+        assert call.kwargs["msg_type"] == "interactive"
+        content = call.kwargs["content"]
+        assert content["header"]["title"]["content"] == "ControlMesh Command Center"
+
+    async def test_handle_incoming_event_menu_help_sends_command_center_card(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path)
+        bot._orchestrator = _make_settings_orchestrator(bot, tmp_path)
+        bot._send_message_to_receive_ref = AsyncMock(return_value="om_help")  # type: ignore[method-assign]
+
+        payload = {
+            "schema": "2.0",
+            "header": {
+                "event_id": "evt_menu_help",
+                "event_type": "application.bot.menu_v6",
+            },
+            "event": {
+                "event_key": "cm_help",
+                "open_chat_id": "och_menu_1",
+                "operator": {"operator_id": {"open_id": "ou_sender"}},
+            },
+        }
+
+        await bot.handle_incoming_event(payload)
+
+        bot._send_message_to_receive_ref.assert_awaited_once()
+        call = bot._send_message_to_receive_ref.await_args
+        assert call.args[0] == "och_menu_1"
+        assert call.kwargs["receive_id_type"] == "open_chat_id"
+        assert call.kwargs["msg_type"] == "interactive"
+        content = call.kwargs["content"]
+        assert content["header"]["title"]["content"] == "ControlMesh Command Center"
+
+    async def test_handle_incoming_event_menu_settings_sends_settings_card(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path)
+        bot._orchestrator = _make_settings_orchestrator(bot, tmp_path)
+        bot._send_message_to_receive_ref = AsyncMock(return_value="om_settings")  # type: ignore[method-assign]
+
+        payload = {
+            "schema": "2.0",
+            "header": {
+                "event_id": "evt_menu_settings",
+                "event_type": "application.bot.menu_v6",
+            },
+            "event": {
+                "event_key": "cm_settings",
+                "open_chat_id": "och_menu_1",
+                "operator": {"operator_id": {"open_id": "ou_sender"}},
+            },
+        }
+
+        await bot.handle_incoming_event(payload)
+
+        bot._send_message_to_receive_ref.assert_awaited_once()
+        call = bot._send_message_to_receive_ref.await_args
+        assert call.args[0] == "och_menu_1"
+        assert call.kwargs["receive_id_type"] == "open_chat_id"
+        assert call.kwargs["msg_type"] == "interactive"
+        content = call.kwargs["content"]
+        assert content["header"]["title"]["content"] == "ControlMesh Advanced Settings"
+
     async def test_handle_incoming_event_routes_settings_card_action_before_auth_runner(
         self,
         tmp_path: Path,

@@ -49,6 +49,10 @@ from controlmesh.messenger.feishu.bundled_runtime import (
     BundledFeishuRuntimeTurn,
     run_bundled_codex_turn,
 )
+from controlmesh.messenger.feishu.command_center_card import (
+    build_command_center_card,
+    parse_command_center_action,
+)
 from controlmesh.messenger.feishu.media import ResolveMediaRequest, is_supported_media_message_type
 from controlmesh.messenger.feishu.media import resolve_media_text as _resolve_media_text
 from controlmesh.messenger.feishu.media_meta import parse_mp4_duration, prepare_audio_upload
@@ -413,9 +417,15 @@ class FeishuBot:
 
     async def handle_incoming_event(self, payload: dict[str, Any]) -> None:
         if self._is_card_action_event(payload):
+            if await self._handle_command_center_card_action_event(payload):
+                return
             if await self._handle_settings_card_action_event(payload):
                 return
             self._ensure_auth_orchestration_runner().schedule_card_action(payload)
+            return
+        if await self._handle_feishu_menu_event(payload):
+            return
+        if await self._handle_feishu_welcome_event(payload):
             return
         message = await self._parse_incoming_message(payload)
         if message is None:
@@ -517,6 +527,13 @@ class FeishuBot:
         reply_to_message_id: str | None,
         content_key: str | None,
     ) -> bool:
+        if await self._handle_command_center_command(
+            message,
+            reply_to_message_id=reply_to_message_id,
+        ):
+            if content_key:
+                self._recent_content_dedup.check(content_key)
+            return True
         if await self._handle_native_tool_command(message, reply_to_message_id=reply_to_message_id):
             if content_key:
                 self._recent_content_dedup.check(content_key)
@@ -529,6 +546,22 @@ class FeishuBot:
                 self._recent_content_dedup.check(content_key)
             return True
         return False
+
+    async def _handle_command_center_command(
+        self,
+        message: FeishuIncomingText,
+        *,
+        reply_to_message_id: str | None,
+    ) -> bool:
+        command = message.text.strip().split(maxsplit=1)[0].lower()
+        if command not in {"/help", "/start", "/info"}:
+            return False
+        await self._send_card_to_chat_ref(
+            message.chat_id,
+            build_command_center_card(self._effective_config()),
+            reply_to_message_id=reply_to_message_id,
+        )
+        return True
 
     async def _handle_settings_panel_command(
         self,
@@ -557,6 +590,38 @@ class FeishuBot:
             ),
             reply_to_message_id=reply_to_message_id,
         )
+        return True
+
+    async def _handle_command_center_card_action_event(self, payload: dict[str, Any]) -> bool:
+        parsed = parse_command_center_action(payload)
+        if parsed is None:
+            return False
+        if parsed.operator_open_id and not self._sender_allowed(parsed.operator_open_id):
+            logger.info(
+                "Ignoring Feishu command center action from unauthorized operator=%s",
+                parsed.operator_open_id,
+            )
+            return True
+
+        settings_card = build_settings_card(
+            self._effective_config(),
+            selected_tab=parsed.tab,
+        )
+        if parsed.message_id:
+            await self._update_interactive_card(
+                FeishuCardHandle(chat_id=parsed.chat_id or "", message_id=parsed.message_id),
+                settings_card,
+            )
+            return True
+        if parsed.chat_id:
+            await self._send_message_to_receive_ref(
+                parsed.chat_id,
+                receive_id_type=parsed.receive_id_type,
+                msg_type="interactive",
+                content=settings_card,
+            )
+            return True
+        logger.warning("Ignoring Feishu command center action without message or chat id")
         return True
 
     async def _handle_settings_card_action_event(self, payload: dict[str, Any]) -> bool:
@@ -602,6 +667,63 @@ class FeishuBot:
                 note=note,
                 version_info=version_info,
             ),
+        )
+        return True
+
+    async def _handle_feishu_welcome_event(self, payload: dict[str, Any]) -> bool:
+        if self._event_type(payload) != "im.chat.access_event.bot_p2p_chat_entered_v1":
+            return False
+        event = payload.get("event")
+        if not isinstance(event, dict):
+            return True
+        operator_open_id = self._extract_event_operator_open_id(event)
+        if operator_open_id and not self._sender_allowed(operator_open_id):
+            logger.info(
+                "Ignoring Feishu welcome event from unauthorized operator=%s",
+                operator_open_id,
+            )
+            return True
+        target = event.get("open_chat_id")
+        if isinstance(target, str) and target:
+            await self._send_message_to_receive_ref(
+                target,
+                receive_id_type="open_chat_id",
+                msg_type="interactive",
+                content=build_command_center_card(self._effective_config()),
+            )
+        return True
+
+    async def _handle_feishu_menu_event(self, payload: dict[str, Any]) -> bool:
+        if self._event_type(payload) != "application.bot.menu_v6":
+            return False
+        event = payload.get("event")
+        if not isinstance(event, dict):
+            return True
+        operator_open_id = self._extract_event_operator_open_id(event)
+        if operator_open_id and not self._sender_allowed(operator_open_id):
+            logger.info(
+                "Ignoring Feishu menu event from unauthorized operator=%s",
+                operator_open_id,
+            )
+            return True
+        target = event.get("open_chat_id")
+        if not isinstance(target, str) or not target:
+            logger.warning("Ignoring Feishu menu event without open_chat_id")
+            return True
+
+        event_key = event.get("event_key")
+        if event_key == "cm_help":
+            card = build_command_center_card(self._effective_config())
+        elif event_key == "cm_settings":
+            card = build_settings_card(self._effective_config(), selected_tab="streaming")
+        else:
+            return True
+
+        await self._send_message_to_receive_ref(
+            target,
+            receive_id_type="open_chat_id",
+            msg_type="interactive",
+            content=card,
         )
         return True
 
@@ -1136,11 +1258,28 @@ class FeishuBot:
         content: dict[str, object],
         reply_to_message_id: str | None = None,
     ) -> str | None:
+        return await self._send_message_to_receive_ref(
+            chat_ref,
+            receive_id_type="chat_id",
+            msg_type=msg_type,
+            content=content,
+            reply_to_message_id=reply_to_message_id,
+        )
+
+    async def _send_message_to_receive_ref(
+        self,
+        receive_ref: str,
+        *,
+        receive_id_type: str,
+        msg_type: str,
+        content: dict[str, object],
+        reply_to_message_id: str | None = None,
+    ) -> str | None:
         session = await self._ensure_session()
         token = await self._get_tenant_access_token()
         url = f"{self._config.feishu.domain.rstrip('/')}/open-apis/im/v1/messages"
         payload: dict[str, object] = {
-            "receive_id": chat_ref,
+            "receive_id": receive_ref,
             "msg_type": msg_type,
             "content": json.dumps(content, ensure_ascii=False),
         }
@@ -1149,7 +1288,7 @@ class FeishuBot:
         headers = {"Authorization": f"Bearer {token}"}
         async with session.post(
             url,
-            params={"receive_id_type": "chat_id"},
+            params={"receive_id_type": receive_id_type},
             json=payload,
             headers=headers,
         ) as response:
@@ -1171,6 +1310,13 @@ class FeishuBot:
             if isinstance(message_id, str) and message_id:
                 return message_id
         return None
+
+    def _effective_config(self) -> AgentConfig:
+        if self._orchestrator is not None:
+            config = getattr(self._orchestrator, "_config", None)
+            if isinstance(config, AgentConfig):
+                return config
+        return self._config
 
     async def _patch_message(
         self,
@@ -1759,6 +1905,29 @@ class FeishuBot:
         if isinstance(event, dict) and isinstance(event.get("action"), dict):
             return True
         return isinstance(payload.get("action"), dict)
+
+    @staticmethod
+    def _event_type(payload: dict[str, Any]) -> str | None:
+        header = payload.get("header")
+        if not isinstance(header, dict):
+            return None
+        event_type = header.get("event_type")
+        return event_type if isinstance(event_type, str) and event_type else None
+
+    @staticmethod
+    def _extract_event_operator_open_id(event: dict[str, Any]) -> str | None:
+        operator = event.get("operator")
+        if not isinstance(operator, dict):
+            return None
+        open_id = operator.get("open_id")
+        if isinstance(open_id, str) and open_id:
+            return open_id
+        operator_id = operator.get("operator_id")
+        if isinstance(operator_id, dict):
+            nested = operator_id.get("open_id")
+            if isinstance(nested, str) and nested:
+                return nested
+        return None
 
     @staticmethod
     def _extract_sender_id(sender: dict[str, Any]) -> str:
