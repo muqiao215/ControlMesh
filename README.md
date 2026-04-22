@@ -164,6 +164,25 @@ controlmesh service install
 controlmesh api enable
 ```
 
+### 正式发版
+
+正式 GitHub Release 不要让 `gh release create` 隐式建 tag。ControlMesh 仓库内置了一个
+“先定锚、再挂牌”的发版脚本：
+
+```bash
+scripts/release_github.sh v0.21.0 --notes-file /tmp/release-notes.md
+```
+
+它会固定执行这条顺序：
+
+- 校验工作树干净、版本号和 tag 一致
+- 先创建或验证本地 annotated tag
+- 先推分支，再单独推 tag
+- 先核对远端 tag 指向
+- 最后才 `gh release create --verify-tag`
+
+这条脚本的原则是：GitHub Release 只消费已有 tag，不负责创建 tag。
+
 ### 文档
 
 - 安装：[`docs/installation.md`](docs/installation.md)
