@@ -5,12 +5,15 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import urlsplit, urlunsplit
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 from aiogram.filters import Command, CommandStart
@@ -179,6 +182,35 @@ async def _cancel_task(task: asyncio.Task[None] | None) -> None:
             await task
 
 
+def _telegram_proxy_url() -> str | None:
+    """Return the first configured Telegram proxy URL from environment."""
+    for key in (
+        "CONTROLMESH_TELEGRAM_PROXY",
+        "HTTPS_PROXY",
+        "https_proxy",
+        "HTTP_PROXY",
+        "http_proxy",
+    ):
+        value = (os.environ.get(key) or "").strip()
+        if value:
+            return value
+    return None
+
+
+def _redact_proxy_url(url: str) -> str:
+    """Hide proxy credentials before logging."""
+    parts = urlsplit(url)
+    if parts.username is None:
+        return url
+    auth = parts.username
+    if parts.password is not None:
+        auth = f"{auth}:***"
+    host = parts.hostname or ""
+    if parts.port is not None:
+        host = f"{host}:{parts.port}"
+    return urlunsplit((parts.scheme, f"{auth}@{host}", parts.path, parts.query, parts.fragment))
+
+
 class TelegramNotificationService:
     """NotificationService implementation for Telegram."""
 
@@ -210,8 +242,20 @@ class TelegramBot:
         self._orchestrator: Orchestrator | None = None
         self._abort_all_callback: Callable[[], Awaitable[int]] | None = None
 
+        proxy = _telegram_proxy_url()
+        session = None
+        if proxy:
+            logger.info("Telegram bot using proxy %s", _redact_proxy_url(proxy))
+            try:
+                session = AiohttpSession(proxy=proxy)
+            except RuntimeError as exc:
+                raise RuntimeError(
+                    "Telegram proxy support requires aiohttp-socks to be installed"
+                ) from exc
+
         self._bot = Bot(
             token=config.telegram_token,
+            session=session,
             default=DefaultBotProperties(parse_mode=ParseMode.HTML),
         )
         self._notification_service: NotificationService = TelegramNotificationService(
@@ -1532,7 +1576,9 @@ class TelegramBot:
         scoped_chat_ids = list(
             dict.fromkeys([*self._config.allowed_user_ids, *self._config.allowed_group_ids]),
         )
-        scopes = [
+        scopes: list[
+            BotCommandScopeAllPrivateChats | BotCommandScopeAllGroupChats | BotCommandScopeChat
+        ] = [
             BotCommandScopeAllPrivateChats(),
             BotCommandScopeAllGroupChats(),
             *(BotCommandScopeChat(chat_id=chat_id) for chat_id in scoped_chat_ids),

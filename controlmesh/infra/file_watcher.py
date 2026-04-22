@@ -36,9 +36,19 @@ class FileWatcher:
         self._last_mtime = value
 
     async def start(self) -> None:
-        """Begin polling."""
+        """Begin polling.
+
+        Snapshot the current mtime before the first poll so an already-existing
+        file does not immediately trigger a false-positive change event.
+        """
+        if self._task is not None and not self._task.done():
+            return
+        await self.update_mtime()
         self._running = True
-        self._task = asyncio.create_task(self._watch_loop())
+        self._task = asyncio.create_task(
+            self._watch_loop(),
+            name=f"file-watcher:{self._path.name}",
+        )
 
     async def stop(self) -> None:
         """Cancel the polling task."""

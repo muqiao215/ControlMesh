@@ -35,6 +35,7 @@ dependencies = [
     "pydantic>=2.12.5",
     "aiogram>=3.24.0,<4.0.0",
     "aiohttp>=3.9.0,<4.0.0",
+    "aiohttp-socks>=0.10.1,<0.11.0",
     "lark-oapi>=1.5.5",
     "cronsim>=2.7",
     "pyyaml>=6.0.3",

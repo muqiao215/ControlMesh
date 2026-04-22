@@ -30,12 +30,37 @@ _RESTART_BACKOFF_BASE = 5  # seconds, doubles each retry
 
 
 def _config_changed(new: AgentConfig, old: AgentConfig) -> bool:
-    """Detect meaningful config changes that require agent restart."""
+    """Detect meaningful config changes that require agent restart.
+
+    ``transport`` remains the primary transport selector, but identity-sensitive
+    fields may live under any enabled transport in ``transports``. Check every
+    configured transport so multi-transport agents do not miss a required
+    restart when a secondary ingress changes.
+    """
     if new.transport != old.transport:
         return True
     if new.transports != old.transports:
         return True
-    return _TRANSPORT_IDENTITY_CHANGED.get(new.transport, _default_identity_check)(new, old)
+
+    transports = dict.fromkeys([
+        old.transport,
+        *old.transports,
+        new.transport,
+        *new.transports,
+    ])
+    return any(
+        _transport_identity_changed(new, old, transport)
+        for transport in transports
+    )
+
+
+def _transport_identity_changed(
+    new: AgentConfig,
+    old: AgentConfig,
+    transport: str,
+) -> bool:
+    check = _TRANSPORT_IDENTITY_CHANGED.get(transport, _default_identity_check)
+    return check(new, old)
 
 
 def _telegram_identity_check(new: AgentConfig, old: AgentConfig) -> bool:
@@ -48,6 +73,27 @@ def _matrix_identity_check(new: AgentConfig, old: AgentConfig) -> bool:
     )
 
 
+def _feishu_identity_check(new: AgentConfig, old: AgentConfig) -> bool:
+    return (
+        new.feishu.app_id != old.feishu.app_id
+        or new.feishu.app_secret != old.feishu.app_secret
+        or new.feishu.runtime_mode != old.feishu.runtime_mode
+        or new.feishu.domain != old.feishu.domain
+        or new.feishu.listener_host != old.feishu.listener_host
+        or new.feishu.listener_port != old.feishu.listener_port
+        or new.feishu.listener_path != old.feishu.listener_path
+    )
+
+
+def _weixin_identity_check(new: AgentConfig, old: AgentConfig) -> bool:
+    return (
+        new.weixin.enabled != old.weixin.enabled
+        or new.weixin.base_url != old.weixin.base_url
+        or new.weixin.credentials_path != old.weixin.credentials_path
+        or new.weixin.channel_version != old.weixin.channel_version
+    )
+
+
 def _default_identity_check(_new: AgentConfig, _old: AgentConfig) -> bool:
     return False
 
@@ -57,6 +103,8 @@ _IdentityCheck = Callable[[AgentConfig, AgentConfig], bool]
 _TRANSPORT_IDENTITY_CHANGED: dict[str, _IdentityCheck] = {
     "telegram": _telegram_identity_check,
     "matrix": _matrix_identity_check,
+    "feishu": _feishu_identity_check,
+    "weixin": _weixin_identity_check,
 }
 
 
