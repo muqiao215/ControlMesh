@@ -45,7 +45,7 @@ verify_version_matches_tag() {
   local tag="$1"
   local expected="${tag#v}"
 
-  python - "$expected" <<'PY'
+  python3 - "$expected" <<'PY'
 import pathlib
 import re
 import sys
@@ -150,7 +150,7 @@ done
 
 require_cmd git
 require_cmd gh
-require_cmd python
+require_cmd python3
 require_cmd uv
 
 repo_root="$(git rev-parse --show-toplevel)"
