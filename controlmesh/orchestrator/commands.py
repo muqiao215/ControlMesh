@@ -44,7 +44,7 @@ from controlmesh.orchestrator.selectors.settings_selector import (
 from controlmesh.orchestrator.selectors.task_selector import task_selector_start
 from controlmesh.team.contracts import TEAM_TOPOLOGIES, ensure_team_topology
 from controlmesh.text.response_format import SEP, fmt, new_session_text
-from controlmesh.workspace.loader import read_mainmemory
+from controlmesh.workspace.loader import read_file, read_mainmemory
 
 if TYPE_CHECKING:
     from controlmesh.orchestrator.core import Orchestrator
@@ -426,8 +426,15 @@ async def cmd_controlmesh(orch: Orchestrator, key: SessionKey, text: str) -> Orc
 async def cmd_memory(orch: Orchestrator, _key: SessionKey, _text: str) -> OrchestratorResult:
     """Handle /memory."""
     logger.info("Memory requested")
-    content = await asyncio.to_thread(read_mainmemory, orch.paths)
-    if not content.strip():
+    legacy = await asyncio.to_thread(read_mainmemory, orch.paths)
+    authority = await asyncio.to_thread(read_file, orch.paths.authority_memory_path) or ""
+    sections: list[str] = []
+    if authority.strip():
+        sections.extend(["## Authority Memory (v2)", authority.strip()])
+    if legacy.strip():
+        sections.extend(["## Legacy Main Memory", legacy.strip()])
+
+    if not sections:
         return OrchestratorResult(
             text=fmt(
                 t("memory.header"),
@@ -441,7 +448,7 @@ async def cmd_memory(orch: Orchestrator, _key: SessionKey, _text: str) -> Orches
         text=fmt(
             t("memory.header"),
             SEP,
-            content,
+            *sections,
             SEP,
             t("memory.filled_tip"),
         ),

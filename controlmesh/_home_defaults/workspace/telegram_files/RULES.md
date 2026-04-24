@@ -40,4 +40,5 @@ Tool scripts require absolute paths (`--file /absolute/path/...`).
 
 When file processing reveals durable user patterns or preferences
 (e.g., "always transcribe voice notes", preferred formats), update
-`memory_system/MAINMEMORY.md` silently.
+durable memory files silently. Prefer `MEMORY.md`; keep
+`memory_system/MAINMEMORY.md` aligned when compatibility matters.

@@ -222,7 +222,8 @@ can follow up directly with the sub-agent if needed.
 ## Shared Knowledge
 
 `SHAREDMEMORY.md` contains knowledge shared across all agents. Changes are
-automatically synced into every agent's MAINMEMORY.md via the supervisor.
+automatically synced into every agent's MAINMEMORY.md compatibility layer via
+the supervisor.
 
 ```bash
 # View current shared knowledge
@@ -237,7 +238,7 @@ python3 tools/agent_tools/edit_shared_knowledge.py --set "Full new content"
 
 When you learn something that is relevant to ALL agents (server facts, user
 preferences, infrastructure changes), update shared knowledge instead of
-only your own MAINMEMORY.md.
+only your own agent-specific memory files.
 
 ## Removing Sub-Agents
 

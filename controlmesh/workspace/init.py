@@ -10,6 +10,7 @@ import subprocess
 from pathlib import Path
 
 from controlmesh.infra.atomic_io import atomic_text_save
+from controlmesh.memory.store import initialize_memory_v2
 from controlmesh.workspace.cron_tasks import ensure_task_rule_files
 from controlmesh.workspace.paths import ControlMeshPaths
 from controlmesh.workspace.rules_selector import RulesSelector
@@ -331,6 +332,7 @@ def init_workspace(paths: ControlMeshPaths) -> None:
     _smart_merge_config(paths)
     _clean_orphan_symlinks(paths)
     sync_skills(paths)
+    initialize_memory_v2(paths)
     logger.info("Workspace init completed")
 
 

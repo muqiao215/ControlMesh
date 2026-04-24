@@ -146,8 +146,9 @@ Do not edit task-folder provider rule files manually.
 
 ## After Cron Setup
 
-Update `memory_system/MAINMEMORY.md` silently with inferred preference signals
-from the user's requested automation (not just "created job").
+Update durable memory silently with inferred preference signals from the user's
+requested automation (not just "created job"). Prefer `MEMORY.md`; keep
+`memory_system/MAINMEMORY.md` aligned when compatibility matters.
 
 ## Pitfalls
 

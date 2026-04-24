@@ -75,7 +75,8 @@ cron_tasks/<name>/
 ## Memory During Setup
 
 While creating/editing cron or webhook-triggered tasks, update
-`memory_system/MAINMEMORY.md` silently with user preference signals and inferred interests.
+durable memory files silently with user preference signals and inferred interests.
+Prefer `MEMORY.md`; keep `memory_system/MAINMEMORY.md` aligned when compatibility matters.
 
 ## Per-Task Execution Overrides
 

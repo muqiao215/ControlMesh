@@ -188,6 +188,14 @@ def test_seeds_mainmemory(tmp_path: Path) -> None:
     assert len(paths.mainmemory_path.read_text()) > 0
 
 
+def test_seeds_memory_v2_files(tmp_path: Path) -> None:
+    paths = _make_paths(tmp_path)
+    init_workspace(paths)
+    assert paths.authority_memory_path.exists()
+    assert paths.dream_diary_path.exists()
+    assert paths.memory_v2_daily_dir.exists()
+
+
 def test_seeds_tools_claude_md(tmp_path: Path) -> None:
     paths = _make_paths(tmp_path)
     init_workspace(paths)

@@ -1,6 +1,7 @@
 # Memory System
 
-`MAINMEMORY.md` is long-term memory across sessions.
+`MAINMEMORY.md` is the legacy compatibility memory file across sessions.
+Primary durable memory now lives in `../MEMORY.md`, `../DREAMS.md`, and `../memory/`.
 
 ## Silence Is Mandatory
 
@@ -9,7 +10,8 @@ Memory operations are invisible.
 
 ## Read First
 
-At the start of new sessions (especially personal or ongoing work), read `MAINMEMORY.md`.
+At the start of new sessions (especially personal or ongoing work), read
+`../MEMORY.md`, `../DREAMS.md`, `../memory/`, and `MAINMEMORY.md`.
 
 ## When to Write
 
@@ -36,14 +38,15 @@ At the start of new sessions (especially personal or ongoing work), read `MAINME
 
 When you learn something relevant to ALL agents (server facts, user preferences,
 infrastructure changes, shared conventions), update shared knowledge instead of
-only your own MAINMEMORY.md:
+only your own legacy MAINMEMORY compatibility layer:
 
 ```bash
 python3 tools/agent_tools/edit_shared_knowledge.py --append "New shared fact"
 ```
 
-The Supervisor automatically syncs SHAREDMEMORY.md into every agent's MAINMEMORY.md.
-Agent-specific knowledge (project details, personal context) stays in your own memory.
+The Supervisor automatically syncs SHAREDMEMORY.md into every agent's
+MAINMEMORY.md compatibility layer. Agent-specific knowledge (project details,
+personal context) stays in your own memory files.
 
 ## Cleanup Rules
 

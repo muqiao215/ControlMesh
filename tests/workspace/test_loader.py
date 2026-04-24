@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from controlmesh.workspace.loader import read_file, read_mainmemory
+from controlmesh.workspace.loader import read_file, read_mainmemory, read_startup_memory_context
 from controlmesh.workspace.paths import ControlMeshPaths
 
 
@@ -48,3 +48,32 @@ def test_read_mainmemory_exists(tmp_path: Path) -> None:
 def test_read_mainmemory_missing(tmp_path: Path) -> None:
     paths = _make_paths(tmp_path)
     assert read_mainmemory(paths) == ""
+
+
+def test_read_startup_memory_context_prefers_meaningful_authority_and_legacy(tmp_path: Path) -> None:
+    paths = _make_paths(tmp_path)
+    paths.memory_system_dir.mkdir(parents=True)
+    paths.workspace.mkdir(parents=True, exist_ok=True)
+    paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n## Durable Memory\n\n### Fact\n- File-backed context wins.\n",
+        encoding="utf-8",
+    )
+    paths.mainmemory_path.write_text("legacy memory", encoding="utf-8")
+
+    result = read_startup_memory_context(paths)
+
+    assert "Authority Memory (v2)" in result
+    assert "File-backed context wins." in result
+    assert "Legacy Main Memory" in result
+    assert "legacy memory" in result
+
+
+def test_read_startup_memory_context_ignores_empty_authority_template(tmp_path: Path) -> None:
+    paths = _make_paths(tmp_path)
+    paths.workspace.mkdir(parents=True, exist_ok=True)
+    paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n## Durable Memory\n\n### Fact\n\n### Preference\n",
+        encoding="utf-8",
+    )
+
+    assert read_startup_memory_context(paths) == ""

@@ -28,4 +28,5 @@ clear progress/check commands.
 ## Memory
 
 When creating scripts that indicate recurring user workflows or preferences,
-update `memory_system/MAINMEMORY.md` silently.
+update durable memory silently. Prefer `MEMORY.md`; keep
+`memory_system/MAINMEMORY.md` aligned when compatibility matters.

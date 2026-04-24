@@ -9,7 +9,7 @@ Read in this order:
 
 1. the workspace runtime guide (main behavior + Telegram rules)
 2. the workspace tools guide (tool routing)
-3. `workspace/memory_system/MAINMEMORY.md` (long-term context)
+3. `workspace/MEMORY.md`, `workspace/DREAMS.md`, `workspace/memory/`, and `workspace/memory_system/MAINMEMORY.md` (memory context)
 4. the config guide (only for config changes)
 
 ## Top-Level Layout
@@ -56,9 +56,10 @@ for the full agent management command set.
 
 `~/.controlmesh/SHAREDMEMORY.md` contains facts shared across all agents
 (server info, user preferences, infrastructure). Changes are automatically
-synced into every agent's `MAINMEMORY.md` by the Supervisor.
+synced into every agent's `MAINMEMORY.md` compatibility layer by the Supervisor.
 
-- For agent-specific knowledge: use your own `memory_system/MAINMEMORY.md`.
+- For agent-specific knowledge: prefer your own durable memory files
+  (`workspace/MEMORY.md`, `workspace/DREAMS.md`, and `workspace/memory/`).
 - For cross-agent knowledge: use `SHAREDMEMORY.md` (via
   `workspace/tools/agent_tools/edit_shared_knowledge.py`).
 
@@ -70,5 +71,6 @@ Do not manually edit `cron_jobs.json` or `webhooks.json` for normal operations.
 Then tell the user to run `/restart`.
 - Save user-facing generated files in `workspace/output_to_user/` and send with
 `<file:/absolute/path/to/output_to_user/...>`.
-- Update `workspace/memory_system/MAINMEMORY.md` silently when durable user facts
-or preferences are learned.
+- Update durable memory silently when durable user facts or preferences are learned.
+  Prefer `workspace/MEMORY.md`; keep `workspace/memory_system/MAINMEMORY.md`
+  aligned when compatibility matters.

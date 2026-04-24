@@ -22,7 +22,7 @@ from controlmesh.orchestrator.hooks import HookContext
 from controlmesh.orchestrator.registry import OrchestratorResult
 from controlmesh.session import SessionData, SessionKey
 from controlmesh.text.response_format import session_error_text, timeout_error_text
-from controlmesh.workspace.loader import read_mainmemory
+from controlmesh.workspace.loader import read_startup_memory_context
 
 if TYPE_CHECKING:
     from controlmesh.orchestrator.core import Orchestrator
@@ -141,9 +141,9 @@ async def _prepare_normal(  # noqa: PLR0913
 
     append_prompt = None
     if is_new and prompt_policy.include_append_prompt:
-        mainmemory = await asyncio.to_thread(read_mainmemory, orch.paths)
-        if mainmemory.strip():
-            append_prompt = mainmemory
+        memory_context = await asyncio.to_thread(read_startup_memory_context, orch.paths)
+        if memory_context.strip():
+            append_prompt = memory_context
 
         roster = _build_agent_roster(orch)
         if roster:

@@ -15,6 +15,7 @@ from controlmesh.workspace.init import sync_rule_files as sync_rule_files
 from controlmesh.workspace.init import watch_rule_files as watch_rule_files
 from controlmesh.workspace.loader import read_file as read_file
 from controlmesh.workspace.loader import read_mainmemory as read_mainmemory
+from controlmesh.workspace.loader import read_startup_memory_context as read_startup_memory_context
 from controlmesh.workspace.paths import ControlMeshPaths as ControlMeshPaths
 from controlmesh.workspace.paths import resolve_paths as resolve_paths
 from controlmesh.workspace.skill_sync import cleanup_controlmesh_links as cleanup_controlmesh_links
@@ -32,6 +33,7 @@ __all__ = [
     "list_cron_tasks",
     "read_file",
     "read_mainmemory",
+    "read_startup_memory_context",
     "render_cron_task_claude_md",
     "render_task_description_md",
     "resolve_paths",

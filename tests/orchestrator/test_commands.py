@@ -437,8 +437,19 @@ async def test_memory_shows_content(orch: Orchestrator) -> None:
     assert "My Memories" in result.text
 
 
+async def test_memory_shows_authority_memory_content(orch: Orchestrator) -> None:
+    orch.paths.mainmemory_path.write_text("")
+    orch.paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n## Durable Memory\n\n### Decision\n- Keep memory local.\n",
+        encoding="utf-8",
+    )
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory")
+    assert "Keep memory local." in result.text
+
+
 async def test_memory_empty(orch: Orchestrator) -> None:
     orch.paths.mainmemory_path.write_text("")
+    orch.paths.authority_memory_path.write_text("")
     result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory")
     assert "empty" in result.text.lower()
 

@@ -604,7 +604,26 @@ class TestFullRoundTrip:
         await orch.handle_message(KEY, "First message")
 
         request = mock_execute.call_args[0][0]
-        assert request.append_system_prompt == memory_text
+        assert request.append_system_prompt is not None
+        assert memory_text in request.append_system_prompt
+
+    async def test_new_session_injects_authority_memory(
+        self, orch_with_mock_cli: tuple[Orchestrator, AsyncMock]
+    ) -> None:
+        orch, mock_execute = orch_with_mock_cli
+
+        orch.paths.mainmemory_path.write_text("", encoding="utf-8")
+        orch.paths.authority_memory_path.write_text(
+            "# ControlMesh Memory v2\n\n## Durable Memory\n\n### Fact\n- User prefers file-backed context.\n",
+            encoding="utf-8",
+        )
+
+        await orch.handle_message(KEY, "First message")
+
+        request = mock_execute.call_args[0][0]
+        assert request.append_system_prompt is not None
+        assert "Authority Memory (v2)" in request.append_system_prompt
+        assert "User prefers file-backed context." in request.append_system_prompt
 
     async def test_resumed_session_skips_mainmemory_injection(
         self, orch_with_mock_cli: tuple[Orchestrator, AsyncMock]
