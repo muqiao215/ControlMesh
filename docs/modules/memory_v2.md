@@ -7,9 +7,9 @@ Additive memory-v2 primitives inspired by OpenClaw's mature split between:
 - dream diary output (`DREAMS.md`)
 - machine-managed dreaming state (`memory/.dreams/`)
 
-This cut does **not** replace ControlMesh's existing `memory_system/MAINMEMORY.md`.
-It creates a parallel, explicit, file-backed substrate that local search and
-deterministic dreaming work can build on without becoming the source of truth.
+`MEMORY.md` is now the primary durable memory surface.
+`memory_system/MAINMEMORY.md` remains only as a lazy compatibility layer that
+is created when legacy consumers still need it.
 
 ## What Exists in Cut 2
 
@@ -18,6 +18,9 @@ deterministic dreaming work can build on without becoming the source of truth.
 - `workspace/MEMORY.md`
   - human-readable durable authority for promoted items
   - grouped into fixed sections: `Fact`, `Preference`, `Decision`, `Project`, `Person`
+- `workspace/memory_system/MAINMEMORY.md`
+  - legacy compatibility mirror
+  - no longer seeded at workspace init; created lazily by compat sync
 - `workspace/memory/YYYY-MM-DD.md`
   - daily note skeleton with explicit `## Promotion Candidates`
 - `workspace/DREAMS.md`
@@ -58,8 +61,8 @@ Preview/apply helpers live in `controlmesh.memory.commands`:
 - `preview_daily_note_promotions(...)`
 - `apply_daily_note_promotions(...)`
 
-Both helpers are internal utilities for now. They are not wired into the
-runtime command surface yet.
+These helpers now feed the runtime-facing authority memory path and legacy
+compatibility mirror.
 
 ### Local FTS5 search
 
@@ -124,7 +127,7 @@ There is still no autonomous scheduler or background dreaming job in this cut.
 - embeddings / vector search
 - automated cross-note ranking or clustering
 - cron wiring or service startup integration
-- replacing `/memory` or `MAINMEMORY.md`
+- replacing the remaining legacy compatibility read surfaces entirely
 - historical migration
 - OpenClaw runtime assumptions that depend on its own command surface
 
@@ -135,6 +138,7 @@ daily memory, search, and dreaming. ControlMesh needs the same split, but with
 its own constraints:
 
 - file-backed authority stays canonical
+- legacy compatibility is allowed, but only as a mirror of the authority
 - local SQLite is an index, never the authority
 - operations must be reviewable and deterministic
 - no cloud dependency is introduced

@@ -166,6 +166,7 @@ class ControlMeshPaths:
 
     @property
     def mainmemory_path(self) -> Path:
+        """Legacy compatibility memory path, created lazily when compat sync needs it."""
         return self.memory_system_dir / "MAINMEMORY.md"
 
     @property
