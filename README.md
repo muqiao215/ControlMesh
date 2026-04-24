@@ -167,30 +167,13 @@ controlmesh api enable
 QQ 路线现状：
 
 - 官方主线路径：ControlMesh 直接实现官方 QQ Bot runtime，但以 Tencent/OpenClaw `qqbot` 源码作为协议与产品语义的主要参考
-- 已归档实验路径：`controlmesh qq connect`
 - 迁移说明见：[`docs/qqbot-official-pivot.md`](docs/qqbot-official-pivot.md)
-
-归档参考：`controlmesh qq connect` 会输出一个 QQ bridge manifest：
-
-- QQ 侧参考 `cc-connect` 的 OneBot v11 / NapCat 正向 WebSocket 形态
-- 上游复用 ControlMesh 现有 `/ws` API
-- 只用于归档实验桥接，不代表当前官方 QQ 集成路径
-
-当前仓库内的实验实现位于 `plugins/controlmesh-qqbot/`：
-
-- 通过 Bun + TypeScript 连接 OneBot/NapCat 与 ControlMesh `/ws`
-- 群聊按 `(group_id, user_id)` 做独立 session
-- 支持通过插件本地 hook server 接收任务问题与主动通知
-- Python 侧附加到 QQ 的通知是 best-effort，不会反向打断原有 transport 的通知链
-- chat_id 级别的 QQ 群通知如果无法唯一定位到单个用户，会直接拒绝而不是扩大发到整个群
-- Python 侧若要把主动通知 / task-question 转发到 QQ，需要额外设置：
-  - `CONTROLMESH_QQBOT_HOOK_URL`
-  - `CONTROLMESH_QQBOT_HOOK_TOKEN`
 
 重要状态更新：
 
-- 上述 `NapCat / OneBot / controlmesh-qqbot` 路径现在只作为已归档的实验实现保留，不再是后续 QQ 产品主线。
+- 旧的 `NapCat / OneBot / controlmesh-qqbot` 桥接路径已从仓库删除，不再作为可用入口保留。
 - 当前主线方向是官方 QQ Bot 路线：ControlMesh 内置 direct official `qqbot` runtime，并持续以 Tencent/OpenClaw `qqbot` 源码作为 source of truth。
+- 变更说明见：[`docs/release-note-qqbot-official-runtime.md`](docs/release-note-qqbot-official-runtime.md)
 
 ### 正式发版
 
@@ -221,6 +204,7 @@ scripts/release_github.sh v0.21.0 --notes-file /tmp/release-notes.md
 - 微信/WeChat 设置：[`docs/weixin-setup.md`](docs/weixin-setup.md)
 - Case-pack contract：[`docs/case-pack/README.md`](docs/case-pack/README.md)
 - 文档总览：[`docs/README.md`](docs/README.md)
+- QQ 迁移变更说明：[`docs/release-note-qqbot-official-runtime.md`](docs/release-note-qqbot-official-runtime.md)
 - 配置示例：[`config.example.json`](config.example.json)
 
 ### 许可证

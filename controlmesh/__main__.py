@@ -45,7 +45,6 @@ from controlmesh.cli_commands.status import (
     print_usage as _print_usage,
 )
 from controlmesh.cli_commands.tasks import cmd_tasks as _cmd_tasks
-from controlmesh.cli_commands.qq import cmd_qq as _cmd_qq
 from controlmesh.config import (
     DEFAULT_EMPTY_GEMINI_API_KEY,
     AgentConfig,
@@ -531,7 +530,6 @@ def main() -> None:
         "runtime": lambda: _cmd_runtime(args),
         "tasks": lambda: _cmd_tasks(args),
         "feishu": lambda: _cmd_feishu(args),
-        "qq": lambda: _cmd_qq(args),
     }
 
     handler = dispatch.get(action) if action else None

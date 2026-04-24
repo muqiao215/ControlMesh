@@ -451,37 +451,21 @@ class AgentSupervisor:
 
         name = stack.name
         orch.set_task_hub(hub)
-        from controlmesh.qq_bridge.relay import get_qq_bridge_relay
-
-        qq_relay = get_qq_bridge_relay(stack.bot)
 
         # Register this agent's CLI service and workspace paths for task execution
         hub.set_cli_service(name, orch.cli_service)
         hub.set_agent_paths(name, stack.paths)
 
         async def _deliver_task_result(result):
-            if qq_relay is not None and result.transport == "qq":
-                await qq_relay.deliver_task_result(result)
-                return
             await stack.bot.on_task_result(result)
 
         async def _deliver_task_question(
             task_id: str,
             question: str,
             prompt_preview: str,
-            chat_id: int,
-            thread_id: int | None,
+            chat_id,
+            thread_id,
         ) -> None:
-            entry = hub.registry.get(task_id)
-            if qq_relay is not None and entry is not None and entry.transport == "qq":
-                await qq_relay.deliver_task_question(
-                    task_id=task_id,
-                    question=question,
-                    prompt_preview=prompt_preview,
-                    chat_id=chat_id,
-                    thread_id=thread_id,
-                )
-                return
             await stack.bot.on_task_question(task_id, question, prompt_preview, chat_id, thread_id)
 
         hub.set_result_handler(name, _deliver_task_result)

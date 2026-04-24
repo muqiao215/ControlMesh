@@ -17,7 +17,7 @@ Protocol and product-semantics source of truth:
 - Tencent `tencent-connect/openclaw-qqbot`
 - related official/OpenClaw qqbot sources as reference/spec only
 
-Archived route:
+Removed route:
 
 ```text
 QQ / NapCat / OneBot v11
@@ -25,7 +25,8 @@ QQ / NapCat / OneBot v11
   -> ControlMesh /ws API
 ```
 
-That archived route remains in this repository only as experimental reference.
+That old bridge route has now been removed from the repository. It is no longer
+shipped as a runnable or documented compatibility layer.
 
 ## What Changed
 
@@ -58,9 +59,9 @@ real:
 - inline-button callback surface for `c2c/group`
 - C2C typing/input-notify keepalive
 
-## What Stays Archived
+## What Was Removed
 
-The following remain archive/reference-only and should not be treated as the
+The following old bridge surfaces were deleted and should not be treated as the
 forward QQ product path:
 
 - `plugins/controlmesh-qqbot/`
@@ -72,11 +73,11 @@ forward QQ product path:
 
 ## What Still Matters From The Old Bridge
 
-The archived bridge remains useful for:
+The deleted bridge still matters only as historical product context:
 
 - early product expectation examples
 - fail-closed behavior around ambiguous recipient identity
-- archive-only reference for bridge manifest / `/ws` adapter shape
+- a reminder not to rebuild the old `/ws` bridge unless a fresh requirement justifies it
 
 It is not the source of truth for the official runtime anymore.
 
@@ -105,4 +106,4 @@ For future QQ work:
 2. prefer CM-direct implementations only when the boundary is clean
 3. keep plugin/runtime/helper glue as reference-only unless a new CM-owned
    subset is clearly justified
-4. keep the old bridge archived, available, and clearly non-primary
+4. do not reintroduce the old bridge unless a new requirement justifies it
