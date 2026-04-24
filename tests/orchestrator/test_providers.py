@@ -114,6 +114,12 @@ class TestResolveSessionDirective:
         assert result is not None
         assert result == ("claw", "sonnet")
 
+    def test_provider_name_claw_code_alias(self) -> None:
+        pm = _pm(model="sonnet", provider="claw")
+        result = pm.resolve_session_directive("claw-code")
+        assert result is not None
+        assert result == ("claw", "sonnet")
+
     def test_provider_name_opencode(self) -> None:
         pm = _pm(model="openai/gpt-4.1", provider="opencode")
         result = pm.resolve_session_directive("opencode")
@@ -295,7 +301,7 @@ class TestActiveProviderName:
 
     def test_claw(self) -> None:
         pm = _pm(model="sonnet", provider="claw")
-        assert pm.active_provider_name == "Claw"
+        assert pm.active_provider_name == "Claw-Code"
 
     def test_opencode(self) -> None:
         pm = _pm(model="openai/gpt-4.1", provider="opencode")

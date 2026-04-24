@@ -28,6 +28,41 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _EXPLICIT_RUNTIME_PROVIDERS = frozenset({"openai_agents", "claw", "opencode"})
+_PROVIDER_NAME_ALIASES = {"claw-code": "claw"}
+_PROVIDER_DISPLAY_NAMES = {
+    "claude": "Claude Code",
+    "codex": "Codex",
+    "gemini": "Gemini",
+    "claw": "Claw-Code",
+    "opencode": "OpenCode",
+    "openai_agents": "OpenAI Agents",
+}
+_PROVIDER_PUBLIC_TOKENS = {
+    "claude": "claude",
+    "codex": "codex",
+    "gemini": "gemini",
+    "claw": "claw-code",
+    "opencode": "opencode",
+    "openai_agents": "openai_agents",
+}
+
+
+def normalize_provider_name(provider: str | None) -> str:
+    """Normalize external provider aliases to internal provider IDs."""
+    normalized = (provider or "").strip().lower()
+    return _PROVIDER_NAME_ALIASES.get(normalized, normalized)
+
+
+def provider_display_name(provider: str | None) -> str:
+    """Return a human-friendly provider label."""
+    normalized = normalize_provider_name(provider)
+    return _PROVIDER_DISPLAY_NAMES.get(normalized, normalized.title())
+
+
+def provider_public_token(provider: str | None) -> str:
+    """Return the public-facing provider token for commands and docs."""
+    normalized = normalize_provider_name(provider)
+    return _PROVIDER_PUBLIC_TOKENS.get(normalized, normalized)
 
 
 class ProviderManager:
@@ -81,17 +116,7 @@ class ProviderManager:
     def active_provider_name(self) -> str:
         """Human-readable name for the active CLI provider."""
         _model, provider = self.resolve_runtime_target(self._config.model)
-        if provider == "claude":
-            return "Claude Code"
-        if provider == "gemini":
-            return "Gemini"
-        if provider == "claw":
-            return "Claw"
-        if provider == "opencode":
-            return "OpenCode"
-        if provider == "openai_agents":
-            return "OpenAI Agents"
-        return "Codex"
+        return provider_display_name(provider)
 
     # -- Auth / init ----------------------------------------------------------
 
@@ -159,6 +184,7 @@ class ProviderManager:
 
     def default_model_for_provider(self, provider: str) -> str:
         """Return the default model ID for a provider, or empty string if unknown."""
+        provider = normalize_provider_name(provider)
         if provider == "claude":
             return self._config.model if self._config.provider == "claude" else "sonnet"
         if provider == "codex":
@@ -186,8 +212,9 @@ class ProviderManager:
         - known model   (``@opus``)  -> (inferred_provider, model)
         - unknown                    -> None
         """
-        if key in ("claude", "codex", "gemini", "claw", "opencode"):
-            return key, self.default_model_for_provider(key)
+        normalized = normalize_provider_name(key)
+        if normalized in ("claude", "codex", "gemini", "claw", "opencode"):
+            return normalized, self.default_model_for_provider(normalized)
         if self.is_known_model(key):
             provider = self._models.provider_for(key)
             return provider, key
@@ -204,12 +231,12 @@ class ProviderManager:
         Only includes authenticated providers.
         """
         provider_meta: dict[str, tuple[str, str]] = {
-            "claude": ("Claude Code", "#F97316"),
-            "gemini": ("Gemini", "#8B5CF6"),
-            "codex": ("Codex", "#10B981"),
-            "claw": ("Claw", "#C084FC"),
-            "opencode": ("OpenCode", "#06B6D4"),
-            "openai_agents": ("OpenAI Agents", "#2563EB"),
+            "claude": (provider_display_name("claude"), "#F97316"),
+            "gemini": (provider_display_name("gemini"), "#8B5CF6"),
+            "codex": (provider_display_name("codex"), "#10B981"),
+            "claw": (provider_display_name("claw"), "#C084FC"),
+            "opencode": (provider_display_name("opencode"), "#06B6D4"),
+            "openai_agents": (provider_display_name("openai_agents"), "#2563EB"),
         }
         providers: list[dict[str, object]] = []
         for pid in sorted(self._available_providers):

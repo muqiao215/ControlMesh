@@ -26,10 +26,12 @@ from _shared import (
     JOBS_PATH,
     detect_rule_filenames,
     load_jobs_or_default,
+    normalize_cli_provider,
     read_user_timezone,
     render_cron_task_claude_md,
     sanitize_name,
     save_jobs,
+    SUPPORTED_PROVIDER_CHOICES,
     update_task_policy,
 )
 
@@ -58,7 +60,8 @@ OPTIONAL:
                   If config has no user_timezone either, falls back to UTC.
 
 EXECUTION OVERRIDES (optional, override global config for this specific job):
-  --provider          CLI provider: 'claude', 'codex', or 'gemini' (defaults to global config)
+  --provider          CLI provider: 'claude', 'codex', 'gemini', 'claw-code', or 'opencode'
+                      (defaults to global config)
   --model             Model name (e.g. 'opus', 'sonnet', 'gpt-5.2-codex')
   --reasoning-effort  Thinking level for Codex: 'low', 'medium', 'high', 'xhigh'
   --cli-parameters    Additional CLI flags as JSON array (e.g. '["--chrome"]' for Claude only)
@@ -224,8 +227,12 @@ def main() -> None:
     )
     parser.add_argument(
         "--provider",
-        choices=["claude", "codex", "gemini"],
-        help="CLI provider for this job (claude, codex, or gemini). If omitted, uses global config.",
+        choices=list(SUPPORTED_PROVIDER_CHOICES),
+        help=(
+            "CLI provider for this job "
+            "(claude, codex, gemini, claw-code, or opencode). "
+            "If omitted, uses global config."
+        ),
     )
     parser.add_argument(
         "--model",
@@ -375,7 +382,7 @@ def main() -> None:
     if args.timezone:
         job["timezone"] = args.timezone.strip()
     if args.provider:
-        job["provider"] = args.provider
+        job["provider"] = normalize_cli_provider(args.provider)
     if args.model:
         job["model"] = args.model
     if args.reasoning_effort:

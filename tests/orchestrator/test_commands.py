@@ -146,7 +146,7 @@ async def test_mode_without_args_appends_runtime_buttons_when_available(orch: Or
 
     assert result.buttons is not None
     rows = result.buttons.rows
-    assert rows[1][0].callback_data == "/mode claw"
+    assert rows[1][0].callback_data == "/mode claw-code"
     assert rows[1][1].callback_data == "/mode opencode"
 
 
@@ -180,6 +180,21 @@ async def test_mode_switch_supports_opencode_runtime_channel(orch: Orchestrator)
     assert session is not None
     assert session.command_mode == "opencode"
     assert session.command_mode_model == "openai/gpt-4.1"
+
+
+async def test_mode_switch_supports_claw_code_runtime_channel(orch: Orchestrator) -> None:
+    key = SessionKey(chat_id=1)
+
+    with patch.object(orch._providers, "default_model_for_provider", return_value="sonnet"):
+        result = await cmd_mode(orch, key, "/mode claw-code")
+
+    assert "Takeover mode: Claw-Code" in result.text
+    assert "sonnet" in result.text
+
+    session = await orch._sessions.get_active(key)
+    assert session is not None
+    assert session.command_mode == "claw"
+    assert session.command_mode_model == "sonnet"
 
 
 async def test_claude_native_on_requires_claude_provider(orch: Orchestrator) -> None:

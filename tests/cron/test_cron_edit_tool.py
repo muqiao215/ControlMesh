@@ -92,6 +92,48 @@ def test_cron_edit_updates_title_description_schedule(tmp_path: Path) -> None:
     assert job["schedule"] == "30 7 * * 1-5"
 
 
+def test_cron_edit_normalizes_claw_code_provider_alias(tmp_path: Path) -> None:
+    _add_job(tmp_path, "provider-edit")
+
+    result = _run(
+        tmp_path,
+        TOOL_EDIT,
+        [
+            "provider-edit",
+            "--provider",
+            "claw-code",
+            "--model",
+            "sonnet",
+        ],
+    )
+    assert result.returncode == 0
+
+    job = _job(tmp_path, "provider-edit")
+    assert job["provider"] == "claw"
+    assert job["model"] == "sonnet"
+
+
+def test_cron_edit_accepts_opencode_provider(tmp_path: Path) -> None:
+    _add_job(tmp_path, "provider-opencode")
+
+    result = _run(
+        tmp_path,
+        TOOL_EDIT,
+        [
+            "provider-opencode",
+            "--provider",
+            "opencode",
+            "--model",
+            "openai/gpt-4.1",
+        ],
+    )
+    assert result.returncode == 0
+
+    job = _job(tmp_path, "provider-opencode")
+    assert job["provider"] == "opencode"
+    assert job["model"] == "openai/gpt-4.1"
+
+
 def test_cron_edit_rename_updates_json_and_folder(tmp_path: Path) -> None:
     _add_job(tmp_path, "old-name")
     old_dir = tmp_path / "workspace" / "cron_tasks" / "old-name"

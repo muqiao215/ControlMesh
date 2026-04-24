@@ -197,9 +197,9 @@ def default_capability_registry() -> CapabilityRegistry:
         ),
         "claw": CapabilityProfile(
             profile_id="claw",
-            display_name="Claw runtime",
+            display_name="Claw-Code runtime",
             notes=(
-                "Treat claw as an external coding runtime channel. "
+                "Treat claw-code as an external coding runtime channel. "
                 "Prefer conservative routing until its JSON/session contract is hardened."
             ),
             confidences=MappingProxyType(

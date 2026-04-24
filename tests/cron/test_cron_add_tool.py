@@ -67,6 +67,44 @@ def test_cron_add_creates_json_and_folder(tmp_path: Path) -> None:
     assert (task_dir / "scripts").is_dir()
 
 
+def test_cron_add_accepts_claw_code_provider_alias(tmp_path: Path) -> None:
+    result = _run_tool(
+        tmp_path,
+        [
+            *_full_args("claw-job"),
+            "--provider",
+            "claw-code",
+            "--model",
+            "sonnet",
+        ],
+    )
+    assert result.returncode == 0
+
+    data = json.loads((tmp_path / "cron_jobs.json").read_text(encoding="utf-8"))
+    job = next(j for j in data["jobs"] if j["id"] == "claw-job")
+    assert job["provider"] == "claw"
+    assert job["model"] == "sonnet"
+
+
+def test_cron_add_accepts_opencode_provider(tmp_path: Path) -> None:
+    result = _run_tool(
+        tmp_path,
+        [
+            *_full_args("opencode-job"),
+            "--provider",
+            "opencode",
+            "--model",
+            "openai/gpt-4.1",
+        ],
+    )
+    assert result.returncode == 0
+
+    data = json.loads((tmp_path / "cron_jobs.json").read_text(encoding="utf-8"))
+    job = next(j for j in data["jobs"] if j["id"] == "opencode-job")
+    assert job["provider"] == "opencode"
+    assert job["model"] == "openai/gpt-4.1"
+
+
 def test_cron_add_duplicate_exits_1(tmp_path: Path) -> None:
     _run_tool(tmp_path, _full_args("dup"))
     result = _run_tool(tmp_path, _full_args("dup"))

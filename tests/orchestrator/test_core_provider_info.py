@@ -93,7 +93,7 @@ class TestBuildProviderInfo:
         pm._config.model = "sonnet"
         info = pm.build_provider_info(obs)
         assert info[0]["id"] == "claw"
-        assert info[0]["name"] == "Claw"
+        assert info[0]["name"] == "Claw-Code"
         assert info[0]["color"] == "#C084FC"
         assert info[0]["models"] == ["sonnet"]
 

@@ -19,9 +19,11 @@ from typing import Any
 from _shared import (
     CRON_TASKS_DIR,
     JOBS_PATH,
+    SUPPORTED_PROVIDER_CHOICES,
     available_job_ids,
     find_job_by_id_or_task_folder,
     load_jobs_strict,
+    normalize_cli_provider,
     render_cron_task_claude_md,
     safe_task_dir,
     sanitize_name,
@@ -47,6 +49,10 @@ CHANGES:
   --quiet-start <hour>       Start of quiet hours (0-23, job won't run during this time)
   --quiet-end <hour>         End of quiet hours (0-23, exclusive)
   --dependency "<name>"      Resource dependency for sequential execution (e.g. 'chrome_browser')
+  --provider "<name>"        Change CLI provider (claude, codex, gemini, claw-code, opencode)
+  --model "<name>"           Change model name
+  --reasoning-effort <lvl>   Change thinking level (low, medium, high, xhigh)
+  --cli-parameters "<json>"  Change CLI flags as JSON array
   --clear-quiet-hours        Remove quiet hour settings (use global config)
   --clear-dependency         Remove dependency (allow parallel execution)
   --enable                   Set enabled=true
@@ -104,6 +110,21 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--dependency",
         help="Resource dependency (e.g. 'chrome_browser'). Jobs with same dependency run sequentially.",
+    )
+    parser.add_argument(
+        "--provider",
+        choices=list(SUPPORTED_PROVIDER_CHOICES),
+        help="Change CLI provider (claude, codex, gemini, claw-code, or opencode).",
+    )
+    parser.add_argument("--model", help="Change model name")
+    parser.add_argument(
+        "--reasoning-effort",
+        choices=["low", "medium", "high", "xhigh"],
+        help="Change thinking level (Codex only)",
+    )
+    parser.add_argument(
+        "--cli-parameters",
+        help="Change CLI flags as JSON array (e.g. '[\"--chrome\"]')",
     )
     parser.add_argument(
         "--clear-quiet-hours",
@@ -164,6 +185,19 @@ def _has_policy_changes(args: argparse.Namespace) -> bool:
             args.publish_no_review,
         ]
     )
+
+
+def _parse_cli_parameters(raw: str) -> list[str]:
+    """Parse and validate ``--cli-parameters`` JSON."""
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        msg = f"Invalid --cli-parameters JSON: {exc}"
+        raise ValueError(msg) from exc
+    if not isinstance(parsed, list) or not all(isinstance(item, str) for item in parsed):
+        msg = "--cli-parameters must be a JSON array of strings"
+        raise ValueError(msg)
+    return parsed
 
 
 def _publish_enabled_value(args: argparse.Namespace) -> bool | None:
@@ -280,6 +314,28 @@ def _apply_updates(args: argparse.Namespace, job: dict[str, Any]) -> tuple[list[
             job["dependency"] = dep_val
             updated_fields.append("dependency")
 
+    if args.provider is not None:
+        provider = normalize_cli_provider(args.provider)
+        if job.get("provider") != provider:
+            job["provider"] = provider
+            updated_fields.append("provider")
+
+    if args.model is not None:
+        model = args.model.strip()
+        if job.get("model", "") != model:
+            job["model"] = model
+            updated_fields.append("model")
+
+    if args.reasoning_effort is not None and job.get("reasoning_effort") != args.reasoning_effort:
+        job["reasoning_effort"] = args.reasoning_effort
+        updated_fields.append("reasoning_effort")
+
+    if args.cli_parameters is not None:
+        cli_parameters = _parse_cli_parameters(args.cli_parameters)
+        if job.get("cli_parameters") != cli_parameters:
+            job["cli_parameters"] = cli_parameters
+            updated_fields.append("cli_parameters")
+
     if args.clear_quiet_hours:
         if "quiet_start" in job or "quiet_end" in job:
             job.pop("quiet_start", None)
@@ -322,6 +378,10 @@ def main() -> None:
             args.quiet_start is not None,
             args.quiet_end is not None,
             args.dependency is not None,
+            args.provider is not None,
+            args.model is not None,
+            args.reasoning_effort is not None,
+            args.cli_parameters is not None,
             args.clear_quiet_hours,
             args.clear_dependency,
             args.enable,

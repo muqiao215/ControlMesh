@@ -10,7 +10,7 @@ Usage:
 
 Options:
     --name NAME        Human-readable task name (e.g. "Flugsuche Paris")
-    --provider PROV    Override provider (claude, codex, gemini)
+    --provider PROV    Override provider (claude, codex, gemini, claw-code, opencode)
     --model MODEL      Override model (opus, sonnet, flash, etc.)
     --thinking LEVEL   Reasoning effort for codex (low, medium, high)
 
@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import os
 import sys
+
+from controlmesh.orchestrator.providers import normalize_provider_name
 
 
 _HELP_FLAGS = {"--help", "-h"}
@@ -81,7 +83,7 @@ def main() -> None:
     if name:
         body["name"] = name
     if provider:
-        body["provider"] = provider
+        body["provider"] = normalize_provider_name(provider)
     if model:
         body["model"] = model
     if thinking:

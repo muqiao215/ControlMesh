@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from controlmesh.cron.policy import default_task_policy, load_task_policy, task_policy_path
+from controlmesh.orchestrator.providers import normalize_provider_name
 from controlmesh._home_defaults.workspace.tools._tool_shared import (
     available_ids,
     find_by_id,
@@ -27,6 +28,7 @@ CRON_TASKS_DIR = CONTROLMESH_HOME / "workspace" / "cron_tasks"
 
 # Provider rule files — only create for authenticated providers.
 _RULE_FILENAMES = ("CLAUDE.md", "AGENTS.md", "GEMINI.md")
+SUPPORTED_PROVIDER_CHOICES = ("claude", "codex", "gemini", "claw-code", "opencode")
 
 
 def read_user_timezone() -> str:
@@ -51,6 +53,11 @@ def detect_rule_filenames() -> list[str]:
     """
     found = [name for name in _RULE_FILENAMES if (CRON_TASKS_DIR / name).is_file()]
     return found or ["CLAUDE.md"]
+
+
+def normalize_cli_provider(provider: str | None) -> str:
+    """Normalize public provider input to the stored provider ID."""
+    return normalize_provider_name(provider)
 
 
 def render_cron_task_claude_md(name: str) -> str:

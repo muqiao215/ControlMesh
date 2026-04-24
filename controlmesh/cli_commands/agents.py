@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import json
 
+import questionary
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
 from controlmesh.i18n import t_rich
+from controlmesh.orchestrator.providers import normalize_provider_name
 from controlmesh.workspace.paths import ControlMeshPaths, resolve_paths
 
 _console = Console()
+_AGENT_PROVIDER_CHOICES = ["claude", "codex", "gemini", "claw-code", "opencode"]
 
 _AGENTS_SUBCOMMANDS = frozenset({"list", "add", "remove"})
 
@@ -197,8 +200,6 @@ def agents_list() -> None:
 
 def agents_add(rest: list[str]) -> None:
     """Add a new sub-agent interactively."""
-    import questionary
-
     paths = resolve_paths()
     agents = load_agents_registry(paths)
     name = validate_agent_name(rest[0] if rest else None, agents)
@@ -233,7 +234,7 @@ def agents_add(rest: list[str]) -> None:
 
     provider: str | None = questionary.select(
         t_rich("agents.add.prompt_provider"),
-        choices=["claude", "codex", "gemini"],
+        choices=_AGENT_PROVIDER_CHOICES,
         default="claude",
     ).ask()
     if provider is None:
@@ -253,7 +254,7 @@ def agents_add(rest: list[str]) -> None:
         "telegram_token": token.strip(),
         "allowed_user_ids": user_ids,
         "allowed_group_ids": group_ids,
-        "provider": provider,
+        "provider": normalize_provider_name(provider),
         "model": model.strip(),
     }
     agents.append(new_agent)
@@ -269,8 +270,6 @@ def agents_add(rest: list[str]) -> None:
 
 def agents_remove(rest: list[str]) -> None:
     """Remove a sub-agent from agents.json."""
-    import questionary
-
     name = rest[0] if rest else None
     if not name:
         _console.print(t_rich("agents.remove.usage"))
