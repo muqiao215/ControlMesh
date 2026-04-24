@@ -19,6 +19,7 @@ from controlmesh.history.catalog import (
 )
 from controlmesh.i18n import t
 from controlmesh.infra.install import detect_install_mode
+from controlmesh.infra.updater import check_source_upgrade_status
 from controlmesh.infra.version import check_latest_version, get_current_version
 from controlmesh.orchestrator.registry import OrchestratorResult
 from controlmesh.orchestrator.providers import (
@@ -550,13 +551,57 @@ async def cmd_cron(orch: Orchestrator, _key: SessionKey, _text: str) -> Orchestr
 async def cmd_upgrade(_orch: Orchestrator, _key: SessionKey, _text: str) -> OrchestratorResult:
     """Handle /upgrade: check for updates and offer upgrade."""
     logger.info("Upgrade check requested")
+    current = get_current_version()
 
     if detect_install_mode() == "dev":
+        status = await check_source_upgrade_status(current_version=current)
+        current_label = f"{current} ({status.current_commit[:7]})" if status.current_commit else current
+        if status.actionable:
+            keyboard = ButtonGrid(
+                rows=[
+                    [
+                        Button(
+                            text=t("upgrade.btn_yes"),
+                            callback_data="upg:yes:source",
+                        ),
+                        Button(text=t("upgrade.btn_not_now"), callback_data="upg:no"),
+                    ],
+                ]
+            )
+            target_label = status.upstream or "upstream"
+            behind_label = f"{status.behind} commit{'s' if status.behind != 1 else ''}"
+            return OrchestratorResult(
+                text=fmt(
+                    t("upgrade.available_header"),
+                    SEP,
+                    (
+                        f"Installed: `{current_label}`\n"
+                        f"New:       `{target_label}` ({behind_label})\n\n"
+                        "Source checkout can fast-forward safely. Upgrade now?"
+                    ),
+                ),
+                buttons=keyboard,
+            )
+
+        if status.message.startswith("Source checkout already matches upstream"):
+            latest_label = status.upstream or current_label
+            return OrchestratorResult(
+                text=fmt(
+                    t("upgrade.up_to_date_header"),
+                    SEP,
+                    (
+                        f"Installed: `{current_label}`\n"
+                        f"Latest:    `{latest_label}`\n\n"
+                        "Your source checkout already matches upstream."
+                    ),
+                ),
+            )
+
         return OrchestratorResult(
             text=fmt(
-                t("upgrade.dev_header"),
+                "**Source Upgrade Blocked**",
                 SEP,
-                t("upgrade.dev_body"),
+                status.message or "Source upgrade is not currently actionable.",
             ),
         )
 

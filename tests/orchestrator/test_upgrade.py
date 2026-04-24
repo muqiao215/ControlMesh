@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import patch
 
+from controlmesh.infra.updater import SourceUpgradeStatus
 from controlmesh.infra.version import VersionInfo
 from controlmesh.orchestrator.commands import cmd_upgrade
 from controlmesh.orchestrator.core import Orchestrator
@@ -94,9 +96,56 @@ class TestCmdUpgrade:
         assert any(b.callback_data == "upg:cl:2.0.0" for b in all_buttons)
         assert any(b.callback_data == "upg:yes:2.0.0" for b in all_buttons)
 
-    async def test_dev_mode_rejects_upgrade(self, orch: Orchestrator) -> None:
-        with patch("controlmesh.orchestrator.commands.detect_install_mode", return_value="dev"):
+    async def test_dev_mode_surfaces_source_upgrade_without_release_metadata(self, orch: Orchestrator) -> None:
+        with (
+            patch("controlmesh.orchestrator.commands.detect_install_mode", return_value="dev"),
+            patch(
+                "controlmesh.orchestrator.commands.check_source_upgrade_status",
+                return_value=SourceUpgradeStatus(
+                    current_version="1.0.0",
+                    repo_root=Path("/repo/controlmesh"),
+                    current_commit="abcdef123456",
+                    branch="main",
+                    upstream="origin/main",
+                    behind=3,
+                    actionable=True,
+                    message="Source checkout can fast-forward `main` -> `origin/main` (3 commits behind).",
+                    output="status output",
+                ),
+            ) as mock_status,
+            patch("controlmesh.orchestrator.commands.check_latest_version") as mock_release,
+        ):
             result = await cmd_upgrade(orch, 1, "/upgrade")
 
-        assert "source" in result.text.lower() or "git pull" in result.text.lower()
+        assert "Update Available" in result.text
+        assert result.buttons is not None
+        all_buttons = [b for row in result.buttons.rows for b in row]
+        assert any(b.callback_data == "upg:yes:source" for b in all_buttons)
+        mock_status.assert_called_once()
+        mock_release.assert_not_called()
+
+    async def test_dev_mode_reports_blocked_source_upgrade_without_release_check(
+        self, orch: Orchestrator
+    ) -> None:
+        with (
+            patch("controlmesh.orchestrator.commands.detect_install_mode", return_value="dev"),
+            patch(
+                "controlmesh.orchestrator.commands.check_source_upgrade_status",
+                return_value=SourceUpgradeStatus(
+                    current_version="1.0.0",
+                    repo_root=Path("/repo/controlmesh"),
+                    current_commit="abcdef123456",
+                    branch="main",
+                    actionable=False,
+                    message="Refusing source upgrade: worktree has uncommitted or untracked changes.",
+                    output="dirty worktree",
+                ),
+            ),
+            patch("controlmesh.orchestrator.commands.check_latest_version") as mock_release,
+        ):
+            result = await cmd_upgrade(orch, 1, "/upgrade")
+
+        assert "Source Upgrade Blocked" in result.text
+        assert "worktree" in result.text.lower()
         assert result.buttons is None
+        mock_release.assert_not_called()

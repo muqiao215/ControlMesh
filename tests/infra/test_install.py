@@ -12,7 +12,13 @@ class TestDetectInstallMode:
     """Test runtime installation method detection."""
 
     def test_pipx_detected_from_sys_prefix(self) -> None:
-        with patch("controlmesh.infra.install.sys") as mock_sys:
+        mock_dist = MagicMock()
+        mock_dist.read_text.return_value = None
+
+        with (
+            patch("controlmesh.infra.install.sys") as mock_sys,
+            patch("controlmesh.infra.install.distribution", return_value=mock_dist),
+        ):
             mock_sys.prefix = "/home/user/.local/share/pipx/venvs/controlmesh"
             assert detect_install_mode() == "pipx"
 
@@ -27,6 +33,23 @@ class TestDetectInstallMode:
         ):
             mock_sys.prefix = "/home/user/venv"
             assert detect_install_mode() == "dev"
+
+    def test_editable_install_keeps_local_source_path(self) -> None:
+        direct_url = json.dumps({"dir_info": {"editable": True}, "url": "file:///src/project"})
+        mock_dist = MagicMock()
+        mock_dist.read_text.return_value = direct_url
+
+        with (
+            patch("controlmesh.infra.install.sys") as mock_sys,
+            patch("controlmesh.infra.install.distribution", return_value=mock_dist),
+        ):
+            mock_sys.prefix = "/home/user/venv"
+            info = detect_install_info()
+
+        assert info.mode == "dev"
+        assert info.source == "dev"
+        assert info.url == "file:///src/project"
+        assert info.local_path == "/src/project"
 
     def test_pip_install_from_pypi(self) -> None:
         mock_dist = MagicMock()
@@ -61,7 +84,13 @@ class TestDetectInstallMode:
             assert detect_install_mode() == "dev"
 
     def test_pipx_path_variant_windows(self) -> None:
-        with patch("controlmesh.infra.install.sys") as mock_sys:
+        mock_dist = MagicMock()
+        mock_dist.read_text.return_value = None
+
+        with (
+            patch("controlmesh.infra.install.sys") as mock_sys,
+            patch("controlmesh.infra.install.distribution", return_value=mock_dist),
+        ):
             mock_sys.prefix = "C:\\Users\\me\\AppData\\Local\\pipx\\venvs\\controlmesh"
             assert detect_install_mode() == "pipx"
 

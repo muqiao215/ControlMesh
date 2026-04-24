@@ -315,6 +315,93 @@ class TestPerformUpgradePipeline:
             "force_reinstall": True,
         }
 
+    async def test_dev_install_fast_forwards_and_refreshes_editable_install(self) -> None:
+        with (
+            patch(
+                "controlmesh.infra.updater.detect_install_info",
+                return_value=InstallInfo(
+                    mode="dev",
+                    source="dev",
+                    local_path="/repo/controlmesh",
+                ),
+            ),
+            patch(
+                "controlmesh.infra.updater._resolve_source_repo_root",
+                new=AsyncMock(return_value=(Path("/repo/controlmesh"), "repo-root")),
+            ),
+            patch(
+                "controlmesh.infra.updater._read_source_state",
+                new=AsyncMock(return_value=InstalledState(version="1.0.0", commit_id="old123")),
+            ),
+            patch(
+                "controlmesh.infra.updater._git_output",
+                new=AsyncMock(
+                    side_effect=[
+                        (True, "main"),
+                        (True, ""),
+                        (True, "fetch-ok"),
+                        (True, "origin/main"),
+                        (True, "0\t3"),
+                        (True, "pull-ok"),
+                    ]
+                ),
+            ),
+            patch(
+                "controlmesh.infra.updater._run_upgrade_command",
+                new=AsyncMock(return_value=(True, "reinstall-ok")),
+            ) as mock_run,
+            patch(
+                "controlmesh.infra.updater._wait_for_source_state_change",
+                new=AsyncMock(return_value=InstalledState(version="1.0.0", commit_id="new456")),
+            ),
+        ):
+            changed, version, output = await perform_upgrade_pipeline(current_version="1.0.0")
+
+        assert changed is True
+        assert version == "1.0.0"
+        assert "pull-ok" in output
+        assert "reinstall-ok" in output
+        assert mock_run.call_args.kwargs["cwd"] == "/repo/controlmesh"
+
+    async def test_dev_install_refuses_dirty_worktree(self) -> None:
+        with (
+            patch(
+                "controlmesh.infra.updater.detect_install_info",
+                return_value=InstallInfo(
+                    mode="dev",
+                    source="dev",
+                    local_path="/repo/controlmesh",
+                ),
+            ),
+            patch(
+                "controlmesh.infra.updater._resolve_source_repo_root",
+                new=AsyncMock(return_value=(Path("/repo/controlmesh"), "repo-root")),
+            ),
+            patch(
+                "controlmesh.infra.updater._read_source_state",
+                new=AsyncMock(return_value=InstalledState(version="1.0.0", commit_id="old123")),
+            ),
+            patch(
+                "controlmesh.infra.updater._git_output",
+                new=AsyncMock(
+                    side_effect=[
+                        (True, "main"),
+                        (True, " M controlmesh/infra/updater.py\n?? notes.txt"),
+                    ]
+                ),
+            ),
+            patch(
+                "controlmesh.infra.updater._run_upgrade_command",
+                new=AsyncMock(return_value=(True, "should-not-run")),
+            ) as mock_run,
+        ):
+            changed, version, output = await perform_upgrade_pipeline(current_version="1.0.0")
+
+        assert changed is False
+        assert version == "1.0.0"
+        assert "worktree has uncommitted or untracked changes" in output
+        mock_run.assert_not_called()
+
 
 class TestBuildUpgradeCommand:
     """Test source-aware upgrade command construction."""
