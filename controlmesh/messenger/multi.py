@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 
 from controlmesh.bus.bus import MessageBus
 from controlmesh.bus.lock_pool import LockPool
+from controlmesh.messenger.address import ChatRef, TopicRef
 from controlmesh.messenger.notifications import CompositeNotificationService
 
 if TYPE_CHECKING:
@@ -109,8 +110,8 @@ class MultiBotAdapter:
         task_id: str,
         question: str,
         prompt_preview: str,
-        chat_id: int,
-        thread_id: int | None = None,
+        chat_id: ChatRef,
+        thread_id: TopicRef = None,
     ) -> None:
         for bot in self._all:
             await bot.on_task_question(task_id, question, prompt_preview, chat_id, thread_id)

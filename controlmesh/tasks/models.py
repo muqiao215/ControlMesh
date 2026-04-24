@@ -7,16 +7,19 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from controlmesh.messenger.address import ChatRef, TopicRef
+
 
 @dataclass(slots=True)
 class TaskSubmit:
     """Input for creating a background task."""
 
-    chat_id: int
+    chat_id: ChatRef
     prompt: str
     message_id: int
-    thread_id: int | None
+    thread_id: TopicRef
     parent_agent: str
+    transport: str = "tg"
     name: str = ""
     provider_override: str = ""
     model_override: str = ""
@@ -29,13 +32,14 @@ class TaskEntry:
     """Persisted task metadata."""
 
     task_id: str
-    chat_id: int
+    chat_id: ChatRef
     parent_agent: str
     name: str
     prompt_preview: str
     provider: str
     model: str
     status: str  # "running" | "done" | "failed" | "cancelled" | "waiting"
+    transport: str = "tg"
     topology: str = ""
     session_id: str = ""
     created_at: float = field(default_factory=time.time)
@@ -49,7 +53,7 @@ class TaskEntry:
     original_prompt: str = ""
     thinking: str = ""
     tasks_dir: str = ""  # Agent's tasks directory (for per-agent folder resolution)
-    thread_id: int | None = None  # Forum topic ID (for routing results back to topic)
+    thread_id: TopicRef = None  # Forum topic ID (for routing results back to topic)
 
     def to_dict(self) -> dict[str, object]:
         d: dict[str, object] = {
@@ -60,6 +64,7 @@ class TaskEntry:
             "prompt_preview": self.prompt_preview,
             "provider": self.provider,
             "model": self.model,
+            "transport": self.transport,
             "topology": self.topology,
             "status": self.status,
             "session_id": self.session_id,
@@ -88,6 +93,7 @@ class TaskEntry:
             prompt_preview=d.get("prompt_preview", ""),
             provider=d.get("provider", ""),
             model=d.get("model", ""),
+            transport=d.get("transport", "tg"),
             topology=d.get("topology", ""),
             status=d.get("status", "running"),
             session_id=d.get("session_id", ""),
@@ -119,7 +125,7 @@ class TaskResult:
     """Outcome delivered to parent agent after task completion."""
 
     task_id: str
-    chat_id: int
+    chat_id: ChatRef
     parent_agent: str
     name: str
     prompt_preview: str
@@ -128,8 +134,9 @@ class TaskResult:
     elapsed_seconds: float
     provider: str
     model: str
+    transport: str = "tg"
     session_id: str = ""
     error: str = ""
     task_folder: str = ""
     original_prompt: str = ""
-    thread_id: int | None = None
+    thread_id: TopicRef = None

@@ -13,6 +13,8 @@ from controlmesh.config import (
     CodexHooksConfig,
     DockerConfig,
     ModelRegistry,
+    QQBotAccountConfig,
+    QQBotConfig,
     StreamingConfig,
     WeixinConfig,
     deep_merge_config,
@@ -235,6 +237,60 @@ def test_transport_weixin_backward_compat() -> None:
     assert cfg.weixin == WeixinConfig()
     assert cfg.weixin.mode == "ilink"
     assert cfg.weixin.enabled is False
+
+
+def test_transport_qqbot_backward_compat() -> None:
+    cfg = AgentConfig(transport="qqbot")
+    assert cfg.transports == ["qqbot"]
+    assert cfg.transport == "qqbot"
+    assert cfg.qqbot == QQBotConfig()
+
+
+def test_qqbot_account_config_fields() -> None:
+    cfg = QQBotAccountConfig(
+        app_id="1903891442",
+        client_secret="secret",
+        allow_from=["user-a"],
+        group_allow_from=["group-a"],
+        dm_policy="allowlist",
+        group_policy="disabled",
+        group_message_mode="mention_patterns",
+        mention_patterns=["ControlMesh", "@CM"],
+        activate_on_bot_reply=True,
+    )
+    assert cfg.app_id == "1903891442"
+    assert cfg.client_secret == "secret"
+    assert cfg.allow_from == ["user-a"]
+    assert cfg.group_allow_from == ["group-a"]
+    assert cfg.dm_policy == "allowlist"
+    assert cfg.group_policy == "disabled"
+    assert cfg.group_message_mode == "mention_patterns"
+    assert cfg.mention_patterns == ["ControlMesh", "@CM"]
+    assert cfg.activate_on_bot_reply is True
+
+
+def test_qqbot_config_accepts_accounts_mapping() -> None:
+    cfg = AgentConfig(
+        transport="qqbot",
+        qqbot={
+            "app_id": "1903891442",
+            "client_secret": "secret",
+            "accounts": {
+                "bot2": {
+                    "app_id": "1903891443",
+                    "client_secret_file": "/tmp/qqbot-secret.txt",
+                }
+            },
+        },
+    )
+    assert cfg.qqbot.app_id == "1903891442"
+    assert cfg.qqbot.accounts["bot2"].app_id == "1903891443"
+    assert cfg.qqbot.accounts["bot2"].client_secret_file == "/tmp/qqbot-secret.txt"
+
+
+def test_api_config_accepts_string_chat_ref() -> None:
+    cfg = AgentConfig(api={"chat_id": "qqbot:c2c:OPENID"})
+    assert cfg.api.chat_id == "qqbot:c2c:OPENID"
 
 
 def test_transports_multi_sets_primary_transport() -> None:

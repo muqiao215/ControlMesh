@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from controlmesh.i18n import t
+from controlmesh.messenger.address import ChatRef, TopicRef
 
 if TYPE_CHECKING:
     from controlmesh.multiagent.stack import AgentStack
@@ -57,8 +58,8 @@ class AsyncSendOptions:
 
     new_session: bool = False
     summary: str = ""
-    chat_id: int = 0
-    topic_id: int | None = None
+    chat_id: ChatRef = 0
+    topic_id: TopicRef = None
 
 
 @dataclass(slots=True)
@@ -73,8 +74,8 @@ class AsyncInterAgentTask:
     summary: str = ""
     timestamp: float = field(default_factory=time.time)
     asyncio_task: asyncio.Task[None] | None = field(default=None, repr=False)
-    chat_id: int = 0
-    topic_id: int | None = None
+    chat_id: ChatRef = 0
+    topic_id: TopicRef = None
 
 
 @dataclass(slots=True)
@@ -92,8 +93,8 @@ class AsyncInterAgentResult:
     session_name: str = ""
     provider_switch_notice: str = ""
     original_message: str = ""
-    chat_id: int = 0
-    topic_id: int | None = None
+    chat_id: ChatRef = 0
+    topic_id: TopicRef = None
 
 
 AsyncResultCallback = Callable[["AsyncInterAgentResult"], Awaitable[None]]

@@ -49,8 +49,10 @@ class AgentStack:
         await asyncio.to_thread(init_workspace, paths)
 
         from controlmesh.messenger.registry import create_bot
+        from controlmesh.qq_bridge.relay import attach_qq_bridge_relay
 
         bot = create_bot(config, agent_name=name)
+        attach_qq_bridge_relay(bot)
 
         logger.info(
             "AgentStack created: name=%s home=%s main=%s transport=%s",

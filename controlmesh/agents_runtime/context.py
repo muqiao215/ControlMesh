@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from controlmesh.messenger.address import ChatRef, TopicRef
+
 if False:  # pragma: no cover
     from controlmesh.multiagent.bus import InterAgentBus
     from controlmesh.tasks.hub import TaskHub
@@ -14,9 +16,10 @@ class AgentsRuntimeContext:
     """Minimal ControlMesh-owned execution context for one bounded SDK turn."""
 
     agent_name: str
-    chat_id: int
-    topic_id: int | None
+    chat_id: ChatRef
+    topic_id: TopicRef
     process_label: str
+    transport: str = "tg"
     provider: str = "openai_agents"
     model: str | None = None
     task_hub: TaskHub | None = None

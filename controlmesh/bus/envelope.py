@@ -7,6 +7,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from controlmesh.messenger.address import ChatRef, LockKey, TopicRef
+
 
 class Origin(enum.Enum):
     """Where the message result came from."""
@@ -48,8 +50,8 @@ class Envelope:
 
     # -- Identity --
     origin: Origin
-    chat_id: int
-    topic_id: int | None = None
+    chat_id: ChatRef
+    topic_id: TopicRef = None
     transport: str = "tg"
 
     # -- Input (for injection into active session) --
@@ -85,6 +87,6 @@ class Envelope:
     session_id: str = ""
 
     @property
-    def lock_key(self) -> tuple[int, int | None]:
+    def lock_key(self) -> LockKey:
         """Key for per-session lock acquisition."""
         return (self.chat_id, self.topic_id)

@@ -37,6 +37,21 @@ class TestStorageKey:
         key = SessionKey(transport="api", chat_id=1, topic_id=5)
         assert key.storage_key == "api:1:5"
 
+    def test_string_chat_ref_uses_v2_storage_key(self) -> None:
+        key = SessionKey(transport="qqbot", chat_id="qqbot:c2c:OPENID")
+        assert key.storage_key == "v2:qqbot:s:qqbot%3Ac2c%3AOPENID"
+
+    def test_string_chat_and_topic_ref_use_v2_storage_key(self) -> None:
+        key = SessionKey(
+            transport="qqbot",
+            chat_id="qqbot:group:GROUP_OPENID",
+            topic_id="thread:alpha",
+        )
+        assert (
+            key.storage_key
+            == "v2:qqbot:s:qqbot%3Agroup%3AGROUP_OPENID:s:thread%3Aalpha"
+        )
+
 
 class TestParse:
     def test_prefixed_telegram(self) -> None:
@@ -75,6 +90,20 @@ class TestParse:
         key = SessionKey.parse("tg:-100123:45")
         assert key == SessionKey(transport="tg", chat_id=-100123, topic_id=45)
 
+    def test_v2_string_chat_ref(self) -> None:
+        key = SessionKey.parse("v2:qqbot:s:qqbot%3Ac2c%3AOPENID")
+        assert key == SessionKey(transport="qqbot", chat_id="qqbot:c2c:OPENID")
+
+    def test_v2_string_chat_and_topic_ref(self) -> None:
+        key = SessionKey.parse(
+            "v2:qqbot:s:qqbot%3Agroup%3AGROUP_OPENID:s:thread%3Aalpha"
+        )
+        assert key == SessionKey(
+            transport="qqbot",
+            chat_id="qqbot:group:GROUP_OPENID",
+            topic_id="thread:alpha",
+        )
+
     def test_roundtrip(self) -> None:
         cases = [
             SessionKey(transport="tg", chat_id=123),
@@ -83,6 +112,12 @@ class TestParse:
             SessionKey(transport="mx", chat_id=-200, topic_id=7),
             SessionKey(transport="api", chat_id=1, topic_id=5),
             SessionKey(chat_id=0),
+            SessionKey(transport="qqbot", chat_id="qqbot:c2c:OPENID"),
+            SessionKey(
+                transport="qqbot",
+                chat_id="qqbot:group:GROUP_OPENID",
+                topic_id="thread:alpha",
+            ),
         ]
         for key in cases:
             assert SessionKey.parse(key.storage_key) == key
@@ -110,6 +145,14 @@ class TestLockKey:
         a = SessionKey(transport="tg", chat_id=1)
         b = SessionKey(transport="tg", chat_id=2)
         assert a.lock_key != b.lock_key
+
+    def test_string_lock_key(self) -> None:
+        key = SessionKey(
+            transport="qqbot",
+            chat_id="qqbot:c2c:OPENID",
+            topic_id="thread:alpha",
+        )
+        assert key.lock_key == ("qqbot:c2c:OPENID", "thread:alpha")
 
 
 class TestFactoryMethods:

@@ -61,6 +61,15 @@ def test_envelope_lock_key_with_topic() -> None:
     assert env.lock_key == (42, 7)
 
 
+def test_envelope_lock_key_accepts_string_refs() -> None:
+    env = Envelope(
+        origin=Origin.INTERAGENT,
+        chat_id="qqbot:c2c:OPENID",
+        topic_id="thread:alpha",
+    )
+    assert env.lock_key == ("qqbot:c2c:OPENID", "thread:alpha")
+
+
 def test_envelope_created_at_is_set() -> None:
     env = Envelope(origin=Origin.BACKGROUND, chat_id=1)
     assert env.created_at > 0

@@ -33,6 +33,7 @@ async def create_background_task(  # noqa: PLR0913
                 prompt=prompt,
                 message_id=0,
                 thread_id=ctx.topic_id,
+                transport=ctx.transport,
                 parent_agent=ctx.agent_name,
                 name=name,
                 provider_override=provider_override,

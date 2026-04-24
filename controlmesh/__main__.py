@@ -45,6 +45,7 @@ from controlmesh.cli_commands.status import (
     print_usage as _print_usage,
 )
 from controlmesh.cli_commands.tasks import cmd_tasks as _cmd_tasks
+from controlmesh.cli_commands.qq import cmd_qq as _cmd_qq
 from controlmesh.config import (
     DEFAULT_EMPTY_GEMINI_API_KEY,
     AgentConfig,
@@ -141,11 +142,33 @@ def _is_configured_weixin(data: dict[str, object]) -> bool:
     )
 
 
+def _qqbot_account_is_configured(raw: object) -> bool:
+    if not isinstance(raw, dict):
+        return False
+    app_id = raw.get("app_id") or raw.get("appId") or ""
+    client_secret = raw.get("client_secret") or raw.get("clientSecret") or ""
+    client_secret_file = raw.get("client_secret_file") or raw.get("clientSecretFile") or ""
+    return bool(app_id) and bool(client_secret or client_secret_file)
+
+
+def _is_configured_qqbot(data: dict[str, object]) -> bool:
+    qq = data.get("qqbot", {})
+    if not isinstance(qq, dict):
+        return False
+    if _qqbot_account_is_configured(qq):
+        return True
+    accounts = qq.get("accounts", {})
+    if not isinstance(accounts, dict):
+        return False
+    return any(_qqbot_account_is_configured(account) for account in accounts.values())
+
+
 _IS_CONFIGURED_CHECKS: dict[str, Callable[[dict[str, object]], bool]] = {
     "telegram": _is_configured_telegram,
     "matrix": _is_configured_matrix,
     "feishu": _is_configured_feishu,
     "weixin": _is_configured_weixin,
+    "qqbot": _is_configured_qqbot,
 }
 
 
@@ -344,11 +367,51 @@ def _validate_weixin_config(config: AgentConfig) -> None:
         sys.exit(1)
 
 
+def _validate_qqbot_config(config: AgentConfig) -> None:
+    """Validate official QQ Bot transport requirements."""
+    qq = config.qqbot
+    selected = None
+    selected_name = "default"
+    if qq.default_account:
+        selected = qq.accounts.get(qq.default_account)
+        selected_name = qq.default_account
+        if selected is None:
+            _console.print(f"QQ Bot default_account {qq.default_account!r} was not found.")
+            sys.exit(1)
+    elif qq.app_id and (qq.client_secret or qq.client_secret_file):
+        selected = qq
+    else:
+        for account_name, account in qq.accounts.items():
+            if account.enabled and account.app_id and (account.client_secret or account.client_secret_file):
+                selected = account
+                selected_name = account_name
+                break
+    if selected is None:
+        _console.print("QQ Bot transport requires at least one configured official bot account.")
+        _console.print(
+            "Set qqbot.app_id plus qqbot.client_secret/client_secret_file, or define a valid qqbot.accounts entry."
+        )
+        sys.exit(1)
+    if not selected.app_id or not (selected.client_secret or selected.client_secret_file):
+        _console.print(f"QQ Bot account {selected_name!r} is incomplete.")
+        sys.exit(1)
+    if selected.client_secret_file:
+        secret_path = Path(selected.client_secret_file)
+        if not secret_path.is_absolute():
+            secret_path = Path(config.controlmesh_home).expanduser() / secret_path
+        if not secret_path.exists():
+            _console.print(
+                f"QQ Bot account {selected_name!r} references missing client_secret_file: {secret_path}"
+            )
+            sys.exit(1)
+
+
 _TRANSPORT_VALIDATORS: dict[str, Callable[[AgentConfig], None]] = {
     "telegram": _validate_telegram_config,
     "matrix": _validate_matrix_config,
     "feishu": _validate_feishu_config,
     "weixin": _validate_weixin_config,
+    "qqbot": _validate_qqbot_config,
 }
 
 
@@ -428,6 +491,7 @@ _COMMANDS: dict[str, str] = {
     "runtime": "runtime",
     "tasks": "tasks",
     "feishu": "feishu",
+    "qq": "qq",
 }
 
 _Action = Callable[[], None]
@@ -467,6 +531,7 @@ def main() -> None:
         "runtime": lambda: _cmd_runtime(args),
         "tasks": lambda: _cmd_tasks(args),
         "feishu": lambda: _cmd_feishu(args),
+        "qq": lambda: _cmd_qq(args),
     }
 
     handler = dispatch.get(action) if action else None

@@ -10,6 +10,38 @@ Provides transport-independent access to the same orchestrator/session system us
 - authenticated file download/upload endpoints
 - shared session model (`SessionKey`) with optional channel isolation
 
+## Official QQ direction
+
+This API remains available as a backend surface for external adapters and for
+the archived QQ bridge, but it is no longer the primary product-layer entry for
+QQ.
+
+Active QQ direction:
+
+`QQ Open Platform bot -> ControlMesh direct official qqbot runtime`
+
+ControlMesh now owns the official QQ runtime boundary directly, using Tencent
+and OpenClaw qqbot source as the protocol/spec reference rather than depending
+on an external OpenClaw runtime at the product edge.
+
+See [`../qqbot-official-pivot.md`](../qqbot-official-pivot.md).
+
+## Archived QQ bridge reference
+
+`controlmesh qq connect` and the repo-local QQ bridge are deprecated
+experimental work kept only as archive/reference material.
+
+That archived shape was:
+
+- `OneBot v11` style downstream connector
+- `NapCat`-compatible forward WebSocket default (`ws://127.0.0.1:3001`)
+- per-user session isolation hint
+- ControlMesh upstream over the existing `/ws` API
+
+Historical integration shape:
+
+`QQ / NapCat / OneBot v11 -> QQ bridge -> ControlMesh API (/ws)`
+
 ## Files
 
 - `api/crypto.py`: E2E session (`E2ESession`)
@@ -33,7 +65,7 @@ Endpoint: `ws://<host>:<port>/ws`
 Client first frame (plaintext):
 
 ```json
-{"type":"auth","token":"...","e2e_pk":"...","chat_id":123,"channel_id":77}
+{"type":"auth","token":"...","e2e_pk":"...","chat_id":123,"channel_id":77,"transport":"qq"}
 ```
 
 Required:
@@ -46,20 +78,23 @@ Optional session scope:
 
 - `chat_id`: positive int
 - `channel_id`: positive int (mapped to `SessionKey.topic_id`)
+- `transport`: client label for the frontstage session (`"api"` by default, archived QQ bridge uses `"qq"`)
 
 Server responds (last plaintext frame):
 
 ```json
-{"type":"auth_ok","chat_id":123,"channel_id":77,"e2e_pk":"...","providers":[...]}
+{"type":"auth_ok","chat_id":123,"channel_id":77,"transport":"qq","e2e_pk":"...","providers":[...]}
 ```
 
 After `auth_ok`, all frames are encrypted.
 
 ## Session identity in API
 
-API uses `SessionKey("api", chat_id, topic_id)`.
+API uses `SessionKey(transport, chat_id, topic_id)`.
 
 - `topic_id` is populated from `channel_id` in auth payload
+- `transport` defaults to `"api"` when not specified by the client
+- the archived QQ bridge sets `transport="qq"` so task delivery and runtime events keep the QQ identity
 - without `channel_id`, session is chat-scoped only
 
 This allows multiple API channels to maintain isolated contexts under one `chat_id`.
@@ -93,6 +128,10 @@ Current scope nuance:
 - `GET /health` (no auth)
 - `GET /files?path=...` (Bearer token + allowed-root checks)
 - `POST /upload` (Bearer token + multipart)
+
+The archived QQ bridge also reused `GET /files` as a bearer-protected fetch
+path when the plugin needed to materialize a ControlMesh attachment before
+sending it through OneBot/NapCat.
 
 Upload target:
 

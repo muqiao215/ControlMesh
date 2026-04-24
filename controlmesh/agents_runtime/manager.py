@@ -37,6 +37,7 @@ class AgentsRuntimeManager:
                 agent_name=config.agent_name,
                 chat_id=config.chat_id,
                 topic_id=config.topic_id,
+                transport=config.transport,
                 process_label=config.process_label,
                 provider=config.provider,
                 model=config.model,

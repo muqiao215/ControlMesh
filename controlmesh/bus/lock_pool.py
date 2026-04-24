@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from controlmesh.messenger.address import ChatRef, LockKey, TopicRef
+
 logger = logging.getLogger(__name__)
 
 _MAX_LOCKS = 1000
@@ -18,14 +20,14 @@ class LockPool:
     """
 
     def __init__(self, *, max_locks: int = _MAX_LOCKS) -> None:
-        self._locks: dict[tuple[int, int | None], asyncio.Lock] = {}
+        self._locks: dict[LockKey, asyncio.Lock] = {}
         self._max = max_locks
 
-    def get(self, key: tuple[int, int | None] | int) -> asyncio.Lock:
+    def get(self, key: LockKey | ChatRef) -> asyncio.Lock:
         """Return the lock for *key*, creating one if needed.
 
         Accepts either a ``(chat_id, topic_id)`` tuple or a plain
-        ``chat_id`` integer for backward compatibility.
+        ``chat_id`` ref for backward compatibility.
         """
         k = self._normalize(key)
         if k not in self._locks:
@@ -33,12 +35,12 @@ class LockPool:
             self._locks[k] = asyncio.Lock()
         return self._locks[k]
 
-    def is_locked(self, key: tuple[int, int | None] | int) -> bool:
+    def is_locked(self, key: LockKey | ChatRef) -> bool:
         """Return True if the lock for *key* is currently held."""
         lock = self._locks.get(self._normalize(key))
         return lock.locked() if lock else False
 
-    def any_locked_for_chat(self, chat_id: int) -> bool:
+    def any_locked_for_chat(self, chat_id: ChatRef) -> bool:
         """Return True if any topic-scoped lock for *chat_id* is held."""
         return any(lock.locked() for (cid, _), lock in self._locks.items() if cid == chat_id)
 
@@ -48,7 +50,7 @@ class LockPool:
     # -- Internal helpers ------------------------------------------------------
 
     @staticmethod
-    def _normalize(key: tuple[int, int | None] | int) -> tuple[int, int | None]:
+    def _normalize(key: LockKey | ChatRef) -> LockKey:
         return key if isinstance(key, tuple) else (key, None)
 
     def _evict_if_needed(self) -> None:

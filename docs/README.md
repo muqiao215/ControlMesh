@@ -72,6 +72,7 @@ Runtime behavior notes:
 - [Feishu Setup](feishu-setup.md)
 - [Telegram Setup](telegram-setup.md)
 - [WeChat / Weixin Setup](weixin-setup.md)
+- [QQ Bot Official Pivot](qqbot-official-pivot.md)
 - [Matrix Setup](matrix-setup.md)
 - [Case-Pack](case-pack/README.md)
 - [Automation Quickstart](automation.md)

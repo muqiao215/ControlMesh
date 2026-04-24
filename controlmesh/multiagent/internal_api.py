@@ -184,8 +184,12 @@ class InternalAgentAPI:
         message = data.get("message", "")
         new_session = bool(data.get("new_session", False))
         summary = str(data.get("summary", ""))
-        chat_id = int(data["chat_id"]) if data.get("chat_id") else 0
-        topic_id = int(data["topic_id"]) if data.get("topic_id") else None
+        chat_id = data.get("chat_id", 0)
+        if chat_id in ("", None):
+            chat_id = 0
+        topic_id = data.get("topic_id")
+        if topic_id == "":
+            topic_id = None
 
         if not recipient or not message:
             return web.json_response(
@@ -279,6 +283,7 @@ class InternalAgentAPI:
             prompt=prompt,
             message_id=0,
             thread_id=data.get("topic_id") or None,
+            transport=data.get("transport") or "tg",
             parent_agent=sender,
             name=data.get("name", ""),
             provider_override=data.get("provider") or "",

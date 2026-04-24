@@ -6,6 +6,8 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
+from controlmesh.messenger.address import ChatRef, TopicRef
+
 if TYPE_CHECKING:
     from controlmesh.config import AgentConfig
     from controlmesh.messenger.notifications import NotificationService
@@ -61,8 +63,8 @@ class BotProtocol(Protocol):
         task_id: str,
         question: str,
         prompt_preview: str,
-        chat_id: int,
-        thread_id: int | None = None,
+        chat_id: ChatRef,
+        thread_id: TopicRef = None,
     ) -> None:
         """Handle background task question delivery."""
         ...

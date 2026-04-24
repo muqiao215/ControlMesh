@@ -93,6 +93,10 @@ def _weixin_identity_check(new: AgentConfig, old: AgentConfig) -> bool:
     )
 
 
+def _qqbot_identity_check(new: AgentConfig, old: AgentConfig) -> bool:
+    return new.qqbot.model_dump(mode="json") != old.qqbot.model_dump(mode="json")
+
+
 def _default_identity_check(_new: AgentConfig, _old: AgentConfig) -> bool:
     return False
 
@@ -104,6 +108,7 @@ _TRANSPORT_IDENTITY_CHANGED: dict[str, _IdentityCheck] = {
     "matrix": _matrix_identity_check,
     "feishu": _feishu_identity_check,
     "weixin": _weixin_identity_check,
+    "qqbot": _qqbot_identity_check,
 }
 
 
@@ -446,13 +451,41 @@ class AgentSupervisor:
 
         name = stack.name
         orch.set_task_hub(hub)
+        from controlmesh.qq_bridge.relay import get_qq_bridge_relay
+
+        qq_relay = get_qq_bridge_relay(stack.bot)
 
         # Register this agent's CLI service and workspace paths for task execution
         hub.set_cli_service(name, orch.cli_service)
         hub.set_agent_paths(name, stack.paths)
 
-        hub.set_result_handler(name, stack.bot.on_task_result)
-        hub.set_question_handler(name, stack.bot.on_task_question)
+        async def _deliver_task_result(result):
+            if qq_relay is not None and result.transport == "qq":
+                await qq_relay.deliver_task_result(result)
+                return
+            await stack.bot.on_task_result(result)
+
+        async def _deliver_task_question(
+            task_id: str,
+            question: str,
+            prompt_preview: str,
+            chat_id: int,
+            thread_id: int | None,
+        ) -> None:
+            entry = hub.registry.get(task_id)
+            if qq_relay is not None and entry is not None and entry.transport == "qq":
+                await qq_relay.deliver_task_question(
+                    task_id=task_id,
+                    question=question,
+                    prompt_preview=prompt_preview,
+                    chat_id=chat_id,
+                    thread_id=thread_id,
+                )
+                return
+            await stack.bot.on_task_question(task_id, question, prompt_preview, chat_id, thread_id)
+
+        hub.set_result_handler(name, _deliver_task_result)
+        hub.set_question_handler(name, _deliver_task_question)
 
         # Register agent's primary chat_id for resolving CLI-submitted tasks
         if stack.config.allowed_user_ids:

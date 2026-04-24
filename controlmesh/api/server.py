@@ -36,6 +36,7 @@ import asyncio
 import hmac
 import json
 import logging
+import re
 import shutil
 from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
@@ -73,6 +74,7 @@ StreamingMessageHandler = Callable[..., Awaitable[Any]]
 AbortHandler = Callable[[int], Awaitable[int]]
 
 _MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
+_TRANSPORT_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
 
 
 def _detect_tailscale() -> bool:
@@ -484,17 +486,23 @@ class ApiServer:
         if not isinstance(chat_id, int) or chat_id <= 0:
             chat_id = self._default_chat_id
 
+        transport = str(data.get("transport", "api")).strip() or "api"
+        if not _TRANSPORT_RE.fullmatch(transport):
+            await _ws_reject(ws, "auth_failed", "transport must match [A-Za-z0-9_-]{1,32}")
+            return None
+
         # Optional channel_id for per-channel session isolation (maps to topic_id)
         channel_id = data.get("channel_id")
         if not isinstance(channel_id, int) or channel_id <= 0:
             channel_id = None
 
-        key = SessionKey(chat_id=chat_id, topic_id=channel_id)
+        key = SessionKey.for_transport(transport, chat_id, channel_id)
 
         # Last plaintext message -- everything after this is E2E encrypted
         auth_ok_payload: dict[str, object] = {
             "type": "auth_ok",
             "chat_id": chat_id,
+            "transport": transport,
             "e2e_pk": e2e.local_pk_b64,
             "providers": self._provider_info,
         }

@@ -43,3 +43,12 @@ class TestTransportRegistry:
         with patch("controlmesh.messenger.feishu.bot.FeishuBot", return_value=fake_bot):
             bot = create_bot(config, agent_name="test")
         assert bot is fake_bot
+
+    def test_qqbot_transport(self) -> None:
+        config = MagicMock()
+        config.transport = "qqbot"
+        config.is_multi_transport = False
+        fake_bot = MagicMock()
+        with patch("controlmesh.messenger.qqbot.bot.QQBotBot", return_value=fake_bot):
+            bot = create_bot(config, agent_name="test")
+        assert bot is fake_bot

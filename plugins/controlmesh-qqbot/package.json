@@ -1,0 +1,24 @@
+{
+  "name": "controlmesh-qqbot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.3.13",
+  "description": "Incubating QQ channel plugin for ControlMesh using OneBot v11 / NapCat Forward WebSocket.",
+  "scripts": {
+    "dev": "bun --watch run src/index.ts",
+    "start": "bun run src/index.ts",
+    "test": "bun test",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "tweetnacl": "^1.0.3",
+    "tweetnacl-util": "^0.15.1",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1",
+    "bun-types": "^1.3.13",
+    "typescript": "^5.9.3"
+  }
+}

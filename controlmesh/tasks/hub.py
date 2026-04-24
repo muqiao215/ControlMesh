@@ -10,6 +10,7 @@ from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 from controlmesh.infra.json_store import atomic_json_save, load_json
+from controlmesh.messenger.address import ChatRef, TopicRef
 from controlmesh.runtime import RuntimeEvent, RuntimeEventStore
 from controlmesh.session import SessionKey
 from controlmesh.tasks.models import TaskEntry, TaskInFlight, TaskResult, TaskSubmit
@@ -31,7 +32,7 @@ _MAINTENANCE_INTERVAL = 5 * 3600  # 5 hours
 _TOPOLOGY_STATE_FILENAME = "topology_execution.json"
 
 TaskResultCallback = Callable[[TaskResult], Awaitable[None]]
-QuestionHandler = Callable[[str, str, str, int, int | None], Awaitable[None]]
+QuestionHandler = Callable[[str, str, str, ChatRef, TopicRef], Awaitable[None]]
 # QuestionHandler(task_id, question, prompt_preview, chat_id, thread_id) -> None
 
 TASK_PROMPT_SUFFIX = """
@@ -86,7 +87,7 @@ class TaskHub:
         self._in_flight: dict[str, TaskInFlight] = {}
         self._result_handlers: dict[str, TaskResultCallback] = {}
         self._question_handlers: dict[str, QuestionHandler] = {}
-        self._agent_chat_ids: dict[str, int] = {}
+        self._agent_chat_ids: dict[str, ChatRef] = {}
         self._maintenance_task: asyncio.Task[None] | None = None
         self._runtime_events = RuntimeEventStore(paths)
 
@@ -117,7 +118,7 @@ class TaskHub:
         """Register per-agent paths for task folder isolation."""
         self._agent_tasks_dirs[agent_name] = paths.tasks_dir
 
-    def set_agent_chat_id(self, agent_name: str, chat_id: int) -> None:
+    def set_agent_chat_id(self, agent_name: str, chat_id: ChatRef) -> None:
         """Register the primary chat_id for an agent (for resolving CLI-submitted tasks)."""
         self._agent_chat_ids[agent_name] = chat_id
 
@@ -492,6 +493,7 @@ class TaskHub:
                     elapsed_seconds=elapsed,
                     provider=entry.provider,
                     model=entry.model,
+                    transport=entry.transport,
                     session_id=session_id,
                     error=error,
                     task_folder=str(self._registry.task_folder(entry.task_id)),
@@ -521,6 +523,7 @@ class TaskHub:
                         elapsed_seconds=elapsed,
                         provider=entry.provider,
                         model=entry.model,
+                        transport=entry.transport,
                         original_prompt=entry.original_prompt,
                         thread_id=entry.thread_id,
                     )
@@ -551,6 +554,7 @@ class TaskHub:
                         elapsed_seconds=elapsed,
                         provider=entry.provider,
                         model=entry.model,
+                        transport=entry.transport,
                         error=error_msg,
                         original_prompt=entry.original_prompt,
                         thread_id=entry.thread_id,
@@ -584,7 +588,7 @@ class TaskHub:
         status: str | None = None,
     ) -> None:
         """Write the bounded task lifecycle events into the runtime event substrate."""
-        key = SessionKey.telegram(entry.chat_id, entry.thread_id)
+        key = SessionKey.for_transport(entry.transport, entry.chat_id, entry.thread_id)
         payload: dict[str, str] = {"task_id": entry.task_id}
         if status is not None:
             payload["status"] = status

@@ -185,6 +185,7 @@ def print_usage() -> None:
     table.add_row("controlmesh agents", t_rich("help.agents"))
     table.add_row("controlmesh docker", t_rich("help.docker"))
     table.add_row("controlmesh api", t_rich("help.api"))
+    table.add_row("controlmesh qq connect", "Emit QQ bridge connection info backed by the WebSocket API.")
     table.add_row("controlmesh tasks list", "List background tasks from the local task runtime.")
     table.add_row("controlmesh tasks doctor", "Show task runtime health, policy, and primitive endpoints.")
     table.add_row(

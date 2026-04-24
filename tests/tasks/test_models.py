@@ -90,6 +90,23 @@ class TestTaskEntry:
         restored = TaskEntry.from_dict(d)
         assert restored.thread_id is None
 
+    def test_string_refs_roundtrip(self) -> None:
+        entry = TaskEntry(
+            task_id="qq1",
+            chat_id="qqbot:c2c:OPENID",
+            parent_agent="main",
+            name="qq-task",
+            prompt_preview="short",
+            provider="claude",
+            model="opus",
+            status="running",
+            transport="qqbot",
+            thread_id="qqbot:channel:THREAD",
+        )
+        restored = TaskEntry.from_dict(entry.to_dict())
+        assert restored.chat_id == "qqbot:c2c:OPENID"
+        assert restored.thread_id == "qqbot:channel:THREAD"
+
 
 class TestTaskSubmit:
     def test_default_fields(self) -> None:
@@ -103,6 +120,18 @@ class TestTaskSubmit:
         assert sub.name == ""
         assert sub.provider_override == ""
         assert sub.thinking_override == ""
+
+    def test_string_refs_are_allowed(self) -> None:
+        sub = TaskSubmit(
+            chat_id="qqbot:group:GROUP_OPENID",
+            prompt="do something",
+            message_id=10,
+            thread_id="qqbot:channel:THREAD",
+            parent_agent="main",
+            transport="qqbot",
+        )
+        assert sub.chat_id == "qqbot:group:GROUP_OPENID"
+        assert sub.thread_id == "qqbot:channel:THREAD"
 
 
 class TestTaskResult:
@@ -152,3 +181,21 @@ class TestTaskResult:
             thread_id=99,
         )
         assert result.thread_id == 99
+
+    def test_string_refs_are_allowed(self) -> None:
+        result = TaskResult(
+            task_id="x",
+            chat_id="qqbot:c2c:OPENID",
+            parent_agent="main",
+            name="t",
+            prompt_preview="p",
+            result_text="r",
+            status="done",
+            elapsed_seconds=0.0,
+            provider="c",
+            model="m",
+            transport="qqbot",
+            thread_id="qqbot:channel:THREAD",
+        )
+        assert result.chat_id == "qqbot:c2c:OPENID"
+        assert result.thread_id == "qqbot:channel:THREAD"

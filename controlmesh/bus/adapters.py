@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from controlmesh.bus.envelope import DeliveryMode, Envelope, LockMode, Origin
+from controlmesh.messenger.address import ChatRef, TopicRef
 
 if TYPE_CHECKING:
     from controlmesh.background.models import BackgroundResult
@@ -52,8 +53,8 @@ def from_cron_result(  # noqa: PLR0913
     result: str,
     status: str,
     *,
-    chat_id: int = 0,
-    topic_id: int | None = None,
+    chat_id: ChatRef = 0,
+    topic_id: TopicRef = None,
     transport: str = "tg",
 ) -> Envelope:
     """Convert a cron job result (title, text, status triple).
@@ -89,9 +90,9 @@ def from_cron_result(  # noqa: PLR0913
 
 
 def from_heartbeat(
-    chat_id: int,
+    chat_id: ChatRef,
     text: str,
-    topic_id: int | None = None,
+    topic_id: TopicRef = None,
     *,
     transport: str = "tg",
 ) -> Envelope:
@@ -127,7 +128,7 @@ def from_webhook_cron_result(result: WebhookResult) -> Envelope:
     )
 
 
-def from_webhook_wake(chat_id: int, prompt: str) -> Envelope:
+def from_webhook_wake(chat_id: ChatRef, prompt: str) -> Envelope:
     """Convert a webhook wake request (acquires lock, executes via orchestrator)."""
     return Envelope(
         origin=Origin.WEBHOOK_WAKE,
@@ -141,7 +142,7 @@ def from_webhook_wake(chat_id: int, prompt: str) -> Envelope:
 # -- Inter-agent ---------------------------------------------------------------
 
 
-def from_interagent_result(result: AsyncInterAgentResult, chat_id: int) -> Envelope:
+def from_interagent_result(result: AsyncInterAgentResult, chat_id: ChatRef) -> Envelope:
     """Convert an async inter-agent result.
 
     Uses ``result.chat_id`` / ``result.topic_id`` when available so that
@@ -208,6 +209,7 @@ def from_task_result(result: TaskResult) -> Envelope:
         origin=Origin.TASK_RESULT,
         chat_id=result.chat_id,
         topic_id=result.thread_id,
+        transport=getattr(result, "transport", "tg"),
         prompt=prompt,
         prompt_preview=result.prompt_preview,
         result_text=result.result_text,
@@ -263,15 +265,17 @@ def from_task_question(
     task_id: str,
     question: str,
     prompt_preview: str,
-    chat_id: int,
+    chat_id: ChatRef,
     *,
-    topic_id: int | None = None,
+    topic_id: TopicRef = None,
+    transport: str = "tg",
 ) -> Envelope:
     """Convert a task question (worker asks parent agent)."""
     return Envelope(
         origin=Origin.TASK_QUESTION,
         chat_id=chat_id,
         topic_id=topic_id,
+        transport=transport,
         prompt=question,
         prompt_preview=prompt_preview,
         delivery=DeliveryMode.UNICAST,
@@ -285,10 +289,11 @@ def from_task_question(
 
 
 def from_user_message(
-    chat_id: int,
+    chat_id: ChatRef,
     text: str,
     *,
-    topic_id: int | None = None,
+    topic_id: TopicRef = None,
+    transport: str = "tg",
     source: Origin = Origin.USER,
 ) -> Envelope:
     """Create an envelope for a user/API message (audit tracking only)."""
@@ -296,6 +301,7 @@ def from_user_message(
         origin=source,
         chat_id=chat_id,
         topic_id=topic_id,
+        transport=transport,
         prompt=text,
         prompt_preview=text[:80] if text else "",
         delivery=DeliveryMode.UNICAST,

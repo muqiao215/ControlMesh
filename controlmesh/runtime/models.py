@@ -8,6 +8,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from controlmesh.messenger.address import ChatRef, TopicRef
+
 
 def utc_now_iso() -> str:
     """Return the current UTC timestamp in ISO-8601 format."""
@@ -23,5 +25,5 @@ class RuntimeEvent(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
     created_at: str = Field(default_factory=utc_now_iso)
     transport: str
-    chat_id: int
-    topic_id: int | None = None
+    chat_id: ChatRef
+    topic_id: TopicRef = None

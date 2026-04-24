@@ -57,3 +57,17 @@ def test_runtime_event_store_append_and_read_recent_stay_out_of_transcripts(tmp_
     assert [event.event_type for event in events] == ["worker.started"]
     assert transcript_store.read_recent(key, limit=10) == []
     assert not transcript_store.path_for(key).exists()
+
+
+def test_runtime_event_accepts_string_native_refs() -> None:
+    event = RuntimeEvent(
+        session_key="v2:qqbot:s:qqbot%3Ac2c%3AOPENID",
+        event_type="task.lifecycle.created",
+        payload={"task_id": "qq1"},
+        transport="qqbot",
+        chat_id="qqbot:c2c:OPENID",
+        topic_id="qqbot:channel:THREAD",
+    )
+
+    assert event.chat_id == "qqbot:c2c:OPENID"
+    assert event.topic_id == "qqbot:channel:THREAD"

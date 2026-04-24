@@ -143,6 +143,12 @@ def test_from_heartbeat_with_topic_id() -> None:
     assert env.result_text == "group alert"
 
 
+def test_from_heartbeat_accepts_string_target() -> None:
+    env = from_heartbeat("qqbot:c2c:OPENID", "alert text", transport="qqbot")
+    assert env.chat_id == "qqbot:c2c:OPENID"
+    assert env.transport == "qqbot"
+
+
 def test_from_webhook_cron_result() -> None:
     env = from_webhook_cron_result(_FakeWebhookResult())
     assert env.origin == Origin.WEBHOOK_CRON
@@ -216,6 +222,7 @@ def test_from_task_result_done() -> None:
     assert env.origin == Origin.TASK_RESULT
     assert env.chat_id == 100
     assert env.topic_id is None
+    assert env.transport == "tg"
     assert env.status == "done"
     assert env.lock_mode == LockMode.REQUIRED
     assert env.needs_injection
@@ -266,6 +273,18 @@ def test_from_task_question_with_topic() -> None:
     assert env.topic_id == 42
 
 
+def test_from_task_question_accepts_string_target() -> None:
+    env = from_task_question(
+        "t1",
+        "what color?",
+        "what co...",
+        "qqbot:c2c:OPENID",
+        transport="qqbot",
+    )
+    assert env.chat_id == "qqbot:c2c:OPENID"
+    assert env.transport == "qqbot"
+
+
 # -- User / API messages -------------------------------------------------------
 
 
@@ -291,6 +310,12 @@ def test_from_user_message_with_topic() -> None:
     env = from_user_message(300, "topic msg", topic_id=42)
     assert env.chat_id == 300
     assert env.topic_id == 42
+
+
+def test_from_user_message_accepts_string_target() -> None:
+    env = from_user_message("qqbot:group:GROUP_OPENID", "hello", transport="qqbot")
+    assert env.chat_id == "qqbot:group:GROUP_OPENID"
+    assert env.transport == "qqbot"
 
 
 def test_from_user_message_truncates_preview() -> None:

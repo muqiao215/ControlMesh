@@ -100,8 +100,8 @@ class HeartbeatTarget(BaseModel):
     """
 
     enabled: bool = True
-    chat_id: int | None = None
-    topic_id: int | None = None
+    chat_id: int | str | None = None
+    topic_id: int | str | None = None
     prompt: str | None = None
     ack_token: str | None = None
     interval_minutes: int | None = None
@@ -265,6 +265,65 @@ class WeixinConfig(BaseModel):
     reply_chunk_chars: int = 2000
 
 
+class QQBotAccountConfig(BaseModel):
+    """Official QQ Bot account settings."""
+
+    enabled: bool = True
+    name: str = ""
+    app_id: str = Field(default="", validation_alias=AliasChoices("app_id", "appId"))
+    client_secret: str = Field(
+        default="",
+        validation_alias=AliasChoices("client_secret", "clientSecret"),
+    )
+    client_secret_file: str = Field(
+        default="",
+        validation_alias=AliasChoices("client_secret_file", "clientSecretFile"),
+    )
+    allow_from: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("allow_from", "allowFrom"),
+    )
+    group_allow_from: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("group_allow_from", "groupAllowFrom"),
+    )
+    dm_policy: Literal["open", "allowlist", "disabled"] = Field(
+        default="open",
+        validation_alias=AliasChoices("dm_policy", "dmPolicy"),
+    )
+    group_policy: Literal["open", "allowlist", "disabled"] = Field(
+        default="open",
+        validation_alias=AliasChoices("group_policy", "groupPolicy"),
+    )
+    group_message_mode: Literal["passive", "mention_patterns"] = Field(
+        default="passive",
+        validation_alias=AliasChoices("group_message_mode", "groupMessageMode"),
+    )
+    mention_patterns: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("mention_patterns", "mentionPatterns"),
+    )
+    activate_on_bot_reply: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("activate_on_bot_reply", "activateOnBotReply"),
+    )
+    system_prompt: str = Field(
+        default="",
+        validation_alias=AliasChoices("system_prompt", "systemPrompt"),
+    )
+
+
+class QQBotConfig(QQBotAccountConfig):
+    """Top-level QQ Bot transport configuration."""
+
+    enabled: bool = False
+    accounts: dict[str, QQBotAccountConfig] = Field(default_factory=dict)
+    default_account: str = Field(
+        default="",
+        validation_alias=AliasChoices("default_account", "defaultAccount"),
+    )
+
+
 class TasksConfig(BaseModel):
     """Settings for background task delegation."""
 
@@ -349,7 +408,7 @@ class ApiConfig(BaseModel):
     host: str = _BIND_ALL_INTERFACES
     port: int = 8741
     token: str = ""
-    chat_id: int = 0
+    chat_id: int | str = 0
     allow_public: bool = False
 
 
@@ -436,7 +495,7 @@ class AgentConfig(BaseModel):
     update_check: bool = True
     group_mention_only: bool = False
     interagent_port: int = 8799
-    transport: str = "telegram"  # "telegram" | "matrix" | "feishu" | "weixin"
+    transport: str = "telegram"  # "telegram" | "matrix" | "feishu" | "weixin" | "qqbot"
     transports: list[str] = Field(default_factory=list)
     telegram_token: str = ""
     allowed_user_ids: list[int] = Field(default_factory=list)
@@ -444,6 +503,7 @@ class AgentConfig(BaseModel):
     matrix: MatrixConfig = Field(default_factory=MatrixConfig)
     feishu: FeishuConfig = Field(default_factory=FeishuConfig)
     weixin: WeixinConfig = Field(default_factory=WeixinConfig)
+    qqbot: QQBotConfig = Field(default_factory=QQBotConfig)
 
     @field_validator("gemini_api_key", mode="before")
     @classmethod

@@ -257,6 +257,82 @@ class TestIsConfigured:
             mock_paths.return_value = paths
             assert _is_configured() is False
 
+    def test_configured_with_valid_qqbot_default_account(self, tmp_path: Path) -> None:
+        from controlmesh.__main__ import _is_configured
+
+        home = tmp_path / "home"
+        config_dir = home / "config"
+        config_dir.mkdir(parents=True)
+        cfg = {
+            "transport": "qqbot",
+            "qqbot": {
+                "app_id": "1903891442",
+                "client_secret": "secret",
+            },
+        }
+        (config_dir / "config.json").write_text(json.dumps(cfg))
+
+        with patch("controlmesh.__main__.resolve_paths") as mock_paths:
+            paths = ControlMeshPaths(
+                controlmesh_home=home,
+                home_defaults=tmp_path / "fw" / "workspace",
+                framework_root=tmp_path / "fw",
+            )
+            mock_paths.return_value = paths
+            assert _is_configured() is True
+
+    def test_configured_with_valid_qqbot_named_account(self, tmp_path: Path) -> None:
+        from controlmesh.__main__ import _is_configured
+
+        home = tmp_path / "home"
+        config_dir = home / "config"
+        config_dir.mkdir(parents=True)
+        cfg = {
+            "transport": "qqbot",
+            "qqbot": {
+                "accounts": {
+                    "bot2": {
+                        "app_id": "1903891443",
+                        "client_secret_file": "/tmp/qqbot-secret.txt",
+                    }
+                }
+            },
+        }
+        (config_dir / "config.json").write_text(json.dumps(cfg))
+
+        with patch("controlmesh.__main__.resolve_paths") as mock_paths:
+            paths = ControlMeshPaths(
+                controlmesh_home=home,
+                home_defaults=tmp_path / "fw" / "workspace",
+                framework_root=tmp_path / "fw",
+            )
+            mock_paths.return_value = paths
+            assert _is_configured() is True
+
+    def test_unconfigured_with_missing_qqbot_secret(self, tmp_path: Path) -> None:
+        from controlmesh.__main__ import _is_configured
+
+        home = tmp_path / "home"
+        config_dir = home / "config"
+        config_dir.mkdir(parents=True)
+        cfg = {
+            "transport": "qqbot",
+            "qqbot": {
+                "app_id": "1903891442",
+                "client_secret": "",
+            },
+        }
+        (config_dir / "config.json").write_text(json.dumps(cfg))
+
+        with patch("controlmesh.__main__.resolve_paths") as mock_paths:
+            paths = ControlMeshPaths(
+                controlmesh_home=home,
+                home_defaults=tmp_path / "fw" / "workspace",
+                framework_root=tmp_path / "fw",
+            )
+            mock_paths.return_value = paths
+            assert _is_configured() is False
+
     def test_configured_with_enabled_weixin_and_stored_credentials(self, tmp_path: Path) -> None:
         from controlmesh.__main__ import _is_configured
 
@@ -371,6 +447,31 @@ class TestRunTelegram:
         ):
             await run_telegram(config)
 
+        mock_supervisor.start.assert_called_once()
+        mock_supervisor.stop_all.assert_called_once()
+
+    async def test_runs_bot_with_valid_qqbot_config(self, tmp_path: Path) -> None:
+        from controlmesh.__main__ import run_bot
+
+        config = AgentConfig(
+            transport="qqbot",
+            qqbot={"app_id": "1903891442", "client_secret": "secret"},
+            controlmesh_home=str(tmp_path),
+        )
+        mock_supervisor = MagicMock()
+        mock_supervisor.start = AsyncMock(return_value=0)
+        mock_supervisor.stop_all = AsyncMock()
+
+        with (
+            patch("controlmesh.__main__.resolve_paths"),
+            patch("controlmesh.infra.pidlock.acquire_lock"),
+            patch("controlmesh.infra.pidlock.release_lock"),
+            patch(
+                "controlmesh.multiagent.supervisor.AgentSupervisor",
+                return_value=mock_supervisor,
+            ),
+        ):
+            await run_bot(config)
         mock_supervisor.start.assert_called_once()
         mock_supervisor.stop_all.assert_called_once()
 

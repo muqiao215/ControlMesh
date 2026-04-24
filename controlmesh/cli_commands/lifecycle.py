@@ -124,10 +124,10 @@ def stop_bot() -> None:
 
 
 def start_bot(verbose: bool = False) -> None:
-    """Load config and start the Telegram bot."""
+    """Load config and start the configured transport runtime."""
     import logging
 
-    from controlmesh.__main__ import load_config, run_telegram
+    from controlmesh.__main__ import load_config, run_bot
     from controlmesh.logging_config import setup_logging
 
     paths = resolve_paths()
@@ -141,7 +141,7 @@ def start_bot(verbose: bool = False) -> None:
         if config_level != logging.INFO:
             setup_logging(level=config_level, log_dir=paths.logs_dir)
     try:
-        exit_code = asyncio.run(run_telegram(config))
+        exit_code = asyncio.run(run_bot(config))
     except KeyboardInterrupt:
         exit_code = 0
     if exit_code == EXIT_RESTART:

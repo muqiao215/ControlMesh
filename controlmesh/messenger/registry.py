@@ -119,9 +119,22 @@ def _create_weixin(
     return WeixinBot(config, agent_name=agent_name, bus=bus, lock_pool=lock_pool)
 
 
+def _create_qqbot(
+    config: AgentConfig,
+    *,
+    agent_name: str,
+    bus: MessageBus | None,
+    lock_pool: LockPool | None,
+) -> BotProtocol:
+    from controlmesh.messenger.qqbot.bot import QQBotBot
+
+    return QQBotBot(config, agent_name=agent_name, bus=bus, lock_pool=lock_pool)
+
+
 _TRANSPORT_FACTORIES: dict[str, _Factory] = {
     "telegram": _create_telegram,
     "matrix": _create_matrix,
     "feishu": _create_feishu,
     "weixin": _create_weixin,
+    "qqbot": _create_qqbot,
 }

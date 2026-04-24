@@ -73,12 +73,15 @@ async def _do_handshake(
     ws: Any,
     token: str = _DEFAULT_TOKEN,
     chat_id: int | None = None,
+    transport: str | None = None,
 ) -> tuple[E2ESession, dict[str, Any]]:
     """Perform E2E handshake.  Returns (client_e2e, auth_ok_data)."""
     client = E2ESession()
     auth_msg: dict[str, Any] = {"type": "auth", "token": token, "e2e_pk": client.local_pk_b64}
     if chat_id is not None:
         auth_msg["chat_id"] = chat_id
+    if transport is not None:
+        auth_msg["transport"] = transport
     await ws.send_json(auth_msg)
     resp = await ws.receive_json()
     assert resp["type"] == "auth_ok"
@@ -177,6 +180,17 @@ class TestE2EHandshake:
         assert resp["chat_id"] == 999
         await ws.close()
 
+    async def test_transport_label_roundtrips_in_auth_ok(
+        self,
+        api_ws: tuple[TestClient, ApiServer],
+    ) -> None:
+        client, _ = api_ws
+        ws = await client.ws_connect("/ws")
+        _, resp = await _do_handshake(ws, chat_id=999, transport="qq")
+        assert resp["chat_id"] == 999
+        assert resp["transport"] == "qq"
+        await ws.close()
+
     async def test_missing_e2e_pk_rejected(self, api_ws: tuple[TestClient, ApiServer]) -> None:
         client, _ = api_ws
         ws = await client.ws_connect("/ws")
@@ -191,6 +205,25 @@ class TestE2EHandshake:
         ws = await client.ws_connect("/ws")
         await ws.send_json(
             {"type": "auth", "token": _DEFAULT_TOKEN, "e2e_pk": "not-valid-base64!!"},
+        )
+        resp = await ws.receive_json()
+        assert resp["type"] == "error"
+        assert resp["code"] == "auth_failed"
+
+    async def test_invalid_transport_label_rejected(
+        self,
+        api_ws: tuple[TestClient, ApiServer],
+    ) -> None:
+        client, _ = api_ws
+        ws = await client.ws_connect("/ws")
+        e2e = E2ESession()
+        await ws.send_json(
+            {
+                "type": "auth",
+                "token": _DEFAULT_TOKEN,
+                "e2e_pk": e2e.local_pk_b64,
+                "transport": "qq:bad",
+            },
         )
         resp = await ws.receive_json()
         assert resp["type"] == "error"

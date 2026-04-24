@@ -164,3 +164,44 @@ async def test_send_async_to_agent_uses_interagent_bus() -> None:
             topic_id=9,
         ),
     )
+
+
+async def test_string_native_refs_flow_through_runtime_tools() -> None:
+    hub = MagicMock()
+    hub.submit.return_value = "taskqq1"
+    bus = MagicMock()
+    bus.send_async.return_value = "asyncqq1"
+    ctx = AgentsRuntimeContext(
+        agent_name="main",
+        chat_id="qqbot:c2c:OPENID",
+        topic_id="qqbot:channel:THREAD",
+        transport="qqbot",
+        process_label="main",
+        task_hub=hub,
+        interagent_bus=bus,
+    )
+
+    task_result = await create_background_task(ctx, prompt="Inspect qqbot wiring")
+    send_result = await send_async_to_agent(
+        ctx,
+        recipient="reviewer",
+        message="Check qqbot diff",
+        summary="QQ review",
+    )
+
+    assert task_result.ok is True
+    assert send_result.ok is True
+    submit = hub.submit.call_args.args[0]
+    assert submit.chat_id == "qqbot:c2c:OPENID"
+    assert submit.thread_id == "qqbot:channel:THREAD"
+    bus.send_async.assert_called_once_with(
+        "main",
+        "reviewer",
+        "Check qqbot diff",
+        opts=AsyncSendOptions(
+            new_session=False,
+            summary="QQ review",
+            chat_id="qqbot:c2c:OPENID",
+            topic_id="qqbot:channel:THREAD",
+        ),
+    )
