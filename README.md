@@ -179,7 +179,9 @@ scripts/release_github.sh v0.21.0 --notes-file /tmp/release-notes.md
 - 先创建或验证本地 annotated tag
 - 先推分支，再单独推 tag
 - 先核对远端 tag 指向
-- 最后才 `gh release create --verify-tag`
+- 最后才创建 GitHub Release
+  - 如果本机 `gh` 支持，会用 `--verify-tag`
+  - 老版本 `gh` 则退回到“先人工校验远端 tag，再创建 release”
 
 这条脚本的原则是：GitHub Release 只消费已有 tag，不负责创建 tag。
 

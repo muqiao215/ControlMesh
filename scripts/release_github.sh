@@ -21,7 +21,8 @@ Rules:
   - This script creates or verifies the local annotated tag first.
   - It pushes the branch and tag separately.
   - It verifies the remote tag commit before creating the GitHub Release.
-  - It always uses gh release create --verify-tag.
+  - It uses gh release create --verify-tag when the installed gh supports it.
+  - Otherwise it falls back to manual remote-tag verification before release creation.
   - It refuses to move an existing remote tag to a different commit.
 EOF
 }
@@ -39,6 +40,10 @@ require_clean_worktree() {
   if [[ -n "$(git status --short)" ]]; then
     die "working tree is not clean; commit or stash changes before releasing"
   fi
+}
+
+gh_supports_release_verify_tag() {
+  gh release create --help 2>/dev/null | grep -q -- '--verify-tag'
 }
 
 verify_version_matches_tag() {
@@ -194,7 +199,7 @@ if [[ "$skip_gate" -eq 0 && -f /root/.codex/skills/public-repo-release-gate/scri
 fi
 
 if [[ "$skip_tests" -eq 0 ]]; then
-  [[ "$dry_run" -eq 1 ]] || pytest -q
+  [[ "$dry_run" -eq 1 ]] || uv run --python 3.12 --extra dev pytest -q
 fi
 
 if [[ "$skip_build" -eq 0 ]]; then
@@ -221,7 +226,11 @@ if [[ "$dry_run" -eq 0 ]]; then
 fi
 
 if [[ "$dry_run" -eq 1 ]]; then
-  echo "dry-run: would run gh release create $tag --verify-tag"
+  if gh_supports_release_verify_tag; then
+    echo "dry-run: would run gh release create $tag --verify-tag"
+  else
+    echo "dry-run: would run gh release create $tag (without --verify-tag; remote tag already verified)"
+  fi
   exit 0
 fi
 
@@ -236,9 +245,14 @@ fi
 
 release_args=(
   "$tag"
-  --verify-tag
   --title "$title"
 )
+
+if gh_supports_release_verify_tag; then
+  release_args+=(--verify-tag)
+else
+  echo "info: installed gh does not support --verify-tag; using preverified remote tag fallback"
+fi
 
 if [[ -n "$notes_file" ]]; then
   release_args+=(--notes-file "$notes_file")
