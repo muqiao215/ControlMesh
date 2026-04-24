@@ -128,7 +128,7 @@ class TestLoadConfig:
     ) -> None:
         from controlmesh.__main__ import load_config
 
-        home = tmp_path / ".ductor"
+        home = tmp_path / ".controlmesh"
         config_dir = home / "config"
         config_dir.mkdir(parents=True)
         fw = tmp_path / "framework"

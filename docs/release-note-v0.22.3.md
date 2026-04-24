@@ -10,7 +10,7 @@ stability fixes that were blocking broader test execution.
 ## What Changed
 
 - replaced the outdated Telegram welcome artwork so `/start` no longer shows
-  legacy `ductor.dev` branding
+  obsolete pre-ControlMesh branding
 - updated the Telegram welcome copy and join notification copy to the current
   ControlMesh product wording
 - fixed `tests/cli/test_auth.py` so claw auth tests clear all relevant provider
