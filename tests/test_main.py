@@ -6,6 +6,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -588,17 +589,93 @@ class TestUpgradeCli:
             upgrade()
         mock_exec.assert_not_called()
 
-    def test_upgrade_rejects_dev_mode(self) -> None:
+    def test_upgrade_with_dev_source_install(self, tmp_path: Path) -> None:
         from controlmesh.cli_commands.lifecycle import upgrade
 
+        paths = _make_paths(tmp_path)
+        paths.controlmesh_home.mkdir(parents=True)
         with (
             patch("controlmesh.infra.install.detect_install_mode", return_value="dev"),
+            patch(f"{_LIFECYCLE}.resolve_paths", return_value=paths),
+            patch(
+                "controlmesh.infra.updater.check_source_upgrade_status",
+                new=AsyncMock(
+                    return_value=SimpleNamespace(
+                        actionable=True,
+                        output="can fast-forward",
+                    )
+                ),
+            ),
+            patch(
+                "controlmesh.infra.updater.perform_upgrade_pipeline",
+                new=AsyncMock(return_value=(True, "9.9.9", "source fast-forwarded")),
+            ) as mock_pipeline,
             patch(f"{_LIFECYCLE}.stop_bot") as mock_stop,
             patch(f"{_LIFECYCLE}._re_exec_bot") as mock_exec,
         ):
             upgrade()
+        mock_stop.assert_called_once()
+        mock_pipeline.assert_called_once()
+        mock_exec.assert_called_once()
+
+    def test_upgrade_dev_refusal_does_not_stop_bot(self, tmp_path: Path) -> None:
+        from controlmesh.cli_commands.lifecycle import upgrade
+
+        paths = _make_paths(tmp_path)
+        paths.controlmesh_home.mkdir(parents=True)
+        with (
+            patch("controlmesh.infra.install.detect_install_mode", return_value="dev"),
+            patch(f"{_LIFECYCLE}.resolve_paths", return_value=paths),
+            patch(
+                "controlmesh.infra.updater.check_source_upgrade_status",
+                new=AsyncMock(
+                    return_value=SimpleNamespace(
+                        actionable=False,
+                        output="dirty worktree",
+                    )
+                ),
+            ) as mock_status,
+            patch(
+                "controlmesh.infra.updater.perform_upgrade_pipeline",
+                new=AsyncMock(return_value=(False, get_current_version(), "should not run")),
+            ) as mock_pipeline,
+            patch(f"{_LIFECYCLE}.stop_bot") as mock_stop,
+            patch(f"{_LIFECYCLE}._re_exec_bot") as mock_exec,
+        ):
+            upgrade()
+        mock_status.assert_called_once()
         mock_stop.assert_not_called()
+        mock_pipeline.assert_not_called()
         mock_exec.assert_not_called()
+
+    def test_upgrade_dev_failure_after_stop_restarts_current_bot(self, tmp_path: Path) -> None:
+        from controlmesh.cli_commands.lifecycle import upgrade
+
+        paths = _make_paths(tmp_path)
+        paths.controlmesh_home.mkdir(parents=True)
+        with (
+            patch("controlmesh.infra.install.detect_install_mode", return_value="dev"),
+            patch(f"{_LIFECYCLE}.resolve_paths", return_value=paths),
+            patch(
+                "controlmesh.infra.updater.check_source_upgrade_status",
+                new=AsyncMock(
+                    return_value=SimpleNamespace(
+                        actionable=True,
+                        output="can fast-forward",
+                    )
+                ),
+            ),
+            patch(
+                "controlmesh.infra.updater.perform_upgrade_pipeline",
+                new=AsyncMock(return_value=(False, get_current_version(), "pull failed")),
+            ) as mock_pipeline,
+            patch(f"{_LIFECYCLE}.stop_bot") as mock_stop,
+            patch(f"{_LIFECYCLE}._re_exec_bot") as mock_exec,
+        ):
+            upgrade()
+        mock_stop.assert_called_once()
+        mock_pipeline.assert_called_once()
+        mock_exec.assert_called_once()
 
 
 class TestReExecBot:

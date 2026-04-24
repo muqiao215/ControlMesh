@@ -7,6 +7,7 @@ import contextlib
 import json
 import logging
 import os
+import shutil
 import sys
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -38,6 +39,22 @@ class InstalledState:
 
     version: str
     commit_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SourceUpgradeStatus:
+    """Preflight status for editable/source upgrades."""
+
+    current_version: str
+    repo_root: Path | None = None
+    current_commit: str | None = None
+    branch: str | None = None
+    upstream: str | None = None
+    ahead: int = 0
+    behind: int = 0
+    actionable: bool = False
+    message: str = ""
+    output: str = ""
 
 
 class UpdateObserver:
@@ -147,6 +164,7 @@ async def _run_upgrade_command(
     cmd: list[str],
     *,
     env: dict[str, str],
+    cwd: str | None = None,
 ) -> tuple[bool, str]:
     """Execute one upgrade command and return ``(success, output)``."""
     proc = await asyncio.create_subprocess_exec(
@@ -154,10 +172,351 @@ async def _run_upgrade_command(
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
         env=env,
+        cwd=cwd,
     )
     stdout, _ = await proc.communicate()
     output = stdout.decode(errors="replace") if stdout else ""
     return (proc.returncode or 0) == 0, output
+
+
+def _source_repo_hint(install_info: InstallInfo) -> Path | None:
+    """Return the editable/source checkout path hint from install metadata."""
+    if install_info.local_path:
+        return Path(install_info.local_path).expanduser()
+    return None
+
+
+async def _resolve_source_repo_root(repo_hint: Path) -> tuple[Path | None, str]:
+    """Resolve the canonical git toplevel for a source checkout."""
+    if shutil.which("git") is None:
+        return None, "Source upgrade requires `git` in PATH."
+
+    env = dict(os.environ)
+    ok, output = await _run_upgrade_command(
+        ["git", "-C", str(repo_hint), "rev-parse", "--show-toplevel"],
+        env=env,
+    )
+    if not ok:
+        message = output.strip() or f"No git repository found at `{repo_hint}`."
+        return None, message
+    root_text = output.strip().splitlines()[-1].strip()
+    if not root_text:
+        return None, f"Could not resolve git repository root from `{repo_hint}`."
+    return Path(root_text), output
+
+
+async def _git_output(repo_root: Path, *args: str) -> tuple[bool, str]:
+    """Run a git command inside *repo_root* and capture combined output."""
+    env = dict(os.environ)
+    return await _run_upgrade_command(["git", "-C", str(repo_root), *args], env=env)
+
+
+async def _get_git_head(repo_root: Path) -> str | None:
+    """Read the current HEAD commit for the source checkout."""
+    ok, output = await _git_output(repo_root, "rev-parse", "HEAD")
+    if not ok:
+        return None
+    head = output.strip().splitlines()[-1].strip()
+    return head or None
+
+
+async def _read_source_state(current_version: str, repo_root: Path) -> InstalledState:
+    """Read installed version and source commit for editable installs."""
+    version = await get_installed_version()
+    commit_id = await _get_git_head(repo_root)
+    return InstalledState(version=version or current_version, commit_id=commit_id)
+
+
+async def _wait_for_source_state_change(
+    previous: InstalledState,
+    repo_root: Path,
+) -> InstalledState:
+    """Wait briefly for source checkout state to settle after an editable refresh."""
+    installed = await _read_source_state(previous.version, repo_root)
+    if _state_changed(installed, previous):
+        return installed
+    for delay in _VERIFY_DELAYS_S:
+        await asyncio.sleep(delay)
+        installed = await _read_source_state(previous.version, repo_root)
+        if _state_changed(installed, previous):
+            return installed
+    return installed
+
+
+def _short_commit(commit_id: str | None) -> str:
+    """Return a compact commit id for user-facing status text."""
+    if not commit_id:
+        return "unknown"
+    return commit_id[:7]
+
+
+async def check_source_upgrade_status(
+    *,
+    current_version: str,
+    install_info: InstallInfo | None = None,
+    fetch: bool = True,
+) -> SourceUpgradeStatus:
+    """Inspect whether an editable/source install has a safe fast-forward path."""
+    active_install = install_info or detect_install_info()
+    repo_hint = _source_repo_hint(active_install)
+    if repo_hint is None:
+        message = "Could not determine the source checkout for this editable install."
+        return SourceUpgradeStatus(
+            current_version=current_version,
+            message=message,
+            output=message,
+        )
+
+    repo_root, repo_output = await _resolve_source_repo_root(repo_hint)
+    if repo_root is None:
+        message = repo_output.strip() or "Could not resolve source checkout."
+        return SourceUpgradeStatus(
+            current_version=current_version,
+            message=message,
+            output=message,
+        )
+
+    current_state = await _read_source_state(current_version, repo_root)
+    current_commit = current_state.commit_id
+    if current_commit is None:
+        message = "Could not determine current git commit."
+        output = _combine_outputs([repo_output, message])
+        return SourceUpgradeStatus(
+            current_version=current_version,
+            repo_root=repo_root,
+            message=message,
+            output=output,
+        )
+
+    outputs = [repo_output]
+
+    ok, branch_output = await _git_output(repo_root, "symbolic-ref", "--short", "HEAD")
+    outputs.append(branch_output)
+    if not ok:
+        message = "Refusing source upgrade: repository is in detached HEAD state."
+        return SourceUpgradeStatus(
+            current_version=current_version,
+            repo_root=repo_root,
+            current_commit=current_commit,
+            message=message,
+            output=_combine_outputs([*outputs, message]),
+        )
+    branch = branch_output.strip().splitlines()[-1].strip()
+
+    ok, status_output = await _git_output(repo_root, "status", "--porcelain")
+    outputs.append(status_output)
+    if not ok:
+        return SourceUpgradeStatus(
+            current_version=current_version,
+            repo_root=repo_root,
+            current_commit=current_commit,
+            branch=branch,
+            message="Failed to read git worktree status.",
+            output=_combine_outputs(outputs),
+        )
+    dirty = [line for line in status_output.splitlines() if line.strip()]
+    if dirty:
+        message = "Refusing source upgrade: worktree has uncommitted or untracked changes."
+        return SourceUpgradeStatus(
+            current_version=current_version,
+            repo_root=repo_root,
+            current_commit=current_commit,
+            branch=branch,
+            message=message,
+            output=_combine_outputs([*outputs, message, "\n".join(dirty)]),
+        )
+
+    if fetch:
+        ok, fetch_output = await _git_output(repo_root, "fetch", "--prune", "--tags")
+        outputs.append(fetch_output)
+        if not ok:
+            return SourceUpgradeStatus(
+                current_version=current_version,
+                repo_root=repo_root,
+                current_commit=current_commit,
+                branch=branch,
+                message="Failed to fetch upstream updates.",
+                output=_combine_outputs(outputs),
+            )
+
+    ok, upstream_output = await _git_output(
+        repo_root, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"
+    )
+    outputs.append(upstream_output)
+    if not ok:
+        message = (
+            f"Refusing source upgrade: branch `{branch or 'HEAD'}` has no upstream tracking branch."
+        )
+        return SourceUpgradeStatus(
+            current_version=current_version,
+            repo_root=repo_root,
+            current_commit=current_commit,
+            branch=branch,
+            message=message,
+            output=_combine_outputs([*outputs, message]),
+        )
+    upstream = upstream_output.strip().splitlines()[-1].strip()
+
+    ok, count_output = await _git_output(repo_root, "rev-list", "--left-right", "--count", "HEAD...@{u}")
+    outputs.append(count_output)
+    if not ok:
+        message = "Could not determine local/upstream commit distance."
+        return SourceUpgradeStatus(
+            current_version=current_version,
+            repo_root=repo_root,
+            current_commit=current_commit,
+            branch=branch,
+            upstream=upstream,
+            message=message,
+            output=_combine_outputs([*outputs, message]),
+        )
+
+    try:
+        ahead_text, behind_text = count_output.strip().split()
+        ahead = int(ahead_text)
+        behind = int(behind_text)
+    except (TypeError, ValueError):
+        message = "Could not determine local/upstream commit distance."
+        return SourceUpgradeStatus(
+            current_version=current_version,
+            repo_root=repo_root,
+            current_commit=current_commit,
+            branch=branch,
+            upstream=upstream,
+            message=message,
+            output=_combine_outputs([*outputs, message]),
+        )
+
+    if ahead > 0 and behind > 0:
+        message = (
+            "Refusing source upgrade: local branch has diverged from upstream "
+            f"(`{branch}` vs `{upstream}`, ahead {ahead}, behind {behind})."
+        )
+        return SourceUpgradeStatus(
+            current_version=current_version,
+            repo_root=repo_root,
+            current_commit=current_commit,
+            branch=branch,
+            upstream=upstream,
+            ahead=ahead,
+            behind=behind,
+            message=message,
+            output=_combine_outputs([*outputs, message]),
+        )
+
+    if ahead > 0:
+        message = (
+            "Refusing source upgrade: local branch is ahead of upstream "
+            f"(`{branch}` vs `{upstream}`, ahead {ahead})."
+        )
+        return SourceUpgradeStatus(
+            current_version=current_version,
+            repo_root=repo_root,
+            current_commit=current_commit,
+            branch=branch,
+            upstream=upstream,
+            ahead=ahead,
+            behind=behind,
+            message=message,
+            output=_combine_outputs([*outputs, message]),
+        )
+
+    if behind == 0:
+        message = f"Source checkout already matches upstream (`{branch}` -> `{upstream}`)."
+        return SourceUpgradeStatus(
+            current_version=current_version,
+            repo_root=repo_root,
+            current_commit=current_commit,
+            branch=branch,
+            upstream=upstream,
+            ahead=ahead,
+            behind=behind,
+            message=message,
+            output=_combine_outputs([*outputs, message]),
+        )
+
+    message = (
+        f"Source checkout can fast-forward `{branch}` -> `{upstream}` "
+        f"({behind} commit{'s' if behind != 1 else ''} behind)."
+    )
+    return SourceUpgradeStatus(
+        current_version=current_version,
+        repo_root=repo_root,
+        current_commit=current_commit,
+        branch=branch,
+        upstream=upstream,
+        ahead=ahead,
+        behind=behind,
+        actionable=True,
+        message=message,
+        output=_combine_outputs([*outputs, message]),
+    )
+
+
+async def _perform_source_upgrade_pipeline(
+    *,
+    current_version: str,
+    install_info: InstallInfo,
+) -> tuple[bool, str, str]:
+    """Update an editable/source install via git + editable reinstall."""
+    status = await check_source_upgrade_status(current_version=current_version, install_info=install_info)
+    if not status.actionable or status.repo_root is None or status.current_commit is None:
+        return False, current_version, status.output or status.message
+
+    previous_state = InstalledState(version=current_version, commit_id=status.current_commit)
+    outputs = [status.output]
+
+    repo_root = status.repo_root
+    ok, pull_output = await _git_output(repo_root, "pull", "--ff-only")
+    outputs.append(pull_output)
+    if not ok:
+        return False, current_version, _combine_outputs(outputs)
+
+    env = {**os.environ, "PIP_NO_CACHE_DIR": "1"}
+    ok, reinstall_output = await _run_upgrade_command(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--upgrade",
+            "--no-cache-dir",
+            "-e",
+            str(repo_root),
+        ],
+        env=env,
+        cwd=str(repo_root),
+    )
+    outputs.append(reinstall_output)
+    if not ok:
+        return (
+            False,
+            current_version,
+            _combine_outputs(
+                [
+                    *outputs,
+                    (
+                        "Git fast-forward succeeded, but editable dependency refresh failed. "
+                        f"Review the pip output and rerun `python -m pip install -e {repo_root}`."
+                    ),
+                ]
+            ),
+        )
+
+    installed_state = await _wait_for_source_state_change(previous_state, repo_root)
+    if _state_changed(installed_state, previous_state):
+        return True, installed_state.version, _combine_outputs(outputs)
+
+    return (
+        False,
+        current_version,
+        _combine_outputs(
+            [
+                *outputs,
+                "Source upgrade completed commands but no new commit or installed state could be verified.",
+            ]
+        ),
+    )
 
 
 async def _perform_upgrade_impl(
@@ -347,8 +706,14 @@ async def perform_upgrade_pipeline(
     Returns:
         ``(changed, installed_version, output)``
     """
-    outputs: list[str] = []
     install_info = detect_install_info()
+    if install_info.mode == "dev":
+        return await _perform_source_upgrade_pipeline(
+            current_version=current_version,
+            install_info=install_info,
+        )
+
+    outputs: list[str] = []
     previous_state = InstalledState(
         version=current_version,
         commit_id=install_info.commit_id if install_info.source == "github" else None,

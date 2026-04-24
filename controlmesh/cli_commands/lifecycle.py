@@ -239,20 +239,8 @@ def uninstall() -> None:
 def upgrade() -> None:
     """Stop bot, upgrade package, restart."""
     from controlmesh.infra.install import detect_install_mode
-    from controlmesh.infra.updater import perform_upgrade_pipeline
+    from controlmesh.infra.updater import check_source_upgrade_status, perform_upgrade_pipeline
     from controlmesh.infra.version import get_current_version
-
-    mode = detect_install_mode()
-    if mode == "dev":
-        _console.print(
-            Panel(
-                t_rich("lifecycle.upgrade.dev_body"),
-                title=t_rich("lifecycle.upgrade.dev_title"),
-                border_style="yellow",
-                padding=(1, 2),
-            ),
-        )
-        return
 
     _console.print()
     _console.print(
@@ -265,6 +253,15 @@ def upgrade() -> None:
     )
 
     current = get_current_version()
+    mode = detect_install_mode()
+
+    if mode == "dev":
+        preflight = asyncio.run(check_source_upgrade_status(current_version=current))
+        if preflight.output:
+            _console.print(f"[dim]{preflight.output}[/dim]")
+        if not preflight.actionable:
+            _console.print(t_rich("lifecycle.upgrade.unchanged", version=current))
+            return
 
     # 1. Graceful stop
     stop_bot()
@@ -279,6 +276,9 @@ def upgrade() -> None:
 
     if not changed:
         _console.print(t_rich("lifecycle.upgrade.unchanged", version=actual))
+        if mode == "dev":
+            _console.print(t_rich("lifecycle.upgrade.restarting"))
+            _re_exec_bot()
         return
 
     _console.print(t_rich("lifecycle.upgrade.complete", old=current, new=actual))
