@@ -157,7 +157,8 @@ Per-topic `/model` behavior:
 
 1. resolve runtime target (provider/model)
 2. resolve session by `SessionKey`
-3. new session: append `MAINMEMORY.md` (+ agent roster context if available)
+3. new session: append memory context (`MEMORY.md` first, legacy compatibility
+   memory second) (+ agent roster context if available)
 4. apply message hooks
 5. build `AgentRequest` with `topic_id`
 6. persist in-flight foreground turn (`InflightTracker.begin`)

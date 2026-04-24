@@ -66,7 +66,7 @@ def test_read_startup_memory_context_prefers_meaningful_authority_and_legacy(
 
     assert "Authority Memory (v2)" in result
     assert "File-backed context wins." in result
-    assert "Legacy Main Memory" in result
+    assert "Legacy Compatibility Memory" in result
     assert "legacy memory" in result
 
 

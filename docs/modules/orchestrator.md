@@ -129,7 +129,8 @@ Important model-selector behavior:
 
 - session resolution via `SessionKey`
 - provider-isolated session buckets
-- optional new-session system prompt append (`MAINMEMORY.md`)
+- optional new-session system prompt append (memory-v2 authority first,
+  legacy compatibility memory second)
 - in-flight foreground turn tracking
 - single automatic recovery retry on SIGKILL/invalid resumed session
 - session update on success

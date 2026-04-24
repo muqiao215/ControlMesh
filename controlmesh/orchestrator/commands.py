@@ -136,10 +136,7 @@ def _mode_label(mode: str) -> str:
 def _mode_status_text(mode: str, model: str | None = None) -> str:
     """Render the session-local takeover mode status."""
     if mode == _CONTROL_MODE:
-        return (
-            "Takeover mode: ControlMesh\n"
-            "ControlMesh handles slash commands normally."
-        )
+        return "Takeover mode: ControlMesh\nControlMesh handles slash commands normally."
 
     model_line = f"\nTarget model: {model}" if model else ""
     display_channel = provider_public_token(mode)
@@ -432,7 +429,7 @@ async def cmd_memory(orch: Orchestrator, _key: SessionKey, _text: str) -> Orches
     if authority.strip():
         sections.extend(["## Authority Memory (v2)", authority.strip()])
     if legacy.strip():
-        sections.extend(["## Legacy Main Memory", legacy.strip()])
+        sections.extend(["## Legacy Compatibility Memory", legacy.strip()])
 
     if not sections:
         return OrchestratorResult(
@@ -498,7 +495,9 @@ async def _cmd_tasks_topology(
     args: list[str],
 ) -> OrchestratorResult:
     if not args or args[0].lower() == "status":
-        return OrchestratorResult(text=_tasks_topology_status_text(orch._config.tasks.default_topology))
+        return OrchestratorResult(
+            text=_tasks_topology_status_text(orch._config.tasks.default_topology)
+        )
 
     if len(args) > 1:
         return OrchestratorResult(text=_tasks_topology_usage_text())

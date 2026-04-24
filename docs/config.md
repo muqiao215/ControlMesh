@@ -345,7 +345,7 @@ When extras are configured, the supervisor startup timeout is dynamically extend
 | `cooldown_minutes` | `int` | `5` | Skip if user active recently |
 | `quiet_start` | `int` | `21` | Quiet start hour in `user_timezone` |
 | `quiet_end` | `int` | `8` | Quiet end hour in `user_timezone` |
-| `prompt` | `str` | default prompt | Multiline default prompt references `MAINMEMORY.md` and `cron_tasks/` |
+| `prompt` | `str` | default prompt | Multiline default prompt references memory-v2 (`MEMORY.md`, `DREAMS.md`, `memory/`), uses `MAINMEMORY.md` only as compatibility context, and checks `cron_tasks/` |
 | `ack_token` | `str` | `"HEARTBEAT_OK"` | Suppression token |
 | `group_targets` | `list[HeartbeatTarget]` | `[]` | Per-group/topic heartbeat targets with optional overrides |
 

@@ -93,7 +93,9 @@ MAINMEMORY_REMINDER = MessageHook(
     condition=every_n_messages(6),
     suffix=(
         "## MEMORY CHECK\n"
-        "Silently review: MEMORY.md, DREAMS.md, memory/, memory_system/MAINMEMORY.md, "
+        "Silently review: MEMORY.md, DREAMS.md, memory/, then "
+        "memory_system/MAINMEMORY.md only for compatibility context, "
+        "plus "
         "user_tools/, cron_tasks/.\n"
         "Compare what you already know with this conversation so far.\n"
         "If something important is missing from memory (personality, preferences, "

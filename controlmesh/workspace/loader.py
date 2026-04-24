@@ -35,7 +35,8 @@ def read_startup_memory_context(paths: ControlMeshPaths) -> str:
     """Build the memory context injected into a brand-new session.
 
     Includes memory-v2 authority only when it appears to contain actual promoted
-    memory entries, and includes legacy MAINMEMORY.md when non-empty.
+    memory entries, and includes legacy MAINMEMORY.md only as compatibility
+    context when non-empty.
     """
     sections: list[str] = []
     authority = read_file(paths.authority_memory_path) or ""
@@ -44,6 +45,6 @@ def read_startup_memory_context(paths: ControlMeshPaths) -> str:
 
     legacy = read_mainmemory(paths)
     if legacy.strip():
-        sections.extend(["## Legacy Main Memory", legacy.strip()])
+        sections.extend(["## Legacy Compatibility Memory", legacy.strip()])
 
     return "\n\n".join(sections)
