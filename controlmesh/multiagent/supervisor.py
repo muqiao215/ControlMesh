@@ -42,16 +42,15 @@ def _config_changed(new: AgentConfig, old: AgentConfig) -> bool:
     if new.transports != old.transports:
         return True
 
-    transports = dict.fromkeys([
-        old.transport,
-        *old.transports,
-        new.transport,
-        *new.transports,
-    ])
-    return any(
-        _transport_identity_changed(new, old, transport)
-        for transport in transports
+    transports = dict.fromkeys(
+        [
+            old.transport,
+            *old.transports,
+            new.transport,
+            *new.transports,
+        ]
     )
+    return any(_transport_identity_changed(new, old, transport) for transport in transports)
 
 
 def _transport_identity_changed(
@@ -521,9 +520,12 @@ class AgentSupervisor:
             name=f"agent:{name}",
         )
 
-        # Sync shared knowledge into the new agent's MAINMEMORY.md
+        # Sync shared knowledge into the new agent's v2 and legacy memory files.
         if self._shared_knowledge:
-            await self._shared_knowledge.sync_agent(stack.paths.mainmemory_path)
+            await self._shared_knowledge.sync_agent(
+                stack.paths.mainmemory_path,
+                stack.paths.authority_memory_path,
+            )
 
         logger.info("Sub-agent '%s' started (home=%s)", name, agent_home)
 

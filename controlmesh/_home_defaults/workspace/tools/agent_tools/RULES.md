@@ -222,8 +222,8 @@ can follow up directly with the sub-agent if needed.
 ## Shared Knowledge
 
 `SHAREDMEMORY.md` contains knowledge shared across all agents. Changes are
-automatically synced into every agent's MAINMEMORY.md compatibility layer via
-the supervisor.
+automatically synced into every agent's `MEMORY.md` authority and
+`MAINMEMORY.md` compatibility layer via the supervisor.
 
 ```bash
 # View current shared knowledge

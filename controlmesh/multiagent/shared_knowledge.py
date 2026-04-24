@@ -65,8 +65,21 @@ def _sync_agent_io(shared_path: Path, mainmemory_path: Path) -> bool:
     return False
 
 
+def _sync_agent_files(shared_path: Path, *memory_paths: Path) -> tuple[Path, ...]:
+    """Sync shared knowledge into every provided memory target.
+
+    Missing targets are ignored so legacy and v2 memory can evolve
+    independently without breaking the whole sync operation.
+    """
+    written: list[Path] = []
+    for memory_path in memory_paths:
+        if _sync_agent_io(shared_path, memory_path):
+            written.append(memory_path)
+    return tuple(written)
+
+
 class SharedKnowledgeSync:
-    """Watches ``SHAREDMEMORY.md`` and syncs its content into every agent's MAINMEMORY.md.
+    """Watches ``SHAREDMEMORY.md`` and syncs its content into every agent's memory files.
 
     The shared content is wrapped in Markdown-native markers::
 
@@ -76,6 +89,11 @@ class SharedKnowledgeSync:
 
     Legacy HTML comment markers (``<!-- SHARED:START/END -->``) are detected
     on read and automatically migrated to the new format on write.
+
+    Sync targets are:
+
+    - ``workspace/MEMORY.md`` (memory-v2 authority)
+    - ``workspace/memory_system/MAINMEMORY.md`` (legacy compatibility layer)
     """
 
     def __init__(self, shared_path: Path, supervisor: AgentSupervisor) -> None:
@@ -98,7 +116,8 @@ class SharedKnowledgeSync:
             self._path.write_text(
                 "# Shared Knowledge — All Agents\n\n"
                 "Knowledge written here is automatically synced into every\n"
-                "agent's MAINMEMORY.md by the Supervisor.\n",
+                "agent's MEMORY.md authority and MAINMEMORY.md compatibility\n"
+                "layer by the Supervisor.\n",
                 encoding="utf-8",
             )
             logger.info("Created seed SHAREDMEMORY.md at %s", self._path)
@@ -114,16 +133,22 @@ class SharedKnowledgeSync:
         logger.info("SHAREDMEMORY.md changed, syncing to all agents")
         await self._sync_all()
 
-    async def sync_agent(self, mainmemory_path: Path) -> None:
-        """Inject shared knowledge into a single agent's MAINMEMORY.md."""
-        written = await asyncio.to_thread(_sync_agent_io, self._path, mainmemory_path)
-        if written:
-            logger.info("Synced shared knowledge to %s", mainmemory_path)
+    async def sync_agent(
+        self, mainmemory_path: Path, authority_memory_path: Path | None = None
+    ) -> None:
+        """Inject shared knowledge into a single agent's v2 and legacy memory files."""
+        targets = [path for path in (authority_memory_path, mainmemory_path) if path is not None]
+        written = await asyncio.to_thread(_sync_agent_files, self._path, *targets)
+        for path in written:
+            logger.info("Synced shared knowledge to %s", path)
 
     async def _sync_all(self) -> None:
-        """Inject into all registered agents' MAINMEMORY.md files."""
+        """Inject into all registered agents' v2 and legacy memory files."""
         for name, stack in self._supervisor.stacks.items():
             try:
-                await self.sync_agent(stack.paths.mainmemory_path)
+                await self.sync_agent(
+                    stack.paths.mainmemory_path,
+                    stack.paths.authority_memory_path,
+                )
             except Exception:
                 logger.exception("Failed to sync shared knowledge to agent '%s'", name)

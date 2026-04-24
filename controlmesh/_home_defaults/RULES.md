@@ -56,7 +56,8 @@ for the full agent management command set.
 
 `~/.controlmesh/SHAREDMEMORY.md` contains facts shared across all agents
 (server info, user preferences, infrastructure). Changes are automatically
-synced into every agent's `MAINMEMORY.md` compatibility layer by the Supervisor.
+synced into every agent's `workspace/MEMORY.md` authority and
+`workspace/memory_system/MAINMEMORY.md` compatibility layer by the Supervisor.
 
 - For agent-specific knowledge: prefer your own durable memory files
   (`workspace/MEMORY.md`, `workspace/DREAMS.md`, and `workspace/memory/`).

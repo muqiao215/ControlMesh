@@ -299,6 +299,36 @@ class TestStartSubAgent:
 
         assert "sub1" not in supervisor._stacks
 
+    async def test_syncs_shared_knowledge_to_v2_and_legacy_memory(
+        self, supervisor: AgentSupervisor
+    ) -> None:
+        sub_cfg = SubAgentConfig(name="sub1", telegram_token="tok:1")
+
+        mock_stack = MagicMock()
+        mock_stack.bot = MagicMock()
+        mock_stack.bot.on_async_interagent_result = AsyncMock()
+        mock_stack.paths = MagicMock()
+        mock_stack.paths.mainmemory_path = Path("/tmp/sub1/memory_system/MAINMEMORY.md")
+        mock_stack.paths.authority_memory_path = Path("/tmp/sub1/MEMORY.md")
+
+        supervisor._shared_knowledge = MagicMock()
+        supervisor._shared_knowledge.sync_agent = AsyncMock()
+
+        with (
+            patch(
+                "controlmesh.multiagent.supervisor.AgentStack.create",
+                new_callable=AsyncMock,
+                return_value=mock_stack,
+            ),
+            patch.object(supervisor, "_supervised_run", new_callable=AsyncMock),
+        ):
+            await supervisor._start_sub_agent(sub_cfg)
+
+        supervisor._shared_knowledge.sync_agent.assert_awaited_once_with(
+            mock_stack.paths.mainmemory_path,
+            mock_stack.paths.authority_memory_path,
+        )
+
 
 class TestStopAll:
     """Test stop_all() ordered shutdown."""
@@ -538,7 +568,9 @@ class TestSupervisorStartupHook:
             orchestrator=orch,
             team_state_root=orch.paths.team_state_dir,
         )
-        supervisor._internal_api.set_team_runtime_controller.assert_called_once_with(fake_controller)
+        supervisor._internal_api.set_team_runtime_controller.assert_called_once_with(
+            fake_controller
+        )
         fake_controller.recover_live_runtimes.assert_awaited_once_with()
         orch.register_multiagent_commands.assert_called_once_with()
         stack.bot.set_abort_all_callback.assert_called_once_with(supervisor.abort_all_agents)

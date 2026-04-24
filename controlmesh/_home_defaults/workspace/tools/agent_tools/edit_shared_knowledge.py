@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """View or edit the shared knowledge file (SHAREDMEMORY.md).
 
-SHAREDMEMORY.md is automatically synced into every agent's MAINMEMORY.md
-compatibility layer
-by the AgentSupervisor. Use this tool to read or update shared knowledge
-without needing to know the file path.
+SHAREDMEMORY.md is automatically synced into every agent's MEMORY.md authority
+and MAINMEMORY.md compatibility layer by the AgentSupervisor. Use this tool to
+read or update shared knowledge without needing to know the file path.
 
 Usage:
     python3 edit_shared_knowledge.py --show

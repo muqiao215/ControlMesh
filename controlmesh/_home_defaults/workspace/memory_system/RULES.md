@@ -45,8 +45,9 @@ python3 tools/agent_tools/edit_shared_knowledge.py --append "New shared fact"
 ```
 
 The Supervisor automatically syncs SHAREDMEMORY.md into every agent's
-MAINMEMORY.md compatibility layer. Agent-specific knowledge (project details,
-personal context) stays in your own memory files.
+`../MEMORY.md` authority and `MAINMEMORY.md` compatibility layer.
+Agent-specific knowledge (project details, personal context) stays in your own
+memory files.
 
 ## Cleanup Rules
 
