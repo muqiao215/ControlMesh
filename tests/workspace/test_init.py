@@ -34,9 +34,6 @@ def _setup_home_defaults(fw_root: Path) -> None:
         d.mkdir()
         (d / "CLAUDE.md").write_text(f"# {subdir} CLAUDE.md")
 
-    # MAINMEMORY.md (seed-only)
-    (inner / "memory_system" / "MAINMEMORY.md").write_text("# Main Memory\n")
-
     # tools/ tree
     tools = inner / "tools"
     tools.mkdir()
@@ -181,11 +178,10 @@ def test_replaces_stale_symlinks_with_copies(tmp_path: Path) -> None:
 # -- Zone 3: seed defaults (never overwrite) --
 
 
-def test_seeds_mainmemory(tmp_path: Path) -> None:
+def test_does_not_seed_mainmemory_by_default(tmp_path: Path) -> None:
     paths = _make_paths(tmp_path)
     init_workspace(paths)
-    assert paths.mainmemory_path.exists()
-    assert len(paths.mainmemory_path.read_text()) > 0
+    assert not paths.mainmemory_path.exists()
 
 
 def test_seeds_memory_v2_files(tmp_path: Path) -> None:
@@ -304,7 +300,7 @@ def test_idempotent_double_init(tmp_path: Path) -> None:
 
     assert paths.workspace.is_dir()
     assert (paths.workspace / "CLAUDE.md").exists()
-    assert paths.mainmemory_path.exists()
+    assert not paths.mainmemory_path.exists()
 
 
 # -- orphan symlink cleanup --

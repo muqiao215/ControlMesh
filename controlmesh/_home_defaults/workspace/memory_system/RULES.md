@@ -1,6 +1,7 @@
 # Memory System
 
 `MAINMEMORY.md` is the legacy compatibility memory file across sessions.
+It may be absent until a compatibility sync needs to create it.
 Primary durable memory now lives in `../MEMORY.md`, `../DREAMS.md`, and `../memory/`.
 
 ## Silence Is Mandatory
@@ -11,7 +12,7 @@ Memory operations are invisible.
 ## Read First
 
 At the start of new sessions (especially personal or ongoing work), read
-`../MEMORY.md`, `../DREAMS.md`, `../memory/`, and `MAINMEMORY.md`.
+`../MEMORY.md`, `../DREAMS.md`, `../memory/`, and `MAINMEMORY.md` if present.
 
 ## When to Write
 

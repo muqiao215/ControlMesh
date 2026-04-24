@@ -114,6 +114,24 @@ def test_sync_authority_to_legacy_mainmemory_replaces_existing_compat_block(tmp_
     assert legacy_text.count(_COMPAT_END_MARKER) == 1
 
 
+def test_sync_authority_to_legacy_mainmemory_creates_file_on_first_compat_sync(
+    tmp_path: Path,
+) -> None:
+    paths = _make_paths(tmp_path)
+    assert not paths.mainmemory_path.exists()
+
+    written = sync_authority_to_legacy_mainmemory(
+        paths,
+        authority_text="# ControlMesh Memory v2\n\n## Durable Memory\n\n### Decision\n- First compat sync.\n",
+    )
+
+    assert written is True
+    assert paths.mainmemory_path.exists()
+    legacy_text = paths.mainmemory_path.read_text(encoding="utf-8")
+    assert _COMPAT_START_MARKER in legacy_text
+    assert "First compat sync." in legacy_text
+
+
 def test_sync_authority_to_legacy_mainmemory_removes_empty_compat_block(tmp_path: Path) -> None:
     paths = _make_paths(tmp_path)
     paths.memory_system_dir.mkdir(parents=True, exist_ok=True)
