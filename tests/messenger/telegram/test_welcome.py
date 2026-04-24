@@ -128,7 +128,8 @@ class TestBuildWelcomeText:
 
         text = build_welcome_text("X", {}, _config())
 
-        assert "Deploy from your pocket" in text
+        assert "Chat-native task runtime" in text
+        assert "background tasks, memory" in text
         assert "Claude Code" in text
         assert "/model" in text
         assert "/help" in text

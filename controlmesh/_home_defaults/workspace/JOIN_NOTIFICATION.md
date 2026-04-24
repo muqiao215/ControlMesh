@@ -1,9 +1,11 @@
-Welcome! I'm your AI assistant. Here's what you need to know:
+Welcome to ControlMesh.
 
-**Commands** (use `/` in Telegram, `!` in Matrix)
-- `/new` — Start fresh conversation (clears context)
-- `/stop` — Cancel running task
-- `/model` — Switch AI model
-- `/help` — All commands
+Chat-native runtime for Claude Code, Codex, and Gemini.
 
-Send any message to begin.
+**Start here** (use `/` in Telegram, `!` in Matrix)
+- `/new` — Start a fresh session
+- `/model` — Switch model
+- `/tasks` — Check background tasks
+- `/help` — Full command map
+
+Send any message to start working.

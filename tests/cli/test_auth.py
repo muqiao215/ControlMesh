@@ -272,11 +272,22 @@ def test_check_openai_agents_auth_env_key(monkeypatch: pytest.MonkeyPatch) -> No
 # -- claw auth --
 
 
+def _clear_claw_auth_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in (
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_AUTH_TOKEN",
+        "OPENAI_API_KEY",
+        "XAI_API_KEY",
+        "DASHSCOPE_API_KEY",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+
 def test_check_claw_auth_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
     import controlmesh.cli.auth as _auth_mod
 
     monkeypatch.setattr(_auth_mod, "which", lambda _name: None)
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    _clear_claw_auth_env(monkeypatch)
 
     result = check_claw_auth()
 
@@ -300,7 +311,7 @@ def test_check_claw_auth_installed(monkeypatch: pytest.MonkeyPatch) -> None:
     import controlmesh.cli.auth as _auth_mod
 
     monkeypatch.setattr(_auth_mod, "which", lambda _name: "/usr/bin/claw")
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    _clear_claw_auth_env(monkeypatch)
 
     result = check_claw_auth()
 

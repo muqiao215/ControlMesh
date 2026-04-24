@@ -268,8 +268,8 @@ unknown_action = "Unknown action. Refreshed cron list."
 [welcome]
 header = "**Welcome to ControlMesh{name}!**"
 tagline = """\
-Deploy from your pocket. Automate from your couch.
-Claude Code, Codex & Gemini -- straight from Telegram."""
+Chat-native task runtime for Claude Code, Codex & Gemini.
+Sessions, background tasks, memory, and tool routing -- straight from Telegram."""
 hint_model = "/model — switch models"
 hint_info = "/info — docs & links"
 hint_help = "/help — all commands"
