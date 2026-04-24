@@ -8,6 +8,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from controlmesh.infra.file_watcher import FileWatcher
+from controlmesh.memory.compat import (
+    _COMPAT_END_MARKER,
+    _COMPAT_START_MARKER,
+    sync_authority_text_to_legacy_mainmemory,
+)
 
 if TYPE_CHECKING:
     from controlmesh.multiagent.supervisor import AgentSupervisor
@@ -65,16 +70,69 @@ def _sync_agent_io(shared_path: Path, mainmemory_path: Path) -> bool:
     return False
 
 
-def _sync_agent_files(shared_path: Path, *memory_paths: Path) -> tuple[Path, ...]:
-    """Sync shared knowledge into every provided memory target.
+def _remove_shared_block(memory_path: Path) -> bool:
+    """Remove direct shared-knowledge injection from a legacy target."""
+    if not memory_path.is_file():
+        return False
 
-    Missing targets are ignored so legacy and v2 memory can evolve
-    independently without breaking the whole sync operation.
-    """
+    current = memory_path.read_text(encoding="utf-8")
+    if _COMPAT_START_MARKER in current and _COMPAT_END_MARKER in current:
+        compat_start = current.find(_COMPAT_START_MARKER)
+        compat_end = current.find(_COMPAT_END_MARKER) + len(_COMPAT_END_MARKER)
+        before_compat = current[:compat_start]
+        compat_block = current[compat_start:compat_end]
+        after_compat = current[compat_end:]
+        new_content = (
+            _remove_shared_block_from_segment(before_compat)
+            + compat_block
+            + _remove_shared_block_from_segment(after_compat)
+        )
+    else:
+        new_content = _remove_shared_block_from_segment(current)
+
+    if new_content == current:
+        return False
+
+    memory_path.write_text(new_content, encoding="utf-8")
+    return True
+
+
+def _remove_shared_block_from_segment(content: str) -> str:
+    """Remove a direct shared block from one content segment, if present."""
+    markers = _find_markers(content)
+    if markers is None:
+        return content
+
+    start, end = markers
+    before = content.split(start, 1)[0]
+    after_parts = content.split(end, 1)
+    after = after_parts[1] if len(after_parts) > 1 else ""
+    trimmed = (
+        f"{before.rstrip()}\n{after.lstrip()}"
+        if before.strip() and after.strip()
+        else before + after
+    )
+    return trimmed.rstrip() + ("\n" if trimmed.strip() else "")
+
+
+def _sync_agent_files(
+    shared_path: Path,
+    mainmemory_path: Path,
+    authority_memory_path: Path | None = None,
+) -> tuple[Path, ...]:
+    """Sync shared knowledge into authority memory, then mirror legacy compat."""
     written: list[Path] = []
-    for memory_path in memory_paths:
-        if _sync_agent_io(shared_path, memory_path):
-            written.append(memory_path)
+    if authority_memory_path is None or not authority_memory_path.is_file():
+        return tuple(written)
+
+    if _sync_agent_io(shared_path, authority_memory_path):
+        written.append(authority_memory_path)
+
+    authority_text = authority_memory_path.read_text(encoding="utf-8")
+    removed_legacy_block = _remove_shared_block(mainmemory_path)
+    synced_legacy = sync_authority_text_to_legacy_mainmemory(mainmemory_path, authority_text)
+    if removed_legacy_block or synced_legacy:
+        written.append(mainmemory_path)
     return tuple(written)
 
 
@@ -137,8 +195,12 @@ class SharedKnowledgeSync:
         self, mainmemory_path: Path, authority_memory_path: Path | None = None
     ) -> None:
         """Inject shared knowledge into a single agent's v2 and legacy memory files."""
-        targets = [path for path in (authority_memory_path, mainmemory_path) if path is not None]
-        written = await asyncio.to_thread(_sync_agent_files, self._path, *targets)
+        written = await asyncio.to_thread(
+            _sync_agent_files,
+            self._path,
+            mainmemory_path,
+            authority_memory_path,
+        )
         for path in written:
             logger.info("Synced shared knowledge to %s", path)
 

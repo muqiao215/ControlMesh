@@ -5,6 +5,10 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from controlmesh.memory.compat import (
+    has_meaningful_authority_content,
+    strip_legacy_authority_compat,
+)
 from controlmesh.workspace.paths import ControlMeshPaths
 
 logger = logging.getLogger(__name__)
@@ -23,7 +27,8 @@ def read_file(path: Path) -> str | None:
 
 def read_mainmemory(paths: ControlMeshPaths) -> str:
     """Read MAINMEMORY.md, returning empty string if missing."""
-    return read_file(paths.mainmemory_path) or ""
+    raw = read_file(paths.mainmemory_path) or ""
+    return strip_legacy_authority_compat(raw)
 
 
 def read_startup_memory_context(paths: ControlMeshPaths) -> str:
@@ -34,7 +39,7 @@ def read_startup_memory_context(paths: ControlMeshPaths) -> str:
     """
     sections: list[str] = []
     authority = read_file(paths.authority_memory_path) or ""
-    if _has_meaningful_authority_content(authority):
+    if has_meaningful_authority_content(authority):
         sections.extend(["## Authority Memory (v2)", authority.strip()])
 
     legacy = read_mainmemory(paths)
@@ -42,8 +47,3 @@ def read_startup_memory_context(paths: ControlMeshPaths) -> str:
         sections.extend(["## Legacy Main Memory", legacy.strip()])
 
     return "\n\n".join(sections)
-
-
-def _has_meaningful_authority_content(content: str) -> bool:
-    """Return True when ``MEMORY.md`` contains promoted memory entries."""
-    return any(line.lstrip().startswith("- ") for line in content.splitlines())

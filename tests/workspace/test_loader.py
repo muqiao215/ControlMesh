@@ -50,7 +50,9 @@ def test_read_mainmemory_missing(tmp_path: Path) -> None:
     assert read_mainmemory(paths) == ""
 
 
-def test_read_startup_memory_context_prefers_meaningful_authority_and_legacy(tmp_path: Path) -> None:
+def test_read_startup_memory_context_prefers_meaningful_authority_and_legacy(
+    tmp_path: Path,
+) -> None:
     paths = _make_paths(tmp_path)
     paths.memory_system_dir.mkdir(parents=True)
     paths.workspace.mkdir(parents=True, exist_ok=True)
@@ -77,3 +79,38 @@ def test_read_startup_memory_context_ignores_empty_authority_template(tmp_path: 
     )
 
     assert read_startup_memory_context(paths) == ""
+
+
+def test_read_startup_memory_context_treats_shared_block_as_meaningful_authority(
+    tmp_path: Path,
+) -> None:
+    paths = _make_paths(tmp_path)
+    paths.workspace.mkdir(parents=True, exist_ok=True)
+    paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n"
+        "## Durable Memory\n\n"
+        "### Fact\n\n"
+        "--- SHARED KNOWLEDGE START ---\n"
+        "Shared context only.\n"
+        "--- SHARED KNOWLEDGE END ---\n",
+        encoding="utf-8",
+    )
+
+    result = read_startup_memory_context(paths)
+    assert "Authority Memory (v2)" in result
+    assert "Shared context only." in result
+
+
+def test_read_mainmemory_strips_authority_compat_mirror(tmp_path: Path) -> None:
+    paths = _make_paths(tmp_path)
+    paths.memory_system_dir.mkdir(parents=True)
+    paths.mainmemory_path.write_text(
+        "# Main Memory\n\n"
+        "--- MEMORY V2 COMPAT START ---\n"
+        "## Authority Memory (v2 compatibility mirror)\n\n"
+        "# ControlMesh Memory v2\n\n## Durable Memory\n\n### Decision\n- Keep state local.\n"
+        "--- MEMORY V2 COMPAT END ---\n",
+        encoding="utf-8",
+    )
+
+    assert read_mainmemory(paths) == "# Main Memory"

@@ -10,6 +10,7 @@ from pathlib import Path
 
 from controlmesh.infra.atomic_io import atomic_text_save
 from controlmesh.infra.json_store import atomic_json_save, load_json
+from controlmesh.memory.compat import sync_authority_to_legacy_mainmemory
 from controlmesh.memory.models import (
     MemoryCategory,
     PromotionApplyResult,
@@ -121,6 +122,7 @@ def apply_candidates(
     for candidate in preview.selected:
         updated = _insert_candidate(updated, candidate, applied_on=applied_on)
     atomic_text_save(paths.authority_memory_path, updated)
+    sync_authority_to_legacy_mainmemory(paths, authority_text=updated)
 
     promotion_log = _load_promotion_log(paths)
     promoted_on = (applied_on or datetime.now(UTC).date()).isoformat()
@@ -150,7 +152,8 @@ def _load_promotion_log(paths: ControlMeshPaths) -> dict[str, dict[str, str | No
     for key, value in raw.items():
         if isinstance(key, str) and isinstance(value, dict):
             cleaned[key] = {
-                str(inner_key): _coerce_string(inner_value) for inner_key, inner_value in value.items()
+                str(inner_key): _coerce_string(inner_value)
+                for inner_key, inner_value in value.items()
             }
     return cleaned
 
@@ -161,7 +164,9 @@ def _coerce_string(value: object) -> str | None:
     return str(value)
 
 
-def _insert_candidate(authority_text: str, candidate: PromotionCandidate, *, applied_on: date | None) -> str:
+def _insert_candidate(
+    authority_text: str, candidate: PromotionCandidate, *, applied_on: date | None
+) -> str:
     heading = f"### {candidate.category.value.title()}"
     marker = _render_entry(candidate, applied_on=applied_on)
     lines = authority_text.splitlines()

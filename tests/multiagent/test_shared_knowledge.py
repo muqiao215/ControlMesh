@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from controlmesh.memory.compat import _COMPAT_END_MARKER, _COMPAT_START_MARKER
 from controlmesh.multiagent.shared_knowledge import (
     _END_MARKER,
     _LEGACY_END,
@@ -216,9 +217,12 @@ class TestSyncAgentFiles:
         self, shared_path: Path, mainmemory_path: Path, authority_memory_path: Path
     ) -> None:
         written = _sync_agent_files(shared_path, mainmemory_path, authority_memory_path)
-        assert written == (mainmemory_path, authority_memory_path)
+        assert written == (authority_memory_path, mainmemory_path)
 
-        assert "Shared content here" in mainmemory_path.read_text()
+        legacy_text = mainmemory_path.read_text()
+        assert _COMPAT_START_MARKER in legacy_text
+        assert _COMPAT_END_MARKER in legacy_text
+        assert "Shared content here" in legacy_text
         assert "Shared content here" in authority_memory_path.read_text()
 
     def test_skips_missing_target_but_updates_existing_ones(
@@ -226,7 +230,7 @@ class TestSyncAgentFiles:
     ) -> None:
         missing = tmp_path / "workspace" / "MEMORY.md"
         written = _sync_agent_files(shared_path, mainmemory_path, missing)
-        assert written == (mainmemory_path,)
+        assert written == ()
 
     def test_returns_empty_tuple_when_nothing_changed(
         self, shared_path: Path, mainmemory_path: Path, authority_memory_path: Path
@@ -234,3 +238,19 @@ class TestSyncAgentFiles:
         _sync_agent_files(shared_path, mainmemory_path, authority_memory_path)
         written = _sync_agent_files(shared_path, mainmemory_path, authority_memory_path)
         assert written == ()
+
+    def test_removes_legacy_direct_shared_block_after_authority_sync(
+        self, shared_path: Path, mainmemory_path: Path, authority_memory_path: Path
+    ) -> None:
+        mainmemory_path.write_text(
+            f"# Main Memory\n\n{_START_MARKER}\nold direct block\n{_END_MARKER}\n",
+            encoding="utf-8",
+        )
+
+        written = _sync_agent_files(shared_path, mainmemory_path, authority_memory_path)
+
+        assert written == (authority_memory_path, mainmemory_path)
+        legacy_text = mainmemory_path.read_text(encoding="utf-8")
+        assert "old direct block" not in legacy_text
+        assert legacy_text.count(_START_MARKER) == 1
+        assert _COMPAT_START_MARKER in legacy_text

@@ -9,6 +9,11 @@ from controlmesh.memory.commands import (
     apply_daily_note_promotions,
     preview_daily_note_promotions,
 )
+from controlmesh.memory.compat import (
+    _COMPAT_END_MARKER,
+    _COMPAT_START_MARKER,
+    sync_authority_to_legacy_mainmemory,
+)
 from controlmesh.memory.promotion import parse_promotion_candidates
 from controlmesh.memory.store import ensure_daily_note, initialize_memory_v2
 from controlmesh.workspace.paths import ControlMeshPaths
@@ -77,3 +82,53 @@ def test_preview_and_apply_daily_note_promotions(tmp_path: Path) -> None:
     second = apply_daily_note_promotions(paths, date(2026, 4, 8), min_score=0.8)
     assert second.applied_count == 0
     assert second.skipped_existing == 1
+
+    legacy_text = paths.mainmemory_path.read_text(encoding="utf-8")
+    assert _COMPAT_START_MARKER in legacy_text
+    assert _COMPAT_END_MARKER in legacy_text
+    assert "Keep canonical authority file-backed and human-readable." in legacy_text
+
+
+def test_sync_authority_to_legacy_mainmemory_replaces_existing_compat_block(tmp_path: Path) -> None:
+    paths = _make_paths(tmp_path)
+    paths.memory_system_dir.mkdir(parents=True, exist_ok=True)
+    paths.workspace.mkdir(parents=True, exist_ok=True)
+    paths.mainmemory_path.write_text(
+        "# Main Memory\n\n"
+        "--- MEMORY V2 COMPAT START ---\nold mirror\n--- MEMORY V2 COMPAT END ---\n\n"
+        "--- SHARED KNOWLEDGE START ---\nshared\n--- SHARED KNOWLEDGE END ---\n",
+        encoding="utf-8",
+    )
+
+    written = sync_authority_to_legacy_mainmemory(
+        paths,
+        authority_text="# ControlMesh Memory v2\n\n## Durable Memory\n\n### Decision\n- New mirror.\n",
+    )
+
+    assert written is True
+    legacy_text = paths.mainmemory_path.read_text(encoding="utf-8")
+    assert "old mirror" not in legacy_text
+    assert "New mirror." in legacy_text
+    assert "shared" in legacy_text
+    assert legacy_text.count(_COMPAT_START_MARKER) == 1
+    assert legacy_text.count(_COMPAT_END_MARKER) == 1
+
+
+def test_sync_authority_to_legacy_mainmemory_removes_empty_compat_block(tmp_path: Path) -> None:
+    paths = _make_paths(tmp_path)
+    paths.memory_system_dir.mkdir(parents=True, exist_ok=True)
+    paths.mainmemory_path.write_text(
+        "# Main Memory\n\n"
+        "--- MEMORY V2 COMPAT START ---\nold mirror\n--- MEMORY V2 COMPAT END ---\n",
+        encoding="utf-8",
+    )
+
+    written = sync_authority_to_legacy_mainmemory(
+        paths,
+        authority_text="# ControlMesh Memory v2\n\n## Durable Memory\n\n### Decision\n",
+    )
+
+    assert written is True
+    legacy_text = paths.mainmemory_path.read_text(encoding="utf-8")
+    assert _COMPAT_START_MARKER not in legacy_text
+    assert "old mirror" not in legacy_text
