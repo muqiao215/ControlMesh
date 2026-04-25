@@ -207,6 +207,7 @@ def _format_provenance(content: str, meta: AuthorityEntryMetadata) -> str:
         f"**Entry:** {content[:100]}",
         "",
         f"- **Status:** {meta.status.value if meta.status else 'unknown'}",
+        f"- **Scope:** {meta.scope.value if meta.scope else 'local'}",
     ]
 
     if meta.source_ref:

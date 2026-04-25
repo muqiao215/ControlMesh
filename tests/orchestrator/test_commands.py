@@ -577,6 +577,40 @@ async def test_memory_why_unknown_id(orch: Orchestrator) -> None:
     assert "No authority entry found" in result.text
 
 
+async def test_memory_why_shared_entry_shows_scope(orch: Orchestrator) -> None:
+    """Test /memory why shows scope: shared for shared authority entries."""
+    orch.paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n"
+        "## Durable Memory\n\n"
+        "### Decision\n"
+        "- Team uses shared memory for cross-agent context. _(id: sh001; status: active; scope: shared; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory why sh001")
+    assert "Provenance" in result.text
+    assert "Team uses shared memory" in result.text
+    assert "Scope:" in result.text
+    assert "shared" in result.text
+
+
+async def test_memory_why_local_entry_shows_scope(orch: Orchestrator) -> None:
+    """Test /memory why shows scope: local for local authority entries."""
+    orch.paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n"
+        "## Durable Memory\n\n"
+        "### Preference\n"
+        "- User prefers dark mode. _(id: loc001; status: active; scope: local; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory why loc001")
+    assert "Provenance" in result.text
+    assert "User prefers dark mode" in result.text
+    assert "Scope:" in result.text
+    assert "local" in result.text
+
+
 async def test_memory_review_shows_summary(orch: Orchestrator) -> None:
     """Test /memory review shows a compact review surface."""
     from datetime import UTC, datetime

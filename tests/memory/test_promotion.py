@@ -1159,3 +1159,102 @@ def test_apply_result_promotion_log_scope_written_from_candidates(tmp_path: Path
     scopes_in_log = [entry.get("scope") for entry in log.values()]
     assert "shared" in scopes_in_log
     assert "local" in scopes_in_log
+
+
+# --- Phase 14: Scope-aware provenance surface ---
+
+
+def test_explain_authority_entry_shows_scope_for_shared_entry(tmp_path: Path) -> None:
+    """Provenance for a shared entry shows shared scope."""
+    from controlmesh.memory.commands import explain_authority_entry
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+
+    entry_line = "- Team uses shared memory for cross-agent context. _(id: why001; status: active; scope: shared; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_"
+    authority_text = f"# ControlMesh Memory v2\n\n### Fact\n\n{entry_line}\n"
+    paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
+
+    result = explain_authority_entry(paths, "why001")
+
+    assert result is not None
+    assert "**Scope:** shared" in result
+    assert "**Status:** active" in result
+    assert "Team uses shared memory" in result
+
+
+def test_explain_authority_entry_shows_scope_for_local_entry(tmp_path: Path) -> None:
+    """Provenance for a local/default entry shows local scope."""
+    from controlmesh.memory.commands import explain_authority_entry
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+
+    entry_line = "- User prefers dark mode. _(id: why002; status: active; scope: local; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_"
+    authority_text = f"# ControlMesh Memory v2\n\n### Fact\n\n{entry_line}\n"
+    paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
+
+    result = explain_authority_entry(paths, "why002")
+
+    assert result is not None
+    assert "**Scope:** local" in result
+    assert "**Status:** active" in result
+    assert "User prefers dark mode" in result
+
+
+def test_explain_authority_entry_not_found_returns_none(tmp_path: Path) -> None:
+    """Provenance for non-existent entry returns None (not-found behavior)."""
+    from controlmesh.memory.commands import explain_authority_entry
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    paths.authority_memory_path.write_text("# ControlMesh Memory v2\n", encoding="utf-8")
+
+    result = explain_authority_entry(paths, "nonexistent")
+
+    assert result is None
+
+
+def test_explain_authority_entry_missing_scope_defaults_to_local(tmp_path: Path) -> None:
+    """Provenance for legacy entries without explicit scope defaults to local."""
+    from controlmesh.memory.commands import explain_authority_entry
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+
+    # Legacy entry format: no scope field in metadata
+    entry_line = "- Legacy fact without scope. _(id: why003; status: active; source: memory/2026-04-01.md#L3; promoted: 2026-04-01)_"
+    authority_text = f"# ControlMesh Memory v2\n\n### Fact\n\n{entry_line}\n"
+    paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
+
+    result = explain_authority_entry(paths, "why003")
+
+    assert result is not None
+    # Should default to local since legacy entries have no explicit scope
+    assert "**Scope:** local" in result
+
+
+def test_explain_authority_entry_command_output_includes_scope(tmp_path: Path) -> None:
+    """/memory why <entry-id> command output includes scope in provenance."""
+    from controlmesh.memory.commands import explain_authority_entry
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+
+    # Shared entry
+    shared_line = "- Shared team decision. _(id: cmd001; status: active; scope: shared; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_"
+    # Local entry
+    local_line = "- Local user preference. _(id: cmd002; status: active; scope: local; source: memory/2026-04-25.md#L4; promoted: 2026-04-25)_"
+    authority_text = f"# ControlMesh Memory v2\n\n### Decision\n\n{shared_line}\n\n### Preference\n\n{local_line}\n"
+    paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
+
+    shared_result = explain_authority_entry(paths, "cmd001")
+    local_result = explain_authority_entry(paths, "cmd002")
+
+    assert shared_result is not None
+    assert "**Scope:** shared" in shared_result
+    assert "Shared team decision" in shared_result
+
+    assert local_result is not None
+    assert "**Scope:** local" in local_result
+    assert "Local user preference" in local_result
