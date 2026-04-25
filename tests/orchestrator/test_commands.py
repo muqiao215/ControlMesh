@@ -736,6 +736,46 @@ async def test_memory_review_shows_summary(orch: Orchestrator) -> None:
     assert "Open Candidates" in result.text
 
 
+async def test_memory_review_shows_explicit_scope_labels_in_review_items(orch: Orchestrator) -> None:
+    """Item-level /memory review output shows explicit local/shared scope labels."""
+    from datetime import UTC, datetime
+
+    from controlmesh.memory.store import ensure_daily_note
+
+    orch.paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n"
+        "## Durable Memory\n\n"
+        "### Decision\n"
+        "- Existing decision. _(id: d1; status: active; scope: local; source: memory/2026-04-24.md#L2; promoted: 2026-04-24)_\n",
+        encoding="utf-8",
+    )
+    orch.paths.memory_promotion_log_path.write_text(
+        '{'
+        '"local001": {"category": "fact", "content": "Local promotion in review", "promoted_on": "2026-04-26"}, '
+        '"shared001": {"category": "decision", "content": "Shared promotion in review", "promoted_on": "2026-04-26", "scope": "shared"}'
+        '}',
+        encoding="utf-8",
+    )
+
+    today = datetime.now(UTC).date()
+    note_path = ensure_daily_note(orch.paths, today)
+    note_path.write_text(
+        f"# Daily Memory: {today.isoformat()}\n\n"
+        "## Open Candidates\n\n"
+        "- [preference] Local candidate in review.\n"
+        "- [fact shared] Shared candidate in review.\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory review")
+    assert "(local, promoted 2026-04-26)" in result.text
+    assert "(shared, promoted 2026-04-26)" in result.text
+    assert "Local candidate in review." in result.text
+    assert "(local)" in result.text
+    assert "Shared candidate in review." in result.text
+    assert "(shared)" in result.text
+
+
 async def test_memory_review_scope_local_filters_entries(orch: Orchestrator) -> None:
     """Test /memory review --scope local shows only local entries."""
     # Create authority memory with mixed local and shared entries
@@ -822,6 +862,15 @@ async def test_memory_review_missing_scope_value_shows_usage(orch: Orchestrator)
     assert "Usage:" in result.text
     assert "Memory Review" not in result.text
     assert "--scope" in result.text
+
+
+async def test_memory_review_no_memory_still_returns_empty_message(orch: Orchestrator) -> None:
+    """Empty review remains a stable scaffold without recent/open item sections."""
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory review")
+    assert "## Memory Review" in result.text
+    assert "### Authority Memory" in result.text
+    assert "### Recent Promotions" not in result.text
+    assert "### Today's Open Candidates" not in result.text
 
 
 async def test_memory_usage_mentions_scope_option(orch: Orchestrator) -> None:

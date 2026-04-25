@@ -33,7 +33,7 @@ from controlmesh.memory.store import daily_note_path, ensure_daily_note, initial
 from controlmesh.workspace.paths import ControlMeshPaths
 
 _OPEN_CANDIDATES_RE = re.compile(
-    r"^- \[(?P<category>[a-z-]+)(?:\s+score=(?P<score>[0-9]+(?:\.[0-9]+)?))?\]\s+(?P<content>.+)$"
+    r"^- \[(?P<category>[a-z-]+)(?: (?P<scope>local|shared))?(?:\s+score=(?P<score>[0-9]+(?:\.[0-9]+)?))?\]\s+(?P<content>.+)$"
 )
 
 
@@ -286,11 +286,10 @@ def _append_recent_promotions(paths: ControlMeshPaths, sections: list[str]) -> N
         cat = entry.get("category", "unknown")
         content = entry.get("content", "")[:60]
         promoted = entry.get("promoted_on", "?")
-        entry_scope = entry.get("scope", "local")
-        if entry_scope == "shared":
-            lines.append(f"- [{cat}] {content}... (shared, promoted {promoted})")
-        else:
-            lines.append(f"- [{cat}] {content}... (promoted {promoted})")
+        scope = _coerce_memory_scope(entry.get("scope"))
+        lines.append(
+            f"- [{cat}] {content}... ({scope.value}, promoted {promoted})"
+        )
     sections.append("\n".join(lines))
 
 
@@ -313,7 +312,10 @@ def _append_open_candidates(paths: ControlMeshPaths, sections: list[str]) -> Non
         return
 
     lines = [f"### Today's Open Candidates ({len(candidates)})"]
-    lines.extend(f"- [{cand.category.value}] {cand.content[:60]}..." for cand in candidates[:3])
+    lines.extend(
+        _format_open_candidate_review_line(cand)
+        for cand in candidates[:3]
+    )
     if len(candidates) > 3:
         lines.append(f"- ... and {len(candidates) - 3} more")
     sections.append("\n".join(lines))
@@ -323,7 +325,7 @@ def _parse_open_candidates_from_daily_note(note_text: str) -> list[PromotionCand
     """Parse promotion candidate lines from the '## Open Candidates' section.
 
     Daily notes use '## Open Candidates' instead of '## Promotion Candidates'.
-    This parses the same line format (- [category] content) from that section.
+    This parses the same line format with optional scope/score markers from that section.
     """
     candidates: list[PromotionCandidate] = []
     in_section = False
@@ -347,6 +349,8 @@ def _parse_open_candidates_from_daily_note(note_text: str) -> list[PromotionCand
         content = match.group("content").strip()
         key_seed = f"{category.value}:{' '.join(content.split())}".encode()
         key = hashlib.sha256(key_seed).hexdigest()[:12]
+        scope_text = match.group("scope")
+        scope = MemoryScope(scope_text) if scope_text else MemoryScope.LOCAL
         candidates.append(
             PromotionCandidate(
                 key=key,
@@ -356,9 +360,30 @@ def _parse_open_candidates_from_daily_note(note_text: str) -> list[PromotionCand
                 source_path="memory",
                 source_date=None,
                 score=1.0,
+                scope=scope,
             )
         )
     return candidates
+
+
+def _coerce_memory_scope(scope_value: object) -> MemoryScope:
+    """Normalize string-ish scope values, defaulting legacy/missing values to local."""
+    if isinstance(scope_value, MemoryScope):
+        return scope_value
+    if isinstance(scope_value, str):
+        try:
+            return MemoryScope(scope_value.lower())
+        except ValueError:
+            pass
+    return MemoryScope.LOCAL
+
+
+def _format_open_candidate_review_line(candidate: PromotionCandidate) -> str:
+    """Render one open-candidate review line with an explicit scope label."""
+    return (
+        f"- [{candidate.category.value}] {candidate.content[:60]}..."
+        f" ({candidate.scope.value})"
+    )
 
 
 def _count_authority_entries(

@@ -862,8 +862,8 @@ def test_render_memory_review_shows_shared_scope_for_shared_promotions(tmp_path:
     assert "Shared decision should show scope" in review
 
 
-def test_render_memory_review_local_promotions_stay_concise(tmp_path: Path) -> None:
-    """Local promotions do not show scope label to stay concise."""
+def test_render_memory_review_shows_local_scope_for_local_promotions(tmp_path: Path) -> None:
+    """render_memory_review shows local scope explicitly for local/default promotions."""
     from controlmesh.memory.commands import render_memory_review
 
     paths = _make_paths(tmp_path)
@@ -882,15 +882,60 @@ def test_render_memory_review_local_promotions_stay_concise(tmp_path: Path) -> N
     apply_daily_note_promotions(paths, date(2026, 4, 25))
 
     review = render_memory_review(paths)
-    # Should contain the content
     assert "Local fact should not show scope label" in review
     assert "Default scope decision also concise" in review
-    # The word "local" should appear in category context like "[fact]" but NOT as a scope label
-    # like "(shared, promoted" for local entries
-    # Count occurrences of "local" as a scope label pattern
-    lines = review.splitlines()
-    scope_label_count = sum(1 for line in lines if "(local," in line or "(local)" in line)
-    assert scope_label_count == 0, f"Local entries should not show scope label, got {scope_label_count}"
+    assert "(local, promoted 2026-04-25)" in review
+
+
+def test_render_memory_review_shows_shared_scope_for_open_candidates(tmp_path: Path) -> None:
+    """Today's open candidates show shared scope when explicitly marked shared."""
+    from datetime import UTC, datetime
+
+    from controlmesh.memory.commands import render_memory_review
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    today = datetime.now(UTC).date()
+    note_path = ensure_daily_note(paths, today)
+    note_path.write_text(
+        f"""# Daily Memory: {today.isoformat()}
+
+## Open Candidates
+- [decision shared] Shared open candidate should show scope.
+""",
+        encoding="utf-8",
+    )
+
+    review = render_memory_review(paths)
+    assert "Today's Open Candidates (1)" in review
+    assert "Shared open candidate should show scope" in review
+    assert "(shared)" in review
+
+
+def test_render_memory_review_shows_local_scope_for_open_candidates(tmp_path: Path) -> None:
+    """Today's open candidates show local scope for local/default candidate lines."""
+    from datetime import UTC, datetime
+
+    from controlmesh.memory.commands import render_memory_review
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    today = datetime.now(UTC).date()
+    note_path = ensure_daily_note(paths, today)
+    note_path.write_text(
+        f"""# Daily Memory: {today.isoformat()}
+
+## Open Candidates
+- [fact local] Local open candidate should show scope.
+- [preference] Default local candidate should show scope too.
+""",
+        encoding="utf-8",
+    )
+
+    review = render_memory_review(paths)
+    assert "Local open candidate should show scope" in review
+    assert "Default local candidate should show scope too" in review
+    assert review.count("(local)") >= 2
 
 
 def test_legacy_promotion_log_without_scope_still_loads(tmp_path: Path) -> None:
@@ -964,6 +1009,7 @@ def test_render_memory_review_handles_legacy_log_without_scope(tmp_path: Path) -
     review = render_memory_review(paths)
     assert "Legacy fact without scope" in review
     assert "fact" in review
+    assert "(local, promoted 2026-04-01)" in review
 
 
 def test_promotion_log_scope_field_added_to_existing_log_on_reapply(tmp_path: Path) -> None:
@@ -1460,4 +1506,3 @@ def test_supersede_authority_entry_legacy_entry_defaults_to_local_scope(tmp_path
     assert success is True
     # Legacy entries default to LOCAL scope
     assert scope == MemoryScope.LOCAL
-
