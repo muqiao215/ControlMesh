@@ -802,6 +802,134 @@ async def test_memory_unknown_subcommand_shows_usage_with_semantic(orch: Orchest
     assert "semantic" in result.text.lower()
 
 
+# -- cmd_memory promote --
+
+
+async def test_memory_promote_preview_shows_candidates(orch: Orchestrator) -> None:
+    """Test /memory promote shows candidates from today's daily note."""
+    from datetime import UTC, datetime
+
+    from controlmesh.memory.store import ensure_daily_note
+
+    today = datetime.now(UTC).date()
+    note_path = ensure_daily_note(orch.paths, today)
+    note_path.write_text(
+        f"# Daily Memory: {today.isoformat()}\n\n"
+        "## Promotion Candidates\n"
+        "- [decision] Keep memory deterministic and explicit.\n"
+        "- [preference score=0.85] Prefer file-backed authority.\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory promote")
+    assert "Promotion Preview" in result.text
+    assert "Keep memory deterministic" in result.text
+    assert "decision" in result.text
+    assert "preference" in result.text
+    assert "score=0.85" in result.text
+    assert "/memory promote apply" in result.text
+
+
+async def test_memory_promote_preview_no_candidates(orch: Orchestrator) -> None:
+    """Test /memory promote shows empty state when no candidates exist."""
+    from datetime import UTC, datetime
+
+    from controlmesh.memory.store import ensure_daily_note
+
+    today = datetime.now(UTC).date()
+    note_path = ensure_daily_note(orch.paths, today)
+    note_path.write_text(
+        f"# Daily Memory: {today.isoformat()}\n\n"
+        "## Promotion Candidates\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory promote")
+    assert "Promotion Preview" in result.text
+    assert "No new candidates" in result.text
+
+
+async def test_memory_promote_apply_modifies_authority(orch: Orchestrator) -> None:
+    """Test /memory promote apply inserts candidates into authority memory."""
+    from datetime import UTC, datetime
+
+    from controlmesh.memory.store import ensure_daily_note
+
+    today = datetime.now(UTC).date()
+    note_path = ensure_daily_note(orch.paths, today)
+    note_path.write_text(
+        f"# Daily Memory: {today.isoformat()}\n\n"
+        "## Promotion Candidates\n"
+        "- [decision] Keep memory deterministic and explicit.\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory promote apply")
+    assert "Promotion Apply" in result.text
+    assert "1 entry(s) promoted" in result.text
+    assert "id:" in result.text
+
+    # Verify authority memory was modified
+    authority_text = orch.paths.authority_memory_path.read_text(encoding="utf-8")
+    assert "Keep memory deterministic" in authority_text
+    assert "status: active" in authority_text
+    assert "scope: local" in authority_text
+
+
+async def test_memory_promote_apply_idempotent(orch: Orchestrator) -> None:
+    """Test /memory promote apply is idempotent - re-running reports skipped existing."""
+    from datetime import UTC, datetime
+
+    from controlmesh.memory.store import ensure_daily_note
+
+    today = datetime.now(UTC).date()
+    note_path = ensure_daily_note(orch.paths, today)
+    note_path.write_text(
+        f"# Daily Memory: {today.isoformat()}\n\n"
+        "## Promotion Candidates\n"
+        "- [decision] Keep memory deterministic and explicit.\n",
+        encoding="utf-8",
+    )
+
+    # First apply
+    result1 = await cmd_memory(orch, SessionKey(chat_id=0), "/memory promote apply")
+    assert "1 entry(s) promoted" in result1.text
+
+    # Second apply - should be idempotent
+    result2 = await cmd_memory(orch, SessionKey(chat_id=0), "/memory promote apply")
+    assert "No new candidates" in result2.text
+    assert "already promoted: 1" in result2.text
+
+
+async def test_memory_promote_apply_with_low_score_filtered(orch: Orchestrator) -> None:
+    """Test /memory promote apply with multiple candidates shows all promoted."""
+    from datetime import UTC, datetime
+
+    from controlmesh.memory.store import ensure_daily_note
+
+    today = datetime.now(UTC).date()
+    note_path = ensure_daily_note(orch.paths, today)
+    note_path.write_text(
+        f"# Daily Memory: {today.isoformat()}\n\n"
+        "## Promotion Candidates\n"
+        "- [decision] First decision to promote.\n"
+        "- [preference] Second preference to promote.\n"
+        "- [fact] Third fact to promote.\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory promote apply")
+    assert "Promotion Apply" in result.text
+    assert "3 entry(s) promoted" in result.text
+    assert "id:" in result.text
+
+    # Verify all three entries are in authority memory
+    authority_text = orch.paths.authority_memory_path.read_text(encoding="utf-8")
+    assert "First decision" in authority_text
+    assert "Second preference" in authority_text
+    assert "Third fact" in authority_text
+
+
 # -- cmd_history --
 
 

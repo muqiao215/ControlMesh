@@ -23,7 +23,9 @@ from controlmesh.infra.install import detect_install_mode
 from controlmesh.infra.updater import check_source_upgrade_status
 from controlmesh.infra.version import check_latest_version, get_current_version
 from controlmesh.memory.commands import (
+    apply_daily_note_promotions,
     explain_authority_entry,
+    preview_daily_note_promotions,
     render_daily_note_summary,
     render_memory_review,
     search_memory,
@@ -440,7 +442,7 @@ async def cmd_controlmesh(orch: Orchestrator, key: SessionKey, text: str) -> Orc
     return await orch.dispatch_controlmesh_command(key, nested)
 
 
-_MEMORY_USAGE = "Usage: /memory [today|search <query>|semantic <query>|why <id>|review [--scope local|shared]|patterns]"
+_MEMORY_USAGE = "Usage: /memory [today|search <query>|semantic <query>|why <id>|review [--scope local|shared]|patterns|promote [apply]]"
 
 
 async def cmd_memory(orch: Orchestrator, _key: SessionKey, _text: str) -> OrchestratorResult:
@@ -474,6 +476,7 @@ async def cmd_memory(orch: Orchestrator, _key: SessionKey, _text: str) -> Orches
         "semantic": lambda: _cmd_memory_semantic(orch, parts),
         "why": lambda: _cmd_memory_why(orch, parts),
         "patterns": lambda: _cmd_memory_patterns(orch),
+        "promote": lambda: _cmd_memory_promote(orch, parts),
     }
     handler = _handlers.get(subcommand)
     if handler is not None:
@@ -562,6 +565,70 @@ async def _cmd_memory_patterns(orch: Orchestrator) -> OrchestratorResult:
     result = await asyncio.to_thread(find_repeated_patterns, orch.paths)
     summary = render_patterns_summary(result)
     return OrchestratorResult(text=summary)
+
+
+async def _cmd_memory_promote(orch: Orchestrator, parts: list[str]) -> OrchestratorResult:
+    """Handle /memory promote [apply]."""
+    if len(parts) >= 3 and parts[2].lower() == "apply":
+        return await _cmd_memory_promote_apply(orch)
+    return await _cmd_memory_promote_preview(orch)
+
+
+async def _cmd_memory_promote_preview(orch: Orchestrator) -> OrchestratorResult:
+    """Handle /memory promote (preview only)."""
+    from datetime import UTC, datetime
+
+    today = datetime.now(UTC).date()
+    preview = await asyncio.to_thread(preview_daily_note_promotions, orch.paths, today)
+
+    lines = [f"## Promotion Preview ({today.isoformat()})"]
+    if not preview.selected:
+        lines.append("_No new candidates to promote._")
+        if preview.skipped_existing:
+            lines.append(f"_(already promoted: {preview.skipped_existing})_")
+        if preview.skipped_low_score:
+            lines.append(f"_(low score filtered: {preview.skipped_low_score})_")
+        return OrchestratorResult(text="\n".join(lines))
+
+    lines.append(f"__{len(preview.selected)} candidates ready to promote__")
+    for cand in preview.selected:
+        score_str = f" (score={cand.score})" if cand.score < 1.0 else ""
+        lines.append(f"- [{cand.category.value}]{score_str} {cand.content}")
+
+    if preview.skipped_existing:
+        lines.append(f"\n_skipped (already promoted): {preview.skipped_existing}_")
+    if preview.skipped_low_score:
+        lines.append(f"_skipped (low score): {preview.skipped_low_score}_")
+
+    lines.append("\n_Run `/memory promote apply` to promote these entries._")
+    return OrchestratorResult(text="\n".join(lines))
+
+
+async def _cmd_memory_promote_apply(orch: Orchestrator) -> OrchestratorResult:
+    """Handle /memory promote apply."""
+    from datetime import UTC, datetime
+
+    today = datetime.now(UTC).date()
+    result = await asyncio.to_thread(apply_daily_note_promotions, orch.paths, today)
+
+    if result.applied_count == 0:
+        lines = [f"## Promotion Apply ({today.isoformat()})"]
+        lines.append("_No new candidates to promote._")
+        if result.skipped_existing:
+            lines.append(f"_(already promoted: {result.skipped_existing})_")
+        if result.skipped_low_score:
+            lines.append(f"_(low score filtered: {result.skipped_low_score})_")
+        return OrchestratorResult(text="\n".join(lines))
+
+    lines = [f"## Promotion Apply ({today.isoformat()})"]
+    lines.append(f"__{result.applied_count} entry(s) promoted to authority memory.__")
+    for key in result.applied_keys:
+        lines.append(f"- _(id: {key[:12]})_")
+    if result.skipped_existing:
+        lines.append(f"\n_skipped (already promoted): {result.skipped_existing}_")
+    if result.skipped_low_score:
+        lines.append(f"_skipped (low score): {result.skipped_low_score}_")
+    return OrchestratorResult(text="\n".join(lines))
 
 
 async def _cmd_memory_full(orch: Orchestrator) -> OrchestratorResult:
