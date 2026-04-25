@@ -15,6 +15,7 @@ from controlmesh.memory.models import (
     AuthorityEntryMetadata,
     LifecycleStatus,
     MemoryCategory,
+    MemoryScope,
     PromotionApplyResult,
     PromotionCandidate,
     PromotionPreview,
@@ -30,11 +31,13 @@ _PROMOTION_LINE_RE = re.compile(
 
 # Pattern for parsing authority entry metadata from rendered entries
 # The meta string captured by _AUTHORITY_ENTRY_RE has format:
-# id: abc123; status: active; source: path#LN; promoted: YYYY-MM-DD
+# id: abc123; status: active; scope: local; source: path#LN; promoted: YYYY-MM-DD
 # (without the surrounding parentheses since those are matched by the outer regex)
+# Note: scope is optional for backward compatibility with entries created before Phase 8
 _AUTHORITY_METADATA_RE = re.compile(
     r"^id:\s*(?P<id>[^;]+);\s*"
     r"status:\s*(?P<status>\w+);"
+    r"(?:\s*scope:\s*(?P<scope>\w+);)?"
     r"(?:\s*superseded_by:\s*(?P<superseded_by>[^;]+);)?"
     r"\s*source:\s*(?P<source>[^;]+);\s*"
     r"promoted:\s*(?P<promoted>.+)$"
@@ -202,7 +205,7 @@ def parse_authority_entry_metadata(line: str) -> AuthorityEntryMetadata | None:
 
     meta_str = content_match.group("meta")
 
-    # Try new format first (has id and status)
+    # Try new format first (has id, status, and scope)
     meta_match = _AUTHORITY_METADATA_RE.search(meta_str)
     if meta_match is not None:
         try:
@@ -211,20 +214,28 @@ def parse_authority_entry_metadata(line: str) -> AuthorityEntryMetadata | None:
         except ValueError:
             status = LifecycleStatus.ACTIVE
 
+        try:
+            scope_str = meta_match.group("scope")
+            scope = MemoryScope(scope_str)
+        except ValueError:
+            scope = MemoryScope.LOCAL
+
         return AuthorityEntryMetadata(
             entry_id=meta_match.group("id"),
             status=status,
+            scope=scope,
             source_ref=meta_match.group("source"),
             promoted_at=meta_match.group("promoted"),
             superseded_by=meta_match.group("superseded_by"),
         )
 
-    # Fall back to legacy format (source and promoted only, no id/status)
+    # Fall back to legacy format (source and promoted only, no id/status/scope)
     legacy_match = _LEGACY_AUTHORITY_METADATA_RE.search(meta_str)
     if legacy_match is not None:
         return AuthorityEntryMetadata(
             entry_id=None,
             status=LifecycleStatus.ACTIVE,
+            scope=MemoryScope.LOCAL,
             source_ref=legacy_match.group("source"),
             promoted_at=legacy_match.group("promoted"),
             superseded_by=None,
@@ -288,11 +299,12 @@ def _render_entry(candidate: PromotionCandidate, *, applied_on: date | None) -> 
     if candidate.line_start is not None:
         source_ref = f"{source_ref}#L{candidate.line_start}"
 
-    # Build metadata block with entry_id and status
+    # Build metadata block with entry_id, status, and scope
     entry_id = candidate.key[:12]
     meta_str = "; ".join([
         f"id: {entry_id}",
         f"status: {LifecycleStatus.ACTIVE.value}",
+        f"scope: {MemoryScope.LOCAL.value}",
         f"source: {source_ref}",
         f"promoted: {promoted_on}",
     ])

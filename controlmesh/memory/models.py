@@ -170,6 +170,18 @@ class LifecycleStatus(StrEnum):
     DISPUTED = "disputed"
 
 
+class MemoryScope(StrEnum):
+    """Scope of a memory entry: local (private) or shared (explicitly shared).
+
+    Entries default to LOCAL to preserve backward compatibility with existing
+    authority entries. SHARED entries are explicitly opted-in and represent
+    information intended for cross-agent or shared contexts.
+    """
+
+    LOCAL = "local"
+    SHARED = "shared"
+
+
 class AuthorityEntryMetadata(BaseModel):
     """Lightweight lifecycle metadata for authority memory entries.
 
@@ -179,6 +191,7 @@ class AuthorityEntryMetadata(BaseModel):
 
     entry_id: str | None = None
     status: LifecycleStatus = LifecycleStatus.ACTIVE
+    scope: MemoryScope = MemoryScope.LOCAL
     promoted_at: str | None = None
     source_ref: str | None = None
     superseded_by: str | None = None

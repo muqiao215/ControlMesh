@@ -58,6 +58,7 @@ from controlmesh.text.response_format import SEP, fmt, new_session_text
 from controlmesh.workspace.loader import read_file, read_mainmemory
 
 if TYPE_CHECKING:
+    from controlmesh.memory.models import MemoryScope
     from controlmesh.orchestrator.core import Orchestrator
     from controlmesh.session.key import SessionKey
 
@@ -439,15 +440,15 @@ async def cmd_controlmesh(orch: Orchestrator, key: SessionKey, text: str) -> Orc
     return await orch.dispatch_controlmesh_command(key, nested)
 
 
-_MEMORY_USAGE = "Usage: /memory [today|search <query>|semantic <query>|why <id>|review|patterns]"
+_MEMORY_USAGE = "Usage: /memory [today|search <query>|semantic <query>|why <id>|review [--scope local|shared]|patterns]"
 
 
 async def cmd_memory(orch: Orchestrator, _key: SessionKey, _text: str) -> OrchestratorResult:
-    """Handle /memory [today|search <query>|semantic <query>|why <id>|review|patterns]."""
+    """Handle /memory [today|search <query>|semantic <query>|why <id>|review [--scope local|shared]|patterns]."""
     from datetime import UTC, datetime
 
     logger.info("Memory requested")
-    parts = _text.strip().split(None, 2)
+    parts = _text.strip().split(None, 3)
 
     # /memory with no subcommand - show full authority + legacy
     if len(parts) == 1:
@@ -459,11 +460,19 @@ async def cmd_memory(orch: Orchestrator, _key: SessionKey, _text: str) -> Orches
         today = datetime.now(UTC).date()
         return await _cmd_memory_today(orch, today)
 
+    if subcommand == "review":
+        scope = None
+        if len(parts) >= 3 and parts[2].lower() == "--scope":
+            if len(parts) < 4 or parts[3].lower() not in ("local", "shared"):
+                return OrchestratorResult(text="Usage: /memory review [--scope local|shared]")
+            from controlmesh.memory.models import MemoryScope
+            scope = MemoryScope(parts[3].lower())
+        return await _cmd_memory_review(orch, scope=scope)
+
     _handlers = {
         "search": lambda: _cmd_memory_search(orch, parts),
         "semantic": lambda: _cmd_memory_semantic(orch, parts),
         "why": lambda: _cmd_memory_why(orch, parts),
-        "review": lambda: _cmd_memory_review(orch),
         "patterns": lambda: _cmd_memory_patterns(orch),
     }
     handler = _handlers.get(subcommand)
@@ -540,9 +549,9 @@ async def _cmd_memory_why(orch: Orchestrator, parts: list[str]) -> OrchestratorR
     return OrchestratorResult(text=f"## Provenance\n\n{explanation}")
 
 
-async def _cmd_memory_review(orch: Orchestrator) -> OrchestratorResult:
-    """Handle /memory review."""
-    review = await asyncio.to_thread(render_memory_review, orch.paths)
+async def _cmd_memory_review(orch: Orchestrator, scope: MemoryScope | None = None) -> OrchestratorResult:
+    """Handle /memory review [--scope local|shared]."""
+    review = await asyncio.to_thread(render_memory_review, orch.paths, scope=scope)
     if not review:
         return OrchestratorResult(text="No memory to review.")
     return OrchestratorResult(text=review)

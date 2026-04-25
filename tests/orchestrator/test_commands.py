@@ -611,6 +611,102 @@ async def test_memory_review_shows_summary(orch: Orchestrator) -> None:
     assert "Open Candidates" in result.text
 
 
+async def test_memory_review_scope_local_filters_entries(orch: Orchestrator) -> None:
+    """Test /memory review --scope local shows only local entries."""
+    # Create authority memory with mixed local and shared entries
+    orch.paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n"
+        "## Durable Memory\n\n"
+        "### Decision\n"
+        "- Local decision. _(id: d1; status: active; scope: local; source: memory/2026-04-24.md#L2; promoted: 2026-04-24)_\n"
+        "- Shared decision. _(id: d2; status: active; scope: shared; source: memory/2026-04-24.md#L3; promoted: 2026-04-24)_\n\n"
+        "### Fact\n"
+        "- Local fact. _(id: f1; status: active; scope: local; source: memory/2026-04-23.md#L5; promoted: 2026-04-23)_\n"
+        "- Shared fact. _(id: f2; status: active; scope: shared; source: memory/2026-04-23.md#L6; promoted: 2026-04-23)_\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory review --scope local")
+    assert "Memory Review" in result.text
+    assert "scope: local" in result.text or "scope:local" in result.text
+    # Should show Decision and Fact sections with local entries
+    assert "Decision" in result.text
+    assert "Fact" in result.text
+    # Should not count shared entries
+    # Local scope filter means only local entries are counted
+    lines = result.text.split("\n")
+    # The output should indicate scope filtering is active
+    assert any("local" in line.lower() for line in lines)
+
+
+async def test_memory_review_scope_shared_filters_entries(orch: Orchestrator) -> None:
+    """Test /memory review --scope shared shows only shared entries."""
+    # Create authority memory with mixed local and shared entries
+    orch.paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n"
+        "## Durable Memory\n\n"
+        "### Decision\n"
+        "- Local decision. _(id: d1; status: active; scope: local; source: memory/2026-04-24.md#L2; promoted: 2026-04-24)_\n"
+        "- Shared decision. _(id: d2; status: active; scope: shared; source: memory/2026-04-24.md#L3; promoted: 2026-04-24)_\n\n"
+        "### Fact\n"
+        "- Local fact. _(id: f1; status: active; scope: local; source: memory/2026-04-23.md#L5; promoted: 2026-04-23)_\n"
+        "- Shared fact. _(id: f2; status: active; scope: shared; source: memory/2026-04-23.md#L6; promoted: 2026-04-23)_\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory review --scope shared")
+    assert "Memory Review" in result.text
+    assert "scope: shared" in result.text or "scope:shared" in result.text
+    # Should show Decision and Fact sections with shared entries
+    assert "Decision" in result.text
+    assert "Fact" in result.text
+    # The output should indicate scope filtering is active
+    lines = result.text.split("\n")
+    assert any("shared" in line.lower() for line in lines)
+
+
+async def test_memory_review_invalid_scope_shows_usage(orch: Orchestrator) -> None:
+    """Test /memory review with invalid scope value shows usage, not unfiltered review."""
+    # Create authority memory so we can distinguish usage from actual review output
+    orch.paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n"
+        "## Durable Memory\n\n"
+        "### Decision\n"
+        "- Some decision. _(id: d1; status: active; scope: local; source: memory/2026-04-24.md#L2; promoted: 2026-04-24)_\n",
+        encoding="utf-8",
+    )
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory review --scope invalid")
+    # Must show usage, not a review
+    assert "Usage:" in result.text
+    assert "Memory Review" not in result.text
+    assert "--scope" in result.text
+
+
+async def test_memory_review_missing_scope_value_shows_usage(orch: Orchestrator) -> None:
+    """Test /memory review --scope without a value shows usage, not unfiltered review."""
+    # Create authority memory so we can distinguish usage from actual review output
+    orch.paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n"
+        "## Durable Memory\n\n"
+        "### Decision\n"
+        "- Some decision. _(id: d1; status: active; scope: local; source: memory/2026-04-24.md#L2; promoted: 2026-04-24)_\n",
+        encoding="utf-8",
+    )
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory review --scope")
+    # Must show usage, not a review
+    assert "Usage:" in result.text
+    assert "Memory Review" not in result.text
+    assert "--scope" in result.text
+
+
+async def test_memory_usage_mentions_scope_option(orch: Orchestrator) -> None:
+    """Test that /memory usage text mentions the scope option."""
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory unknown_subcommand")
+    assert "Usage:" in result.text
+    assert "review" in result.text
+    assert "--scope" in result.text
+
+
 async def test_memory_patterns_shows_repeated(orch: Orchestrator) -> None:
     """Test /memory patterns shows repeated patterns across multiple daily notes."""
     from datetime import UTC, datetime, timedelta

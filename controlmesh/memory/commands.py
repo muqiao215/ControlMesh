@@ -13,6 +13,7 @@ from controlmesh.memory.models import (
     DreamingSweepResult,
     MemoryCategory,
     MemoryIndexSyncResult,
+    MemoryScope,
     MemorySearchResult,
     PromotionApplyResult,
     PromotionCandidate,
@@ -221,33 +222,42 @@ def _format_provenance(content: str, meta: AuthorityEntryMetadata) -> str:
     return "\n".join(lines)
 
 
-def render_memory_review(paths: ControlMeshPaths) -> str:
+def render_memory_review(paths: ControlMeshPaths, *, scope: MemoryScope | None = None) -> str:
     """Render a compact review surface combining authority memory and promotion state.
 
     Shows entry counts by category, recent promotions, and open promotion candidates.
+    When scope is specified, only entries with that scope are counted.
     """
     initialize_memory_v2(paths)
 
     sections: list[str] = ["## Memory Review"]
-    _append_authority_counts(paths, sections)
+    if scope is not None:
+        sections[0] += f" (scope: {scope.value})"
+    _append_authority_counts(paths, sections, scope=scope)
     _append_recent_promotions(paths, sections)
     _append_open_candidates(paths, sections)
 
     return "\n\n".join(sections)
 
 
-def _append_authority_counts(paths: ControlMeshPaths, sections: list[str]) -> None:
-    """Append authority memory entry counts by category."""
+def _append_authority_counts(
+    paths: ControlMeshPaths,
+    sections: list[str],
+    *,
+    scope: MemoryScope | None = None,
+) -> None:
+    """Append authority memory entry counts by category, optionally filtered by scope."""
     authority_path = paths.authority_memory_path
     if not authority_path.exists():
         return
 
     authority_text = authority_path.read_text(encoding="utf-8")
-    category_counts = _count_authority_entries(authority_text)
+    category_counts = _count_authority_entries(authority_text, scope=scope)
     if not category_counts:
         return
 
-    lines = ["### Authority Memory"]
+    scope_label = f" (scope: {scope.value})" if scope else ""
+    lines = [f"### Authority Memory{scope_label}"]
     for cat, count in sorted(category_counts.items()):
         lines.append(f"- **{cat}:** {count} entries")
     sections.append("\n".join(lines))
@@ -344,8 +354,12 @@ def _parse_open_candidates_from_daily_note(note_text: str) -> list[PromotionCand
     return candidates
 
 
-def _count_authority_entries(authority_text: str) -> dict[str, int]:
-    """Count authority entries by category from rendered text."""
+def _count_authority_entries(
+    authority_text: str,
+    *,
+    scope: MemoryScope | None = None,
+) -> dict[str, int]:
+    """Count authority entries by category from rendered text, optionally filtered by scope."""
     lines = authority_text.splitlines()
     category_counts: dict[str, int] = {}
     current_category = ""
@@ -357,7 +371,10 @@ def _count_authority_entries(authority_text: str) -> dict[str, int]:
             if current_category and current_category not in category_counts:
                 category_counts[current_category] = 0
         elif current_category and stripped.startswith("- "):
-            if parse_authority_entry(stripped) is not None:
-                category_counts[current_category] = category_counts.get(current_category, 0) + 1
+            parsed = parse_authority_entry(stripped)
+            if parsed is not None:
+                _content, meta = parsed
+                if scope is None or meta.scope == scope:
+                    category_counts[current_category] = category_counts.get(current_category, 0) + 1
 
     return category_counts

@@ -6,6 +6,7 @@ from datetime import date
 from pathlib import Path
 
 from controlmesh.memory.commands import (
+    _count_authority_entries,
     apply_daily_note_promotions,
     preview_daily_note_promotions,
 )
@@ -14,7 +15,7 @@ from controlmesh.memory.compat import (
     _COMPAT_START_MARKER,
     sync_authority_to_legacy_mainmemory,
 )
-from controlmesh.memory.models import LifecycleStatus
+from controlmesh.memory.models import LifecycleStatus, MemoryScope
 from controlmesh.memory.promotion import (
     parse_authority_entry,
     parse_authority_entry_metadata,
@@ -159,13 +160,14 @@ def test_sync_authority_to_legacy_mainmemory_removes_empty_compat_block(tmp_path
 
 def test_parse_authority_entry_metadata_with_full_metadata() -> None:
     """Parse a metadata-bearing authority entry correctly."""
-    line = "- Keep local memory canonical. _(id: abc123; status: active; source: memory/2026-04-08.md#L7; promoted: 2026-04-08)_"
+    line = "- Keep local memory canonical. _(id: abc123; status: active; scope: local; source: memory/2026-04-08.md#L7; promoted: 2026-04-08)_"
 
     meta = parse_authority_entry_metadata(line)
 
     assert meta is not None
     assert meta.entry_id == "abc123"
     assert meta.status == LifecycleStatus.ACTIVE
+    assert meta.scope == MemoryScope.LOCAL
     assert meta.source_ref == "memory/2026-04-08.md#L7"
     assert meta.promoted_at == "2026-04-08"
     assert meta.superseded_by is None
@@ -173,32 +175,34 @@ def test_parse_authority_entry_metadata_with_full_metadata() -> None:
 
 def test_parse_authority_entry_metadata_superseded() -> None:
     """Parse a superseded authority entry correctly."""
-    line = "- Old decision. _(id: def456; status: superseded; superseded_by: xyz789; source: memory/2026-04-10.md#L3; promoted: 2026-04-10)_"
+    line = "- Old decision. _(id: def456; status: superseded; scope: local; superseded_by: xyz789; source: memory/2026-04-10.md#L3; promoted: 2026-04-10)_"
 
     meta = parse_authority_entry_metadata(line)
 
     assert meta is not None
     assert meta.entry_id == "def456"
     assert meta.status == LifecycleStatus.SUPERSEDED
+    assert meta.scope == MemoryScope.LOCAL
     assert meta.superseded_by == "xyz789"
     assert meta.source_ref == "memory/2026-04-10.md#L3"
 
 
 def test_parse_authority_entry_metadata_deprecated() -> None:
     """Parse a deprecated authority entry correctly."""
-    line = "- Deprecated preference. _(id: ghi101; status: deprecated; source: memory/2026-03-15.md#L12; promoted: 2026-03-15)_"
+    line = "- Deprecated preference. _(id: ghi101; status: deprecated; scope: local; source: memory/2026-03-15.md#L12; promoted: 2026-03-15)_"
 
     meta = parse_authority_entry_metadata(line)
 
     assert meta is not None
     assert meta.entry_id == "ghi101"
     assert meta.status == LifecycleStatus.DEPRECATED
+    assert meta.scope == MemoryScope.LOCAL
     assert meta.promoted_at == "2026-03-15"
 
 
 def test_parse_authority_entry_roundtrip() -> None:
     """Round-trip: parse content and metadata from rendered entry."""
-    line = "- Keep local memory canonical. _(id: abc123; status: active; source: memory/2026-04-08.md#L7; promoted: 2026-04-08)_"
+    line = "- Keep local memory canonical. _(id: abc123; status: active; scope: local; source: memory/2026-04-08.md#L7; promoted: 2026-04-08)_"
 
     result = parse_authority_entry(line)
 
@@ -221,6 +225,7 @@ def test_parse_authority_entry_returns_none_for_legacy_format() -> None:
     assert meta is not None
     assert meta.entry_id is None
     assert meta.status == LifecycleStatus.ACTIVE
+    assert meta.scope == MemoryScope.LOCAL
     assert meta.source_ref == "memory/2026-04-08.md"
     assert meta.promoted_at == "2026-04-08"
     assert meta.superseded_by is None
@@ -231,6 +236,7 @@ def test_parse_authority_entry_returns_none_for_legacy_format() -> None:
     assert content == "Legacy fact."
     assert parsed_meta.status == LifecycleStatus.ACTIVE
     assert parsed_meta.entry_id is None
+    assert parsed_meta.scope == MemoryScope.LOCAL
 
 
 def test_parse_authority_entry_returns_none_for_non_entry_lines() -> None:
@@ -242,17 +248,18 @@ def test_parse_authority_entry_returns_none_for_non_entry_lines() -> None:
 
 def test_parse_authority_entry_metadata_disputed() -> None:
     """Parse a disputed authority entry correctly."""
-    line = "- Disputed claim. _(id: jkl202; status: disputed; source: memory/2026-04-12.md#L5; promoted: 2026-04-12)_"
+    line = "- Disputed claim. _(id: jkl202; status: disputed; scope: local; source: memory/2026-04-12.md#L5; promoted: 2026-04-12)_"
 
     meta = parse_authority_entry_metadata(line)
 
     assert meta is not None
     assert meta.status == LifecycleStatus.DISPUTED
     assert meta.entry_id == "jkl202"
+    assert meta.scope == MemoryScope.LOCAL
 
 
 def test_promoted_entry_contains_id_and_status(tmp_path: Path) -> None:
-    """Applied entries include id and status in metadata."""
+    """Applied entries include id, status, and scope in metadata."""
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
     note_path = ensure_daily_note(paths, date(2026, 4, 8))
@@ -270,9 +277,10 @@ def test_promoted_entry_contains_id_and_status(tmp_path: Path) -> None:
     assert result.applied_count == 1
     memory_text = paths.authority_memory_path.read_text(encoding="utf-8")
 
-    # Entry should contain id and status markers
+    # Entry should contain id, status, and scope markers
     assert "id:" in memory_text
     assert "status: active" in memory_text
+    assert "scope: local" in memory_text
     assert "source: memory/2026-04-08.md" in memory_text
     assert "promoted: 2026-04-08" in memory_text
 
@@ -285,6 +293,7 @@ def test_promoted_entry_contains_id_and_status(tmp_path: Path) -> None:
             assert "Keep canonical authority file-backed and human-readable." in content
             assert meta.entry_id is not None
             assert meta.status == LifecycleStatus.ACTIVE
+            assert meta.scope == MemoryScope.LOCAL
 
 
 def test_existing_promotion_flow_still_works(tmp_path: Path) -> None:
@@ -315,3 +324,95 @@ def test_existing_promotion_flow_still_works(tmp_path: Path) -> None:
             content, meta = parsed
             assert "Simple fact" in content
             assert meta.status == LifecycleStatus.ACTIVE
+            assert meta.scope == MemoryScope.LOCAL
+
+
+def test_parse_authority_entry_with_shared_scope() -> None:
+    """Parse an entry with shared scope correctly."""
+    line = "- Shared team decision. _(id: shared123; status: active; scope: shared; source: memory/2026-04-15.md#L3; promoted: 2026-04-15)_"
+
+    meta = parse_authority_entry_metadata(line)
+
+    assert meta is not None
+    assert meta.entry_id == "shared123"
+    assert meta.status == LifecycleStatus.ACTIVE
+    assert meta.scope == MemoryScope.SHARED
+    assert meta.source_ref == "memory/2026-04-15.md#L3"
+    assert meta.promoted_at == "2026-04-15"
+
+
+def test_parse_authority_entry_with_local_scope() -> None:
+    """Parse an entry with local scope correctly."""
+    line = "- Local preference. _(id: local456; status: active; scope: local; source: memory/2026-04-16.md#L5; promoted: 2026-04-16)_"
+
+    meta = parse_authority_entry_metadata(line)
+
+    assert meta is not None
+    assert meta.entry_id == "local456"
+    assert meta.status == LifecycleStatus.ACTIVE
+    assert meta.scope == MemoryScope.LOCAL
+    assert meta.source_ref == "memory/2026-04-16.md#L5"
+    assert meta.promoted_at == "2026-04-16"
+
+
+def test_parse_authority_entry_unknown_scope_defaults_to_local() -> None:
+    """Entries with unknown scope value default to LOCAL for safety."""
+    line = "- Unknown scope entry. _(id: unk789; status: active; scope: unknown; source: memory/2026-04-17.md#L2; promoted: 2026-04-17)_"
+
+    meta = parse_authority_entry_metadata(line)
+
+    assert meta is not None
+    assert meta.scope == MemoryScope.LOCAL
+
+
+def test_count_authority_entries_filters_by_scope() -> None:
+    """Authority entry counting respects scope filter."""
+    authority_text = """# ControlMesh Memory v2
+
+## Durable Memory
+
+### Fact
+
+- Local fact. _(id: f001; status: active; scope: local; source: memory/2026-04-01.md#L5; promoted: 2026-04-01)_
+- Shared fact. _(id: f002; status: active; scope: shared; source: memory/2026-04-02.md#L5; promoted: 2026-04-02)_
+- Another local. _(id: f003; status: active; scope: local; source: memory/2026-04-03.md#L5; promoted: 2026-04-03)_
+
+### Decision
+
+- Shared decision. _(id: d001; status: active; scope: shared; source: memory/2026-04-04.md#L5; promoted: 2026-04-04)_
+"""
+    # No filter - should count all
+    counts_all = _count_authority_entries(authority_text)
+    assert counts_all.get("Fact", 0) == 3
+    assert counts_all.get("Decision", 0) == 1
+
+    # Local scope filter
+    counts_local = _count_authority_entries(authority_text, scope=MemoryScope.LOCAL)
+    assert counts_local.get("Fact", 0) == 2
+    assert counts_local.get("Decision", 0) == 0
+
+    # Shared scope filter
+    counts_shared = _count_authority_entries(authority_text, scope=MemoryScope.SHARED)
+    assert counts_shared.get("Fact", 0) == 1
+    assert counts_shared.get("Decision", 0) == 1
+
+
+def test_count_authority_entries_legacy_entries_default_to_local() -> None:
+    """Legacy entries without scope are counted as LOCAL."""
+    authority_text = """# ControlMesh Memory v2
+
+## Durable Memory
+
+### Fact
+
+- New local fact. _(id: f001; status: active; scope: local; source: memory/2026-04-01.md#L5; promoted: 2026-04-01)_
+- Legacy fact. _(source: memory/2026-04-02.md; promoted: 2026-04-02)_
+"""
+    counts_all = _count_authority_entries(authority_text)
+    assert counts_all.get("Fact", 0) == 2
+
+    counts_local = _count_authority_entries(authority_text, scope=MemoryScope.LOCAL)
+    assert counts_local.get("Fact", 0) == 2
+
+    counts_shared = _count_authority_entries(authority_text, scope=MemoryScope.SHARED)
+    assert counts_shared.get("Fact", 0) == 0
