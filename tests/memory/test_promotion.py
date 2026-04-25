@@ -9,6 +9,7 @@ from controlmesh.memory.commands import (
     _count_authority_entries,
     apply_daily_note_promotions,
     preview_daily_note_promotions,
+    render_memory_review,
 )
 from controlmesh.memory.compat import (
     _COMPAT_END_MARKER,
@@ -841,7 +842,6 @@ def test_apply_writes_scope_into_promotion_log(tmp_path: Path) -> None:
 
 def test_render_memory_review_shows_shared_scope_for_shared_promotions(tmp_path: Path) -> None:
     """render_memory_review shows scope for shared promotions in recent section."""
-    from controlmesh.memory.commands import render_memory_review
 
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
@@ -864,7 +864,6 @@ def test_render_memory_review_shows_shared_scope_for_shared_promotions(tmp_path:
 
 def test_render_memory_review_shows_local_scope_for_local_promotions(tmp_path: Path) -> None:
     """render_memory_review shows local scope explicitly for local/default promotions."""
-    from controlmesh.memory.commands import render_memory_review
 
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
@@ -891,8 +890,6 @@ def test_render_memory_review_shows_shared_scope_for_open_candidates(tmp_path: P
     """Today's open candidates show shared scope when explicitly marked shared."""
     from datetime import UTC, datetime
 
-    from controlmesh.memory.commands import render_memory_review
-
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
     today = datetime.now(UTC).date()
@@ -915,8 +912,6 @@ def test_render_memory_review_shows_shared_scope_for_open_candidates(tmp_path: P
 def test_render_memory_review_shows_local_scope_for_open_candidates(tmp_path: Path) -> None:
     """Today's open candidates show local scope for local/default candidate lines."""
     from datetime import UTC, datetime
-
-    from controlmesh.memory.commands import render_memory_review
 
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
@@ -944,8 +939,6 @@ def test_render_memory_review_scope_local_filters_recent_promotions_and_open_can
     """Scoped local review keeps local/default items across recent and open sections."""
     import json
     from datetime import UTC, datetime
-
-    from controlmesh.memory.commands import render_memory_review
 
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
@@ -1004,8 +997,6 @@ def test_render_memory_review_scope_shared_filters_recent_promotions_and_open_ca
     import json
     from datetime import UTC, datetime
 
-    from controlmesh.memory.commands import render_memory_review
-
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
     paths.memory_promotion_log_path.write_text(
@@ -1062,8 +1053,6 @@ def test_render_memory_review_scope_shared_omits_empty_recent_and_open_sections(
     """Scoped review omits empty recent/open sections after filtering."""
     import json
     from datetime import UTC, datetime
-
-    from controlmesh.memory.commands import render_memory_review
 
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
@@ -1147,8 +1136,6 @@ def test_render_memory_review_handles_legacy_log_without_scope(tmp_path: Path) -
     """Review surface renders legacy log entries without scope gracefully."""
     import json
 
-    from controlmesh.memory.commands import render_memory_review
-
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
 
@@ -1169,6 +1156,74 @@ def test_render_memory_review_handles_legacy_log_without_scope(tmp_path: Path) -
     assert "Legacy fact without scope" in review
     assert "fact" in review
     assert "(local, promoted 2026-04-01)" in review
+
+
+def test_render_memory_review_unscoped_authority_summary_shows_local_only_count(
+    tmp_path: Path,
+) -> None:
+    """Unscoped authority summary shows a concise local-only scope count."""
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n"
+        "## Durable Memory\n\n"
+        "### Decision\n"
+        "- Keep memory local. _(id: d1; status: active; scope: local; source: memory/2026-04-24.md#L2; promoted: 2026-04-24)_\n\n"
+        "### Fact\n"
+        "- Memory uses markdown files. _(id: f1; status: active; source: memory/2026-04-23.md#L5; promoted: 2026-04-23)_\n",
+        encoding="utf-8",
+    )
+
+    review = render_memory_review(paths)
+
+    assert "### Authority Memory _(2 local)_" in review
+    assert "- **Decision:** 1 entries" in review
+    assert "- **Fact:** 1 entries" in review
+
+
+def test_render_memory_review_unscoped_authority_summary_shows_local_shared_split(
+    tmp_path: Path,
+) -> None:
+    """Unscoped authority summary surfaces the local/shared split when mixed."""
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n"
+        "## Durable Memory\n\n"
+        "### Decision\n"
+        "- Local decision. _(id: d1; status: active; scope: local; source: memory/2026-04-24.md#L2; promoted: 2026-04-24)_\n"
+        "- Shared decision. _(id: d2; status: active; scope: shared; source: memory/2026-04-24.md#L3; promoted: 2026-04-24)_\n\n"
+        "### Fact\n"
+        "- Local fact. _(id: f1; status: active; source: memory/2026-04-23.md#L5; promoted: 2026-04-23)_\n",
+        encoding="utf-8",
+    )
+
+    review = render_memory_review(paths)
+
+    assert "### Authority Memory _(2 local, 1 shared)_" in review
+    assert "- **Decision:** 2 entries" in review
+    assert "- **Fact:** 1 entries" in review
+
+
+def test_render_memory_review_unscoped_authority_summary_counts_legacy_entries_as_local(
+    tmp_path: Path,
+) -> None:
+    """Legacy authority entries without explicit scope still count as local."""
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n"
+        "## Durable Memory\n\n"
+        "### Fact\n"
+        "- Legacy fact. _(source: memory/2026-04-22.md#L5; promoted: 2026-04-22)_\n"
+        "- Shared fact. _(id: f2; status: active; scope: shared; source: memory/2026-04-23.md#L5; promoted: 2026-04-23)_\n",
+        encoding="utf-8",
+    )
+
+    review = render_memory_review(paths)
+
+    assert "### Authority Memory _(1 local, 1 shared)_" in review
+    assert "- **Fact:** 2 entries" in review
 
 
 def test_promotion_log_scope_field_added_to_existing_log_on_reapply(tmp_path: Path) -> None:

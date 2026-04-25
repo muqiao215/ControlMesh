@@ -732,8 +732,29 @@ async def test_memory_review_shows_summary(orch: Orchestrator) -> None:
 
     result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory review")
     assert "Memory Review" in result.text
+    assert "### Authority Memory _(2 local)_" in result.text
     assert "Decision" in result.text or "Fact" in result.text
     assert "Open Candidates" in result.text
+
+
+async def test_memory_review_shows_mixed_authority_scope_summary(orch: Orchestrator) -> None:
+    """Unscoped /memory review shows the local/shared split for authority memory."""
+    orch.paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n"
+        "## Durable Memory\n\n"
+        "### Decision\n"
+        "- Local decision. _(id: d1; status: active; scope: local; source: memory/2026-04-24.md#L2; promoted: 2026-04-24)_\n"
+        "- Shared decision. _(id: d2; status: active; scope: shared; source: memory/2026-04-24.md#L3; promoted: 2026-04-24)_\n\n"
+        "### Fact\n"
+        "- Local fact. _(id: f1; status: active; source: memory/2026-04-23.md#L5; promoted: 2026-04-23)_\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory review")
+
+    assert "### Authority Memory _(2 local, 1 shared)_" in result.text
+    assert "- **Decision:** 2 entries" in result.text
+    assert "- **Fact:** 1 entries" in result.text
 
 
 async def test_memory_review_shows_explicit_scope_labels_in_review_items(orch: Orchestrator) -> None:
@@ -833,6 +854,8 @@ async def test_memory_review_scope_local_filters_entries(orch: Orchestrator) -> 
 
     result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory review --scope local")
     assert "## Memory Review (scope: local)" in result.text
+    assert "### Authority Memory (scope: local)" in result.text
+    assert "### Authority Memory _(1 local" not in result.text
     assert "- **Decision:** 1 entries" in result.text
     assert "- **Fact:** 1 entries" in result.text
     assert "Legacy local promotion" in result.text
@@ -899,6 +922,8 @@ async def test_memory_review_scope_shared_filters_entries(orch: Orchestrator) ->
 
     result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory review --scope shared")
     assert "## Memory Review (scope: shared)" in result.text
+    assert "### Authority Memory (scope: shared)" in result.text
+    assert "### Authority Memory _(1 local" not in result.text
     assert "- **Decision:** 1 entries" in result.text
     assert "- **Fact:** 1 entries" in result.text
     assert "Shared promotion remains visible" in result.text

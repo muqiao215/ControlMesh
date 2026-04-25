@@ -263,8 +263,7 @@ def _append_authority_counts(
     if not category_counts:
         return
 
-    scope_label = f" (scope: {scope.value})" if scope else ""
-    lines = [f"### Authority Memory{scope_label}"]
+    lines = [f"### Authority Memory{_format_authority_review_scope_label(authority_text, scope=scope)}"]
     for cat, count in sorted(category_counts.items()):
         lines.append(f"- **{cat}:** {count} entries")
     sections.append("\n".join(lines))
@@ -443,6 +442,35 @@ def _count_authority_entries(
                     category_counts[current_category] = category_counts.get(current_category, 0) + 1
 
     return category_counts
+
+
+def _format_authority_review_scope_label(
+    authority_text: str,
+    *,
+    scope: MemoryScope | None = None,
+) -> str:
+    """Build the authority-review header label for scoped and unscoped review."""
+    if scope is not None:
+        return f" (scope: {scope.value})"
+
+    local_count = 0
+    shared_count = 0
+
+    for line in authority_text.splitlines():
+        parsed = parse_authority_entry(line.strip())
+        if parsed is None:
+            continue
+        _content, meta = parsed
+        if meta.scope == MemoryScope.SHARED:
+            shared_count += 1
+        else:
+            local_count += 1
+
+    if shared_count > 0:
+        return f" _({local_count} local, {shared_count} shared)_"
+    if local_count > 0:
+        return f" _({local_count} local)_"
+    return ""
 
 
 def deprecate_authority_entry(paths: ControlMeshPaths, entry_id: str) -> tuple[bool, MemoryScope | None]:
