@@ -237,8 +237,8 @@ def render_memory_review(paths: ControlMeshPaths, *, scope: MemoryScope | None =
     if scope is not None:
         sections[0] += f" (scope: {scope.value})"
     _append_authority_counts(paths, sections, scope=scope)
-    _append_recent_promotions(paths, sections)
-    _append_open_candidates(paths, sections)
+    _append_recent_promotions(paths, sections, scope=scope)
+    _append_open_candidates(paths, sections, scope=scope)
 
     return "\n\n".join(sections)
 
@@ -256,6 +256,10 @@ def _append_authority_counts(
 
     authority_text = authority_path.read_text(encoding="utf-8")
     category_counts = _count_authority_entries(authority_text, scope=scope)
+    if scope is not None:
+        category_counts = {
+            cat: count for cat, count in category_counts.items() if count > 0
+        }
     if not category_counts:
         return
 
@@ -266,7 +270,12 @@ def _append_authority_counts(
     sections.append("\n".join(lines))
 
 
-def _append_recent_promotions(paths: ControlMeshPaths, sections: list[str]) -> None:
+def _append_recent_promotions(
+    paths: ControlMeshPaths,
+    sections: list[str],
+    *,
+    scope: MemoryScope | None = None,
+) -> None:
     """Append recent promotions from promotion log."""
     promotion_log_path = paths.memory_promotion_log_path
     if not promotion_log_path.exists():
@@ -280,7 +289,15 @@ def _append_recent_promotions(paths: ControlMeshPaths, sections: list[str]) -> N
     if not log:
         return
 
-    recent = list(log.items())[-5:]
+    matching_entries = [
+        (key, entry)
+        for key, entry in log.items()
+        if _scope_matches_filter(_coerce_memory_scope(entry.get("scope")), scope)
+    ]
+    if not matching_entries:
+        return
+
+    recent = matching_entries[-5:]
     lines = ["### Recent Promotions"]
     for _key, entry in reversed(recent):
         cat = entry.get("category", "unknown")
@@ -293,7 +310,12 @@ def _append_recent_promotions(paths: ControlMeshPaths, sections: list[str]) -> N
     sections.append("\n".join(lines))
 
 
-def _append_open_candidates(paths: ControlMeshPaths, sections: list[str]) -> None:
+def _append_open_candidates(
+    paths: ControlMeshPaths,
+    sections: list[str],
+    *,
+    scope: MemoryScope | None = None,
+) -> None:
     """Append today's open candidates count."""
     today = datetime.now(UTC).date()
     note_path = daily_note_path(paths, today)
@@ -308,6 +330,9 @@ def _append_open_candidates(paths: ControlMeshPaths, sections: list[str]) -> Non
     )
     if not candidates:
         candidates = _parse_open_candidates_from_daily_note(note_text)
+    candidates = [
+        cand for cand in candidates if _scope_matches_filter(cand.scope, scope)
+    ]
     if not candidates:
         return
 
@@ -376,6 +401,14 @@ def _coerce_memory_scope(scope_value: object) -> MemoryScope:
         except ValueError:
             pass
     return MemoryScope.LOCAL
+
+
+def _scope_matches_filter(
+    entry_scope: MemoryScope,
+    scope_filter: MemoryScope | None,
+) -> bool:
+    """Return whether an entry should be included for the requested scope."""
+    return scope_filter is None or entry_scope == scope_filter
 
 
 def _format_open_candidate_review_line(candidate: PromotionCandidate) -> str:

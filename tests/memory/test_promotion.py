@@ -938,6 +938,165 @@ def test_render_memory_review_shows_local_scope_for_open_candidates(tmp_path: Pa
     assert review.count("(local)") >= 2
 
 
+def test_render_memory_review_scope_local_filters_recent_promotions_and_open_candidates(
+    tmp_path: Path,
+) -> None:
+    """Scoped local review keeps local/default items across recent and open sections."""
+    import json
+    from datetime import UTC, datetime
+
+    from controlmesh.memory.commands import render_memory_review
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    paths.memory_promotion_log_path.write_text(
+        json.dumps(
+            {
+                "legacy001": {
+                    "category": "fact",
+                    "content": "Legacy local promotion stays visible",
+                    "promoted_on": "2026-04-24",
+                },
+                "shared001": {
+                    "category": "decision",
+                    "content": "Shared promotion is filtered out",
+                    "promoted_on": "2026-04-25",
+                    "scope": "shared",
+                },
+                "local001": {
+                    "category": "preference",
+                    "content": "Explicit local promotion stays visible",
+                    "promoted_on": "2026-04-26",
+                    "scope": "local",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    today = datetime.now(UTC).date()
+    note_path = ensure_daily_note(paths, today)
+    note_path.write_text(
+        f"""# Daily Memory: {today.isoformat()}
+
+## Open Candidates
+- [preference] Default local candidate stays visible.
+- [fact shared] Shared open candidate is filtered out.
+- [decision local] Explicit local candidate stays visible.
+""",
+        encoding="utf-8",
+    )
+
+    review = render_memory_review(paths, scope=MemoryScope.LOCAL)
+    assert "Legacy local promotion stays visible" in review
+    assert "Explicit local promotion stays visible" in review
+    assert "Shared promotion is filtered out" not in review
+    assert "Today's Open Candidates (2)" in review
+    assert "Default local candidate stays visible." in review
+    assert "Explicit local candidate stays visible." in review
+    assert "Shared open candidate is filtered out." not in review
+
+
+def test_render_memory_review_scope_shared_filters_recent_promotions_and_open_candidates(
+    tmp_path: Path,
+) -> None:
+    """Scoped shared review keeps only shared items across recent and open sections."""
+    import json
+    from datetime import UTC, datetime
+
+    from controlmesh.memory.commands import render_memory_review
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    paths.memory_promotion_log_path.write_text(
+        json.dumps(
+            {
+                "legacy001": {
+                    "category": "fact",
+                    "content": "Legacy local promotion is filtered out",
+                    "promoted_on": "2026-04-24",
+                },
+                "local001": {
+                    "category": "preference",
+                    "content": "Explicit local promotion is filtered out",
+                    "promoted_on": "2026-04-25",
+                    "scope": "local",
+                },
+                "shared001": {
+                    "category": "decision",
+                    "content": "Shared promotion stays visible",
+                    "promoted_on": "2026-04-26",
+                    "scope": "shared",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    today = datetime.now(UTC).date()
+    note_path = ensure_daily_note(paths, today)
+    note_path.write_text(
+        f"""# Daily Memory: {today.isoformat()}
+
+## Open Candidates
+- [preference] Default local candidate is filtered out.
+- [decision local] Explicit local candidate is filtered out.
+- [fact shared] Shared open candidate stays visible.
+""",
+        encoding="utf-8",
+    )
+
+    review = render_memory_review(paths, scope=MemoryScope.SHARED)
+    assert "Shared promotion stays visible" in review
+    assert "Legacy local promotion is filtered out" not in review
+    assert "Explicit local promotion is filtered out" not in review
+    assert "Today's Open Candidates (1)" in review
+    assert "Shared open candidate stays visible." in review
+    assert "Default local candidate is filtered out." not in review
+    assert "Explicit local candidate is filtered out." not in review
+
+
+def test_render_memory_review_scope_shared_omits_empty_recent_and_open_sections(
+    tmp_path: Path,
+) -> None:
+    """Scoped review omits empty recent/open sections after filtering."""
+    import json
+    from datetime import UTC, datetime
+
+    from controlmesh.memory.commands import render_memory_review
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    paths.memory_promotion_log_path.write_text(
+        json.dumps(
+            {
+                "legacy001": {
+                    "category": "fact",
+                    "content": "Legacy local promotion only",
+                    "promoted_on": "2026-04-24",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    today = datetime.now(UTC).date()
+    note_path = ensure_daily_note(paths, today)
+    note_path.write_text(
+        f"""# Daily Memory: {today.isoformat()}
+
+## Open Candidates
+- [preference] Default local candidate only.
+""",
+        encoding="utf-8",
+    )
+
+    review = render_memory_review(paths, scope=MemoryScope.SHARED)
+    assert review.strip() == "## Memory Review (scope: shared)"
+    assert "### Recent Promotions" not in review
+    assert "### Today's Open Candidates" not in review
+
+
 def test_legacy_promotion_log_without_scope_still_loads(tmp_path: Path) -> None:
     """Promotion log entries without scope field are handled gracefully."""
     import json

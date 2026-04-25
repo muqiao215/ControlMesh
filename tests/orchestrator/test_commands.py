@@ -768,8 +768,10 @@ async def test_memory_review_shows_explicit_scope_labels_in_review_items(orch: O
     )
 
     result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory review")
+    assert "### Recent Promotions" in result.text
     assert "(local, promoted 2026-04-26)" in result.text
     assert "(shared, promoted 2026-04-26)" in result.text
+    assert "### Today's Open Candidates (2)" in result.text
     assert "Local candidate in review." in result.text
     assert "(local)" in result.text
     assert "Shared candidate in review." in result.text
@@ -777,7 +779,11 @@ async def test_memory_review_shows_explicit_scope_labels_in_review_items(orch: O
 
 
 async def test_memory_review_scope_local_filters_entries(orch: Orchestrator) -> None:
-    """Test /memory review --scope local shows only local entries."""
+    """Test /memory review --scope local filters the full review surface."""
+    from datetime import UTC, datetime
+
+    from controlmesh.memory.store import ensure_daily_note
+
     # Create authority memory with mixed local and shared entries
     orch.paths.authority_memory_path.write_text(
         "# ControlMesh Memory v2\n\n"
@@ -788,24 +794,62 @@ async def test_memory_review_scope_local_filters_entries(orch: Orchestrator) -> 
         "### Fact\n"
         "- Local fact. _(id: f1; status: active; scope: local; source: memory/2026-04-23.md#L5; promoted: 2026-04-23)_\n"
         "- Shared fact. _(id: f2; status: active; scope: shared; source: memory/2026-04-23.md#L6; promoted: 2026-04-23)_\n",
+        encoding="utf-8",
+    )
+    orch.paths.memory_promotion_log_path.write_text(
+        json.dumps(
+            {
+                "legacy001": {
+                    "category": "fact",
+                    "content": "Legacy local promotion",
+                    "promoted_on": "2026-04-24",
+                },
+                "shared001": {
+                    "category": "decision",
+                    "content": "Shared promotion should be filtered",
+                    "promoted_on": "2026-04-25",
+                    "scope": "shared",
+                },
+                "local001": {
+                    "category": "preference",
+                    "content": "Explicit local promotion remains visible",
+                    "promoted_on": "2026-04-26",
+                    "scope": "local",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    today = datetime.now(UTC).date()
+    note_path = ensure_daily_note(orch.paths, today)
+    note_path.write_text(
+        f"# Daily Memory: {today.isoformat()}\n\n"
+        "## Open Candidates\n\n"
+        "- [preference] Default local candidate remains visible.\n"
+        "- [fact shared] Shared open candidate should be filtered.\n"
+        "- [decision local] Explicit local candidate remains visible.\n",
         encoding="utf-8",
     )
 
     result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory review --scope local")
-    assert "Memory Review" in result.text
-    assert "scope: local" in result.text or "scope:local" in result.text
-    # Should show Decision and Fact sections with local entries
-    assert "Decision" in result.text
-    assert "Fact" in result.text
-    # Should not count shared entries
-    # Local scope filter means only local entries are counted
-    lines = result.text.split("\n")
-    # The output should indicate scope filtering is active
-    assert any("local" in line.lower() for line in lines)
+    assert "## Memory Review (scope: local)" in result.text
+    assert "- **Decision:** 1 entries" in result.text
+    assert "- **Fact:** 1 entries" in result.text
+    assert "Legacy local promotion" in result.text
+    assert "Explicit local promotion remains visible" in result.text
+    assert "Shared promotion should be filtered" not in result.text
+    assert "### Today's Open Candidates (2)" in result.text
+    assert "Default local candidate remains visible." in result.text
+    assert "Explicit local candidate remains visible." in result.text
+    assert "Shared open candidate should be filtered." not in result.text
 
 
 async def test_memory_review_scope_shared_filters_entries(orch: Orchestrator) -> None:
-    """Test /memory review --scope shared shows only shared entries."""
+    """Test /memory review --scope shared filters out local/default review items."""
+    from datetime import UTC, datetime
+
+    from controlmesh.memory.store import ensure_daily_note
+
     # Create authority memory with mixed local and shared entries
     orch.paths.authority_memory_path.write_text(
         "# ControlMesh Memory v2\n\n"
@@ -818,16 +862,93 @@ async def test_memory_review_scope_shared_filters_entries(orch: Orchestrator) ->
         "- Shared fact. _(id: f2; status: active; scope: shared; source: memory/2026-04-23.md#L6; promoted: 2026-04-23)_\n",
         encoding="utf-8",
     )
+    orch.paths.memory_promotion_log_path.write_text(
+        json.dumps(
+            {
+                "legacy001": {
+                    "category": "fact",
+                    "content": "Legacy local promotion should be filtered",
+                    "promoted_on": "2026-04-24",
+                },
+                "local001": {
+                    "category": "preference",
+                    "content": "Explicit local promotion should be filtered",
+                    "promoted_on": "2026-04-25",
+                    "scope": "local",
+                },
+                "shared001": {
+                    "category": "decision",
+                    "content": "Shared promotion remains visible",
+                    "promoted_on": "2026-04-26",
+                    "scope": "shared",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    today = datetime.now(UTC).date()
+    note_path = ensure_daily_note(orch.paths, today)
+    note_path.write_text(
+        f"# Daily Memory: {today.isoformat()}\n\n"
+        "## Open Candidates\n\n"
+        "- [preference] Default local candidate should be filtered.\n"
+        "- [decision local] Explicit local candidate should be filtered.\n"
+        "- [fact shared] Shared open candidate remains visible.\n",
+        encoding="utf-8",
+    )
 
     result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory review --scope shared")
-    assert "Memory Review" in result.text
-    assert "scope: shared" in result.text or "scope:shared" in result.text
-    # Should show Decision and Fact sections with shared entries
-    assert "Decision" in result.text
-    assert "Fact" in result.text
-    # The output should indicate scope filtering is active
-    lines = result.text.split("\n")
-    assert any("shared" in line.lower() for line in lines)
+    assert "## Memory Review (scope: shared)" in result.text
+    assert "- **Decision:** 1 entries" in result.text
+    assert "- **Fact:** 1 entries" in result.text
+    assert "Shared promotion remains visible" in result.text
+    assert "Legacy local promotion should be filtered" not in result.text
+    assert "Explicit local promotion should be filtered" not in result.text
+    assert "### Today's Open Candidates (1)" in result.text
+    assert "Shared open candidate remains visible." in result.text
+    assert "Default local candidate should be filtered." not in result.text
+    assert "Explicit local candidate should be filtered." not in result.text
+
+
+async def test_memory_review_scope_shared_omits_empty_recent_and_open_sections(orch: Orchestrator) -> None:
+    """Empty scoped sections are omitted instead of rendering empty headers."""
+    from datetime import UTC, datetime
+
+    from controlmesh.memory.store import ensure_daily_note
+
+    orch.paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n"
+        "## Durable Memory\n\n"
+        "### Decision\n"
+        "- Local decision only. _(id: d1; status: active; scope: local; source: memory/2026-04-24.md#L2; promoted: 2026-04-24)_\n",
+        encoding="utf-8",
+    )
+    orch.paths.memory_promotion_log_path.write_text(
+        json.dumps(
+            {
+                "legacy001": {
+                    "category": "fact",
+                    "content": "Legacy local promotion only",
+                    "promoted_on": "2026-04-24",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    today = datetime.now(UTC).date()
+    note_path = ensure_daily_note(orch.paths, today)
+    note_path.write_text(
+        f"# Daily Memory: {today.isoformat()}\n\n"
+        "## Open Candidates\n\n"
+        "- [preference] Default local candidate only.\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory review --scope shared")
+    assert result.text.strip() == "## Memory Review (scope: shared)"
+    assert "### Authority Memory" not in result.text
+    assert "### Recent Promotions" not in result.text
+    assert "### Today's Open Candidates" not in result.text
 
 
 async def test_memory_review_invalid_scope_shows_usage(orch: Orchestrator) -> None:
