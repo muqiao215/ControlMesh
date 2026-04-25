@@ -167,6 +167,7 @@ class SemanticSearchHit(BaseModel):
     authority_entry_id: str | None = None
     line_number: int | None = None
     similarity: float = 0.0
+    scope: MemoryScope | None = None
 
 
 class SemanticSearchResult(BaseModel):

@@ -542,7 +542,8 @@ async def _cmd_memory_semantic(orch: Orchestrator, parts: list[str]) -> Orchestr
         if hit.line_number:
             ref += f" (line {hit.line_number})"
         extra = f" [id:{hit.authority_entry_id}]" if hit.authority_entry_id else ""
-        lines.append(f"**[{hit.kind.value}]** {ref}  _similarity={hit.similarity:.2f}{extra}_")
+        scope_str = f"[{hit.scope.value}]" if hit.scope else ""
+        lines.append(f"**[{hit.kind.value}]{scope_str}** {ref}  _similarity={hit.similarity:.2f}{extra}_")
         lines.append(f"- {hit.content}")
         lines.append("")
     return OrchestratorResult(text="\n".join(lines))

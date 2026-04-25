@@ -22,7 +22,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from controlmesh.memory.models import MemoryDocumentKind, SemanticSearchHit, SemanticSearchResult
+from controlmesh.memory.models import (
+    MemoryDocumentKind,
+    MemoryScope,
+    SemanticSearchHit,
+    SemanticSearchResult,
+)
 from controlmesh.memory.store import initialize_memory_v2
 from controlmesh.workspace.paths import ControlMeshPaths
 
@@ -40,6 +45,7 @@ _AUTHORITY_ENTRY_RE = re.compile(
     r"^- (?P<content>[^_].*?) _\((?P<meta>[^)]+)\)_$"
 )
 _AUTHORITY_META_RE = re.compile(r"\bid:\s*(?P<eid>[^;]+)")
+_SCOPE_RE = re.compile(r"\bscope:\s*(?P<scope>local|shared)\b", re.IGNORECASE)
 
 # Daily note section header
 _SECTION_RE = re.compile(r"^##\s+(.+)$")
@@ -59,6 +65,7 @@ class _SourceEntry:
     content: str
     authority_entry_id: str | None = None  # only for authority entries
     line_number: int | None = None
+    scope: MemoryScope = MemoryScope.LOCAL
 
 
 # ---------------------------------------------------------------------------
@@ -137,10 +144,15 @@ def _extract_authority_entries(paths: ControlMeshPaths) -> list[_SourceEntry]:
 
         # Extract authority entry id from metadata
         authority_id: str | None = None
+        scope: MemoryScope = MemoryScope.LOCAL
         meta_str = m.group("meta")
         id_m = _AUTHORITY_META_RE.search(meta_str)
         if id_m:
             authority_id = id_m.group("eid").strip()
+        # Extract scope from metadata (defaults to LOCAL for backward compat)
+        scope_m = _SCOPE_RE.search(meta_str)
+        if scope_m:
+            scope = MemoryScope(scope_m.group("scope").lower())
 
         # Stable entry_id derived from path + line number
         seed = f"authority:{authority_path.relative_to(paths.workspace).as_posix()}:{lineno}".encode()
@@ -155,6 +167,7 @@ def _extract_authority_entries(paths: ControlMeshPaths) -> list[_SourceEntry]:
                 content=content,
                 authority_entry_id=authority_id,
                 line_number=lineno,
+                scope=scope,
             )
         )
 
@@ -267,6 +280,7 @@ def _build_entry_record(entry: _SourceEntry, trigram_set: set[str]) -> dict[str,
         "content": entry.content,
         "authority_entry_id": entry.authority_entry_id,
         "line_number": entry.line_number,
+        "scope": entry.scope.value,
         "trigram_count": len(trigram_set),
     }
 
@@ -325,6 +339,34 @@ def _atomic_json_save(path: Path, data: dict[str, Any]) -> None:
 # ---------------------------------------------------------------------------
 # Query / retrieval
 # ---------------------------------------------------------------------------
+
+
+def _record_to_hit(score: float, record: dict[str, Any]) -> SemanticSearchHit:
+    """Convert a scored index record into a SemanticSearchHit."""
+    kind_str = record.get("kind", "authority")
+    try:
+        kind = MemoryDocumentKind(kind_str)
+    except ValueError:
+        kind = MemoryDocumentKind.AUTHORITY
+
+    # Parse scope from record; default to None for non-authority entries
+    scope: MemoryScope | None = None
+    if kind == MemoryDocumentKind.AUTHORITY:
+        scope_str = record.get("scope", "")
+        if scope_str in ("local", "shared"):
+            scope = MemoryScope(scope_str)
+
+    return SemanticSearchHit(
+        entry_id=record.get("entry_id", ""),
+        kind=kind,
+        source_path=record.get("source_path", ""),
+        section=record.get("section"),
+        content=record.get("content", ""),
+        authority_entry_id=record.get("authority_entry_id"),
+        line_number=record.get("line_number"),
+        similarity=round(score, 4),
+        scope=scope,
+    )
 
 
 def _load_index(paths: ControlMeshPaths) -> dict[str, Any] | None:
@@ -386,26 +428,7 @@ def search_semantic_index(
     kind_priority = {"authority": 0, "daily-note": 1}
     scored.sort(key=lambda x: (-x[0], kind_priority.get(x[1].get("kind", ""), 9)))
 
-    hits: list[SemanticSearchHit] = []
-    for score, record in scored[:limit]:
-        kind_str = record.get("kind", "authority")
-        try:
-            kind = MemoryDocumentKind(kind_str)
-        except ValueError:
-            kind = MemoryDocumentKind.AUTHORITY
-
-        hits.append(
-            SemanticSearchHit(
-                entry_id=record.get("entry_id", ""),
-                kind=kind,
-                source_path=record.get("source_path", ""),
-                section=record.get("section"),
-                content=record.get("content", ""),
-                authority_entry_id=record.get("authority_entry_id"),
-                line_number=record.get("line_number"),
-                similarity=round(score, 4),
-            )
-        )
+    hits = [_record_to_hit(score, record) for score, record in scored[:limit]]
 
     return SemanticSearchResult(
         query=query,

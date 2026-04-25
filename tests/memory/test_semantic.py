@@ -6,7 +6,7 @@ import json
 from datetime import date
 from pathlib import Path
 
-from controlmesh.memory.models import MemoryDocumentKind
+from controlmesh.memory.models import MemoryDocumentKind, MemoryScope
 from controlmesh.memory.semantic import (
     _extract_authority_entries,
     _extract_daily_note_entries,
@@ -477,3 +477,141 @@ def test_daily_note_entry_line_numbers_are_real_file_positions(tmp_path: Path) -
     # real_lineno = 7 + 1 + 1 = 9
     second_entry = next(e for e in entries if "Second signal" in e.content)
     assert second_entry.line_number == 9, f"Expected 9, got {second_entry.line_number}"
+
+
+# ---------------------------------------------------------------------------
+# Scope-aware semantic search (Phase 16)
+# ---------------------------------------------------------------------------
+
+
+def test_search_semantic_index_returns_shared_scope_for_shared_authority_hit(tmp_path: Path) -> None:
+    """Authority hits with scope:shared return MemoryScope.SHARED."""
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    paths.authority_memory_path.write_text(
+        r"""# ControlMesh Memory v2
+
+## Durable Memory
+
+### Fact
+- Team uses shared memory for cross-agent context _(\id: shared001; status: active; scope: shared)_
+""",
+        encoding="utf-8",
+    )
+
+    result = search_semantic_index(paths, "shared memory cross-agent", limit=5)
+
+    assert len(result.hits) >= 1
+    top = result.hits[0]
+    assert top.kind == MemoryDocumentKind.AUTHORITY
+    assert top.scope == MemoryScope.SHARED
+    assert top.authority_entry_id == "shared001"
+
+
+def test_search_semantic_index_returns_local_scope_for_local_authority_hit(tmp_path: Path) -> None:
+    """Authority hits with scope:local return MemoryScope.LOCAL."""
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    paths.authority_memory_path.write_text(
+        r"""# ControlMesh Memory v2
+
+## Durable Memory
+
+### Fact
+- User prefers dark mode theme _(\id: local001; status: active; scope: local)_
+""",
+        encoding="utf-8",
+    )
+
+    result = search_semantic_index(paths, "dark mode theme", limit=5)
+
+    assert len(result.hits) >= 1
+    top = result.hits[0]
+    assert top.kind == MemoryDocumentKind.AUTHORITY
+    assert top.scope == MemoryScope.LOCAL
+    assert top.authority_entry_id == "local001"
+
+
+def test_search_semantic_index_defaults_to_local_for_legacy_entries(tmp_path: Path) -> None:
+    """Legacy authority entries without explicit scope default to MemoryScope.LOCAL."""
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    # Legacy format without scope field
+    paths.authority_memory_path.write_text(
+        r"""# ControlMesh Memory v2
+
+## Durable Memory
+
+### Fact
+- Legacy entry without scope field _(\id: legacy001; status: active)_
+""",
+        encoding="utf-8",
+    )
+
+    result = search_semantic_index(paths, "legacy entry", limit=5)
+
+    assert len(result.hits) >= 1
+    top = result.hits[0]
+    assert top.kind == MemoryDocumentKind.AUTHORITY
+    # Legacy entries without scope metadata default to local
+    assert top.scope == MemoryScope.LOCAL
+
+
+def test_search_semantic_index_daily_notes_have_no_scope(tmp_path: Path) -> None:
+    """Daily note entries are not authority entries and have no scope."""
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    paths.authority_memory_path.write_text(
+        r"""# ControlMesh Memory v2
+
+## Durable Memory
+
+### Fact
+- Authority fact _(\id: fact001; status: active)_
+""",
+        encoding="utf-8",
+    )
+    note_path = ensure_daily_note(paths, date(2026, 4, 10))
+    note_path.write_text(
+        """# Daily Memory: 2026-04-10
+
+## Signals
+- [preference] User mentioned python projects [sig:sig001]
+""",
+        encoding="utf-8",
+    )
+
+    result = search_semantic_index(paths, "python projects", limit=5)
+
+    # Find the daily note hit
+    daily_hits = [h for h in result.hits if h.kind == MemoryDocumentKind.DAILY_NOTE]
+    assert len(daily_hits) >= 1
+    daily_top = daily_hits[0]
+    # Daily notes are not authority entries, scope should be None
+    assert daily_top.scope is None
+
+
+def test_search_semantic_index_scope_in_index_record(tmp_path: Path) -> None:
+    """Scope is persisted in the semantic index JSON records."""
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    paths.authority_memory_path.write_text(
+        r"""# ControlMesh Memory v2
+
+## Durable Memory
+
+### Fact
+- Shared entry _(\id: shr001; status: active; scope: shared)_
+- Local entry _(\id: loc001; status: active; scope: local)_
+""",
+        encoding="utf-8",
+    )
+    sync_semantic_index(paths)
+
+    index_path = _semantic_index_path(paths)
+    data = json.loads(index_path.read_text(encoding="utf-8"))
+
+    entries_by_id = {e["authority_entry_id"]: e for e in data["entries"] if e.get("authority_entry_id")}
+
+    assert entries_by_id["shr001"]["scope"] == "shared"
+    assert entries_by_id["loc001"]["scope"] == "local"

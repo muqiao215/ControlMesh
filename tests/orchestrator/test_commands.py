@@ -921,6 +921,78 @@ async def test_memory_semantic_short_query_shows_empty_state(orch: Orchestrator)
     assert "no similar entries" in result.text.lower()
 
 
+async def test_memory_semantic_shows_shared_scope_for_shared_authority_hit(orch: Orchestrator) -> None:
+    """Test /memory semantic shows [shared] suffix for shared authority hits."""
+    # Directly write to authority memory to create a shared entry
+    auth_path = orch.paths.authority_memory_path
+    auth_path.parent.mkdir(parents=True, exist_ok=True)
+    auth_path.write_text(
+        r"""# ControlMesh Memory v2
+
+## Durable Memory
+
+### Fact
+- Team uses shared memory for cross-agent context _(\id: shr001; status: active; scope: shared)_
+""",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory semantic shared memory cross-agent")
+    assert "Semantic Search" in result.text
+    assert "[shared]" in result.text
+    assert "[authority]" in result.text
+
+
+async def test_memory_semantic_shows_local_scope_for_local_authority_hit(orch: Orchestrator) -> None:
+    """Test /memory semantic shows [local] suffix for local authority hits."""
+    auth_path = orch.paths.authority_memory_path
+    auth_path.parent.mkdir(parents=True, exist_ok=True)
+    auth_path.write_text(
+        r"""# ControlMesh Memory v2
+
+## Durable Memory
+
+### Fact
+- User prefers dark mode _(\id: loc001; status: active; scope: local)_
+""",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory semantic dark mode")
+    assert "Semantic Search" in result.text
+    assert "[local]" in result.text
+    assert "[authority]" in result.text
+
+
+async def test_memory_semantic_shows_no_scope_for_daily_note_hits(orch: Orchestrator) -> None:
+    """Test /memory semantic does not show scope suffix for daily note hits."""
+    from datetime import UTC, datetime
+
+    from controlmesh.memory.store import ensure_daily_note
+
+    today = datetime.now(UTC).date()
+    note_path = ensure_daily_note(orch.paths, today)
+    note_path.write_text(
+        f"# Daily Memory: {today.isoformat()}\n\n"
+        "## Signals\n\n"
+        "- [preference] User mentioned python projects [sig:sig001]\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory semantic python projects")
+    assert "Semantic Search" in result.text
+    # Daily note entries should not have scope displayed
+    # (they show as [daily-note] without a scope suffix)
+    assert "[daily-note]" in result.text
+    # Verify no spurious scope appears on daily note hits
+    lines = result.text.split("\n")
+    for line in lines:
+        if "[daily-note]" in line:
+            # The scope suffix only appears for authority entries
+            assert "[local]" not in line
+            assert "[shared]" not in line
+
+
 async def test_memory_unknown_subcommand_shows_usage_with_semantic(orch: Orchestrator) -> None:
     """Test /memory with unknown subcommand shows usage including semantic."""
     result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory unknown_subcommand")
