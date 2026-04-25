@@ -733,7 +733,8 @@ async def test_memory_review_shows_summary(orch: Orchestrator) -> None:
     result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory review")
     assert "Memory Review" in result.text
     assert "### Authority Memory _(2 local)_" in result.text
-    assert "Decision" in result.text or "Fact" in result.text
+    assert "- **Decision:** 1 entries _(1 local)_" in result.text
+    assert "- **Fact:** 1 entries _(1 local)_" in result.text
     assert "Open Candidates" in result.text
 
 
@@ -753,8 +754,27 @@ async def test_memory_review_shows_mixed_authority_scope_summary(orch: Orchestra
     result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory review")
 
     assert "### Authority Memory _(2 local, 1 shared)_" in result.text
-    assert "- **Decision:** 2 entries" in result.text
-    assert "- **Fact:** 1 entries" in result.text
+    assert "- **Decision:** 2 entries _(1 local, 1 shared)_" in result.text
+    assert "- **Fact:** 1 entries _(1 local)_" in result.text
+
+
+async def test_memory_review_shows_legacy_authority_entries_as_local_in_category_summary(
+    orch: Orchestrator,
+) -> None:
+    """Unscoped /memory review treats legacy authority entries as local per category."""
+    orch.paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n"
+        "## Durable Memory\n\n"
+        "### Fact\n"
+        "- Legacy fact. _(source: memory/2026-04-22.md#L5; promoted: 2026-04-22)_\n"
+        "- Shared fact. _(id: f2; status: active; scope: shared; source: memory/2026-04-23.md#L5; promoted: 2026-04-23)_\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory review")
+
+    assert "### Authority Memory _(1 local, 1 shared)_" in result.text
+    assert "- **Fact:** 2 entries _(1 local, 1 shared)_" in result.text
 
 
 async def test_memory_review_shows_explicit_scope_labels_in_review_items(orch: Orchestrator) -> None:
@@ -857,7 +877,9 @@ async def test_memory_review_scope_local_filters_entries(orch: Orchestrator) -> 
     assert "### Authority Memory (scope: local)" in result.text
     assert "### Authority Memory _(1 local" not in result.text
     assert "- **Decision:** 1 entries" in result.text
+    assert "- **Decision:** 1 entries _(" not in result.text
     assert "- **Fact:** 1 entries" in result.text
+    assert "- **Fact:** 1 entries _(" not in result.text
     assert "Legacy local promotion" in result.text
     assert "Explicit local promotion remains visible" in result.text
     assert "Shared promotion should be filtered" not in result.text
@@ -925,7 +947,9 @@ async def test_memory_review_scope_shared_filters_entries(orch: Orchestrator) ->
     assert "### Authority Memory (scope: shared)" in result.text
     assert "### Authority Memory _(1 local" not in result.text
     assert "- **Decision:** 1 entries" in result.text
+    assert "- **Decision:** 1 entries _(" not in result.text
     assert "- **Fact:** 1 entries" in result.text
+    assert "- **Fact:** 1 entries _(" not in result.text
     assert "Shared promotion remains visible" in result.text
     assert "Legacy local promotion should be filtered" not in result.text
     assert "Explicit local promotion should be filtered" not in result.text

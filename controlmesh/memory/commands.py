@@ -256,6 +256,7 @@ def _append_authority_counts(
 
     authority_text = authority_path.read_text(encoding="utf-8")
     category_counts = _count_authority_entries(authority_text, scope=scope)
+    category_scope_counts = _count_authority_entries_by_scope(authority_text)
     if scope is not None:
         category_counts = {
             cat: count for cat, count in category_counts.items() if count > 0
@@ -265,7 +266,10 @@ def _append_authority_counts(
 
     lines = [f"### Authority Memory{_format_authority_review_scope_label(authority_text, scope=scope)}"]
     for cat, count in sorted(category_counts.items()):
-        lines.append(f"- **{cat}:** {count} entries")
+        lines.append(
+            f"- **{cat}:** "
+            f"{_format_authority_category_review_count(count, category_scope_counts.get(cat), scope=scope)}"
+        )
     sections.append("\n".join(lines))
 
 
@@ -424,8 +428,24 @@ def _count_authority_entries(
     scope: MemoryScope | None = None,
 ) -> dict[str, int]:
     """Count authority entries by category from rendered text, optionally filtered by scope."""
+    category_scope_counts = _count_authority_entries_by_scope(authority_text)
+    if scope is None:
+        return {
+            category: scope_counts[MemoryScope.LOCAL] + scope_counts[MemoryScope.SHARED]
+            for category, scope_counts in category_scope_counts.items()
+        }
+    return {
+        category: scope_counts[scope]
+        for category, scope_counts in category_scope_counts.items()
+    }
+
+
+def _count_authority_entries_by_scope(
+    authority_text: str,
+) -> dict[str, dict[MemoryScope, int]]:
+    """Count authority entries by category and scope from rendered authority markdown."""
     lines = authority_text.splitlines()
-    category_counts: dict[str, int] = {}
+    category_counts: dict[str, dict[MemoryScope, int]] = {}
     current_category = ""
 
     for line in lines:
@@ -433,15 +453,43 @@ def _count_authority_entries(
         if stripped.startswith("### "):
             current_category = stripped[4:].strip()
             if current_category and current_category not in category_counts:
-                category_counts[current_category] = 0
-        elif current_category and stripped.startswith("- "):
-            parsed = parse_authority_entry(stripped)
-            if parsed is not None:
-                _content, meta = parsed
-                if scope is None or meta.scope == scope:
-                    category_counts[current_category] = category_counts.get(current_category, 0) + 1
+                category_counts[current_category] = {
+                    MemoryScope.LOCAL: 0,
+                    MemoryScope.SHARED: 0,
+                }
+            continue
+
+        if not current_category or not stripped.startswith("- "):
+            continue
+
+        parsed = parse_authority_entry(stripped)
+        if parsed is None:
+            continue
+        _content, meta = parsed
+        entry_scope = MemoryScope.SHARED if meta.scope == MemoryScope.SHARED else MemoryScope.LOCAL
+        category_counts[current_category][entry_scope] += 1
 
     return category_counts
+
+
+def _format_authority_category_review_count(
+    count: int,
+    scope_counts: dict[MemoryScope, int] | None,
+    *,
+    scope: MemoryScope | None = None,
+) -> str:
+    """Format one authority category review line, adding scope detail when unscoped."""
+    if scope is not None or scope_counts is None:
+        return f"{count} entries"
+
+    local_count = scope_counts[MemoryScope.LOCAL]
+    shared_count = scope_counts[MemoryScope.SHARED]
+
+    if shared_count > 0 and local_count > 0:
+        return f"{count} entries _({local_count} local, {shared_count} shared)_"
+    if shared_count > 0:
+        return f"{count} entries _({shared_count} shared)_"
+    return f"{count} entries _({local_count} local)_"
 
 
 def _format_authority_review_scope_label(

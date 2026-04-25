@@ -1177,8 +1177,8 @@ def test_render_memory_review_unscoped_authority_summary_shows_local_only_count(
     review = render_memory_review(paths)
 
     assert "### Authority Memory _(2 local)_" in review
-    assert "- **Decision:** 1 entries" in review
-    assert "- **Fact:** 1 entries" in review
+    assert "- **Decision:** 1 entries _(1 local)_" in review
+    assert "- **Fact:** 1 entries _(1 local)_" in review
 
 
 def test_render_memory_review_unscoped_authority_summary_shows_local_shared_split(
@@ -1201,8 +1201,8 @@ def test_render_memory_review_unscoped_authority_summary_shows_local_shared_spli
     review = render_memory_review(paths)
 
     assert "### Authority Memory _(2 local, 1 shared)_" in review
-    assert "- **Decision:** 2 entries" in review
-    assert "- **Fact:** 1 entries" in review
+    assert "- **Decision:** 2 entries _(1 local, 1 shared)_" in review
+    assert "- **Fact:** 1 entries _(1 local)_" in review
 
 
 def test_render_memory_review_unscoped_authority_summary_counts_legacy_entries_as_local(
@@ -1223,7 +1223,7 @@ def test_render_memory_review_unscoped_authority_summary_counts_legacy_entries_a
     review = render_memory_review(paths)
 
     assert "### Authority Memory _(1 local, 1 shared)_" in review
-    assert "- **Fact:** 2 entries" in review
+    assert "- **Fact:** 2 entries _(1 local, 1 shared)_" in review
 
 
 def test_promotion_log_scope_field_added_to_existing_log_on_reapply(tmp_path: Path) -> None:
