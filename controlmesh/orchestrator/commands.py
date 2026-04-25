@@ -21,12 +21,12 @@ from controlmesh.i18n import t
 from controlmesh.infra.install import detect_install_mode
 from controlmesh.infra.updater import check_source_upgrade_status
 from controlmesh.infra.version import check_latest_version, get_current_version
-from controlmesh.orchestrator.registry import OrchestratorResult
 from controlmesh.orchestrator.providers import (
     normalize_provider_name,
     provider_display_name,
     provider_public_token,
 )
+from controlmesh.orchestrator.registry import OrchestratorResult
 from controlmesh.orchestrator.selectors.cron_selector import cron_selector_start
 from controlmesh.orchestrator.selectors.model_selector import model_selector_start, switch_model
 from controlmesh.orchestrator.selectors.models import Button, ButtonGrid, SelectorResponse
@@ -35,6 +35,7 @@ from controlmesh.orchestrator.selectors.settings_selector import (
     set_feishu_app_credentials,
     set_feishu_progress_mode,
     set_feishu_runtime_mode,
+    set_language,
     set_streaming_output_mode,
     set_telegram_bot_token,
     set_tool_display_mode,
@@ -338,6 +339,12 @@ async def cmd_settings(orch: Orchestrator, _key: SessionKey, text: str) -> Orche
             result = await _cmd_settings_update(orch, parts)
     elif parts[1].lower().replace("-", "_") == "upgrade":
         result = await cmd_upgrade(orch, _key, "/upgrade")
+    elif parts[1].lower().replace("-", "_") in {"language", "lang"}:
+        if len(parts) >= 3:
+            result = await _cmd_settings_update(orch, parts)
+        else:
+            resp = await settings_selector_start(orch)
+            result = OrchestratorResult(text=resp.text, buttons=resp.buttons)
     elif len(parts) >= 3:
         result = await _cmd_settings_update(orch, parts)
 
@@ -358,6 +365,8 @@ async def _cmd_settings_update(
         resp = await _cmd_settings_feishu_update(orch, parts)
     elif section == "messaging":
         resp = await _cmd_settings_messaging_update(orch, parts)
+    elif section in {"language", "lang"}:
+        resp = await set_language(orch, value)
     else:
         resp = None
 

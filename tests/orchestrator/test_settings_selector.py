@@ -141,3 +141,44 @@ async def test_settings_version_refresh_callback_shows_upgrade_actions(orch: Orc
     assert "upg:yes:0.16.0" in callback_values
     labels = [button.text for row in resp.buttons.rows for button in row]
     assert any("github@main" in label for label in labels)
+
+
+async def test_settings_language_section_appears(orch: Orchestrator) -> None:
+    resp = await settings_selector_start(orch)
+
+    assert "**Language**" in resp.text
+    assert "Current:" in resp.text
+    assert resp.buttons is not None
+    labels = [button.text for row in resp.buttons.rows for button in row]
+    assert any("English" in label for label in labels)
+    assert any("中文" in label for label in labels)
+
+
+async def test_settings_language_callback_updates_config_english(orch: Orchestrator) -> None:
+    resp = await handle_settings_callback(orch, "st:l:en")
+
+    assert "Language updated" in resp.text
+    assert orch._config.language == "en"
+    saved = json.loads(orch.paths.config_path.read_text(encoding="utf-8"))
+    assert saved["language"] == "en"
+
+
+async def test_settings_language_callback_updates_config_chinese(orch: Orchestrator) -> None:
+    resp = await handle_settings_callback(orch, "st:l:zh")
+
+    assert "Language updated" in resp.text
+    assert orch._config.language == "zh"
+    saved = json.loads(orch.paths.config_path.read_text(encoding="utf-8"))
+    assert saved["language"] == "zh"
+
+
+async def test_settings_language_buttons_show_current_marker(orch: Orchestrator) -> None:
+    orch._config.language = "zh"
+    resp = await settings_selector_start(orch)
+
+    assert resp.buttons is not None
+    labels = [button.text for row in resp.buttons.rows for button in row]
+    # Chinese should have [x] marker since it's the current language
+    assert any("[x] 中文" in label for label in labels)
+    # English should have [ ] marker
+    assert any("[ ] English" in label for label in labels)

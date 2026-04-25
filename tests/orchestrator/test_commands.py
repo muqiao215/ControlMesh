@@ -428,6 +428,48 @@ async def test_settings_rejects_unknown_values(orch: Orchestrator) -> None:
     assert "Usage: /settings" in result.text
 
 
+async def test_settings_language_en_persists_to_config(orch: Orchestrator) -> None:
+    result = await cmd_settings(orch, SessionKey(chat_id=1), "/settings language en")
+
+    assert "Language updated" in result.text
+    assert orch._config.language == "en"
+    saved = json.loads(orch.paths.config_path.read_text(encoding="utf-8"))
+    assert saved["language"] == "en"
+
+
+async def test_settings_language_zh_persists_to_config(orch: Orchestrator) -> None:
+    result = await cmd_settings(orch, SessionKey(chat_id=1), "/settings language zh")
+
+    assert "Language updated" in result.text
+    assert orch._config.language == "zh"
+    saved = json.loads(orch.paths.config_path.read_text(encoding="utf-8"))
+    assert saved["language"] == "zh"
+
+
+async def test_settings_language_lang_alias_persists_to_config(orch: Orchestrator) -> None:
+    result = await cmd_settings(orch, SessionKey(chat_id=1), "/settings lang de")
+
+    assert "Language updated" in result.text
+    assert orch._config.language == "de"
+    saved = json.loads(orch.paths.config_path.read_text(encoding="utf-8"))
+    assert saved["language"] == "de"
+
+
+async def test_settings_language_without_value_shows_panel(orch: Orchestrator) -> None:
+    result = await cmd_settings(orch, SessionKey(chat_id=1), "/settings language")
+
+    assert "Advanced Settings" in result.text
+    assert "Language" in result.text
+    assert result.buttons is not None
+
+
+async def test_settings_language_shows_in_usage_text() -> None:
+    from controlmesh.orchestrator.selectors.settings_selector import settings_usage_text
+
+    usage = settings_usage_text()
+    assert "/settings language" in usage
+
+
 # -- cmd_memory --
 
 

@@ -208,3 +208,18 @@ def test_all_language_dirs_exist() -> None:
     for lang_code in LANGUAGES:
         lang_dir = i18n_dir / lang_code
         assert lang_dir.is_dir(), f"Language dir missing: {lang_dir}"
+
+
+def test_store_chinese_fallback() -> None:
+    """Chinese language loads with English fallback since files are copies of English."""
+    store = TranslationStore("zh")
+    # Should have chat keys from English fallback
+    assert len(store.all_chat_keys()) > 0
+    # Should resolve English keys even for Chinese store
+    result = store.chat("session.error_header")
+    assert "Session Error" in result
+
+
+def test_init_chinese() -> None:
+    init("zh")
+    assert get_language() == "zh"

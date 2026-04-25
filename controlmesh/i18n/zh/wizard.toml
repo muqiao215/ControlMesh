@@ -1,0 +1,182 @@
+# English wizard strings (Rich-formatted, shown in terminal during onboarding).
+
+[common]
+cancelled = "[dim]Setup cancelled.[/dim]"
+subtitle = "ControlMesh"
+
+[cli_backends]
+title = "CLI Backends"
+header = "[bold]Detected AI Backends:[/bold]\n"
+claude = "  Claude Code CLI   {status}"
+codex = "  OpenAI Codex CLI  {status}"
+gemini = "  Google Gemini CLI {status}"
+no_auth = """\
+\n[bold red]At least one CLI must be installed and authenticated.[/bold red]\n
+  Claude: [dim]https://docs.anthropic.com/en/docs/claude-code[/dim]
+  Codex:  [dim]https://github.com/openai/codex[/dim]
+  Gemini: [dim]https://github.com/google-gemini/gemini-cli[/dim]"""
+
+[disclaimer]
+title = "[bold yellow]Disclaimer[/bold yellow]"
+body = """\
+[bold]Important -- please read before continuing.[/bold]\n
+controlmesh connects to [bold]Anthropic Claude CLI[/bold] and \
+[bold]OpenAI Codex CLI[/bold] as AI agent backends.\n
+The bot operates in [bold yellow]full permission bypass mode[/bold yellow]. \
+The agent can read, write, and delete files, execute commands, \
+and interact with your system without asking for confirmation.\n
+While safeguards are in place, [bold red]unintended actions can occur[/bold red] \
+-- including data loss, unexpected file changes, or unintended command execution.\n
+[bold green]We strongly recommend running controlmesh inside a Docker container[/bold green] \
+to isolate it from your host system."""
+confirm = "I understand the risks and want to continue."
+
+[transport]
+title = "[bold]Messaging Transport[/bold]"
+body = """\
+[bold]Choose how users will talk to the bot:[/bold]\n
+  [bold cyan]Telegram[/bold cyan]  — Requires a bot token from @BotFather
+  [bold cyan]Matrix[/bold cyan]    — Requires a Matrix account on a homeserver (e.g. Element)"""
+prompt = "Select transport:"
+
+[telegram.token]
+title = "[bold]Telegram Bot Token[/bold]"
+body = """\
+[bold]How to get your Telegram Bot Token:[/bold]\n
+  1. Open Telegram and search for [bold cyan]@BotFather[/bold cyan]
+  2. Send [bold]/newbot[/bold] and follow the prompts
+  3. Choose a name and username for your bot
+  4. BotFather will reply with your bot token\n
+[dim]Token format: 1234567890:ABCdefGHIjklMNOpqrsTUVwxyz[/dim]"""
+prompt = "Paste your bot token:"
+error = "[red]Invalid token format. Expected: digits:alphanumeric (e.g. 123456:ABC-xyz)[/red]"
+
+[telegram.user_id]
+title = "[bold]Telegram User ID[/bold]"
+body = """\
+[bold]How to find your Telegram User ID:[/bold]\n
+  1. Open Telegram and search for [bold cyan]@userinfobot[/bold cyan]
+  2. Send [bold]/start[/bold] to the bot
+  3. It will reply with your numeric user ID\n
+[dim]Only messages from this user ID will be accepted by the bot.[/dim]"""
+prompt = "Enter your numeric user ID:"
+error_nan = "[red]Please enter a valid number.[/red]"
+error_negative = "[red]User ID must be a positive number.[/red]"
+
+[matrix.homeserver]
+title = "[bold]Matrix Homeserver[/bold]"
+body = """\
+[bold]Enter your Matrix homeserver URL.[/bold]\n
+  This is the server where your bot account lives.\n
+[dim]Example: https://matrix.example.com[/dim]"""
+prompt = "Homeserver URL:"
+error = "[red]Must be an HTTPS URL (e.g. https://matrix.example.com)[/red]"
+
+[matrix.user_id]
+title = "[bold]Matrix Bot User ID[/bold]"
+body = """\
+[bold]Enter the bot's Matrix user ID.[/bold]\n
+  Create a dedicated account for the bot on your homeserver.\n
+[dim]Format: @botname:homeserver.domain[/dim]"""
+prompt = "Bot user ID:"
+error = "[red]Invalid format. Expected: @localpart:domain (e.g. @mybot:matrix.org)[/red]"
+
+[matrix.password]
+title = "[bold]Matrix Password[/bold]"
+body = """\
+[bold]Enter the bot account's password.[/bold]\n
+  Used for the initial login only. After first login, an access
+  token is saved and the password is no longer needed."""
+prompt = "Password:"
+error = "[red]Password cannot be empty.[/red]"
+
+[matrix.allowed_users]
+title = "[bold]Allowed Users[/bold]"
+body = """\
+[bold]Who should be allowed to talk to this bot?[/bold]\n
+  Enter your Matrix user ID. Only messages from allowed users
+  will be processed.\n
+[dim]Format: @username:homeserver.domain[/dim]"""
+prompt = "Your Matrix user ID:"
+error = "[red]Invalid format. Expected: @user:domain (e.g. @nik:matrix.org)[/red]"
+
+[docker]
+title = "[bold]Docker Sandboxing[/bold]"
+found_body = """\
+[bold green]Docker detected on your system.[/bold green]\n
+Running controlmesh inside Docker isolates it from your host.
+This is the recommended setup for safety."""
+found_prompt = "Enable Docker sandboxing? (Recommended)"
+not_found_body = """\
+[bold yellow]Docker was not found on your system.[/bold yellow]\n
+We recommend installing Docker to run the bot in an isolated container.
+You can enable Docker sandboxing later in the config.\n
+[dim]https://docs.docker.com/get-docker/[/dim]"""
+
+[docker.extras]
+title = "[bold]Available Docker Extras[/bold]"
+col_package = "Package"
+col_description = "What it does"
+col_size = "Size"
+prompt = "Select extras (Space to toggle, Enter to confirm):"
+hint = """\
+[dim]These packages are optional and increase image build time.
+You can change this later with [cyan]controlmesh docker extras-add / extras-remove[/cyan].[/dim]"""
+auto_deps = "[dim]Auto-added dependencies: {names}[/dim]"
+
+[timezone]
+title = "[bold]Timezone[/bold]"
+body = """\
+Your timezone is used for cron scheduling, heartbeat quiet hours,
+and daily session resets."""
+prompt = "Select your timezone:"
+manual_prompt = "Enter IANA timezone (e.g. Europe/Berlin):"
+error = "[red]Unknown timezone: {tz}[/red]"
+
+[service]
+title = "[bold]Background Service[/bold]"
+body = """\
+[bold]Run controlmesh as a background service?[/bold]\n
+This creates a {mechanism} that:\n
+  - Starts controlmesh on {trigger}
+  - Restarts automatically on crash
+  - Keeps running in the background\n
+[dim]Recommended for VPS or always-on setups.[/dim]"""
+prompt = "Install as background service? (Recommended for VPS)"
+
+[complete]
+title = "[bold green]Ready[/bold green]"
+header = "[bold green]Setup complete![/bold green]"
+files_header = "[bold]Your controlmesh files:[/bold]"
+home = "  Home:       [cyan]{path}[/cyan]"
+config = "  Config:     [cyan]{path}[/cyan]"
+workspace = "  Workspace:  [cyan]{path}[/cyan]"
+logs = "  Logs:       [cyan]{path}[/cyan]"
+installing_service = "Installing service..."
+starting_bot = "Starting bot..."
+
+[reset]
+title = "[bold yellow]Existing Setup Detected[/bold yellow]"
+body = """\
+[bold yellow]You already have a configured setup.[/bold yellow]\n
+Re-running onboarding will perform a [bold red]full reset[/bold red]:\n
+  [dim]{home}[/dim] will be deleted entirely.
+  All sessions, configs, memory, and cron tasks will be lost."""
+
+[reset.docker]
+title = "[bold]Docker Cleanup[/bold]"
+body = """\
+[bold]Docker sandboxing is enabled in your current config.[/bold]\n
+  Container: [cyan]{container}[/cyan]
+  Image:     [cyan]{image}[/cyan]"""
+prompt = "Remove the Docker container and image?"
+removing = "[dim]Removing Docker resources...[/dim]"
+done = "[green]Docker cleanup done.[/green]"
+
+[reset.confirm]
+prompt = "Delete everything and start fresh?"
+deleted = "[dim]Workspace deleted.[/dim]"
+warning = "[yellow]Warning: Could not fully delete {home}. Remove manually.[/yellow]"
+
+[language]
+prompt = "Select language / Sprache wählen:"

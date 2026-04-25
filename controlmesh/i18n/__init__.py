@@ -30,6 +30,7 @@ LANGUAGES: dict[str, str] = {
     "fr": "Français",
     "pt": "Português",
     "ru": "Русский",
+    "zh": "中文",
 }
 
 

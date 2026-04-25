@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Literal
 
 from controlmesh.config import update_config_file_async
+from controlmesh.i18n import LANGUAGES
 from controlmesh.infra.install import detect_install_info, detect_install_mode
 from controlmesh.infra.version import VersionInfo, check_latest_version, get_current_version
 from controlmesh.orchestrator.selectors.models import Button, ButtonGrid, SelectorResponse
@@ -13,6 +14,7 @@ if TYPE_CHECKING:
     from controlmesh.orchestrator.core import Orchestrator
 
 _OUTPUT_MODES: tuple[str, ...] = ("full", "tools", "conversation", "off")
+_LANGUAGE_CODES: tuple[str, ...] = tuple(LANGUAGES.keys())
 _TOOL_DISPLAYS: tuple[str, ...] = ("name", "details")
 _FEISHU_RUNTIME_MODES: tuple[str, ...] = ("bridge", "native")
 _FEISHU_PROGRESS_MODES: tuple[str, ...] = ("text", "card_preview", "card_stream")
@@ -104,6 +106,18 @@ async def set_feishu_progress_mode(
     return _render_settings_panel(orch, note=f"Feishu progress updated: {mode}")
 
 
+async def set_language(
+    orch: Orchestrator,
+    language: str,
+) -> SelectorResponse:
+    """Persist the language setting and return the updated panel."""
+    if language not in LANGUAGES:
+        return _render_settings_panel(orch, note=f"Unknown language: {language}")
+    orch._config.language = language
+    await update_config_file_async(orch.paths.config_path, language=language)
+    return _render_settings_panel(orch, note=f"Language updated: {LANGUAGES[language]}")
+
+
 async def refresh_version_info(orch: Orchestrator) -> SelectorResponse:
     """Refresh latest-version status and return the updated panel."""
     info = await check_latest_version(fresh=True)
@@ -188,6 +202,8 @@ async def handle_settings_callback(orch: Orchestrator, data: str) -> SelectorRes
             and parts[3] in _FEISHU_PROGRESS_MODES
         ):
             resp = await set_feishu_progress_mode(orch, parts[3])  # type: ignore[arg-type]
+        elif len(parts) == 3 and parts[1] == "l" and parts[2] in _LANGUAGE_CODES:
+            resp = await set_language(orch, parts[2])  # type: ignore[arg-type]
 
     return resp or _render_settings_panel(orch, note="Unknown settings action.")
 
@@ -198,6 +214,7 @@ def settings_usage_text() -> str:
         "Usage: /settings\n"
         "       /settings output <full|tools|conversation|off>\n"
         "       /settings tools <name|details>\n"
+        "       /settings language <en|de|nl|es|fr|pt|ru|zh>\n"
         "       /settings feishu runtime <bridge|native>\n"
         "       /settings feishu progress <text|card_preview|card_stream>\n"
         "       /settings messaging\n"
@@ -233,6 +250,7 @@ def _render_settings_panel(
     tool_display = orch._config.streaming.tool_display
     feishu_runtime = orch._config.feishu.runtime_mode
     feishu_progress = orch._config.feishu.progress_mode
+    current_language = orch._config.language
     current_version = get_current_version()
     install_info = detect_install_info()
     install_mode = detect_install_mode()
@@ -280,6 +298,10 @@ def _render_settings_panel(
             "- Telegram supports bot token config here.",
             "- Feishu supports app id/app secret and official console links.",
             "- Weixin uses QR/link-based auth flow rather than static secret fields.",
+            "",
+            "**Language**",
+            f"Current: `{LANGUAGES.get(current_language, current_language)}`",
+            "- Changes apply immediately and persist across restarts.",
             "",
             "**Version & upgrade**",
             f"Installed: `{current_version}`",
@@ -350,6 +372,7 @@ def _render_settings_panel(
             Button(text="Feishu app", callback_data="st:m:feishu"),
             Button(text="Weixin iLink", callback_data="st:m:weixin"),
         ],
+        *_language_button_rows(current_language),
         [Button(text="Check latest", callback_data="st:v:refresh")],
         *_version_action_rows(version_info, install_mode, install_info),
         [Button(text="Refresh", callback_data="st:r:root")],
@@ -395,6 +418,19 @@ def _messaging_help_note(orch: Orchestrator, target: str) -> str:
         f"- Service URL: `{orch._config.weixin.base_url}`\n"
         "- Weixin uses QR/link-based auth instead of a static bot token."
     )
+
+
+def _language_button_rows(current: str) -> list[list[Button]]:
+    """Build button rows for language selection."""
+    rows: list[list[Button]] = []
+    items = list(LANGUAGES.items())
+    for i in range(0, len(items), 2):
+        row: list[Button] = []
+        for code, label in items[i : i + 2]:
+            marker = "[x]" if current == code else "[ ]"
+            row.append(Button(text=f"{marker} {label}", callback_data=f"st:l:{code}"))
+        rows.append(row)
+    return rows
 
 
 def _format_install_source(install_info: object) -> str:

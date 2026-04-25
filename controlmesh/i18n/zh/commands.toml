@@ -1,0 +1,29 @@
+# Bot command descriptions (≤22 chars for Telegram mobile clients).
+
+[bot]
+new = "Start new chat"
+stop = "Stop current + queued msgs"
+interrupt = "Interrupt current, keep queue"
+model = "Route model/channel"
+mode = "CLI takeover mode"
+cm = "Return to ControlMesh"
+status = "ControlMesh status"
+memory = "Main memory"
+settings = "Advanced settings"
+session = "Resume sessions"
+tasks = "Autonomous tasks"
+cron = "Timed automations"
+agent_commands = "Legacy agent guide"
+showfiles = "Browse files"
+info = "Docs, links & about"
+help = "Show all commands"
+diagnose = "System diagnostics"
+upgrade = "Check for updates"
+restart = "Restart bot"
+
+[multiagent]
+agents = "Agent fleet"
+agent_start = "Start a sub-agent"
+agent_stop = "Stop a sub-agent"
+agent_restart = "Restart a sub-agent"
+stop_all = "Kill everything"
