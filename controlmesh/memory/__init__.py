@@ -18,6 +18,17 @@ from controlmesh.memory.dreaming import (
     save_checkpoints,
     save_sweep_state,
 )
+from controlmesh.memory.events import (
+    AskParentEvent,
+    EvidenceRef,
+    EvidenceRefKind,
+    MemoryEvent,
+    MemoryEventKind,
+    ResumeEvent,
+    RoutingContext,
+    SignalCandidate,
+    SignalConfidence,
+)
 from controlmesh.memory.models import (
     DreamingCheckpoint,
     DreamingLock,
@@ -42,19 +53,28 @@ from controlmesh.memory.search import search_memory_index, sync_memory_index
 from controlmesh.memory.store import append_dream_entry, ensure_daily_note, initialize_memory_v2
 
 __all__ = [
+    "AskParentEvent",
     "DreamingCheckpoint",
     "DreamingLock",
     "DreamingSweepMode",
     "DreamingSweepNoteResult",
     "DreamingSweepResult",
     "DreamingSweepState",
+    "EvidenceRef",
+    "EvidenceRefKind",
     "MemoryDocumentKind",
+    "MemoryEvent",
+    "MemoryEventKind",
     "MemoryIndexSyncResult",
     "MemorySearchHit",
     "MemorySearchResult",
     "PromotionApplyResult",
     "PromotionCandidate",
     "PromotionPreview",
+    "ResumeEvent",
+    "RoutingContext",
+    "SignalCandidate",
+    "SignalConfidence",
     "acquire_dream_lock",
     "append_dream_entry",
     "apply_candidates",
