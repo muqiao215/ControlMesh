@@ -1171,6 +1171,7 @@ async def test_memory_promote_preview_shows_candidates(orch: Orchestrator) -> No
     assert "Keep memory deterministic" in result.text
     assert "decision" in result.text
     assert "preference" in result.text
+    assert "[local]" in result.text
     assert "score=0.85" in result.text
     assert "/memory promote apply" in result.text
 
@@ -1213,6 +1214,7 @@ async def test_memory_promote_apply_modifies_authority(orch: Orchestrator) -> No
     assert "Promotion Apply" in result.text
     assert "1 entry(s) promoted" in result.text
     assert "id:" in result.text
+    assert "[local]" in result.text
 
     # Verify authority memory was modified
     authority_text = orch.paths.authority_memory_path.read_text(encoding="utf-8")
@@ -1276,7 +1278,7 @@ async def test_memory_promote_apply_with_low_score_filtered(orch: Orchestrator) 
 
 
 async def test_memory_promote_apply_shows_shared_scope_in_output(orch: Orchestrator) -> None:
-    """Test /memory promote apply marks shared entries with [shared] and keeps local concise."""
+    """Test /memory promote apply shows explicit local/shared scope for every promoted entry."""
     from datetime import UTC, datetime
 
     from controlmesh.memory.store import ensure_daily_note
@@ -1296,25 +1298,22 @@ async def test_memory_promote_apply_shows_shared_scope_in_output(orch: Orchestra
 
     assert "Promotion Apply" in result.text
     assert "3 entry(s) promoted" in result.text
-    # Shared entry must be explicitly marked
     assert "[shared]" in result.text
-    # Local entries must not show scope label
+    assert "[local]" in result.text
     lines = result.text.splitlines()
     id_lines = [ln for ln in lines if "_(id:" in ln]
-    # All three applied entries appear as id lines
     assert len(id_lines) == 3
     shared_lines = [ln for ln in id_lines if "[shared]" in ln]
     assert len(shared_lines) == 1, f"Expected 1 shared line, got: {shared_lines}"
-    concise_local_lines = [ln for ln in id_lines if "[shared]" not in ln]
-    assert len(concise_local_lines) == 2, f"Expected 2 concise local lines, got: {concise_local_lines}"
-    # Verify authority was written correctly with scope
+    local_lines = [ln for ln in id_lines if "[local]" in ln]
+    assert len(local_lines) == 2, f"Expected 2 local lines, got: {local_lines}"
     authority_text = orch.paths.authority_memory_path.read_text(encoding="utf-8")
     assert "scope: shared" in authority_text
     assert "scope: local" in authority_text
 
 
 async def test_memory_promote_preview_shows_scope_for_shared_candidates(orch: Orchestrator) -> None:
-    """Test /memory promote preview annotates shared candidates with [scope: shared]."""
+    """Test /memory promote preview shows explicit local/shared scope for all candidates."""
     from datetime import UTC, datetime
 
     from controlmesh.memory.store import ensure_daily_note
@@ -1333,13 +1332,16 @@ async def test_memory_promote_preview_shows_scope_for_shared_candidates(orch: Or
     result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory promote")
 
     assert "Promotion Preview" in result.text
-    # Shared candidate must show scope annotation
     assert "[shared]" in result.text
+    assert "[local]" in result.text
     assert "Team uses shared memory" in result.text
-    # Local/default candidates must NOT show scope annotation
-    assert "[local]" not in result.text
     assert "Local fact without scope" in result.text
     assert "Default preference is local" in result.text
+    candidate_lines = [ln for ln in result.text.splitlines() if ln.startswith("- [")]
+    shared_lines = [ln for ln in candidate_lines if "[shared]" in ln]
+    local_lines = [ln for ln in candidate_lines if "[local]" in ln]
+    assert len(shared_lines) == 1, f"Expected 1 shared candidate line, got: {shared_lines}"
+    assert len(local_lines) == 2, f"Expected 2 local candidate lines, got: {local_lines}"
 
 
 # -- Phase 10: lifecycle mutation command tests --
