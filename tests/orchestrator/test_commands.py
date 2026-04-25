@@ -930,6 +930,44 @@ async def test_memory_promote_apply_with_low_score_filtered(orch: Orchestrator) 
     assert "Third fact" in authority_text
 
 
+async def test_memory_promote_apply_shows_shared_scope_in_output(orch: Orchestrator) -> None:
+    """Test /memory promote apply marks shared entries with [shared] and keeps local concise."""
+    from datetime import UTC, datetime
+
+    from controlmesh.memory.store import ensure_daily_note
+
+    today = datetime.now(UTC).date()
+    note_path = ensure_daily_note(orch.paths, today)
+    note_path.write_text(
+        f"# Daily Memory: {today.isoformat()}\n\n"
+        "## Promotion Candidates\n"
+        "- [decision shared] Team uses shared memory for cross-agent context.\n"
+        "- [fact local] Local fact stays private.\n"
+        "- [preference] Default preference is local - no scope shown.\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory promote apply")
+
+    assert "Promotion Apply" in result.text
+    assert "3 entry(s) promoted" in result.text
+    # Shared entry must be explicitly marked
+    assert "[shared]" in result.text
+    # Local entries must not show scope label
+    lines = result.text.splitlines()
+    id_lines = [ln for ln in lines if "_(id:" in ln]
+    # All three applied entries appear as id lines
+    assert len(id_lines) == 3
+    shared_lines = [ln for ln in id_lines if "[shared]" in ln]
+    assert len(shared_lines) == 1, f"Expected 1 shared line, got: {shared_lines}"
+    concise_local_lines = [ln for ln in id_lines if "[shared]" not in ln]
+    assert len(concise_local_lines) == 2, f"Expected 2 concise local lines, got: {concise_local_lines}"
+    # Verify authority was written correctly with scope
+    authority_text = orch.paths.authority_memory_path.read_text(encoding="utf-8")
+    assert "scope: shared" in authority_text
+    assert "scope: local" in authority_text
+
+
 async def test_memory_promote_preview_shows_scope_for_shared_candidates(orch: Orchestrator) -> None:
     """Test /memory promote preview annotates shared candidates with [scope: shared]."""
     from datetime import UTC, datetime

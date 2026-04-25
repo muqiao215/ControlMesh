@@ -16,6 +16,7 @@ from controlmesh.memory.models import (
     LifecycleStatus,
     MemoryCategory,
     MemoryScope,
+    PromotionAppliedEntry,
     PromotionApplyResult,
     PromotionCandidate,
     PromotionPreview,
@@ -146,6 +147,7 @@ def apply_candidates(
             skipped_existing=preview.skipped_existing,
             skipped_low_score=preview.skipped_low_score,
             applied_keys=[],
+            applied_entries=[],
         )
 
     authority_text = paths.authority_memory_path.read_text(encoding="utf-8")
@@ -173,6 +175,10 @@ def apply_candidates(
         skipped_existing=preview.skipped_existing,
         skipped_low_score=preview.skipped_low_score,
         applied_keys=[candidate.key for candidate in preview.selected],
+        applied_entries=[
+            PromotionAppliedEntry(key=candidate.key, scope=candidate.scope)
+            for candidate in preview.selected
+        ],
     )
 
 

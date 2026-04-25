@@ -617,6 +617,8 @@ async def _cmd_memory_promote_apply(orch: Orchestrator) -> OrchestratorResult:
     """Handle /memory promote apply."""
     from datetime import UTC, datetime
 
+    from controlmesh.memory.models import MemoryScope
+
     today = datetime.now(UTC).date()
     result = await asyncio.to_thread(apply_daily_note_promotions, orch.paths, today)
 
@@ -631,8 +633,11 @@ async def _cmd_memory_promote_apply(orch: Orchestrator) -> OrchestratorResult:
 
     lines = [f"## Promotion Apply ({today.isoformat()})"]
     lines.append(f"__{result.applied_count} entry(s) promoted to authority memory.__")
-    for key in result.applied_keys:
-        lines.append(f"- _(id: {key[:12]})_")
+    for entry in result.applied_entries:
+        if entry.scope == MemoryScope.SHARED:
+            lines.append(f"- _(id: {entry.key[:12]}, [shared])_")
+        else:
+            lines.append(f"- _(id: {entry.key[:12]})_")
     if result.skipped_existing:
         lines.append(f"\n_skipped (already promoted): {result.skipped_existing}_")
     if result.skipped_low_score:

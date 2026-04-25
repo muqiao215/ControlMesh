@@ -73,6 +73,13 @@ class PromotionPreview(BaseModel):
     skipped_low_score: int = 0
 
 
+class PromotionAppliedEntry(BaseModel):
+    """A single applied promotion entry with its scope for command-surface rendering."""
+
+    key: str
+    scope: MemoryScope = MemoryScope.LOCAL
+
+
 class PromotionApplyResult(BaseModel):
     """Result from applying promotion candidates into ``MEMORY.md``."""
 
@@ -80,6 +87,7 @@ class PromotionApplyResult(BaseModel):
     skipped_existing: int = 0
     skipped_low_score: int = 0
     applied_keys: list[str] = Field(default_factory=list)
+    applied_entries: list[PromotionAppliedEntry] = Field(default_factory=list)
 
 
 class DreamingSweepState(BaseModel):

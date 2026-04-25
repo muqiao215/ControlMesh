@@ -1001,3 +1001,161 @@ def test_promotion_log_scope_field_added_to_existing_log_on_reapply(tmp_path: Pa
     )
     assert new_entry is not None, "New entry not found in log"
     assert new_entry.get("scope") == "shared", f"New entry should have scope=shared: {new_entry}"
+
+
+# --- Phase 13: Scope-aware apply result surface ---
+
+
+def test_apply_result_contains_applied_entries_with_scope(tmp_path: Path) -> None:
+    """Apply result includes per-entry scope metadata for command-surface rendering."""
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    note_path = ensure_daily_note(paths, date(2026, 4, 25))
+    note_path.write_text(
+        """# Daily Memory: 2026-04-25
+
+## Promotion Candidates
+- [decision shared] Shared team decision.
+- [fact local] Local fact entry.
+- [preference] Default scope (local).
+""",
+        encoding="utf-8",
+    )
+
+    result = apply_daily_note_promotions(paths, date(2026, 4, 25))
+
+    assert result.applied_count == 3
+    assert len(result.applied_entries) == 3
+    assert len(result.applied_keys) == 3
+
+    scopes = {entry.key: entry.scope for entry in result.applied_entries}
+    assert MemoryScope.SHARED in scopes.values()
+    local_count = sum(1 for s in scopes.values() if s == MemoryScope.LOCAL)
+    assert local_count == 2
+
+
+def test_apply_result_applied_entries_keys_match_applied_keys(tmp_path: Path) -> None:
+    """applied_entries keys match applied_keys for each entry."""
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    note_path = ensure_daily_note(paths, date(2026, 4, 25))
+    note_path.write_text(
+        """# Daily Memory: 2026-04-25
+
+## Promotion Candidates
+- [decision shared] First shared decision.
+- [fact] Second local fact.
+""",
+        encoding="utf-8",
+    )
+
+    result = apply_daily_note_promotions(paths, date(2026, 4, 25))
+
+    assert result.applied_count == 2
+    assert set(result.applied_keys) == {entry.key for entry in result.applied_entries}
+
+
+def test_apply_result_mixed_scope_shows_shared_scope_label(tmp_path: Path) -> None:
+    """Shared entries in applied_entries carry SHARED scope; local carry LOCAL."""
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    note_path = ensure_daily_note(paths, date(2026, 4, 25))
+    note_path.write_text(
+        """# Daily Memory: 2026-04-25
+
+## Promotion Candidates
+- [decision shared] Team uses shared memory.
+- [fact local] User prefers dark mode.
+- [preference] Default preference (local).
+""",
+        encoding="utf-8",
+    )
+
+    result = apply_daily_note_promotions(paths, date(2026, 4, 25))
+
+    shared_entries = [e for e in result.applied_entries if e.scope == MemoryScope.SHARED]
+    local_entries = [e for e in result.applied_entries if e.scope == MemoryScope.LOCAL]
+
+    assert len(shared_entries) == 1
+    assert shared_entries[0].scope == MemoryScope.SHARED
+
+    assert len(local_entries) == 2
+    assert all(e.scope == MemoryScope.LOCAL for e in local_entries)
+
+
+def test_apply_result_zero_entries_has_empty_applied_entries(tmp_path: Path) -> None:
+    """When no entries are applied, applied_entries is empty (not absent)."""
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    note_path = ensure_daily_note(paths, date(2026, 4, 25))
+    note_path.write_text(
+        """# Daily Memory: 2026-04-25
+
+## Promotion Candidates
+- [decision] Decision already promoted earlier.
+""",
+        encoding="utf-8",
+    )
+
+    # First apply
+    first = apply_daily_note_promotions(paths, date(2026, 4, 25))
+    assert first.applied_count == 1
+
+    # Second apply should skip
+    second = apply_daily_note_promotions(paths, date(2026, 4, 25))
+    assert second.applied_count == 0
+    assert second.skipped_existing == 1
+    assert second.applied_keys == []
+    assert second.applied_entries == []
+
+
+def test_apply_result_applied_entries_order_deterministic(tmp_path: Path) -> None:
+    """applied_entries order matches the order of applied_keys (deterministic)."""
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    note_path = ensure_daily_note(paths, date(2026, 4, 25))
+    note_path.write_text(
+        """# Daily Memory: 2026-04-25
+
+## Promotion Candidates
+- [decision shared] First decision.
+- [fact local] First fact.
+- [preference shared] Second shared preference.
+- [person local] A person note.
+""",
+        encoding="utf-8",
+    )
+
+    result = apply_daily_note_promotions(paths, date(2026, 4, 25))
+
+    assert result.applied_count == 4
+    assert len(result.applied_entries) == 4
+    # Order must match applied_keys
+    for i, entry in enumerate(result.applied_entries):
+        assert entry.key == result.applied_keys[i]
+
+
+def test_apply_result_promotion_log_scope_written_from_candidates(tmp_path: Path) -> None:
+    """Promotion log records scope correctly for each applied entry."""
+    import json
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    note_path = ensure_daily_note(paths, date(2026, 4, 25))
+    note_path.write_text(
+        """# Daily Memory: 2026-04-25
+
+## Promotion Candidates
+- [decision shared] A shared decision.
+- [fact local] A local fact.
+""",
+        encoding="utf-8",
+    )
+
+    result = apply_daily_note_promotions(paths, date(2026, 4, 25))
+    assert result.applied_count == 2
+
+    log = json.loads(paths.memory_promotion_log_path.read_text(encoding="utf-8"))
+    scopes_in_log = [entry.get("scope") for entry in log.values()]
+    assert "shared" in scopes_in_log
+    assert "local" in scopes_in_log
