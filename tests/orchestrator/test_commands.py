@@ -552,6 +552,97 @@ async def test_memory_search_no_results(orch: Orchestrator) -> None:
     assert "No results found" in result.text
 
 
+async def test_memory_search_shows_shared_scope_for_shared_authority_hit(orch: Orchestrator) -> None:
+    """Test /memory search shows [shared] for shared authority entries."""
+    orch.paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n"
+        "## Durable Memory\n\n"
+        "### Decision\n"
+        "- Team uses shared memory for cross-agent context. _(id: sh001; status: active; scope: shared; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory search shared")
+    assert "Search" in result.text
+    assert "shared" in result.text
+    assert "[shared]" in result.text
+
+
+async def test_memory_search_shows_local_scope_for_local_authority_hit(orch: Orchestrator) -> None:
+    """Test /memory search shows [local] for local authority entries."""
+    orch.paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n"
+        "## Durable Memory\n\n"
+        "### Preference\n"
+        "- User prefers dark mode. _(id: loc001; status: active; scope: local; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory search dark")
+    assert "Search" in result.text
+    assert "local" in result.text
+    # Local scope should be shown (since scope field is always populated for authority hits)
+    assert "[local]" in result.text
+
+
+async def test_memory_search_daily_note_hit_has_no_scope_suffix(orch: Orchestrator) -> None:
+    """Test /memory search does not add scope suffix for non-authority hits."""
+    from datetime import UTC, datetime
+
+    from controlmesh.memory.store import ensure_daily_note
+
+    today = datetime.now(UTC).date()
+    note_path = ensure_daily_note(orch.paths, today)
+    note_path.write_text(
+        f"# Daily Memory: {today.isoformat()}\n\n"
+        "## Events\n\n- User mentioned Paris trip.\n\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory search Paris")
+    assert "Search" in result.text
+    assert "Paris" in result.text
+    # daily-note hits should not show [local] or [shared] scope suffix
+    # The scope field is None for non-authority hits
+    lines = result.text.split("\n")
+    for line in lines:
+        if "daily-note" in line:
+            assert "[local]" not in line
+            assert "[shared]" not in line
+
+
+async def test_memory_search_mixed_scope_same_file_resolves_correctly(orch: Orchestrator) -> None:
+    """Test that mixed local/shared entries in the same MEMORY.md are resolved per-hit.
+
+    Verifies that when one entry is [shared] and another is [local], a search
+    matching only the shared entry returns [shared], and a search matching only
+    the local entry returns [local].  This prevents the bug where all authority
+    hits from the same file incorrectly inherited the same scope.
+    """
+    # Write MEMORY.md with one shared and one local entry, each with unique content.
+    # Use query terms that FTS5 handles reliably (no hyphens in multi-word terms).
+    orch.paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n"
+        "## Durable Memory\n\n"
+        "### Decision\n"
+        "- Shared context across agents. _(id: s001; status: active; scope: shared; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_\n"
+        "- User prefers dark mode for UI. _(id: l001; status: active; scope: local; source: memory/2026-04-25.md#L5; promoted: 2026-04-25)_\n",
+        encoding="utf-8",
+    )
+
+    # Search for unique shared entry content -> should show [shared]
+    result_shared = await cmd_memory(orch, SessionKey(chat_id=0), "/memory search agents")
+    assert "[shared]" in result_shared.text
+
+    # Search for unique local entry content -> should show [local]
+    result_local = await cmd_memory(orch, SessionKey(chat_id=0), "/memory search dark mode")
+    assert "[local]" in result_local.text
+
+    # Ensure neither search picked up the other entry's scope
+    assert "[local]" not in result_shared.text
+    assert "[shared]" not in result_local.text
+
+
 async def test_memory_why_returns_provenance(orch: Orchestrator) -> None:
     """Test /memory why explains an authority entry's provenance."""
     # Write authority memory with a Phase-4 style entry containing metadata

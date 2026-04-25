@@ -11,9 +11,11 @@ from pathlib import Path
 from controlmesh.memory.models import (
     MemoryDocumentKind,
     MemoryIndexSyncResult,
+    MemoryScope,
     MemorySearchHit,
     MemorySearchResult,
 )
+from controlmesh.memory.promotion import parse_authority_entry_metadata
 from controlmesh.memory.store import initialize_memory_v2
 from controlmesh.workspace.paths import ControlMeshPaths
 
@@ -27,6 +29,77 @@ class _IndexedDocument:
     source_date: str | None
     content_hash: str
     content: str
+
+
+def _get_authority_scope_for_hit(
+    authority_path: Path,
+    snippet: str,
+) -> MemoryScope | None:
+    """Extract scope for an authority hit from its snippet.
+
+    Searches the authority file for an entry whose content (before metadata)
+    matches the query term found in the FTS5 snippet, then parses the entry's
+    metadata to extract scope.
+    Returns None if the matching entry cannot be confidently determined
+    (avoids mislabeling a local entry as shared).
+    """
+    if not authority_path.exists():
+        return None
+
+    authority_text = authority_path.read_text(encoding="utf-8")
+    lines = authority_text.splitlines()
+
+    # Extract the query term from the FTS5 snippet markup.
+    # FTS5 returns snippets with matched terms wrapped in [...].
+    # We extract the term(s) to identify which entry triggered the hit.
+    snippet_clean = snippet.replace("[", "").replace("]", "").replace("...", "").strip()
+    if len(snippet_clean) < 5:
+        return None
+
+    # Extract the primary matched term from the snippet.
+    # The matched term is the text inside [...] in the snippet.
+    import re as _re
+    matched_terms = _re.findall(r"\[([^\]]+)\]", snippet)
+    if not matched_terms:
+        return None
+    primary_term = matched_terms[0].lower()
+
+    # Now find the authority entry whose content contains the matched term.
+    # Iterate through entries and check if the term appears in the content.
+    candidates: list[MemoryScope] = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped.startswith("- "):
+            continue
+        content = _extract_entry_content_for_match(stripped)
+        if not content:
+            continue
+        # Check if the primary matched term appears in this entry's content
+        if primary_term in content.lower():
+            meta = parse_authority_entry_metadata(stripped)
+            if meta is not None:
+                candidates.append(meta.scope)
+
+    # If exactly one match, use its scope
+    if len(candidates) == 1:
+        return candidates[0]
+    # Multiple matches or no match: conservative - return None rather than guess
+    return None
+
+
+def _extract_entry_content_for_match(line: str) -> str:
+    """Extract the content portion of an authority entry line for matching.
+
+    Authority entries end with a metadata block like:
+        - Some content here. _(id: abc123; status: active; ...)_
+    Returns the content before the '_(...)' metadata block, stripped of the
+    leading '- ' list marker.  Returns the empty string if the line doesn't
+    look like an authority entry.
+    """
+    meta_start = line.find(" _(")
+    if meta_start == -1:
+        return ""
+    return line[:meta_start].strip().removeprefix("- ")
 
 
 def sync_memory_index(paths: ControlMeshPaths) -> MemoryIndexSyncResult:
@@ -139,16 +212,23 @@ def search_memory_index(
     except sqlite3.OperationalError:
         return MemorySearchResult(query=query, hits=[])
 
-    hits = [
-        MemorySearchHit(
+    authority_path = paths.authority_memory_path
+
+    hits = []
+    for row in rows:
+        kind = MemoryDocumentKind(str(row[1]))
+        snippet = str(row[3])
+        hit = MemorySearchHit(
             source_path=str(row[0]),
-            kind=MemoryDocumentKind(str(row[1])),
+            kind=kind,
             source_date=str(row[2]) if row[2] is not None else None,
-            snippet=str(row[3]),
+            snippet=snippet,
             rank=float(row[4]),
         )
-        for row in rows
-    ]
+        # Populate scope for authority hits by matching snippet to entry in authority file
+        if kind == MemoryDocumentKind.AUTHORITY:
+            hit.scope = _get_authority_scope_for_hit(authority_path, snippet)
+        hits.append(hit)
     return MemorySearchResult(query=query, hits=hits)
 
 

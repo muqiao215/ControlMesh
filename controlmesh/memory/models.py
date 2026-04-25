@@ -141,6 +141,7 @@ class MemorySearchHit(BaseModel):
     source_date: str | None = None
     snippet: str
     rank: float
+    scope: MemoryScope | None = None
 
 
 class MemorySearchResult(BaseModel):

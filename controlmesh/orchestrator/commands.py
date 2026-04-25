@@ -508,7 +508,8 @@ async def _cmd_memory_search(orch: Orchestrator, parts: list[str]) -> Orchestrat
         return OrchestratorResult(text=f"No results found for: {query}")
     lines = [f"## Search: {query}\n"]
     for hit in result.hits:
-        lines.append(f"**[{hit.kind.value}]** {hit.source_path}")
+        scope_str = f" [{hit.scope.value}]" if hit.scope else ""
+        lines.append(f"**[{hit.kind.value}]{scope_str}** {hit.source_path}")
         lines.append(f"_{hit.snippet}_")
         lines.append("")
     return OrchestratorResult(text="\n".join(lines))
