@@ -1,5 +1,14 @@
 """Additive memory-v2 primitives for ControlMesh."""
 
+from controlmesh.memory.capture import (
+    capture_event,
+    capture_event_batch,
+    capture_evidence,
+    capture_open_candidate,
+    capture_signal,
+    capture_signal_batch,
+    expand_daily_note_skeleton,
+)
 from controlmesh.memory.commands import (
     apply_daily_note_promotions,
     apply_memory_dreaming_sweep,
@@ -81,7 +90,14 @@ __all__ = [
     "apply_daily_note_promotions",
     "apply_dreaming_sweep",
     "apply_memory_dreaming_sweep",
+    "capture_event",
+    "capture_event_batch",
+    "capture_evidence",
+    "capture_open_candidate",
+    "capture_signal",
+    "capture_signal_batch",
     "ensure_daily_note",
+    "expand_daily_note_skeleton",
     "initialize_memory_v2",
     "load_checkpoints",
     "load_sweep_state",

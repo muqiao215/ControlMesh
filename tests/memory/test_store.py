@@ -44,7 +44,10 @@ def test_ensure_daily_note_creates_template(tmp_path: Path) -> None:
     assert note_path == paths.memory_v2_daily_dir / "2026-04-08.md"
     content = note_path.read_text(encoding="utf-8")
     assert "# Daily Memory: 2026-04-08" in content
-    assert "## Promotion Candidates" in content
+    assert "## Events" in content
+    assert "## Signals" in content
+    assert "## Evidence" in content
+    assert "## Open Candidates" in content
 
 
 def test_append_dream_entry_appends_markdown(tmp_path: Path) -> None:

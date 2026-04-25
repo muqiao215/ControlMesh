@@ -76,7 +76,9 @@ def ensure_daily_note(paths: ControlMeshPaths, note_date: date) -> Path:
 
 ## Signals
 
-## Promotion Candidates
+## Evidence
+
+## Open Candidates
 """
         atomic_text_save(note_path, content)
     return note_path
