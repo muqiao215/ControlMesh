@@ -26,9 +26,13 @@ from controlmesh.session.key import SessionKey
 _AUTHED_CLAUDE = AuthResult("claude", AuthStatus.AUTHENTICATED)
 _AUTHED_CODEX = AuthResult("codex", AuthStatus.AUTHENTICATED)
 _AUTHED_GEMINI = AuthResult("gemini", AuthStatus.AUTHENTICATED)
+_AUTHED_CLAW = AuthResult("claw", AuthStatus.AUTHENTICATED)
+_AUTHED_OPENCODE = AuthResult("opencode", AuthStatus.AUTHENTICATED)
 _NOT_FOUND_CLAUDE = AuthResult("claude", AuthStatus.NOT_FOUND)
 _NOT_FOUND_CODEX = AuthResult("codex", AuthStatus.NOT_FOUND)
 _NOT_FOUND_GEMINI = AuthResult("gemini", AuthStatus.NOT_FOUND)
+_NOT_FOUND_CLAW = AuthResult("claw", AuthStatus.NOT_FOUND)
+_NOT_FOUND_OPENCODE = AuthResult("opencode", AuthStatus.NOT_FOUND)
 
 _CODEX_MODELS = [
     CodexModelInfo(
@@ -96,7 +100,13 @@ def test_prefix_detection() -> None:
 
 async def test_start_no_providers(orch: Orchestrator) -> None:
     with _patch_auth(
-        {"claude": _NOT_FOUND_CLAUDE, "codex": _NOT_FOUND_CODEX, "gemini": _NOT_FOUND_GEMINI}
+        {
+            "claude": _NOT_FOUND_CLAUDE,
+            "codex": _NOT_FOUND_CODEX,
+            "gemini": _NOT_FOUND_GEMINI,
+            "claw": _NOT_FOUND_CLAW,
+            "opencode": _NOT_FOUND_OPENCODE,
+        }
     ):
         resp = await model_selector_start(orch, SessionKey(chat_id=1))
     assert "No authenticated providers" in resp.text
@@ -105,7 +115,13 @@ async def test_start_no_providers(orch: Orchestrator) -> None:
 
 async def test_start_one_provider_claude(orch: Orchestrator) -> None:
     with _patch_auth(
-        {"claude": _AUTHED_CLAUDE, "codex": _NOT_FOUND_CODEX, "gemini": _NOT_FOUND_GEMINI}
+        {
+            "claude": _AUTHED_CLAUDE,
+            "codex": _NOT_FOUND_CODEX,
+            "gemini": _NOT_FOUND_GEMINI,
+            "claw": _NOT_FOUND_CLAW,
+            "opencode": _NOT_FOUND_OPENCODE,
+        }
     ):
         resp = await model_selector_start(orch, SessionKey(chat_id=1))
     assert "Select Claude model" in resp.text
@@ -119,7 +135,13 @@ async def test_start_one_provider_claude(orch: Orchestrator) -> None:
 async def test_start_one_provider_codex(orch: Orchestrator) -> None:
     with (
         _patch_auth(
-            {"claude": _NOT_FOUND_CLAUDE, "codex": _AUTHED_CODEX, "gemini": _NOT_FOUND_GEMINI}
+            {
+                "claude": _NOT_FOUND_CLAUDE,
+                "codex": _AUTHED_CODEX,
+                "gemini": _NOT_FOUND_GEMINI,
+                "claw": _NOT_FOUND_CLAW,
+                "opencode": _NOT_FOUND_OPENCODE,
+            }
         ),
         _with_codex_cache(orch),
     ):
@@ -132,7 +154,13 @@ async def test_start_shows_configured_model_without_runtime_fallback(orch: Orche
     orch._providers._available_providers = frozenset({"codex"})
     with (
         _patch_auth(
-            {"claude": _NOT_FOUND_CLAUDE, "codex": _AUTHED_CODEX, "gemini": _NOT_FOUND_GEMINI}
+            {
+                "claude": _NOT_FOUND_CLAUDE,
+                "codex": _AUTHED_CODEX,
+                "gemini": _NOT_FOUND_GEMINI,
+                "claw": _NOT_FOUND_CLAW,
+                "opencode": _NOT_FOUND_OPENCODE,
+            }
         ),
         _with_codex_cache(orch),
     ):
@@ -144,7 +172,13 @@ async def test_start_shows_configured_model_without_runtime_fallback(orch: Orche
 
 async def test_start_two_providers(orch: Orchestrator) -> None:
     with _patch_auth(
-        {"claude": _AUTHED_CLAUDE, "codex": _AUTHED_CODEX, "gemini": _NOT_FOUND_GEMINI}
+        {
+            "claude": _AUTHED_CLAUDE,
+            "codex": _AUTHED_CODEX,
+            "gemini": _NOT_FOUND_GEMINI,
+            "claw": _NOT_FOUND_CLAW,
+            "opencode": _NOT_FOUND_OPENCODE,
+        }
     ):
         resp = await model_selector_start(orch, SessionKey(chat_id=1))
     assert "Model Selector" in resp.text
@@ -165,7 +199,13 @@ async def test_start_one_provider_gemini_uses_discovered_models(orch: Orchestrat
         )
     )
     with _patch_auth(
-        {"claude": _NOT_FOUND_CLAUDE, "codex": _NOT_FOUND_CODEX, "gemini": _AUTHED_GEMINI}
+        {
+            "claude": _NOT_FOUND_CLAUDE,
+            "codex": _NOT_FOUND_CODEX,
+            "gemini": _AUTHED_GEMINI,
+            "claw": _NOT_FOUND_CLAW,
+            "opencode": _NOT_FOUND_OPENCODE,
+        }
     ):
         resp = await model_selector_start(orch, SessionKey(chat_id=1))
     assert "Select Gemini model" in resp.text
@@ -174,6 +214,24 @@ async def test_start_one_provider_gemini_uses_discovered_models(orch: Orchestrat
     assert "2.5-pro" in labels
     assert "2.5-flash" in labels
     assert "3-pro-preview" in labels
+
+
+async def test_start_runtime_providers_get_their_own_row(orch: Orchestrator) -> None:
+    with _patch_auth(
+        {
+            "claude": _AUTHED_CLAUDE,
+            "codex": _AUTHED_CODEX,
+            "gemini": _NOT_FOUND_GEMINI,
+            "claw": _AUTHED_CLAW,
+            "opencode": _AUTHED_OPENCODE,
+        }
+    ):
+        resp = await model_selector_start(orch, SessionKey(chat_id=1))
+    assert resp.buttons is not None
+    assert len(resp.buttons.rows) == 2
+    labels = [btn.text for row in resp.buttons.rows for btn in row]
+    assert "CLAW-CODE" in labels
+    assert "OPENCODE" in labels
 
 
 # -- handle_model_callback: provider selection --
@@ -203,6 +261,24 @@ async def test_callback_provider_codex_fallback(orch: Orchestrator) -> None:
     assert resp.buttons is not None
     labels = [btn.text for row in resp.buttons.rows for btn in row]
     assert any("o3" in label.lower() for label in labels) or "<< Back" in labels
+
+
+async def test_callback_provider_opencode_requires_known_runtime_model(orch: Orchestrator) -> None:
+    resp = await handle_model_callback(orch, SessionKey(chat_id=1), "ms:p:opencode")
+    assert "Cannot switch to OpenCode yet" in resp.text
+    assert resp.buttons is not None
+
+
+async def test_callback_provider_opencode_shows_current_runtime_model(orch: Orchestrator) -> None:
+    orch._config.provider = "opencode"
+    orch._config.model = "openai/gpt-4.1"
+
+    resp = await handle_model_callback(orch, SessionKey(chat_id=1), "ms:p:opencode")
+
+    assert "Select OpenCode model" in resp.text
+    assert resp.buttons is not None
+    labels = [btn.text for row in resp.buttons.rows for btn in row]
+    assert "openai/gpt-4.1" in labels
 
 
 # -- handle_model_callback: model selection --
@@ -236,6 +312,21 @@ async def test_callback_model_codex_mini_limited_efforts(orch: Orchestrator) -> 
     assert "High" in labels
     assert "Low" not in labels
     assert "XHigh" not in labels
+
+
+async def test_callback_runtime_provider_switches_to_opencode(orch: Orchestrator) -> None:
+    object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
+
+    resp = await handle_model_callback(
+        orch,
+        SessionKey(chat_id=1),
+        "ms:x:opencode:openai/gpt-4.1",
+    )
+
+    assert "Provider:" in resp.text
+    assert "opencode" in resp.text
+    assert orch._config.provider == "opencode"
+    assert orch._config.model == "openai/gpt-4.1"
 
 
 # -- handle_model_callback: reasoning selection --

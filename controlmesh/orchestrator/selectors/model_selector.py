@@ -11,6 +11,11 @@ from controlmesh.cli.auth import AuthStatus, check_all_auth
 from controlmesh.config import CLAUDE_MODELS_ORDERED, get_gemini_models, update_config_file_async
 from controlmesh.i18n import t
 from controlmesh.multiagent.registry import update_agent_fields
+from controlmesh.orchestrator.providers import (
+    normalize_provider_name,
+    provider_display_name,
+    provider_public_token,
+)
 from controlmesh.orchestrator.selectors.models import Button, ButtonGrid, SelectorResponse
 
 if TYPE_CHECKING:
@@ -29,6 +34,15 @@ _EFFORT_LABELS: dict[str, str] = {
     "high": "High",
     "xhigh": "XHigh",
 }
+_CORE_PROVIDER_BUTTONS: tuple[tuple[str, str], ...] = (
+    ("claude", "CLAUDE"),
+    ("codex", "CODEX"),
+    ("gemini", "GEMINI"),
+)
+_RUNTIME_PROVIDER_BUTTONS: tuple[tuple[str, str], ...] = (
+    ("claw", "CLAW-CODE"),
+    ("opencode", "OPENCODE"),
+)
 
 
 @dataclass(frozen=True)
@@ -159,17 +173,26 @@ async def model_selector_start(
         codex_cache = (
             orch._observers.codex_cache_obs.get_cache() if orch._observers.codex_cache_obs else None
         )
-        return await _build_model_step(provider, header, codex_cache)
+        return await _build_model_step(orch, key, provider, header, codex_cache)
 
-    buttons: list[Button] = []
-    if "claude" in authed:
-        buttons.append(Button(text="CLAUDE", callback_data="ms:p:claude"))
-    if "codex" in authed:
-        buttons.append(Button(text="CODEX", callback_data="ms:p:codex"))
-    if "gemini" in authed:
-        buttons.append(Button(text="GEMINI", callback_data="ms:p:gemini"))
+    authed_set = set(authed)
+    rows: list[list[Button]] = []
+    core_buttons = [
+        Button(text=label, callback_data=f"ms:p:{provider}")
+        for provider, label in _CORE_PROVIDER_BUTTONS
+        if provider in authed_set
+    ]
+    if core_buttons:
+        rows.append(core_buttons)
+    runtime_buttons = [
+        Button(text=label, callback_data=f"ms:p:{provider}")
+        for provider, label in _RUNTIME_PROVIDER_BUTTONS
+        if provider in authed_set
+    ]
+    if runtime_buttons:
+        rows.append(runtime_buttons)
 
-    keyboard = ButtonGrid(rows=[buttons])
+    keyboard = ButtonGrid(rows=rows)
     return SelectorResponse(text=f"{header}\n\n{t('model.pick_provider')}", buttons=keyboard)
 
 
@@ -193,10 +216,18 @@ async def handle_model_callback(
     )
 
     if action == "p":
-        return await _build_model_step(payload, await _status_line(orch, key), codex_cache)
+        return await _build_model_step(orch, key, payload, await _status_line(orch, key), codex_cache)
 
     if action == "m":
         return await _handle_model_selected(orch, key, payload, codex_cache)
+
+    if action == "x":
+        return await _handle_runtime_provider_selected(
+            orch,
+            key,
+            provider=payload,
+            model_id=extra,
+        )
 
     if action == "r":
         return await _handle_reasoning_selected(orch, key, effort=payload, model_id=extra)
@@ -204,7 +235,7 @@ async def handle_model_callback(
     if action == "b":
         if payload == "root":
             return await model_selector_start(orch, key)
-        return await _build_model_step(payload, await _status_line(orch, key), codex_cache)
+        return await _build_model_step(orch, key, payload, await _status_line(orch, key), codex_cache)
 
     logger.warning("Unknown model selector callback: %s", data)
     return SelectorResponse(text=t("model.unknown_action"))
@@ -216,6 +247,7 @@ async def switch_model(
     model_id: str,
     *,
     reasoning_effort: str | None = None,
+    provider_override: str | None = None,
 ) -> str:
     """Execute model switch: kill processes, preserve sessions, persist config.
 
@@ -231,8 +263,15 @@ async def switch_model(
     if same_model and reasoning_effort is None:
         return t("model.already_running", model=model_id)
 
-    old_provider = orch.models.provider_for(old)
-    new_provider = orch.models.provider_for(model_id)
+    if is_topic and active_session:
+        old_provider = active_session.provider
+    else:
+        _resolved_old_model, old_provider = orch.resolve_runtime_target(old)
+    new_provider = (
+        normalize_provider_name(provider_override)
+        if provider_override is not None
+        else orch.models.provider_for(model_id)
+    )
     provider_changed = old_provider != new_provider
     resume_session_id, resume_message_count = _resume_state_for_provider(
         active_session,
@@ -330,11 +369,14 @@ async def _status_line(orch: Orchestrator, key: SessionKey) -> str:
 
 
 async def _build_model_step(
+    orch: Orchestrator,
+    key: SessionKey,
     provider: str,
     header: str,
     codex_cache: CodexModelCache | None = None,
 ) -> SelectorResponse:
     """Build the model selection keyboard for a provider."""
+    provider = normalize_provider_name(provider)
     if provider == "claude":
         buttons = [Button(text=m.upper(), callback_data=f"ms:m:{m}") for m in CLAUDE_MODELS_ORDERED]
         keyboard = ButtonGrid(
@@ -362,6 +404,30 @@ async def _build_model_step(
         gemini_rows.append([Button(text=t("model.btn_back"), callback_data="ms:b:root")])
         keyboard = ButtonGrid(rows=gemini_rows)
         return SelectorResponse(text=f"{header}\n\n{t('model.select_gemini')}", buttons=keyboard)
+
+    if provider in {"claw", "opencode"}:
+        model_id = await _resolve_runtime_provider_model(orch, key, provider)
+        back = [Button(text=t("model.btn_back"), callback_data="ms:b:root")]
+        if not model_id:
+            label = provider_display_name(provider)
+            channel = provider_public_token(provider)
+            return SelectorResponse(
+                text=(
+                    f"{header}\n\nCannot switch to {label} yet: no default model is known for "
+                    f"channel '{channel}'.\nMake that runtime the active provider first, then retry."
+                ),
+                buttons=ButtonGrid(rows=[back]),
+            )
+        keyboard = ButtonGrid(
+            rows=[
+                [Button(text=model_id, callback_data=f"ms:x:{provider}:{model_id}")],
+                back,
+            ]
+        )
+        return SelectorResponse(
+            text=f"{header}\n\nSelect {provider_display_name(provider)} model",
+            buttons=keyboard,
+        )
 
     # Use cache instead of live discovery
     codex_models = codex_cache.models if codex_cache else []
@@ -429,3 +495,38 @@ async def _handle_reasoning_selected(
     """Handle a reasoning effort button press. Final step: switch model + effort."""
     result = await switch_model(orch, key, model_id, reasoning_effort=effort)
     return SelectorResponse(text=result)
+
+
+async def _handle_runtime_provider_selected(
+    orch: Orchestrator,
+    key: SessionKey,
+    *,
+    provider: str,
+    model_id: str,
+) -> SelectorResponse:
+    """Handle explicit runtime providers whose model IDs do not imply the provider."""
+    result = await switch_model(
+        orch,
+        key,
+        model_id,
+        provider_override=provider,
+    )
+    return SelectorResponse(text=result)
+
+
+async def _resolve_runtime_provider_model(
+    orch: Orchestrator,
+    key: SessionKey,
+    provider: str,
+) -> str | None:
+    """Resolve a usable model for an explicit runtime-backed provider."""
+    active_session = await orch._sessions.get_active(key)
+    if active_session is not None and active_session.provider == provider and active_session.model.strip():
+        return active_session.model
+
+    configured_model, configured_provider = orch.resolve_runtime_target(orch._config.model)
+    if configured_provider == provider and configured_model.strip():
+        return configured_model
+
+    default_model = orch._providers.default_model_for_provider(provider).strip()
+    return default_model or None
