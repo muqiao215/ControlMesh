@@ -496,6 +496,121 @@ async def test_memory_empty(orch: Orchestrator) -> None:
     assert "empty" in result.text.lower()
 
 
+async def test_memory_today_shows_daily_note(orch: Orchestrator) -> None:
+    """Test /memory today returns a compact summary of today's daily note."""
+    from datetime import UTC, datetime
+
+    from controlmesh.memory.store import ensure_daily_note
+
+    today = datetime.now(UTC).date()
+    note_path = ensure_daily_note(orch.paths, today)
+    note_path.write_text(
+        f"# Daily Memory: {today.isoformat()}\n\n"
+        "## Events\n\n- User asked about memory\n\n"
+        "## Signals\n\n- User seems interested in review\n\n"
+        "## Evidence\n\n## Open Candidates\n\n"
+        "- [decision] Consider memory review workflow.\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory today")
+    assert today.isoformat() in result.text
+    assert "Events" in result.text
+    assert "Open Candidates" in result.text
+    assert "decision" in result.text
+
+
+async def test_memory_today_no_note(orch: Orchestrator) -> None:
+    """Test /memory today shows message when no daily note exists."""
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory today")
+    assert "No daily note found" in result.text or "No daily note" in result.text
+
+
+async def test_memory_search_returns_results(orch: Orchestrator) -> None:
+    """Test /memory search delegates to FTS5 search and renders results."""
+    from datetime import UTC, datetime
+
+    from controlmesh.memory.store import ensure_daily_note
+
+    today = datetime.now(UTC).date()
+    note_path = ensure_daily_note(orch.paths, today)
+    note_path.write_text(
+        f"# Daily Memory: {today.isoformat()}\n\n"
+        "## Events\n\n- The user wants to find memory about Paris.\n\n"
+        "## Open Candidates\n\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory search Paris")
+    assert "Search" in result.text
+    assert "Paris" in result.text
+
+
+async def test_memory_search_no_results(orch: Orchestrator) -> None:
+    """Test /memory search shows no results message."""
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory search xyzzy_nonexistent")
+    assert "No results found" in result.text
+
+
+async def test_memory_why_returns_provenance(orch: Orchestrator) -> None:
+    """Test /memory why explains an authority entry's provenance."""
+    # Write authority memory with a Phase-4 style entry containing metadata
+    orch.paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n"
+        "## Durable Memory\n\n"
+        "### Decision\n"
+        "- Keep memory local. _(id: abc12345; status: active; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory why abc12345")
+    assert "Provenance" in result.text
+    assert "Keep memory local" in result.text
+    assert "active" in result.text
+    assert "source:" in result.text or "memory/" in result.text
+    assert "promoted:" in result.text or "2026-04-25" in result.text
+
+
+async def test_memory_why_unknown_id(orch: Orchestrator) -> None:
+    """Test /memory why shows not found for unknown entry id."""
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory why nonexistent_id")
+    assert "No authority entry found" in result.text
+
+
+async def test_memory_review_shows_summary(orch: Orchestrator) -> None:
+    """Test /memory review shows a compact review surface."""
+    from datetime import UTC, datetime
+
+    from controlmesh.memory.store import ensure_daily_note
+
+    # Create authority memory with entries
+    orch.paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n"
+        "## Durable Memory\n\n"
+        "### Decision\n"
+        "- Keep memory local. _(id: d1; status: active; source: memory/2026-04-24.md#L2; promoted: 2026-04-24)_\n\n"
+        "### Fact\n"
+        "- Memory system uses markdown files. _(id: f1; status: active; source: memory/2026-04-23.md#L5; promoted: 2026-04-23)_\n",
+        encoding="utf-8",
+    )
+
+    # Create daily note with open candidates
+    today = datetime.now(UTC).date()
+    note_path = ensure_daily_note(orch.paths, today)
+    note_path.write_text(
+        f"# Daily Memory: {today.isoformat()}\n\n"
+        "## Open Candidates\n\n"
+        "- [preference] User prefers short responses.\n"
+        "- [fact] User works in engineering.\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory review")
+    assert "Memory Review" in result.text
+    assert "Decision" in result.text or "Fact" in result.text
+    assert "Open Candidates" in result.text
+
+
 # -- cmd_history --
 
 

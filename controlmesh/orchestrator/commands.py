@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
+from datetime import date
 from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -21,6 +22,12 @@ from controlmesh.i18n import t
 from controlmesh.infra.install import detect_install_mode
 from controlmesh.infra.updater import check_source_upgrade_status
 from controlmesh.infra.version import check_latest_version, get_current_version
+from controlmesh.memory.commands import (
+    explain_authority_entry,
+    render_daily_note_summary,
+    render_memory_review,
+    search_memory,
+)
 from controlmesh.orchestrator.providers import (
     normalize_provider_name,
     provider_display_name,
@@ -431,8 +438,80 @@ async def cmd_controlmesh(orch: Orchestrator, key: SessionKey, text: str) -> Orc
 
 
 async def cmd_memory(orch: Orchestrator, _key: SessionKey, _text: str) -> OrchestratorResult:
-    """Handle /memory."""
+    """Handle /memory [today|search <query>|why <id>|review]."""
+    from datetime import UTC, datetime
+
     logger.info("Memory requested")
+    parts = _text.strip().split(None, 2)
+
+    # /memory with no subcommand - show full authority + legacy
+    if len(parts) == 1:
+        return await _cmd_memory_full(orch)
+
+    subcommand = parts[1].lower()
+
+    if subcommand == "today":
+        today = datetime.now(UTC).date()
+        return await _cmd_memory_today(orch, today)
+
+    if subcommand == "search":
+        return await _cmd_memory_search(orch, parts)
+
+    if subcommand == "why":
+        return await _cmd_memory_why(orch, parts)
+
+    if subcommand == "review":
+        return await _cmd_memory_review(orch)
+
+    # Unknown subcommand - show usage
+    return OrchestratorResult(text="Usage: /memory [today|search <query>|why <id>|review]")
+
+
+async def _cmd_memory_today(orch: Orchestrator, today: date) -> OrchestratorResult:
+    """Handle /memory today."""
+    summary = await asyncio.to_thread(render_daily_note_summary, orch.paths, today)
+    if not summary:
+        return OrchestratorResult(text=f"No daily note found for {today.isoformat()}.")
+    return OrchestratorResult(text=summary)
+
+
+async def _cmd_memory_search(orch: Orchestrator, parts: list[str]) -> OrchestratorResult:
+    """Handle /memory search <query>."""
+    if len(parts) < 3:
+        return OrchestratorResult(text="Usage: /memory search <query>")
+    query = parts[2]
+    result = await asyncio.to_thread(search_memory, orch.paths, query)
+    if not result.hits:
+        return OrchestratorResult(text=f"No results found for: {query}")
+    lines = [f"## Search: {query}\n"]
+    for hit in result.hits:
+        lines.append(f"**[{hit.kind.value}]** {hit.source_path}")
+        lines.append(f"_{hit.snippet}_")
+        lines.append("")
+    return OrchestratorResult(text="\n".join(lines))
+
+
+async def _cmd_memory_why(orch: Orchestrator, parts: list[str]) -> OrchestratorResult:
+    """Handle /memory why <entry-id>."""
+    if len(parts) < 3:
+        return OrchestratorResult(text="Usage: /memory why <entry-id>")
+    entry_id = parts[2]
+    explanation = await asyncio.to_thread(explain_authority_entry, orch.paths, entry_id)
+    if explanation is None:
+        return OrchestratorResult(text=f"No authority entry found with id: {entry_id}")
+    return OrchestratorResult(text=f"## Provenance\n\n{explanation}")
+
+
+async def _cmd_memory_review(orch: Orchestrator) -> OrchestratorResult:
+    """Handle /memory review."""
+    review = await asyncio.to_thread(render_memory_review, orch.paths)
+    if not review:
+        return OrchestratorResult(text="No memory to review.")
+    return OrchestratorResult(text=review)
+
+
+async def _cmd_memory_full(orch: Orchestrator) -> OrchestratorResult:
+    """Render the full /memory output (authority + legacy)."""
     legacy = await asyncio.to_thread(read_mainmemory, orch.paths)
     authority = await asyncio.to_thread(read_file, orch.paths.authority_memory_path) or ""
     sections: list[str] = []
