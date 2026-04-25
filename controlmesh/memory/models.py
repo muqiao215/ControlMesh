@@ -129,6 +129,38 @@ class MemorySearchResult(BaseModel):
     hits: list[MemorySearchHit] = Field(default_factory=list)
 
 
+class SemanticSearchHit(BaseModel):
+    """One trigram-similarity match from the non-authoritative semantic index.
+
+    Always includes a source reference so users can inspect the original
+    markdown entry directly.  The similarity score is an approximation
+    (character trigram Jaccard) and is not authoritative.
+    """
+
+    entry_id: str = ""
+    kind: MemoryDocumentKind = MemoryDocumentKind.AUTHORITY
+    source_path: str = ""
+    section: str | None = None
+    content: str = ""
+    authority_entry_id: str | None = None
+    line_number: int | None = None
+    similarity: float = 0.0
+
+
+class SemanticSearchResult(BaseModel):
+    """Trigram-similarity search results from the non-authoritative semantic index.
+
+    The semantic index is a derived/cache-like sidecar.  Markdown files remain
+    the sole source of truth.
+    """
+
+    query: str = ""
+    hits: list[SemanticSearchHit] = Field(default_factory=list)
+    index_available: bool = True
+    indexed_at: str | None = None
+    total_indexed: int = 0
+
+
 class LifecycleStatus(StrEnum):
     """Lifecycle state for promoted authority memory entries."""
 

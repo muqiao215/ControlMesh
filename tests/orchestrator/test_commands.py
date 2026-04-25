@@ -663,6 +663,49 @@ async def test_memory_unknown_subcommand_shows_usage_with_patterns(orch: Orchest
     assert "patterns" in result.text.lower()
 
 
+async def test_memory_semantic_returns_results(orch: Orchestrator) -> None:
+    """Test /memory semantic <query> returns trigram-similarity results for indexed content."""
+    from datetime import UTC, datetime
+
+    from controlmesh.memory.store import ensure_daily_note
+
+    today = datetime.now(UTC).date()
+    note_path = ensure_daily_note(orch.paths, today)
+    note_path.write_text(
+        f"# Daily Memory: {today.isoformat()}\n\n"
+        "## Events\n\n"
+        "- [deploy] Deployed semantic search feature [evt:ev1]\n\n"
+        "## Signals\n\n"
+        "- [preference] User prefers dark mode [sig:sg1]\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory semantic dark theme preference")
+    assert "Semantic Search" in result.text
+    assert "dark mode" in result.text.lower()
+    assert "non-authoritative" in result.text.lower()
+
+
+async def test_memory_semantic_no_results_shows_empty_state(orch: Orchestrator) -> None:
+    """Test /memory semantic shows empty-state message when no similar entries exist."""
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory semantic xyzzy_nonexistent_term")
+    assert "Semantic Search" in result.text
+    assert "no similar entries" in result.text.lower()
+
+
+async def test_memory_semantic_short_query_shows_empty_state(orch: Orchestrator) -> None:
+    """Test /memory semantic with a single-character query shows graceful empty state."""
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory semantic a")
+    assert "Semantic Search" in result.text
+    assert "no similar entries" in result.text.lower()
+
+
+async def test_memory_unknown_subcommand_shows_usage_with_semantic(orch: Orchestrator) -> None:
+    """Test /memory with unknown subcommand shows usage including semantic."""
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory unknown_subcommand")
+    assert "semantic" in result.text.lower()
+
+
 # -- cmd_history --
 
 

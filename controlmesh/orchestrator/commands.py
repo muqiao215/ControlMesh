@@ -29,6 +29,7 @@ from controlmesh.memory.commands import (
     search_memory,
 )
 from controlmesh.memory.frequency import find_repeated_patterns, render_patterns_summary
+from controlmesh.memory.semantic import search_semantic_index
 from controlmesh.orchestrator.providers import (
     normalize_provider_name,
     provider_display_name,
@@ -438,11 +439,11 @@ async def cmd_controlmesh(orch: Orchestrator, key: SessionKey, text: str) -> Orc
     return await orch.dispatch_controlmesh_command(key, nested)
 
 
-_MEMORY_USAGE = "Usage: /memory [today|search <query>|why <id>|review|patterns]"
+_MEMORY_USAGE = "Usage: /memory [today|search <query>|semantic <query>|why <id>|review|patterns]"
 
 
 async def cmd_memory(orch: Orchestrator, _key: SessionKey, _text: str) -> OrchestratorResult:
-    """Handle /memory [today|search <query>|why <id>|review|patterns]."""
+    """Handle /memory [today|search <query>|semantic <query>|why <id>|review|patterns]."""
     from datetime import UTC, datetime
 
     logger.info("Memory requested")
@@ -457,16 +458,17 @@ async def cmd_memory(orch: Orchestrator, _key: SessionKey, _text: str) -> Orches
     if subcommand == "today":
         today = datetime.now(UTC).date()
         return await _cmd_memory_today(orch, today)
-    if subcommand == "search":
-        return await _cmd_memory_search(orch, parts)
-    if subcommand == "why":
-        return await _cmd_memory_why(orch, parts)
 
-    # review and patterns both delegate to their own helpers
-    if subcommand in ("review", "patterns"):
-        return await _cmd_memory_patterns(orch) if subcommand == "patterns" else await _cmd_memory_review(orch)
-
-    # Unknown subcommand - show usage
+    _handlers = {
+        "search": lambda: _cmd_memory_search(orch, parts),
+        "semantic": lambda: _cmd_memory_semantic(orch, parts),
+        "why": lambda: _cmd_memory_why(orch, parts),
+        "review": lambda: _cmd_memory_review(orch),
+        "patterns": lambda: _cmd_memory_patterns(orch),
+    }
+    handler = _handlers.get(subcommand)
+    if handler is not None:
+        return await handler()
     return OrchestratorResult(text=_MEMORY_USAGE)
 
 
@@ -490,6 +492,39 @@ async def _cmd_memory_search(orch: Orchestrator, parts: list[str]) -> Orchestrat
     for hit in result.hits:
         lines.append(f"**[{hit.kind.value}]** {hit.source_path}")
         lines.append(f"_{hit.snippet}_")
+        lines.append("")
+    return OrchestratorResult(text="\n".join(lines))
+
+
+async def _cmd_memory_semantic(orch: Orchestrator, parts: list[str]) -> OrchestratorResult:
+    """Handle /memory semantic <query>."""
+    if len(parts) < 3:
+        return OrchestratorResult(text="Usage: /memory semantic <query>")
+    query = parts[2]
+    result = await asyncio.to_thread(search_semantic_index, orch.paths, query)
+    if not result.hits:
+        lines = [
+            "## Semantic Search",
+            f"__{result.query}__",
+            "",
+            "(no similar entries found — semantic index may be empty or query is too short)",
+        ]
+        return OrchestratorResult(text="\n".join(lines))
+
+    lines = [
+        f"## Semantic Search: {result.query}",
+        f"_(non-authoritative trigram similarity; {len(result.hits)} of {result.total_indexed} entries shown)_",
+        "",
+    ]
+    for hit in result.hits:
+        ref = hit.source_path
+        if hit.section:
+            ref += f" > {hit.section}"
+        if hit.line_number:
+            ref += f" (line {hit.line_number})"
+        extra = f" [id:{hit.authority_entry_id}]" if hit.authority_entry_id else ""
+        lines.append(f"**[{hit.kind.value}]** {ref}  _similarity={hit.similarity:.2f}{extra}_")
+        lines.append(f"- {hit.content}")
         lines.append("")
     return OrchestratorResult(text="\n".join(lines))
 

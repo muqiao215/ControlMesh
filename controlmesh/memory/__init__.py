@@ -58,6 +58,8 @@ from controlmesh.memory.models import (
     PromotionApplyResult,
     PromotionCandidate,
     PromotionPreview,
+    SemanticSearchHit,
+    SemanticSearchResult,
 )
 from controlmesh.memory.promotion import (
     apply_candidates,
@@ -77,6 +79,7 @@ from controlmesh.memory.runtime_capture import (
     event_from_transcript_turn,
 )
 from controlmesh.memory.search import search_memory_index, sync_memory_index
+from controlmesh.memory.semantic import search_semantic_index, sync_semantic_index
 from controlmesh.memory.store import append_dream_entry, ensure_daily_note, initialize_memory_v2
 
 __all__ = [
@@ -102,6 +105,8 @@ __all__ = [
     "RepeatedPattern",
     "ResumeEvent",
     "RoutingContext",
+    "SemanticSearchHit",
+    "SemanticSearchResult",
     "SignalCandidate",
     "SignalConfidence",
     "acquire_dream_lock",
@@ -143,6 +148,8 @@ __all__ = [
     "save_sweep_state",
     "search_memory",
     "search_memory_index",
+    "search_semantic_index",
     "sync_memory_index",
     "sync_memory_search",
+    "sync_semantic_index",
 ]
