@@ -999,6 +999,105 @@ async def test_memory_unknown_subcommand_shows_usage_with_semantic(orch: Orchest
     assert "semantic" in result.text.lower()
 
 
+# -- Phase 17: scope-aware full-memory read surface --
+
+
+async def test_memory_full_shows_scope_summary_with_shared_entries(orch: Orchestrator) -> None:
+    """Test /memory output surfaces shared scope in the authority section header."""
+    orch.paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n"
+        "## Durable Memory\n\n"
+        "### Decision\n"
+        "- Shared decision for all agents. _(id: sd001; status: active; scope: shared; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_\n"
+        "- Local decision here. _(id: ld001; status: active; scope: local; source: memory/2026-04-25.md#L4; promoted: 2026-04-25)_\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory")
+
+    assert "Authority Memory (v2)" in result.text
+    # Scope summary must appear in header showing both counts
+    assert "1 local, 1 shared" in result.text
+    # Entry content must still be present
+    assert "Shared decision for all agents" in result.text
+    assert "Local decision here" in result.text
+
+
+async def test_memory_full_shows_scope_summary_with_local_only_entries(orch: Orchestrator) -> None:
+    """Test /memory output surfaces local/default scope in the authority section header when no shared entries exist."""
+    orch.paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n"
+        "## Durable Memory\n\n"
+        "### Preference\n"
+        "- User prefers dark mode. _(id: pf001; status: active; scope: local; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_\n"
+        "- User prefers light mode. _(id: pf002; status: active; scope: local; source: memory/2026-04-25.md#L4; promoted: 2026-04-25)_\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory")
+
+    assert "Authority Memory (v2)" in result.text
+    # When no shared entries, only local count shown
+    assert "2 local)" in result.text
+    assert "shared" not in result.text.lower()
+    # Entry content must still be present
+    assert "User prefers dark mode" in result.text
+    assert "User prefers light mode" in result.text
+
+
+async def test_memory_full_legacy_compatibility_not_regressed(orch: Orchestrator) -> None:
+    """Test /memory with legacy compatibility section is not regressed by scope annotation."""
+    orch.paths.mainmemory_path.write_text("# Legacy Memory\n- Old memory entry.\n")
+    orch.paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n"
+        "## Durable Memory\n\n"
+        "### Fact\n"
+        "- A fact. _(id: fact01; status: active; scope: local; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory")
+
+    # Both sections must be present
+    assert "Authority Memory (v2)" in result.text
+    assert "Legacy Compatibility Memory" in result.text
+    # Legacy content must still be present
+    assert "Legacy Memory" in result.text
+    assert "Old memory entry" in result.text
+    # Authority content must still be present
+    assert "A fact" in result.text
+    # Scope annotation must be present
+    assert "1 local)" in result.text
+
+
+async def test_memory_full_empty_authority_no_scope_annotation(orch: Orchestrator) -> None:
+    """Test /memory with only legacy memory (no authority entries) shows no scope annotation."""
+    orch.paths.mainmemory_path.write_text("# My Memory\n- Some memory.\n")
+    orch.paths.authority_memory_path.write_text("", encoding="utf-8")
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory")
+
+    # No authority section scope annotation when authority is empty
+    assert "Authority Memory (v2)" not in result.text
+    # Legacy section still works
+    assert "Legacy Compatibility Memory" in result.text
+    assert "Some memory" in result.text
+
+
+async def test_memory_full_empty_memory_not_regressed(orch: Orchestrator) -> None:
+    """Test /memory with empty memory shows empty state and does not crash."""
+    orch.paths.mainmemory_path.write_text("")
+    orch.paths.authority_memory_path.write_text("", encoding="utf-8")
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory")
+
+    # Empty state must be shown (not a crash)
+    assert "empty" in result.text.lower()
+    # No scope annotation when there's nothing
+    assert "local" not in result.text.lower()
+    assert "shared" not in result.text.lower()
+
+
 # -- cmd_memory promote --
 
 

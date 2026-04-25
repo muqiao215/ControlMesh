@@ -34,6 +34,7 @@ from controlmesh.memory.commands import (
     supersede_authority_entry,
 )
 from controlmesh.memory.frequency import find_repeated_patterns, render_patterns_summary
+from controlmesh.memory.promotion import parse_authority_entry
 from controlmesh.memory.semantic import search_semantic_index
 from controlmesh.orchestrator.providers import (
     normalize_provider_name,
@@ -647,13 +648,47 @@ async def _cmd_memory_promote_apply(orch: Orchestrator) -> OrchestratorResult:
     return OrchestratorResult(text="\n".join(lines))
 
 
+def _build_authority_scope_summary(authority_text: str) -> str:
+    """Build a scope summary annotation for authority memory entries.
+
+    Returns a string like "(N local, M shared)" when entries with explicit scope exist,
+    or an empty string if there are no entries or all are legacy (no explicit scope).
+    """
+    local_count = 0
+    shared_count = 0
+    has_entries = False
+
+    for line in authority_text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        parsed = parse_authority_entry(stripped)
+        if parsed is not None:
+            has_entries = True
+            _content, meta = parsed
+            if meta.scope.value == "shared":
+                shared_count += 1
+            else:
+                local_count += 1
+
+    if not has_entries:
+        return ""
+    if shared_count > 0:
+        return f"_({local_count} local, {shared_count} shared)_"
+    return f"_({local_count} local)_"
+
+
 async def _cmd_memory_full(orch: Orchestrator) -> OrchestratorResult:
     """Render the full /memory output (authority + legacy)."""
     legacy = await asyncio.to_thread(read_mainmemory, orch.paths)
     authority = await asyncio.to_thread(read_file, orch.paths.authority_memory_path) or ""
     sections: list[str] = []
     if authority.strip():
-        sections.extend(["## Authority Memory (v2)", authority.strip()])
+        scope_summary = _build_authority_scope_summary(authority)
+        if scope_summary:
+            sections.extend([f"## Authority Memory (v2) {scope_summary}", authority.strip()])
+        else:
+            sections.extend(["## Authority Memory (v2)", authority.strip()])
     if legacy.strip():
         sections.extend(["## Legacy Compatibility Memory", legacy.strip()])
 
