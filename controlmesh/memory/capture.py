@@ -69,6 +69,10 @@ def _event_summary_line(event: MemoryEvent) -> str:
         routing_parts.append(f"session={event.routing.session_id}")
     if event.routing.agent_id:
         routing_parts.append(f"agent={event.routing.agent_id}")
+    if event.routing.parent_task_id:
+        routing_parts.append(f"task={event.routing.parent_task_id}")
+    if event.routing.team_id:
+        routing_parts.append(f"team={event.routing.team_id}")
     routing_str = f" ({', '.join(routing_parts)})" if routing_parts else ""
 
     base = f"- [{event.kind.value}] {event.summary}"

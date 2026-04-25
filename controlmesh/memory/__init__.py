@@ -58,6 +58,18 @@ from controlmesh.memory.promotion import (
     parse_promotion_candidates,
     preview_candidates,
 )
+from controlmesh.memory.runtime_capture import (
+    capture_task_question,
+    capture_task_result,
+    capture_task_resume,
+    capture_team_event,
+    capture_transcript_turn,
+    event_from_task_question,
+    event_from_task_result,
+    event_from_task_resume,
+    event_from_team_event,
+    event_from_transcript_turn,
+)
 from controlmesh.memory.search import search_memory_index, sync_memory_index
 from controlmesh.memory.store import append_dream_entry, ensure_daily_note, initialize_memory_v2
 
@@ -96,7 +108,17 @@ __all__ = [
     "capture_open_candidate",
     "capture_signal",
     "capture_signal_batch",
+    "capture_task_question",
+    "capture_task_result",
+    "capture_task_resume",
+    "capture_team_event",
+    "capture_transcript_turn",
     "ensure_daily_note",
+    "event_from_task_question",
+    "event_from_task_result",
+    "event_from_task_resume",
+    "event_from_team_event",
+    "event_from_transcript_turn",
     "expand_daily_note_skeleton",
     "initialize_memory_v2",
     "load_checkpoints",

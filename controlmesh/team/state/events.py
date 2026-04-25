@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from controlmesh.infra.json_store import atomic_json_save, load_json
+from controlmesh.memory.runtime_capture import capture_team_event
 from controlmesh.team.models import TeamEvent
 from controlmesh.team.state.base import TeamStatePaths, utc_now
 
@@ -31,6 +32,7 @@ def append_event(paths: TeamStatePaths, event: TeamEvent) -> TeamEvent:
     persisted = event.model_copy(update={"created_at": event.created_at or utc_now()})
     events.append(persisted)
     _save(paths, events)
+    capture_team_event(paths, persisted)
     return persisted
 
 

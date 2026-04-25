@@ -7,9 +7,15 @@ import contextlib
 import logging
 import time
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from controlmesh.infra.json_store import atomic_json_save, load_json
+from controlmesh.memory.runtime_capture import (
+    capture_task_question,
+    capture_task_result,
+    capture_task_resume,
+)
 from controlmesh.messenger.address import ChatRef, TopicRef
 from controlmesh.runtime import RuntimeEvent, RuntimeEventStore
 from controlmesh.session import SessionKey
@@ -200,6 +206,8 @@ class TaskHub:
             msg = f"Task '{task_id}' has no provider recorded"
             raise ValueError(msg)
 
+        parent_question = entry.last_question or None
+
         # Reset to running — same entry, same folder, same task_id
         self._registry.update_status(
             task_id,
@@ -211,6 +219,12 @@ class TaskHub:
         )
         refreshed = self._registry.get(task_id)
         if refreshed is not None:
+            capture_task_resume(
+                self._paths,
+                refreshed,
+                follow_up,
+                parent_question=parent_question,
+            )
             self._append_runtime_lifecycle_event(refreshed, "task.lifecycle.resumed")
 
         # Append a short system reminder so the task agent remembers how to
@@ -274,6 +288,12 @@ class TaskHub:
         )
         refreshed = self._registry.get(task_id)
         if refreshed is not None:
+            capture_task_question(
+                self._paths,
+                refreshed,
+                question,
+                question_sequence=refreshed.question_count,
+            )
             self._append_runtime_lifecycle_event(
                 refreshed,
                 "task.lifecycle.waiting",
@@ -481,26 +501,32 @@ class TaskHub:
                     f'python3 tools/task_tools/resume_task.py {entry.task_id} "your follow-up"'
                 )
 
-            await self._deliver(
-                TaskResult(
-                    task_id=entry.task_id,
-                    chat_id=entry.chat_id,
-                    parent_agent=entry.parent_agent,
-                    name=entry.name,
-                    prompt_preview=entry.prompt_preview,
-                    result_text=result_text,
-                    status=status,
-                    elapsed_seconds=elapsed,
-                    provider=entry.provider,
-                    model=entry.model,
-                    transport=entry.transport,
-                    session_id=session_id,
-                    error=error,
-                    task_folder=str(self._registry.task_folder(entry.task_id)),
-                    original_prompt=entry.original_prompt,
-                    thread_id=entry.thread_id,
-                )
+            task_result = TaskResult(
+                task_id=entry.task_id,
+                chat_id=entry.chat_id,
+                parent_agent=entry.parent_agent,
+                name=entry.name,
+                prompt_preview=entry.prompt_preview,
+                result_text=result_text,
+                status=status,
+                elapsed_seconds=elapsed,
+                provider=entry.provider,
+                model=entry.model,
+                transport=entry.transport,
+                session_id=session_id,
+                error=error,
+                task_folder=str(self._registry.task_folder(entry.task_id)),
+                original_prompt=entry.original_prompt,
+                thread_id=entry.thread_id,
             )
+            if status in _FINISHED:
+                capture_task_result(
+                    self._paths,
+                    task_result,
+                    completed_at=datetime.now(UTC),
+                    taskmemory_path=self._registry.taskmemory_path(entry.task_id),
+                )
+            await self._deliver(task_result)
 
         except asyncio.CancelledError:
             elapsed = time.monotonic() - t0
@@ -511,23 +537,28 @@ class TaskHub:
                 elapsed_seconds=elapsed,
             )
             with contextlib.suppress(Exception):
-                await self._deliver(
-                    TaskResult(
-                        task_id=entry.task_id,
-                        chat_id=entry.chat_id,
-                        parent_agent=entry.parent_agent,
-                        name=entry.name,
-                        prompt_preview=entry.prompt_preview,
-                        result_text="",
-                        status="cancelled",
-                        elapsed_seconds=elapsed,
-                        provider=entry.provider,
-                        model=entry.model,
-                        transport=entry.transport,
-                        original_prompt=entry.original_prompt,
-                        thread_id=entry.thread_id,
-                    )
+                task_result = TaskResult(
+                    task_id=entry.task_id,
+                    chat_id=entry.chat_id,
+                    parent_agent=entry.parent_agent,
+                    name=entry.name,
+                    prompt_preview=entry.prompt_preview,
+                    result_text="",
+                    status="cancelled",
+                    elapsed_seconds=elapsed,
+                    provider=entry.provider,
+                    model=entry.model,
+                    transport=entry.transport,
+                    original_prompt=entry.original_prompt,
+                    thread_id=entry.thread_id,
                 )
+                capture_task_result(
+                    self._paths,
+                    task_result,
+                    completed_at=datetime.now(UTC),
+                    taskmemory_path=self._registry.taskmemory_path(entry.task_id),
+                )
+                await self._deliver(task_result)
             raise
 
         except Exception:
@@ -542,24 +573,29 @@ class TaskHub:
                 error=error_msg,
             )
             with contextlib.suppress(Exception):
-                await self._deliver(
-                    TaskResult(
-                        task_id=entry.task_id,
-                        chat_id=entry.chat_id,
-                        parent_agent=entry.parent_agent,
-                        name=entry.name,
-                        prompt_preview=entry.prompt_preview,
-                        result_text="",
-                        status="failed",
-                        elapsed_seconds=elapsed,
-                        provider=entry.provider,
-                        model=entry.model,
-                        transport=entry.transport,
-                        error=error_msg,
-                        original_prompt=entry.original_prompt,
-                        thread_id=entry.thread_id,
-                    )
+                task_result = TaskResult(
+                    task_id=entry.task_id,
+                    chat_id=entry.chat_id,
+                    parent_agent=entry.parent_agent,
+                    name=entry.name,
+                    prompt_preview=entry.prompt_preview,
+                    result_text="",
+                    status="failed",
+                    elapsed_seconds=elapsed,
+                    provider=entry.provider,
+                    model=entry.model,
+                    transport=entry.transport,
+                    error=error_msg,
+                    original_prompt=entry.original_prompt,
+                    thread_id=entry.thread_id,
                 )
+                capture_task_result(
+                    self._paths,
+                    task_result,
+                    completed_at=datetime.now(UTC),
+                    taskmemory_path=self._registry.taskmemory_path(entry.task_id),
+                )
+                await self._deliver(task_result)
 
     async def _deliver(self, result: TaskResult) -> None:
         """Deliver result to the parent agent's registered callback."""

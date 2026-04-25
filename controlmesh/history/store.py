@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 
 from controlmesh.history.models import TranscriptTurn
+from controlmesh.memory.runtime_capture import capture_transcript_turn
 from controlmesh.session.key import SessionKey
 from controlmesh.workspace.paths import ControlMeshPaths
 
@@ -31,6 +32,7 @@ class TranscriptStore:
         with path.open("a", encoding="utf-8") as fh:
             fh.write(turn.model_dump_json())
             fh.write("\n")
+        capture_transcript_turn(self._paths, turn)
         return turn
 
     def read_recent(self, key: SessionKey, *, limit: int = 20) -> list[TranscriptTurn]:
