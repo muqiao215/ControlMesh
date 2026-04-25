@@ -12,6 +12,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 
+from controlmesh.memory.models import MemoryScope
 from controlmesh.memory.store import daily_note_path, initialize_memory_v2
 from controlmesh.workspace.paths import ControlMeshPaths
 
@@ -33,6 +34,7 @@ class RepeatedPattern:
     note_dates: list[date] = field(default_factory=list)
     source_refs: list[str] = field(default_factory=list)
     category: str | None = None
+    scopes: list[MemoryScope] = field(default_factory=list)
 
 
 @dataclass
@@ -82,7 +84,9 @@ _SIGNAL_LINE_RE = re.compile(
 )
 
 _OPEN_CANDIDATE_LINE_RE = re.compile(
-    r"^- \[(?P<category>[a-z-]+)(?:\s+[a-z]+=[0-9.]+)*\] (?P<content>.+?)"
+    r"^- \[(?P<category>[a-z-]+)"
+    r"(?: (?P<scope>local|shared))?"
+    r"(?:\s+score=(?P<score>[0-9]+(?:\.[0-9]+)?))?\]\s+(?P<content>.+?)"
     r"(?:\s+\(confidence=[^)]+\))?"
     r"\s+\[oc:(?P<oc_id>[^\]]+)\]$"
 )
@@ -97,6 +101,7 @@ class _ParsedEntry:
     section: str
     marker_id: str
     category: str | None = None
+    scope: MemoryScope | None = None
 
 
 def _parse_events_section(section_text: str) -> list[_ParsedEntry]:
@@ -167,6 +172,7 @@ def _parse_open_candidates_section(section_text: str) -> list[_ParsedEntry]:
                 section="Open Candidates",
                 marker_id=m.group("oc_id"),
                 category=m.group("category"),
+                scope=MemoryScope(m.group("scope")) if m.group("scope") else MemoryScope.LOCAL,
             )
         )
     return entries
@@ -286,6 +292,14 @@ def find_repeated_patterns(
         first_date = occurrences[0][0]
         last_date = occurrences[-1][0]
         first_entry = occurrences[0][1]
+        scopes: list[MemoryScope] = []
+        if section == "Open Candidates":
+            seen_scopes: set[MemoryScope] = set()
+            for _occ_date, entry, _ref in occurrences:
+                if entry.scope is None or entry.scope in seen_scopes:
+                    continue
+                seen_scopes.add(entry.scope)
+                scopes.append(entry.scope)
 
         source_refs = sorted({occ[2] for occ in occurrences})
 
@@ -300,6 +314,7 @@ def find_repeated_patterns(
                 note_dates=note_dates,
                 source_refs=source_refs,
                 category=first_entry.category,
+                scopes=scopes,
             )
         )
 
@@ -339,7 +354,7 @@ def render_patterns_summary(result: PatternAnalysisResult, *, max_items: int = 1
         lines.append(f"### {section} ({len(section_patterns)})")
         for p in section_patterns[:max_items]:
             dates_label = ", ".join(d.isoformat() for d in p.note_dates)
-            extra = f" [{p.category}]" if p.category else ""
+            extra = _format_pattern_extra(p)
             lines.append(f"- **{p.count}x** {p.display_text[:70]}{extra}")
             lines.append(f"  __{dates_label}__")
         if len(section_patterns) > max_items:
@@ -347,3 +362,18 @@ def render_patterns_summary(result: PatternAnalysisResult, *, max_items: int = 1
         lines.append("")
 
     return "\n".join(lines).strip()
+
+
+def _format_pattern_extra(pattern: RepeatedPattern) -> str:
+    """Build the compact label suffix for one rendered repeated pattern."""
+    if pattern.section != "Open Candidates":
+        return f" [{pattern.category}]" if pattern.category else ""
+
+    label_parts: list[str] = []
+    if pattern.category:
+        label_parts.append(pattern.category)
+    if len(pattern.scopes) == 1:
+        label_parts.append(pattern.scopes[0].value)
+    elif len(pattern.scopes) > 1:
+        label_parts.append("local/shared")
+    return f" [{' '.join(label_parts)}]" if label_parts else ""

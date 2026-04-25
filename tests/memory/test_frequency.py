@@ -24,6 +24,7 @@ from controlmesh.memory.frequency import (
     find_repeated_patterns,
     render_patterns_summary,
 )
+from controlmesh.memory.models import MemoryScope
 from controlmesh.memory.store import ensure_daily_note
 from controlmesh.workspace.paths import ControlMeshPaths
 
@@ -215,6 +216,26 @@ class TestParseOpenCandidatesSection:
         assert entries[0].category == "preference"
         assert "score" not in entries[0].display_text  # score=0.90 is not part of content
 
+    def test_parses_open_candidate_with_shared_scope(self) -> None:
+        section = "- [fact shared] Shared repeated candidate (confidence=90%) [oc:shared123]"
+        entries = _parse_open_candidates_section(section)
+        assert len(entries) == 1
+        assert entries[0].category == "fact"
+        assert entries[0].scope == MemoryScope.SHARED
+
+    def test_parses_open_candidate_with_local_scope(self) -> None:
+        section = "- [fact local] Local repeated candidate (confidence=90%) [oc:local123]"
+        entries = _parse_open_candidates_section(section)
+        assert len(entries) == 1
+        assert entries[0].category == "fact"
+        assert entries[0].scope == MemoryScope.LOCAL
+
+    def test_open_candidate_without_scope_defaults_to_local(self) -> None:
+        section = "- [fact] Legacy local candidate (confidence=90%) [oc:legacy123]"
+        entries = _parse_open_candidates_section(section)
+        assert len(entries) == 1
+        assert entries[0].scope == MemoryScope.LOCAL
+
     def test_ignores_malformed_lines(self) -> None:
         section = "- [decision] Good one (confidence=80%) [oc:aaaa]\n- no marker here\n- [fact] Another [evt:bbbb]"
         entries = _parse_open_candidates_section(section)
@@ -350,6 +371,46 @@ class TestFindRepeatedPatterns:
         assert p.section == "Open Candidates"
         assert p.category == "decision"
         assert p.display_text == cand_text
+
+    def test_repeated_shared_open_candidates_preserve_shared_scope(self, tmp_path: Path) -> None:
+        paths = _make_paths(tmp_path)
+        shared_text = "Shared repeated candidate"
+        for day, marker in ((24, "shared24"), (25, "shared25")):
+            note_path = ensure_daily_note(paths, date(2026, 4, day))
+            note_path.write_text(
+                f"# Daily Memory: 2026-04-{day:02d}\n\n"
+                "## Events\n\n"
+                "## Signals\n\n"
+                "## Open Candidates\n"
+                f"- [fact shared] {shared_text} (confidence=80%) [oc:{marker}]\n",
+                encoding="utf-8",
+            )
+
+        result = find_repeated_patterns(paths, window_days=7, end_date=date(2026, 4, 25))
+
+        assert result.total_patterns == 1
+        assert result.patterns[0].section == "Open Candidates"
+        assert result.patterns[0].scopes == [MemoryScope.SHARED]
+
+    def test_repeated_legacy_open_candidates_default_to_local_scope(self, tmp_path: Path) -> None:
+        paths = _make_paths(tmp_path)
+        local_text = "Legacy repeated candidate"
+        for day, marker in ((24, "legacy24"), (25, "legacy25")):
+            note_path = ensure_daily_note(paths, date(2026, 4, day))
+            note_path.write_text(
+                f"# Daily Memory: 2026-04-{day:02d}\n\n"
+                "## Events\n\n"
+                "## Signals\n\n"
+                "## Open Candidates\n"
+                f"- [fact] {local_text} (confidence=80%) [oc:{marker}]\n",
+                encoding="utf-8",
+            )
+
+        result = find_repeated_patterns(paths, window_days=7, end_date=date(2026, 4, 25))
+
+        assert result.total_patterns == 1
+        assert result.patterns[0].section == "Open Candidates"
+        assert result.patterns[0].scopes == [MemoryScope.LOCAL]
 
     def test_three_different_repeated_items(self, tmp_path: Path) -> None:
         """Events, signals, and open candidates each repeat - all three found."""
@@ -719,6 +780,71 @@ class TestRenderPatternsSummary:
         )
         rendered = render_patterns_summary(result)
         assert "[decision]" in rendered
+
+    def test_open_candidate_scope_shown_when_present(self) -> None:
+        result = PatternAnalysisResult(
+            window_start=date(2026, 4, 19),
+            window_end=date(2026, 4, 25),
+            patterns=[
+                RepeatedPattern(
+                    normalized_key="shared repeated candidate",
+                    display_text="Shared repeated candidate",
+                    section="Open Candidates",
+                    count=2,
+                    first_seen=date(2026, 4, 23),
+                    last_seen=date(2026, 4, 24),
+                    note_dates=[date(2026, 4, 23), date(2026, 4, 24)],
+                    source_refs=[],
+                    category="fact",
+                    scopes=[MemoryScope.SHARED],
+                )
+            ],
+        )
+        rendered = render_patterns_summary(result)
+        assert "[fact shared]" in rendered
+
+    def test_open_candidate_default_local_scope_is_rendered(self) -> None:
+        result = PatternAnalysisResult(
+            window_start=date(2026, 4, 19),
+            window_end=date(2026, 4, 25),
+            patterns=[
+                RepeatedPattern(
+                    normalized_key="local repeated candidate",
+                    display_text="Local repeated candidate",
+                    section="Open Candidates",
+                    count=2,
+                    first_seen=date(2026, 4, 23),
+                    last_seen=date(2026, 4, 24),
+                    note_dates=[date(2026, 4, 23), date(2026, 4, 24)],
+                    source_refs=[],
+                    category="fact",
+                    scopes=[MemoryScope.LOCAL],
+                )
+            ],
+        )
+        rendered = render_patterns_summary(result)
+        assert "[fact local]" in rendered
+
+    def test_non_open_candidate_rendering_does_not_gain_scope_suffix(self) -> None:
+        result = PatternAnalysisResult(
+            window_start=date(2026, 4, 19),
+            window_end=date(2026, 4, 25),
+            patterns=[
+                RepeatedPattern(
+                    normalized_key="event text",
+                    display_text="Event text",
+                    section="Events",
+                    count=2,
+                    first_seen=date(2026, 4, 23),
+                    last_seen=date(2026, 4, 24),
+                    note_dates=[date(2026, 4, 23), date(2026, 4, 24)],
+                    source_refs=[],
+                )
+            ],
+        )
+        rendered = render_patterns_summary(result)
+        assert "- **2x** Event text" in rendered
+        assert "Event text [" not in rendered
 
     def test_section_grouping(self) -> None:
         patterns = [
