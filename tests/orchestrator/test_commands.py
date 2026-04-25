@@ -930,6 +930,175 @@ async def test_memory_promote_apply_with_low_score_filtered(orch: Orchestrator) 
     assert "Third fact" in authority_text
 
 
+# -- Phase 10: lifecycle mutation command tests --
+
+
+async def test_memory_deprecate_command_updates_memory(orch: Orchestrator) -> None:
+    """Test /memory deprecate <id> marks the entry deprecated in MEMORY.md."""
+    orch.paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n"
+        "## Durable Memory\n\n"
+        "### Fact\n"
+        "- Old fact to deprecate. _(id: dep001; status: active; scope: local; source: memory/2026-04-20.md#L3; promoted: 2026-04-20)_\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory deprecate dep001")
+
+    assert "deprecated" in result.text.lower()
+    # Verify MEMORY.md was actually updated
+    authority_text = orch.paths.authority_memory_path.read_text(encoding="utf-8")
+    assert "status: deprecated" in authority_text
+    assert "Old fact to deprecate" in authority_text
+
+
+async def test_memory_deprecate_not_found(orch: Orchestrator) -> None:
+    """Test /memory deprecate with unknown id returns clear not-found message."""
+    orch.paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n"
+        "## Durable Memory\n\n"
+        "### Fact\n"
+        "- Real fact. _(id: real001; status: active; scope: local; source: memory/2026-04-20.md#L3; promoted: 2026-04-20)_\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory deprecate nonexistent_id")
+
+    assert "No authority entry found" in result.text
+    # Verify no changes were made
+    authority_text = orch.paths.authority_memory_path.read_text(encoding="utf-8")
+    assert "status: active" in authority_text
+
+
+async def test_memory_deprecate_command_idempotent(orch: Orchestrator) -> None:
+    """Test /memory deprecate on already-deprecated entry succeeds and is idempotent."""
+    orch.paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n"
+        "## Durable Memory\n\n"
+        "### Fact\n"
+        "- Deprecated fact. _(id: dep002; status: deprecated; scope: local; source: memory/2026-04-20.md#L3; promoted: 2026-04-20)_\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory deprecate dep002")
+
+    assert "deprecated" in result.text.lower()
+    authority_text = orch.paths.authority_memory_path.read_text(encoding="utf-8")
+    # Content preserved and status unchanged
+    assert "Deprecated fact" in authority_text
+    assert "status: deprecated" in authority_text
+
+
+async def test_memory_dispute_command_updates_memory(orch: Orchestrator) -> None:
+    """Test /memory dispute <id> marks the entry disputed in MEMORY.md."""
+    orch.paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n"
+        "## Durable Memory\n\n"
+        "### Fact\n"
+        "- Disputed fact to fix. _(id: dis001; status: active; scope: local; source: memory/2026-04-21.md#L3; promoted: 2026-04-21)_\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory dispute dis001")
+
+    assert "disputed" in result.text.lower()
+    authority_text = orch.paths.authority_memory_path.read_text(encoding="utf-8")
+    assert "status: disputed" in authority_text
+    assert "Disputed fact to fix" in authority_text
+
+
+async def test_memory_dispute_not_found(orch: Orchestrator) -> None:
+    """Test /memory dispute with unknown id returns clear not-found message."""
+    orch.paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n"
+        "## Durable Memory\n\n"
+        "### Fact\n"
+        "- Real fact. _(id: real002; status: active; scope: local; source: memory/2026-04-21.md#L3; promoted: 2026-04-21)_\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory dispute nonexistent_id")
+
+    assert "No authority entry found" in result.text
+    authority_text = orch.paths.authority_memory_path.read_text(encoding="utf-8")
+    assert "status: active" in authority_text
+
+
+async def test_memory_dispute_command_idempotent(orch: Orchestrator) -> None:
+    """Test /memory dispute on already-disputed entry succeeds and is idempotent."""
+    orch.paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n"
+        "## Durable Memory\n\n"
+        "### Fact\n"
+        "- Disputed fact. _(id: dis002; status: disputed; scope: local; source: memory/2026-04-21.md#L3; promoted: 2026-04-21)_\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory dispute dis002")
+
+    assert "disputed" in result.text.lower()
+    authority_text = orch.paths.authority_memory_path.read_text(encoding="utf-8")
+    assert "Disputed fact" in authority_text
+    assert "status: disputed" in authority_text
+
+
+async def test_memory_supersede_command_updates_status_and_superseded_by(orch: Orchestrator) -> None:
+    """Test /memory supersede <old-id> <new-id> updates status and superseded_by in MEMORY.md."""
+    orch.paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n"
+        "## Durable Memory\n\n"
+        "### Decision\n"
+        "- Old decision being replaced. _(id: sup001; status: active; scope: local; source: memory/2026-04-22.md#L3; promoted: 2026-04-22)_\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory supersede sup001 newentryid")
+
+    assert "superseded" in result.text.lower()
+    assert "newentryid" in result.text
+    authority_text = orch.paths.authority_memory_path.read_text(encoding="utf-8")
+    assert "status: superseded" in authority_text
+    assert "superseded_by: newentryid" in authority_text
+    assert "Old decision being replaced" in authority_text
+
+
+async def test_memory_supersede_not_found(orch: Orchestrator) -> None:
+    """Test /memory supersede with unknown old id returns clear not-found message."""
+    orch.paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n"
+        "## Durable Memory\n\n"
+        "### Decision\n"
+        "- Real decision. _(id: real003; status: active; scope: local; source: memory/2026-04-22.md#L3; promoted: 2026-04-22)_\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory supersede nonexistent_id newid")
+
+    assert "No authority entry found" in result.text
+    authority_text = orch.paths.authority_memory_path.read_text(encoding="utf-8")
+    assert "status: active" in authority_text
+
+
+async def test_memory_supersede_command_idempotent(orch: Orchestrator) -> None:
+    """Test /memory supersede on already-superseded entry succeeds and is idempotent."""
+    orch.paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n"
+        "## Durable Memory\n\n"
+        "### Decision\n"
+        "- Old decision. _(id: sup002; status: superseded; scope: local; superseded_by: sameref; source: memory/2026-04-22.md#L3; promoted: 2026-04-22)_\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory supersede sup002 sameref")
+
+    assert "superseded" in result.text.lower()
+    assert "sameref" in result.text
+    authority_text = orch.paths.authority_memory_path.read_text(encoding="utf-8")
+    assert "Old decision" in authority_text
+    assert "status: superseded" in authority_text
+    assert "superseded_by: sameref" in authority_text
+
+
 # -- cmd_history --
 
 

@@ -416,3 +416,179 @@ def test_count_authority_entries_legacy_entries_default_to_local() -> None:
 
     counts_shared = _count_authority_entries(authority_text, scope=MemoryScope.SHARED)
     assert counts_shared.get("Fact", 0) == 0
+
+
+# --- Phase 10: Lifecycle mutation tests ---
+
+
+def test_deprecate_authority_entry_by_id(tmp_path: Path) -> None:
+    """Deprecating an active entry updates its status to deprecated."""
+    from controlmesh.memory.commands import deprecate_authority_entry
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+
+    # Inject an active entry directly into MEMORY.md
+    entry_line = "- Fact entry for deprecation. _(id: dep001; status: active; scope: local; source: memory/2026-04-20.md#L3; promoted: 2026-04-20)_"
+    authority_text = f"# ControlMesh Memory v2\n\n### Fact\n\n{entry_line}\n"
+    paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
+
+    result = deprecate_authority_entry(paths, "dep001")
+    assert result is True
+
+    updated = paths.authority_memory_path.read_text(encoding="utf-8")
+    assert "status: deprecated" in updated
+    assert "id: dep001" in updated
+    assert "Fact entry for deprecation" in updated
+
+
+def test_deprecate_authority_entry_not_found(tmp_path: Path) -> None:
+    """Deprecating a non-existent entry returns False."""
+    from controlmesh.memory.commands import deprecate_authority_entry
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    paths.authority_memory_path.write_text("# ControlMesh Memory v2\n", encoding="utf-8")
+
+    result = deprecate_authority_entry(paths, "nonexistent")
+    assert result is False
+
+
+def test_deprecate_authority_entry_idempotent(tmp_path: Path) -> None:
+    """Re-deprecating an already-deprecated entry succeeds (idempotent)."""
+    from controlmesh.memory.commands import deprecate_authority_entry
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+
+    entry_line = "- Fact entry. _(id: dep002; status: deprecated; scope: local; source: memory/2026-04-20.md#L3; promoted: 2026-04-20)_"
+    authority_text = f"# ControlMesh Memory v2\n\n### Fact\n\n{entry_line}\n"
+    paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
+
+    result = deprecate_authority_entry(paths, "dep002")
+    assert result is True
+
+    # Content unchanged
+    updated = paths.authority_memory_path.read_text(encoding="utf-8")
+    assert "status: deprecated" in updated
+
+
+def test_dispute_authority_entry_by_id(tmp_path: Path) -> None:
+    """Disputing an active entry updates its status to disputed."""
+    from controlmesh.memory.commands import dispute_authority_entry
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+
+    entry_line = "- Fact entry for disputing. _(id: dis001; status: active; scope: local; source: memory/2026-04-21.md#L3; promoted: 2026-04-21)_"
+    authority_text = f"# ControlMesh Memory v2\n\n### Fact\n\n{entry_line}\n"
+    paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
+
+    result = dispute_authority_entry(paths, "dis001")
+    assert result is True
+
+    updated = paths.authority_memory_path.read_text(encoding="utf-8")
+    assert "status: disputed" in updated
+    assert "id: dis001" in updated
+    assert "Fact entry for disputing" in updated
+
+
+def test_dispute_authority_entry_not_found(tmp_path: Path) -> None:
+    """Disputing a non-existent entry returns False."""
+    from controlmesh.memory.commands import dispute_authority_entry
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    paths.authority_memory_path.write_text("# ControlMesh Memory v2\n", encoding="utf-8")
+
+    result = dispute_authority_entry(paths, "nonexistent")
+    assert result is False
+
+
+def test_dispute_authority_entry_idempotent(tmp_path: Path) -> None:
+    """Re-disputing an already-disputed entry succeeds (idempotent)."""
+    from controlmesh.memory.commands import dispute_authority_entry
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+
+    entry_line = "- Fact entry. _(id: dis002; status: disputed; scope: local; source: memory/2026-04-21.md#L3; promoted: 2026-04-21)_"
+    authority_text = f"# ControlMesh Memory v2\n\n### Fact\n\n{entry_line}\n"
+    paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
+
+    result = dispute_authority_entry(paths, "dis002")
+    assert result is True
+
+    updated = paths.authority_memory_path.read_text(encoding="utf-8")
+    assert "status: disputed" in updated
+
+
+def test_supersede_authority_entry(tmp_path: Path) -> None:
+    """Superseding an entry sets status to superseded and records superseded_by."""
+    from controlmesh.memory.commands import supersede_authority_entry
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+
+    entry_line = "- Old fact being superseded. _(id: sup001; status: active; scope: local; source: memory/2026-04-22.md#L3; promoted: 2026-04-22)_"
+    authority_text = f"# ControlMesh Memory v2\n\n### Fact\n\n{entry_line}\n"
+    paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
+
+    result = supersede_authority_entry(paths, "sup001", "new001")
+    assert result is True
+
+    updated = paths.authority_memory_path.read_text(encoding="utf-8")
+    assert "status: superseded" in updated
+    assert "superseded_by: new001" in updated
+    assert "id: sup001" in updated
+    assert "Old fact being superseded" in updated
+
+
+def test_supersede_authority_entry_not_found(tmp_path: Path) -> None:
+    """Superseding a non-existent entry returns False."""
+    from controlmesh.memory.commands import supersede_authority_entry
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    paths.authority_memory_path.write_text("# ControlMesh Memory v2\n", encoding="utf-8")
+
+    result = supersede_authority_entry(paths, "nonexistent", "new001")
+    assert result is False
+
+
+def test_supersede_authority_entry_idempotent(tmp_path: Path) -> None:
+    """Re-superseding with the same new id succeeds (idempotent)."""
+    from controlmesh.memory.commands import supersede_authority_entry
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+
+    entry_line = "- Old fact. _(id: sup002; status: superseded; scope: local; superseded_by: new002; source: memory/2026-04-22.md#L3; promoted: 2026-04-22)_"
+    authority_text = f"# ControlMesh Memory v2\n\n### Fact\n\n{entry_line}\n"
+    paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
+
+    result = supersede_authority_entry(paths, "sup002", "new002")
+    assert result is True
+
+    updated = paths.authority_memory_path.read_text(encoding="utf-8")
+    assert "status: superseded" in updated
+    assert "superseded_by: new002" in updated
+
+
+def test_supersede_authority_entry_updates_superseded_by_field(tmp_path: Path) -> None:
+    """Superseding with a different new id updates the superseded_by field."""
+    from controlmesh.memory.commands import supersede_authority_entry
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+
+    entry_line = "- Old fact. _(id: sup003; status: superseded; scope: local; superseded_by: old_new; source: memory/2026-04-22.md#L3; promoted: 2026-04-22)_"
+    authority_text = f"# ControlMesh Memory v2\n\n### Fact\n\n{entry_line}\n"
+    paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
+
+    result = supersede_authority_entry(paths, "sup003", "updated_new")
+    assert result is True
+
+    updated = paths.authority_memory_path.read_text(encoding="utf-8")
+    assert "superseded_by: updated_new" in updated
+    assert "superseded_by: old_new" not in updated

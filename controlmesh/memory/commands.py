@@ -11,6 +11,7 @@ from controlmesh.memory.dreaming import apply_dreaming_sweep, preview_dreaming_s
 from controlmesh.memory.models import (
     AuthorityEntryMetadata,
     DreamingSweepResult,
+    LifecycleStatus,
     MemoryCategory,
     MemoryIndexSyncResult,
     MemoryScope,
@@ -25,6 +26,7 @@ from controlmesh.memory.promotion import (
     parse_authority_entry,
     parse_promotion_candidates,
     preview_candidates,
+    update_authority_entry_status,
 )
 from controlmesh.memory.search import search_memory_index, sync_memory_index
 from controlmesh.memory.store import daily_note_path, ensure_daily_note, initialize_memory_v2
@@ -378,3 +380,39 @@ def _count_authority_entries(
                     category_counts[current_category] = category_counts.get(current_category, 0) + 1
 
     return category_counts
+
+
+def deprecate_authority_entry(paths: ControlMeshPaths, entry_id: str) -> bool:
+    """Mark an authority entry as deprecated by its id.
+
+    Returns True if the entry was found and updated, False if not found.
+    Idempotent: re-deprecating an already-deprecated entry returns True with no change.
+    """
+    return update_authority_entry_status(
+        paths, entry_id, LifecycleStatus.DEPRECATED
+    )
+
+
+def dispute_authority_entry(paths: ControlMeshPaths, entry_id: str) -> bool:
+    """Mark an authority entry as disputed by its id.
+
+    Returns True if the entry was found and updated, False if not found.
+    Idempotent: re-disputing an already-disputed entry returns True with no change.
+    """
+    return update_authority_entry_status(
+        paths, entry_id, LifecycleStatus.DISPUTED
+    )
+
+
+def supersede_authority_entry(paths: ControlMeshPaths, old_entry_id: str, new_entry_id: str) -> bool:
+    """Mark an authority entry as superseded by another entry.
+
+    Returns True if the old entry was found and updated, False if not found.
+    Idempotent: re-superseding with the same new_entry_id returns True with no change.
+    """
+    return update_authority_entry_status(
+        paths,
+        old_entry_id,
+        LifecycleStatus.SUPERSEDED,
+        superseded_by=new_entry_id,
+    )

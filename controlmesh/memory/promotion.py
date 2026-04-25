@@ -293,6 +293,79 @@ def _insert_candidate(
     return "\n".join(lines).rstrip() + "\n"
 
 
+def update_authority_entry_status(
+    paths: ControlMeshPaths,
+    entry_id: str,
+    new_status: LifecycleStatus,
+    *,
+    superseded_by: str | None = None,
+) -> bool:
+    """Update the lifecycle status of an authority entry by its id.
+
+    Returns True if the entry was found and updated, False otherwise.
+    Updates are idempotent: re-setting the same status is a no-op (returns True).
+    When superseded_by is provided, it sets/updates the superseded_by field.
+    """
+    authority_path = paths.authority_memory_path
+    if not authority_path.exists():
+        return False
+
+    authority_text = authority_path.read_text(encoding="utf-8")
+    lines = authority_text.splitlines()
+    updated_lines: list[str] = []
+    found = False
+
+    for line in lines:
+        parsed = parse_authority_entry(line)
+        if parsed is not None:
+            content, meta = parsed
+            if meta.entry_id == entry_id:
+                found = True
+                # Idempotent: no change needed if status already matches
+                if meta.status == new_status and meta.superseded_by == superseded_by:
+                    updated_lines.append(line)
+                    continue
+                # Build replacement line with updated metadata
+                new_meta = AuthorityEntryMetadata(
+                    entry_id=meta.entry_id,
+                    status=new_status,
+                    scope=meta.scope,
+                    promoted_at=meta.promoted_at,
+                    source_ref=meta.source_ref,
+                    superseded_by=superseded_by if superseded_by is not None else meta.superseded_by,
+                    evidence_count=meta.evidence_count,
+                )
+                updated_line = _render_entry_from_metadata(content, new_meta)
+                updated_lines.append(updated_line)
+                continue
+        updated_lines.append(line)
+
+    if not found:
+        return False
+
+    updated_text = "\n".join(updated_lines) + "\n"
+    atomic_text_save(authority_path, updated_text)
+    sync_authority_to_legacy_mainmemory(paths, authority_text=updated_text)
+    return True
+
+
+def _render_entry_from_metadata(content: str, meta: AuthorityEntryMetadata) -> str:
+    """Render an authority entry line from content and metadata."""
+    parts = [
+        f"id: {meta.entry_id}",
+        f"status: {meta.status.value}",
+        f"scope: {meta.scope.value}",
+    ]
+    if meta.superseded_by:
+        parts.append(f"superseded_by: {meta.superseded_by}")
+    parts.extend([
+        f"source: {meta.source_ref}",
+        f"promoted: {meta.promoted_at}",
+    ])
+    meta_str = "; ".join(parts)
+    return f"- {content} _({meta_str})_"
+
+
 def _render_entry(candidate: PromotionCandidate, *, applied_on: date | None) -> str:
     promoted_on = (applied_on or datetime.now(UTC).date()).isoformat()
     source_ref = candidate.source_path

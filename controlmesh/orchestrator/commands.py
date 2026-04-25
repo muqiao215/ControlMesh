@@ -24,11 +24,14 @@ from controlmesh.infra.updater import check_source_upgrade_status
 from controlmesh.infra.version import check_latest_version, get_current_version
 from controlmesh.memory.commands import (
     apply_daily_note_promotions,
+    deprecate_authority_entry,
+    dispute_authority_entry,
     explain_authority_entry,
     preview_daily_note_promotions,
     render_daily_note_summary,
     render_memory_review,
     search_memory,
+    supersede_authority_entry,
 )
 from controlmesh.memory.frequency import find_repeated_patterns, render_patterns_summary
 from controlmesh.memory.semantic import search_semantic_index
@@ -442,7 +445,7 @@ async def cmd_controlmesh(orch: Orchestrator, key: SessionKey, text: str) -> Orc
     return await orch.dispatch_controlmesh_command(key, nested)
 
 
-_MEMORY_USAGE = "Usage: /memory [today|search <query>|semantic <query>|why <id>|review [--scope local|shared]|patterns|promote [apply]]"
+_MEMORY_USAGE = "Usage: /memory [today|search <query>|semantic <query>|why <id>|review [--scope local|shared]|patterns|deprecate <id>|dispute <id>|supersede <old-id> <new-id>|promote [apply]]"
 
 
 async def cmd_memory(orch: Orchestrator, _key: SessionKey, _text: str) -> OrchestratorResult:
@@ -477,6 +480,9 @@ async def cmd_memory(orch: Orchestrator, _key: SessionKey, _text: str) -> Orches
         "why": lambda: _cmd_memory_why(orch, parts),
         "patterns": lambda: _cmd_memory_patterns(orch),
         "promote": lambda: _cmd_memory_promote(orch, parts),
+        "deprecate": lambda: _cmd_memory_deprecate(orch, parts),
+        "dispute": lambda: _cmd_memory_dispute(orch, parts),
+        "supersede": lambda: _cmd_memory_supersede(orch, parts),
     }
     handler = _handlers.get(subcommand)
     if handler is not None:
@@ -659,6 +665,49 @@ async def _cmd_memory_full(orch: Orchestrator) -> OrchestratorResult:
             SEP,
             t("memory.filled_tip"),
         ),
+    )
+
+
+async def _cmd_memory_deprecate(orch: Orchestrator, parts: list[str]) -> OrchestratorResult:
+    """Handle /memory deprecate <entry-id>."""
+    if len(parts) < 3:
+        return OrchestratorResult(text="Usage: /memory deprecate <entry-id>")
+    entry_id = parts[2]
+    updated = await asyncio.to_thread(deprecate_authority_entry, orch.paths, entry_id)
+    if not updated:
+        return OrchestratorResult(text=f"No authority entry found with id: {entry_id}")
+    return OrchestratorResult(
+        text=f"Entry `{entry_id}` marked as deprecated.\n\n_Entry content is preserved; lifecycle status is now deprecated._"
+    )
+
+
+async def _cmd_memory_dispute(orch: Orchestrator, parts: list[str]) -> OrchestratorResult:
+    """Handle /memory dispute <entry-id>."""
+    if len(parts) < 3:
+        return OrchestratorResult(text="Usage: /memory dispute <entry-id>")
+    entry_id = parts[2]
+    updated = await asyncio.to_thread(dispute_authority_entry, orch.paths, entry_id)
+    if not updated:
+        return OrchestratorResult(text=f"No authority entry found with id: {entry_id}")
+    return OrchestratorResult(
+        text=f"Entry `{entry_id}` marked as disputed.\n\n_Entry content is preserved; lifecycle status is now disputed._"
+    )
+
+
+async def _cmd_memory_supersede(orch: Orchestrator, parts: list[str]) -> OrchestratorResult:
+    """Handle /memory supersede <old-entry-id> <new-entry-id>."""
+    if len(parts) < 4:
+        return OrchestratorResult(text="Usage: /memory supersede <old-entry-id> <new-entry-id>")
+    old_entry_id = parts[2]
+    new_entry_id = parts[3]
+    updated = await asyncio.to_thread(
+        supersede_authority_entry, orch.paths, old_entry_id, new_entry_id
+    )
+    if not updated:
+        return OrchestratorResult(text=f"No authority entry found with id: {old_entry_id}")
+    return OrchestratorResult(
+        text=f"Entry `{old_entry_id}` marked as superseded by `{new_entry_id}`.\n\n"
+        f"_Entry content is preserved; lifecycle status is now superseded._"
     )
 
 
