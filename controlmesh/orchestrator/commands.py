@@ -584,6 +584,8 @@ async def _cmd_memory_promote_preview(orch: Orchestrator) -> OrchestratorResult:
     """Handle /memory promote (preview only)."""
     from datetime import UTC, datetime
 
+    from controlmesh.memory.models import MemoryScope
+
     today = datetime.now(UTC).date()
     preview = await asyncio.to_thread(preview_daily_note_promotions, orch.paths, today)
 
@@ -599,7 +601,8 @@ async def _cmd_memory_promote_preview(orch: Orchestrator) -> OrchestratorResult:
     lines.append(f"__{len(preview.selected)} candidates ready to promote__")
     for cand in preview.selected:
         score_str = f" (score={cand.score})" if cand.score < 1.0 else ""
-        lines.append(f"- [{cand.category.value}]{score_str} {cand.content}")
+        scope_str = f" [{cand.scope.value}]" if cand.scope == MemoryScope.SHARED else ""
+        lines.append(f"- [{cand.category.value}]{scope_str}{score_str} {cand.content}")
 
     if preview.skipped_existing:
         lines.append(f"\n_skipped (already promoted): {preview.skipped_existing}_")

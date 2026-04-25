@@ -930,6 +930,35 @@ async def test_memory_promote_apply_with_low_score_filtered(orch: Orchestrator) 
     assert "Third fact" in authority_text
 
 
+async def test_memory_promote_preview_shows_scope_for_shared_candidates(orch: Orchestrator) -> None:
+    """Test /memory promote preview annotates shared candidates with [scope: shared]."""
+    from datetime import UTC, datetime
+
+    from controlmesh.memory.store import ensure_daily_note
+
+    today = datetime.now(UTC).date()
+    note_path = ensure_daily_note(orch.paths, today)
+    note_path.write_text(
+        f"# Daily Memory: {today.isoformat()}\n\n"
+        "## Promotion Candidates\n"
+        "- [decision shared] Team uses shared memory for cross-agent context.\n"
+        "- [fact local] Local fact without scope annotation should not show scope.\n"
+        "- [preference] Default preference is local - no scope shown.\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory promote")
+
+    assert "Promotion Preview" in result.text
+    # Shared candidate must show scope annotation
+    assert "[shared]" in result.text
+    assert "Team uses shared memory" in result.text
+    # Local/default candidates must NOT show scope annotation
+    assert "[local]" not in result.text
+    assert "Local fact without scope" in result.text
+    assert "Default preference is local" in result.text
+
+
 # -- Phase 10: lifecycle mutation command tests --
 
 

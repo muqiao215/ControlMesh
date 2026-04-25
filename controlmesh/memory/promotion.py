@@ -26,7 +26,7 @@ from controlmesh.workspace.paths import ControlMeshPaths
 
 _PROMOTION_SECTION_HEADING = "## Promotion Candidates"
 _PROMOTION_LINE_RE = re.compile(
-    r"^- \[(?P<category>[a-z-]+)(?:\s+score=(?P<score>[0-9]+(?:\.[0-9]+)?))?\]\s+(?P<content>.+)$"
+    r"^- \[(?P<category>[a-z-]+)(?: (?P<scope>local|shared))?(?:\s+score=(?P<score>[0-9]+(?:\.[0-9]+)?))?\]\s+(?P<content>.+)$"
 )
 
 # Pattern for parsing authority entry metadata from rendered entries
@@ -85,6 +85,8 @@ def parse_promotion_candidates(
         key_seed = f"{category.value}:{' '.join(content.split())}".encode()
         key = hashlib.sha256(key_seed).hexdigest()[:12]
         score_text = match.group("score")
+        scope_text = match.group("scope")
+        scope = MemoryScope(scope_text) if scope_text else MemoryScope.LOCAL
         candidates.append(
             PromotionCandidate(
                 key=key,
@@ -96,6 +98,7 @@ def parse_promotion_candidates(
                 line_start=line_number,
                 line_end=line_number,
                 score=float(score_text) if score_text else 1.0,
+                scope=scope,
             )
         )
     return candidates
@@ -377,7 +380,7 @@ def _render_entry(candidate: PromotionCandidate, *, applied_on: date | None) -> 
     meta_str = "; ".join([
         f"id: {entry_id}",
         f"status: {LifecycleStatus.ACTIVE.value}",
-        f"scope: {MemoryScope.LOCAL.value}",
+        f"scope: {candidate.scope.value}",
         f"source: {source_ref}",
         f"promoted: {promoted_on}",
     ])

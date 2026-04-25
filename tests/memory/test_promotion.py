@@ -15,7 +15,7 @@ from controlmesh.memory.compat import (
     _COMPAT_START_MARKER,
     sync_authority_to_legacy_mainmemory,
 )
-from controlmesh.memory.models import LifecycleStatus, MemoryScope
+from controlmesh.memory.models import LifecycleStatus, MemoryCategory, MemoryScope
 from controlmesh.memory.promotion import (
     parse_authority_entry,
     parse_authority_entry_metadata,
@@ -592,3 +592,203 @@ def test_supersede_authority_entry_updates_superseded_by_field(tmp_path: Path) -
     updated = paths.authority_memory_path.read_text(encoding="utf-8")
     assert "superseded_by: updated_new" in updated
     assert "superseded_by: old_new" not in updated
+
+
+# --- Phase 11: Scope-aware promotion tests ---
+
+
+def test_parse_promotion_candidates_with_explicit_shared_scope(tmp_path: Path) -> None:
+    """Candidates with explicit [category shared] format parse scope correctly."""
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    note_path = ensure_daily_note(paths, date(2026, 4, 25))
+    note_path.write_text(
+        """# Daily Memory: 2026-04-25
+
+## Promotion Candidates
+- [decision shared] Team uses shared memory for cross-agent context.
+- [fact shared] Project deadline is end of Q2.
+""",
+        encoding="utf-8",
+    )
+
+    candidates = parse_promotion_candidates(
+        note_path.read_text(encoding="utf-8"),
+        source_path=note_path.relative_to(paths.workspace),
+        source_date=date(2026, 4, 25),
+    )
+
+    assert len(candidates) == 2
+    assert all(c.scope == MemoryScope.SHARED for c in candidates)
+    assert candidates[0].category == MemoryCategory.DECISION
+    assert candidates[1].category == MemoryCategory.FACT
+    assert "cross-agent" in candidates[0].content
+
+
+def test_parse_promotion_candidates_with_explicit_local_scope(tmp_path: Path) -> None:
+    """Candidates with explicit [category local] format parse scope correctly."""
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    note_path = ensure_daily_note(paths, date(2026, 4, 25))
+    note_path.write_text(
+        """# Daily Memory: 2026-04-25
+
+## Promotion Candidates
+- [preference local] User prefers dark mode.
+""",
+        encoding="utf-8",
+    )
+
+    candidates = parse_promotion_candidates(
+        note_path.read_text(encoding="utf-8"),
+        source_path=note_path.relative_to(paths.workspace),
+        source_date=date(2026, 4, 25),
+    )
+
+    assert len(candidates) == 1
+    assert candidates[0].scope == MemoryScope.LOCAL
+    assert candidates[0].category == MemoryCategory.PREFERENCE
+
+
+def test_parse_promotion_candidates_defaults_to_local_when_no_scope(tmp_path: Path) -> None:
+    """Legacy candidates without explicit scope default to LOCAL scope."""
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    note_path = ensure_daily_note(paths, date(2026, 4, 25))
+    note_path.write_text(
+        """# Daily Memory: 2026-04-25
+
+## Promotion Candidates
+- [decision] Keep authority memory file-backed.
+- [fact] Simple fact without scope annotation.
+""",
+        encoding="utf-8",
+    )
+
+    candidates = parse_promotion_candidates(
+        note_path.read_text(encoding="utf-8"),
+        source_path=note_path.relative_to(paths.workspace),
+        source_date=date(2026, 4, 25),
+    )
+
+    assert len(candidates) == 2
+    assert all(c.scope == MemoryScope.LOCAL for c in candidates)
+
+
+def test_parse_promotion_candidates_shared_with_score(tmp_path: Path) -> None:
+    """Candidates with [category shared score=X] format parse correctly."""
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    note_path = ensure_daily_note(paths, date(2026, 4, 25))
+    note_path.write_text(
+        """# Daily Memory: 2026-04-25
+
+## Promotion Candidates
+- [decision shared score=0.95] Important team decision to share.
+""",
+        encoding="utf-8",
+    )
+
+    candidates = parse_promotion_candidates(
+        note_path.read_text(encoding="utf-8"),
+        source_path=note_path.relative_to(paths.workspace),
+        source_date=date(2026, 4, 25),
+    )
+
+    assert len(candidates) == 1
+    assert candidates[0].scope == MemoryScope.SHARED
+    assert candidates[0].score == 0.95
+    assert candidates[0].category == MemoryCategory.DECISION
+
+
+def test_apply_promotes_entry_with_scope_preserved(tmp_path: Path) -> None:
+    """Applied entries preserve explicit scope in rendered authority metadata."""
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    note_path = ensure_daily_note(paths, date(2026, 4, 25))
+    note_path.write_text(
+        """# Daily Memory: 2026-04-25
+
+## Promotion Candidates
+- [decision shared] Shared decision should retain shared scope.
+- [fact local] Local fact should retain local scope.
+""",
+        encoding="utf-8",
+    )
+
+    result = apply_daily_note_promotions(paths, date(2026, 4, 25))
+    assert result.applied_count == 2
+
+    memory_text = paths.authority_memory_path.read_text(encoding="utf-8")
+
+    # Verify shared entry has scope: shared
+    shared_found = False
+    local_found = False
+    for line in memory_text.splitlines():
+        if "Shared decision should retain shared scope" in line:
+            assert "scope: shared" in line
+            shared_found = True
+        if "Local fact should retain local scope" in line:
+            assert "scope: local" in line
+            local_found = True
+
+    assert shared_found, "Shared decision entry not found in authority memory"
+    assert local_found, "Local fact entry not found in authority memory"
+
+
+def test_apply_shared_entry_round_trip(tmp_path: Path) -> None:
+    """A promoted shared entry can be parsed back with correct scope."""
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    note_path = ensure_daily_note(paths, date(2026, 4, 25))
+    note_path.write_text(
+        """# Daily Memory: 2026-04-25
+
+## Promotion Candidates
+- [preference shared] Team preference for standup time.
+""",
+        encoding="utf-8",
+    )
+
+    result = apply_daily_note_promotions(paths, date(2026, 4, 25))
+    assert result.applied_count == 1
+
+    # Read and parse the authority entry
+    memory_text = paths.authority_memory_path.read_text(encoding="utf-8")
+    for line in memory_text.splitlines():
+        if "Team preference for standup time" in line:
+            parsed = parse_authority_entry(line)
+            assert parsed is not None
+            content, meta = parsed
+            assert meta.scope == MemoryScope.SHARED
+            assert "Team preference for standup time" in content
+            return
+
+    raise AssertionError("Authority entry not found")
+
+
+def test_preview_shows_scope_for_shared_candidates(tmp_path: Path) -> None:
+    """Preview output includes scope indicator for shared candidates."""
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    note_path = ensure_daily_note(paths, date(2026, 4, 25))
+    note_path.write_text(
+        """# Daily Memory: 2026-04-25
+
+## Promotion Candidates
+- [decision shared] This is a shared decision.
+- [fact] This is a local fact (no scope shown).
+""",
+        encoding="utf-8",
+    )
+
+    from controlmesh.memory.commands import preview_daily_note_promotions
+
+    preview = preview_daily_note_promotions(paths, date(2026, 4, 25))
+
+    assert len(preview.selected) == 2
+    shared_cand = next(c for c in preview.selected if "shared" in c.content.lower())
+    local_cand = next(c for c in preview.selected if "local" in c.content.lower())
+
+    assert shared_cand.scope == MemoryScope.SHARED
+    assert local_cand.scope == MemoryScope.LOCAL

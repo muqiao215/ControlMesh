@@ -33,6 +33,18 @@ class PromotionSourceKind(StrEnum):
     MANUAL = "manual"
 
 
+class MemoryScope(StrEnum):
+    """Scope of a memory entry: local (private) or shared (explicitly shared).
+
+    Entries default to LOCAL to preserve backward compatibility with existing
+    authority entries. SHARED entries are explicitly opted-in and represent
+    information intended for cross-agent or shared contexts.
+    """
+
+    LOCAL = "local"
+    SHARED = "shared"
+
+
 class PromotionCandidate(BaseModel):
     """A deterministic promotion candidate ready for preview/apply."""
 
@@ -45,6 +57,7 @@ class PromotionCandidate(BaseModel):
     line_start: int | None = None
     line_end: int | None = None
     score: float = 1.0
+    scope: MemoryScope = MemoryScope.LOCAL
 
     @field_validator("content")
     @classmethod
@@ -168,18 +181,6 @@ class LifecycleStatus(StrEnum):
     DEPRECATED = "deprecated"
     SUPERSEDED = "superseded"
     DISPUTED = "disputed"
-
-
-class MemoryScope(StrEnum):
-    """Scope of a memory entry: local (private) or shared (explicitly shared).
-
-    Entries default to LOCAL to preserve backward compatibility with existing
-    authority entries. SHARED entries are explicitly opted-in and represent
-    information intended for cross-agent or shared contexts.
-    """
-
-    LOCAL = "local"
-    SHARED = "shared"
 
 
 class AuthorityEntryMetadata(BaseModel):
