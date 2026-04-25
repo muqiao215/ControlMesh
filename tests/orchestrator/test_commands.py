@@ -1462,6 +1462,111 @@ async def test_memory_supersede_command_idempotent(orch: Orchestrator) -> None:
     assert "superseded_by: sameref" in authority_text
 
 
+# -- Phase 18: scope-aware lifecycle mutation response surface --
+
+
+async def test_memory_deprecate_command_includes_local_scope_in_response(orch: Orchestrator) -> None:
+    """Test /memory deprecate success response includes [local] scope indicator."""
+    orch.paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n"
+        "## Durable Memory\n\n"
+        "### Fact\n"
+        "- Local fact to deprecate. _(id: ph18dl001; status: active; scope: local; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory deprecate ph18dl001")
+
+    assert "deprecated" in result.text.lower()
+    assert "[local]" in result.text
+    assert "ph18dl001" in result.text
+
+
+async def test_memory_deprecate_command_includes_shared_scope_in_response(orch: Orchestrator) -> None:
+    """Test /memory deprecate success response includes [shared] scope indicator."""
+    orch.paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n"
+        "## Durable Memory\n\n"
+        "### Decision\n"
+        "- Shared decision to deprecate. _(id: ph18ds001; status: active; scope: shared; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory deprecate ph18ds001")
+
+    assert "deprecated" in result.text.lower()
+    assert "[shared]" in result.text
+    assert "ph18ds001" in result.text
+
+
+async def test_memory_dispute_command_includes_local_scope_in_response(orch: Orchestrator) -> None:
+    """Test /memory dispute success response includes [local] scope indicator."""
+    orch.paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n"
+        "## Durable Memory\n\n"
+        "### Fact\n"
+        "- Local fact to dispute. _(id: ph18dpl001; status: active; scope: local; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory dispute ph18dpl001")
+
+    assert "disputed" in result.text.lower()
+    assert "[local]" in result.text
+    assert "ph18dpl001" in result.text
+
+
+async def test_memory_dispute_command_includes_shared_scope_in_response(orch: Orchestrator) -> None:
+    """Test /memory dispute success response includes [shared] scope indicator."""
+    orch.paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n"
+        "## Durable Memory\n\n"
+        "### Decision\n"
+        "- Shared decision to dispute. _(id: ph18dps001; status: active; scope: shared; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory dispute ph18dps001")
+
+    assert "disputed" in result.text.lower()
+    assert "[shared]" in result.text
+    assert "ph18dps001" in result.text
+
+
+async def test_memory_supersede_command_includes_local_scope_in_response(orch: Orchestrator) -> None:
+    """Test /memory supersede success response includes [local] scope indicator."""
+    orch.paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n"
+        "## Durable Memory\n\n"
+        "### Decision\n"
+        "- Local decision to supersede. _(id: ph18supl001; status: active; scope: local; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory supersede ph18supl001 newid001")
+
+    assert "superseded" in result.text.lower()
+    assert "[local]" in result.text
+    assert "ph18supl001" in result.text
+
+
+async def test_memory_supersede_command_includes_shared_scope_in_response(orch: Orchestrator) -> None:
+    """Test /memory supersede success response includes [shared] scope indicator."""
+    orch.paths.authority_memory_path.write_text(
+        "# ControlMesh Memory v2\n\n"
+        "## Durable Memory\n\n"
+        "### Decision\n"
+        "- Shared decision to supersede. _(id: ph18sups001; status: active; scope: shared; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory supersede ph18sups001 newid002")
+
+    assert "superseded" in result.text.lower()
+    assert "[shared]" in result.text
+    assert "ph18sups001" in result.text
+
+
 # -- cmd_history --
 
 

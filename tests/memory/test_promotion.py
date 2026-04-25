@@ -433,8 +433,9 @@ def test_deprecate_authority_entry_by_id(tmp_path: Path) -> None:
     authority_text = f"# ControlMesh Memory v2\n\n### Fact\n\n{entry_line}\n"
     paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
 
-    result = deprecate_authority_entry(paths, "dep001")
-    assert result is True
+    success, scope = deprecate_authority_entry(paths, "dep001")
+    assert success is True
+    assert scope == MemoryScope.LOCAL
 
     updated = paths.authority_memory_path.read_text(encoding="utf-8")
     assert "status: deprecated" in updated
@@ -443,19 +444,20 @@ def test_deprecate_authority_entry_by_id(tmp_path: Path) -> None:
 
 
 def test_deprecate_authority_entry_not_found(tmp_path: Path) -> None:
-    """Deprecating a non-existent entry returns False."""
+    """Deprecating a non-existent entry returns False with no scope."""
     from controlmesh.memory.commands import deprecate_authority_entry
 
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
     paths.authority_memory_path.write_text("# ControlMesh Memory v2\n", encoding="utf-8")
 
-    result = deprecate_authority_entry(paths, "nonexistent")
-    assert result is False
+    success, scope = deprecate_authority_entry(paths, "nonexistent")
+    assert success is False
+    assert scope is None
 
 
 def test_deprecate_authority_entry_idempotent(tmp_path: Path) -> None:
-    """Re-deprecating an already-deprecated entry succeeds (idempotent)."""
+    """Re-deprecating an already-deprecated entry succeeds (idempotent) and returns scope."""
     from controlmesh.memory.commands import deprecate_authority_entry
 
     paths = _make_paths(tmp_path)
@@ -465,8 +467,9 @@ def test_deprecate_authority_entry_idempotent(tmp_path: Path) -> None:
     authority_text = f"# ControlMesh Memory v2\n\n### Fact\n\n{entry_line}\n"
     paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
 
-    result = deprecate_authority_entry(paths, "dep002")
-    assert result is True
+    success, scope = deprecate_authority_entry(paths, "dep002")
+    assert success is True
+    assert scope == MemoryScope.LOCAL
 
     # Content unchanged
     updated = paths.authority_memory_path.read_text(encoding="utf-8")
@@ -484,8 +487,9 @@ def test_dispute_authority_entry_by_id(tmp_path: Path) -> None:
     authority_text = f"# ControlMesh Memory v2\n\n### Fact\n\n{entry_line}\n"
     paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
 
-    result = dispute_authority_entry(paths, "dis001")
-    assert result is True
+    success, scope = dispute_authority_entry(paths, "dis001")
+    assert success is True
+    assert scope == MemoryScope.LOCAL
 
     updated = paths.authority_memory_path.read_text(encoding="utf-8")
     assert "status: disputed" in updated
@@ -494,19 +498,20 @@ def test_dispute_authority_entry_by_id(tmp_path: Path) -> None:
 
 
 def test_dispute_authority_entry_not_found(tmp_path: Path) -> None:
-    """Disputing a non-existent entry returns False."""
+    """Disputing a non-existent entry returns False with no scope."""
     from controlmesh.memory.commands import dispute_authority_entry
 
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
     paths.authority_memory_path.write_text("# ControlMesh Memory v2\n", encoding="utf-8")
 
-    result = dispute_authority_entry(paths, "nonexistent")
-    assert result is False
+    success, scope = dispute_authority_entry(paths, "nonexistent")
+    assert success is False
+    assert scope is None
 
 
 def test_dispute_authority_entry_idempotent(tmp_path: Path) -> None:
-    """Re-disputing an already-disputed entry succeeds (idempotent)."""
+    """Re-disputing an already-disputed entry succeeds (idempotent) and returns scope."""
     from controlmesh.memory.commands import dispute_authority_entry
 
     paths = _make_paths(tmp_path)
@@ -516,8 +521,9 @@ def test_dispute_authority_entry_idempotent(tmp_path: Path) -> None:
     authority_text = f"# ControlMesh Memory v2\n\n### Fact\n\n{entry_line}\n"
     paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
 
-    result = dispute_authority_entry(paths, "dis002")
-    assert result is True
+    success, scope = dispute_authority_entry(paths, "dis002")
+    assert success is True
+    assert scope == MemoryScope.LOCAL
 
     updated = paths.authority_memory_path.read_text(encoding="utf-8")
     assert "status: disputed" in updated
@@ -534,8 +540,9 @@ def test_supersede_authority_entry(tmp_path: Path) -> None:
     authority_text = f"# ControlMesh Memory v2\n\n### Fact\n\n{entry_line}\n"
     paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
 
-    result = supersede_authority_entry(paths, "sup001", "new001")
-    assert result is True
+    success, scope = supersede_authority_entry(paths, "sup001", "new001")
+    assert success is True
+    assert scope == MemoryScope.LOCAL
 
     updated = paths.authority_memory_path.read_text(encoding="utf-8")
     assert "status: superseded" in updated
@@ -545,19 +552,20 @@ def test_supersede_authority_entry(tmp_path: Path) -> None:
 
 
 def test_supersede_authority_entry_not_found(tmp_path: Path) -> None:
-    """Superseding a non-existent entry returns False."""
+    """Superseding a non-existent entry returns False with no scope."""
     from controlmesh.memory.commands import supersede_authority_entry
 
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
     paths.authority_memory_path.write_text("# ControlMesh Memory v2\n", encoding="utf-8")
 
-    result = supersede_authority_entry(paths, "nonexistent", "new001")
-    assert result is False
+    success, scope = supersede_authority_entry(paths, "nonexistent", "new001")
+    assert success is False
+    assert scope is None
 
 
 def test_supersede_authority_entry_idempotent(tmp_path: Path) -> None:
-    """Re-superseding with the same new id succeeds (idempotent)."""
+    """Re-superseding with the same new id succeeds (idempotent) and returns scope."""
     from controlmesh.memory.commands import supersede_authority_entry
 
     paths = _make_paths(tmp_path)
@@ -567,8 +575,9 @@ def test_supersede_authority_entry_idempotent(tmp_path: Path) -> None:
     authority_text = f"# ControlMesh Memory v2\n\n### Fact\n\n{entry_line}\n"
     paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
 
-    result = supersede_authority_entry(paths, "sup002", "new002")
-    assert result is True
+    success, scope = supersede_authority_entry(paths, "sup002", "new002")
+    assert success is True
+    assert scope == MemoryScope.LOCAL
 
     updated = paths.authority_memory_path.read_text(encoding="utf-8")
     assert "status: superseded" in updated
@@ -586,8 +595,9 @@ def test_supersede_authority_entry_updates_superseded_by_field(tmp_path: Path) -
     authority_text = f"# ControlMesh Memory v2\n\n### Fact\n\n{entry_line}\n"
     paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
 
-    result = supersede_authority_entry(paths, "sup003", "updated_new")
-    assert result is True
+    success, scope = supersede_authority_entry(paths, "sup003", "updated_new")
+    assert success is True
+    assert scope == MemoryScope.LOCAL
 
     updated = paths.authority_memory_path.read_text(encoding="utf-8")
     assert "superseded_by: updated_new" in updated
@@ -1258,3 +1268,196 @@ def test_explain_authority_entry_command_output_includes_scope(tmp_path: Path) -
     assert local_result is not None
     assert "**Scope:** local" in local_result
     assert "Local user preference" in local_result
+
+
+# --- Phase 18: Scope-aware lifecycle mutation responses ---
+
+
+def test_deprecate_authority_entry_returns_scope_for_local_entry(tmp_path: Path) -> None:
+    """Deprecating a local entry returns LOCAL scope."""
+    from controlmesh.memory.commands import deprecate_authority_entry
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+
+    entry_line = "- Local fact being deprecated. _(id: ph18dl001; status: active; scope: local; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_"
+    authority_text = f"# ControlMesh Memory v2\n\n### Fact\n\n{entry_line}\n"
+    paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
+
+    success, scope = deprecate_authority_entry(paths, "ph18dl001")
+    assert success is True
+    assert scope == MemoryScope.LOCAL
+
+
+def test_deprecate_authority_entry_returns_scope_for_shared_entry(tmp_path: Path) -> None:
+    """Deprecating a shared entry returns SHARED scope."""
+    from controlmesh.memory.commands import deprecate_authority_entry
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+
+    entry_line = "- Shared decision being deprecated. _(id: ph18ds001; status: active; scope: shared; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_"
+    authority_text = f"# ControlMesh Memory v2\n\n### Decision\n\n{entry_line}\n"
+    paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
+
+    success, scope = deprecate_authority_entry(paths, "ph18ds001")
+    assert success is True
+    assert scope == MemoryScope.SHARED
+
+
+def test_dispute_authority_entry_returns_scope_for_local_entry(tmp_path: Path) -> None:
+    """Disputing a local entry returns LOCAL scope."""
+    from controlmesh.memory.commands import dispute_authority_entry
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+
+    entry_line = "- Local fact being disputed. _(id: ph18dpl001; status: active; scope: local; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_"
+    authority_text = f"# ControlMesh Memory v2\n\n### Fact\n\n{entry_line}\n"
+    paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
+
+    success, scope = dispute_authority_entry(paths, "ph18dpl001")
+    assert success is True
+    assert scope == MemoryScope.LOCAL
+
+
+def test_dispute_authority_entry_returns_scope_for_shared_entry(tmp_path: Path) -> None:
+    """Disputing a shared entry returns SHARED scope."""
+    from controlmesh.memory.commands import dispute_authority_entry
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+
+    entry_line = "- Shared decision being disputed. _(id: ph18dps001; status: active; scope: shared; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_"
+    authority_text = f"# ControlMesh Memory v2\n\n### Decision\n\n{entry_line}\n"
+    paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
+
+    success, scope = dispute_authority_entry(paths, "ph18dps001")
+    assert success is True
+    assert scope == MemoryScope.SHARED
+
+
+def test_supersede_authority_entry_returns_scope_for_local_entry(tmp_path: Path) -> None:
+    """Superseding a local entry returns LOCAL scope."""
+    from controlmesh.memory.commands import supersede_authority_entry
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+
+    entry_line = "- Local fact being superseded. _(id: ph18supl001; status: active; scope: local; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_"
+    authority_text = f"# ControlMesh Memory v2\n\n### Fact\n\n{entry_line}\n"
+    paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
+
+    success, scope = supersede_authority_entry(paths, "ph18supl001", "new_entry_id")
+    assert success is True
+    assert scope == MemoryScope.LOCAL
+
+
+def test_supersede_authority_entry_returns_scope_for_shared_entry(tmp_path: Path) -> None:
+    """Superseding a shared entry returns SHARED scope."""
+    from controlmesh.memory.commands import supersede_authority_entry
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+
+    entry_line = "- Shared decision being superseded. _(id: ph18sups001; status: active; scope: shared; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_"
+    authority_text = f"# ControlMesh Memory v2\n\n### Decision\n\n{entry_line}\n"
+    paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
+
+    success, scope = supersede_authority_entry(paths, "ph18sups001", "new_entry_id")
+    assert success is True
+    assert scope == MemoryScope.SHARED
+
+
+def test_deprecate_authority_entry_not_found_returns_none_scope(tmp_path: Path) -> None:
+    """Deprecating a non-existent entry returns None scope (not-found behavior unchanged)."""
+    from controlmesh.memory.commands import deprecate_authority_entry
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    paths.authority_memory_path.write_text("# ControlMesh Memory v2\n", encoding="utf-8")
+
+    success, scope = deprecate_authority_entry(paths, "nonexistent")
+    assert success is False
+    assert scope is None
+
+
+def test_dispute_authority_entry_not_found_returns_none_scope(tmp_path: Path) -> None:
+    """Disputing a non-existent entry returns None scope (not-found behavior unchanged)."""
+    from controlmesh.memory.commands import dispute_authority_entry
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    paths.authority_memory_path.write_text("# ControlMesh Memory v2\n", encoding="utf-8")
+
+    success, scope = dispute_authority_entry(paths, "nonexistent")
+    assert success is False
+    assert scope is None
+
+
+def test_supersede_authority_entry_not_found_returns_none_scope(tmp_path: Path) -> None:
+    """Superseding a non-existent entry returns None scope (not-found behavior unchanged)."""
+    from controlmesh.memory.commands import supersede_authority_entry
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    paths.authority_memory_path.write_text("# ControlMesh Memory v2\n", encoding="utf-8")
+
+    success, scope = supersede_authority_entry(paths, "nonexistent", "new_id")
+    assert success is False
+    assert scope is None
+
+
+def test_deprecate_authority_entry_legacy_entry_defaults_to_local_scope(tmp_path: Path) -> None:
+    """Deprecating a legacy entry (no explicit scope) returns LOCAL scope."""
+    from controlmesh.memory.commands import deprecate_authority_entry
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+
+    # Legacy entry format: no scope field in metadata
+    entry_line = "- Legacy fact without scope. _(id: ph18leg001; status: active; source: memory/2026-04-01.md#L3; promoted: 2026-04-01)_"
+    authority_text = f"# ControlMesh Memory v2\n\n### Fact\n\n{entry_line}\n"
+    paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
+
+    success, scope = deprecate_authority_entry(paths, "ph18leg001")
+    assert success is True
+    # Legacy entries default to LOCAL scope
+    assert scope == MemoryScope.LOCAL
+
+
+def test_dispute_authority_entry_legacy_entry_defaults_to_local_scope(tmp_path: Path) -> None:
+    """Disputing a legacy entry (no explicit scope) returns LOCAL scope."""
+    from controlmesh.memory.commands import dispute_authority_entry
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+
+    # Legacy entry format: no scope field in metadata
+    entry_line = "- Legacy preference without scope. _(id: ph18leg002; status: active; source: memory/2026-04-01.md#L3; promoted: 2026-04-01)_"
+    authority_text = f"# ControlMesh Memory v2\n\n### Preference\n\n{entry_line}\n"
+    paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
+
+    success, scope = dispute_authority_entry(paths, "ph18leg002")
+    assert success is True
+    # Legacy entries default to LOCAL scope
+    assert scope == MemoryScope.LOCAL
+
+
+def test_supersede_authority_entry_legacy_entry_defaults_to_local_scope(tmp_path: Path) -> None:
+    """Superseding a legacy entry (no explicit scope) returns LOCAL scope."""
+    from controlmesh.memory.commands import supersede_authority_entry
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+
+    # Legacy entry format: no scope field in metadata
+    entry_line = "- Legacy decision without scope. _(id: ph18leg003; status: active; source: memory/2026-04-01.md#L3; promoted: 2026-04-01)_"
+    authority_text = f"# ControlMesh Memory v2\n\n### Decision\n\n{entry_line}\n"
+    paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
+
+    success, scope = supersede_authority_entry(paths, "ph18leg003", "new_entry")
+    assert success is True
+    # Legacy entries default to LOCAL scope
+    assert scope == MemoryScope.LOCAL
+

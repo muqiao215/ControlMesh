@@ -718,11 +718,12 @@ async def _cmd_memory_deprecate(orch: Orchestrator, parts: list[str]) -> Orchest
     if len(parts) < 3:
         return OrchestratorResult(text="Usage: /memory deprecate <entry-id>")
     entry_id = parts[2]
-    updated = await asyncio.to_thread(deprecate_authority_entry, orch.paths, entry_id)
+    updated, scope = await asyncio.to_thread(deprecate_authority_entry, orch.paths, entry_id)
     if not updated:
         return OrchestratorResult(text=f"No authority entry found with id: {entry_id}")
+    scope_str = f" [{scope.value}]" if scope else ""
     return OrchestratorResult(
-        text=f"Entry `{entry_id}` marked as deprecated.\n\n_Entry content is preserved; lifecycle status is now deprecated._"
+        text=f"Entry `{entry_id}`{scope_str} marked as deprecated.\n\n_Entry content is preserved; lifecycle status is now deprecated._"
     )
 
 
@@ -731,11 +732,12 @@ async def _cmd_memory_dispute(orch: Orchestrator, parts: list[str]) -> Orchestra
     if len(parts) < 3:
         return OrchestratorResult(text="Usage: /memory dispute <entry-id>")
     entry_id = parts[2]
-    updated = await asyncio.to_thread(dispute_authority_entry, orch.paths, entry_id)
+    updated, scope = await asyncio.to_thread(dispute_authority_entry, orch.paths, entry_id)
     if not updated:
         return OrchestratorResult(text=f"No authority entry found with id: {entry_id}")
+    scope_str = f" [{scope.value}]" if scope else ""
     return OrchestratorResult(
-        text=f"Entry `{entry_id}` marked as disputed.\n\n_Entry content is preserved; lifecycle status is now disputed._"
+        text=f"Entry `{entry_id}`{scope_str} marked as disputed.\n\n_Entry content is preserved; lifecycle status is now disputed._"
     )
 
 
@@ -745,13 +747,14 @@ async def _cmd_memory_supersede(orch: Orchestrator, parts: list[str]) -> Orchest
         return OrchestratorResult(text="Usage: /memory supersede <old-entry-id> <new-entry-id>")
     old_entry_id = parts[2]
     new_entry_id = parts[3]
-    updated = await asyncio.to_thread(
+    updated, scope = await asyncio.to_thread(
         supersede_authority_entry, orch.paths, old_entry_id, new_entry_id
     )
     if not updated:
         return OrchestratorResult(text=f"No authority entry found with id: {old_entry_id}")
+    scope_str = f" [{scope.value}]" if scope else ""
     return OrchestratorResult(
-        text=f"Entry `{old_entry_id}` marked as superseded by `{new_entry_id}`.\n\n"
+        text=f"Entry `{old_entry_id}`{scope_str} marked as superseded by `{new_entry_id}`.\n\n"
         f"_Entry content is preserved; lifecycle status is now superseded._"
     )
 

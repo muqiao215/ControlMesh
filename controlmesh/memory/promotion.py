@@ -309,21 +309,23 @@ def update_authority_entry_status(
     new_status: LifecycleStatus,
     *,
     superseded_by: str | None = None,
-) -> bool:
+) -> tuple[bool, MemoryScope | None]:
     """Update the lifecycle status of an authority entry by its id.
 
-    Returns True if the entry was found and updated, False otherwise.
-    Updates are idempotent: re-setting the same status is a no-op (returns True).
+    Returns (True, scope) if the entry was found and updated (or already had that status).
+    Returns (False, None) if the entry was not found.
+    Updates are idempotent: re-setting the same status is a no-op (returns True with the entry scope).
     When superseded_by is provided, it sets/updates the superseded_by field.
     """
     authority_path = paths.authority_memory_path
     if not authority_path.exists():
-        return False
+        return (False, None)
 
     authority_text = authority_path.read_text(encoding="utf-8")
     lines = authority_text.splitlines()
     updated_lines: list[str] = []
     found = False
+    found_scope: MemoryScope | None = None
 
     for line in lines:
         parsed = parse_authority_entry(line)
@@ -331,6 +333,7 @@ def update_authority_entry_status(
             content, meta = parsed
             if meta.entry_id == entry_id:
                 found = True
+                found_scope = meta.scope
                 # Idempotent: no change needed if status already matches
                 if meta.status == new_status and meta.superseded_by == superseded_by:
                     updated_lines.append(line)
@@ -351,12 +354,12 @@ def update_authority_entry_status(
         updated_lines.append(line)
 
     if not found:
-        return False
+        return (False, None)
 
     updated_text = "\n".join(updated_lines) + "\n"
     atomic_text_save(authority_path, updated_text)
     sync_authority_to_legacy_mainmemory(paths, authority_text=updated_text)
-    return True
+    return (True, found_scope)
 
 
 def _render_entry_from_metadata(content: str, meta: AuthorityEntryMetadata) -> str:

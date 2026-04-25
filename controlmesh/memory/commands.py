@@ -387,33 +387,36 @@ def _count_authority_entries(
     return category_counts
 
 
-def deprecate_authority_entry(paths: ControlMeshPaths, entry_id: str) -> bool:
+def deprecate_authority_entry(paths: ControlMeshPaths, entry_id: str) -> tuple[bool, MemoryScope | None]:
     """Mark an authority entry as deprecated by its id.
 
-    Returns True if the entry was found and updated, False if not found.
-    Idempotent: re-deprecating an already-deprecated entry returns True with no change.
+    Returns (True, scope) if the entry was found and updated (or already had that status).
+    Returns (False, None) if not found.
+    Idempotent: re-deprecating an already-deprecated entry returns (True, scope) with no change.
     """
     return update_authority_entry_status(
         paths, entry_id, LifecycleStatus.DEPRECATED
     )
 
 
-def dispute_authority_entry(paths: ControlMeshPaths, entry_id: str) -> bool:
+def dispute_authority_entry(paths: ControlMeshPaths, entry_id: str) -> tuple[bool, MemoryScope | None]:
     """Mark an authority entry as disputed by its id.
 
-    Returns True if the entry was found and updated, False if not found.
-    Idempotent: re-disputing an already-disputed entry returns True with no change.
+    Returns (True, scope) if the entry was found and updated (or already had that status).
+    Returns (False, None) if not found.
+    Idempotent: re-disputing an already-disputed entry returns (True, scope) with no change.
     """
     return update_authority_entry_status(
         paths, entry_id, LifecycleStatus.DISPUTED
     )
 
 
-def supersede_authority_entry(paths: ControlMeshPaths, old_entry_id: str, new_entry_id: str) -> bool:
+def supersede_authority_entry(paths: ControlMeshPaths, old_entry_id: str, new_entry_id: str) -> tuple[bool, MemoryScope | None]:
     """Mark an authority entry as superseded by another entry.
 
-    Returns True if the old entry was found and updated, False if not found.
-    Idempotent: re-superseding with the same new_entry_id returns True with no change.
+    Returns (True, scope) if the old entry was found and updated (or already superseded).
+    Returns (False, None) if not found.
+    Idempotent: re-superseding with the same new_entry_id returns (True, scope) with no change.
     """
     return update_authority_entry_status(
         paths,
