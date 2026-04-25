@@ -792,3 +792,212 @@ def test_preview_shows_scope_for_shared_candidates(tmp_path: Path) -> None:
 
     assert shared_cand.scope == MemoryScope.SHARED
     assert local_cand.scope == MemoryScope.LOCAL
+
+
+# --- Phase 12: Scope-aware promotion audit/review ---
+
+
+def test_apply_writes_scope_into_promotion_log(tmp_path: Path) -> None:
+    """Applied entries record scope in the promotion log."""
+    import json
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    note_path = ensure_daily_note(paths, date(2026, 4, 25))
+    note_path.write_text(
+        """# Daily Memory: 2026-04-25
+
+## Promotion Candidates
+- [decision shared] Shared team decision to promote.
+- [fact local] Local fact to keep private.
+- [preference] Default scope preference (should be local).
+""",
+        encoding="utf-8",
+    )
+
+    result = apply_daily_note_promotions(paths, date(2026, 4, 25))
+    assert result.applied_count == 3
+
+    log_text = paths.memory_promotion_log_path.read_text(encoding="utf-8")
+    log = json.loads(log_text)
+
+    scopes = {key: entry.get("scope") for key, entry in log.items()}
+    assert "shared" in scopes.values(), f"Expected 'shared' in scopes: {scopes}"
+    assert "local" in scopes.values(), f"Expected 'local' in scopes: {scopes}"
+    # Default scope should be local
+    local_count = sum(1 for s in scopes.values() if s == "local")
+    assert local_count == 2, f"Expected 2 local entries, got {local_count}"
+
+
+def test_render_memory_review_shows_shared_scope_for_shared_promotions(tmp_path: Path) -> None:
+    """render_memory_review shows scope for shared promotions in recent section."""
+    from controlmesh.memory.commands import render_memory_review
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    note_path = ensure_daily_note(paths, date(2026, 4, 25))
+    note_path.write_text(
+        """# Daily Memory: 2026-04-25
+
+## Promotion Candidates
+- [decision shared] Shared decision should show scope.
+""",
+        encoding="utf-8",
+    )
+
+    apply_daily_note_promotions(paths, date(2026, 4, 25))
+
+    review = render_memory_review(paths)
+    assert "shared" in review, f"Expected 'shared' in review output: {review}"
+    assert "Shared decision should show scope" in review
+
+
+def test_render_memory_review_local_promotions_stay_concise(tmp_path: Path) -> None:
+    """Local promotions do not show scope label to stay concise."""
+    from controlmesh.memory.commands import render_memory_review
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    note_path = ensure_daily_note(paths, date(2026, 4, 25))
+    note_path.write_text(
+        """# Daily Memory: 2026-04-25
+
+## Promotion Candidates
+- [fact local] Local fact should not show scope label.
+- [decision] Default scope decision also concise.
+""",
+        encoding="utf-8",
+    )
+
+    apply_daily_note_promotions(paths, date(2026, 4, 25))
+
+    review = render_memory_review(paths)
+    # Should contain the content
+    assert "Local fact should not show scope label" in review
+    assert "Default scope decision also concise" in review
+    # The word "local" should appear in category context like "[fact]" but NOT as a scope label
+    # like "(shared, promoted" for local entries
+    # Count occurrences of "local" as a scope label pattern
+    lines = review.splitlines()
+    scope_label_count = sum(1 for line in lines if "(local," in line or "(local)" in line)
+    assert scope_label_count == 0, f"Local entries should not show scope label, got {scope_label_count}"
+
+
+def test_legacy_promotion_log_without_scope_still_loads(tmp_path: Path) -> None:
+    """Promotion log entries without scope field are handled gracefully."""
+    import json
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+
+    # Write a pre-Phase-12 style promotion log entry without scope
+    legacy_log = {
+        "abc123": {
+            "category": "fact",
+            "content": "Legacy fact before Phase 12",
+            "source_path": "memory/2026-04-01.md",
+            "source_date": "2026-04-01",
+            "promoted_on": "2026-04-01",
+        },
+        "def456": {
+            "category": "decision",
+            "content": "Another legacy decision",
+            "source_path": "memory/2026-04-02.md",
+            "source_date": "2026-04-02",
+            "promoted_on": "2026-04-02",
+            # No scope field
+        },
+    }
+    paths.memory_promotion_log_path.write_text(json.dumps(legacy_log), encoding="utf-8")
+
+    # Load log via apply_candidates path - should not raise
+    from controlmesh.memory.models import PromotionCandidate
+    from controlmesh.memory.promotion import preview_candidates
+
+    # Verify the log can be read (used by preview_candidates)
+    candidates = [
+        PromotionCandidate(
+            key="abc123",
+            category=MemoryCategory.FACT,
+            content="Test content",
+            source_path="memory/2026-04-01.md",
+            source_date="2026-04-01",
+        )
+    ]
+    preview = preview_candidates(paths, candidates)
+    # The existing entry should be skipped (not re-applied)
+    assert preview.skipped_existing == 1
+
+
+def test_render_memory_review_handles_legacy_log_without_scope(tmp_path: Path) -> None:
+    """Review surface renders legacy log entries without scope gracefully."""
+    import json
+
+    from controlmesh.memory.commands import render_memory_review
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+
+    # Write legacy log entries without scope
+    legacy_log = {
+        "legacy001": {
+            "category": "fact",
+            "content": "Legacy fact without scope",
+            "source_path": "memory/2026-04-01.md",
+            "source_date": "2026-04-01",
+            "promoted_on": "2026-04-01",
+        },
+    }
+    paths.memory_promotion_log_path.write_text(json.dumps(legacy_log), encoding="utf-8")
+
+    # render_memory_review should not raise and should show the entry
+    review = render_memory_review(paths)
+    assert "Legacy fact without scope" in review
+    assert "fact" in review
+
+
+def test_promotion_log_scope_field_added_to_existing_log_on_reapply(tmp_path: Path) -> None:
+    """New promotions append scope; existing entries without scope remain readable."""
+    import json
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+
+    # Start with a legacy entry (no scope)
+    legacy_log = {
+        "old001": {
+            "category": "fact",
+            "content": "Pre-existing legacy fact",
+            "source_path": "memory/2026-04-01.md",
+            "source_date": "2026-04-01",
+            "promoted_on": "2026-04-01",
+        },
+    }
+    paths.memory_promotion_log_path.write_text(json.dumps(legacy_log), encoding="utf-8")
+
+    # Apply a new entry with scope
+    note_path = ensure_daily_note(paths, date(2026, 4, 26))
+    note_path.write_text(
+        """# Daily Memory: 2026-04-26
+
+## Promotion Candidates
+- [decision shared] New shared decision.
+""",
+        encoding="utf-8",
+    )
+
+    result = apply_daily_note_promotions(paths, date(2026, 4, 26))
+    assert result.applied_count == 1
+
+    # Verify log has both old entry and new entry with scope
+    log = json.loads(paths.memory_promotion_log_path.read_text(encoding="utf-8"))
+    assert "old001" in log
+    assert "scope" not in log["old001"], "Legacy entry should not have scope field added"
+
+    # Find the new entry by content
+    new_entry = next(
+        (v for k, v in log.items() if "New shared decision" in v.get("content", "")),
+        None,
+    )
+    assert new_entry is not None, "New entry not found in log"
+    assert new_entry.get("scope") == "shared", f"New entry should have scope=shared: {new_entry}"

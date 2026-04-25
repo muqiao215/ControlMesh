@@ -164,6 +164,7 @@ def apply_candidates(
             "source_path": candidate.source_path,
             "source_date": candidate.source_date,
             "promoted_on": promoted_on,
+            "scope": candidate.scope.value,
         }
     atomic_json_save(paths.memory_promotion_log_path, promotion_log)
 

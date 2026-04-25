@@ -285,7 +285,11 @@ def _append_recent_promotions(paths: ControlMeshPaths, sections: list[str]) -> N
         cat = entry.get("category", "unknown")
         content = entry.get("content", "")[:60]
         promoted = entry.get("promoted_on", "?")
-        lines.append(f"- [{cat}] {content}... (promoted {promoted})")
+        entry_scope = entry.get("scope", "local")
+        if entry_scope == "shared":
+            lines.append(f"- [{cat}] {content}... (shared, promoted {promoted})")
+        else:
+            lines.append(f"- [{cat}] {content}... (promoted {promoted})")
     sections.append("\n".join(lines))
 
 
