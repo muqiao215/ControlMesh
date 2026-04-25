@@ -129,6 +129,30 @@ class MemorySearchResult(BaseModel):
     hits: list[MemorySearchHit] = Field(default_factory=list)
 
 
+class LifecycleStatus(StrEnum):
+    """Lifecycle state for promoted authority memory entries."""
+
+    ACTIVE = "active"
+    DEPRECATED = "deprecated"
+    SUPERSEDED = "superseded"
+    DISPUTED = "disputed"
+
+
+class AuthorityEntryMetadata(BaseModel):
+    """Lightweight lifecycle metadata for authority memory entries.
+
+    Carried inline in MEMORY.md entries to support reversible promotion
+    without requiring a database or semantic index.
+    """
+
+    entry_id: str | None = None
+    status: LifecycleStatus = LifecycleStatus.ACTIVE
+    promoted_at: str | None = None
+    source_ref: str | None = None
+    superseded_by: str | None = None
+    evidence_count: int | None = None
+
+
 class DreamingSweepMode(StrEnum):
     """Supported sweep execution modes."""
 

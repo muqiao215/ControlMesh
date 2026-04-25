@@ -12,6 +12,8 @@ from controlmesh.infra.atomic_io import atomic_text_save
 from controlmesh.infra.json_store import atomic_json_save, load_json
 from controlmesh.memory.compat import sync_authority_to_legacy_mainmemory
 from controlmesh.memory.models import (
+    AuthorityEntryMetadata,
+    LifecycleStatus,
     MemoryCategory,
     PromotionApplyResult,
     PromotionCandidate,
@@ -24,6 +26,29 @@ from controlmesh.workspace.paths import ControlMeshPaths
 _PROMOTION_SECTION_HEADING = "## Promotion Candidates"
 _PROMOTION_LINE_RE = re.compile(
     r"^- \[(?P<category>[a-z-]+)(?:\s+score=(?P<score>[0-9]+(?:\.[0-9]+)?))?\]\s+(?P<content>.+)$"
+)
+
+# Pattern for parsing authority entry metadata from rendered entries
+# The meta string captured by _AUTHORITY_ENTRY_RE has format:
+# id: abc123; status: active; source: path#LN; promoted: YYYY-MM-DD
+# (without the surrounding parentheses since those are matched by the outer regex)
+_AUTHORITY_METADATA_RE = re.compile(
+    r"^id:\s*(?P<id>[^;]+);\s*"
+    r"status:\s*(?P<status>\w+);"
+    r"(?:\s*superseded_by:\s*(?P<superseded_by>[^;]+);)?"
+    r"\s*source:\s*(?P<source>[^;]+);\s*"
+    r"promoted:\s*(?P<promoted>.+)$"
+)
+
+# Pattern to match entry with metadata block at end
+_AUTHORITY_ENTRY_RE = re.compile(
+    r"^(?P<content>.+?)\s*_\((?P<meta>.+)\)_$"
+)
+
+# Legacy metadata format: only source and promoted, no id or status
+_LEGACY_AUTHORITY_METADATA_RE = re.compile(
+    r"source:\s*(?P<source>[^;]+);\s*"
+    r"promoted:\s*(?P<promoted>.+)$"
 )
 
 
@@ -164,6 +189,71 @@ def _coerce_string(value: object) -> str | None:
     return str(value)
 
 
+def parse_authority_entry_metadata(line: str) -> AuthorityEntryMetadata | None:
+    """Parse lifecycle metadata from a rendered authority entry line.
+
+    Handles both new-format entries with full metadata and legacy entries
+    with only source/promoted annotations.
+    Returns None only for lines that cannot be parsed as authority entries.
+    """
+    content_match = _AUTHORITY_ENTRY_RE.match(line.strip())
+    if content_match is None:
+        return None
+
+    meta_str = content_match.group("meta")
+
+    # Try new format first (has id and status)
+    meta_match = _AUTHORITY_METADATA_RE.search(meta_str)
+    if meta_match is not None:
+        try:
+            status_str = meta_match.group("status")
+            status = LifecycleStatus(status_str)
+        except ValueError:
+            status = LifecycleStatus.ACTIVE
+
+        return AuthorityEntryMetadata(
+            entry_id=meta_match.group("id"),
+            status=status,
+            source_ref=meta_match.group("source"),
+            promoted_at=meta_match.group("promoted"),
+            superseded_by=meta_match.group("superseded_by"),
+        )
+
+    # Fall back to legacy format (source and promoted only, no id/status)
+    legacy_match = _LEGACY_AUTHORITY_METADATA_RE.search(meta_str)
+    if legacy_match is not None:
+        return AuthorityEntryMetadata(
+            entry_id=None,
+            status=LifecycleStatus.ACTIVE,
+            source_ref=legacy_match.group("source"),
+            promoted_at=legacy_match.group("promoted"),
+            superseded_by=None,
+        )
+
+    return None
+
+
+def parse_authority_entry(line: str) -> tuple[str, AuthorityEntryMetadata] | None:
+    """Parse a full authority entry line into content and metadata.
+
+    Returns (content, metadata) if the line is a valid authority entry,
+    or None if it cannot be parsed as an authority entry.
+    """
+    content_match = _AUTHORITY_ENTRY_RE.match(line.strip())
+    if content_match is None:
+        return None
+
+    meta = parse_authority_entry_metadata(line)
+    if meta is None:
+        return None
+
+    # Strip leading "- " from content since that's the markdown list marker
+    raw_content = content_match.group("content")
+    if raw_content.startswith("- "):
+        raw_content = raw_content.removeprefix("- ")
+    return (raw_content, meta)
+
+
 def _insert_candidate(
     authority_text: str, candidate: PromotionCandidate, *, applied_on: date | None
 ) -> str:
@@ -197,4 +287,13 @@ def _render_entry(candidate: PromotionCandidate, *, applied_on: date | None) -> 
     source_ref = candidate.source_path
     if candidate.line_start is not None:
         source_ref = f"{source_ref}#L{candidate.line_start}"
-    return f"- {candidate.content} _(source: {source_ref}; promoted: {promoted_on})_"
+
+    # Build metadata block with entry_id and status
+    entry_id = candidate.key[:12]
+    meta_str = "; ".join([
+        f"id: {entry_id}",
+        f"status: {LifecycleStatus.ACTIVE.value}",
+        f"source: {source_ref}",
+        f"promoted: {promoted_on}",
+    ])
+    return f"- {candidate.content} _({meta_str})_"
