@@ -809,10 +809,10 @@ async def test_memory_review_shows_explicit_scope_labels_in_review_items(orch: O
     )
 
     result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory review")
-    assert "### Recent Promotions" in result.text
+    assert "### Recent Promotions _(1 local, 1 shared)_" in result.text
     assert "(local, promoted 2026-04-26)" in result.text
     assert "(shared, promoted 2026-04-26)" in result.text
-    assert "### Today's Open Candidates (2)" in result.text
+    assert "### Today's Open Candidates (2) _(1 local, 1 shared)_" in result.text
     assert "Local candidate in review." in result.text
     assert "(local)" in result.text
     assert "Shared candidate in review." in result.text

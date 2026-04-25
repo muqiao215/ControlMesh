@@ -858,6 +858,7 @@ def test_render_memory_review_shows_shared_scope_for_shared_promotions(tmp_path:
     apply_daily_note_promotions(paths, date(2026, 4, 25))
 
     review = render_memory_review(paths)
+    assert "### Recent Promotions _(1 shared)_" in review
     assert "shared" in review, f"Expected 'shared' in review output: {review}"
     assert "Shared decision should show scope" in review
 
@@ -881,9 +882,45 @@ def test_render_memory_review_shows_local_scope_for_local_promotions(tmp_path: P
     apply_daily_note_promotions(paths, date(2026, 4, 25))
 
     review = render_memory_review(paths)
+    assert "### Recent Promotions _(2 local)_" in review
     assert "Local fact should not show scope label" in review
     assert "Default scope decision also concise" in review
     assert "(local, promoted 2026-04-25)" in review
+
+
+def test_render_memory_review_unscoped_recent_promotions_header_shows_local_shared_split(
+    tmp_path: Path,
+) -> None:
+    """Unscoped recent-promotions header surfaces the local/shared split at a glance."""
+    import json
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    paths.memory_promotion_log_path.write_text(
+        json.dumps(
+            {
+                "local001": {
+                    "category": "fact",
+                    "content": "Local promotion in header summary",
+                    "promoted_on": "2026-04-25",
+                    "scope": "local",
+                },
+                "shared001": {
+                    "category": "decision",
+                    "content": "Shared promotion in header summary",
+                    "promoted_on": "2026-04-26",
+                    "scope": "shared",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    review = render_memory_review(paths)
+
+    assert "### Recent Promotions _(1 local, 1 shared)_" in review
+    assert "(local, promoted 2026-04-25)" in review
+    assert "(shared, promoted 2026-04-26)" in review
 
 
 def test_render_memory_review_shows_shared_scope_for_open_candidates(tmp_path: Path) -> None:
@@ -904,7 +941,7 @@ def test_render_memory_review_shows_shared_scope_for_open_candidates(tmp_path: P
     )
 
     review = render_memory_review(paths)
-    assert "Today's Open Candidates (1)" in review
+    assert "Today's Open Candidates (1) _(1 shared)_" in review
     assert "Shared open candidate should show scope" in review
     assert "(shared)" in review
 
@@ -928,9 +965,37 @@ def test_render_memory_review_shows_local_scope_for_open_candidates(tmp_path: Pa
     )
 
     review = render_memory_review(paths)
+    assert "Today's Open Candidates (2) _(2 local)_" in review
     assert "Local open candidate should show scope" in review
     assert "Default local candidate should show scope too" in review
     assert review.count("(local)") >= 2
+
+
+def test_render_memory_review_unscoped_open_candidates_header_shows_local_shared_split(
+    tmp_path: Path,
+) -> None:
+    """Unscoped open-candidates header surfaces the local/shared split at a glance."""
+    from datetime import UTC, datetime
+
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    today = datetime.now(UTC).date()
+    note_path = ensure_daily_note(paths, today)
+    note_path.write_text(
+        f"""# Daily Memory: {today.isoformat()}
+
+## Open Candidates
+- [preference] Local open candidate in header summary.
+- [fact shared] Shared open candidate in header summary.
+""",
+        encoding="utf-8",
+    )
+
+    review = render_memory_review(paths)
+
+    assert "Today's Open Candidates (2) _(1 local, 1 shared)_" in review
+    assert "Local open candidate in header summary." in review
+    assert "Shared open candidate in header summary." in review
 
 
 def test_render_memory_review_scope_local_filters_recent_promotions_and_open_candidates(
@@ -985,6 +1050,8 @@ def test_render_memory_review_scope_local_filters_recent_promotions_and_open_can
     assert "Explicit local promotion stays visible" in review
     assert "Shared promotion is filtered out" not in review
     assert "Today's Open Candidates (2)" in review
+    assert "### Recent Promotions _(" not in review
+    assert "Today's Open Candidates (2) _(" not in review
     assert "Default local candidate stays visible." in review
     assert "Explicit local candidate stays visible." in review
     assert "Shared open candidate is filtered out." not in review
@@ -1042,6 +1109,8 @@ def test_render_memory_review_scope_shared_filters_recent_promotions_and_open_ca
     assert "Legacy local promotion is filtered out" not in review
     assert "Explicit local promotion is filtered out" not in review
     assert "Today's Open Candidates (1)" in review
+    assert "### Recent Promotions _(" not in review
+    assert "Today's Open Candidates (1) _(" not in review
     assert "Shared open candidate stays visible." in review
     assert "Default local candidate is filtered out." not in review
     assert "Explicit local candidate is filtered out." not in review
@@ -1153,6 +1222,7 @@ def test_render_memory_review_handles_legacy_log_without_scope(tmp_path: Path) -
 
     # render_memory_review should not raise and should show the entry
     review = render_memory_review(paths)
+    assert "### Recent Promotions _(1 local)_" in review
     assert "Legacy fact without scope" in review
     assert "fact" in review
     assert "(local, promoted 2026-04-01)" in review

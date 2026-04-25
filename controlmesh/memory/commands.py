@@ -301,7 +301,8 @@ def _append_recent_promotions(
         return
 
     recent = matching_entries[-5:]
-    lines = ["### Recent Promotions"]
+    recent_scopes = [_coerce_memory_scope(entry.get("scope")) for _key, entry in recent]
+    lines = [f"### Recent Promotions{_format_review_section_scope_label(recent_scopes, scope=scope)}"]
     for _key, entry in reversed(recent):
         cat = entry.get("category", "unknown")
         content = entry.get("content", "")[:60]
@@ -339,7 +340,10 @@ def _append_open_candidates(
     if not candidates:
         return
 
-    lines = [f"### Today's Open Candidates ({len(candidates)})"]
+    lines = [
+        "### Today's Open Candidates "
+        f"({len(candidates)}){_format_review_section_scope_label([cand.scope for cand in candidates], scope=scope)}"
+    ]
     lines.extend(
         _format_open_candidate_review_line(cand)
         for cand in candidates[:3]
@@ -420,6 +424,25 @@ def _format_open_candidate_review_line(candidate: PromotionCandidate) -> str:
         f"- [{candidate.category.value}] {candidate.content[:60]}..."
         f" ({candidate.scope.value})"
     )
+
+
+def _format_review_section_scope_label(
+    scopes: list[MemoryScope],
+    *,
+    scope: MemoryScope | None = None,
+) -> str:
+    """Build a compact unscoped local/shared split label for review section headers."""
+    if scope is not None or not scopes:
+        return ""
+
+    local_count = sum(1 for entry_scope in scopes if entry_scope == MemoryScope.LOCAL)
+    shared_count = sum(1 for entry_scope in scopes if entry_scope == MemoryScope.SHARED)
+
+    if shared_count > 0 and local_count > 0:
+        return f" _({local_count} local, {shared_count} shared)_"
+    if shared_count > 0:
+        return f" _({shared_count} shared)_"
+    return f" _({local_count} local)_"
 
 
 def _count_authority_entries(
