@@ -611,6 +611,58 @@ async def test_memory_review_shows_summary(orch: Orchestrator) -> None:
     assert "Open Candidates" in result.text
 
 
+async def test_memory_patterns_shows_repeated(orch: Orchestrator) -> None:
+    """Test /memory patterns shows repeated patterns across multiple daily notes."""
+    from datetime import UTC, datetime, timedelta
+
+    from controlmesh.memory.store import ensure_daily_note
+
+    # Create two daily notes with the same event text
+    for days_ago in (1, 2):
+        note_date = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0).date()
+        note_date = note_date - timedelta(days=days_ago)
+        note_path = ensure_daily_note(orch.paths, note_date)
+        note_path.write_text(
+            f"# Daily Memory: {note_date.isoformat()}\n\n"
+            "## Events\n\n"
+            "- [chat-turn] User asked about status #question [evt:aaa0000]\n\n"
+            "## Signals\n\n"
+            "## Open Candidates\n",
+            encoding="utf-8",
+        )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory patterns")
+    assert "Repeated Patterns" in result.text or "repeated patterns" in result.text.lower()
+    assert "User asked about status" in result.text
+
+
+async def test_memory_patterns_no_repeated_shows_empty(orch: Orchestrator) -> None:
+    """Test /memory patterns shows empty-state message when no patterns exist."""
+    from datetime import UTC, datetime
+
+    from controlmesh.memory.store import ensure_daily_note
+
+    today = datetime.now(UTC).date()
+    note_path = ensure_daily_note(orch.paths, today)
+    note_path.write_text(
+        f"# Daily Memory: {today.isoformat()}\n\n"
+        "## Events\n\n"
+        "- [chat-turn] User asked about status #question [evt:bbb1111]\n\n"
+        "## Signals\n\n"
+        "## Open Candidates\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory patterns")
+    assert "No repeated patterns" in result.text or "no repeated" in result.text.lower()
+
+
+async def test_memory_unknown_subcommand_shows_usage_with_patterns(orch: Orchestrator) -> None:
+    """Test /memory with unknown subcommand shows usage including patterns."""
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory unknown_subcommand")
+    assert "patterns" in result.text.lower()
+
+
 # -- cmd_history --
 
 

@@ -28,6 +28,7 @@ from controlmesh.memory.commands import (
     render_memory_review,
     search_memory,
 )
+from controlmesh.memory.frequency import find_repeated_patterns, render_patterns_summary
 from controlmesh.orchestrator.providers import (
     normalize_provider_name,
     provider_display_name,
@@ -437,8 +438,11 @@ async def cmd_controlmesh(orch: Orchestrator, key: SessionKey, text: str) -> Orc
     return await orch.dispatch_controlmesh_command(key, nested)
 
 
+_MEMORY_USAGE = "Usage: /memory [today|search <query>|why <id>|review|patterns]"
+
+
 async def cmd_memory(orch: Orchestrator, _key: SessionKey, _text: str) -> OrchestratorResult:
-    """Handle /memory [today|search <query>|why <id>|review]."""
+    """Handle /memory [today|search <query>|why <id>|review|patterns]."""
     from datetime import UTC, datetime
 
     logger.info("Memory requested")
@@ -453,18 +457,17 @@ async def cmd_memory(orch: Orchestrator, _key: SessionKey, _text: str) -> Orches
     if subcommand == "today":
         today = datetime.now(UTC).date()
         return await _cmd_memory_today(orch, today)
-
     if subcommand == "search":
         return await _cmd_memory_search(orch, parts)
-
     if subcommand == "why":
         return await _cmd_memory_why(orch, parts)
 
-    if subcommand == "review":
-        return await _cmd_memory_review(orch)
+    # review and patterns both delegate to their own helpers
+    if subcommand in ("review", "patterns"):
+        return await _cmd_memory_patterns(orch) if subcommand == "patterns" else await _cmd_memory_review(orch)
 
     # Unknown subcommand - show usage
-    return OrchestratorResult(text="Usage: /memory [today|search <query>|why <id>|review]")
+    return OrchestratorResult(text=_MEMORY_USAGE)
 
 
 async def _cmd_memory_today(orch: Orchestrator, today: date) -> OrchestratorResult:
@@ -508,6 +511,13 @@ async def _cmd_memory_review(orch: Orchestrator) -> OrchestratorResult:
     if not review:
         return OrchestratorResult(text="No memory to review.")
     return OrchestratorResult(text=review)
+
+
+async def _cmd_memory_patterns(orch: Orchestrator) -> OrchestratorResult:
+    """Handle /memory patterns."""
+    result = await asyncio.to_thread(find_repeated_patterns, orch.paths)
+    summary = render_patterns_summary(result)
+    return OrchestratorResult(text=summary)
 
 
 async def _cmd_memory_full(orch: Orchestrator) -> OrchestratorResult:

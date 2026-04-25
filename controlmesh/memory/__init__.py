@@ -38,6 +38,12 @@ from controlmesh.memory.events import (
     SignalCandidate,
     SignalConfidence,
 )
+from controlmesh.memory.frequency import (
+    PatternAnalysisResult,
+    RepeatedPattern,
+    find_repeated_patterns,
+    render_patterns_summary,
+)
 from controlmesh.memory.models import (
     DreamingCheckpoint,
     DreamingLock,
@@ -89,9 +95,11 @@ __all__ = [
     "MemoryIndexSyncResult",
     "MemorySearchHit",
     "MemorySearchResult",
+    "PatternAnalysisResult",
     "PromotionApplyResult",
     "PromotionCandidate",
     "PromotionPreview",
+    "RepeatedPattern",
     "ResumeEvent",
     "RoutingContext",
     "SignalCandidate",
@@ -120,6 +128,7 @@ __all__ = [
     "event_from_team_event",
     "event_from_transcript_turn",
     "expand_daily_note_skeleton",
+    "find_repeated_patterns",
     "initialize_memory_v2",
     "load_checkpoints",
     "load_sweep_state",
@@ -129,6 +138,7 @@ __all__ = [
     "preview_dreaming_sweep",
     "preview_memory_dreaming_sweep",
     "release_dream_lock",
+    "render_patterns_summary",
     "save_checkpoints",
     "save_sweep_state",
     "search_memory",
