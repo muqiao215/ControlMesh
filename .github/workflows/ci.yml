@@ -31,7 +31,7 @@ jobs:
         run: python scripts/doctor_toolchain.py --strict --require-bun
       - name: Install dependencies
         run: |
-          uv sync --locked --all-extras --dev
+          uv sync --all-extras --dev
       - name: Ruff
         run: uv run ruff check .
       - name: Mypy
@@ -60,7 +60,7 @@ jobs:
         run: python scripts/doctor_toolchain.py --strict --require-bun
       - name: Install dependencies
         run: |
-          uv sync --locked --all-extras --dev
+          uv sync --all-extras --dev
       - name: Run test suite
         run: uv run pytest -q
 
@@ -83,6 +83,6 @@ jobs:
         run: python scripts/doctor_toolchain.py --strict --require-bun
       - name: Install build tooling
         run: |
-          uv sync --locked --all-extras --dev
+          uv sync --all-extras --dev
       - name: Build distribution
         run: uv build

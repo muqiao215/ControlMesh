@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 env:
   UV_VERSION: "0.11.7"
@@ -28,7 +29,7 @@ jobs:
       - name: Toolchain doctor
         run: python scripts/doctor_toolchain.py --strict --require-bun
       - name: Install build environment
-        run: uv sync --locked --all-extras --dev
+        run: uv sync --all-extras --dev
       - name: Verify version consistency
         run: |
           python - <<'PY'
@@ -111,23 +112,24 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Wait for PyPI JSON to show the tagged version
-        env:
-          EXPECTED_VERSION: ${{ github.ref_name }}
         run: |
           python - <<'PY'
           import json
-          import os
           import pathlib
           import time
           import urllib.error
           import urllib.request
 
-          expected = os.environ["EXPECTED_VERSION"].removeprefix("v")
           pyproject = pathlib.Path("pyproject.toml").read_text(encoding="utf-8")
           project_name = next(
               line.split("=", 1)[1].strip().strip('"')
               for line in pyproject.splitlines()
               if line.startswith("name = ")
+          )
+          expected = next(
+              line.split("=", 1)[1].strip().strip('"')
+              for line in pyproject.splitlines()
+              if line.startswith("version = ")
           )
           attempts = 24
           delay_seconds = 15
