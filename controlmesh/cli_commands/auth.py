@@ -626,7 +626,7 @@ async def _cmd_feishu_login() -> None:
         scope=token.scope,
         granted_at=now_ms,
         auth_mode="device_flow",
-        token_source="device_flow",  # noqa: S106 - auth mode label, not a secret
+        token_source="device_flow",
     )
     _console.print("Feishu auth mode: device_flow")
 
@@ -1339,7 +1339,7 @@ def _is_weixin_transport_configured(config: AgentConfig) -> bool:
     return "weixin" in config.transports
 
 
-def _state_with(  # noqa: PLR0913
+def _state_with(
     state: WeixinQrLoginState,
     *,
     auth_state: str | None = None,

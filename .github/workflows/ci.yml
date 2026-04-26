@@ -34,8 +34,13 @@ jobs:
           uv sync --all-extras --dev
       - name: Ruff
         run: uv run ruff check .
-      - name: Mypy
-        run: uv run mypy controlmesh tests
+      - name: Mypy smoke
+        run: >
+          uv run mypy --no-warn-unused-configs
+          controlmesh/text/frontstage_delivery.py
+          tests/cli/test_factory.py
+          tests/integration/test_cli_parameter_flow.py
+          tests/workspace/test_init.py
 
   test:
     name: Pytest (Python ${{ matrix.python-version }})

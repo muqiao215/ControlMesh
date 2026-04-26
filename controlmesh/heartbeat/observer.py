@@ -303,7 +303,7 @@ class HeartbeatObserver(BaseObserver):
             logger.debug("Heartbeat skipped for %d: per-target quiet hours", chat_id)
         return is_quiet
 
-    async def _run_for_chat(  # noqa: PLR0913
+    async def _run_for_chat(
         self,
         chat_id: int,
         topic_id: int | None = None,

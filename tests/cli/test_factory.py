@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from unittest.mock import patch
+
+import pytest
 
 from controlmesh.cli.base import CLIConfig
 from controlmesh.cli.claude_provider import ClaudeCodeCLI
@@ -12,6 +15,16 @@ from controlmesh.cli.factory import create_cli
 from controlmesh.cli.gemini_provider import GeminiCLI
 from controlmesh.cli.openai_agents_provider import OpenAIAgentsCLI
 from controlmesh.cli.opencode_provider import OpenCodeCLI
+
+
+@pytest.fixture(autouse=True)
+def _mock_local_cli_binaries() -> Generator[None, None, None]:
+    """Keep provider-construction tests independent from host PATH."""
+    with (
+        patch("controlmesh.cli.claude_provider.ClaudeCodeCLI._find_cli", return_value="claude"),
+        patch("controlmesh.cli.codex_provider.CodexCLI._find_cli", return_value="codex"),
+    ):
+        yield
 
 
 def test_create_cli_returns_claude_by_default() -> None:

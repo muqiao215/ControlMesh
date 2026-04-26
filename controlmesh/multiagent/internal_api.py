@@ -430,7 +430,7 @@ class InternalAgentAPI:
         cancelled = await self._task_hub.cancel(task_id)
         return web.json_response({"success": cancelled})
 
-    async def _handle_task_delete(  # noqa: PLR0911
+    async def _handle_task_delete(
         self, request: web.Request
     ) -> web.Response:
         """POST /tasks/delete — permanently delete a finished task (entry + folder)."""
@@ -475,7 +475,7 @@ class InternalAgentAPI:
             )
         return web.json_response({"success": True})
 
-    async def _handle_team_operate(self, request: web.Request) -> web.Response:  # noqa: PLR0911
+    async def _handle_team_operate(self, request: web.Request) -> web.Response:
         """POST /teams/operate — execute a narrow internal team state operation."""
         try:
             data = await request.json()

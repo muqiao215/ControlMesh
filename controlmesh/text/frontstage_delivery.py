@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from hashlib import sha1
+from hashlib import sha256
 from pathlib import Path
 
 from controlmesh.files.tags import FILE_PATH_RE
@@ -64,7 +64,7 @@ def _write_full_output_artifact(
 ) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-    digest = sha1(text.encode("utf-8")).hexdigest()[:8]
+    digest = sha256(text.encode("utf-8")).hexdigest()[:8]
     path = output_dir / f"{filename_prefix}-{stamp}-{digest}.md"
     path.write_text(text, encoding="utf-8")
     return path

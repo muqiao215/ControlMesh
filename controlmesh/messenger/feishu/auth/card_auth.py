@@ -49,7 +49,7 @@ def _scope_with_offline_access(scope: str | None) -> str:
     return " ".join(parts)
 
 
-async def start_device_flow_card_auth(  # noqa: PLR0913
+async def start_device_flow_card_auth(
     session: Any,
     *,
     app_id: str,
@@ -84,7 +84,7 @@ async def start_device_flow_card_auth(  # noqa: PLR0913
     )
 
 
-async def complete_device_flow_card_auth(  # noqa: PLR0913
+async def complete_device_flow_card_auth(
     session: Any,
     *,
     app_id: str,

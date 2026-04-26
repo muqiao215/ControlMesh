@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-async def _inject_prompt(  # noqa: PLR0913
+async def _inject_prompt(
     orch: Orchestrator,
     prompt: str,
     chat_id: int,

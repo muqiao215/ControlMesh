@@ -186,7 +186,7 @@ class ObserverManager:
 
         if self.cron:
 
-            async def _on_cron(  # noqa: PLR0913
+            async def _on_cron(
                 title: str,
                 result: str,
                 status: str,

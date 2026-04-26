@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING
 
 from controlmesh.messenger.qqbot.api import QQBotAccessToken
 

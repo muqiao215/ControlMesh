@@ -57,7 +57,7 @@ class TeamTopologyExecutionSpine:
             return None
         return TeamTopologyExecutionState.model_validate(raw)
 
-    def start(  # noqa: PLR0913
+    def start(
         self,
         task_id: str,
         *,
@@ -95,7 +95,7 @@ class TeamTopologyExecutionSpine:
         )
         return self._write(state)
 
-    def record_checkpoint(  # noqa: PLR0913
+    def record_checkpoint(
         self,
         task_id: str,
         *,
@@ -142,7 +142,7 @@ class TeamTopologyExecutionSpine:
         )
         return self._write(updated)
 
-    def interrupt_for_parent(  # noqa: PLR0913
+    def interrupt_for_parent(
         self,
         task_id: str,
         *,
@@ -201,7 +201,7 @@ class TeamTopologyExecutionSpine:
         )
         return self._write(updated)
 
-    def resume_from_parent(  # noqa: PLR0913
+    def resume_from_parent(
         self,
         task_id: str,
         *,
@@ -361,7 +361,7 @@ class TeamPipelineRuntime:
         msg = f"pipeline worker pass does not accept status '{result.status}'"
         raise ValueError(msg)
 
-    def record_review_result(  # noqa: PLR0913
+    def record_review_result(
         self,
         task_id: str,
         result: TeamStructuredResult,
@@ -712,7 +712,7 @@ class TeamFanoutMergeRuntime:
             at=at,
         )
 
-    def record_reducer_result(  # noqa: PLR0913
+    def record_reducer_result(
         self,
         task_id: str,
         result: TeamStructuredResult,
@@ -984,7 +984,7 @@ class TeamFanoutMergeRuntime:
 class TeamDirectorWorkerRuntime:
     """director_worker execution behavior layered on the Step 2 persistence seam."""
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         spine: TeamTopologyExecutionSpine,
         *,
@@ -1056,7 +1056,7 @@ class TeamDirectorWorkerRuntime:
             at=at,
         )
 
-    def record_director_decision(  # noqa: C901, PLR0911, PLR0912
+    def record_director_decision(
         self,
         task_id: str,
         decision: TeamDirectorDecision,
@@ -1832,7 +1832,7 @@ class TeamDebateJudgeRuntime:
             at=at,
         )
 
-    def _record_judge_parent_input(  # noqa: PLR0913
+    def _record_judge_parent_input(
         self,
         task_id: str,
         state: TeamTopologyExecutionState,

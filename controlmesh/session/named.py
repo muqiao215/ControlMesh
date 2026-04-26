@@ -249,7 +249,7 @@ class NamedSessionRegistry:
         )
         return session
 
-    def create_explicit(  # noqa: PLR0913
+    def create_explicit(
         self,
         chat_id: int,
         name: str,

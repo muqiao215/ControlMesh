@@ -73,7 +73,7 @@ AuthExpiredHandler = Callable[[StoredWeixinCredentials], None | Awaitable[None]]
 class WeixinLongPollRuntime:
     """Stateful iLink adapter for getupdates and context-token-aware text sends."""
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         *,
         credentials: StoredWeixinCredentials,

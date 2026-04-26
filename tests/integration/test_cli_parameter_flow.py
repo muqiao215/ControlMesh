@@ -2,12 +2,24 @@
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from unittest.mock import MagicMock
+from unittest.mock import patch
 
 import pytest
 
 from controlmesh.cli.base import CLIConfig
 from controlmesh.cli.service import CLIServiceConfig
+
+
+@pytest.fixture(autouse=True)
+def _mock_local_cli_binaries() -> Generator[None, None, None]:
+    """Keep provider-construction tests independent from host PATH."""
+    with (
+        patch("controlmesh.cli.claude_provider.ClaudeCodeCLI._find_cli", return_value="claude"),
+        patch("controlmesh.cli.codex_provider.CodexCLI._find_cli", return_value="codex"),
+    ):
+        yield
 
 
 @pytest.fixture
@@ -21,9 +33,9 @@ def service_config_with_params() -> CLIServiceConfig:
         max_budget_usd=None,
         permission_mode="normal",
         reasoning_effort="medium",
-        docker_container=None,
-        claude_cli_parameters=["--claude-flag", "claude-value"],
-        codex_cli_parameters=["--codex-flag", "codex-value"],
+        docker_container="",
+        claude_cli_parameters=("--claude-flag", "claude-value"),
+        codex_cli_parameters=("--codex-flag", "codex-value"),
     )
 
 
@@ -163,9 +175,9 @@ async def test_cli_service_parameter_routing() -> None:
         max_budget_usd=None,
         permission_mode="normal",
         reasoning_effort="medium",
-        docker_container=None,
-        claude_cli_parameters=["--claude-param", "value1"],
-        codex_cli_parameters=["--codex-param", "value2"],
+        docker_container="",
+        claude_cli_parameters=("--claude-param", "value1"),
+        codex_cli_parameters=("--codex-param", "value2"),
     )
 
     # Test Claude parameter routing

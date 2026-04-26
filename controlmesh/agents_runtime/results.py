@@ -40,7 +40,7 @@ class ToolResultEnvelope(BaseModel):
         )
 
     @classmethod
-    def failure(  # noqa: PLR0913
+    def failure(
         cls,
         operation: str,
         *,

@@ -44,7 +44,7 @@ def _device_flow_auth_path(controlmesh_home: str | Path) -> Path:
     return Path(controlmesh_home).expanduser() / "feishu_store" / "auth" / "device_flow.json"
 
 
-def persist_device_flow_auth(  # noqa: PLR0913
+def persist_device_flow_auth(
     *,
     controlmesh_home: str | Path,
     app_id: str,
@@ -55,7 +55,7 @@ def persist_device_flow_auth(  # noqa: PLR0913
     scope: str,
     granted_at: int,
     auth_mode: str = "device_flow",
-    token_source: str = "device_flow",  # noqa: S107 - auth mode label, not a secret
+    token_source: str = "device_flow",
 ) -> StoredDeviceFlowAuth:
     record = StoredDeviceFlowAuth(
         auth_mode=auth_mode,
@@ -107,7 +107,7 @@ def _is_valid_device_flow_auth(
 ) -> bool:
     if record is None:
         return False
-    if record.auth_mode != "device_flow" or record.token_source != "device_flow":  # noqa: S105
+    if record.auth_mode != "device_flow" or record.token_source != "device_flow":
         return False
     if not record.access_token or not record.refresh_token:
         return False
@@ -120,12 +120,12 @@ def get_feishu_auth_status(*, config: AgentConfig, now_ms: int) -> FeishuAuthSta
         return FeishuAuthStatus(
             active_auth_mode="device_flow",
             uses_device_flow=True,
-            token_source="device_flow",  # noqa: S106 - auth mode label, not a secret
+            token_source="device_flow",
         )
     return FeishuAuthStatus(
         active_auth_mode="bot_only",
         uses_device_flow=False,
-        token_source="app_credentials",  # noqa: S106 - auth mode label, not a secret
+        token_source="app_credentials",
     )
 
 
@@ -135,14 +135,14 @@ def resolve_feishu_auth(*, config: AgentConfig, now_ms: int) -> ResolvedFeishuAu
         assert stored is not None
         return ResolvedFeishuAuth(
             auth_mode="device_flow",
-            token_source="device_flow",  # noqa: S106 - auth mode label, not a secret
+            token_source="device_flow",
             access_token=stored.access_token,
             refresh_token=stored.refresh_token,
             app_id=stored.app_id,
         )
     return ResolvedFeishuAuth(
         auth_mode="bot_only",
-        token_source="app_credentials",  # noqa: S106 - auth mode label, not a secret
+        token_source="app_credentials",
         app_id=config.feishu.app_id,
         app_secret=config.feishu.app_secret,
     )

@@ -69,7 +69,7 @@ async def verify_access_token_identity(
 class FeishuCardAuthRunner:
     """Own the in-process device-flow card auth bridge and duplicate guard."""
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         config: AgentConfig,
         *,

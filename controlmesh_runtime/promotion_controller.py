@@ -38,7 +38,7 @@ class PromotionController:
         self._store = RuntimeStore(root)
         self._bridge = PromotionBridge(root)
 
-    def reconcile(  # noqa: PLR0913
+    def reconcile(
         self,
         *,
         episode: RuntimeEvidenceIdentity,

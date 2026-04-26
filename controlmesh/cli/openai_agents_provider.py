@@ -224,7 +224,7 @@ class OpenAIAgentsCLI(BaseCLI):
             num_turns=response.num_turns,
         )
 
-    async def _stream_via_send_fallback(  # noqa: PLR0913
+    async def _stream_via_send_fallback(
         self,
         prompt: str,
         *,

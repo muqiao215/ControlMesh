@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from controlmesh.messenger.address import ChatRef, LockKey, TopicRef
+from controlmesh.messenger.address import ChatRef, LockKey
 
 logger = logging.getLogger(__name__)
 

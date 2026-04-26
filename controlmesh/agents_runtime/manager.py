@@ -51,7 +51,7 @@ class AgentsRuntimeManager:
         tools: list[Any] = []
 
         if self._ctx.task_hub is not None:
-            async def create_background_task(  # noqa: PLR0913
+            async def create_background_task(
                 prompt: str,
                 name: str = "",
                 provider_override: str = "",

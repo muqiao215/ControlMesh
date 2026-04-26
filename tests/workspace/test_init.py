@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Generator
 from pathlib import Path
+from unittest.mock import patch
 
+import pytest
+
+from controlmesh.cli.auth import AuthResult, AuthStatus
 from controlmesh.workspace.init import init_workspace, inject_runtime_environment
 from controlmesh.workspace.paths import ControlMeshPaths
 
@@ -59,6 +64,18 @@ def _make_paths(tmp_path: Path) -> ControlMeshPaths:
         home_defaults=fw_root / "workspace",
         framework_root=fw_root,
     )
+
+
+@pytest.fixture(autouse=True)
+def _mock_authenticated_providers() -> Generator[None, None, None]:
+    """Keep init tests deterministic regardless of local CLI auth state."""
+    auth = {
+        "claude": AuthResult(provider="claude", status=AuthStatus.AUTHENTICATED),
+        "codex": AuthResult(provider="codex", status=AuthStatus.AUTHENTICATED),
+        "gemini": AuthResult(provider="gemini", status=AuthStatus.AUTHENTICATED),
+    }
+    with patch("controlmesh.cli.auth.check_all_auth", return_value=auth):
+        yield
 
 
 # -- directory creation --

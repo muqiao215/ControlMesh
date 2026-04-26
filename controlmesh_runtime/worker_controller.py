@@ -72,7 +72,7 @@ class WorkerController(Protocol):
 class ControlMeshWorkerController:
     """Adapt ControlMesh's team runtime controller into the harness worker surface."""
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         *,
         orchestrator: Any,

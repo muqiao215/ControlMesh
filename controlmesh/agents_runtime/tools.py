@@ -8,7 +8,7 @@ from controlmesh.multiagent.bus import AsyncSendOptions
 from controlmesh.tasks.models import TaskSubmit
 
 
-async def create_background_task(  # noqa: PLR0913
+async def create_background_task(
     ctx: AgentsRuntimeContext,
     *,
     prompt: str,

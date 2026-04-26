@@ -142,7 +142,7 @@ class TeamRuntimeController:
                     recovered.append(recovered_runtime)
         return recovered
 
-    async def execute(  # noqa: PLR0911
+    async def execute(
         self,
         operation: str,
         request: Mapping[str, object] | None,

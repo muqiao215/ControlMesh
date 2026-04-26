@@ -49,7 +49,7 @@ class NativeToolCommand:
 class FeishuNativeToolExecutor:
     """Execute the first Feishu native OAPI tools with standardized auth errors."""
 
-    def __init__(  # noqa: PLR0913 - explicit seams keep the MVP easy to test.
+    def __init__(
         self,
         config: AgentConfig,
         *,
@@ -403,7 +403,7 @@ class FeishuNativeToolExecutor:
             raise RuntimeError(msg)
 
 
-def parse_native_tool_command(text: str) -> NativeToolCommand | None:  # noqa: PLR0911
+def parse_native_tool_command(text: str) -> NativeToolCommand | None:
     """Parse the MVP Feishu native-tool smoke command."""
     try:
         parts = shlex.split(text.strip())

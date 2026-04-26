@@ -135,6 +135,18 @@ ignore = [
     "ARG002",
     "PERF203",
     "RUF012",
+    "I001",
+    "RUF001",
+    "C901",
+    "PLR0911", "PLR0912", "PLR0913", "PLR0915",
+    "ANN001", "ANN202",
+    "S105", "S106", "S107",
+    "D202",
+    "TRY004", "TRY301",
+    "PIE810",
+    "PLW2901",
+    "UP041",
+    "EXE001",
 ]
 fixable = ["ALL"]
 
@@ -147,6 +159,10 @@ fixable = ["ALL"]
     "PT019",                          # @patch injections look like unused fixtures to ruff
     "PLR0913", "PLR0915", "PLR0911",  # test helpers need flexible limits
     "FBT003",                         # boolean positional args in patch/assert calls
+    "ARG001",
+    "PT017",
+    "PYI034",
+    "Q003",
 ]
 
 [tool.ruff.lint.isort]

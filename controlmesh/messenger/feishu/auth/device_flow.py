@@ -91,7 +91,7 @@ async def request_device_authorization(
     )
 
 
-async def poll_device_token(  # noqa: PLR0913
+async def poll_device_token(
     session: aiohttp.ClientSession | Any,
     *,
     app_id: str,

@@ -315,7 +315,7 @@ class Orchestrator:
         dispatch = _MessageDispatch(key=key, text=text, cmd=text.strip().lower())
         return await self._handle_message_impl(dispatch)
 
-    async def handle_message_streaming(  # noqa: PLR0913
+    async def handle_message_streaming(
         self,
         key: SessionKey,
         text: str,
@@ -662,7 +662,7 @@ class Orchestrator:
         head = text.strip().split(None, 1)[0] if text.strip() else "/"
         return OrchestratorResult(text=f"Unknown ControlMesh command: {head}")
 
-    async def _native_mode_target(  # noqa: PLR0911
+    async def _native_mode_target(
         self, dispatch: _MessageDispatch
     ) -> tuple[str, str] | None:
         """Return the selected provider-native target for this slash command, if any."""

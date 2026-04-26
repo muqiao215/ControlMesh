@@ -69,7 +69,7 @@ async def check_folder(folder: Path) -> bool:
     return await asyncio.to_thread(folder.is_dir)
 
 
-async def execute_in_task_folder(  # noqa: PLR0913
+async def execute_in_task_folder(
     observer: BaseTaskObserver,
     *,
     cron_tasks_dir: Path,

@@ -61,7 +61,7 @@ class FeishuNativeToolAuthContract:
     user_open_id: str = ""
     operation_id: str = ""
     flow_key: str = ""
-    token_type: FeishuTokenType = "user"  # noqa: S105 - Feishu token class label.
+    token_type: FeishuTokenType = "user"
     scope_need_type: FeishuScopeNeedType = "all"
     source: str = "controlmesh-feishu-native-tool"
     schema: str = "controlmesh.feishu.tool_auth.v1"

@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Generator
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from controlmesh.cli.auth import AuthResult, AuthStatus
 from controlmesh.cli.types import AgentResponse, CLIResponse
 from controlmesh.config import AgentConfig
 from controlmesh.orchestrator.core import Orchestrator
@@ -64,6 +66,18 @@ def workspace(tmp_path: Path) -> tuple[ControlMeshPaths, AgentConfig]:
     init_workspace(paths)
     config = AgentConfig()
     return paths, config
+
+
+@pytest.fixture(autouse=True)
+def _mock_authenticated_providers() -> Generator[None, None, None]:
+    """Keep integration workspace setup independent from local CLI auth."""
+    auth = {
+        "claude": AuthResult(provider="claude", status=AuthStatus.AUTHENTICATED),
+        "codex": AuthResult(provider="codex", status=AuthStatus.AUTHENTICATED),
+        "gemini": AuthResult(provider="gemini", status=AuthStatus.AUTHENTICATED),
+    }
+    with patch("controlmesh.cli.auth.check_all_auth", return_value=auth):
+        yield
 
 
 def _make_cli_response(

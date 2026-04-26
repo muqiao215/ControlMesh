@@ -48,7 +48,7 @@ def from_background_result(result: BackgroundResult) -> Envelope:
 # -- Cron jobs -----------------------------------------------------------------
 
 
-def from_cron_result(  # noqa: PLR0913
+def from_cron_result(
     title: str,
     result: str,
     status: str,

@@ -44,7 +44,7 @@ def is_native_auth_all_command(text: str) -> bool:
 class FeishuNativeAuthAllRunner:
     """Bridge a user-friendly slash command into auth-kit plan + runtime flows."""
 
-    def __init__(  # noqa: PLR0913 - explicit seams keep the auth UX testable.
+    def __init__(
         self,
         config: AgentConfig,
         *,
@@ -146,7 +146,7 @@ class FeishuNativeAuthAllRunner:
                 brand=self._config.feishu.brand,
                 tenant_access_token=tenant_access_token,
                 app_id=self._config.feishu.app_id,
-                token_type="user",  # noqa: S106 - Feishu scope token class, not a secret.
+                token_type="user",
             )
         except AppInfoAccessError:
             logger.warning("Feishu auth-all could not inspect app scopes; falling back to optimistic planning")

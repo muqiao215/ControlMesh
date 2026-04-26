@@ -172,7 +172,7 @@ def _unwrap_post_locale(parsed: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
-def _render_post_element(item: dict[str, Any]) -> str:  # noqa: PLR0911 - mirrors Feishu tag variants.
+def _render_post_element(item: dict[str, Any]) -> str:
     tag = item.get("tag")
     if tag == "text":
         return _styled_text(str(item.get("text") or ""), item.get("style"))

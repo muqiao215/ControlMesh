@@ -255,7 +255,7 @@ class TestE2EHandshake:
 
         original_wait_for = asyncio.wait_for
 
-        async def _patched_wait_for(coro: Any, *, timeout: float) -> Any:  # noqa: ARG001, ASYNC109
+        async def _patched_wait_for(coro: Any, *, timeout: float) -> Any:  # noqa: ASYNC109
             return await original_wait_for(coro, timeout=0.1)
 
         app = _build_app(server)

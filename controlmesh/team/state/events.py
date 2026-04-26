@@ -36,7 +36,7 @@ def append_event(paths: TeamStatePaths, event: TeamEvent) -> TeamEvent:
     return persisted
 
 
-def read_events(  # noqa: PLR0913
+def read_events(
     paths: TeamStatePaths,
     *,
     after_event_id: str | None = None,

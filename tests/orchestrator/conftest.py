@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from controlmesh.cli.auth import AuthResult, AuthStatus
 from controlmesh.config import AgentConfig
 from controlmesh.orchestrator.core import Orchestrator
 from controlmesh.workspace.init import init_workspace
@@ -51,6 +53,18 @@ def workspace(tmp_path: Path) -> tuple[ControlMeshPaths, AgentConfig]:
     init_workspace(paths)
     config = AgentConfig()
     return paths, config
+
+
+@pytest.fixture(autouse=True)
+def _mock_authenticated_providers() -> Generator[None, None, None]:
+    """Keep orchestrator workspace setup independent from local CLI auth."""
+    auth = {
+        "claude": AuthResult(provider="claude", status=AuthStatus.AUTHENTICATED),
+        "codex": AuthResult(provider="codex", status=AuthStatus.AUTHENTICATED),
+        "gemini": AuthResult(provider="gemini", status=AuthStatus.AUTHENTICATED),
+    }
+    with patch("controlmesh.cli.auth.check_all_auth", return_value=auth):
+        yield
 
 
 @pytest.fixture

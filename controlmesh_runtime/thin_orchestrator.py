@@ -230,7 +230,7 @@ class ThinOrchestrator:
             stop_reason=execution.stop_reason,
         )
 
-    def _build_run(  # noqa: PLR0913
+    def _build_run(
         self,
         *,
         packet_id: str,
@@ -270,7 +270,7 @@ class ThinOrchestrator:
         )
 
 
-def _trace(  # noqa: PLR0913
+def _trace(
     execution_event_type: Literal[
         "execution.plan_created",
         "execution.step_started",

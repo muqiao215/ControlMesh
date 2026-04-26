@@ -93,7 +93,7 @@ def _make_timeout_controller(orch: Orchestrator, kind: str) -> TimeoutController
     )
 
 
-async def _prepare_normal(  # noqa: PLR0913
+async def _prepare_normal(
     orch: Orchestrator,
     key: SessionKey,
     text: str,
@@ -375,7 +375,7 @@ async def _gemini_missing_config_key_warning(
     return OrchestratorResult(text=t("gemini.missing_key"))
 
 
-async def normal(  # noqa: PLR0913
+async def normal(
     orch: Orchestrator,
     key: SessionKey,
     text: str,
@@ -468,7 +468,7 @@ async def _normal_with_options(
         orch._inflight_tracker.complete(key.chat_id)
 
 
-async def normal_streaming(  # noqa: PLR0913
+async def normal_streaming(
     orch: Orchestrator,
     key: SessionKey,
     text: str,
@@ -511,7 +511,7 @@ async def provider_native_command(
     )
 
 
-async def provider_native_command_streaming(  # noqa: PLR0913
+async def provider_native_command_streaming(
     orch: Orchestrator,
     key: SessionKey,
     text: str,

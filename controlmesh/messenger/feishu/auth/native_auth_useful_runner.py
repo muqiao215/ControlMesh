@@ -76,7 +76,7 @@ def filter_useful_user_auth_scopes(
 class FeishuNativeAuthUsefulRunner:
     """Authorize all currently granted user scopes except excluded enterprise domains."""
 
-    def __init__(  # noqa: PLR0913 - explicit auth seams keep this testable.
+    def __init__(
         self,
         config: AgentConfig,
         *,
@@ -171,7 +171,7 @@ class FeishuNativeAuthUsefulRunner:
                 brand=self._config.feishu.brand,
                 tenant_access_token=tenant_access_token,
                 app_id=self._config.feishu.app_id,
-                token_type="user",  # noqa: S106 - Feishu scope token class, not a secret.
+                token_type="user",
             )
         except AppInfoAccessError:
             logger.warning("Feishu auth-useful could not inspect app scopes")
