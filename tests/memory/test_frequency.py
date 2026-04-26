@@ -872,7 +872,7 @@ class TestRenderPatternsSummary:
             ],
         )
         rendered = render_patterns_summary(result)
-        assert "[decision]" in rendered
+        assert "[decision local]" in rendered
 
     def test_open_candidates_section_header_shows_local_and_shared_scope_mix(self) -> None:
         result = PatternAnalysisResult(
@@ -972,7 +972,7 @@ class TestRenderPatternsSummary:
         )
         rendered = render_patterns_summary(result)
         assert "### Open Candidates (1) _(1 mixed)_" in rendered
-        assert "[fact local/shared]" in rendered
+        assert "[fact mixed]" in rendered
 
     def test_open_candidate_scope_shown_when_present(self) -> None:
         result = PatternAnalysisResult(
@@ -1073,7 +1073,7 @@ class TestRenderPatternsSummary:
         )
         rendered = render_patterns_summary(result)
         assert "### Promotion Candidates (1) _(1 mixed)_" in rendered
-        assert "[decision local/shared]" in rendered
+        assert "[decision mixed]" in rendered
 
     def test_promotion_candidate_default_local_scope_is_rendered(self) -> None:
         result = PatternAnalysisResult(

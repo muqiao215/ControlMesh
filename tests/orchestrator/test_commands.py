@@ -1279,6 +1279,50 @@ async def test_memory_patterns_promotion_candidates_show_scope_summary(orch: Orc
     assert "[decision shared]" in result.text
 
 
+async def test_memory_patterns_candidate_sections_use_unified_mixed_scope_notation(
+    orch: Orchestrator,
+) -> None:
+    """Mixed-scope repeated candidates should use the same label in both candidate sections."""
+    from datetime import UTC, datetime, timedelta
+
+    from controlmesh.memory.store import ensure_daily_note
+
+    candidate_lines = (
+        "- [fact] Mixed open candidate (confidence=80%) [oc:local-open]",
+        "- [fact shared] Mixed open candidate (confidence=80%) [oc:shared-open]",
+        "- [decision] Mixed promotion candidate [pc:local-promotion]",
+        "- [decision shared score=0.8] Mixed promotion candidate [pc:shared-promotion]",
+    )
+
+    for days_ago in (1, 2):
+        note_date = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0).date()
+        note_date = note_date - timedelta(days=days_ago)
+        note_path = ensure_daily_note(orch.paths, note_date)
+        note_path.write_text(
+            f"# Daily Memory: {note_date.isoformat()}\n\n"
+            "## Events\n\n"
+            "- [chat-turn] User asked about status #question [evt:aaa0000]\n\n"
+            "## Signals\n\n"
+            "## Open Candidates\n"
+            f"{candidate_lines[0]}\n"
+            f"{candidate_lines[1]}\n\n"
+            "## Promotion Candidates\n"
+            f"{candidate_lines[2]}\n"
+            f"{candidate_lines[3]}\n",
+            encoding="utf-8",
+        )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory patterns")
+    assert "### Open Candidates (1) _(1 mixed)_" in result.text
+    assert "### Promotion Candidates (1) _(1 mixed)_" in result.text
+    assert "[fact mixed]" in result.text
+    assert "[decision mixed]" in result.text
+    assert "[fact local/shared]" not in result.text
+    assert "[decision local/shared]" not in result.text
+    assert "### Events (1)" in result.text
+    assert "### Signals" not in result.text
+
+
 async def test_memory_patterns_no_repeated_shows_empty(orch: Orchestrator) -> None:
     """Test /memory patterns shows empty-state message when no patterns exist."""
     from datetime import UTC, datetime

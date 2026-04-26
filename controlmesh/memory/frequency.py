@@ -422,9 +422,10 @@ def _format_pattern_section_header(section: str, section_patterns: list[Repeated
     mixed_count = 0
 
     for pattern in section_patterns:
-        if len(pattern.scopes) > 1:
+        scope_label = _pattern_scope_label(pattern)
+        if scope_label == "mixed":
             mixed_count += 1
-        elif pattern.scopes and pattern.scopes[0] == MemoryScope.SHARED:
+        elif scope_label == MemoryScope.SHARED.value:
             shared_count += 1
         else:
             local_count += 1
@@ -450,8 +451,16 @@ def _format_pattern_extra(pattern: RepeatedPattern) -> str:
     label_parts: list[str] = []
     if pattern.category:
         label_parts.append(pattern.category)
-    if len(pattern.scopes) == 1:
-        label_parts.append(pattern.scopes[0].value)
-    elif len(pattern.scopes) > 1:
-        label_parts.append("local/shared")
+    scope_label = _pattern_scope_label(pattern)
+    if scope_label:
+        label_parts.append(scope_label)
     return f" [{' '.join(label_parts)}]" if label_parts else ""
+
+
+def _pattern_scope_label(pattern: RepeatedPattern) -> str:
+    """Return the shared scope notation used by scoped repeated-pattern rendering."""
+    if len(pattern.scopes) > 1:
+        return "mixed"
+    if pattern.scopes and pattern.scopes[0] == MemoryScope.SHARED:
+        return MemoryScope.SHARED.value
+    return MemoryScope.LOCAL.value
