@@ -131,6 +131,75 @@ There is still no autonomous scheduler or background dreaming job in this cut.
 - historical migration
 - OpenClaw runtime assumptions that depend on its own command surface
 
+## Scope Visibility Coverage
+
+Scope visibility is now considered complete for the currently intended
+operator-facing memory surfaces. This section is an acceptance note for the
+current boundary, not a roadmap for new behavior.
+
+### Surfaces That Show Explicit Scope
+
+- `/memory`
+  - the full authority view shows an authority-level local/shared summary,
+    not per-entry scope badges
+- `/memory search <query>`
+  - exact-search hits show scope only when snippet matching can recover it
+    conservatively
+- `/memory why <id>`
+  - provenance reads authority metadata directly and shows the stored scope
+- `/memory promote` and `/memory promote apply`
+  - preview/apply output shows candidate or applied-entry scope explicitly
+- `/memory review [--scope local|shared]`
+  - authority counts, recent promotions, and today's open candidates show
+    explicit scope or scope summaries
+- `/memory today`
+  - daily-note summaries show scope only for `Open Candidates` and
+    `Promotion Candidates`
+- `/memory patterns`
+  - repeated-pattern output shows scope labels and section summaries only for
+    `Open Candidates` and `Promotion Candidates`
+- `/memory semantic <query>`
+  - semantic hits surface stored scope for authority entries and for scoped
+    daily-note candidate entries
+- `/memory deprecate`, `/memory dispute`, `/memory supersede`
+  - lifecycle mutation responses echo the affected authority entry scope
+
+### Exact vs Conservative Scope Propagation
+
+Exact stored scope is available where the implementation is entry-based rather
+than snippet-based:
+
+- authority-file-backed surfaces that parse `MEMORY.md` entries directly
+- promotion log and authority lifecycle metadata
+- semantic index records and semantic-search hits for:
+  - authority entries
+  - daily-note entries from `Open Candidates`
+  - daily-note entries from `Promotion Candidates`
+
+Daily-note candidate sections default to `local` when no explicit scope marker
+is present. This preserves backward compatibility for legacy candidate lines.
+
+`/memory search <query>` is intentionally more conservative. The FTS index is
+document-level, so scope is recovered from the returned snippet only when it
+can be matched back to one candidate or authority entry without ambiguity.
+When that match is not unique, the hit remains unlabeled instead of guessing.
+For daily-note hits this means candidate scope is snippet-based and
+conservative, not guaranteed exact per-entry attribution.
+
+### Intentionally Unchanged or Scope-Less Surfaces
+
+- `Events` and `Signals` remain scope-less in daily-note summaries, repeated
+  pattern output, and search results
+- non-candidate daily-note hits remain scope-less in both exact and semantic
+  search
+- `DREAMS.md` remains unchanged by scope-visibility work
+- `memory_system/MAINMEMORY.md` remains a compatibility mirror; this work does
+  not add a separate scope-specific presentation layer there
+
+Future contributors should treat this as the current boundary: scoped coverage
+is intentional on the surfaces above, and missing scope elsewhere is also
+intentional unless product behavior changes in a later phase.
+
 ## Why This Shape
 
 OpenClaw's docs show a solid architecture around explicit memory files,
