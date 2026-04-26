@@ -19,6 +19,7 @@ from controlmesh.memory.frequency import (
     _normalize,
     _parse_events_section,
     _parse_open_candidates_section,
+    _parse_promotion_candidates_section,
     _parse_signals_section,
     _split_sections,
     find_repeated_patterns,
@@ -242,6 +243,29 @@ class TestParseOpenCandidatesSection:
         assert len(entries) == 1
 
 
+class TestParsePromotionCandidatesSection:
+    def test_parses_promotion_candidate_with_shared_scope(self) -> None:
+        section = "- [fact shared score=0.90] Shared promotion candidate [pc:shared123]"
+        entries = _parse_promotion_candidates_section(section)
+        assert len(entries) == 1
+        assert entries[0].category == "fact"
+        assert entries[0].scope == MemoryScope.SHARED
+        assert entries[0].display_text == "Shared promotion candidate"
+
+    def test_promotion_candidate_without_scope_defaults_to_local(self) -> None:
+        section = "- [decision] Legacy promotion candidate [pc:legacy123]"
+        entries = _parse_promotion_candidates_section(section)
+        assert len(entries) == 1
+        assert entries[0].scope == MemoryScope.LOCAL
+
+    def test_promotion_candidate_marker_is_optional(self) -> None:
+        section = "- [preference local score=0.75] Local promotion candidate without marker"
+        entries = _parse_promotion_candidates_section(section)
+        assert len(entries) == 1
+        assert entries[0].scope == MemoryScope.LOCAL
+        assert entries[0].display_text == "Local promotion candidate without marker"
+
+
 # ---------------------------------------------------------------------------
 # Pattern analysis - core
 # ---------------------------------------------------------------------------
@@ -411,6 +435,75 @@ class TestFindRepeatedPatterns:
         assert result.total_patterns == 1
         assert result.patterns[0].section == "Open Candidates"
         assert result.patterns[0].scopes == [MemoryScope.LOCAL]
+
+    def test_repeated_local_promotion_candidates_preserve_local_scope(self, tmp_path: Path) -> None:
+        paths = _make_paths(tmp_path)
+        local_text = "Local promotion candidate"
+        for day, marker in ((24, "local24"), (25, "local25")):
+            note_path = ensure_daily_note(paths, date(2026, 4, day))
+            note_path.write_text(
+                f"# Daily Memory: 2026-04-{day:02d}\n\n"
+                "## Events\n\n"
+                "## Signals\n\n"
+                "## Promotion Candidates\n"
+                f"- [decision] {local_text} [pc:{marker}]\n",
+                encoding="utf-8",
+            )
+
+        result = find_repeated_patterns(paths, window_days=7, end_date=date(2026, 4, 25))
+
+        assert result.total_patterns == 1
+        assert result.patterns[0].section == "Promotion Candidates"
+        assert result.patterns[0].scopes == [MemoryScope.LOCAL]
+
+    def test_repeated_shared_promotion_candidates_preserve_shared_scope(self, tmp_path: Path) -> None:
+        paths = _make_paths(tmp_path)
+        shared_text = "Shared promotion candidate"
+        for day, marker in ((24, "shared24"), (25, "shared25")):
+            note_path = ensure_daily_note(paths, date(2026, 4, day))
+            note_path.write_text(
+                f"# Daily Memory: 2026-04-{day:02d}\n\n"
+                "## Events\n\n"
+                "## Signals\n\n"
+                "## Promotion Candidates\n"
+                f"- [fact shared score=0.90] {shared_text} [pc:{marker}]\n",
+                encoding="utf-8",
+            )
+
+        result = find_repeated_patterns(paths, window_days=7, end_date=date(2026, 4, 25))
+
+        assert result.total_patterns == 1
+        assert result.patterns[0].section == "Promotion Candidates"
+        assert result.patterns[0].scopes == [MemoryScope.SHARED]
+
+    def test_repeated_mixed_scope_promotion_candidates_surface_both_scopes(
+        self, tmp_path: Path
+    ) -> None:
+        paths = _make_paths(tmp_path)
+        mixed_text = "Mixed promotion candidate"
+        note_specs = (
+            (23, "- [decision] Mixed promotion candidate [pc:local23]"),
+            (24, "- [decision shared score=0.85] Mixed promotion candidate [pc:shared24]"),
+            (25, "- [decision] Mixed promotion candidate [pc:local25]"),
+        )
+
+        for day, entry_line in note_specs:
+            note_path = ensure_daily_note(paths, date(2026, 4, day))
+            note_path.write_text(
+                f"# Daily Memory: 2026-04-{day:02d}\n\n"
+                "## Events\n\n"
+                "## Signals\n\n"
+                "## Promotion Candidates\n"
+                f"{entry_line}\n",
+                encoding="utf-8",
+            )
+
+        result = find_repeated_patterns(paths, window_days=7, end_date=date(2026, 4, 25))
+
+        assert result.total_patterns == 1
+        assert result.patterns[0].section == "Promotion Candidates"
+        assert result.patterns[0].display_text == mixed_text
+        assert result.patterns[0].scopes == [MemoryScope.LOCAL, MemoryScope.SHARED]
 
     def test_three_different_repeated_items(self, tmp_path: Path) -> None:
         """Events, signals, and open candidates each repeat - all three found."""
@@ -924,6 +1017,107 @@ class TestRenderPatternsSummary:
         )
         rendered = render_patterns_summary(result)
         assert "[fact local]" in rendered
+
+    def test_promotion_candidates_section_header_shows_local_and_shared_scope_mix(self) -> None:
+        result = PatternAnalysisResult(
+            window_start=date(2026, 4, 19),
+            window_end=date(2026, 4, 25),
+            patterns=[
+                RepeatedPattern(
+                    normalized_key="local promotion candidate",
+                    display_text="Local promotion candidate",
+                    section="Promotion Candidates",
+                    count=2,
+                    first_seen=date(2026, 4, 23),
+                    last_seen=date(2026, 4, 24),
+                    note_dates=[date(2026, 4, 23), date(2026, 4, 24)],
+                    source_refs=[],
+                    category="decision",
+                    scopes=[MemoryScope.LOCAL],
+                ),
+                RepeatedPattern(
+                    normalized_key="shared promotion candidate",
+                    display_text="Shared promotion candidate",
+                    section="Promotion Candidates",
+                    count=2,
+                    first_seen=date(2026, 4, 23),
+                    last_seen=date(2026, 4, 24),
+                    note_dates=[date(2026, 4, 23), date(2026, 4, 24)],
+                    source_refs=[],
+                    category="fact",
+                    scopes=[MemoryScope.SHARED],
+                ),
+            ],
+        )
+        rendered = render_patterns_summary(result)
+        assert "### Promotion Candidates (2) _(1 local, 1 shared)_" in rendered
+
+    def test_promotion_candidate_mixed_scope_is_rendered_compactly(self) -> None:
+        result = PatternAnalysisResult(
+            window_start=date(2026, 4, 19),
+            window_end=date(2026, 4, 25),
+            patterns=[
+                RepeatedPattern(
+                    normalized_key="mixed promotion candidate",
+                    display_text="Mixed promotion candidate",
+                    section="Promotion Candidates",
+                    count=3,
+                    first_seen=date(2026, 4, 23),
+                    last_seen=date(2026, 4, 25),
+                    note_dates=[date(2026, 4, 23), date(2026, 4, 24), date(2026, 4, 25)],
+                    source_refs=[],
+                    category="decision",
+                    scopes=[MemoryScope.LOCAL, MemoryScope.SHARED],
+                )
+            ],
+        )
+        rendered = render_patterns_summary(result)
+        assert "### Promotion Candidates (1) _(1 mixed)_" in rendered
+        assert "[decision local/shared]" in rendered
+
+    def test_promotion_candidate_default_local_scope_is_rendered(self) -> None:
+        result = PatternAnalysisResult(
+            window_start=date(2026, 4, 19),
+            window_end=date(2026, 4, 25),
+            patterns=[
+                RepeatedPattern(
+                    normalized_key="local promotion candidate",
+                    display_text="Local promotion candidate",
+                    section="Promotion Candidates",
+                    count=2,
+                    first_seen=date(2026, 4, 23),
+                    last_seen=date(2026, 4, 24),
+                    note_dates=[date(2026, 4, 23), date(2026, 4, 24)],
+                    source_refs=[],
+                    category="decision",
+                    scopes=[MemoryScope.LOCAL],
+                )
+            ],
+        )
+        rendered = render_patterns_summary(result)
+        assert "[decision local]" in rendered
+
+    def test_promotion_candidate_shared_scope_is_rendered(self) -> None:
+        result = PatternAnalysisResult(
+            window_start=date(2026, 4, 19),
+            window_end=date(2026, 4, 25),
+            patterns=[
+                RepeatedPattern(
+                    normalized_key="shared promotion candidate",
+                    display_text="Shared promotion candidate",
+                    section="Promotion Candidates",
+                    count=2,
+                    first_seen=date(2026, 4, 23),
+                    last_seen=date(2026, 4, 24),
+                    note_dates=[date(2026, 4, 23), date(2026, 4, 24)],
+                    source_refs=[],
+                    category="fact",
+                    scopes=[MemoryScope.SHARED],
+                )
+            ],
+        )
+        rendered = render_patterns_summary(result)
+        assert "[fact shared]" in rendered
 
     def test_non_open_candidate_rendering_does_not_gain_scope_suffix(self) -> None:
         result = PatternAnalysisResult(

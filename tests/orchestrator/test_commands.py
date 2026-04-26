@@ -1245,6 +1245,40 @@ async def test_memory_patterns_open_candidates_header_shows_scope_summary(orch: 
     assert "[fact shared]" in result.text
 
 
+async def test_memory_patterns_promotion_candidates_show_scope_summary(orch: Orchestrator) -> None:
+    """Test /memory patterns surfaces scoped Promotion Candidates in the same compact form."""
+    from datetime import UTC, datetime, timedelta
+
+    from controlmesh.memory.store import ensure_daily_note
+
+    repeated_candidates = (
+        ("decision", "Local promotion candidate", "pc:local"),
+        ("decision shared score=0.8", "Shared promotion candidate", "pc:shared"),
+    )
+
+    for days_ago in (1, 2):
+        note_date = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0).date()
+        note_date = note_date - timedelta(days=days_ago)
+        note_path = ensure_daily_note(orch.paths, note_date)
+        promotion_candidates = "\n".join(
+            f"- [{label}] {content} [{marker_prefix}{days_ago}]"
+            for label, content, marker_prefix in repeated_candidates
+        )
+        note_path.write_text(
+            f"# Daily Memory: {note_date.isoformat()}\n\n"
+            "## Events\n\n"
+            "## Signals\n\n"
+            "## Promotion Candidates\n"
+            f"{promotion_candidates}\n",
+            encoding="utf-8",
+        )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory patterns")
+    assert "### Promotion Candidates (2) _(1 local, 1 shared)_" in result.text
+    assert "[decision local]" in result.text
+    assert "[decision shared]" in result.text
+
+
 async def test_memory_patterns_no_repeated_shows_empty(orch: Orchestrator) -> None:
     """Test /memory patterns shows empty-state message when no patterns exist."""
     from datetime import UTC, datetime

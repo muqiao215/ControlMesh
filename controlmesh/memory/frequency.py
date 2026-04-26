@@ -3,7 +3,7 @@
 Phase 6 scope:
 - Read/analyze helpers only; no AI summarization and no authority-memory mutation.
 - Simple, stable, explainable heuristics: text normalization, exact-match grouping.
-- Covers Events, Signals, and Open Candidates sections from daily notes.
+- Covers Events, Signals, Open Candidates, and Promotion Candidates sections from daily notes.
 """
 
 from __future__ import annotations
@@ -91,7 +91,15 @@ _OPEN_CANDIDATE_LINE_RE = re.compile(
     r"\s+\[oc:(?P<oc_id>[^\]]+)\]$"
 )
 
+_PROMOTION_CANDIDATE_LINE_RE = re.compile(
+    r"^- \[(?P<category>[a-z-]+)"
+    r"(?: (?P<scope>local|shared))?"
+    r"(?:\s+score=(?P<score>[0-9]+(?:\.[0-9]+)?))?\]\s+(?P<content>.+?)"
+    r"(?:\s+\[pc:(?P<pc_id>[^\]]+)\])?$"
+)
+
 _SECTION_RE = re.compile(r"^##\s+(.+)$")
+_SCOPED_PATTERN_SECTIONS = {"Open Candidates", "Promotion Candidates"}
 
 
 @dataclass
@@ -99,7 +107,7 @@ class _ParsedEntry:
     normalized_key: str
     display_text: str
     section: str
-    marker_id: str
+    marker_id: str | None
     category: str | None = None
     scope: MemoryScope | None = None
 
@@ -170,7 +178,33 @@ def _parse_open_candidates_section(section_text: str) -> list[_ParsedEntry]:
                 normalized_key=_normalize(content),
                 display_text=content,
                 section="Open Candidates",
-                marker_id=m.group("oc_id"),
+                marker_id=f"oc:{m.group('oc_id')}",
+                category=m.group("category"),
+                scope=MemoryScope(m.group("scope")) if m.group("scope") else MemoryScope.LOCAL,
+            )
+        )
+    return entries
+
+
+def _parse_promotion_candidates_section(section_text: str) -> list[_ParsedEntry]:
+    """Extract normalized promotion-candidate entries from a raw section body."""
+    entries: list[_ParsedEntry] = []
+    for raw_line in section_text.splitlines():
+        line = raw_line.strip()
+        if not line.startswith("- "):
+            continue
+        m = _PROMOTION_CANDIDATE_LINE_RE.match(line)
+        if m is None:
+            continue
+        content = m.group("content").strip()
+        if not content:
+            continue
+        entries.append(
+            _ParsedEntry(
+                normalized_key=_normalize(content),
+                display_text=content,
+                section="Promotion Candidates",
+                marker_id=f"pc:{m.group('pc_id')}" if m.group("pc_id") else None,
                 category=m.group("category"),
                 scope=MemoryScope(m.group("scope")) if m.group("scope") else MemoryScope.LOCAL,
             )
@@ -237,11 +271,23 @@ def _load_entries_for_date(
             )
         elif sec_name == "Open Candidates":
             result.extend(
-                (note_date, entry, f"{ref_base} [oc:{entry.marker_id}]")
+                (note_date, entry, _format_entry_source_ref(ref_base, entry))
                 for entry in _parse_open_candidates_section(sec_body)
+            )
+        elif sec_name == "Promotion Candidates":
+            result.extend(
+                (note_date, entry, _format_entry_source_ref(ref_base, entry))
+                for entry in _parse_promotion_candidates_section(sec_body)
             )
 
     return result
+
+
+def _format_entry_source_ref(ref_base: str, entry: _ParsedEntry) -> str:
+    """Render one stable source ref, preserving candidate markers when present."""
+    if entry.marker_id:
+        return f"{ref_base} [{entry.marker_id}]"
+    return ref_base
 
 
 def find_repeated_patterns(
@@ -253,7 +299,8 @@ def find_repeated_patterns(
     """Find items that appear in multiple daily notes within a bounded window.
 
     Performs deterministic normalization and exact-match grouping over Events,
-    Signals, and Open Candidates sections. No LLM, semantic, or fuzzy methods.
+    Signals, Open Candidates, and Promotion Candidates sections. No LLM,
+    semantic, or fuzzy methods.
 
     Args:
         paths: ControlMeshPaths pointing at the workspace.
@@ -293,7 +340,7 @@ def find_repeated_patterns(
         last_date = occurrences[-1][0]
         first_entry = occurrences[0][1]
         scopes: list[MemoryScope] = []
-        if section == "Open Candidates":
+        if section in _SCOPED_PATTERN_SECTIONS:
             seen_scopes: set[MemoryScope] = set()
             for _occ_date, entry, _ref in occurrences:
                 if entry.scope is None or entry.scope in seen_scopes:
@@ -367,7 +414,7 @@ def render_patterns_summary(result: PatternAnalysisResult, *, max_items: int = 1
 def _format_pattern_section_header(section: str, section_patterns: list[RepeatedPattern]) -> str:
     """Build one repeated-pattern section header, adding scope detail only where needed."""
     header = f"### {section} ({len(section_patterns)})"
-    if section != "Open Candidates":
+    if section not in _SCOPED_PATTERN_SECTIONS:
         return header
 
     local_count = 0
@@ -397,7 +444,7 @@ def _format_pattern_section_header(section: str, section_patterns: list[Repeated
 
 def _format_pattern_extra(pattern: RepeatedPattern) -> str:
     """Build the compact label suffix for one rendered repeated pattern."""
-    if pattern.section != "Open Candidates":
+    if pattern.section not in _SCOPED_PATTERN_SECTIONS:
         return f" [{pattern.category}]" if pattern.category else ""
 
     label_parts: list[str] = []
