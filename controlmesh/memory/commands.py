@@ -147,10 +147,10 @@ def render_daily_note_summary(paths: ControlMeshPaths, note_date: date) -> str:
             section_scopes[current_section] = []
         elif current_section and stripped.startswith("- "):
             section_counts[current_section] = section_counts.get(current_section, 0) + 1
-            preview = stripped[2:]
+            preview = _format_daily_note_preview_line(current_section, stripped)
             if len(section_previews[current_section]) < 2:
                 section_previews[current_section].append(
-                    preview[:80] + ("..." if len(preview) > 80 else "")
+                    _truncate_daily_note_preview(current_section, preview)
                 )
             if current_section == "Open Candidates":
                 section_scopes[current_section].append(
@@ -190,6 +190,42 @@ def _format_note_section(
     if count > len(previews):
         lines.append(f"  ... and {count - len(previews)} more")
     return "\n".join(lines)
+
+
+def _format_daily_note_preview_line(section_name: str, line: str) -> str:
+    """Render one daily-note bullet preview, with explicit scope for open candidates."""
+    preview = line.removeprefix("- ")
+    if section_name != "Open Candidates":
+        return preview
+
+    match = _OPEN_CANDIDATES_RE.match(line.strip())
+    if match is None:
+        return f"{preview} (local)"
+
+    category = match.group("category")
+    content = match.group("content").strip()
+    score_text = match.group("score")
+    scope = _coerce_memory_scope(match.group("scope"))
+    category_label = category if score_text is None else f"{category} score={score_text}"
+    return f"[{category_label}] {content} ({scope.value})"
+
+
+def _truncate_daily_note_preview(section_name: str, preview: str, *, max_length: int = 80) -> str:
+    """Clamp preview length while preserving the open-candidate scope suffix."""
+    if len(preview) <= max_length:
+        return preview
+    if section_name != "Open Candidates":
+        return preview[:max_length] + "..."
+
+    for scope in MemoryScope:
+        suffix = f" ({scope.value})"
+        if preview.endswith(suffix):
+            available = max_length - len(suffix) - 3
+            if available <= 0:
+                return "..." + suffix
+            return preview[:available] + "..." + suffix
+
+    return preview[:max_length] + "..."
 
 
 def _parse_open_candidate_scope_from_daily_note_line(line: str) -> MemoryScope:

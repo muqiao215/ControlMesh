@@ -950,7 +950,7 @@ def test_render_memory_review_shows_shared_scope_for_open_candidates(tmp_path: P
 def test_render_daily_note_summary_shows_mixed_scope_summary_for_open_candidates(
     tmp_path: Path,
 ) -> None:
-    """Daily-note summary surfaces the local/shared split on the Open Candidates header."""
+    """Daily-note summary surfaces the local/shared split on header and preview lines."""
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
     note_date = date(2026, 4, 26)
@@ -974,14 +974,14 @@ def test_render_daily_note_summary_shows_mixed_scope_summary_for_open_candidates
     assert "### Events (1 entries)" in summary
     assert "### Events (1 entries) _(" not in summary
     assert "### Open Candidates (2 entries) _(1 local, 1 shared)_" in summary
-    assert "- [preference] Default local candidate remains compact." in summary
-    assert "- [fact shared] Shared candidate shows in the header split." in summary
+    assert "- [preference] Default local candidate remains compact. (local)" in summary
+    assert "- [fact] Shared candidate shows in the header split. (shared)" in summary
 
 
 def test_render_daily_note_summary_shows_local_only_scope_summary_for_open_candidates(
     tmp_path: Path,
 ) -> None:
-    """Daily-note summary keeps local-only open candidates concise in the header."""
+    """Daily-note summary makes local/default open-candidate preview lines explicit."""
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
     note_date = date(2026, 4, 26)
@@ -999,14 +999,14 @@ def test_render_daily_note_summary_shows_local_only_scope_summary_for_open_candi
 
     summary = render_daily_note_summary(paths, note_date)
     assert "### Open Candidates (2 entries) _(2 local)_" in summary
-    assert "- [decision local] Explicit local candidate." in summary
-    assert "- [preference] Default local candidate." in summary
+    assert "- [decision] Explicit local candidate. (local)" in summary
+    assert "- [preference] Default local candidate. (local)" in summary
 
 
 def test_render_daily_note_summary_treats_legacy_open_candidates_as_local(
     tmp_path: Path,
 ) -> None:
-    """Legacy/unscoped open-candidate bullets still count as local in the header summary."""
+    """Legacy/unscoped open-candidate bullets still render sensibly as local."""
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
     note_date = date(2026, 4, 26)
@@ -1029,7 +1029,54 @@ def test_render_daily_note_summary_treats_legacy_open_candidates_as_local(
     assert "### Signals (1 entries)" in summary
     assert "### Signals (1 entries) _(" not in summary
     assert "### Open Candidates (1 entries) _(1 local)_" in summary
-    assert "- Legacy bullet without candidate syntax" in summary
+    assert "- Legacy bullet without candidate syntax (local)" in summary
+
+
+def test_render_daily_note_summary_preserves_scope_on_truncated_open_candidate_preview(
+    tmp_path: Path,
+) -> None:
+    """Truncated open-candidate previews still end with an explicit scope label."""
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    note_date = date(2026, 4, 26)
+    note_path = ensure_daily_note(paths, note_date)
+    note_path.write_text(
+        """# Daily Memory: 2026-04-26
+
+## Open Candidates
+
+- [fact shared] This shared candidate line is intentionally long so the preview truncation still needs to keep the scope marker visible at the end.
+""",
+        encoding="utf-8",
+    )
+
+    summary = render_daily_note_summary(paths, note_date)
+    assert "### Open Candidates (1 entries) _(1 shared)_" in summary
+    assert "- [fact] This shared candidate line is intentionally long" in summary
+    assert "... (shared)" in summary
+
+
+def test_render_daily_note_summary_preserves_candidate_score_in_open_candidate_preview(
+    tmp_path: Path,
+) -> None:
+    """Scoped daily-note previews keep explicit score markers on candidate lines."""
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    note_date = date(2026, 4, 26)
+    note_path = ensure_daily_note(paths, note_date)
+    note_path.write_text(
+        """# Daily Memory: 2026-04-26
+
+## Open Candidates
+
+- [decision shared score=0.95] High-confidence shared candidate.
+""",
+        encoding="utf-8",
+    )
+
+    summary = render_daily_note_summary(paths, note_date)
+    assert "### Open Candidates (1 entries) _(1 shared)_" in summary
+    assert "- [decision score=0.95] High-confidence shared candidate. (shared)" in summary
 
 
 def test_render_memory_review_shows_local_scope_for_open_candidates(tmp_path: Path) -> None:

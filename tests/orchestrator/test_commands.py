@@ -497,7 +497,7 @@ async def test_memory_empty(orch: Orchestrator) -> None:
 
 
 async def test_memory_today_shows_daily_note(orch: Orchestrator) -> None:
-    """Test /memory today returns a compact summary of today's daily note."""
+    """Test /memory today keeps non-open previews intact and scopes open candidates."""
     from datetime import UTC, datetime
 
     from controlmesh.memory.store import ensure_daily_note
@@ -521,8 +521,10 @@ async def test_memory_today_shows_daily_note(orch: Orchestrator) -> None:
     assert "### Signals (1 entries)" in result.text
     assert "### Evidence (0 entries)" in result.text
     assert "### Open Candidates (2 entries) _(1 local, 1 shared)_" in result.text
-    assert "decision" in result.text
-    assert "Team-wide candidate should be visible at a glance." in result.text
+    assert "- User asked about memory" in result.text
+    assert "- User seems interested in review" in result.text
+    assert "- [decision] Consider memory review workflow. (local)" in result.text
+    assert "- [fact] Team-wide candidate should be visible at a glance. (shared)" in result.text
 
 
 async def test_memory_today_no_note(orch: Orchestrator) -> None:
