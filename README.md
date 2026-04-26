@@ -120,10 +120,14 @@ controlmesh
 ```bash
 git clone https://github.com/muqiao215/ControlMesh.git
 cd ControlMesh
-python -m venv .venv
-. .venv/bin/activate
-pip install -e ".[matrix,api]"
-controlmesh
+uv sync --locked --all-extras --dev
+uv run controlmesh
+```
+
+检查本机 toolchain 是否满足仓库基线：
+
+```bash
+python ./scripts/doctor_toolchain.py --strict --require-bun
 ```
 
 首次启动会引导你完成 CLI 检查、聊天入口配置、时区设置和可选服务安装。

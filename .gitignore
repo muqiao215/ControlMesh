@@ -52,6 +52,9 @@ desktop.ini
 *.pid
 *.log
 *.sock
+playwright/.auth/
+playwright/.profiles/
+playwright/.locks/
 
 # Local harness/controller scratch
 /evidence.yaml

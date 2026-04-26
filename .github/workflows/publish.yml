@@ -5,15 +5,30 @@ on:
     tags:
       - "v*"
 
+env:
+  UV_VERSION: "0.11.7"
+  BUN_VERSION: "1.3.11"
+
 jobs:
   build:
     name: Build distribution
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Toolchain doctor
+        run: python scripts/doctor_toolchain.py --strict --require-bun
+      - name: Install build environment
+        run: uv sync --locked --all-extras --dev
       - name: Verify version consistency
         run: |
           python - <<'PY'
@@ -32,10 +47,8 @@ jobs:
               )
           print(f"Version OK: {project_version}")
           PY
-      - name: Install build
-        run: pip install build
       - name: Build package
-        run: python -m build
+        run: uv build
       - name: Verify dist contents
         run: |
           python - <<'PY'
@@ -96,7 +109,7 @@ jobs:
     needs: publish-pypi
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Wait for PyPI JSON to show the tagged version
         env:
           EXPECTED_VERSION: ${{ github.ref_name }}
