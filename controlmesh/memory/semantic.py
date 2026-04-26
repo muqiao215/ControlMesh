@@ -35,7 +35,7 @@ from controlmesh.workspace.paths import ControlMeshPaths
 # Constants
 # ---------------------------------------------------------------------------
 
-_INDEX_VERSION = 1
+_INDEX_VERSION = 2
 _TRIGRAM_SIZE = 3
 _MIN_NGRAM_LENGTH = 3  # skip texts shorter than this after normalization
 _DEFAULT_LIMIT = 10
@@ -50,6 +50,9 @@ _SCOPE_RE = re.compile(r"\bscope:\s*(?P<scope>local|shared)\b", re.IGNORECASE)
 # Daily note section header
 _SECTION_RE = re.compile(r"^##\s+(.+)$")
 _ITEM_RE = re.compile(r"^- \[(?P<kind>[^\]]+)\] (?P<content>.+?)(?: \[(?P<ref>[^\]]+)\])?$")
+_OPEN_CANDIDATE_RE = re.compile(
+    r"^- \[(?P<category>[a-z-]+)(?: (?P<scope>local|shared))?(?:\s+score=(?P<score>[0-9]+(?:\.[0-9]+)?))?\]\s+(?P<content>.+?)(?: \[(?P<ref>[^\]]+)\])?$"
+)
 
 # ---------------------------------------------------------------------------
 # Entry models (used only in this module, not persisted)
@@ -65,7 +68,7 @@ class _SourceEntry:
     content: str
     authority_entry_id: str | None = None  # only for authority entries
     line_number: int | None = None
-    scope: MemoryScope = MemoryScope.LOCAL
+    scope: MemoryScope | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -235,11 +238,20 @@ def _extract_daily_note_entries(paths: ControlMeshPaths) -> list[_SourceEntry]:
                 if not line.startswith("- "):
                     continue
 
-                m = _ITEM_RE.match(line)
-                if m is None:
-                    continue
+                scope: MemoryScope | None = None
+                if section_name == "Open Candidates":
+                    match = _OPEN_CANDIDATE_RE.match(line)
+                    if match is None:
+                        continue
+                    content = match.group("content").strip()
+                    scope_text = match.group("scope")
+                    scope = MemoryScope(scope_text) if scope_text else MemoryScope.LOCAL
+                else:
+                    match = _ITEM_RE.match(line)
+                    if match is None:
+                        continue
+                    content = match.group("content").strip()
 
-                content = m.group("content").strip()
                 if not content:
                     continue
 
@@ -259,6 +271,7 @@ def _extract_daily_note_entries(paths: ControlMeshPaths) -> list[_SourceEntry]:
                         content=content,
                         authority_entry_id=None,
                         line_number=real_lineno,
+                        scope=scope,
                     )
                 )
 
@@ -280,7 +293,7 @@ def _build_entry_record(entry: _SourceEntry, trigram_set: set[str]) -> dict[str,
         "content": entry.content,
         "authority_entry_id": entry.authority_entry_id,
         "line_number": entry.line_number,
-        "scope": entry.scope.value,
+        "scope": entry.scope.value if entry.scope is not None else None,
         "trigram_count": len(trigram_set),
     }
 
@@ -349,12 +362,17 @@ def _record_to_hit(score: float, record: dict[str, Any]) -> SemanticSearchHit:
     except ValueError:
         kind = MemoryDocumentKind.AUTHORITY
 
-    # Parse scope from record; default to None for non-authority entries
+    # Parse scope from record for authority hits and Open Candidates daily-note hits.
     scope: MemoryScope | None = None
-    if kind == MemoryDocumentKind.AUTHORITY:
-        scope_str = record.get("scope", "")
-        if scope_str in ("local", "shared"):
-            scope = MemoryScope(scope_str)
+    scope_str = record.get("scope", "")
+    if scope_str in ("local", "shared") and (
+        kind == MemoryDocumentKind.AUTHORITY
+        or (
+            kind == MemoryDocumentKind.DAILY_NOTE
+            and record.get("section") == "Open Candidates"
+        )
+    ):
+        scope = MemoryScope(scope_str)
 
     return SemanticSearchHit(
         entry_id=record.get("entry_id", ""),
@@ -375,9 +393,12 @@ def _load_index(paths: ControlMeshPaths) -> dict[str, Any] | None:
     if not index_path.exists():
         return None
     try:
-        return json.loads(index_path.read_text(encoding="utf-8"))
+        data = json.loads(index_path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return None
+    if data.get("version") != _INDEX_VERSION:
+        return None
+    return data
 
 
 def search_semantic_index(

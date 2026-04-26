@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import sqlite3
 from dataclasses import dataclass
 from datetime import date
@@ -20,6 +21,10 @@ from controlmesh.memory.store import initialize_memory_v2
 from controlmesh.workspace.paths import ControlMeshPaths
 
 _SEARCH_SNIPPET_TOKENS = 12
+_OPEN_CANDIDATES_HEADER = "## Open Candidates"
+_OPEN_CANDIDATE_LINE_RE = re.compile(
+    r"^- \[(?P<category>[a-z-]+)(?: (?P<scope>local|shared))?(?:\s+score=(?P<score>[0-9]+(?:\.[0-9]+)?))?\]\s+(?P<content>.+?)(?: \[(?P<ref>[^\]]+)\])?$"
+)
 
 
 @dataclass(frozen=True)
@@ -58,8 +63,7 @@ def _get_authority_scope_for_hit(
 
     # Extract the primary matched term from the snippet.
     # The matched term is the text inside [...] in the snippet.
-    import re as _re
-    matched_terms = _re.findall(r"\[([^\]]+)\]", snippet)
+    matched_terms = re.findall(r"\[([^\]]+)\]", snippet)
     if not matched_terms:
         return None
     primary_term = matched_terms[0].lower()
@@ -85,6 +89,84 @@ def _get_authority_scope_for_hit(
         return candidates[0]
     # Multiple matches or no match: conservative - return None rather than guess
     return None
+
+
+def _get_daily_note_open_candidate_scope_for_hit(
+    daily_note_path: Path,
+    snippet: str,
+) -> MemoryScope | None:
+    """Extract scope for a daily-note hit when it can be tied to Open Candidates.
+
+    Exact search indexes whole daily-note files, so scope is only surfaced when
+    the returned snippet can be conservatively matched back to a specific
+    ``## Open Candidates`` line. Non-open-candidate daily-note hits remain
+    unlabeled.
+    """
+    if not daily_note_path.exists():
+        return None
+
+    snippet_norm = _normalize_for_match(snippet.replace("...", " "))
+    if not snippet_norm:
+        return None
+
+    candidates: list[MemoryScope] = []
+    note_text = daily_note_path.read_text(encoding="utf-8")
+    for content, scope in _iter_open_candidate_entries(note_text):
+        if _open_candidate_content_matches_snippet(content, snippet_norm):
+            candidates.append(scope)
+
+    if len(candidates) == 1:
+        return candidates[0]
+    return None
+
+
+def _iter_open_candidate_entries(note_text: str) -> list[tuple[str, MemoryScope]]:
+    """Return parsed ``(content, scope)`` pairs from one daily note."""
+    entries: list[tuple[str, MemoryScope]] = []
+    in_open_candidates = False
+    for raw_line in note_text.splitlines():
+        stripped = raw_line.strip()
+        if stripped.startswith("## "):
+            in_open_candidates = stripped == _OPEN_CANDIDATES_HEADER
+            continue
+        if not in_open_candidates or not stripped.startswith("- "):
+            continue
+
+        match = _OPEN_CANDIDATE_LINE_RE.match(stripped)
+        if match is None:
+            continue
+
+        scope_text = match.group("scope")
+        scope = MemoryScope(scope_text) if scope_text else MemoryScope.LOCAL
+        entries.append((match.group("content").strip(), scope))
+    return entries
+
+
+def _normalize_for_match(text: str) -> str:
+    """Normalize text for conservative snippet-to-line matching."""
+    return re.sub(r"\s+", " ", re.sub(r"[^\w\s]", " ", text.lower())).strip()
+
+
+def _open_candidate_content_matches_snippet(content: str, snippet_norm: str) -> bool:
+    """Return whether an Open Candidates content string matches the FTS snippet."""
+    content_norm = _normalize_for_match(content)
+    if not content_norm:
+        return False
+
+    if content_norm in snippet_norm:
+        return True
+    if len(snippet_norm.split()) >= 3 and snippet_norm in content_norm:
+        return True
+
+    tokens = content_norm.split()
+    max_window = min(5, len(tokens))
+    for window_size in range(max_window, 1, -1):
+        for start in range(len(tokens) - window_size + 1):
+            phrase = " ".join(tokens[start : start + window_size])
+            if phrase in snippet_norm:
+                return True
+
+    return False
 
 
 def _extract_entry_content_for_match(line: str) -> str:
@@ -228,6 +310,11 @@ def search_memory_index(
         # Populate scope for authority hits by matching snippet to entry in authority file
         if kind == MemoryDocumentKind.AUTHORITY:
             hit.scope = _get_authority_scope_for_hit(authority_path, snippet)
+        elif kind == MemoryDocumentKind.DAILY_NOTE:
+            hit.scope = _get_daily_note_open_candidate_scope_for_hit(
+                paths.workspace / hit.source_path,
+                snippet,
+            )
         hits.append(hit)
     return MemorySearchResult(query=query, hits=hits)
 

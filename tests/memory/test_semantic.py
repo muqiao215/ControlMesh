@@ -196,7 +196,7 @@ def test_sync_semantic_index_builds_json_sidecar(tmp_path: Path) -> None:
     assert result.daily_count == 1
 
     data = json.loads(index_path.read_text(encoding="utf-8"))
-    assert data["version"] == 1
+    assert data["version"] == 2
     assert data["entry_count"] == 2
     assert len(data["entries"]) == 2
     # Each entry should have a stable entry_id and trigrams
@@ -591,6 +591,50 @@ def test_search_semantic_index_daily_notes_have_no_scope(tmp_path: Path) -> None
     assert daily_top.scope is None
 
 
+def test_search_semantic_index_open_candidates_return_shared_scope(tmp_path: Path) -> None:
+    """Open Candidates daily-note hits surface shared scope."""
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    note_path = ensure_daily_note(paths, date(2026, 4, 10))
+    note_path.write_text(
+        """# Daily Memory: 2026-04-10
+
+## Open Candidates
+- [fact shared score=0.9] Shared memory candidate for agents [oc:oc001]
+""",
+        encoding="utf-8",
+    )
+
+    result = search_semantic_index(paths, "agents shared memory candidate", limit=5)
+
+    daily_hits = [h for h in result.hits if h.kind == MemoryDocumentKind.DAILY_NOTE]
+    assert len(daily_hits) >= 1
+    assert daily_hits[0].scope == MemoryScope.SHARED
+    assert daily_hits[0].section == "Open Candidates"
+
+
+def test_search_semantic_index_open_candidates_default_to_local_scope(tmp_path: Path) -> None:
+    """Open Candidates daily-note hits default to local when scope is omitted."""
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    note_path = ensure_daily_note(paths, date(2026, 4, 10))
+    note_path.write_text(
+        """# Daily Memory: 2026-04-10
+
+## Open Candidates
+- [preference] Local default candidate for dark mode [oc:oc001]
+""",
+        encoding="utf-8",
+    )
+
+    result = search_semantic_index(paths, "default candidate dark mode", limit=5)
+
+    daily_hits = [h for h in result.hits if h.kind == MemoryDocumentKind.DAILY_NOTE]
+    assert len(daily_hits) >= 1
+    assert daily_hits[0].scope == MemoryScope.LOCAL
+    assert daily_hits[0].section == "Open Candidates"
+
+
 def test_search_semantic_index_scope_in_index_record(tmp_path: Path) -> None:
     """Scope is persisted in the semantic index JSON records."""
     paths = _make_paths(tmp_path)
@@ -615,3 +659,34 @@ def test_search_semantic_index_scope_in_index_record(tmp_path: Path) -> None:
 
     assert entries_by_id["shr001"]["scope"] == "shared"
     assert entries_by_id["loc001"]["scope"] == "local"
+
+
+def test_sync_semantic_index_records_open_candidate_scope_only_for_open_candidates(
+    tmp_path: Path,
+) -> None:
+    """Only Open Candidates daily-note records carry scope in the semantic index."""
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    note_path = ensure_daily_note(paths, date(2026, 4, 10))
+    note_path.write_text(
+        """# Daily Memory: 2026-04-10
+
+## Signals
+- [preference] Signal stays scope-less [sig:sig001]
+
+## Open Candidates
+- [fact shared score=0.9] Shared memory candidate for agents [oc:oc001]
+- [fact] Local default candidate for dark mode [oc:oc002]
+""",
+        encoding="utf-8",
+    )
+
+    sync_semantic_index(paths)
+    data = json.loads(_semantic_index_path(paths).read_text(encoding="utf-8"))
+
+    records = {(entry["section"], entry["content"]): entry for entry in data["entries"]}
+    assert records[("Signals", "Signal stays scope-less")]["scope"] is None
+    assert (
+        records[("Open Candidates", "Shared memory candidate for agents")]["scope"] == "shared"
+    )
+    assert records[("Open Candidates", "Local default candidate for dark mode")]["scope"] == "local"
