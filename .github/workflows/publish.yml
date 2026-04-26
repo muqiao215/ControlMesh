@@ -86,7 +86,7 @@ jobs:
               f"wheel_hits={len(wheel_hits)} sdist_hits={len(sdist_hits)}"
           )
           PY
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: dist
           path: dist/
@@ -99,7 +99,7 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           name: dist
           path: dist/
