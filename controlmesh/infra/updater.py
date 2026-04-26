@@ -153,6 +153,19 @@ def _build_upgrade_command(
         cmd.append(package_spec)
         return cmd
 
+    if shutil.which("uv"):
+        cmd = [
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            sys.executable,
+            "--no-cache",
+        ]
+        cmd.append("--reinstall" if force_reinstall else "--upgrade")
+        cmd.append(package_spec)
+        return cmd
+
     cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "--no-cache-dir"]
     if force_reinstall:
         cmd.append("--force-reinstall")
@@ -177,6 +190,11 @@ async def _run_upgrade_command(
     stdout, _ = await proc.communicate()
     output = stdout.decode(errors="replace") if stdout else ""
     return (proc.returncode or 0) == 0, output
+
+
+async def _ensure_pip_available(env: dict[str, str]) -> tuple[bool, str]:
+    """Best-effort bootstrap of ``pip`` into the active interpreter."""
+    return await _run_upgrade_command([sys.executable, "-m", "ensurepip", "--upgrade"], env=env)
 
 
 def _source_repo_hint(install_info: InstallInfo) -> Path | None:
@@ -473,8 +491,16 @@ async def _perform_source_upgrade_pipeline(
         return False, current_version, _combine_outputs(outputs)
 
     env = {**os.environ, "PIP_NO_CACHE_DIR": "1"}
-    ok, reinstall_output = await _run_upgrade_command(
-        [
+    reinstall_cmd = _build_upgrade_command(
+        mode="pip",
+        package_spec=str(repo_root),
+        target_version=None,
+        force_reinstall=True,
+    )
+    if reinstall_cmd[:4] == ["uv", "pip", "install", "--python"]:
+        reinstall_cmd.extend(["-e", str(repo_root)])
+    else:
+        reinstall_cmd = [
             sys.executable,
             "-m",
             "pip",
@@ -483,10 +509,9 @@ async def _perform_source_upgrade_pipeline(
             "--no-cache-dir",
             "-e",
             str(repo_root),
-        ],
-        env=env,
-        cwd=str(repo_root),
-    )
+        ]
+
+    ok, reinstall_output = await _run_upgrade_command(reinstall_cmd, env=env, cwd=str(repo_root))
     outputs.append(reinstall_output)
     if not ok:
         return (
@@ -497,7 +522,7 @@ async def _perform_source_upgrade_pipeline(
                     *outputs,
                     (
                         "Git fast-forward succeeded, but editable dependency refresh failed. "
-                        f"Review the pip output and rerun `python -m pip install -e {repo_root}`."
+                        "Review the installer output and rerun an editable reinstall for the repo."
                     ),
                 ]
             ),
@@ -545,6 +570,18 @@ async def _perform_upgrade_impl(
     ok, output = await _run_upgrade_command(cmd, env=env)
     if ok:
         return True, output
+
+    if (
+        install_info.mode == "pip"
+        and cmd[:3] == [sys.executable, "-m", "pip"]
+        and "No module named pip" in output
+    ):
+        ensure_ok, ensure_output = await _ensure_pip_available(env)
+        combined = _combine_outputs([output, ensure_output])
+        if ensure_ok:
+            retry_ok, retry_output = await _run_upgrade_command(cmd, env=env)
+            return retry_ok, _combine_outputs([combined, retry_output])
+        return False, combined
 
     # Older pipx setups may not support/handle runpip as expected.
     # Fall back to plain pipx upgrade so we keep behavior resilient.

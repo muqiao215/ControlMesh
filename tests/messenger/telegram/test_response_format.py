@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from controlmesh.text.response_format import (
     classify_cli_error,
+    compact_transport_text,
     new_session_text,
     session_error_text,
 )
@@ -86,3 +87,20 @@ class TestNewSessionText:
     def test_unknown_provider_passthrough(self) -> None:
         text = new_session_text("custom")
         assert "custom" in text
+
+
+class TestCompactTransportText:
+    def test_leaves_short_text_untouched(self) -> None:
+        text = "Short result"
+        assert compact_transport_text(text) == text
+
+    def test_trims_long_text_with_notice(self) -> None:
+        text = "\n".join(f"line {idx}" for idx in range(30))
+        result = compact_transport_text(text, max_chars=200, max_lines=5)
+        assert "Output trimmed for chat view" in result
+        assert "line 0" in result
+        assert "line 29" not in result
+
+    def test_skips_trimming_when_file_tag_present(self) -> None:
+        text = "See artifact <file:/tmp/result.md>"
+        assert compact_transport_text(text) == text

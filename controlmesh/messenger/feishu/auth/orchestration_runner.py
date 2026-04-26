@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 from controlmesh.config import AgentConfig
 from controlmesh.integrations.feishu_auth_kit import run_feishu_auth_kit_json
+from controlmesh.messenger.feishu.card_action_payload import extract_card_action_target
 from controlmesh.messenger.feishu.auth.card_auth_context import build_card_auth_context
 from controlmesh.messenger.feishu.auth.feishu_card_sender import FeishuCardSender
 from controlmesh.messenger.feishu.auth.runtime_continuation import (
@@ -354,13 +355,13 @@ def _parse_card_action(payload: dict[str, Any]) -> _ParsedCardAction | None:
         operator_open_id = operator.get("open_id")
         if not operator_open_id and isinstance(operator.get("operator_id"), dict):
             operator_open_id = operator["operator_id"].get("open_id")
-    message_id = event.get("open_message_id") or event.get("message_id")
+    _, _, message_id = extract_card_action_target(event)
     action_payload = value if isinstance(value, dict) else {}
     return _ParsedCardAction(
         action=str(action),
         operation_id=operation_id,
         operator_open_id=operator_open_id if isinstance(operator_open_id, str) else None,
-        message_id=message_id if isinstance(message_id, str) else None,
+        message_id=message_id,
         payload=action_payload,
     )
 

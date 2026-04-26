@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from controlmesh.bus.envelope import Envelope
+from controlmesh.text.response_format import compact_transport_text
 
 if TYPE_CHECKING:
     from controlmesh.messenger.weixin.bot import WeixinBot
@@ -21,11 +22,11 @@ class WeixinTransport:
         return "wx"
 
     async def deliver(self, envelope: Envelope) -> None:
-        text = envelope.result_text or envelope.prompt
+        text = compact_transport_text(envelope.delivery_text or envelope.result_text or envelope.prompt)
         if text:
             await self._bot.send_text(envelope.chat_id, text)
 
     async def deliver_broadcast(self, envelope: Envelope) -> None:
-        text = envelope.result_text or envelope.prompt
+        text = compact_transport_text(envelope.delivery_text or envelope.result_text or envelope.prompt)
         if text:
             await self._bot.broadcast_text(text)

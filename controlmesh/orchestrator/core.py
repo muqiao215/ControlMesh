@@ -420,7 +420,8 @@ class Orchestrator:
         if source is None:
             return
 
-        content, attachments = self._normalize_transcript_content(envelope.result_text)
+        visible_text = envelope.delivery_text or envelope.result_text
+        content, attachments = self._normalize_transcript_content(visible_text)
         if not content and not attachments:
             return
 

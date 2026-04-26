@@ -171,6 +171,7 @@ async def test_handle_card_action_builds_retry_artifact_and_injects_synthetic_me
         {
             "header": {"event_type": "card.action.trigger"},
             "event": {
+                "context": {"open_message_id": "om_card_1"},
                 "operator": {"open_id": "ou_sender"},
                 "action": {
                     "value": {
@@ -191,6 +192,8 @@ async def test_handle_card_action_builds_retry_artifact_and_injects_synthetic_me
         "--action",
         "permissions_granted_continue",
     ]
+    assert "--message-id" in calls[-1]
+    assert "om_card_1" in calls[-1]
     assert injected[0][0].operation_id == "op_123"
     assert injected[0][1]["kind"] == "synthetic_retry"
     assert FeishuAuthRuntimeStore(tmp_path).load("op_123") is None

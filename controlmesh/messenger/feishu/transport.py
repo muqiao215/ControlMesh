@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from controlmesh.bus.cron_sanitize import sanitize_cron_result_text
 from controlmesh.bus.envelope import Envelope, Origin
-from controlmesh.text.response_format import SEP, fmt
+from controlmesh.text.response_format import SEP, compact_transport_text, fmt
 
 if TYPE_CHECKING:
     from controlmesh.messenger.feishu.bot import FeishuBot
@@ -46,12 +46,16 @@ class FeishuTransport:
             if env.status == "aborted":
                 text = fmt(f"**[{env.session_name}] Cancelled**", SEP, f"_{env.prompt_preview}_")
             elif env.is_error:
-                text = fmt(f"**[{env.session_name}] Failed** ({elapsed})", SEP, env.result_text or "")
+                text = fmt(
+                    f"**[{env.session_name}] Failed** ({elapsed})",
+                    SEP,
+                    compact_transport_text(env.result_text) or "",
+                )
             else:
                 text = fmt(
                     f"**[{env.session_name}] Complete** ({elapsed})",
                     SEP,
-                    env.result_text or "_No output._",
+                    compact_transport_text(env.result_text) or "_No output._",
                 )
         else:
             task_id = env.metadata.get("task_id", "?")
@@ -66,19 +70,19 @@ class FeishuTransport:
                     f"**Background Task Failed** ({elapsed})",
                     SEP,
                     f"Task `{task_id}` failed ({env.status}).\nPrompt: _{env.prompt_preview}_\n\n"
-                    + (env.result_text or "_No output._"),
+                    + (compact_transport_text(env.result_text) or "_No output._"),
                 )
             else:
                 text = fmt(
                     f"**Background Task Complete** ({elapsed})",
                     SEP,
-                    env.result_text or "_No output._",
+                    compact_transport_text(env.result_text) or "_No output._",
                 )
         await self._bot.send_rich(env.chat_id, text)
 
     async def _deliver_heartbeat(self, env: Envelope) -> None:
         if env.result_text:
-            await self._bot.send_rich(env.chat_id, env.result_text)
+            await self._bot.send_rich(env.chat_id, compact_transport_text(env.result_text))
 
     async def _deliver_interagent(self, env: Envelope) -> None:
         if env.is_error:
@@ -92,13 +96,15 @@ class FeishuTransport:
             return
 
         notice = env.metadata.get("provider_switch_notice", "")
+        delivery_text = env.delivery_text or env.result_text
         if notice:
             await self._bot.send_rich(env.chat_id, f"**Provider Switch Detected**\n\n{notice}")
-        if env.result_text:
-            await self._bot.send_rich(env.chat_id, env.result_text)
+        if delivery_text:
+            await self._bot.send_rich(env.chat_id, compact_transport_text(delivery_text))
 
     async def _deliver_task_result(self, env: Envelope) -> None:
         name = env.metadata.get("name", env.metadata.get("task_id", "?"))
+        delivery_text = env.delivery_text or env.result_text
         note = ""
         if env.status == "done":
             duration = f"{env.elapsed_seconds:.0f}s"
@@ -112,14 +118,15 @@ class FeishuTransport:
 
         if note:
             await self._bot.send_rich(env.chat_id, note)
-        if env.needs_injection and env.result_text:
-            await self._bot.send_rich(env.chat_id, env.result_text)
+        if delivery_text:
+            await self._bot.send_rich(env.chat_id, compact_transport_text(delivery_text))
 
     async def _deliver_task_question(self, env: Envelope) -> None:
         task_id = env.metadata.get("task_id", "?")
+        delivery_text = env.delivery_text or env.result_text
         await self._bot.send_rich(env.chat_id, f"**Task `{task_id}` has a question:**\n{env.prompt}")
-        if env.result_text:
-            await self._bot.send_rich(env.chat_id, env.result_text)
+        if delivery_text:
+            await self._bot.send_rich(env.chat_id, compact_transport_text(delivery_text))
 
     async def _deliver_webhook_wake(self, env: Envelope) -> None:
         if env.result_text:

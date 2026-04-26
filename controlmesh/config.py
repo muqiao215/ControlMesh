@@ -52,13 +52,13 @@ except (ZoneInfoNotFoundError, KeyError):
 class StreamingConfig(BaseModel):
     """Settings for streaming response output."""
 
-    output_mode: Literal["full", "tools", "conversation", "off"] = "full"
+    output_mode: Literal["full", "tools", "conversation", "off"] = "conversation"
     tool_display: Literal["name", "details"] = "name"
     enabled: bool = True
     min_chars: int = 200
-    max_chars: int = 4000
+    max_chars: int = 1200
     idle_ms: int = 800
-    edit_interval_seconds: float = 2.0
+    edit_interval_seconds: float = 3.0
     max_edit_failures: int = 3
     append_mode: bool = False
     sentence_break: bool = True

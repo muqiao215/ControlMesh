@@ -403,6 +403,39 @@ class TestPerformUpgradePipeline:
         mock_run.assert_not_called()
 
 
+class TestPerformUpgradeImpl:
+    async def test_bootstraps_pip_with_ensurepip_when_missing(self) -> None:
+        from controlmesh.infra.updater import _perform_upgrade_impl
+
+        with (
+            patch(
+                "controlmesh.infra.updater.detect_install_info",
+                return_value=InstallInfo(mode="pip", source="pypi"),
+            ),
+            patch("controlmesh.infra.updater.shutil.which", return_value=None),
+            patch("controlmesh.infra.updater.sys.executable", "/tmp/cm-python"),
+            patch(
+                "controlmesh.infra.updater._run_upgrade_command",
+                new=AsyncMock(
+                    side_effect=[
+                        (False, "/tmp/cm-python: No module named pip"),
+                        (True, "ensurepip ok"),
+                        (True, "retry ok"),
+                    ]
+                ),
+            ) as mock_run,
+        ):
+            changed, output = await _perform_upgrade_impl(
+                target_version="0.22.4",
+                force_reinstall=False,
+            )
+
+        assert changed is True
+        assert "ensurepip ok" in output
+        assert "retry ok" in output
+        assert mock_run.call_count == 3
+
+
 class TestBuildUpgradeCommand:
     """Test source-aware upgrade command construction."""
 
@@ -423,6 +456,52 @@ class TestBuildUpgradeCommand:
             "--no-cache-dir",
             "--force-reinstall",
             "controlmesh @ git+https://github.com/muqiao215/ControlMesh.git@v0.16.0",
+        ]
+
+    def test_pip_install_prefers_uv_when_available(self) -> None:
+        with (
+            patch("controlmesh.infra.updater.shutil.which", return_value="/root/.local/bin/uv"),
+            patch("controlmesh.infra.updater.sys.executable", "/tmp/cm-python"),
+        ):
+            cmd = _build_upgrade_command(
+                mode="pip",
+                package_spec="controlmesh==0.22.4",
+                target_version="0.22.4",
+                force_reinstall=False,
+            )
+
+        assert cmd == [
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            "/tmp/cm-python",
+            "--no-cache",
+            "--upgrade",
+            "controlmesh==0.22.4",
+        ]
+
+    def test_pip_install_falls_back_to_python_m_pip_without_uv(self) -> None:
+        with (
+            patch("controlmesh.infra.updater.shutil.which", return_value=None),
+            patch("controlmesh.infra.updater.sys.executable", "/tmp/cm-python"),
+        ):
+            cmd = _build_upgrade_command(
+                mode="pip",
+                package_spec="controlmesh==0.22.4",
+                target_version="0.22.4",
+                force_reinstall=True,
+            )
+
+        assert cmd == [
+            "/tmp/cm-python",
+            "-m",
+            "pip",
+            "install",
+            "--upgrade",
+            "--no-cache-dir",
+            "--force-reinstall",
+            "controlmesh==0.22.4",
         ]
 
 

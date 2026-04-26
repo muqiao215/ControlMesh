@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from controlmesh.config import AgentConfig
+from controlmesh.messenger.feishu.card_action_payload import extract_card_action_target
 from controlmesh.messenger.feishu.settings_card import SettingsTab
 
 _COMMAND_CENTER_TABS: tuple[SettingsTab, ...] = ("streaming", "feishu", "version")
@@ -90,18 +91,12 @@ def parse_command_center_action(payload: dict[str, Any]) -> ParsedCommandCenterA
         if not operator_open_id and isinstance(operator.get("operator_id"), dict):
             operator_open_id = operator["operator_id"].get("open_id")
 
-    receive_id_type = "chat_id"
-    chat_id = event.get("open_chat_id")
-    if isinstance(chat_id, str) and chat_id:
-        receive_id_type = "open_chat_id"
-    else:
-        chat_id = event.get("chat_id")
-    message_id = event.get("open_message_id") or event.get("message_id")
+    chat_id, receive_id_type, message_id = extract_card_action_target(event)
     return ParsedCommandCenterAction(
         tab=raw_tab,
-        chat_id=chat_id if isinstance(chat_id, str) else None,
+        chat_id=chat_id,
         receive_id_type=receive_id_type,
-        message_id=message_id if isinstance(message_id, str) else None,
+        message_id=message_id,
         operator_open_id=operator_open_id if isinstance(operator_open_id, str) else None,
     )
 

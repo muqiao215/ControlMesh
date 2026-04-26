@@ -175,6 +175,15 @@ class TestEditStreamEditor:
         await editor.finalize("")
         assert bot.edit_message_text.call_count >= 2
 
+    async def test_live_overflow_keeps_single_message_during_stream(self) -> None:
+        bot, editor = _make_editor()
+        huge = "A" * 9000
+
+        await editor.append_text(huge)
+
+        assert bot.send_message.call_count == 1
+        assert bot.edit_message_text.call_count == 0
+
     async def test_has_content_after_tool(self) -> None:
         _, editor = _make_editor()
         await editor.append_tool("Bash")

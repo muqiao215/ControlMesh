@@ -213,6 +213,7 @@ def from_task_result(result: TaskResult) -> Envelope:
         prompt=prompt,
         prompt_preview=result.prompt_preview,
         result_text=result.result_text,
+        delivery_text=getattr(result, "delivery_text", ""),
         status=result.status,
         is_error=result.status == "failed",
         delivery=DeliveryMode.UNICAST,

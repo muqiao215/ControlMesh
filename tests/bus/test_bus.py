@@ -208,6 +208,79 @@ async def test_injection_failure_sets_error() -> None:
     t.deliver.assert_awaited_once()
 
 
+async def test_task_result_injection_writes_delivery_text_not_payload() -> None:
+    bus = MessageBus()
+    t = _mock_transport()
+    bus.register_transport(t)
+
+    injector = AsyncMock()
+    injector.inject_prompt = AsyncMock(return_value="Checked summary")
+    bus.set_injector(injector)
+
+    env = _env(
+        origin=Origin.TASK_RESULT,
+        needs_injection=True,
+        prompt="Review this task result",
+        result_text="Raw task payload with taskmemory and resume hint",
+        delivery_text="Raw preview",
+        lock_mode=LockMode.REQUIRED,
+        chat_id=10,
+    )
+    await bus.submit(env)
+
+    assert env.result_text == "Raw task payload with taskmemory and resume hint"
+    assert env.delivery_text == "Checked summary"
+    t.deliver.assert_awaited_once_with(env)
+
+
+async def test_interagent_injection_writes_delivery_text_not_payload() -> None:
+    bus = MessageBus()
+    t = _mock_transport()
+    bus.register_transport(t)
+
+    injector = AsyncMock()
+    injector.inject_prompt = AsyncMock(return_value="Frontstage interagent summary")
+    bus.set_injector(injector)
+
+    env = _env(
+        origin=Origin.INTERAGENT,
+        needs_injection=True,
+        prompt="Review this interagent result",
+        result_text="Raw interagent payload for internal review",
+        lock_mode=LockMode.REQUIRED,
+        chat_id=11,
+    )
+    await bus.submit(env)
+
+    assert env.result_text == "Raw interagent payload for internal review"
+    assert env.delivery_text == "Frontstage interagent summary"
+    t.deliver.assert_awaited_once_with(env)
+
+
+async def test_task_question_injection_writes_delivery_text() -> None:
+    bus = MessageBus()
+    t = _mock_transport()
+    bus.register_transport(t)
+
+    injector = AsyncMock()
+    injector.inject_prompt = AsyncMock(return_value="Ask them for UTF-8")
+    bus.set_injector(injector)
+
+    env = _env(
+        origin=Origin.TASK_QUESTION,
+        needs_injection=True,
+        prompt="Task needs clarification",
+        result_text="",
+        lock_mode=LockMode.REQUIRED,
+        chat_id=12,
+    )
+    await bus.submit(env)
+
+    assert env.result_text == ""
+    assert env.delivery_text == "Ask them for UTF-8"
+    t.deliver.assert_awaited_once_with(env)
+
+
 # -- Pre-deliver hook --
 
 

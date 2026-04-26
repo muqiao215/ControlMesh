@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 from controlmesh.bus.cron_sanitize import sanitize_cron_result_text
 from controlmesh.bus.envelope import Envelope, Origin
 from controlmesh.messenger.telegram.sender import SendRichOpts, send_rich
-from controlmesh.text.response_format import SEP, fmt
+from controlmesh.text.response_format import SEP, compact_transport_text, fmt
 
 if TYPE_CHECKING:
     from controlmesh.messenger.telegram.app import TelegramBot
@@ -96,9 +96,13 @@ class TelegramTransport:
         if env.status == "aborted":
             return fmt(f"**[{name}] Cancelled**", SEP, f"_{env.prompt_preview}_")
         if env.is_error:
-            body = env.result_text[:2000] if env.result_text else "_No output._"
+            body = compact_transport_text(env.result_text) if env.result_text else "_No output._"
             return fmt(f"**[{name}] Failed** ({elapsed})", SEP, body)
-        return fmt(f"**[{name}] Complete** ({elapsed})", SEP, env.result_text or "_No output._")
+        return fmt(
+            f"**[{name}] Complete** ({elapsed})",
+            SEP,
+            compact_transport_text(env.result_text) or "_No output._",
+        )
 
     @staticmethod
     def _format_stateless(env: Envelope, elapsed: str) -> str:
@@ -115,12 +119,12 @@ class TelegramTransport:
                 SEP,
                 f"Task `{task_id}` failed ({env.status}).\n"
                 f"Prompt: _{env.prompt_preview}_\n\n"
-                + (env.result_text[:2000] if env.result_text else "_No output._"),
+                + (compact_transport_text(env.result_text) if env.result_text else "_No output._"),
             )
         return fmt(
             f"**Background Task Complete** ({elapsed})",
             SEP,
-            env.result_text or "_No output._",
+            compact_transport_text(env.result_text) or "_No output._",
         )
 
     async def _deliver_heartbeat(self, env: Envelope) -> None:
@@ -152,6 +156,7 @@ class TelegramTransport:
     async def _deliver_interagent(self, env: Envelope) -> None:
         """Deliver inter-agent result (error notification or injected response)."""
         roots = self._roots()
+        delivery_text = env.delivery_text or env.result_text
 
         if env.is_error:
             session_info = f"\nSession: `{env.session_name}`" if env.session_name else ""
@@ -176,12 +181,12 @@ class TelegramTransport:
                 SendRichOpts(allowed_roots=roots),
             )
 
-        # Result text (filled by bus injection)
-        if env.result_text:
+        # Frontstage delivery text (separate from the internal handoff payload)
+        if delivery_text:
             await send_rich(
                 self._bot.bot_instance,
                 env.chat_id,
-                env.result_text,
+                compact_transport_text(delivery_text),
                 SendRichOpts(allowed_roots=roots),
             )
 
@@ -189,6 +194,7 @@ class TelegramTransport:
         """Deliver task result notification + injected response."""
         opts = self._opts(env)
         name = env.metadata.get("name", env.metadata.get("task_id", "?"))
+        delivery_text = env.delivery_text or env.result_text
 
         # 1. Notification (skip "waiting" — question already shown)
         note = ""
@@ -205,22 +211,33 @@ class TelegramTransport:
         if note:
             await send_rich(self._bot.bot_instance, env.chat_id, note, opts)
 
-        # 2. Injected response (filled by bus injection for done/failed)
-        if env.needs_injection and env.result_text:
-            await send_rich(self._bot.bot_instance, env.chat_id, env.result_text, opts)
+        # 2. Frontstage delivery text (separate from the internal review payload)
+        if delivery_text:
+            await send_rich(
+                self._bot.bot_instance,
+                env.chat_id,
+                compact_transport_text(delivery_text),
+                opts,
+            )
 
     async def _deliver_task_question(self, env: Envelope) -> None:
         """Deliver task question notification + injected agent response."""
         opts = self._opts(env)
         task_id = env.metadata.get("task_id", "?")
+        delivery_text = env.delivery_text or env.result_text
 
         # 1. Notification
         note = f"**Task `{task_id}` has a question:**\n{env.prompt}"
         await send_rich(self._bot.bot_instance, env.chat_id, note, opts)
 
-        # 2. Agent response (filled by bus injection)
-        if env.result_text:
-            await send_rich(self._bot.bot_instance, env.chat_id, env.result_text, opts)
+        # 2. Frontstage delivery text (separate from the internal question prompt)
+        if delivery_text:
+            await send_rich(
+                self._bot.bot_instance,
+                env.chat_id,
+                compact_transport_text(delivery_text),
+                opts,
+            )
 
     async def _deliver_webhook_wake(self, env: Envelope) -> None:
         """Deliver webhook wake result."""

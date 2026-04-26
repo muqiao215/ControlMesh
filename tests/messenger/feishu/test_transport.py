@@ -75,3 +75,57 @@ class TestFeishuTransport:
         text = bot.broadcast_rich.call_args[0][0]
         assert "**TASK: Sync**" in text
         assert "cron ok" in text
+
+    async def test_interagent_prefers_delivery_text_over_internal_payload(self) -> None:
+        transport, bot = _make_transport()
+
+        await transport.deliver(
+            _env(
+                origin=Origin.INTERAGENT,
+                result_text="internal interagent payload",
+                delivery_text="frontstage interagent reply",
+            )
+        )
+
+        bot.send_rich.assert_awaited_once_with(42, "frontstage interagent reply")
+
+    async def test_task_result_prefers_delivery_text_over_internal_payload(self) -> None:
+        transport, bot = _make_transport()
+
+        await transport.deliver(
+            _env(
+                origin=Origin.TASK_RESULT,
+                status="done",
+                result_text="internal payload that should not hit frontstage",
+                delivery_text="checked frontstage summary",
+                elapsed_seconds=30.0,
+                provider="claude",
+                model="opus",
+                metadata={"name": "research", "task_id": "t1"},
+            )
+        )
+
+        assert bot.send_rich.await_count == 2
+        delivered = bot.send_rich.call_args_list[1][0][1]
+        assert "checked frontstage summary" in delivered
+        assert "internal payload" not in delivered
+
+    async def test_task_question_prefers_delivery_text_over_internal_payload(self) -> None:
+        transport, bot = _make_transport()
+
+        await transport.deliver(
+            _env(
+                origin=Origin.TASK_QUESTION,
+                prompt="What encoding?",
+                result_text="internal prompt analysis",
+                delivery_text="Ask them to use UTF-8",
+                metadata={"task_id": "q1"},
+            )
+        )
+
+        assert bot.send_rich.await_count == 2
+        question = bot.send_rich.call_args_list[0][0][1]
+        assert "What encoding?" in question
+        delivered = bot.send_rich.call_args_list[1][0][1]
+        assert "Ask them to use UTF-8" in delivered
+        assert "internal prompt analysis" not in delivered

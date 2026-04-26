@@ -27,9 +27,11 @@ from controlmesh.messenger.matrix.credentials import login_or_restore
 from controlmesh.messenger.matrix.id_map import MatrixIdMap
 from controlmesh.messenger.matrix.sender import send_rich as matrix_send_rich
 from controlmesh.messenger.matrix.streaming import MatrixStreamEditor
+from controlmesh.messenger.matrix.streaming_mode import stream_callbacks_for_mode
 from controlmesh.messenger.matrix.typing import MatrixTypingContext
 from controlmesh.messenger.notifications import NotificationService
 from controlmesh.session.key import SessionKey
+from controlmesh.text.frontstage_delivery import prepare_frontstage_text
 from controlmesh.text.response_format import SEP, fmt
 
 if TYPE_CHECKING:
@@ -680,16 +682,26 @@ class MatrixBot:
             send_fn=self._send_rich,
             button_tracker=self._button_tracker,
         )
+        text_cb, tool_cb, system_cb = stream_callbacks_for_mode(
+            self._config.streaming.output_mode,
+            on_text=editor.on_delta,
+            on_tool=editor.on_tool,
+            on_system=editor.on_system,
+        )
         async with MatrixTypingContext(self._client, room_id):
             result = await orch.handle_message_streaming(
                 key,
                 text,
-                on_text_delta=editor.on_delta,
-                on_tool_activity=editor.on_tool,
-                on_system_status=editor.on_system,
+                on_text_delta=text_cb,
+                on_tool_activity=tool_cb,
+                on_system_status=system_cb,
             )
         self._maybe_append_footer(result)
-        await editor.finalize(result.text)
+        deliver_text = prepare_frontstage_text(
+            result.text,
+            output_dir=orch.paths.output_to_user_dir,
+        )
+        await editor.finalize(deliver_text)
 
     async def _run_non_streaming(
         self, key: SessionKey, text: str, room_id: str, event: object
@@ -704,7 +716,11 @@ class MatrixBot:
 
         self._maybe_append_footer(result)
         if result.text:
-            formatted = self._button_tracker.extract_and_format(room_id, result.text)
+            deliver_text = prepare_frontstage_text(
+                result.text,
+                output_dir=orch.paths.output_to_user_dir,
+            )
+            formatted = self._button_tracker.extract_and_format(room_id, deliver_text)
             await self._send_rich(room_id, formatted)
 
     def _is_authorized(

@@ -5,6 +5,8 @@ from __future__ import annotations
 from controlmesh.i18n import t
 
 SEP = "\u2500\u2500\u2500"
+TRANSPORT_PREVIEW_MAX_CHARS = 1200
+TRANSPORT_PREVIEW_MAX_LINES = 16
 
 _SHELL_TOOLS = frozenset({"bash", "powershell", "cmd", "sh", "zsh", "shell"})
 
@@ -17,6 +19,45 @@ def normalize_tool_name(name: str) -> str:
 def fmt(*blocks: str) -> str:
     """Join non-empty blocks with double newlines."""
     return "\n\n".join(b for b in blocks if b)
+
+
+def compact_transport_text(
+    text: str,
+    *,
+    max_chars: int = TRANSPORT_PREVIEW_MAX_CHARS,
+    max_lines: int = TRANSPORT_PREVIEW_MAX_LINES,
+    include_note: bool = True,
+) -> str:
+    """Trim oversized transport output into a chat-friendly preview.
+
+    Frontstage chat surfaces should not receive arbitrarily large background
+    payloads. Keep the head of the content, preserve normal-sized replies, and
+    add a short note when trimming occurs.
+    """
+    clean = (text or "").strip()
+    if not clean or "<file:" in clean:
+        return clean
+
+    lines = clean.splitlines()
+    limited_lines = lines[:max_lines]
+    preview = "\n".join(limited_lines).strip()
+    truncated = len(lines) > max_lines
+
+    if len(preview) > max_chars:
+        preview = preview[:max_chars].rstrip()
+        truncated = True
+
+    if not truncated and len(clean) <= max_chars:
+        return clean
+
+    if not preview:
+        preview = clean[:max_chars].rstrip()
+
+    trimmed = preview + "..."
+    if not include_note:
+        return trimmed
+
+    return fmt(trimmed, SEP, "Output trimmed for chat view. Ask for the full result if you need it.")
 
 
 # Known CLI error patterns -> user-friendly short explanation.

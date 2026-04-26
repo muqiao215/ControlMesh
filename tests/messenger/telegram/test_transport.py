@@ -353,6 +353,23 @@ class TestInteragentDelivery:
         second_text = mock_send.call_args_list[1][0][2]
         assert second_text == "Response text"
 
+    async def test_success_prefers_delivery_text_over_internal_payload(self) -> None:
+        transport, _, _ = _make_transport()
+        env = _env(
+            origin=Origin.INTERAGENT,
+            result_text="internal interagent payload",
+            delivery_text="frontstage interagent reply",
+        )
+
+        with patch(
+            "controlmesh.messenger.telegram.transport.send_rich", new_callable=AsyncMock
+        ) as mock_send:
+            await transport.deliver(env)
+
+        delivered = mock_send.call_args[0][2]
+        assert "frontstage interagent reply" in delivered
+        assert "internal interagent payload" not in delivered
+
 
 # ---------------------------------------------------------------------------
 # Task result delivery
@@ -383,6 +400,29 @@ class TestTaskResultDelivery:
         assert "research" in note
         assert "completed" in note
         assert "claude/opus" in note
+
+    async def test_done_prefers_delivery_text_over_internal_payload(self) -> None:
+        transport, _, _ = _make_transport()
+        env = _env(
+            origin=Origin.TASK_RESULT,
+            status="done",
+            result_text="internal payload that should not hit frontstage",
+            delivery_text="checked frontstage summary",
+            needs_injection=True,
+            elapsed_seconds=30.0,
+            provider="claude",
+            model="opus",
+            metadata={"name": "research", "task_id": "t1"},
+        )
+
+        with patch(
+            "controlmesh.messenger.telegram.transport.send_rich", new_callable=AsyncMock
+        ) as mock_send:
+            await transport.deliver(env)
+
+        delivered = mock_send.call_args_list[1][0][2]
+        assert "checked frontstage summary" in delivered
+        assert "internal payload" not in delivered
 
     async def test_failed(self) -> None:
         transport, _, _ = _make_transport()
@@ -418,6 +458,29 @@ class TestTaskResultDelivery:
         note = mock_send.call_args_list[0][0][2]
         assert "cancelled" in note
 
+    async def test_done_injection_is_trimmed_for_chat_view(self) -> None:
+        transport, _, _ = _make_transport()
+        env = _env(
+            origin=Origin.TASK_RESULT,
+            status="done",
+            result_text="\n".join(f"line {idx}" for idx in range(40)),
+            needs_injection=True,
+            elapsed_seconds=30.0,
+            provider="claude",
+            model="opus",
+            metadata={"name": "research", "task_id": "t1"},
+        )
+
+        with patch(
+            "controlmesh.messenger.telegram.transport.send_rich", new_callable=AsyncMock
+        ) as mock_send:
+            await transport.deliver(env)
+
+        injected = mock_send.call_args_list[1][0][2]
+        assert "Output trimmed for chat view" in injected
+        assert "line 0" in injected
+        assert "line 39" not in injected
+
 
 # ---------------------------------------------------------------------------
 # Task question delivery
@@ -445,6 +508,25 @@ class TestTaskQuestionDelivery:
         assert "What encoding?" in question
         answer = mock_send.call_args_list[1][0][2]
         assert answer == "Use UTF-8"
+
+    async def test_prefers_delivery_text_over_internal_payload(self) -> None:
+        transport, _, _ = _make_transport()
+        env = _env(
+            origin=Origin.TASK_QUESTION,
+            prompt="What encoding?",
+            result_text="internal prompt analysis",
+            delivery_text="Ask them to use UTF-8",
+            metadata={"task_id": "q1"},
+        )
+
+        with patch(
+            "controlmesh.messenger.telegram.transport.send_rich", new_callable=AsyncMock
+        ) as mock_send:
+            await transport.deliver(env)
+
+        answer = mock_send.call_args_list[1][0][2]
+        assert "Ask them to use UTF-8" in answer
+        assert "internal prompt analysis" not in answer
 
 
 # ---------------------------------------------------------------------------

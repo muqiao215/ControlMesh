@@ -184,6 +184,28 @@ async def test_record_frontstage_delivery_records_injected_task_result(
 
 
 @pytest.mark.asyncio
+async def test_record_frontstage_delivery_prefers_delivery_text_for_task_result(
+    orch: Orchestrator,
+) -> None:
+    key = SessionKey.telegram(188, 21)
+    envelope = Envelope(
+        origin=Origin.TASK_RESULT,
+        chat_id=key.chat_id,
+        topic_id=key.topic_id,
+        transport=key.transport,
+        result_text="raw payload that should stay internal",
+        delivery_text="checked frontstage summary",
+        status="done",
+    )
+
+    await orch.record_frontstage_delivery(envelope)
+
+    turns = orch._transcripts.read_recent(key, limit=10)
+    assert len(turns) == 1
+    assert turns[0].visible_content == "checked frontstage summary"
+
+
+@pytest.mark.asyncio
 async def test_record_frontstage_delivery_ignores_runtime_only_origins(
     orch: Orchestrator,
 ) -> None:

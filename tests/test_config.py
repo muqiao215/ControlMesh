@@ -66,10 +66,11 @@ def test_agent_config_normalizes_nullish_gemini_api_key() -> None:
 def test_agent_config_streaming_defaults() -> None:
     cfg = AgentConfig()
     assert cfg.streaming.enabled is True
-    assert cfg.streaming.output_mode == "full"
+    assert cfg.streaming.output_mode == "conversation"
     assert cfg.streaming.tool_display == "name"
     assert cfg.streaming.min_chars == 200
-    assert cfg.streaming.max_chars == 4000
+    assert cfg.streaming.max_chars == 1200
+    assert cfg.streaming.edit_interval_seconds == 3.0
 
 
 def test_agent_config_docker_defaults() -> None:

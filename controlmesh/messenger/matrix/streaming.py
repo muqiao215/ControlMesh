@@ -78,19 +78,21 @@ class MatrixStreamEditor:
 
     async def finalize(self, result_text: str | None) -> None:
         """Send the final segment with button extraction."""
-        final_text = self._buffer.strip()
+        final_text = (result_text or "").strip()
         logger.info(
             "Matrix streaming done: segments=%d final_buf_len=%d result_len=%d",
             self._segment_count,
-            len(final_text),
+            len(self._buffer.strip()),
             len(result_text) if result_text else 0,
         )
         if final_text:
             formatted = self._button_tracker.extract_and_format(self._room_id, final_text)
             await self._send_fn(self._room_id, formatted)
-        elif result_text:
-            # Fallback: no deltas received but orchestrator returned text.
-            formatted = self._button_tracker.extract_and_format(self._room_id, result_text)
+        else:
+            buffered = self._buffer.strip()
+            if not buffered:
+                return
+            formatted = self._button_tracker.extract_and_format(self._room_id, buffered)
             await self._send_fn(self._room_id, formatted)
 
     async def _flush_and_tag(self, _tag: str) -> None:

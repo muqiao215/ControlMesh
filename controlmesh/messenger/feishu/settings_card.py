@@ -8,6 +8,7 @@ from typing import Any, Literal
 from controlmesh.config import AgentConfig
 from controlmesh.infra.install import detect_install_info, detect_install_mode
 from controlmesh.infra.version import VersionInfo, get_current_version
+from controlmesh.messenger.feishu.card_action_payload import extract_card_action_target
 
 SettingsTab = Literal["streaming", "feishu", "messaging", "version"]
 _TABS: tuple[SettingsTab, ...] = ("streaming", "feishu", "messaging", "version")
@@ -85,15 +86,14 @@ def parse_settings_card_action(payload: dict[str, Any]) -> ParsedSettingsCardAct
         if not operator_open_id and isinstance(operator.get("operator_id"), dict):
             operator_open_id = operator["operator_id"].get("open_id")
 
-    chat_id = event.get("open_chat_id") or event.get("chat_id")
-    message_id = event.get("open_message_id") or event.get("message_id")
+    chat_id, _, message_id = extract_card_action_target(event)
     return ParsedSettingsCardAction(
         kind=kind,
         tab=raw_tab,
         callback_data=callback_data,
         target_version=target_version,
-        chat_id=chat_id if isinstance(chat_id, str) else None,
-        message_id=message_id if isinstance(message_id, str) else None,
+        chat_id=chat_id,
+        message_id=message_id,
         operator_open_id=operator_open_id if isinstance(operator_open_id, str) else None,
     )
 

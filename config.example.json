@@ -79,13 +79,13 @@
     },
 
     "streaming": {
-        "output_mode": "full",
+        "output_mode": "conversation",
         "tool_display": "name",
         "enabled": true,
         "min_chars": 200,
-        "max_chars": 4000,
+        "max_chars": 1200,
         "idle_ms": 800,
-        "edit_interval_seconds": 2.0,
+        "edit_interval_seconds": 3.0,
         "max_edit_failures": 3,
         "append_mode": false,
         "sentence_break": true

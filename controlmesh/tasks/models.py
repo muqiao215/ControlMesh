@@ -134,6 +134,7 @@ class TaskResult:
     elapsed_seconds: float
     provider: str
     model: str
+    delivery_text: str = ""
     transport: str = "tg"
     session_id: str = ""
     error: str = ""

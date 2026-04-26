@@ -69,6 +69,7 @@ class _FakeTaskResult:
     name: str = "research"
     prompt_preview: str = "find info"
     result_text: str = "found it"
+    delivery_text: str = "short found it"
     status: str = "done"
     elapsed_seconds: float = 5.0
     provider: str = "claude"
@@ -228,6 +229,7 @@ def test_from_task_result_done() -> None:
     assert env.needs_injection
     assert not env.is_error
     assert env.metadata["name"] == "research"
+    assert env.delivery_text == "short found it"
     assert "BACKGROUND TASK COMPLETED" in env.prompt
     assert "task_id='t1'" in env.prompt
     assert "found it" in env.prompt

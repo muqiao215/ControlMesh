@@ -264,7 +264,12 @@ class EditStreamEditor:
         chunks = split_html_message(full_html, max_len=TELEGRAM_MSG_LIMIT)
 
         if len(chunks) > 1:
-            await self._handle_overflow(chunks)
+            preview = chunks[0]
+            if self._s.active_msg is None:
+                await self._create_message(preview)
+            else:
+                await self._edit_message(preview)
+            self._s.last_edit_time = asyncio.get_event_loop().time()
             return
 
         if self._s.active_msg is None:
@@ -272,23 +277,6 @@ class EditStreamEditor:
         else:
             await self._edit_message(chunks[0])
 
-        self._s.last_edit_time = asyncio.get_event_loop().time()
-
-    async def _handle_overflow(self, chunks: list[str]) -> None:
-        """Seal current message with first chunk, continue in a new one."""
-        if self._s.active_msg is not None:
-            await self._edit_message(chunks[0])
-        else:
-            await self._create_message(chunks[0])
-
-        # Seal: reset state for continuation in a new message
-        logger.debug("Message sealed, starting new segment")
-        self._s.active_msg = None
-        self._s.sealed_segment_idx = len(self._s.segments)
-
-        remaining = "\n\n".join(chunks[1:])
-        if remaining.strip():
-            await self._create_message(remaining)
         self._s.last_edit_time = asyncio.get_event_loop().time()
 
     async def _create_message(self, text: str) -> None:

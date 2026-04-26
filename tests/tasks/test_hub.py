@@ -168,6 +168,7 @@ class TestRunAndDeliver:
         assert delivered[0].status == "done"
         assert delivered[0].result_text.startswith("task output")
         assert "resume_task.py" in delivered[0].result_text  # resume hint appended
+        assert delivered[0].delivery_text == "task output"
         assert delivered[0].name == "Test Task"
 
         entry = registry.get(task_id)

@@ -14,7 +14,7 @@ from controlmesh.bus.cron_sanitize import sanitize_cron_result_text
 from controlmesh.bus.envelope import Envelope, Origin
 from controlmesh.messenger.matrix.sender import MatrixSendOpts
 from controlmesh.messenger.matrix.sender import send_rich as matrix_send_rich
-from controlmesh.text.response_format import SEP, fmt
+from controlmesh.text.response_format import SEP, compact_transport_text, fmt
 
 if TYPE_CHECKING:
     from controlmesh.messenger.matrix.bot import MatrixBot
@@ -77,13 +77,13 @@ class MatrixTransport:
             if env.status == "aborted":
                 text = fmt(f"**[{env.session_name}] Cancelled**", SEP, f"_{env.prompt_preview}_")
             elif env.is_error:
-                body = env.result_text[:2000] if env.result_text else "_No output._"
+                body = compact_transport_text(env.result_text) if env.result_text else "_No output._"
                 text = fmt(f"**[{env.session_name}] Failed** ({elapsed})", SEP, body)
             else:
                 text = fmt(
                     f"**[{env.session_name}] Complete** ({elapsed})",
                     SEP,
-                    env.result_text or "_No output._",
+                    compact_transport_text(env.result_text) or "_No output._",
                 )
         else:
             task_id = env.metadata.get("task_id", "?")
@@ -98,13 +98,13 @@ class MatrixTransport:
                     f"**Background Task Failed** ({elapsed})",
                     SEP,
                     f"Task `{task_id}` failed ({env.status}).\nPrompt: _{env.prompt_preview}_\n\n"
-                    + (env.result_text[:2000] if env.result_text else "_No output._"),
+                    + (compact_transport_text(env.result_text) if env.result_text else "_No output._"),
                 )
             else:
                 text = fmt(
                     f"**Background Task Complete** ({elapsed})",
                     SEP,
-                    env.result_text or "_No output._",
+                    compact_transport_text(env.result_text) or "_No output._",
                 )
         await matrix_send_rich(self._bot.client, room_id, text, self._opts(env))
 
@@ -117,6 +117,7 @@ class MatrixTransport:
         room_id = self._resolve_room(env)
         if not room_id:
             return
+        delivery_text = env.delivery_text or env.result_text
         if env.is_error:
             session_info = f"\nSession: `{env.session_name}`" if env.session_name else ""
             text = (
@@ -135,14 +136,15 @@ class MatrixTransport:
                 room_id,
                 f"**Provider Switch Detected**\n\n{notice}",
             )
-        if env.result_text:
-            await matrix_send_rich(self._bot.client, room_id, env.result_text)
+        if delivery_text:
+            await matrix_send_rich(self._bot.client, room_id, compact_transport_text(delivery_text))
 
     async def _deliver_task_result(self, env: Envelope) -> None:
         room_id = self._resolve_room(env)
         if not room_id:
             return
         name = env.metadata.get("name", env.metadata.get("task_id", "?"))
+        delivery_text = env.delivery_text or env.result_text
 
         note = ""
         if env.status == "done":
@@ -157,18 +159,27 @@ class MatrixTransport:
 
         if note:
             await matrix_send_rich(self._bot.client, room_id, note)
-        if env.needs_injection and env.result_text:
-            await matrix_send_rich(self._bot.client, room_id, env.result_text)
+        if delivery_text:
+            await matrix_send_rich(
+                self._bot.client,
+                room_id,
+                compact_transport_text(delivery_text),
+            )
 
     async def _deliver_task_question(self, env: Envelope) -> None:
         room_id = self._resolve_room(env)
         if not room_id:
             return
         task_id = env.metadata.get("task_id", "?")
+        delivery_text = env.delivery_text or env.result_text
         note = f"**Task `{task_id}` has a question:**\n{env.prompt}"
         await matrix_send_rich(self._bot.client, room_id, note)
-        if env.result_text:
-            await matrix_send_rich(self._bot.client, room_id, env.result_text)
+        if delivery_text:
+            await matrix_send_rich(
+                self._bot.client,
+                room_id,
+                compact_transport_text(delivery_text),
+            )
 
     async def _deliver_webhook_wake(self, env: Envelope) -> None:
         room_id = self._resolve_room(env)

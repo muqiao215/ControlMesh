@@ -96,6 +96,32 @@ def test_parse_settings_card_action_normalizes_upgrade_payload() -> None:
     assert parsed.message_id == "om_card"
 
 
+def test_parse_settings_card_action_reads_p2_context_ids() -> None:
+    parsed = parse_settings_card_action(
+        {
+            "event": {
+                "context": {
+                    "open_chat_id": "oc_from_context",
+                    "open_message_id": "om_from_context",
+                },
+                "operator": {"open_id": "ou_sender"},
+                "action": {
+                    "value": {
+                        "cm_action": "settings_apply",
+                        "tab": "streaming",
+                        "callback_data": "st:o:tools",
+                    }
+                },
+            }
+        }
+    )
+
+    assert parsed is not None
+    assert parsed.chat_id == "oc_from_context"
+    assert parsed.message_id == "om_from_context"
+    assert parsed.operator_open_id == "ou_sender"
+
+
 def test_parse_settings_card_action_ignores_non_settings_payload() -> None:
     assert (
         parse_settings_card_action(

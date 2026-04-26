@@ -505,6 +505,42 @@ class TestFeishuBotRouting:
         content = call.kwargs["content"]
         assert content["header"]["title"]["content"] == "ControlMesh Advanced Settings"
 
+    async def test_handle_incoming_event_command_center_action_reads_context_ids(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path)
+        bot._orchestrator = _make_settings_orchestrator(bot, tmp_path)
+        bot._update_interactive_card = AsyncMock()  # type: ignore[method-assign]
+
+        payload = {
+            "schema": "2.0",
+            "header": {"event_type": "card.action.trigger"},
+            "event": {
+                "context": {
+                    "open_chat_id": "oc_chat_1",
+                    "open_message_id": "om_help",
+                },
+                "operator": {"open_id": "ou_sender"},
+                "action": {
+                    "value": {
+                        "cm_action": "command_center_settings",
+                        "tab": "version",
+                    }
+                },
+            },
+        }
+
+        await bot.handle_incoming_event(payload)
+
+        bot._update_interactive_card.assert_awaited_once()
+        handle = bot._update_interactive_card.await_args.args[0]
+        assert handle.chat_id == "oc_chat_1"
+        assert handle.message_id == "om_help"
+        updated_card = bot._update_interactive_card.await_args.args[1]
+        assert updated_card["header"]["title"]["content"] == "ControlMesh Advanced Settings"
+        assert updated_card["elements"][0]["actions"][3]["type"] == "primary"
+
     async def test_handle_incoming_event_routes_settings_card_action_before_auth_runner(
         self,
         tmp_path: Path,
@@ -522,7 +558,7 @@ class TestFeishuBotRouting:
             "schema": "2.0",
             "header": {"event_type": "card.action.trigger"},
             "event": {
-                "open_message_id": "om_settings",
+                "context": {"open_message_id": "om_settings"},
                 "operator": {"open_id": "ou_sender"},
                 "action": {
                     "value": {
@@ -557,8 +593,10 @@ class TestFeishuBotRouting:
             "schema": "2.0",
             "header": {"event_type": "card.action.trigger"},
             "event": {
-                "open_chat_id": "oc_chat_1",
-                "open_message_id": "om_settings",
+                "context": {
+                    "open_chat_id": "oc_chat_1",
+                    "open_message_id": "om_settings",
+                },
                 "operator": {"open_id": "ou_intruder"},
                 "action": {
                     "value": {
@@ -588,7 +626,7 @@ class TestFeishuBotRouting:
             "schema": "2.0",
             "header": {"event_type": "card.action.trigger"},
             "event": {
-                "open_message_id": "om_settings",
+                "context": {"open_message_id": "om_settings"},
                 "operator": {"open_id": "ou_sender"},
                 "action": {
                     "value": {

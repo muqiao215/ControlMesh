@@ -19,6 +19,7 @@ from controlmesh.messenger.telegram.streaming import create_stream_editor
 from controlmesh.messenger.telegram.typing import TypingContext
 from controlmesh.orchestrator.registry import OrchestratorResult
 from controlmesh.session.key import SessionKey
+from controlmesh.text.frontstage_delivery import prepare_frontstage_text
 from controlmesh.text.tool_event_format import format_tool_event_text
 
 if TYPE_CHECKING:
@@ -113,11 +114,15 @@ async def run_non_streaming_message(
 
     footer = _build_footer(result, dispatch.scene_config)
     result.text += footer
+    deliver_text = prepare_frontstage_text(
+        result.text,
+        output_dir=dispatch.orchestrator.paths.output_to_user_dir,
+    )
     reply_id = dispatch.reply_to.message_id if dispatch.reply_to else None
     await send_rich(
         dispatch.bot,
         dispatch.key.chat_id,
-        result.text,
+        deliver_text,
         SendRichOpts(
             reply_to_message_id=reply_id,
             allowed_roots=dispatch.allowed_roots,
@@ -210,7 +215,11 @@ async def run_streaming_message(
     if footer:
         await editor.append_text(footer)
         result.text += footer
-    await editor.finalize(result.text)
+    deliver_text = prepare_frontstage_text(
+        result.text,
+        output_dir=dispatch.orchestrator.paths.output_to_user_dir,
+    )
+    await editor.finalize(deliver_text)
 
     logger.info(
         "Streaming flow completed fallback=%s content=%s",
@@ -222,7 +231,7 @@ async def run_streaming_message(
         await send_rich(
             dispatch.bot,
             dispatch.key.chat_id,
-            result.text,
+            deliver_text,
             SendRichOpts(
                 reply_to_message_id=dispatch.message.message_id,
                 allowed_roots=dispatch.allowed_roots,
@@ -233,7 +242,7 @@ async def run_streaming_message(
         await send_files_from_text(
             dispatch.bot,
             dispatch.key.chat_id,
-            result.text,
+            deliver_text,
             allowed_roots=dispatch.allowed_roots,
             thread_id=dispatch.thread_id,
         )

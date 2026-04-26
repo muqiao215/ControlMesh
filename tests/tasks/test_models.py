@@ -143,6 +143,7 @@ class TestTaskResult:
             name="test",
             prompt_preview="short",
             result_text="done!",
+            delivery_text="short done!",
             status="done",
             elapsed_seconds=5.0,
             provider="claude",
@@ -150,6 +151,7 @@ class TestTaskResult:
         )
         assert result.status == "done"
         assert result.error == ""
+        assert result.delivery_text == "short done!"
 
     def test_thread_id_default(self) -> None:
         result = TaskResult(
@@ -199,3 +201,18 @@ class TestTaskResult:
         )
         assert result.chat_id == "qqbot:c2c:OPENID"
         assert result.thread_id == "qqbot:channel:THREAD"
+
+    def test_delivery_text_defaults_empty(self) -> None:
+        result = TaskResult(
+            task_id="x",
+            chat_id=1,
+            parent_agent="main",
+            name="t",
+            prompt_preview="p",
+            result_text="r",
+            status="done",
+            elapsed_seconds=0.0,
+            provider="c",
+            model="m",
+        )
+        assert result.delivery_text == ""

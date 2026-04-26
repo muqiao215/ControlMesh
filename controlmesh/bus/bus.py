@@ -7,7 +7,7 @@ import secrets
 from collections.abc import Awaitable, Callable
 from typing import Protocol, runtime_checkable
 
-from controlmesh.bus.envelope import DeliveryMode, Envelope, LockMode
+from controlmesh.bus.envelope import DeliveryMode, Envelope, LockMode, Origin
 from controlmesh.bus.lock_pool import LockPool
 from controlmesh.messenger.address import ChatRef, TopicRef
 
@@ -137,7 +137,14 @@ class MessageBus:
                     topic_id=envelope.topic_id,
                     transport=envelope.transport,
                 )
-                envelope.result_text = response
+                if envelope.origin in {
+                    Origin.TASK_RESULT,
+                    Origin.TASK_QUESTION,
+                    Origin.INTERAGENT,
+                }:
+                    envelope.delivery_text = response
+                else:
+                    envelope.result_text = response
             except Exception:
                 logger.exception(
                     "Injection failed: origin=%s chat=%s",
@@ -145,7 +152,16 @@ class MessageBus:
                     envelope.chat_id,
                 )
                 envelope.is_error = True
-                if not envelope.result_text:
+                if envelope.origin in {
+                    Origin.TASK_RESULT,
+                    Origin.TASK_QUESTION,
+                    Origin.INTERAGENT,
+                }:
+                    if not envelope.delivery_text:
+                        envelope.delivery_text = envelope.result_text or (
+                            f"Error processing {envelope.origin.value} result"
+                        )
+                elif not envelope.result_text:
                     envelope.result_text = f"Error processing {envelope.origin.value} result"
 
         if self._pre_deliver:
