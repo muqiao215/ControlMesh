@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 from pathlib import Path
 
+from controlmesh.memory.models import MemoryDocumentKind, MemoryScope
 from controlmesh.memory.search import search_memory_index, sync_memory_index
 from controlmesh.memory.store import append_dream_entry, ensure_daily_note, initialize_memory_v2
 from controlmesh.workspace.paths import ControlMeshPaths
@@ -114,3 +115,66 @@ def test_search_memory_index_returns_empty_hits_for_invalid_fts_query(tmp_path: 
         result = search_memory_index(paths, query, refresh=False)
         assert result.query == query
         assert result.hits == []
+
+
+def test_search_memory_index_promotion_candidates_return_shared_scope(tmp_path: Path) -> None:
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+
+    note_path = ensure_daily_note(paths, date(2026, 4, 10))
+    note_path.write_text(
+        """# Daily Memory: 2026-04-10
+
+## Promotion Candidates
+- [fact shared score=0.9] Shared promotion candidate for agents [pc:pc001]
+""",
+        encoding="utf-8",
+    )
+
+    result = search_memory_index(paths, "agents", limit=5)
+
+    daily_hits = [hit for hit in result.hits if hit.kind == MemoryDocumentKind.DAILY_NOTE]
+    assert len(daily_hits) >= 1
+    assert daily_hits[0].scope == MemoryScope.SHARED
+
+
+def test_search_memory_index_promotion_candidates_default_to_local_scope(tmp_path: Path) -> None:
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+
+    note_path = ensure_daily_note(paths, date(2026, 4, 10))
+    note_path.write_text(
+        """# Daily Memory: 2026-04-10
+
+## Promotion Candidates
+- [preference] Local promotion candidate for dark mode [pc:pc001]
+""",
+        encoding="utf-8",
+    )
+
+    result = search_memory_index(paths, "dark mode", limit=5)
+
+    daily_hits = [hit for hit in result.hits if hit.kind == MemoryDocumentKind.DAILY_NOTE]
+    assert len(daily_hits) >= 1
+    assert daily_hits[0].scope == MemoryScope.LOCAL
+
+
+def test_search_memory_index_non_candidate_daily_hits_remain_scope_less(tmp_path: Path) -> None:
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+
+    note_path = ensure_daily_note(paths, date(2026, 4, 10))
+    note_path.write_text(
+        """# Daily Memory: 2026-04-10
+
+## Signals
+- [preference] Signal stays scope-less for search [sig:sig001]
+""",
+        encoding="utf-8",
+    )
+
+    result = search_memory_index(paths, "scope less", limit=5)
+
+    daily_hits = [hit for hit in result.hits if hit.kind == MemoryDocumentKind.DAILY_NOTE]
+    assert len(daily_hits) >= 1
+    assert daily_hits[0].scope is None

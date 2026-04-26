@@ -50,7 +50,8 @@ _SCOPE_RE = re.compile(r"\bscope:\s*(?P<scope>local|shared)\b", re.IGNORECASE)
 # Daily note section header
 _SECTION_RE = re.compile(r"^##\s+(.+)$")
 _ITEM_RE = re.compile(r"^- \[(?P<kind>[^\]]+)\] (?P<content>.+?)(?: \[(?P<ref>[^\]]+)\])?$")
-_OPEN_CANDIDATE_RE = re.compile(
+_SCOPED_CANDIDATE_SECTIONS = {"Open Candidates", "Promotion Candidates"}
+_SCOPED_CANDIDATE_RE = re.compile(
     r"^- \[(?P<category>[a-z-]+)(?: (?P<scope>local|shared))?(?:\s+score=(?P<score>[0-9]+(?:\.[0-9]+)?))?\]\s+(?P<content>.+?)(?: \[(?P<ref>[^\]]+)\])?$"
 )
 
@@ -239,8 +240,8 @@ def _extract_daily_note_entries(paths: ControlMeshPaths) -> list[_SourceEntry]:
                     continue
 
                 scope: MemoryScope | None = None
-                if section_name == "Open Candidates":
-                    match = _OPEN_CANDIDATE_RE.match(line)
+                if section_name in _SCOPED_CANDIDATE_SECTIONS:
+                    match = _SCOPED_CANDIDATE_RE.match(line)
                     if match is None:
                         continue
                     content = match.group("content").strip()
@@ -362,14 +363,14 @@ def _record_to_hit(score: float, record: dict[str, Any]) -> SemanticSearchHit:
     except ValueError:
         kind = MemoryDocumentKind.AUTHORITY
 
-    # Parse scope from record for authority hits and Open Candidates daily-note hits.
+    # Parse scope from record for authority hits and scoped candidate daily-note hits.
     scope: MemoryScope | None = None
     scope_str = record.get("scope", "")
     if scope_str in ("local", "shared") and (
         kind == MemoryDocumentKind.AUTHORITY
         or (
             kind == MemoryDocumentKind.DAILY_NOTE
-            and record.get("section") == "Open Candidates"
+            and record.get("section") in _SCOPED_CANDIDATE_SECTIONS
         )
     ):
         scope = MemoryScope(scope_str)

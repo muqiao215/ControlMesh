@@ -635,6 +635,52 @@ def test_search_semantic_index_open_candidates_default_to_local_scope(tmp_path: 
     assert daily_hits[0].section == "Open Candidates"
 
 
+def test_search_semantic_index_promotion_candidates_return_shared_scope(tmp_path: Path) -> None:
+    """Promotion Candidates daily-note hits surface shared scope."""
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    note_path = ensure_daily_note(paths, date(2026, 4, 10))
+    note_path.write_text(
+        """# Daily Memory: 2026-04-10
+
+## Promotion Candidates
+- [fact shared score=0.9] Shared promotion candidate for agents [pc:pc001]
+""",
+        encoding="utf-8",
+    )
+
+    result = search_semantic_index(paths, "agents shared promotion candidate", limit=5)
+
+    daily_hits = [h for h in result.hits if h.kind == MemoryDocumentKind.DAILY_NOTE]
+    assert len(daily_hits) >= 1
+    assert daily_hits[0].scope == MemoryScope.SHARED
+    assert daily_hits[0].section == "Promotion Candidates"
+
+
+def test_search_semantic_index_promotion_candidates_default_to_local_scope(
+    tmp_path: Path,
+) -> None:
+    """Promotion Candidates daily-note hits default to local when scope is omitted."""
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    note_path = ensure_daily_note(paths, date(2026, 4, 10))
+    note_path.write_text(
+        """# Daily Memory: 2026-04-10
+
+## Promotion Candidates
+- [preference] Local promotion candidate for dark mode [pc:pc001]
+""",
+        encoding="utf-8",
+    )
+
+    result = search_semantic_index(paths, "local promotion dark mode", limit=5)
+
+    daily_hits = [h for h in result.hits if h.kind == MemoryDocumentKind.DAILY_NOTE]
+    assert len(daily_hits) >= 1
+    assert daily_hits[0].scope == MemoryScope.LOCAL
+    assert daily_hits[0].section == "Promotion Candidates"
+
+
 def test_search_semantic_index_scope_in_index_record(tmp_path: Path) -> None:
     """Scope is persisted in the semantic index JSON records."""
     paths = _make_paths(tmp_path)
@@ -661,10 +707,10 @@ def test_search_semantic_index_scope_in_index_record(tmp_path: Path) -> None:
     assert entries_by_id["loc001"]["scope"] == "local"
 
 
-def test_sync_semantic_index_records_open_candidate_scope_only_for_open_candidates(
+def test_sync_semantic_index_records_scope_only_for_scoped_candidate_sections(
     tmp_path: Path,
 ) -> None:
-    """Only Open Candidates daily-note records carry scope in the semantic index."""
+    """Only candidate daily-note records carry scope in the semantic index."""
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
     note_path = ensure_daily_note(paths, date(2026, 4, 10))
@@ -677,6 +723,10 @@ def test_sync_semantic_index_records_open_candidate_scope_only_for_open_candidat
 ## Open Candidates
 - [fact shared score=0.9] Shared memory candidate for agents [oc:oc001]
 - [fact] Local default candidate for dark mode [oc:oc002]
+
+## Promotion Candidates
+- [decision shared score=0.8] Shared promotion candidate for rollout [pc:pc001]
+- [decision] Local promotion candidate for fallback plan [pc:pc002]
 """,
         encoding="utf-8",
     )
@@ -690,3 +740,11 @@ def test_sync_semantic_index_records_open_candidate_scope_only_for_open_candidat
         records[("Open Candidates", "Shared memory candidate for agents")]["scope"] == "shared"
     )
     assert records[("Open Candidates", "Local default candidate for dark mode")]["scope"] == "local"
+    assert (
+        records[("Promotion Candidates", "Shared promotion candidate for rollout")]["scope"]
+        == "shared"
+    )
+    assert (
+        records[("Promotion Candidates", "Local promotion candidate for fallback plan")]["scope"]
+        == "local"
+    )

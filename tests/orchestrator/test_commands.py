@@ -666,6 +666,52 @@ async def test_memory_search_daily_open_candidate_hit_shows_local_scope_by_defau
     assert "[dark]" in result.text or "[mode]" in result.text
 
 
+async def test_memory_search_daily_promotion_candidate_hit_shows_shared_scope(
+    orch: Orchestrator,
+) -> None:
+    """Promotion Candidates daily-note hits show [shared] in /memory search."""
+    from datetime import UTC, datetime
+
+    from controlmesh.memory.store import ensure_daily_note
+
+    today = datetime.now(UTC).date()
+    note_path = ensure_daily_note(orch.paths, today)
+    note_path.write_text(
+        f"# Daily Memory: {today.isoformat()}\n\n"
+        "## Promotion Candidates\n\n"
+        "- [decision shared score=0.8] Shared promotion candidate for agents [pc:p1]\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory search agents")
+    assert "[daily-note] [shared]" in result.text
+    assert "Shared promotion candidate for" in result.text
+    assert "[agents]" in result.text
+
+
+async def test_memory_search_daily_promotion_candidate_hit_shows_local_scope_by_default(
+    orch: Orchestrator,
+) -> None:
+    """Promotion Candidates daily-note hits show [local] in /memory search by default."""
+    from datetime import UTC, datetime
+
+    from controlmesh.memory.store import ensure_daily_note
+
+    today = datetime.now(UTC).date()
+    note_path = ensure_daily_note(orch.paths, today)
+    note_path.write_text(
+        f"# Daily Memory: {today.isoformat()}\n\n"
+        "## Promotion Candidates\n\n"
+        "- [preference] Local promotion candidate for dark mode [pc:p1]\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory search dark mode")
+    assert "[daily-note] [local]" in result.text
+    assert "Local promotion candidate for" in result.text
+    assert "[dark]" in result.text or "[mode]" in result.text
+
+
 async def test_memory_search_mixed_scope_same_file_resolves_correctly(orch: Orchestrator) -> None:
     """Test that mixed local/shared entries in the same MEMORY.md are resolved per-hit.
 
@@ -1373,6 +1419,54 @@ async def test_memory_semantic_shows_local_scope_for_daily_open_candidate_hit(
     assert "Semantic Search" in result.text
     assert "[daily-note][local]" in result.text
     assert "Local default preference candidate for dark mode" in result.text
+
+
+async def test_memory_semantic_shows_shared_scope_for_daily_promotion_candidate_hit(
+    orch: Orchestrator,
+) -> None:
+    """Promotion Candidates daily-note semantic hits show [shared]."""
+    from datetime import UTC, datetime
+
+    from controlmesh.memory.store import ensure_daily_note
+
+    today = datetime.now(UTC).date()
+    note_path = ensure_daily_note(orch.paths, today)
+    note_path.write_text(
+        f"# Daily Memory: {today.isoformat()}\n\n"
+        "## Promotion Candidates\n\n"
+        "- [decision shared score=0.8] Shared promotion candidate for rollout [pc:p1]\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(
+        orch, SessionKey(chat_id=0), "/memory semantic shared promotion rollout"
+    )
+    assert "Semantic Search" in result.text
+    assert "[daily-note][shared]" in result.text
+    assert "Shared promotion candidate for rollout" in result.text
+
+
+async def test_memory_semantic_shows_local_scope_for_daily_promotion_candidate_hit(
+    orch: Orchestrator,
+) -> None:
+    """Promotion Candidates daily-note semantic hits show [local] by default."""
+    from datetime import UTC, datetime
+
+    from controlmesh.memory.store import ensure_daily_note
+
+    today = datetime.now(UTC).date()
+    note_path = ensure_daily_note(orch.paths, today)
+    note_path.write_text(
+        f"# Daily Memory: {today.isoformat()}\n\n"
+        "## Promotion Candidates\n\n"
+        "- [preference] Local promotion candidate for dark mode [pc:p1]\n",
+        encoding="utf-8",
+    )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory semantic local dark mode")
+    assert "Semantic Search" in result.text
+    assert "[daily-note][local]" in result.text
+    assert "Local promotion candidate for dark mode" in result.text
 
 
 async def test_memory_unknown_subcommand_shows_usage_with_semantic(orch: Orchestrator) -> None:
