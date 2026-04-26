@@ -351,7 +351,7 @@ def render_patterns_summary(result: PatternAnalysisResult, *, max_items: int = 1
         by_section.setdefault(p.section, []).append(p)
 
     for section, section_patterns in by_section.items():
-        lines.append(f"### {section} ({len(section_patterns)})")
+        lines.append(_format_pattern_section_header(section, section_patterns))
         for p in section_patterns[:max_items]:
             dates_label = ", ".join(d.isoformat() for d in p.note_dates)
             extra = _format_pattern_extra(p)
@@ -362,6 +362,37 @@ def render_patterns_summary(result: PatternAnalysisResult, *, max_items: int = 1
         lines.append("")
 
     return "\n".join(lines).strip()
+
+
+def _format_pattern_section_header(section: str, section_patterns: list[RepeatedPattern]) -> str:
+    """Build one repeated-pattern section header, adding scope detail only where needed."""
+    header = f"### {section} ({len(section_patterns)})"
+    if section != "Open Candidates":
+        return header
+
+    local_count = 0
+    shared_count = 0
+    mixed_count = 0
+
+    for pattern in section_patterns:
+        if len(pattern.scopes) > 1:
+            mixed_count += 1
+        elif pattern.scopes and pattern.scopes[0] == MemoryScope.SHARED:
+            shared_count += 1
+        else:
+            local_count += 1
+
+    summary_parts: list[str] = []
+    if local_count > 0:
+        summary_parts.append(f"{local_count} local")
+    if shared_count > 0:
+        summary_parts.append(f"{shared_count} shared")
+    if mixed_count > 0:
+        summary_parts.append(f"{mixed_count} mixed")
+
+    if not summary_parts:
+        return header
+    return f"{header} _({', '.join(summary_parts)})_"
 
 
 def _format_pattern_extra(pattern: RepeatedPattern) -> str:

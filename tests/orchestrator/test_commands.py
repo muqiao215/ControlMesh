@@ -1103,6 +1103,41 @@ async def test_memory_patterns_surfaces_scope_for_repeated_open_candidates(orch:
     assert "User asked about status [local]" not in result.text
 
 
+async def test_memory_patterns_open_candidates_header_shows_scope_summary(orch: Orchestrator) -> None:
+    """Test /memory patterns shows a local/shared split on the Open Candidates header."""
+    from datetime import UTC, datetime, timedelta
+
+    from controlmesh.memory.store import ensure_daily_note
+
+    repeated_candidates = (
+        ("fact local", "Local repeated candidate", "local001"),
+        ("fact shared", "Shared repeated candidate", "shared001"),
+    )
+
+    for days_ago in (1, 2):
+        note_date = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0).date()
+        note_date = note_date - timedelta(days=days_ago)
+        note_path = ensure_daily_note(orch.paths, note_date)
+        open_candidates = "\n".join(
+            f"- [{label}] {content} (confidence=80%) [oc:{marker_prefix}{days_ago}]"
+            for label, content, marker_prefix in repeated_candidates
+        )
+        note_path.write_text(
+            f"# Daily Memory: {note_date.isoformat()}\n\n"
+            "## Events\n\n"
+            "- [chat-turn] User asked about status #question [evt:aaa0000]\n\n"
+            "## Signals\n\n"
+            "## Open Candidates\n"
+            f"{open_candidates}\n",
+            encoding="utf-8",
+        )
+
+    result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory patterns")
+    assert "### Open Candidates (2) _(1 local, 1 shared)_" in result.text
+    assert "[fact local]" in result.text
+    assert "[fact shared]" in result.text
+
+
 async def test_memory_patterns_no_repeated_shows_empty(orch: Orchestrator) -> None:
     """Test /memory patterns shows empty-state message when no patterns exist."""
     from datetime import UTC, datetime

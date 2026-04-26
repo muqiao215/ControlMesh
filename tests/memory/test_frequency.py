@@ -781,6 +781,106 @@ class TestRenderPatternsSummary:
         rendered = render_patterns_summary(result)
         assert "[decision]" in rendered
 
+    def test_open_candidates_section_header_shows_local_and_shared_scope_mix(self) -> None:
+        result = PatternAnalysisResult(
+            window_start=date(2026, 4, 19),
+            window_end=date(2026, 4, 25),
+            patterns=[
+                RepeatedPattern(
+                    normalized_key="local repeated candidate",
+                    display_text="Local repeated candidate",
+                    section="Open Candidates",
+                    count=2,
+                    first_seen=date(2026, 4, 23),
+                    last_seen=date(2026, 4, 24),
+                    note_dates=[date(2026, 4, 23), date(2026, 4, 24)],
+                    source_refs=[],
+                    category="fact",
+                    scopes=[MemoryScope.LOCAL],
+                ),
+                RepeatedPattern(
+                    normalized_key="shared repeated candidate",
+                    display_text="Shared repeated candidate",
+                    section="Open Candidates",
+                    count=2,
+                    first_seen=date(2026, 4, 23),
+                    last_seen=date(2026, 4, 24),
+                    note_dates=[date(2026, 4, 23), date(2026, 4, 24)],
+                    source_refs=[],
+                    category="decision",
+                    scopes=[MemoryScope.SHARED],
+                ),
+            ],
+        )
+        rendered = render_patterns_summary(result)
+        assert "### Open Candidates (2) _(1 local, 1 shared)_" in rendered
+
+    def test_open_candidates_section_header_shows_local_only_scope_summary(self) -> None:
+        result = PatternAnalysisResult(
+            window_start=date(2026, 4, 19),
+            window_end=date(2026, 4, 25),
+            patterns=[
+                RepeatedPattern(
+                    normalized_key="local repeated candidate",
+                    display_text="Local repeated candidate",
+                    section="Open Candidates",
+                    count=2,
+                    first_seen=date(2026, 4, 23),
+                    last_seen=date(2026, 4, 24),
+                    note_dates=[date(2026, 4, 23), date(2026, 4, 24)],
+                    source_refs=[],
+                    category="fact",
+                    scopes=[MemoryScope.LOCAL],
+                )
+            ],
+        )
+        rendered = render_patterns_summary(result)
+        assert "### Open Candidates (1) _(1 local)_" in rendered
+
+    def test_open_candidates_section_header_treats_empty_scopes_as_local(self) -> None:
+        result = PatternAnalysisResult(
+            window_start=date(2026, 4, 19),
+            window_end=date(2026, 4, 25),
+            patterns=[
+                RepeatedPattern(
+                    normalized_key="legacy repeated candidate",
+                    display_text="Legacy repeated candidate",
+                    section="Open Candidates",
+                    count=2,
+                    first_seen=date(2026, 4, 23),
+                    last_seen=date(2026, 4, 24),
+                    note_dates=[date(2026, 4, 23), date(2026, 4, 24)],
+                    source_refs=[],
+                    category="fact",
+                )
+            ],
+        )
+        rendered = render_patterns_summary(result)
+        assert "### Open Candidates (1) _(1 local)_" in rendered
+
+    def test_open_candidates_section_header_counts_mixed_patterns_separately(self) -> None:
+        result = PatternAnalysisResult(
+            window_start=date(2026, 4, 19),
+            window_end=date(2026, 4, 25),
+            patterns=[
+                RepeatedPattern(
+                    normalized_key="mixed repeated candidate",
+                    display_text="Mixed repeated candidate",
+                    section="Open Candidates",
+                    count=3,
+                    first_seen=date(2026, 4, 23),
+                    last_seen=date(2026, 4, 25),
+                    note_dates=[date(2026, 4, 23), date(2026, 4, 24), date(2026, 4, 25)],
+                    source_refs=[],
+                    category="fact",
+                    scopes=[MemoryScope.LOCAL, MemoryScope.SHARED],
+                )
+            ],
+        )
+        rendered = render_patterns_summary(result)
+        assert "### Open Candidates (1) _(1 mixed)_" in rendered
+        assert "[fact local/shared]" in rendered
+
     def test_open_candidate_scope_shown_when_present(self) -> None:
         result = PatternAnalysisResult(
             window_start=date(2026, 4, 19),
@@ -846,7 +946,7 @@ class TestRenderPatternsSummary:
         assert "- **2x** Event text" in rendered
         assert "Event text [" not in rendered
 
-    def test_section_grouping(self) -> None:
+    def test_events_and_signals_headers_remain_unchanged(self) -> None:
         patterns = [
             RepeatedPattern(
                 normalized_key="event text",
@@ -875,5 +975,7 @@ class TestRenderPatternsSummary:
             patterns=patterns,
         )
         rendered = render_patterns_summary(result)
-        assert "### Events" in rendered
-        assert "### Signals" in rendered
+        assert "### Events (1)" in rendered
+        assert "### Signals (1)" in rendered
+        assert "### Events (1) _(" not in rendered
+        assert "### Signals (1) _(" not in rendered
