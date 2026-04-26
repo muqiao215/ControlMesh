@@ -134,12 +134,14 @@ Task endpoints (shared hub):
 
 - `POST /tasks/create`
 - `POST /tasks/resume`
+- `POST /tasks/tell`
+- `POST /tasks/pull_updates`
 - `POST /tasks/ask_parent`
 - `GET /tasks/list`
 - `POST /tasks/cancel`
 - `POST /tasks/delete`
 
-Ownership checks apply for resume/cancel/delete when `from=<agent>` is present.
+Ownership checks apply for resume/tell/cancel/delete when `from=<agent>` is present.
 
 ## TaskHub integration
 

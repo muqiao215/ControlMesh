@@ -103,12 +103,14 @@ HTTP endpoints:
 - `/interagent/health`
 - `/tasks/create`
 - `/tasks/resume`
+- `/tasks/tell`
+- `/tasks/pull_updates`
 - `/tasks/ask_parent`
 - `/tasks/list`
 - `/tasks/cancel`
 - `/tasks/delete`
 
-Ownership checks are enforced for resume/cancel/delete when `from=<agent>` is supplied.
+Ownership checks are enforced for resume/tell/cancel/delete when `from=<agent>` is supplied.
 
 ## 7) Key runtime files (`~/.controlmesh`)
 

@@ -8,9 +8,11 @@ from controlmesh.agents_runtime.context import AgentsRuntimeContext
 from controlmesh.agents_runtime.manager import AgentsRuntimeManager
 from controlmesh.agents_runtime.tools import (
     ask_parent,
+    check_parent_updates,
     create_background_task,
     resume_background_task,
     send_async_to_agent,
+    tell_background_task,
 )
 from controlmesh.multiagent.bus import AsyncSendOptions
 
@@ -66,6 +68,33 @@ async def test_resume_background_task_uses_task_hub_resume() -> None:
     hub.resume.assert_called_once_with("task1234", "Keep going", parent_agent="main")
 
 
+async def test_tell_background_task_uses_task_hub_tell() -> None:
+    hub = MagicMock()
+    hub.tell.return_value = 3
+    ctx = AgentsRuntimeContext(
+        agent_name="main",
+        chat_id=42,
+        topic_id=None,
+        process_label="main",
+        task_hub=hub,
+    )
+
+    result = await tell_background_task(
+        ctx,
+        task_id="task1234",
+        message="Switch to Chinese voiceover",
+    )
+
+    assert result.ok is True
+    assert result.data["task_id"] == "task1234"
+    assert result.data["sequence"] == 3
+    hub.tell.assert_called_once_with(
+        "task1234",
+        "Switch to Chinese voiceover",
+        parent_agent="main",
+    )
+
+
 async def test_ask_parent_requires_task_context() -> None:
     hub = MagicMock()
     ctx = AgentsRuntimeContext(
@@ -84,7 +113,7 @@ async def test_ask_parent_requires_task_context() -> None:
     hub.forward_question.assert_not_called()
 
 
-def test_runtime_manager_exposes_ask_parent_only_in_task_context() -> None:
+def test_runtime_manager_exposes_task_context_tools_only_inside_tasks() -> None:
     wrapped: list[str] = []
 
     def fake_function_tool(func):
@@ -108,10 +137,14 @@ def test_runtime_manager_exposes_ask_parent_only_in_task_context() -> None:
 
     AgentsRuntimeManager(normal_ctx).build_sdk_tools(fake_function_tool)
     assert "ask_parent" not in wrapped
+    assert "check_parent_updates" not in wrapped
+    assert "tell_background_task" in wrapped
 
     wrapped.clear()
     AgentsRuntimeManager(task_ctx).build_sdk_tools(fake_function_tool)
     assert "ask_parent" in wrapped
+    assert "check_parent_updates" in wrapped
+    assert "tell_background_task" in wrapped
 
 
 async def test_ask_parent_forwards_question_from_task_context() -> None:
@@ -130,6 +163,28 @@ async def test_ask_parent_forwards_question_from_task_context() -> None:
     assert result.ok is True
     assert result.data["task_id"] == "feedbeef"
     hub.forward_question.assert_awaited_once_with("feedbeef", "Which branch should I use?")
+
+
+async def test_check_parent_updates_reads_updates_from_task_context() -> None:
+    hub = MagicMock()
+    hub.pull_updates.return_value = [
+        {"sequence": 1, "message": "Switch to Chinese"},
+        {"sequence": 2, "message": "Only one final file"},
+    ]
+    ctx = AgentsRuntimeContext(
+        agent_name="main",
+        chat_id=42,
+        topic_id=None,
+        process_label="task:feedbeef",
+        task_hub=hub,
+    )
+
+    result = await check_parent_updates(ctx)
+
+    assert result.ok is True
+    assert result.data["task_id"] == "feedbeef"
+    assert result.data["count"] == 2
+    hub.pull_updates.assert_called_once_with("feedbeef", mark_read=True)
 
 
 async def test_send_async_to_agent_uses_interagent_bus() -> None:

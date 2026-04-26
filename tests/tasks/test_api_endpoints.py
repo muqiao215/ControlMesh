@@ -19,11 +19,15 @@ def _make_task_hub(
     list_returns: list[object] | None = None,
     question_answer: str = "Yes, use HTML",
     cancel_returns: bool = True,
+    tell_returns: int = 1,
+    pull_updates_returns: list[object] | None = None,
 ) -> MagicMock:
     hub = MagicMock()
     hub.submit = MagicMock(return_value=submit_returns)
     hub.forward_question = AsyncMock(return_value=question_answer)
     hub.cancel = AsyncMock(return_value=cancel_returns)
+    hub.tell = MagicMock(return_value=tell_returns)
+    hub.pull_updates = MagicMock(return_value=pull_updates_returns or [])
 
     reg = MagicMock()
     reg.list_all.return_value = list_returns or []
@@ -113,6 +117,66 @@ class TestTaskCancel:
 
     async def test_missing_task_id(self, api_client: TestClient) -> None:
         resp = await api_client.post("/tasks/cancel", json={})
+        assert resp.status == 400
+
+
+class TestTaskTell:
+    async def test_tells_running_task(self, api_client: TestClient) -> None:
+        hub = api_client.app["_test_hub"]
+        entry = MagicMock()
+        entry.parent_agent = "main"
+        hub.registry.get.return_value = entry
+
+        resp = await api_client.post(
+            "/tasks/tell",
+            json={"task_id": "abc", "message": "Switch to Chinese", "from": "main"},
+        )
+
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["success"] is True
+        assert data["sequence"] == 1
+        hub.tell.assert_called_once_with("abc", "Switch to Chinese", parent_agent="main")
+
+    async def test_rejects_unauthorized_sender(self, api_client: TestClient) -> None:
+        hub = api_client.app["_test_hub"]
+        entry = MagicMock()
+        entry.parent_agent = "main"
+        hub.registry.get.return_value = entry
+
+        resp = await api_client.post(
+            "/tasks/tell",
+            json={"task_id": "abc", "message": "Switch to Chinese", "from": "other_agent"},
+        )
+
+        assert resp.status == 403
+
+    async def test_missing_fields(self, api_client: TestClient) -> None:
+        resp = await api_client.post("/tasks/tell", json={"task_id": "abc"})
+        assert resp.status == 400
+
+
+class TestTaskPullUpdates:
+    async def test_returns_pending_updates(self, api_client: TestClient) -> None:
+        hub = api_client.app["_test_hub"]
+        hub.pull_updates.return_value = [
+            {"sequence": 1, "message": "Switch to Chinese"},
+            {"sequence": 2, "message": "Single final file only"},
+        ]
+
+        resp = await api_client.post(
+            "/tasks/pull_updates",
+            json={"task_id": "abc"},
+        )
+
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["success"] is True
+        assert data["count"] == 2
+        assert len(data["updates"]) == 2
+
+    async def test_missing_task_id(self, api_client: TestClient) -> None:
+        resp = await api_client.post("/tasks/pull_updates", json={})
         assert resp.status == 400
 
 

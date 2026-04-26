@@ -10,6 +10,7 @@ TASK_TOOL_DOC_PATH = "tools/task_tools/CLAUDE/GEMINI/AGENTS.md"
 TASK_RUNTIME_PRIMITIVES: tuple[str, ...] = (
     "/tasks/create",
     "/tasks/resume",
+    "/tasks/tell",
     "/tasks/ask_parent",
     "/tasks/list",
     "/interagent/send",
@@ -39,6 +40,9 @@ def build_delegation_brief() -> str:
         '- **Resume**: tools/task_tools/resume_task.py TASK_ID "follow-up"\n'
         "  Resume keeps the worker's full context — use for refining results, "
         "follow-ups, or delivering answers after a worker question.\n"
+        '- **Tell running task**: tools/task_tools/tell_task.py TASK_ID "new requirement"\n'
+        "  Use this to inject a temporary requirement or command into a still-running "
+        "worker without cancelling it.\n"
         "- **Worker questions**: If a worker asks you something and you don't know "
         "→ ask the user → resume the task with the answer.\n"
         f"Runtime primitives: {runtime_primitives_text()}.\n"
@@ -94,6 +98,18 @@ a new task. The agent still has its full context from the previous run.
 python3 tools/task_tools/resume_task.py TASK_ID "jetzt nur 2. Bundesliga Ergebnisse"
 ```
 
+### Telling a running task about a new requirement
+
+When a task is still running and you need to change or refine the requirement
+without restarting it, queue a parent update:
+
+```bash
+python3 tools/task_tools/tell_task.py TASK_ID "Please switch the final output to Chinese"
+```
+
+This does **not** restart the task and does **not** replace `resume`.
+Use it only while the task is still running.
+
 **When to resume vs. create:**
 - **Resume**: Refine results, adjust parameters, ask follow-ups — the agent
   already has all its research/context from the first run
@@ -148,6 +164,19 @@ This forwards your question to the parent agent and returns immediately.
 Do NOT write questions in your response — the user cannot see them.
 After asking, finish your current work — you will be resumed with the answer.
 
+## Checking for Parent Updates
+
+The parent agent may queue a temporary requirement or command while you are
+still running. Check for these updates with:
+
+```bash
+python3 tools/task_tools/check_task_updates.py
+```
+
+Use it before expensive steps, before finalizing your output, and periodically
+during long-running work. If updates arrive, treat them as newer instructions
+from the parent unless they directly conflict with explicit task constraints.
+
 ## Parent Delegation Policy
 
 Parent agents delegate work that likely takes {delegation_threshold_text()}.
@@ -155,6 +184,7 @@ Use the task runtime primitives: {runtime_primitives_text()}.
 
 ## Other Tools (in `tools/task_tools/`)
 
+- `python3 tools/task_tools/check_task_updates.py` — Read queued parent updates
 - `python3 tools/task_tools/list_tasks.py` — List active tasks
 - `python3 tools/task_tools/cancel_task.py TASK_ID` — Cancel a task
 - `python3 tools/task_tools/delete_task.py TASK_ID` — Delete a finished task

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 import time
 from collections.abc import Awaitable, Callable
@@ -55,6 +56,13 @@ python3 tools/task_tools/ask_parent.py "your question here"
 Do NOT include questions in your response text. The tool forwards your question
 to the parent agent who will resume you with the answer.
 
+If the parent may revise requirements while you are still working, check:
+```
+python3 tools/task_tools/check_task_updates.py
+```
+Use it before expensive or irreversible steps, before finalizing output, and
+periodically during longer runs. Treat new parent updates as newer instructions.
+
 After finishing, update your task memory: {taskmemory_path}
 """
 
@@ -63,6 +71,7 @@ _RESUME_REMINDER = """
 ---
 REMINDER: You are a background task agent with NO direct user access.
 - Need more info? Use: python3 tools/task_tools/ask_parent.py "question"
+- Need to see whether the parent changed requirements? Use: python3 tools/task_tools/check_task_updates.py
 - Do NOT put questions in your response — the user cannot see them.
 - When done, write your final results to: {taskmemory_path}
 """
@@ -361,6 +370,65 @@ class TaskHub:
         if cancelled:
             await asyncio.gather(*cancelled, return_exceptions=True)
         return count
+
+    def tell(self, task_id: str, message: str, *, parent_agent: str = "") -> int:
+        """Append one parent update for a currently running task.
+
+        Returns the assigned sequence number for the newly queued update.
+        """
+        self._check_enabled()
+
+        entry = self._registry.get(task_id)
+        if entry is None:
+            msg = f"Task '{task_id}' not found"
+            raise ValueError(msg)
+        if not message.strip():
+            msg = "Parent update message cannot be empty"
+            raise ValueError(msg)
+
+        inflight = self._in_flight.get(task_id)
+        if inflight is None or inflight.asyncio_task is None or inflight.asyncio_task.done():
+            msg = f"Task '{task_id}' is not currently running"
+            raise ValueError(msg)
+
+        updates_path = self._registry.task_updates_path(task_id)
+        existing = _read_task_updates(updates_path)
+        next_sequence = int(existing[-1]["sequence"]) + 1 if existing else 1
+        payload = {
+            "sequence": next_sequence,
+            "message": message,
+            "sent_at": datetime.now(UTC).isoformat(),
+        }
+        if parent_agent:
+            payload["from"] = parent_agent
+        _append_task_update(updates_path, payload)
+        logger.info(
+            "Queued parent update for task %s seq=%d preview=%s",
+            task_id,
+            next_sequence,
+            message[:80],
+        )
+        return next_sequence
+
+    def pull_updates(self, task_id: str, *, mark_read: bool = True) -> list[dict[str, Any]]:
+        """Return queued parent updates for a task, optionally marking them consumed."""
+        self._check_enabled()
+
+        entry = self._registry.get(task_id)
+        if entry is None:
+            msg = f"Task '{task_id}' not found"
+            raise ValueError(msg)
+
+        updates = _read_task_updates(self._registry.task_updates_path(task_id))
+        if not updates:
+            return []
+
+        cursor_path = self._registry.task_updates_cursor_path(task_id)
+        last_seen = _read_task_updates_cursor(cursor_path)
+        pending = [item for item in updates if int(item.get("sequence", 0)) > last_seen]
+        if mark_read and pending:
+            _write_task_updates_cursor(cursor_path, int(pending[-1]["sequence"]))
+        return pending
 
     def active_tasks(self, chat_id: int | None = None) -> list[TaskEntry]:
         """Return in-flight task entries."""
@@ -668,6 +736,7 @@ class TaskHub:
 
 _RESULT_PREVIEW_LEN = 200
 _TASKMEMORY_MAX_LEN = 4000
+_TASK_UPDATES_CURSOR_KEY = "last_sequence"
 
 
 def _append_taskmemory(result_text: str, taskmemory_path: Path) -> str:
@@ -686,3 +755,48 @@ def _append_taskmemory(result_text: str, taskmemory_path: Path) -> str:
         content = content[:_TASKMEMORY_MAX_LEN] + "\n[... truncated]"
 
     return f"{result_text}\n\n---\nCONTENT FROM TASKMEMORY.MD ({taskmemory_path}):\n\n{content}"
+
+
+def _read_task_updates(updates_path: Path) -> list[dict[str, Any]]:
+    """Read the append-only parent update log for one task."""
+    if not updates_path.is_file():
+        return []
+
+    updates: list[dict[str, Any]] = []
+    try:
+        for raw_line in updates_path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            payload = json.loads(line)
+            if isinstance(payload, dict):
+                updates.append(payload)
+    except (OSError, json.JSONDecodeError):
+        logger.debug("Could not read task updates at %s", updates_path, exc_info=True)
+        return []
+    return updates
+
+
+def _append_task_update(updates_path: Path, payload: dict[str, Any]) -> None:
+    """Append one newline-delimited JSON parent update to a task log."""
+    updates_path.parent.mkdir(parents=True, exist_ok=True)
+    with updates_path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, ensure_ascii=True, sort_keys=True))
+        handle.write("\n")
+
+
+def _read_task_updates_cursor(cursor_path: Path) -> int:
+    """Read the consumed parent-update cursor for one task."""
+    data = load_json(cursor_path)
+    if not isinstance(data, dict):
+        return 0
+    value = data.get(_TASK_UPDATES_CURSOR_KEY, 0)
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _write_task_updates_cursor(cursor_path: Path, last_sequence: int) -> None:
+    """Persist the latest consumed parent-update sequence for one task."""
+    atomic_json_save(cursor_path, {_TASK_UPDATES_CURSOR_KEY: last_sequence})

@@ -367,6 +367,62 @@ class TestWaitingStatus:
         assert entry.last_question == ""
 
 
+class TestParentUpdates:
+    async def test_tell_and_consume_updates(
+        self, registry: TaskRegistry, tmp_path: Path
+    ) -> None:
+        async def _hang(_: object) -> MagicMock:
+            await asyncio.sleep(999)
+            return MagicMock()
+
+        cli = _make_cli_service()
+        cli.execute = AsyncMock(side_effect=_hang)
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=cli,
+            config=_make_config(),
+        )
+
+        task_id = hub.submit(_submit())
+        await asyncio.sleep(0.05)
+
+        seq1 = hub.tell(task_id, "Switch output to Chinese")
+        seq2 = hub.tell(task_id, "Only ship one final file")
+
+        assert seq1 == 1
+        assert seq2 == 2
+
+        peeked = hub.pull_updates(task_id, mark_read=False)
+        assert [item["sequence"] for item in peeked] == [1, 2]
+
+        updates = hub.pull_updates(task_id)
+        assert [item["message"] for item in updates] == [
+            "Switch output to Chinese",
+            "Only ship one final file",
+        ]
+
+        assert hub.pull_updates(task_id) == []
+
+        await hub.shutdown()
+
+    async def test_tell_fails_if_task_not_running(
+        self, registry: TaskRegistry, tmp_path: Path
+    ) -> None:
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=_make_cli_service(),
+            config=_make_config(),
+        )
+
+        task_id = hub.submit(_submit())
+        await asyncio.sleep(0.1)
+
+        with pytest.raises(ValueError, match="not currently running"):
+            hub.tell(task_id, "New requirement")
+
+
 class TestResume:
     def _hub(self, registry: TaskRegistry, tmp_path: Path, **cli_kw: str) -> TaskHub:
         hub = TaskHub(

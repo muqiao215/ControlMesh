@@ -9,6 +9,9 @@ from controlmesh.agents_runtime.tools import (
     ask_parent as ask_parent_tool,
 )
 from controlmesh.agents_runtime.tools import (
+    check_parent_updates as check_parent_updates_tool,
+)
+from controlmesh.agents_runtime.tools import (
     create_background_task as create_background_task_tool,
 )
 from controlmesh.agents_runtime.tools import (
@@ -16,6 +19,9 @@ from controlmesh.agents_runtime.tools import (
 )
 from controlmesh.agents_runtime.tools import (
     send_async_to_agent as send_async_to_agent_tool,
+)
+from controlmesh.agents_runtime.tools import (
+    tell_background_task as tell_background_task_tool,
 )
 
 if TYPE_CHECKING:
@@ -80,10 +86,20 @@ class AgentsRuntimeManager:
                 )
                 return result.model_dump(mode="json")
 
+            async def tell_background_task(task_id: str, message: str) -> dict[str, Any]:
+                """Queue one parent update for a running ControlMesh background task."""
+                result = await tell_background_task_tool(
+                    self._ctx,
+                    task_id=task_id,
+                    message=message,
+                )
+                return result.model_dump(mode="json")
+
             tools.extend(
                 [
                     function_tool(create_background_task),
                     function_tool(resume_background_task),
+                    function_tool(tell_background_task),
                 ]
             )
 
@@ -93,7 +109,17 @@ class AgentsRuntimeManager:
                     result = await ask_parent_tool(self._ctx, question=question)
                     return result.model_dump(mode="json")
 
-                tools.append(function_tool(ask_parent))
+                async def check_parent_updates(mark_read: bool = True) -> dict[str, Any]:
+                    """Read queued parent updates from the current task context."""
+                    result = await check_parent_updates_tool(self._ctx, mark_read=mark_read)
+                    return result.model_dump(mode="json")
+
+                tools.extend(
+                    [
+                        function_tool(ask_parent),
+                        function_tool(check_parent_updates),
+                    ]
+                )
 
         if self._ctx.interagent_bus is not None:
             async def send_async_to_agent(

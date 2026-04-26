@@ -193,6 +193,14 @@ class TaskRegistry:
         """Return the path to a task's TASKMEMORY.md."""
         return self.task_folder(task_id) / "TASKMEMORY.md"
 
+    def task_updates_path(self, task_id: str) -> Path:
+        """Return the append-only parent-updates log path for a task."""
+        return self.task_folder(task_id) / "PARENT_UPDATES.jsonl"
+
+    def task_updates_cursor_path(self, task_id: str) -> Path:
+        """Return the worker cursor path for consumed parent updates."""
+        return self.task_folder(task_id) / "PARENT_UPDATES.cursor"
+
     def cleanup_old(self, max_age_hours: int) -> int:
         """Remove completed/failed tasks older than *max_age_hours*."""
         cutoff = time.time() - max_age_hours * 3600

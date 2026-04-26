@@ -87,6 +87,37 @@ async def resume_background_task(
     )
 
 
+async def tell_background_task(
+    ctx: AgentsRuntimeContext,
+    *,
+    task_id: str,
+    message: str,
+) -> ToolResultEnvelope:
+    """Queue one parent update for a running background task."""
+    if ctx.task_hub is None:
+        return ToolResultEnvelope.failure(
+            "tell_background_task",
+            code="task_hub_unavailable",
+            message="TaskHub is not available for this runtime.",
+        )
+
+    try:
+        sequence = ctx.task_hub.tell(task_id, message, parent_agent=ctx.agent_name)
+    except Exception as exc:
+        return ToolResultEnvelope.failure(
+            "tell_background_task",
+            code="task_tell_failed",
+            message=str(exc),
+            data={"task_id": task_id},
+        )
+
+    return ToolResultEnvelope.success(
+        "tell_background_task",
+        summary=f"Queued parent update {sequence} for background task {task_id}.",
+        data={"task_id": task_id, "sequence": sequence},
+    )
+
+
 async def ask_parent(
     ctx: AgentsRuntimeContext,
     *,
@@ -122,6 +153,49 @@ async def ask_parent(
         "ask_parent",
         summary=detail,
         data={"task_id": task_id},
+    )
+
+
+async def check_parent_updates(
+    ctx: AgentsRuntimeContext,
+    *,
+    mark_read: bool = True,
+) -> ToolResultEnvelope:
+    """Read queued parent updates from inside a running background task."""
+    if ctx.task_hub is None:
+        return ToolResultEnvelope.failure(
+            "check_parent_updates",
+            code="task_hub_unavailable",
+            message="TaskHub is not available for this runtime.",
+        )
+
+    task_id = ctx.current_task_id
+    if task_id is None:
+        return ToolResultEnvelope.failure(
+            "check_parent_updates",
+            code="task_context_required",
+            message="check_parent_updates is only available from a running background task context.",
+        )
+
+    try:
+        updates = ctx.task_hub.pull_updates(task_id, mark_read=mark_read)
+    except Exception as exc:
+        return ToolResultEnvelope.failure(
+            "check_parent_updates",
+            code="task_updates_failed",
+            message=str(exc),
+            data={"task_id": task_id},
+        )
+
+    count = len(updates)
+    if count == 0:
+        summary = "No new parent updates."
+    else:
+        summary = f"Read {count} parent update(s)."
+    return ToolResultEnvelope.success(
+        "check_parent_updates",
+        summary=summary,
+        data={"task_id": task_id, "count": count, "updates": updates},
     )
 
 

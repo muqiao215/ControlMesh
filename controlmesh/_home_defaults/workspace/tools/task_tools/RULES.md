@@ -76,6 +76,18 @@ Runs on the **original provider/model**, regardless of current chat provider.
 3. Task found flight options → user wants cheaper alternatives
 → resume the same task with the cheaper-alternatives request
 
+## Telling a running task about a new requirement
+
+If a task is still running and you need to refine or change its requirement
+without restarting it, queue a parent update:
+
+```bash
+python3 tools/task_tools/tell_task.py TASK_ID "Please switch the final output to Chinese"
+```
+
+Use this only for a still-running task. For finished or waiting tasks, use
+`resume_task.py` instead.
+
 ## Inside a task (for task agents only)
 
 When running as a background task agent, you can ask the parent agent:
@@ -87,6 +99,16 @@ python3 tools/task_tools/ask_parent.py "your question"
 This forwards your question and returns immediately. The parent agent
 will resume your task with the answer. After calling this, finish your
 current work and update the task memory file — you will be resumed.
+
+The parent agent may also queue temporary requirement changes while you are
+still running. Check for them with:
+
+```bash
+python3 tools/task_tools/check_task_updates.py
+```
+
+Run this before expensive steps, before finalizing output, and periodically
+during long-running work.
 
 In pure automatic harness mode, do not use `ask_parent.py` for scope, policy,
 acceptance, or exception decisions. Record the blocking condition instead and

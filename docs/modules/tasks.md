@@ -8,7 +8,7 @@ Delegated background task system (`TaskHub`) for the Feishu native task runtime.
 - `tasks/registry.py`: persistent registry + task-folder seeding + cleanup/delete
 - `tasks/models.py`: `TaskSubmit`, `TaskEntry`, `TaskInFlight`, `TaskResult`
 - `orchestrator/selectors/task_selector.py`: `/tasks` UI callbacks (`tsc:*`)
-- `_home_defaults/workspace/tools/task_tools/*.py`: CLI tools (`create`, `resume`, `ask_parent`, `list`, `cancel`, `delete`)
+- `_home_defaults/workspace/tools/task_tools/*.py`: CLI tools (`create`, `resume`, `tell`, `ask_parent`, `check_task_updates`, `list`, `cancel`, `delete`)
 
 ## Purpose
 
@@ -18,6 +18,7 @@ The public runtime primitive surface is:
 
 - `POST /tasks/create`
 - `POST /tasks/resume`
+- `POST /tasks/tell`
 - `POST /tasks/ask_parent`
 - `GET /tasks/list`
 - `POST /interagent/send`
@@ -42,10 +43,11 @@ High-level flow:
 
 1. create (`/tasks/create`)
 2. execute (`TaskHub._run`)
-3. optional question (`/tasks/ask_parent`)
-4. optional resume (`/tasks/resume`)
-5. result delivery + parent-session injection
-6. optional permanent deletion (`/tasks/delete`)
+3. optional running-task update (`/tasks/tell`)
+4. optional question (`/tasks/ask_parent`)
+5. optional resume (`/tasks/resume`)
+6. result delivery + parent-session injection
+7. optional permanent deletion (`/tasks/delete`)
 
 ## Persistence and folders
 
@@ -97,6 +99,13 @@ Resume behavior:
 - requires stored `session_id` and provider
 - keeps same `task_id` and folder
 
+Running-task parent updates:
+
+- allowed only while the task still has an active in-flight worker process
+- stored in the task folder as an append-only inbox
+- consumed by the worker via `check_task_updates.py`
+- does not replace `resume`; use `resume` after `waiting|done|failed|cancelled`
+
 ## Topic-aware routing
 
 Tasks preserve topic context:
@@ -110,6 +119,8 @@ Tasks preserve topic context:
 
 - `POST /tasks/create`
 - `POST /tasks/resume`
+- `POST /tasks/tell`
+- `POST /tasks/pull_updates`
 - `POST /tasks/ask_parent`
 - `GET /tasks/list`
 - `POST /interagent/send`
@@ -120,7 +131,7 @@ Behavior details:
 
 - no task hub attached -> `503` for mutating endpoints (`/tasks/list` returns empty list)
 - `/tasks/list?from=<agent>` filters by task owner
-- ownership checks for `/tasks/resume`, `/tasks/cancel`, `/tasks/delete` when `from` is provided
+- ownership checks for `/tasks/resume`, `/tasks/tell`, `/tasks/cancel`, `/tasks/delete` when `from` is provided
 - `/tasks/delete` only deletes finished tasks (`done|failed|cancelled`)
 
 ## Registry deletion semantics
@@ -149,7 +160,9 @@ From task agent context:
 
 - create task
 - resume task
+- tell running task
 - ask parent
+- check task updates
 - list tasks
 - `cancel_task.py`
 - `delete_task.py`

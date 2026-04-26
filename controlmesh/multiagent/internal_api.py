@@ -78,6 +78,8 @@ class InternalAgentAPI:
         self._app.router.add_post("/tasks/resume", self._handle_task_resume)
         self._app.router.add_post("/tasks/ask_parent", self._handle_task_ask_parent)
         self._app.router.add_get("/tasks/list", self._handle_task_list)
+        self._app.router.add_post("/tasks/tell", self._handle_task_tell)
+        self._app.router.add_post("/tasks/pull_updates", self._handle_task_pull_updates)
         self._app.router.add_post("/tasks/cancel", self._handle_task_cancel)
         self._app.router.add_post("/tasks/delete", self._handle_task_delete)
         self._app.router.add_post("/teams/operate", self._handle_team_operate)
@@ -391,6 +393,88 @@ class InternalAgentAPI:
         return web.json_response(
             {
                 "tasks": [e.to_dict() for e in entries],
+            }
+        )
+
+    async def _handle_task_tell(self, request: web.Request) -> web.Response:
+        """POST /tasks/tell — queue one parent update for a running task."""
+        if self._task_hub is None:
+            return web.json_response(
+                {"success": False, "error": "Task system not available"},
+                status=503,
+            )
+
+        try:
+            data = await request.json()
+        except Exception:
+            return web.json_response(
+                {"success": False, "error": "Invalid JSON body"},
+                status=400,
+            )
+
+        task_id = data.get("task_id", "")
+        message = data.get("message", "")
+        sender = data.get("from", "")
+        if not task_id or not message:
+            return web.json_response(
+                {"success": False, "error": "Missing 'task_id' or 'message' field"},
+                status=400,
+            )
+
+        entry = self._task_hub.registry.get(task_id)
+        if entry is None:
+            return web.json_response(
+                {"success": False, "error": f"Task '{task_id}' not found"},
+                status=404,
+            )
+        if sender and entry.parent_agent != sender:
+            return web.json_response(
+                {"success": False, "error": "Not authorized to tell this task"},
+                status=403,
+            )
+
+        try:
+            sequence = self._task_hub.tell(task_id, message, parent_agent=sender)
+        except ValueError as exc:
+            return web.json_response({"success": False, "error": str(exc)}, status=409)
+
+        return web.json_response({"success": True, "task_id": task_id, "sequence": sequence})
+
+    async def _handle_task_pull_updates(self, request: web.Request) -> web.Response:
+        """POST /tasks/pull_updates — fetch queued parent updates for a task."""
+        if self._task_hub is None:
+            return web.json_response(
+                {"success": False, "error": "Task system not available"},
+                status=503,
+            )
+
+        try:
+            data = await request.json()
+        except Exception:
+            return web.json_response(
+                {"success": False, "error": "Invalid JSON body"},
+                status=400,
+            )
+
+        task_id = data.get("task_id", "")
+        if not task_id:
+            return web.json_response(
+                {"success": False, "error": "Missing 'task_id' field"},
+                status=400,
+            )
+
+        mark_read = bool(data.get("mark_read", True))
+        try:
+            updates = self._task_hub.pull_updates(task_id, mark_read=mark_read)
+        except ValueError as exc:
+            return web.json_response({"success": False, "error": str(exc)}, status=404)
+
+        return web.json_response(
+            {
+                "success": True,
+                "task_id": task_id,
+                "count": len(updates),
+                "updates": updates,
             }
         )
 
