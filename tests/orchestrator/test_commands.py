@@ -509,15 +509,20 @@ async def test_memory_today_shows_daily_note(orch: Orchestrator) -> None:
         "## Events\n\n- User asked about memory\n\n"
         "## Signals\n\n- User seems interested in review\n\n"
         "## Evidence\n\n## Open Candidates\n\n"
-        "- [decision] Consider memory review workflow.\n",
+        "- [decision] Consider memory review workflow.\n"
+        "- [fact shared] Team-wide candidate should be visible at a glance.\n",
         encoding="utf-8",
     )
 
     result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory today")
     assert today.isoformat() in result.text
-    assert "Events" in result.text
-    assert "Open Candidates" in result.text
+    assert "### Events (1 entries)" in result.text
+    assert "### Events (1 entries) _(" not in result.text
+    assert "### Signals (1 entries)" in result.text
+    assert "### Evidence (0 entries)" in result.text
+    assert "### Open Candidates (2 entries) _(1 local, 1 shared)_" in result.text
     assert "decision" in result.text
+    assert "Team-wide candidate should be visible at a glance." in result.text
 
 
 async def test_memory_today_no_note(orch: Orchestrator) -> None:

@@ -127,6 +127,7 @@ def render_daily_note_summary(paths: ControlMeshPaths, note_date: date) -> str:
     current_section = ""
     section_counts: dict[str, int] = {}
     section_previews: dict[str, list[str]] = {}
+    section_scopes: dict[str, list[MemoryScope]] = {}
 
     for line in lines:
         stripped = line.strip()
@@ -137,17 +138,23 @@ def render_daily_note_summary(paths: ControlMeshPaths, note_date: date) -> str:
                         current_section,
                         section_counts.get(current_section, 0),
                         section_previews.get(current_section, []),
+                        section_scopes.get(current_section),
                     )
                 )
             current_section = stripped[3:]
             section_counts[current_section] = 0
             section_previews[current_section] = []
+            section_scopes[current_section] = []
         elif current_section and stripped.startswith("- "):
             section_counts[current_section] = section_counts.get(current_section, 0) + 1
             preview = stripped[2:]
             if len(section_previews[current_section]) < 2:
                 section_previews[current_section].append(
                     preview[:80] + ("..." if len(preview) > 80 else "")
+                )
+            if current_section == "Open Candidates":
+                section_scopes[current_section].append(
+                    _parse_open_candidate_scope_from_daily_note_line(stripped)
                 )
 
     if current_section:
@@ -156,6 +163,7 @@ def render_daily_note_summary(paths: ControlMeshPaths, note_date: date) -> str:
                 current_section,
                 section_counts.get(current_section, 0),
                 section_previews.get(current_section, []),
+                section_scopes.get(current_section),
             )
         )
 
@@ -167,13 +175,30 @@ def render_daily_note_summary(paths: ControlMeshPaths, note_date: date) -> str:
     return header + "\n\n" + "\n\n".join(sections)
 
 
-def _format_note_section(name: str, count: int, previews: list[str]) -> str:
+def _format_note_section(
+    name: str,
+    count: int,
+    previews: list[str],
+    scopes: list[MemoryScope] | None = None,
+) -> str:
     """Format a single section with count and previews."""
-    lines = [f"### {name} ({count} entries)"]
+    header = f"### {name} ({count} entries)"
+    if name == "Open Candidates":
+        header += _format_review_section_scope_label(scopes or [])
+    lines = [header]
     lines.extend(f"- {preview}" for preview in previews)
     if count > len(previews):
         lines.append(f"  ... and {count - len(previews)} more")
     return "\n".join(lines)
+
+
+def _parse_open_candidate_scope_from_daily_note_line(line: str) -> MemoryScope:
+    """Infer daily-note open-candidate scope, defaulting legacy/unparsed lines to local."""
+    match = _OPEN_CANDIDATES_RE.match(line.strip())
+    if match is None:
+        return MemoryScope.LOCAL
+
+    return _coerce_memory_scope(match.group("scope"))
 
 
 def explain_authority_entry(paths: ControlMeshPaths, entry_id: str) -> str | None:

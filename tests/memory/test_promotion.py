@@ -9,6 +9,7 @@ from controlmesh.memory.commands import (
     _count_authority_entries,
     apply_daily_note_promotions,
     preview_daily_note_promotions,
+    render_daily_note_summary,
     render_memory_review,
 )
 from controlmesh.memory.compat import (
@@ -944,6 +945,91 @@ def test_render_memory_review_shows_shared_scope_for_open_candidates(tmp_path: P
     assert "Today's Open Candidates (1) _(1 shared)_" in review
     assert "Shared open candidate should show scope" in review
     assert "(shared)" in review
+
+
+def test_render_daily_note_summary_shows_mixed_scope_summary_for_open_candidates(
+    tmp_path: Path,
+) -> None:
+    """Daily-note summary surfaces the local/shared split on the Open Candidates header."""
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    note_date = date(2026, 4, 26)
+    note_path = ensure_daily_note(paths, note_date)
+    note_path.write_text(
+        """# Daily Memory: 2026-04-26
+
+## Events
+
+- User asked about memory review
+
+## Open Candidates
+
+- [preference] Default local candidate remains compact.
+- [fact shared] Shared candidate shows in the header split.
+""",
+        encoding="utf-8",
+    )
+
+    summary = render_daily_note_summary(paths, note_date)
+    assert "### Events (1 entries)" in summary
+    assert "### Events (1 entries) _(" not in summary
+    assert "### Open Candidates (2 entries) _(1 local, 1 shared)_" in summary
+    assert "- [preference] Default local candidate remains compact." in summary
+    assert "- [fact shared] Shared candidate shows in the header split." in summary
+
+
+def test_render_daily_note_summary_shows_local_only_scope_summary_for_open_candidates(
+    tmp_path: Path,
+) -> None:
+    """Daily-note summary keeps local-only open candidates concise in the header."""
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    note_date = date(2026, 4, 26)
+    note_path = ensure_daily_note(paths, note_date)
+    note_path.write_text(
+        """# Daily Memory: 2026-04-26
+
+## Open Candidates
+
+- [decision local] Explicit local candidate.
+- [preference] Default local candidate.
+""",
+        encoding="utf-8",
+    )
+
+    summary = render_daily_note_summary(paths, note_date)
+    assert "### Open Candidates (2 entries) _(2 local)_" in summary
+    assert "- [decision local] Explicit local candidate." in summary
+    assert "- [preference] Default local candidate." in summary
+
+
+def test_render_daily_note_summary_treats_legacy_open_candidates_as_local(
+    tmp_path: Path,
+) -> None:
+    """Legacy/unscoped open-candidate bullets still count as local in the header summary."""
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    note_date = date(2026, 4, 26)
+    note_path = ensure_daily_note(paths, note_date)
+    note_path.write_text(
+        """# Daily Memory: 2026-04-26
+
+## Signals
+
+- User seems consistent
+
+## Open Candidates
+
+- Legacy bullet without candidate syntax
+""",
+        encoding="utf-8",
+    )
+
+    summary = render_daily_note_summary(paths, note_date)
+    assert "### Signals (1 entries)" in summary
+    assert "### Signals (1 entries) _(" not in summary
+    assert "### Open Candidates (1 entries) _(1 local)_" in summary
+    assert "- Legacy bullet without candidate syntax" in summary
 
 
 def test_render_memory_review_shows_local_scope_for_open_candidates(tmp_path: Path) -> None:
