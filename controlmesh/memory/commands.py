@@ -35,6 +35,7 @@ from controlmesh.workspace.paths import ControlMeshPaths
 _OPEN_CANDIDATES_RE = re.compile(
     r"^- \[(?P<category>[a-z-]+)(?: (?P<scope>local|shared))?(?:\s+score=(?P<score>[0-9]+(?:\.[0-9]+)?))?\]\s+(?P<content>.+)$"
 )
+_SCOPED_DAILY_NOTE_CANDIDATE_SECTIONS = {"Open Candidates", "Promotion Candidates"}
 
 
 def preview_daily_note_promotions(
@@ -152,9 +153,9 @@ def render_daily_note_summary(paths: ControlMeshPaths, note_date: date) -> str:
                 section_previews[current_section].append(
                     _truncate_daily_note_preview(current_section, preview)
                 )
-            if current_section == "Open Candidates":
+            if current_section in _SCOPED_DAILY_NOTE_CANDIDATE_SECTIONS:
                 section_scopes[current_section].append(
-                    _parse_open_candidate_scope_from_daily_note_line(stripped)
+                    _parse_candidate_scope_from_daily_note_line(stripped)
                 )
 
     if current_section:
@@ -183,7 +184,7 @@ def _format_note_section(
 ) -> str:
     """Format a single section with count and previews."""
     header = f"### {name} ({count} entries)"
-    if name == "Open Candidates":
+    if name in _SCOPED_DAILY_NOTE_CANDIDATE_SECTIONS:
         header += _format_review_section_scope_label(scopes or [])
     lines = [header]
     lines.extend(f"- {preview}" for preview in previews)
@@ -193,9 +194,9 @@ def _format_note_section(
 
 
 def _format_daily_note_preview_line(section_name: str, line: str) -> str:
-    """Render one daily-note bullet preview, with explicit scope for open candidates."""
+    """Render one daily-note bullet preview, with explicit scope for candidate sections."""
     preview = line.removeprefix("- ")
-    if section_name != "Open Candidates":
+    if section_name not in _SCOPED_DAILY_NOTE_CANDIDATE_SECTIONS:
         return preview
 
     match = _OPEN_CANDIDATES_RE.match(line.strip())
@@ -211,10 +212,10 @@ def _format_daily_note_preview_line(section_name: str, line: str) -> str:
 
 
 def _truncate_daily_note_preview(section_name: str, preview: str, *, max_length: int = 80) -> str:
-    """Clamp preview length while preserving the open-candidate scope suffix."""
+    """Clamp preview length while preserving the candidate-scope suffix."""
     if len(preview) <= max_length:
         return preview
-    if section_name != "Open Candidates":
+    if section_name not in _SCOPED_DAILY_NOTE_CANDIDATE_SECTIONS:
         return preview[:max_length] + "..."
 
     for scope in MemoryScope:
@@ -228,8 +229,8 @@ def _truncate_daily_note_preview(section_name: str, preview: str, *, max_length:
     return preview[:max_length] + "..."
 
 
-def _parse_open_candidate_scope_from_daily_note_line(line: str) -> MemoryScope:
-    """Infer daily-note open-candidate scope, defaulting legacy/unparsed lines to local."""
+def _parse_candidate_scope_from_daily_note_line(line: str) -> MemoryScope:
+    """Infer scoped candidate line scope, defaulting legacy/unparsed lines to local."""
     match = _OPEN_CANDIDATES_RE.match(line.strip())
     if match is None:
         return MemoryScope.LOCAL

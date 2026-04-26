@@ -497,7 +497,7 @@ async def test_memory_empty(orch: Orchestrator) -> None:
 
 
 async def test_memory_today_shows_daily_note(orch: Orchestrator) -> None:
-    """Test /memory today keeps non-open previews intact and scopes open candidates."""
+    """Test /memory today keeps other previews intact and scopes candidate sections."""
     from datetime import UTC, datetime
 
     from controlmesh.memory.store import ensure_daily_note
@@ -510,7 +510,10 @@ async def test_memory_today_shows_daily_note(orch: Orchestrator) -> None:
         "## Signals\n\n- User seems interested in review\n\n"
         "## Evidence\n\n## Open Candidates\n\n"
         "- [decision] Consider memory review workflow.\n"
-        "- [fact shared] Team-wide candidate should be visible at a glance.\n",
+        "- [fact shared] Team-wide candidate should be visible at a glance.\n\n"
+        "## Promotion Candidates\n\n"
+        "- [preference] Local promotion candidate should be explicit.\n"
+        "- [decision shared] Shared promotion candidate should be explicit too.\n",
         encoding="utf-8",
     )
 
@@ -521,10 +524,13 @@ async def test_memory_today_shows_daily_note(orch: Orchestrator) -> None:
     assert "### Signals (1 entries)" in result.text
     assert "### Evidence (0 entries)" in result.text
     assert "### Open Candidates (2 entries) _(1 local, 1 shared)_" in result.text
+    assert "### Promotion Candidates (2 entries) _(1 local, 1 shared)_" in result.text
     assert "- User asked about memory" in result.text
     assert "- User seems interested in review" in result.text
     assert "- [decision] Consider memory review workflow. (local)" in result.text
     assert "- [fact] Team-wide candidate should be visible at a glance. (shared)" in result.text
+    assert "- [preference] Local promotion candidate should be explicit. (local)" in result.text
+    assert "- [decision] Shared promotion candidate should be explicit too. (shared)" in result.text
 
 
 async def test_memory_today_no_note(orch: Orchestrator) -> None:

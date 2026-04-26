@@ -1079,6 +1079,69 @@ def test_render_daily_note_summary_preserves_candidate_score_in_open_candidate_p
     assert "- [decision score=0.95] High-confidence shared candidate. (shared)" in summary
 
 
+def test_render_daily_note_summary_shows_mixed_scope_summary_for_promotion_candidates(
+    tmp_path: Path,
+) -> None:
+    """Promotion Candidates mirror the compact scoped summary used for Open Candidates."""
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    note_date = date(2026, 4, 26)
+    note_path = ensure_daily_note(paths, note_date)
+    note_path.write_text(
+        """# Daily Memory: 2026-04-26
+
+## Events
+
+- User asked for a promotion summary
+
+## Promotion Candidates
+
+- [decision] Default local promotion candidate stays explicit.
+- [fact shared score=0.95] Shared promotion candidate keeps its score marker.
+""",
+        encoding="utf-8",
+    )
+
+    summary = render_daily_note_summary(paths, note_date)
+    assert "### Events (1 entries)" in summary
+    assert "### Events (1 entries) _(" not in summary
+    assert "### Promotion Candidates (2 entries) _(1 local, 1 shared)_" in summary
+    assert "- [decision] Default local promotion candidate stays explicit. (local)" in summary
+    assert (
+        "- [fact score=0.95] Shared promotion candidate keeps its score marker. (shared)"
+        in summary
+    )
+
+
+def test_render_daily_note_summary_treats_legacy_promotion_candidates_as_local(
+    tmp_path: Path,
+) -> None:
+    """Legacy Promotion Candidates bullets remain readable and default to local."""
+    paths = _make_paths(tmp_path)
+    initialize_memory_v2(paths)
+    note_date = date(2026, 4, 26)
+    note_path = ensure_daily_note(paths, note_date)
+    note_path.write_text(
+        """# Daily Memory: 2026-04-26
+
+## Signals
+
+- User seems ready to promote a fact
+
+## Promotion Candidates
+
+- Legacy promotion bullet without candidate syntax
+""",
+        encoding="utf-8",
+    )
+
+    summary = render_daily_note_summary(paths, note_date)
+    assert "### Signals (1 entries)" in summary
+    assert "### Signals (1 entries) _(" not in summary
+    assert "### Promotion Candidates (1 entries) _(1 local)_" in summary
+    assert "- Legacy promotion bullet without candidate syntax (local)" in summary
+
+
 def test_render_memory_review_shows_local_scope_for_open_candidates(tmp_path: Path) -> None:
     """Today's open candidates show local scope for local/default candidate lines."""
     from datetime import UTC, datetime
