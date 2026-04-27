@@ -109,7 +109,7 @@ async def test_unknown_slash_command_without_session_uses_configured_provider(
     assert request.model_override == "opus"
 
 
-async def test_claude_native_mode_routes_slash_commands_to_claude(orch: Orchestrator) -> None:
+async def test_claude_command_menu_routes_slash_commands_to_claude(orch: Orchestrator) -> None:
     key = SessionKey(chat_id=1)
     session, _ = await orch._sessions.resolve_session(key, provider="claude", model="opus")
     session.command_mode = "claude"
@@ -128,7 +128,7 @@ async def test_claude_native_mode_routes_slash_commands_to_claude(orch: Orchestr
     assert request.provider_override == "claude"
 
 
-async def test_claude_native_mode_cm_escape_still_hits_controlmesh(orch: Orchestrator) -> None:
+async def test_claude_command_menu_cm_escape_still_hits_controlmesh(orch: Orchestrator) -> None:
     key = SessionKey(chat_id=1)
     session, _ = await orch._sessions.resolve_session(key, provider="claude", model="opus")
     session.command_mode = "codex"
@@ -156,19 +156,7 @@ async def test_cm_switches_registered_slash_commands_to_claude_native(orch: Orch
     assert request.model_override == "opus"
 
 
-async def test_mode_command_still_hits_controlmesh_during_takeover(orch: Orchestrator) -> None:
-    key = SessionKey(chat_id=1)
-    session, _ = await orch._sessions.resolve_session(key, provider="claude", model="opus")
-    session.command_mode = "codex"
-    session.command_mode_model = "gpt-5.2-codex"
-    await orch._sessions.sync_command_mode(session, mode="codex", model="gpt-5.2-codex")
-
-    result = await orch.handle_message(key, "/mode status")
-
-    assert "Takeover mode: Codex" in result.text
-
-
-async def test_back_command_returns_from_takeover_mode(orch: Orchestrator) -> None:
+async def test_back_command_returns_from_claude_command_menu(orch: Orchestrator) -> None:
     key = SessionKey(chat_id=1)
     session, _ = await orch._sessions.resolve_session(key, provider="claude", model="opus")
     await orch._sessions.sync_command_mode(session, mode="claude", model="opus")
@@ -192,7 +180,7 @@ async def test_mode_off_keeps_controlmesh_command_routing(orch: Orchestrator) ->
     mock_execute.assert_not_awaited()
 
 
-async def test_takeover_mode_routes_slash_commands_to_selected_provider(orch: Orchestrator) -> None:
+async def test_command_menu_routes_slash_commands_to_selected_provider(orch: Orchestrator) -> None:
     key = SessionKey(chat_id=1)
     session, _ = await orch._sessions.resolve_session(key, provider="claude", model="opus")
     session.command_mode = "codex"
@@ -212,7 +200,7 @@ async def test_takeover_mode_routes_slash_commands_to_selected_provider(orch: Or
     assert request.model_override == "gpt-5.2-codex"
 
 
-async def test_takeover_mode_routes_slash_commands_to_opencode_channel(orch: Orchestrator) -> None:
+async def test_command_menu_routes_slash_commands_to_opencode_channel(orch: Orchestrator) -> None:
     key = SessionKey(chat_id=1)
     session, _ = await orch._sessions.resolve_session(key, provider="claude", model="opus")
     await orch._sessions.sync_command_mode(session, mode="opencode", model="openai/gpt-4.1")
@@ -228,7 +216,7 @@ async def test_takeover_mode_routes_slash_commands_to_opencode_channel(orch: Orc
     assert request.model_override == "openai/gpt-4.1"
 
 
-async def test_takeover_slash_does_not_retarget_normal_session(orch: Orchestrator) -> None:
+async def test_command_menu_slash_does_not_retarget_normal_session(orch: Orchestrator) -> None:
     key = SessionKey(chat_id=1)
     session, _ = await orch._sessions.resolve_session(key, provider="claude", model="opus")
     await orch._sessions.sync_command_mode(session, mode="codex", model="gpt-5.2-codex")
@@ -279,7 +267,7 @@ async def test_directive_with_text(orch: Orchestrator) -> None:
     assert request.prompt.startswith("Hello")
 
 
-async def test_provider_directive_still_overrides_with_takeover_mode_enabled(
+async def test_provider_directive_still_overrides_with_command_menu_enabled(
     orch: Orchestrator,
 ) -> None:
     key = SessionKey(chat_id=1)

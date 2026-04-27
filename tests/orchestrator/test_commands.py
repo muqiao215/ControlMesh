@@ -11,13 +11,11 @@ from controlmesh.infra.version import VersionInfo
 from controlmesh.orchestrator.commands import (
     HistoryRequestKind,
     cmd_back,
-    cmd_claude_native,
     cmd_controlmesh,
     cmd_cron,
     cmd_diagnose,
     cmd_history,
     cmd_memory,
-    cmd_mode,
     cmd_model,
     cmd_settings,
     cmd_status,
@@ -122,114 +120,6 @@ async def test_status_prefers_session_model_over_config(orch: Orchestrator) -> N
     assert "Model: gpt-5.2-codex (configured: opus)" in result.text
 
 
-async def test_mode_status_defaults_to_controlmesh(orch: Orchestrator) -> None:
-    result = await cmd_mode(orch, SessionKey(chat_id=1), "/mode status")
-
-    assert "Takeover mode: ControlMesh" in result.text
-
-
-async def test_mode_without_args_returns_takeover_selector_buttons(orch: Orchestrator) -> None:
-    result = await cmd_mode(orch, SessionKey(chat_id=1), "/mode")
-
-    assert "Takeover mode: ControlMesh" in result.text
-    assert result.buttons is not None
-    rows = result.buttons.rows
-    assert rows[0][0].callback_data == "/mode cm"
-    assert rows[0][1].callback_data == "/mode claude"
-    assert rows[0][2].callback_data == "/mode codex"
-    assert rows[0][3].callback_data == "/mode gemini"
-
-
-async def test_mode_without_args_appends_runtime_buttons_when_available(orch: Orchestrator) -> None:
-    orch._providers._available_providers = frozenset({"claude", "codex", "gemini", "claw", "opencode"})
-
-    result = await cmd_mode(orch, SessionKey(chat_id=1), "/mode")
-
-    assert result.buttons is not None
-    rows = result.buttons.rows
-    assert rows[1][0].callback_data == "/mode claw-code"
-    assert rows[1][1].callback_data == "/mode opencode"
-
-
-async def test_mode_switch_sets_session_local_takeover_target(orch: Orchestrator) -> None:
-    key = SessionKey(chat_id=1)
-
-    with patch.object(orch._providers, "default_model_for_provider", return_value="gpt-5.2-codex"):
-        result = await cmd_mode(orch, key, "/mode codex")
-
-    assert "Takeover mode: Codex" in result.text
-    assert "gpt-5.2-codex" in result.text
-
-    session = await orch._sessions.get_active(key)
-    assert session is not None
-    assert session.provider == "claude"
-    assert session.model == "opus"
-    assert session.command_mode == "codex"
-    assert session.command_mode_model == "gpt-5.2-codex"
-
-
-async def test_mode_switch_supports_opencode_runtime_channel(orch: Orchestrator) -> None:
-    key = SessionKey(chat_id=1)
-
-    result = await cmd_mode(orch, key, "/mode opencode")
-
-    assert "Takeover mode: OpenCode" in result.text
-    assert "openai/gpt-4.1" in result.text
-
-    session = await orch._sessions.get_active(key)
-    assert session is not None
-    assert session.command_mode == "opencode"
-    assert session.command_mode_model == "openai/gpt-4.1"
-
-
-async def test_mode_switch_supports_claw_code_runtime_channel(orch: Orchestrator) -> None:
-    key = SessionKey(chat_id=1)
-
-    with patch.object(orch._providers, "default_model_for_provider", return_value="sonnet"):
-        result = await cmd_mode(orch, key, "/mode claw-code")
-
-    assert "Takeover mode: Claw-Code" in result.text
-    assert "sonnet" in result.text
-
-    session = await orch._sessions.get_active(key)
-    assert session is not None
-    assert session.command_mode == "claw"
-    assert session.command_mode_model == "sonnet"
-
-
-async def test_claude_native_on_requires_claude_provider(orch: Orchestrator) -> None:
-    await orch._sessions.resolve_session(
-        SessionKey(chat_id=1), provider="codex", model="gpt-5.2-codex"
-    )
-
-    result = await cmd_claude_native(orch, SessionKey(chat_id=1), "/claude_native on")
-
-    assert "only available when the active provider is Claude" in result.text
-
-
-async def test_claude_native_on_off_updates_provider_local_mode(orch: Orchestrator) -> None:
-    key = SessionKey(chat_id=1)
-
-    enabled = await cmd_claude_native(orch, key, "/claude_native on")
-    assert "Claude native command mode: on" in enabled.text
-
-    session = await orch._sessions.get_active(key)
-    assert session is not None
-    assert session.provider == "claude"
-    assert session.native_commands_enabled is True
-    assert session.command_mode == "claude"
-    assert session.command_mode_model == "opus"
-
-    disabled = await cmd_claude_native(orch, key, "/claude_native off")
-    assert "Claude native command mode: off" in disabled.text
-
-    session = await orch._sessions.get_active(key)
-    assert session is not None
-    assert session.native_commands_enabled is False
-    assert session.command_mode == "cm"
-    assert session.command_mode_model is None
-
-
 async def test_cm_without_nested_command_switches_to_claude_native_registry(
     orch: Orchestrator,
 ) -> None:
@@ -244,8 +134,11 @@ async def test_cm_without_nested_command_switches_to_claude_native_registry(
     assert "/compact" in result.text
     assert "/remote-control" in result.text
     assert "/back" in result.text
+    assert "`/mode`" not in result.text
+    assert "`/claude_native`" not in result.text
     assert result.buttons is not None
     assert result.buttons.rows[0][0].callback_data == "/back"
+    assert result.buttons.rows[0][0].text == "返回 ControlMesh"
 
     session = await orch._sessions.get_active(key)
     assert session is not None
@@ -262,8 +155,11 @@ async def test_back_returns_to_controlmesh_command_registry(orch: Orchestrator) 
 
     assert "ControlMesh 命令" in result.text
     assert "/cm" in result.text
+    assert "`/mode`" not in result.text
+    assert "`/claude_native`" not in result.text
     assert result.buttons is not None
     assert result.buttons.rows[0][0].callback_data == "/cm"
+    assert result.buttons.rows[0][0].text == "Claude 原生命令"
 
     session = await orch._sessions.get_active(key)
     assert session is not None

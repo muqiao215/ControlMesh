@@ -29,8 +29,6 @@ ORCHESTRATOR_COMMANDS: frozenset[str] = frozenset(
     {
         "status",
         "model",
-        "mode",
-        "claude_native",
         "cm",
         "back",
         "memory",

@@ -929,7 +929,7 @@ class TestFeishuBotRouting:
             reply_to_message_id="om_1",
         )
 
-    async def test_handle_incoming_text_native_mode_sends_command_guide_once_per_chat(
+    async def test_handle_incoming_text_native_runtime_sends_command_guide_once_per_chat(
         self,
         tmp_path: Path,
     ) -> None:

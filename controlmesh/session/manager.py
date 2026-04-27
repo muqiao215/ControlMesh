@@ -229,7 +229,7 @@ class SessionData:
             self.set_command_mode("cm", model=None)
 
     def set_command_mode(self, mode: str, *, model: str | None) -> None:
-        """Update the explicit takeover mode and mirror legacy provider flags."""
+        """Update the explicit command menu target and mirror legacy provider flags."""
         normalized = mode.strip().lower() if mode else "cm"
         if normalized not in {"cm", *_COMMAND_MODE_PROVIDERS}:
             normalized = "cm"
@@ -569,7 +569,7 @@ class SessionManager:
         mode: str,
         model: str | None,
     ) -> None:
-        """Persist the explicit slash-command takeover mode without touching counters."""
+        """Persist the explicit slash-command menu target without touching counters."""
         async with self._lock:
             sessions = await self._load()
             skey = session.session_key.storage_key

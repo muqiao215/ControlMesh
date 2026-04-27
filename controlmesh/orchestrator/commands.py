@@ -36,11 +36,6 @@ from controlmesh.memory.commands import (
 from controlmesh.memory.frequency import find_repeated_patterns, render_patterns_summary
 from controlmesh.memory.promotion import parse_authority_entry
 from controlmesh.memory.semantic import search_semantic_index
-from controlmesh.orchestrator.providers import (
-    normalize_provider_name,
-    provider_display_name,
-    provider_public_token,
-)
 from controlmesh.orchestrator.registry import OrchestratorResult
 from controlmesh.orchestrator.selectors.cron_selector import cron_selector_start
 from controlmesh.orchestrator.selectors.model_selector import model_selector_start, switch_model
@@ -73,9 +68,6 @@ logger = logging.getLogger(__name__)
 _DEFAULT_HISTORY_LIMIT = 6
 _MAX_HISTORY_LIMIT = 20
 _CONTROL_MODE = "cm"
-_PROVIDER_MODES = frozenset({"claude", "codex", "gemini", "claw", "claw-code", "opencode"})
-_INTERNAL_PROVIDER_MODES = frozenset({"claude", "codex", "gemini", "claw", "opencode"})
-_MODE_USAGE = "Usage: /mode [status|cm|claude|codex|gemini|claw-code|opencode]"
 _CLAUDE_NATIVE_REGISTRY = (
     "**Claude 原生命令**\n\n"
     "- `/add-dir` 添加工作目录\n"
@@ -104,14 +96,14 @@ _CLAUDE_NATIVE_REGISTRY = (
     "- `/remote-control` Claude Remote Control\n"
     "- `/rc` Remote Control 简写\n"
     "- `/back` 返回 ControlMesh 命令\n\n"
-    "当前已切到 Claude 原生命令模式；上面的 `/xxx` 会优先透传给 Claude。"
+    "当前菜单：Claude 原生命令。上面的 `/xxx` 会直接发给 Claude。"
 )
 _CONTROL_MESH_REGISTRY = (
     "**ControlMesh 命令**\n\n"
     "- `/new` 新会话\n"
-    "- `/model` 模型/通道\n"
-    "- `/mode` 斜杠命令接管\n"
     "- `/cm` 打开 Claude 原生命令\n"
+    "- `/back` 返回 ControlMesh 命令\n"
+    "- `/model` 模型/通道\n"
     "- `/tasks` 后台任务\n"
     "- `/session` 会话入口\n"
     "- `/agents` Agent 队列\n"
@@ -120,30 +112,19 @@ _CONTROL_MESH_REGISTRY = (
     "- `/memory` 主记忆\n"
     "- `/settings` 设置\n"
     "- `/help` 完整帮助\n\n"
-    "已返回 ControlMesh 命令模式。"
+    "当前菜单：ControlMesh 命令。"
 )
 _TASKS_TOPOLOGY_OFF_TOKENS = frozenset({"off", "none", "manual", "unset"})
-_MODE_LABELS = {
+_COMMAND_MENU_LABELS = {
     "cm": "ControlMesh",
-    "claude": "Claude-compatible channel",
+    "claude": "Claude 原生命令",
     "codex": "Codex",
     "gemini": "Gemini",
     "claw": "Claw-Code",
-    "claw-code": "Claw-Code",
     "opencode": "OpenCode",
 }
-_CORE_MODE_BUTTONS: tuple[tuple[str, str], ...] = (
-    ("cm", "CM"),
-    ("claude", "CLAUDE"),
-    ("codex", "CODEX"),
-    ("gemini", "GEMINI"),
-)
-_OPTIONAL_MODE_BUTTONS: tuple[tuple[str, str, str], ...] = (
-    ("claw-code", "claw", "CLAW-CODE"),
-    ("opencode", "opencode", "OPENCODE"),
-)
-_CLAUDE_NATIVE_BUTTONS = ButtonGrid(rows=[[Button(text="Back", callback_data="/back")]])
-_CONTROL_MESH_BUTTONS = ButtonGrid(rows=[[Button(text="Claude Native", callback_data="/cm")]])
+_CLAUDE_NATIVE_BUTTONS = ButtonGrid(rows=[[Button(text="返回 ControlMesh", callback_data="/back")]])
+_CONTROL_MESH_BUTTONS = ButtonGrid(rows=[[Button(text="Claude 原生命令", callback_data="/cm")]])
 
 
 class HistoryRequestKind(StrEnum):
@@ -193,57 +174,9 @@ async def cmd_model(orch: Orchestrator, key: SessionKey, text: str) -> Orchestra
     return OrchestratorResult(text=result_text)
 
 
-def _mode_label(mode: str) -> str:
-    """Return an accurate user-facing label for a command mode."""
-    normalized = normalize_provider_name(mode)
-    return _MODE_LABELS.get(mode, _MODE_LABELS.get(normalized, provider_display_name(normalized)))
-
-
-def _mode_status_text(mode: str, model: str | None = None) -> str:
-    """Render the session-local takeover mode status."""
-    if mode == _CONTROL_MODE:
-        return "Takeover mode: ControlMesh\nControlMesh handles slash commands normally."
-
-    model_line = f"\nTarget model: {model}" if model else ""
-    display_channel = provider_public_token(mode)
-    return (
-        f"Takeover mode: {_mode_label(mode)}\n"
-        f"Target channel: {display_channel}{model_line}\n"
-        "Subsequent /xxx messages route to this CLI channel first.\n"
-        "Use /back to return to ControlMesh commands, or /cm /status for one ControlMesh command."
-    )
-
-
-def _mode_selector_buttons(
-    current_mode: str,
-    available_providers: frozenset[str],
-) -> ButtonGrid:
-    """Return the Telegram-friendly takeover selector keyboard."""
-    rows: list[list[Button]] = [
-        [
-            Button(
-                text=f"• {label}" if mode == current_mode else label,
-                callback_data=f"/mode {mode}",
-            )
-            for mode, label in _CORE_MODE_BUTTONS
-        ]
-    ]
-    optional_modes = [
-        (public_mode, internal_mode, label)
-        for public_mode, internal_mode, label in _OPTIONAL_MODE_BUTTONS
-        if internal_mode in available_providers or current_mode == internal_mode
-    ]
-    if optional_modes:
-        rows.append(
-            [
-                Button(
-                    text=f"• {label}" if internal_mode == current_mode else label,
-                    callback_data=f"/mode {public_mode}",
-                )
-                for public_mode, internal_mode, label in optional_modes
-            ]
-        )
-    return ButtonGrid(rows=rows)
+def _command_menu_label(mode: str) -> str:
+    """Return the user-facing command-menu label."""
+    return _COMMAND_MENU_LABELS.get(mode, mode)
 
 
 async def _resolve_command_mode_model(
@@ -251,7 +184,7 @@ async def _resolve_command_mode_model(
     key: SessionKey,
     provider: str,
 ) -> str | None:
-    """Resolve the model to pin for a provider takeover mode."""
+    """Resolve the model to pin for a provider-native command menu."""
     active = await orch._sessions.get_active(key)
     if active is not None and active.provider == provider and active.model.strip():
         return active.model
@@ -262,123 +195,6 @@ async def _resolve_command_mode_model(
 
     default_model = orch._providers.default_model_for_provider(provider).strip()
     return default_model or None
-
-
-async def cmd_mode(orch: Orchestrator, key: SessionKey, text: str) -> OrchestratorResult:
-    """Handle /mode [status|cm|claude|codex|gemini]."""
-    parts = text.strip().split(None, 1)
-    action = parts[1].strip().lower() if len(parts) > 1 else "status"
-    show_selector = len(parts) == 1
-    if action == "status":
-        session = await orch._sessions.get_active(key)
-        current_mode = session.command_mode if session is not None else _CONTROL_MODE
-        if session is None:
-            return OrchestratorResult(
-                text=_mode_status_text(_CONTROL_MODE),
-                buttons=(
-                    _mode_selector_buttons(_CONTROL_MODE, orch.available_providers)
-                    if show_selector
-                    else None
-                ),
-            )
-        return OrchestratorResult(
-            text=_mode_status_text(session.command_mode, session.command_mode_model),
-            buttons=(
-                _mode_selector_buttons(current_mode, orch.available_providers)
-                if show_selector
-                else None
-            ),
-        )
-
-    if action == _CONTROL_MODE:
-        session = await orch._sessions.get_active(key)
-        if session is not None:
-            await orch._sessions.sync_command_mode(session, mode=_CONTROL_MODE, model=None)
-        return OrchestratorResult(text=_mode_status_text(_CONTROL_MODE))
-
-    if action not in _PROVIDER_MODES:
-        return OrchestratorResult(text=_MODE_USAGE)
-    provider = normalize_provider_name(action)
-    if provider not in _INTERNAL_PROVIDER_MODES:
-        return OrchestratorResult(text=_MODE_USAGE)
-
-    model = await _resolve_command_mode_model(orch, key, provider)
-    if model is None:
-        return OrchestratorResult(
-            text=(
-                f"Cannot enable {_mode_label(provider)} takeover mode yet: no default model "
-                f"is known for channel '{provider_public_token(provider)}'.\n"
-                "Make that runtime the active provider first, then retry."
-            )
-        )
-
-    session = await orch._sessions.get_active(key)
-    if session is None:
-        configured_model, configured_provider = orch.resolve_runtime_target(orch._config.model)
-        session, _is_new = await orch._sessions.resolve_session(
-            key,
-            provider=configured_provider,
-            model=configured_model,
-        )
-
-    await orch._sessions.sync_command_mode(session, mode=provider, model=model)
-    return OrchestratorResult(text=_mode_status_text(provider, model))
-
-
-async def cmd_claude_native(orch: Orchestrator, key: SessionKey, text: str) -> OrchestratorResult:
-    """Handle /claude_native [on|off|status]."""
-    parts = text.strip().split(None, 1)
-    action = parts[1].strip().lower() if len(parts) > 1 else "status"
-    if action not in {"on", "off", "status"}:
-        return OrchestratorResult(text="Usage: /claude_native [on|off|status]")
-
-    active = await orch._sessions.get_active(key)
-    if active is not None:
-        provider = active.provider
-        model = active.model
-    else:
-        model, provider = orch.resolve_runtime_target(orch._config.model)
-
-    if provider != "claude":
-        return OrchestratorResult(
-            text=(
-                "Claude native command mode is only available when the active provider is Claude.\n"
-                "Switch to a Claude model first, then retry."
-            )
-        )
-
-    session, _is_new = await orch._sessions.resolve_session(
-        key,
-        provider=provider,
-        model=model,
-        preserve_existing_target=False,
-    )
-
-    if action == "status":
-        mode = "on" if session.command_mode == "claude" else "off"
-        return OrchestratorResult(
-            text=(
-                f"Claude native command mode: {mode}\n"
-                "When on, subsequent /xxx messages go to the claude channel first.\n"
-                "Provider labels are channels; the configured backend may vary.\n"
-                "Use /back to return, or /cm /status for one ControlMesh command."
-            )
-        )
-
-    enabled = action == "on"
-    await orch._sessions.sync_command_mode(
-        session,
-        mode="claude" if enabled else _CONTROL_MODE,
-        model=model if enabled else None,
-    )
-    mode = "on" if enabled else "off"
-    return OrchestratorResult(
-        text=(
-            f"Claude native command mode: {mode}\n"
-            "This uses the claude channel; the configured backend may vary.\n"
-            "Use /back to return, or /cm /status for one ControlMesh command."
-        )
-    )
 
 
 async def cmd_settings(orch: Orchestrator, _key: SessionKey, text: str) -> OrchestratorResult:
@@ -1275,7 +1091,7 @@ async def _build_status(orch: Orchestrator, key: SessionKey) -> str:
             f"{t('status.messages_line', count=session.message_count)}\n"
             f"{t('status.tokens_line', tokens=f'{session.total_tokens:,}')}\n"
             f"{t('status.cost_line', cost=f'{session.total_cost_usd:.4f}')}\n"
-            f"Takeover mode: {_mode_label(session.command_mode)}\n"
+            f"Current menu: {_command_menu_label(session.command_mode)}\n"
             f"{_model_line(session.model)}"
         )
     else:

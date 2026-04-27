@@ -39,13 +39,11 @@ from controlmesh.infra.docker import DockerManager
 from controlmesh.infra.inflight import InflightTracker
 from controlmesh.orchestrator.commands import (
     cmd_back,
-    cmd_claude_native,
     cmd_controlmesh,
     cmd_cron,
     cmd_diagnose,
     cmd_history,
     cmd_memory,
-    cmd_mode,
     cmd_model,
     cmd_reset,
     cmd_sessions,
@@ -574,13 +572,9 @@ class Orchestrator:
         reg.register_async("/status", cmd_status)
         reg.register_async("/model", cmd_model)
         reg.register_async("/model ", cmd_model)
-        reg.register_async("/mode", cmd_mode)
-        reg.register_async("/mode ", cmd_mode)
         reg.register_async("/memory", cmd_memory)
         reg.register_async("/history", cmd_history)
         reg.register_async("/history ", cmd_history)
-        reg.register_async("/claude_native", cmd_claude_native)
-        reg.register_async("/claude_native ", cmd_claude_native)
         reg.register_async("/settings", cmd_settings)
         reg.register_async("/settings ", cmd_settings)
         reg.register_async("/cm", cmd_controlmesh)
@@ -678,7 +672,7 @@ class Orchestrator:
             return None
 
         head = normalized.split(None, 1)[0].split("@", 1)[0]
-        if head in {"/back", "/claude_native", "/mode", "/cm"}:
+        if head in {"/back", "/cm"}:
             return None
 
         session = await self._sessions.get_active(dispatch.key)
@@ -699,14 +693,14 @@ class Orchestrator:
 
         This preserves ControlMesh's established top-level commands while letting
         provider-native slash commands such as ``/compact`` or ``/review`` pass
-        through without requiring users to enter takeover mode first.
+        through without requiring a separate public switch command.
         """
         normalized = dispatch.cmd.strip()
         if not normalized.startswith("/"):
             return None
 
         head = normalized.split(None, 1)[0].split("@", 1)[0]
-        if head in {"/back", "/cm", "/mode", "/claude_native"}:
+        if head in {"/back", "/cm"}:
             return None
 
         session = await self._sessions.get_active(dispatch.key)

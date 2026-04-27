@@ -308,10 +308,10 @@ matrix_description = "Agentes de código IA (Claude, Codex, Gemini) no Matrix.\n
 [help]
 header = "**Referência de Comandos**"
 overview_header = "**Mapa de Capacidades do ControlMesh**"
-overview_intro = "ControlMesh é a camada de orquestração para roteamento de modelos, takeover CLI, trabalho autônomo, frotas de agentes, automação agendada e memória persistente."
+overview_intro = "ControlMesh é a camada de orquestração para roteamento de modelos, menus de comandos CLI, trabalho autônomo, frotas de agentes, automação agendada e memória persistente."
 capabilities_header = "**O que o ControlMesh faz**"
 cap_model = "Roteamento de modelos - escolha canais Claude-compatible, Codex, Gemini ou SDK com `/model`."
-cap_takeover = "Takeover CLI - envie comandos slash para um canal provedor com `/mode` e volte com `/cm`."
+cap_claude_native = "Claude native commands - use `/cm` for Claude commands and `/back` for ControlMesh."
 cap_tasks = "Tarefas autônomas em segundo plano - delegue trabalhos longos com `/tasks` e continue conversando."
 cap_agents = "Frota de agentes - inspecione e conduza sub-agentes com `/agents` e comandos de agente."
 cap_cron = "Automações agendadas - gerencie jobs recorrentes com `/cron`."

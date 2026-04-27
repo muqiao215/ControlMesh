@@ -37,7 +37,6 @@ def build_command_center_card(
         "**ControlMesh**\n"
         "- `/new` new session\n"
         "- `/model` switch or inspect active model\n"
-        "- `/mode` slash-command takeover\n"
         "- `/cm` open Claude native commands\n"
         "- `/tasks` inspect background tasks\n"
         "- `/session` session entry\n"
@@ -49,7 +48,7 @@ def build_command_center_card(
         "**Feishu**\n"
         "- `/feishu_auth_all` narrow native auth path\n"
         "- `/feishu_auth_useful` bulk auth excluding heavy enterprise domains\n\n"
-        "Use `/cm` to switch to Claude native commands.\n\n"
+        "Use `/cm` to open Claude native commands.\n\n"
         f"{runtime_note}"
     )
 
@@ -117,7 +116,7 @@ def build_claude_native_command_card(
         "- `/remote-control` Claude Remote Control\n"
         "- `/rc` Remote Control shortcut\n"
         "- `/back` return to ControlMesh commands\n\n"
-        "Current mode: Claude native slash commands.\n\n"
+        "Current menu: Claude native commands.\n\n"
         f"{runtime_note}"
     )
 

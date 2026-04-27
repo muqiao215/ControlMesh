@@ -66,7 +66,7 @@ async def test_enabled_router_does_not_override_model_directive(orch: Orchestrat
     assert request.model_override == "sonnet"
 
 
-async def test_claude_native_mode_still_wins_over_router(orch: Orchestrator) -> None:
+async def test_claude_command_menu_still_wins_over_router(orch: Orchestrator) -> None:
     key = SessionKey(chat_id=1)
     orch._config.agent_graph.enabled = True
     session, _ = await orch._sessions.resolve_session(key, provider="claude", model="opus")

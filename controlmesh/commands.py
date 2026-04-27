@@ -18,7 +18,6 @@ def get_bot_commands() -> list[tuple[str, str]]:
         # Core ControlMesh workflow
         ("new", t_cmd("bot.new")),
         ("model", t_cmd("bot.model")),
-        ("mode", t_cmd("bot.mode")),
         ("cm", t_cmd("bot.cm")),
         ("tasks", t_cmd("bot.tasks")),
         ("session", t_cmd("bot.session")),

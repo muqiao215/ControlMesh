@@ -141,12 +141,11 @@ def _help_line(command: str) -> str:
 def _build_help_text(agent_name: str = "main") -> str:
     capability_lines = [
         f"- {t('help.cap_model')}",
-        f"- {t('help.cap_takeover')}",
         f"- {t('help.cap_tasks')}",
         f"- {t('help.cap_cron')}",
         f"- {t('help.cap_memory')}",
     ]
-    start_here_commands = ["model", "mode", "cm", "tasks", "cron"]
+    start_here_commands = ["cm", "model", "tasks", "cron"]
     advanced_commands = ["settings", "showfiles", "info", "diagnose", "upgrade", "restart"]
     if agent_name == "main":
         capability_lines.insert(3, f"- {t('help.cap_agents')}")
@@ -401,7 +400,6 @@ class TelegramBot:
             "memory",
             "history",
             "model",
-            "mode",
             "cm",
             "back",
             "settings",
