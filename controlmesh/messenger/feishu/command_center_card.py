@@ -34,13 +34,22 @@ def build_command_center_card(
         f"Progress mode: `{config.feishu.progress_mode}`"
     )
     commands = (
-        "**Quick commands**\n"
-        "- `/settings` interactive settings panel\n"
-        "- `/status` current runtime status\n"
+        "**ControlMesh**\n"
+        "- `/new` new session\n"
         "- `/model` switch or inspect active model\n"
-        "- `/tasks topology status` inspect background task topology\n"
+        "- `/mode` slash-command takeover\n"
+        "- `/cm` open Claude native commands\n"
+        "- `/tasks` inspect background tasks\n"
+        "- `/session` session entry\n"
+        "- `/agents` agent queue\n"
+        "- `/cron` scheduled automation\n"
+        "- `/status` current runtime status\n"
+        "- `/memory` main memory\n"
+        "- `/settings` interactive settings panel\n\n"
+        "**Feishu**\n"
         "- `/feishu_auth_all` narrow native auth path\n"
         "- `/feishu_auth_useful` bulk auth excluding heavy enterprise domains\n\n"
+        "Use `/cm` to switch to Claude native commands.\n\n"
         f"{runtime_note}"
     )
 
@@ -64,6 +73,64 @@ def build_command_center_card(
             "title": {
                 "tag": "plain_text",
                 "content": "ControlMesh Command Center",
+            }
+        },
+        "elements": elements,
+    }
+
+
+def build_claude_native_command_card(
+    config: AgentConfig,
+    *,
+    note: str | None = None,
+) -> dict[str, Any]:
+    """Build the Feishu-visible Claude native slash command registry."""
+    runtime_note = (
+        f"Feishu runtime: `{config.feishu.runtime_mode}`\n"
+        f"Progress mode: `{config.feishu.progress_mode}`"
+    )
+    commands = (
+        "**Claude native**\n"
+        "- `/add-dir` add working directory\n"
+        "- `/agents` manage Claude agents\n"
+        "- `/bug` report Claude Code issue\n"
+        "- `/clear` clear context\n"
+        "- `/compact` compact context\n"
+        "- `/config` Claude Code config\n"
+        "- `/cost` usage cost\n"
+        "- `/doctor` diagnose Claude Code\n"
+        "- `/help` Claude native help\n"
+        "- `/ide` IDE integration\n"
+        "- `/init` initialize project context\n"
+        "- `/install-github-app` install GitHub App\n"
+        "- `/login` log in to Claude\n"
+        "- `/logout` log out of Claude\n"
+        "- `/mcp` manage MCP servers\n"
+        "- `/memory` Claude memory\n"
+        "- `/model` Claude model selector\n"
+        "- `/permissions` Claude tool permissions\n"
+        "- `/pr_comments` pull PR comments\n"
+        "- `/review` review code\n"
+        "- `/status` Claude session status\n"
+        "- `/terminal-setup` terminal integration\n"
+        "- `/vim` Vim mode\n"
+        "- `/remote-control` Claude Remote Control\n"
+        "- `/rc` Remote Control shortcut\n"
+        "- `/back` return to ControlMesh commands\n\n"
+        "Current mode: Claude native slash commands.\n\n"
+        f"{runtime_note}"
+    )
+
+    elements: list[dict[str, Any]] = [{"tag": "markdown", "content": commands}]
+    if note:
+        elements.append({"tag": "markdown", "content": f"**Status**\n{note}"})
+
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "title": {
+                "tag": "plain_text",
+                "content": "Claude Native Commands",
             }
         },
         "elements": elements,

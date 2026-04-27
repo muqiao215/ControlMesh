@@ -231,7 +231,7 @@ def test_deploy_expands_task_policy_placeholder(mock_paths: ControlMeshPaths) ->
     deployed = mock_paths.controlmesh_home / "workspace" / "CLAUDE.md"
     content = deployed.read_text(encoding="utf-8")
     assert "{{CONTROLMESH_TASK_DELEGATION_POLICY}}" not in content
-    assert "Anything that takes >30 seconds" in content
+    assert "Agent Routing Check" in content
     assert "/tasks/create" in content
 
 

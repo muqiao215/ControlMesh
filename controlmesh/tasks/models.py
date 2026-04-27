@@ -25,6 +25,13 @@ class TaskSubmit:
     model_override: str = ""
     thinking_override: str = ""
     topology: str = ""
+    route: str = ""
+    workunit_kind: str = ""
+    command: str = ""
+    target: str = ""
+    evidence: str = ""
+    required_capabilities: list[str] = field(default_factory=list)
+    evaluator: str = ""
 
 
 @dataclass(slots=True)
@@ -52,6 +59,14 @@ class TaskEntry:
     last_question: str = ""
     original_prompt: str = ""
     thinking: str = ""
+    route: str = ""
+    workunit_kind: str = ""
+    route_reason: str = ""
+    required_capabilities: list[str] = field(default_factory=list)
+    evaluator: str = ""
+    command: str = ""
+    target: str = ""
+    evidence: str = ""
     tasks_dir: str = ""  # Agent's tasks directory (for per-agent folder resolution)
     thread_id: TopicRef = None  # Forum topic ID (for routing results back to topic)
 
@@ -77,6 +92,14 @@ class TaskEntry:
             "num_turns": self.num_turns,
             "last_question": self.last_question,
             "thinking": self.thinking,
+            "route": self.route,
+            "workunit_kind": self.workunit_kind,
+            "route_reason": self.route_reason,
+            "required_capabilities": list(self.required_capabilities),
+            "evaluator": self.evaluator,
+            "command": self.command,
+            "target": self.target,
+            "evidence": self.evidence,
             "tasks_dir": self.tasks_dir,
         }
         if self.thread_id is not None:
@@ -106,6 +129,14 @@ class TaskEntry:
             num_turns=d.get("num_turns", 0),
             last_question=d.get("last_question", ""),
             thinking=d.get("thinking", ""),
+            route=d.get("route", ""),
+            workunit_kind=d.get("workunit_kind", ""),
+            route_reason=d.get("route_reason", ""),
+            required_capabilities=list(d.get("required_capabilities") or []),
+            evaluator=d.get("evaluator", ""),
+            command=d.get("command", ""),
+            target=d.get("target", ""),
+            evidence=d.get("evidence", ""),
             tasks_dir=d.get("tasks_dir", ""),
             thread_id=d.get("thread_id"),
         )

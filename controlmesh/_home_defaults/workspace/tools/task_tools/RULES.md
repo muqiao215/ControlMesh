@@ -1,7 +1,8 @@
-# Background Tasks
+# Background Tasks and Agent Routing
 
-Delegate work that takes >30 seconds. The task agent runs autonomously in a
-separate CLI session while you keep chatting with the user.
+Use background tasks for routable WorkUnits, not only for long work. The task
+agent runs autonomously in a separate CLI session while you keep chatting with
+the user.
 
 ## When to use
 
@@ -9,11 +10,28 @@ separate CLI session while you keep chatting with the user.
 - File creation, documents, code generation
 - Any multi-step work that would block the conversation
 - Parallel independent sub-tasks
+- `test_execution`: run tests/checks and summarize failures, no edits
+- `code_review`: review a diff/target with evidence, no writes
+- `patch_candidate`: produce a minimal candidate patch with evidence
 
 ## When NOT to use
 
 - Quick questions answerable in seconds
 - Trivial one-line operations
+
+## Capability-routed tasks
+
+Prefer `route_task.py` when the task fits a WorkUnit kind and you do not need
+to choose the provider/model manually.
+
+```bash
+python3 tools/task_tools/route_task.py --kind test_execution --name "Run pytest" --command "uv run pytest tests/test_x.py -q"
+python3 tools/task_tools/route_task.py --kind code_review --target "git diff main" --topology review_fanout
+python3 tools/task_tools/route_task.py --kind patch_candidate --name "Fix failing test" --evidence logs/pytest.log
+```
+
+Route by capability, required tools, write permission, and evidence needs. Do
+not bind roles directly to model names.
 
 ## Creating a task
 
@@ -24,6 +42,11 @@ Options:
 - `--provider PROV` — override provider (claude, codex, gemini)
 - `--model MODEL` — override model (opus, sonnet, flash, etc.)
 - `--thinking LEVEL` — codex reasoning effort (low, medium, high)
+- `--route auto` — use capability-based routing
+- `--kind KIND` — WorkUnit kind
+- `--command CMD` — test/check command
+- `--target TARGET` — review target
+- `--evidence PATH` — evidence/log path
 
 **Important**: Include ALL context in the prompt. The task agent does NOT see
 the conversation — give it everything it needs.

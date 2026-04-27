@@ -12,7 +12,7 @@ Delegated background task system (`TaskHub`) for the Feishu native task runtime.
 
 ## Purpose
 
-Run long work asynchronously while keeping parent chat responsive.
+Run routable work asynchronously while keeping parent chat responsive.
 
 The public runtime primitive surface is:
 
@@ -22,6 +22,15 @@ The public runtime primitive surface is:
 - `POST /tasks/ask_parent`
 - `GET /tasks/list`
 - `POST /interagent/send`
+
+Capability routing is available through:
+
+- `tools/task_tools/route_task.py`
+- `/tasks/create` with `route=auto`
+
+The MVP WorkUnit kinds are `test_execution`, `code_review`, and
+`patch_candidate`. Routing fills empty provider/model/topology fields from a
+capability registry and never overrides explicit values.
 
 CLI-visible product checks:
 
@@ -72,6 +81,15 @@ Startup/maintenance behavior:
 - `enabled`
 - `max_parallel` (per chat)
 - `timeout_seconds`
+- `default_topology`
+
+## Config (`AgentConfig.agent_routing`)
+
+- `enabled`
+- `mode`
+- `capability_registry`
+- `score_memory_path`
+- `min_confidence`
 
 ## Execution model (`TaskHub`)
 

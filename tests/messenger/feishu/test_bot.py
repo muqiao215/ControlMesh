@@ -82,6 +82,7 @@ def _make_settings_orchestrator(bot: FeishuBot, tmp_path: Path) -> SimpleNamespa
     return SimpleNamespace(
         _config=bot._config,
         paths=SimpleNamespace(config_path=config_path),
+        handle_message=AsyncMock(return_value=SimpleNamespace(text="ok")),
         handle_message_streaming=AsyncMock(return_value=SimpleNamespace(text="pong")),
     )
 
@@ -243,6 +244,28 @@ class TestFeishuBotRouting:
         assert "parent_message_id=om_parent" in prompt
         assert "quote_summary=上一条结论" in prompt
         assert prompt.endswith("继续处理")
+
+    async def test_handle_incoming_slash_command_passes_raw_text_to_orchestrator(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path)
+        bot._orchestrator = SimpleNamespace(
+            handle_message_streaming=AsyncMock(return_value=SimpleNamespace(text="ok"))
+        )
+        bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="/compact",
+            )
+        )
+
+        prompt = bot._orchestrator.handle_message_streaming.await_args.args[1]
+        assert prompt == "/compact"
 
     async def test_handle_incoming_event_normalizes_image_payload(self, tmp_path: Path) -> None:
         bot = _make_bot(tmp_path)
@@ -409,8 +432,70 @@ class TestFeishuBotRouting:
             for element in card["elements"]
             if element.get("tag") == "markdown"
         ]
+        assert any("`/cm`" in block for block in markdown_blocks)
         assert any("`/settings`" in block for block in markdown_blocks)
         assert any("`/feishu_auth_useful`" in block for block in markdown_blocks)
+        bot._orchestrator.handle_message_streaming.assert_not_awaited()
+
+    async def test_handle_incoming_text_cm_command_sends_claude_native_card(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path)
+        bot._orchestrator = _make_settings_orchestrator(bot, tmp_path)
+        bot._send_card_to_chat_ref = AsyncMock(return_value="om_cm")  # type: ignore[method-assign]
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="/cm",
+            )
+        )
+
+        bot._orchestrator.handle_message.assert_awaited_once()
+        assert bot._orchestrator.handle_message.await_args.args[1] == "/cm"
+        bot._send_card_to_chat_ref.assert_awaited_once()
+        card = bot._send_card_to_chat_ref.await_args.args[1]
+        assert card["header"]["title"]["content"] == "Claude Native Commands"
+        markdown_blocks = [
+            element["content"]
+            for element in card["elements"]
+            if element.get("tag") == "markdown"
+        ]
+        assert any("`/compact`" in block for block in markdown_blocks)
+        assert any("`/remote-control`" in block for block in markdown_blocks)
+        assert any("`/back`" in block for block in markdown_blocks)
+        bot._orchestrator.handle_message_streaming.assert_not_awaited()
+
+    async def test_handle_incoming_text_back_command_sends_command_center_card(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path)
+        bot._orchestrator = _make_settings_orchestrator(bot, tmp_path)
+        bot._send_card_to_chat_ref = AsyncMock(return_value="om_back")  # type: ignore[method-assign]
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="/back",
+            )
+        )
+
+        bot._orchestrator.handle_message.assert_awaited_once()
+        assert bot._orchestrator.handle_message.await_args.args[1] == "/back"
+        card = bot._send_card_to_chat_ref.await_args.args[1]
+        assert card["header"]["title"]["content"] == "ControlMesh Command Center"
+        markdown_blocks = [
+            element["content"]
+            for element in card["elements"]
+            if element.get("tag") == "markdown"
+        ]
+        assert any("`/cm`" in block for block in markdown_blocks)
         bot._orchestrator.handle_message_streaming.assert_not_awaited()
 
     async def test_handle_incoming_event_welcome_event_sends_command_center_card(

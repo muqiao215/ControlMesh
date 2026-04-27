@@ -1,0 +1,125 @@
+agent_slots:
+  foreground_controller:
+    runtime: controlmesh_foreground
+    provider: gpt
+    model: gpt-5.4
+    mode: foreground
+    role: controller
+    canonical_write: true
+    capabilities:
+      planning:
+        score: 0.92
+      routing:
+        score: 0.92
+      synthesis:
+        score: 0.9
+      final_judgment:
+        score: 0.9
+
+  background_worker:
+    runtime: controlmesh_background
+    provider: gpt
+    model: gpt-5.4
+    mode: background
+    role: worker
+    can_edit: true
+    capabilities:
+      code_patch:
+        score: 0.84
+      test_execution:
+        score: 0.82
+      shell_execution:
+        score: 0.8
+      test_log_analysis:
+        score: 0.82
+      evidence_writer:
+        score: 0.84
+
+  codex_cli:
+    runtime: codex_cli
+    provider: codex
+    model: auto
+    mode: background
+    role: worker
+    can_edit: true
+    capabilities:
+      code_review:
+        score: 0.9
+      adversarial_review:
+        score: 0.92
+      diff_understanding:
+        score: 0.9
+      code_patch:
+        score: 0.86
+      test_execution:
+        score: 0.84
+      shell_execution:
+        score: 0.82
+      test_log_analysis:
+        score: 0.84
+      evidence_writer:
+        score: 0.86
+    topology_preferences:
+      code_review: fanout_merge
+      patch_candidate: director_worker
+
+  claude_code.codex_plugin_review:
+    runtime: claude_code
+    provider: claude
+    model: ""
+    mode: background
+    role: worker
+    can_edit: false
+    tools:
+      - codex-plugin-cc
+    capabilities:
+      code_review:
+        score: 0.86
+      adversarial_review:
+        score: 0.88
+      diff_understanding:
+        score: 0.84
+      evidence_writer:
+        score: 0.82
+    topology_preferences:
+      code_review: fanout_merge
+
+  opencode.explore:
+    runtime: opencode
+    provider: opencode
+    model: ""
+    mode: background
+    role: worker
+    can_edit: false
+    capabilities:
+      code_search:
+        score: 0.86
+      code_review:
+        score: 0.78
+      diff_understanding:
+        score: 0.76
+      shell_execution:
+        score: 0.78
+      test_log_analysis:
+        score: 0.78
+      evidence_writer:
+        score: 0.78
+
+  opencode.build:
+    runtime: opencode
+    provider: opencode
+    model: ""
+    mode: background
+    role: worker
+    can_edit: true
+    capabilities:
+      code_patch:
+        score: 0.74
+      test_execution:
+        score: 0.82
+      shell_execution:
+        score: 0.84
+      test_log_analysis:
+        score: 0.82
+      evidence_writer:
+        score: 0.78

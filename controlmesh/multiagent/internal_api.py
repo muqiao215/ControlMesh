@@ -280,6 +280,9 @@ class InternalAgentAPI:
 
         from controlmesh.tasks.models import TaskSubmit
 
+        raw_capabilities = data.get("required_capabilities") or []
+        required_capabilities = raw_capabilities if isinstance(raw_capabilities, list) else []
+
         submit = TaskSubmit(
             chat_id=data.get("chat_id", 0),
             prompt=prompt,
@@ -292,6 +295,13 @@ class InternalAgentAPI:
             model_override=data.get("model") or "",
             thinking_override=data.get("thinking") or "",
             topology=data.get("topology") or "",
+            route=data.get("route") or "",
+            workunit_kind=data.get("workunit_kind") or data.get("kind") or "",
+            command=data.get("command") or "",
+            target=data.get("target") or "",
+            evidence=data.get("evidence") or "",
+            required_capabilities=[str(item) for item in required_capabilities],
+            evaluator=data.get("evaluator") or "",
         )
 
         try:

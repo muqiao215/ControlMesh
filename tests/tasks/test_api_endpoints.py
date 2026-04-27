@@ -73,6 +73,34 @@ class TestTaskCreate:
         submit = hub.submit.call_args.args[0]
         assert submit.topology == "pipeline"
 
+    async def test_forwards_routing_fields_to_task_submit(self, api_client: TestClient) -> None:
+        hub = api_client.app["_test_hub"]
+
+        resp = await api_client.post(
+            "/tasks/create",
+            json={
+                "from": "main",
+                "prompt": "run tests",
+                "route": "auto",
+                "workunit_kind": "test_execution",
+                "command": "uv run pytest tests/test_x.py -q",
+                "target": "tests/test_x.py",
+                "evidence": "logs/pytest.log",
+                "required_capabilities": ["shell_execution"],
+                "evaluator": "foreground",
+            },
+        )
+
+        assert resp.status == 200
+        submit = hub.submit.call_args.args[0]
+        assert submit.route == "auto"
+        assert submit.workunit_kind == "test_execution"
+        assert submit.command == "uv run pytest tests/test_x.py -q"
+        assert submit.target == "tests/test_x.py"
+        assert submit.evidence == "logs/pytest.log"
+        assert submit.required_capabilities == ["shell_execution"]
+        assert submit.evaluator == "foreground"
+
     async def test_missing_prompt(self, api_client: TestClient) -> None:
         resp = await api_client.post("/tasks/create", json={"from": "main"})
         assert resp.status == 400

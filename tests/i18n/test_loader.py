@@ -211,13 +211,21 @@ def test_all_language_dirs_exist() -> None:
 
 
 def test_store_chinese_fallback() -> None:
-    """Chinese language loads with English fallback since files are copies of English."""
+    """Chinese language loads and can still fall back to English for missing keys."""
     store = TranslationStore("zh")
     # Should have chat keys from English fallback
     assert len(store.all_chat_keys()) > 0
     # Should resolve English keys even for Chinese store
     result = store.chat("session.error_header")
     assert "Session Error" in result
+
+
+def test_chinese_command_descriptions_are_localized() -> None:
+    store = TranslationStore("zh")
+
+    assert store.cmd("bot.new") == "开始新会话"
+    assert store.cmd("bot.cm") == "Claude 原生命令"
+    assert store.cmd("multiagent.stop_all") == "停止全部"
 
 
 def test_init_chinese() -> None:

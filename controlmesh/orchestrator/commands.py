@@ -76,6 +76,52 @@ _CONTROL_MODE = "cm"
 _PROVIDER_MODES = frozenset({"claude", "codex", "gemini", "claw", "claw-code", "opencode"})
 _INTERNAL_PROVIDER_MODES = frozenset({"claude", "codex", "gemini", "claw", "opencode"})
 _MODE_USAGE = "Usage: /mode [status|cm|claude|codex|gemini|claw-code|opencode]"
+_CLAUDE_NATIVE_REGISTRY = (
+    "**Claude 原生命令**\n\n"
+    "- `/add-dir` 添加工作目录\n"
+    "- `/agents` 管理 Claude agents\n"
+    "- `/bug` 上报 Claude Code 问题\n"
+    "- `/clear` 清空当前上下文\n"
+    "- `/compact` 压缩上下文\n"
+    "- `/config` Claude Code 配置\n"
+    "- `/cost` 查看用量成本\n"
+    "- `/doctor` 诊断 Claude Code 环境\n"
+    "- `/help` Claude 原生帮助\n"
+    "- `/ide` IDE 集成\n"
+    "- `/init` 初始化项目上下文\n"
+    "- `/install-github-app` 安装 GitHub App\n"
+    "- `/login` 登录 Claude\n"
+    "- `/logout` 退出 Claude\n"
+    "- `/mcp` 管理 MCP server\n"
+    "- `/memory` Claude 记忆\n"
+    "- `/model` Claude 模型选择\n"
+    "- `/permissions` Claude 工具权限\n"
+    "- `/pr_comments` 拉取 PR 评论\n"
+    "- `/review` 代码审查\n"
+    "- `/status` Claude 会话状态\n"
+    "- `/terminal-setup` 终端集成\n"
+    "- `/vim` Vim 模式\n"
+    "- `/remote-control` Claude Remote Control\n"
+    "- `/rc` Remote Control 简写\n"
+    "- `/back` 返回 ControlMesh 命令\n\n"
+    "当前已切到 Claude 原生命令模式；上面的 `/xxx` 会优先透传给 Claude。"
+)
+_CONTROL_MESH_REGISTRY = (
+    "**ControlMesh 命令**\n\n"
+    "- `/new` 新会话\n"
+    "- `/model` 模型/通道\n"
+    "- `/mode` 斜杠命令接管\n"
+    "- `/cm` 打开 Claude 原生命令\n"
+    "- `/tasks` 后台任务\n"
+    "- `/session` 会话入口\n"
+    "- `/agents` Agent 队列\n"
+    "- `/cron` 定时任务\n"
+    "- `/status` 当前状态\n"
+    "- `/memory` 主记忆\n"
+    "- `/settings` 设置\n"
+    "- `/help` 完整帮助\n\n"
+    "已返回 ControlMesh 命令模式。"
+)
 _TASKS_TOPOLOGY_OFF_TOKENS = frozenset({"off", "none", "manual", "unset"})
 _MODE_LABELS = {
     "cm": "ControlMesh",
@@ -96,6 +142,8 @@ _OPTIONAL_MODE_BUTTONS: tuple[tuple[str, str, str], ...] = (
     ("claw-code", "claw", "CLAW-CODE"),
     ("opencode", "opencode", "OPENCODE"),
 )
+_CLAUDE_NATIVE_BUTTONS = ButtonGrid(rows=[[Button(text="Back", callback_data="/back")]])
+_CONTROL_MESH_BUTTONS = ButtonGrid(rows=[[Button(text="Claude Native", callback_data="/cm")]])
 
 
 class HistoryRequestKind(StrEnum):
@@ -162,7 +210,7 @@ def _mode_status_text(mode: str, model: str | None = None) -> str:
         f"Takeover mode: {_mode_label(mode)}\n"
         f"Target channel: {display_channel}{model_line}\n"
         "Subsequent /xxx messages route to this CLI channel first.\n"
-        "Use /cm to exit takeover mode, or /cm /status for ControlMesh commands."
+        "Use /back to return to ControlMesh commands, or /cm /status for one ControlMesh command."
     )
 
 
@@ -313,7 +361,7 @@ async def cmd_claude_native(orch: Orchestrator, key: SessionKey, text: str) -> O
                 f"Claude native command mode: {mode}\n"
                 "When on, subsequent /xxx messages go to the claude channel first.\n"
                 "Provider labels are channels; the configured backend may vary.\n"
-                "Use /cm /status or /cm /model ... to force ControlMesh commands."
+                "Use /back to return, or /cm /status for one ControlMesh command."
             )
         )
 
@@ -328,7 +376,7 @@ async def cmd_claude_native(orch: Orchestrator, key: SessionKey, text: str) -> O
         text=(
             f"Claude native command mode: {mode}\n"
             "This uses the claude channel; the configured backend may vary.\n"
-            "Use /cm /status or /cm /model ... to force ControlMesh commands."
+            "Use /back to return, or /cm /status for one ControlMesh command."
         )
     )
 
@@ -432,18 +480,50 @@ async def _cmd_settings_messaging_update(
     return None
 
 
+async def _switch_to_claude_native_registry(
+    orch: Orchestrator,
+    key: SessionKey,
+) -> OrchestratorResult:
+    active = await orch._sessions.get_active(key)
+    if active is not None and active.provider == "claude":
+        model = active.model
+    else:
+        model, provider = orch.resolve_runtime_target(orch._config.model)
+        if provider != "claude":
+            model = await _resolve_command_mode_model(orch, key, "claude") or ""
+
+    if not model:
+        return OrchestratorResult(
+            text="Claude 原生命令不可用：当前没有可用的 Claude provider/model。"
+        )
+
+    session, _is_new = await orch._sessions.resolve_session(
+        key,
+        provider="claude",
+        model=model,
+        preserve_existing_target=True,
+    )
+    await orch._sessions.sync_command_mode(session, mode="claude", model=model)
+    return OrchestratorResult(text=_CLAUDE_NATIVE_REGISTRY, buttons=_CLAUDE_NATIVE_BUTTONS)
+
+
 async def cmd_controlmesh(orch: Orchestrator, key: SessionKey, text: str) -> OrchestratorResult:
-    """Handle /cm <controlmesh-command> as an escape hatch from native mode."""
+    """Handle /cm as the Claude native registry or /cm <command> as a CM escape hatch."""
     parts = text.strip().split(None, 1)
     if len(parts) < 2 or not parts[1].strip():
-        session = await orch._sessions.get_active(key)
-        if session is not None:
-            await orch._sessions.sync_command_mode(session, mode=_CONTROL_MODE, model=None)
-        return OrchestratorResult(text=_mode_status_text(_CONTROL_MODE))
+        return await _switch_to_claude_native_registry(orch, key)
     nested = parts[1].strip()
     if not nested.startswith("/"):
-        return OrchestratorResult(text="Usage: /cm /status")
+        nested = f"/{nested}"
     return await orch.dispatch_controlmesh_command(key, nested)
+
+
+async def cmd_back(orch: Orchestrator, key: SessionKey, _text: str) -> OrchestratorResult:
+    """Return from provider-native slash command mode to the ControlMesh registry."""
+    session = await orch._sessions.get_active(key)
+    if session is not None:
+        await orch._sessions.sync_command_mode(session, mode=_CONTROL_MODE, model=None)
+    return OrchestratorResult(text=_CONTROL_MESH_REGISTRY, buttons=_CONTROL_MESH_BUTTONS)
 
 
 _MEMORY_USAGE = "Usage: /memory [today|search <query>|semantic <query>|why <id>|review [--scope local|shared]|patterns|deprecate <id>|dispute <id>|supersede <old-id> <new-id>|promote [apply]]"

@@ -38,6 +38,7 @@ from controlmesh.history.index import HistoryIndex
 from controlmesh.infra.docker import DockerManager
 from controlmesh.infra.inflight import InflightTracker
 from controlmesh.orchestrator.commands import (
+    cmd_back,
     cmd_claude_native,
     cmd_controlmesh,
     cmd_cron,
@@ -467,6 +468,11 @@ class Orchestrator:
         if result is not None:
             return result
 
+        fallback_target = await self._unknown_slash_native_target(dispatch)
+        if fallback_target is not None:
+            provider, model = fallback_target
+            return await self._route_provider_native_message(dispatch, provider=provider, model=model)
+
         return await self._route_non_command_message(dispatch)
 
     async def _route_non_command_message(
@@ -579,6 +585,7 @@ class Orchestrator:
         reg.register_async("/settings ", cmd_settings)
         reg.register_async("/cm", cmd_controlmesh)
         reg.register_async("/cm ", cmd_controlmesh)
+        reg.register_async("/back", cmd_back)
         reg.register_async("/cron", cmd_cron)
         reg.register_async("/diagnose", cmd_diagnose)
         reg.register_async("/upgrade", cmd_upgrade)
@@ -671,7 +678,7 @@ class Orchestrator:
             return None
 
         head = normalized.split(None, 1)[0].split("@", 1)[0]
-        if head in {"/claude_native", "/mode", "/cm"}:
+        if head in {"/back", "/claude_native", "/mode", "/cm"}:
             return None
 
         session = await self._sessions.get_active(dispatch.key)
@@ -684,6 +691,32 @@ class Orchestrator:
         if not session.command_mode_model:
             return None
         return session.command_mode, session.command_mode_model
+
+    async def _unknown_slash_native_target(
+        self, dispatch: _MessageDispatch
+    ) -> tuple[str, str] | None:
+        """Return the active provider target for unclaimed slash commands.
+
+        This preserves ControlMesh's established top-level commands while letting
+        provider-native slash commands such as ``/compact`` or ``/review`` pass
+        through without requiring users to enter takeover mode first.
+        """
+        normalized = dispatch.cmd.strip()
+        if not normalized.startswith("/"):
+            return None
+
+        head = normalized.split(None, 1)[0].split("@", 1)[0]
+        if head in {"/back", "/cm", "/mode", "/claude_native"}:
+            return None
+
+        session = await self._sessions.get_active(dispatch.key)
+        if session is not None:
+            return session.provider, session.model
+
+        model, provider = self.resolve_runtime_target(self._config.model)
+        if provider not in _NATIVE_COMMAND_MODE_PROVIDERS:
+            return None
+        return provider, model
 
     async def _route_provider_native_message(
         self,

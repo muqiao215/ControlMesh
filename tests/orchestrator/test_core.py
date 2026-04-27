@@ -75,6 +75,40 @@ async def test_status_command(orch: Orchestrator) -> None:
     assert "Model:" in result.text
 
 
+async def test_unknown_slash_command_routes_to_active_provider_by_default(
+    orch: Orchestrator,
+) -> None:
+    key = SessionKey(chat_id=1)
+    await orch._sessions.resolve_session(key, provider="claude", model="opus")
+
+    mock_execute = AsyncMock(return_value=_mock_response(result="Native Claude response"))
+    object.__setattr__(orch._cli_service, "execute", mock_execute)
+
+    result = await orch.handle_message(key, "/compact")
+
+    assert result.text == "Native Claude response"
+    request = mock_execute.call_args[0][0]
+    assert request.prompt == "/compact"
+    assert request.append_system_prompt is None
+    assert request.provider_override == "claude"
+    assert request.model_override == "opus"
+
+
+async def test_unknown_slash_command_without_session_uses_configured_provider(
+    orch: Orchestrator,
+) -> None:
+    mock_execute = AsyncMock(return_value=_mock_response(result="Native Claude response"))
+    object.__setattr__(orch._cli_service, "execute", mock_execute)
+
+    result = await orch.handle_message(SessionKey(chat_id=1), "/compact")
+
+    assert result.text == "Native Claude response"
+    request = mock_execute.call_args[0][0]
+    assert request.prompt == "/compact"
+    assert request.provider_override == "claude"
+    assert request.model_override == "opus"
+
+
 async def test_claude_native_mode_routes_slash_commands_to_claude(orch: Orchestrator) -> None:
     key = SessionKey(chat_id=1)
     session, _ = await orch._sessions.resolve_session(key, provider="claude", model="opus")
@@ -106,6 +140,22 @@ async def test_claude_native_mode_cm_escape_still_hits_controlmesh(orch: Orchest
     assert "Model:" in result.text
 
 
+async def test_cm_switches_registered_slash_commands_to_claude_native(orch: Orchestrator) -> None:
+    key = SessionKey(chat_id=1)
+    await orch.handle_message(key, "/cm")
+
+    mock_execute = AsyncMock(return_value=_mock_response(result="Claude native status"))
+    object.__setattr__(orch._cli_service, "execute", mock_execute)
+
+    result = await orch.handle_message(key, "/status")
+
+    assert result.text == "Claude native status"
+    request = mock_execute.call_args[0][0]
+    assert request.prompt == "/status"
+    assert request.provider_override == "claude"
+    assert request.model_override == "opus"
+
+
 async def test_mode_command_still_hits_controlmesh_during_takeover(orch: Orchestrator) -> None:
     key = SessionKey(chat_id=1)
     session, _ = await orch._sessions.resolve_session(key, provider="claude", model="opus")
@@ -116,6 +166,20 @@ async def test_mode_command_still_hits_controlmesh_during_takeover(orch: Orchest
     result = await orch.handle_message(key, "/mode status")
 
     assert "Takeover mode: Codex" in result.text
+
+
+async def test_back_command_returns_from_takeover_mode(orch: Orchestrator) -> None:
+    key = SessionKey(chat_id=1)
+    session, _ = await orch._sessions.resolve_session(key, provider="claude", model="opus")
+    await orch._sessions.sync_command_mode(session, mode="claude", model="opus")
+
+    result = await orch.handle_message(key, "/back")
+
+    assert "ControlMesh 命令" in result.text
+    active = await orch._sessions.get_active(key)
+    assert active is not None
+    assert active.command_mode == "cm"
+    assert active.command_mode_model is None
 
 
 async def test_mode_off_keeps_controlmesh_command_routing(orch: Orchestrator) -> None:

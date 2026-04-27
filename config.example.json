@@ -235,5 +235,13 @@
         "default_topology": "pipeline"
     },
 
+    "agent_routing": {
+        "enabled": true,
+        "mode": "auto",
+        "capability_registry": "routing/capabilities.yaml",
+        "score_memory_path": "routing/score_events.jsonl",
+        "min_confidence": 0.72
+    },
+
     "interagent_port": 8799
 }

@@ -30,11 +30,17 @@ def runtime_primitives_text(primitives: Iterable[str] = TASK_RUNTIME_PRIMITIVES)
 def build_delegation_brief() -> str:
     """Build the new-session hook reminder for background task delegation."""
     return (
-        "## BACKGROUND TASKS\n"
-        "You have background workers that execute tasks for you autonomously. "
-        f"Any work that will likely take {delegation_threshold_text()} — delegate it. "
-        "The worker gets your instructions, runs independently, and reports back. "
-        "You keep chatting with the user while it works.\n"
+        "## AGENT ROUTING CHECK\n"
+        "You are the foreground controller. Before substantial work, identify "
+        "routable WorkUnits instead of doing everything yourself.\n"
+        "- test_execution: pytest, test runners, linters, static checks\n"
+        "- code_review: diff or repository review with no writes\n"
+        "- patch_candidate: smallest candidate fix with evidence for controller review\n"
+        f"Work likely to take {delegation_threshold_text()} is one trigger, not the only rule. "
+        "Delegate by capability, required tools, write permission, evidence quality, "
+        "and whether an evaluator is needed.\n"
+        "- **Auto-route**: tools/task_tools/route_task.py --kind test_execution "
+        '--name "..." --command "..."\n'
         '- **Create**: tools/task_tools/create_task.py --name "..." "prompt with ALL context"\n'
         "- **Cancel**: tools/task_tools/cancel_task.py TASK_ID\n"
         '- **Resume**: tools/task_tools/resume_task.py TASK_ID "follow-up"\n'
@@ -53,10 +59,13 @@ def build_delegation_brief() -> str:
 def build_delegation_reminder() -> str:
     """Build the periodic delegation reminder hook text."""
     return (
-        "## TASK REMINDER\n"
-        f"Delegate work {delegation_threshold_text()} to background tasks. "
-        "Resume completed tasks for follow-ups instead of creating new ones "
-        f"(keeps context). Runtime primitives: {runtime_primitives_text()}. "
+        "## AGENT ROUTING REMINDER\n"
+        "Look for test_execution, code_review, and patch_candidate WorkUnits. "
+        "Use route_task.py for capability-based routing; use plain create_task.py "
+        "only when you already know the worker. "
+        f"{delegation_threshold_text()} remains a trigger, not the routing policy. "
+        "Resume completed tasks for follow-ups instead of creating new ones. "
+        f"Runtime primitives: {runtime_primitives_text()}. "
         f"Docs: {TASK_TOOL_DOC_PATH}."
     )
 
@@ -65,14 +74,47 @@ def build_root_delegation_rules() -> str:
     """Build root agent rules for background task delegation."""
     return f"""## Work Delegation — Background Tasks
 
-Anything that takes {delegation_threshold_text()} → delegate to a background task.
-This is your primary delegation tool. Use it proactively.
+Do not route by model name. Route by WorkUnit capability:
+- required tools
+- write permission
+- test/log ability
+- review ability
+- recent reliability when available
+- cost/latency/context needs
+
+Work likely to take {delegation_threshold_text()} is one trigger. It is not the
+core policy.
 
 A background task is an autonomous agent in a separate process with its own
 CLI session and full workspace access. You keep chatting while it works.
 When it finishes, the result is delivered into this conversation.
 
 Runtime primitives: {runtime_primitives_text()}.
+
+### Agent Routing Check
+
+Before substantial work, classify the request:
+
+1. Is there a WorkUnit that can be delegated?
+2. Is there a test/search/review command likely to take time?
+3. Is a second opinion useful?
+4. Is a read-only review useful before editing?
+5. Is this a multi-step task requiring plan/findings/progress evidence?
+6. Would a background task reduce foreground blocking?
+7. Would fanout/debate/pipeline improve quality?
+
+If yes, prefer:
+
+```bash
+python3 tools/task_tools/route_task.py --kind test_execution \
+  --name "Run pytest" \
+  --command "uv run pytest tests/test_x.py -q"
+```
+
+MVP WorkUnit kinds:
+- `test_execution`: run tests/checks, collect logs, summarize failures, do not edit
+- `code_review`: read target/diff, report findings with evidence, no writes
+- `patch_candidate`: produce a minimal candidate fix with tests/evidence; controller promotes
 
 ### Creating a task
 

@@ -57,6 +57,22 @@ class TestCreate:
         )
         assert len(reg2.list_all()) == 2
 
+    def test_create_persists_routing_metadata(self, registry: TaskRegistry) -> None:
+        submit = _submit("run tests", name="Routed")
+        submit.route = "auto"
+        submit.workunit_kind = "test_execution"
+        submit.command = "uv run pytest tests/test_x.py -q"
+        submit.required_capabilities = ["shell_execution"]
+        submit.evaluator = "foreground"
+
+        entry = registry.create(submit, "codex", "")
+
+        assert entry.route == "auto"
+        assert entry.workunit_kind == "test_execution"
+        assert entry.command == "uv run pytest tests/test_x.py -q"
+        assert entry.required_capabilities == ["shell_execution"]
+        assert entry.evaluator == "foreground"
+
 
 class TestGet:
     def test_get_existing(self, registry: TaskRegistry) -> None:

@@ -346,6 +346,16 @@ class TasksConfig(BaseModel):
         return normalized
 
 
+class AgentRoutingConfig(BaseModel):
+    """Settings for capability-based agent routing."""
+
+    enabled: bool = True
+    mode: str = "auto"
+    capability_registry: str = "routing/capabilities.yaml"
+    score_memory_path: str = "routing/score_events.jsonl"
+    min_confidence: float = 0.72
+
+
 class TimeoutConfig(BaseModel):
     """Per-execution-path timeout settings."""
 
@@ -486,6 +496,7 @@ class AgentConfig(BaseModel):
     image: ImageConfig = Field(default_factory=ImageConfig)
     timeouts: TimeoutConfig = Field(default_factory=TimeoutConfig)
     tasks: TasksConfig = Field(default_factory=TasksConfig)
+    agent_routing: AgentRoutingConfig = Field(default_factory=AgentRoutingConfig)
     scene: SceneConfig = Field(default_factory=SceneConfig)
     codex_hooks: CodexHooksConfig = Field(default_factory=CodexHooksConfig)
     agent_graph: AgentGraphConfig = Field(default_factory=AgentGraphConfig)

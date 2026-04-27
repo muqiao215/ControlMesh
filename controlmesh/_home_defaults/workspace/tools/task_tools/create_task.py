@@ -13,6 +13,14 @@ Options:
     --provider PROV    Override provider (claude, codex, gemini, claw-code, opencode)
     --model MODEL      Override model (opus, sonnet, flash, etc.)
     --thinking LEVEL   Reasoning effort for codex (low, medium, high)
+    --topology NAME    Explicit topology (pipeline, fanout_merge, director_worker, debate_judge)
+    --route auto       Let ControlMesh route by WorkUnit capability
+    --kind KIND        WorkUnit kind (test_execution, code_review, patch_candidate)
+    --command CMD      Command associated with the WorkUnit
+    --target TARGET    Review target or scope
+    --evidence PATH    Evidence/log path for patch candidates
+    --capability CAP   Required capability hint (repeatable)
+    --evaluator NAME   Evaluator hint, e.g. foreground
 
 Environment variables CONTROLMESH_AGENT_NAME and CONTROLMESH_INTERAGENT_PORT are
 automatically set by the ControlMesh framework.
@@ -49,6 +57,14 @@ def main() -> None:
     provider = ""
     model = ""
     thinking = ""
+    topology = ""
+    route = ""
+    workunit_kind = ""
+    command = ""
+    target = ""
+    evidence = ""
+    required_capabilities: list[str] = []
+    evaluator = ""
 
     # Parse named options
     while args:
@@ -64,13 +80,37 @@ def main() -> None:
         elif args[0] == "--thinking" and len(args) >= 2:
             thinking = args[1]
             args = args[2:]
+        elif args[0] == "--topology" and len(args) >= 2:
+            topology = args[1]
+            args = args[2:]
+        elif args[0] == "--route" and len(args) >= 2:
+            route = args[1]
+            args = args[2:]
+        elif args[0] in {"--kind", "--workunit-kind"} and len(args) >= 2:
+            workunit_kind = args[1]
+            args = args[2:]
+        elif args[0] == "--command" and len(args) >= 2:
+            command = args[1]
+            args = args[2:]
+        elif args[0] == "--target" and len(args) >= 2:
+            target = args[1]
+            args = args[2:]
+        elif args[0] == "--evidence" and len(args) >= 2:
+            evidence = args[1]
+            args = args[2:]
+        elif args[0] == "--capability" and len(args) >= 2:
+            required_capabilities.append(args[1])
+            args = args[2:]
+        elif args[0] == "--evaluator" and len(args) >= 2:
+            evaluator = args[1]
+            args = args[2:]
         else:
             break
 
     if not args:
         print(
             'Usage: python3 create_task.py [--name NAME] [--provider P] '
-            '[--model M] [--thinking L] "prompt"',
+            '[--model M] [--thinking L] [--route auto] [--kind KIND] "prompt"',
             file=sys.stderr,
         )
         sys.exit(1)
@@ -88,6 +128,22 @@ def main() -> None:
         body["model"] = model
     if thinking:
         body["thinking"] = thinking
+    if topology:
+        body["topology"] = topology
+    if route:
+        body["route"] = route
+    if workunit_kind:
+        body["workunit_kind"] = workunit_kind
+    if command:
+        body["command"] = command
+    if target:
+        body["target"] = target
+    if evidence:
+        body["evidence"] = evidence
+    if required_capabilities:
+        body["required_capabilities"] = required_capabilities
+    if evaluator:
+        body["evaluator"] = evaluator
 
     # Propagate sender context so task results route back to the originating chat/topic
     chat_id = os.environ.get("CONTROLMESH_CHAT_ID", "")

@@ -50,6 +50,7 @@ from controlmesh.messenger.feishu.bundled_runtime import (
     run_bundled_codex_turn,
 )
 from controlmesh.messenger.feishu.command_center_card import (
+    build_claude_native_command_card,
     build_command_center_card,
     parse_command_center_action,
 )
@@ -109,18 +110,19 @@ _FEISHU_PROGRESS_MAX_MESSAGES = 8
 _TextStreamCallback = Callable[[str], Awaitable[None]]
 _StatusStreamCallback = Callable[[str | None], Awaitable[None]]
 _ToolEventStreamCallback = Callable[[ToolUseEvent | ToolResultEvent], Awaitable[None]]
-_FEISHU_COMMAND_GUIDE_VERSION = 1
+_FEISHU_COMMAND_GUIDE_VERSION = 2
 _FEISHU_COMMAND_GUIDE_TEXT = (
     "ControlMesh 已接入。\n\n"
     "常用命令:\n"
-    "/help — 查看命令\n"
+    "/cm — 打开 Claude 原生命令\n"
+    "/back — 返回 ControlMesh 命令\n"
     "/status — 查看当前状态\n"
     "/model — 切换模型\n"
+    "/compact — Claude 原生压缩上下文\n"
+    "/remote-control — Claude Remote Control\n"
     "/feishu_auth_all — 批量补齐飞书原生权限\n"
     "/feishu_auth_useful — 除黑名单外批量补齐应用已开放权限\n"
-    "/claude_native on — 打开 Claude 原生命令模式\n"
-    "/claude_native off — 关闭 Claude 原生命令模式\n"
-    "/cm /status — 强制走 ControlMesh 命令\n\n"
+    "/help — 查看命令中心\n\n"
     "不知道发什么时, 直接说需求也可以。"
 )
 
@@ -461,6 +463,8 @@ class FeishuBot:
             async with lock:
                 if await self._handle_pre_stream_shortcuts(
                     message,
+                    chat_id=chat_id,
+                    topic_id=topic_id,
                     reply_to_message_id=reply_to,
                     content_key=content_key,
                 ):
@@ -525,11 +529,15 @@ class FeishuBot:
         self,
         message: FeishuIncomingText,
         *,
+        chat_id: int,
+        topic_id: int | None,
         reply_to_message_id: str | None,
         content_key: str | None,
     ) -> bool:
         if await self._handle_command_center_command(
             message,
+            chat_id=chat_id,
+            topic_id=topic_id,
             reply_to_message_id=reply_to_message_id,
         ):
             if content_key:
@@ -552,11 +560,47 @@ class FeishuBot:
         self,
         message: FeishuIncomingText,
         *,
+        chat_id: int,
+        topic_id: int | None,
         reply_to_message_id: str | None,
     ) -> bool:
         command = message.text.strip().split(maxsplit=1)[0].lower()
+        if command == "/cm":
+            if self._orchestrator is not None:
+                await self._orchestrator.handle_message(
+                    SessionKey.for_transport("fs", chat_id, topic_id),
+                    "/cm",
+                )
+            await self._send_card_to_chat_ref(
+                message.chat_id,
+                build_claude_native_command_card(self._effective_config()),
+                reply_to_message_id=reply_to_message_id,
+            )
+            return True
+        if command == "/back":
+            if self._orchestrator is not None:
+                await self._orchestrator.handle_message(
+                    SessionKey.for_transport("fs", chat_id, topic_id),
+                    "/back",
+                )
+            await self._send_card_to_chat_ref(
+                message.chat_id,
+                build_command_center_card(self._effective_config()),
+                reply_to_message_id=reply_to_message_id,
+            )
+            return True
         if command not in {"/help", "/start", "/info"}:
             return False
+        if (
+            command == "/help"
+            and self._orchestrator is not None
+            and hasattr(self._orchestrator, "_sessions")
+        ):
+            session = await self._orchestrator._sessions.get_active(
+                SessionKey.for_transport("fs", chat_id, topic_id)
+            )
+            if session is not None and session.command_mode != "cm":
+                return False
         await self._send_card_to_chat_ref(
             message.chat_id,
             build_command_center_card(self._effective_config()),
@@ -984,6 +1028,10 @@ class FeishuBot:
         topic_id: int | None,
         progress: _FeishuProgressReporter,
     ) -> str:
+        raw_text = message.text.strip()
+        if raw_text.startswith("/"):
+            return raw_text
+
         prompt_text = build_feishu_agent_input(message)
         if self._config.feishu.runtime_mode != "native" or self._orchestrator is None:
             return prompt_text

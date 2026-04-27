@@ -122,6 +122,13 @@ class TaskRegistry:
             status="running",
             original_prompt=submit.prompt,
             thinking=thinking,
+            route=submit.route,
+            workunit_kind=submit.workunit_kind,
+            required_capabilities=list(submit.required_capabilities),
+            evaluator=submit.evaluator,
+            command=submit.command,
+            target=submit.target,
+            evidence=submit.evidence,
             tasks_dir=str(resolved_dir),
             thread_id=submit.thread_id,
         )

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Literal
 
 from controlmesh.config import update_config_file_async
 from controlmesh.i18n import LANGUAGES
+from controlmesh.i18n import init as init_i18n
 from controlmesh.infra.install import detect_install_info, detect_install_mode
 from controlmesh.infra.version import VersionInfo, check_latest_version, get_current_version
 from controlmesh.orchestrator.selectors.models import Button, ButtonGrid, SelectorResponse
@@ -115,6 +116,7 @@ async def set_language(
         return _render_settings_panel(orch, note=f"Unknown language: {language}")
     orch._config.language = language
     await update_config_file_async(orch.paths.config_path, language=language)
+    init_i18n(language)
     return _render_settings_panel(orch, note=f"Language updated: {LANGUAGES[language]}")
 
 

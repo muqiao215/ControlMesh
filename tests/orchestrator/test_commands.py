@@ -10,6 +10,7 @@ from controlmesh.history import TranscriptAttachment, TranscriptTurn
 from controlmesh.infra.version import VersionInfo
 from controlmesh.orchestrator.commands import (
     HistoryRequestKind,
+    cmd_back,
     cmd_claude_native,
     cmd_controlmesh,
     cmd_cron,
@@ -230,19 +231,51 @@ async def test_claude_native_on_off_updates_provider_local_mode(orch: Orchestrat
     assert session.command_mode_model is None
 
 
-async def test_cm_without_nested_command_exits_takeover_mode(orch: Orchestrator) -> None:
+async def test_cm_without_nested_command_switches_to_claude_native_registry(
+    orch: Orchestrator,
+) -> None:
     key = SessionKey(chat_id=1)
     session, _ = await orch._sessions.resolve_session(key, provider="claude", model="opus")
     await orch._sessions.sync_command_mode(session, mode="codex", model="gpt-5.2-codex")
 
     result = await cmd_controlmesh(orch, key, "/cm")
 
-    assert "Takeover mode: ControlMesh" in result.text
+    assert "Claude 原生命令" in result.text
+    assert "/clear" in result.text
+    assert "/compact" in result.text
+    assert "/remote-control" in result.text
+    assert "/back" in result.text
+    assert result.buttons is not None
+    assert result.buttons.rows[0][0].callback_data == "/back"
+
+    session = await orch._sessions.get_active(key)
+    assert session is not None
+    assert session.command_mode == "claude"
+    assert session.command_mode_model == "opus"
+
+
+async def test_back_returns_to_controlmesh_command_registry(orch: Orchestrator) -> None:
+    key = SessionKey(chat_id=1)
+    session, _ = await orch._sessions.resolve_session(key, provider="claude", model="opus")
+    await orch._sessions.sync_command_mode(session, mode="claude", model="opus")
+
+    result = await cmd_back(orch, key, "/back")
+
+    assert "ControlMesh 命令" in result.text
+    assert "/cm" in result.text
+    assert result.buttons is not None
+    assert result.buttons.rows[0][0].callback_data == "/cm"
 
     session = await orch._sessions.get_active(key)
     assert session is not None
     assert session.command_mode == "cm"
     assert session.command_mode_model is None
+
+
+async def test_cm_accepts_nested_command_without_leading_slash(orch: Orchestrator) -> None:
+    result = await cmd_controlmesh(orch, SessionKey(chat_id=1), "/cm status")
+
+    assert "Model:" in result.text
 
 
 # -- cmd_settings --
@@ -438,12 +471,16 @@ async def test_settings_language_en_persists_to_config(orch: Orchestrator) -> No
 
 
 async def test_settings_language_zh_persists_to_config(orch: Orchestrator) -> None:
+    from controlmesh.i18n import init, t_cmd
+
+    init("en")
     result = await cmd_settings(orch, SessionKey(chat_id=1), "/settings language zh")
 
     assert "Language updated" in result.text
     assert orch._config.language == "zh"
     saved = json.loads(orch.paths.config_path.read_text(encoding="utf-8"))
     assert saved["language"] == "zh"
+    assert t_cmd("bot.new") == "开始新会话"
 
 
 async def test_settings_language_lang_alias_persists_to_config(orch: Orchestrator) -> None:

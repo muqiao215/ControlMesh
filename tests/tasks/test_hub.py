@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from controlmesh.config import AgentConfig
 from controlmesh.tasks.hub import TaskHub
 from controlmesh.tasks.models import TaskResult, TaskSubmit
 from controlmesh.tasks.registry import TaskRegistry
@@ -143,6 +144,71 @@ class TestSubmit:
         entry = registry.get(task_id)
         assert entry is not None
         assert entry.topology == "fanout_merge"
+
+        await hub.shutdown()
+
+    async def test_auto_route_populates_workunit_metadata_and_contract(
+        self,
+        registry: TaskRegistry,
+        tmp_path: Path,
+    ) -> None:
+        cli = _make_cli_service("review output")
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=cli,
+            config=_make_config(),
+            runtime_config=AgentConfig(controlmesh_home=str(tmp_path)),
+        )
+
+        submit = _submit(prompt="Review the current diff", name="Review diff")
+        submit.route = "auto"
+        submit.workunit_kind = "code_review"
+        submit.target = "git diff main"
+        task_id = hub.submit(submit)
+        await asyncio.sleep(0.1)
+
+        entry = registry.get(task_id)
+        assert entry is not None
+        assert entry.route == "auto"
+        assert entry.workunit_kind == "code_review"
+        assert entry.topology == "fanout_merge"
+        assert entry.route_reason
+        assert "fanout_merge" in entry.route_reason
+        assert "diff_understanding" in entry.required_capabilities
+
+        request = cli.execute.await_args.args[0]
+        assert "WorkUnit Contract: code_review" in request.prompt
+        assert "Original task prompt:" in request.prompt
+
+        await hub.shutdown()
+
+    async def test_auto_route_does_not_override_explicit_provider(
+        self,
+        registry: TaskRegistry,
+        tmp_path: Path,
+    ) -> None:
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=_make_cli_service(),
+            config=_make_config(),
+            runtime_config=AgentConfig(controlmesh_home=str(tmp_path)),
+        )
+
+        submit = _submit(prompt="Run tests", name="Run tests")
+        submit.route = "auto"
+        submit.workunit_kind = "test_execution"
+        submit.command = "uv run pytest tests/test_x.py -q"
+        submit.provider_override = "claude"
+        submit.model_override = "opus"
+        task_id = hub.submit(submit)
+
+        entry = registry.get(task_id)
+        assert entry is not None
+        assert entry.provider == "claude"
+        assert entry.model == "opus"
+        assert entry.workunit_kind == "test_execution"
 
         await hub.shutdown()
 

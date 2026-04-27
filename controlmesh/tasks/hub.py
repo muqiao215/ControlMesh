@@ -19,6 +19,7 @@ from controlmesh.memory.runtime_capture import (
 )
 from controlmesh.messenger.address import ChatRef, TopicRef
 from controlmesh.runtime import RuntimeEvent, RuntimeEventStore
+from controlmesh.routing.router import resolve_route
 from controlmesh.session import SessionKey
 from controlmesh.tasks.models import TaskEntry, TaskInFlight, TaskResult, TaskSubmit
 from controlmesh.team.contracts import ensure_team_topology
@@ -27,7 +28,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from controlmesh.cli.service import CLIService
-    from controlmesh.config import TasksConfig
+    from controlmesh.config import AgentConfig, TasksConfig
     from controlmesh.tasks.registry import TaskRegistry
     from controlmesh.workspace.paths import ControlMeshPaths
 
@@ -77,6 +78,11 @@ REMINDER: You are a background task agent with NO direct user access.
 """
 
 
+def _format_workunit_contract(*, contract: str, reason: str) -> str:
+    """Attach router-selected WorkUnit instructions before the user prompt."""
+    return f"{contract}\n\nRoute decision: {reason}"
+
+
 class TaskHub:
     """Central coordinator for background task delegation.
 
@@ -92,6 +98,7 @@ class TaskHub:
         *,
         cli_service: CLIService | None = None,
         config: TasksConfig,
+        runtime_config: AgentConfig | None = None,
     ) -> None:
         self._registry = registry
         self._paths = paths
@@ -99,6 +106,7 @@ class TaskHub:
         self._cli_services: dict[str, CLIService] = {}
         self._agent_tasks_dirs: dict[str, Path] = {}
         self._config = config
+        self._runtime_config = runtime_config
         self._in_flight: dict[str, TaskInFlight] = {}
         self._result_handlers: dict[str, TaskResultCallback] = {}
         self._question_handlers: dict[str, QuestionHandler] = {}
@@ -170,7 +178,40 @@ class TaskHub:
         default_topology = getattr(self._config, "default_topology", None)
         if not isinstance(default_topology, str):
             default_topology = None
-        topology = submit.topology or default_topology or ""
+        topology = submit.topology or ""
+        workunit_contract = ""
+        route_reason = ""
+        if submit.route == "auto":
+            route_config = self._runtime_config or self._config
+            decision = resolve_route(
+                route_config,
+                prompt=submit.prompt,
+                route=submit.route,
+                workunit_kind=submit.workunit_kind,
+                command=submit.command,
+                target=submit.target,
+                evidence=submit.evidence,
+                name=submit.name,
+                topology=topology,
+                required_capabilities=tuple(submit.required_capabilities),
+            )
+            if decision is not None:
+                submit.workunit_kind = decision.workunit.kind.value
+                submit.required_capabilities = list(decision.required_capabilities)
+                submit.evaluator = submit.evaluator or decision.evaluator
+                if not provider:
+                    provider = decision.provider
+                if not model:
+                    model = decision.model
+                if not topology:
+                    topology = decision.topology
+                workunit_contract = _format_workunit_contract(
+                    contract=decision.contract,
+                    reason=decision.reason,
+                )
+                route_reason = decision.reason
+        elif not topology:
+            topology = default_topology or ""
         if topology:
             topology = ensure_team_topology(topology, "topology")
         submit.topology = topology
@@ -180,11 +221,24 @@ class TaskHub:
         entry = self._registry.create(
             submit, provider, model, thinking=thinking, tasks_dir=agent_tasks_dir
         )
+        if submit.route == "auto":
+            self._registry.update_status(
+                entry.task_id,
+                entry.status,
+                route_reason=route_reason,
+            )
+            refreshed = self._registry.get(entry.task_id)
+            if refreshed is not None:
+                entry = refreshed
         self._append_runtime_lifecycle_event(entry, "task.lifecycle.created")
 
         # Build prompt with mandatory suffix
         taskmemory = self._registry.taskmemory_path(entry.task_id)
-        full_prompt = submit.prompt + TASK_PROMPT_SUFFIX.format(taskmemory_path=taskmemory)
+        full_prompt = (
+            f"{workunit_contract}\n\n---\nOriginal task prompt:\n{submit.prompt}"
+            if workunit_contract
+            else submit.prompt
+        ) + TASK_PROMPT_SUFFIX.format(taskmemory_path=taskmemory)
 
         self._spawn(entry, full_prompt, thinking)
 

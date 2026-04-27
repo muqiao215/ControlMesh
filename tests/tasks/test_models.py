@@ -90,6 +90,36 @@ class TestTaskEntry:
         restored = TaskEntry.from_dict(d)
         assert restored.thread_id is None
 
+    def test_routing_metadata_roundtrip(self) -> None:
+        entry = TaskEntry(
+            task_id="r1",
+            chat_id=1,
+            parent_agent="main",
+            name="routed",
+            prompt_preview="run tests",
+            provider="codex",
+            model="",
+            status="running",
+            route="auto",
+            workunit_kind="test_execution",
+            route_reason="selected by capability",
+            required_capabilities=["shell_execution", "test_log_analysis"],
+            evaluator="foreground",
+            command="uv run pytest tests/test_x.py -q",
+            target="",
+            evidence="logs/pytest.log",
+        )
+
+        restored = TaskEntry.from_dict(entry.to_dict())
+
+        assert restored.route == "auto"
+        assert restored.workunit_kind == "test_execution"
+        assert restored.route_reason == "selected by capability"
+        assert restored.required_capabilities == ["shell_execution", "test_log_analysis"]
+        assert restored.evaluator == "foreground"
+        assert restored.command == "uv run pytest tests/test_x.py -q"
+        assert restored.evidence == "logs/pytest.log"
+
     def test_string_refs_roundtrip(self) -> None:
         entry = TaskEntry(
             task_id="qq1",
@@ -120,6 +150,8 @@ class TestTaskSubmit:
         assert sub.name == ""
         assert sub.provider_override == ""
         assert sub.thinking_override == ""
+        assert sub.route == ""
+        assert sub.required_capabilities == []
 
     def test_string_refs_are_allowed(self) -> None:
         sub = TaskSubmit(

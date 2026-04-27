@@ -176,6 +176,8 @@ Heartbeat is hot-reloadable. Changing `enabled` from false to true starts the ob
 - `tasks.enabled`: `true`/`false` — enable background task system
 - `tasks.max_parallel`: max concurrent background tasks (default `5`)
 - `tasks.timeout_seconds`: default timeout per task
+- `agent_routing.enabled`: enable capability-based WorkUnit routing
+- `agent_routing.capability_registry`: workspace-relative capability registry path
 
 ### Access Control
 
