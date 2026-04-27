@@ -732,11 +732,6 @@ class TelegramBot:
             return
         if self._config.group_mention_only and not self._is_addressed(message):
             return
-        if self._orchestrator is not None:
-            session = await self._orchestrator._sessions.get_active(get_session_key(message))
-            if session is not None and session.command_mode != "cm":
-                await handle_command(self._orchestrator, self._bot, message)
-                return
         await send_rich(
             self._bot,
             message.chat.id,

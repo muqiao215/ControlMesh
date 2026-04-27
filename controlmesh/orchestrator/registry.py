@@ -53,6 +53,17 @@ class CommandRegistry:
             _CommandEntry(name=name, handler=handler, match_prefix=name.endswith(" "))
         )
 
+    def matches(self, cmd: str) -> bool:
+        """Return True when *cmd* is claimed by a registered command."""
+        normalized = self._normalize_command(cmd)
+        for entry in self._commands:
+            if entry.match_prefix:
+                if normalized.startswith(entry.name):
+                    return True
+            elif normalized == entry.name:
+                return True
+        return False
+
     async def dispatch(
         self,
         cmd: str,
@@ -65,11 +76,7 @@ class CommandRegistry:
         Strips ``@botname`` suffixes so group commands like
         ``/status@mybot`` match the registered ``/status`` entry.
         """
-        # Normalize: "/status@mybot args" -> "/status args"
-        parts = cmd.split(None, 1)
-        if parts and "@" in parts[0]:
-            parts[0] = parts[0].split("@", 1)[0]
-            cmd = " ".join(parts)
+        cmd = self._normalize_command(cmd)
 
         for entry in self._commands:
             if entry.match_prefix:
@@ -80,3 +87,12 @@ class CommandRegistry:
                 logger.debug("Command matched cmd=%s", entry.name)
                 return await entry.handler(orch, key, text)
         return None
+
+    @staticmethod
+    def _normalize_command(cmd: str) -> str:
+        """Normalize bot-suffixed commands before matching."""
+        parts = cmd.split(None, 1)
+        if parts and "@" in parts[0]:
+            parts[0] = parts[0].split("@", 1)[0]
+            cmd = " ".join(parts)
+        return cmd

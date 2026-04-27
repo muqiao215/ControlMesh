@@ -72,17 +72,17 @@ Common path:
 Registered command handlers:
 
 - `/new`, `/status`, `/model`, `/memory`, `/cron`, `/diagnose`, `/upgrade`, `/sessions`, `/tasks`
-- Command menus: `/cm` opens Claude native commands, `/back` returns to ControlMesh commands
-- Escape hatch from the Claude native menu: `/cm <controlmesh-command>`
+- Command menus: `/cm` opens Native Commands for the current CLI, `/back` returns to ControlMesh commands
+- Escape hatch from the native menu: `/cm <controlmesh-command>`
 
 `/model` never blocks: it always executes immediately (bypasses the sequential queue) and shows current model info if a CLI process is active in the chat.
 
-The Claude native command menu is session-local and provider-local. After `/cm`,
-subsequent `/xxx` messages bypass the ControlMesh slash registry and are sent to
-Claude CLI as raw prompts without ControlMesh hook or main-memory injection.
-`/back` returns to the ControlMesh command menu, and `/cm ...` remains owned by
-ControlMesh so the user can inspect status or switch models without leaving the
-chat.
+The native command menu is session-local and provider-local. After `/cm`,
+unclaimed `/xxx` messages bypass the ControlMesh slash registry and are sent to
+the current CLI as raw prompts without ControlMesh hook or main-memory injection.
+ControlMesh registered commands still win, so `/model`, `/status`, and `/help`
+stay in ControlMesh. `/back` returns to the ControlMesh command menu, and
+`/cm ...` remains owned by ControlMesh for explicit nested ControlMesh commands.
 
 Runtime main-agent registration:
 

@@ -452,11 +452,6 @@ class Orchestrator:
         return await asyncio.to_thread(self._transcripts.read_recent, key, limit=limit)
 
     async def _route_message(self, dispatch: _MessageDispatch) -> OrchestratorResult:
-        native_target = await self._native_mode_target(dispatch)
-        if native_target is not None:
-            provider, model = native_target
-            return await self._route_provider_native_message(dispatch, provider=provider, model=model)
-
         result = await self._command_registry.dispatch(
             dispatch.cmd,
             self,
@@ -465,6 +460,11 @@ class Orchestrator:
         )
         if result is not None:
             return result
+
+        native_target = await self._native_mode_target(dispatch)
+        if native_target is not None:
+            provider, model = native_target
+            return await self._route_provider_native_message(dispatch, provider=provider, model=model)
 
         fallback_target = await self._unknown_slash_native_target(dispatch)
         if fallback_target is not None:
@@ -701,6 +701,8 @@ class Orchestrator:
 
         head = normalized.split(None, 1)[0].split("@", 1)[0]
         if head in {"/back", "/cm"}:
+            return None
+        if self._command_registry.matches(normalized):
             return None
 
         session = await self._sessions.get_active(dispatch.key)

@@ -437,7 +437,7 @@ class TestFeishuBotRouting:
         assert any("`/feishu_auth_useful`" in block for block in markdown_blocks)
         bot._orchestrator.handle_message_streaming.assert_not_awaited()
 
-    async def test_handle_incoming_text_cm_command_sends_claude_native_card(
+    async def test_handle_incoming_text_cm_command_sends_native_card(
         self,
         tmp_path: Path,
     ) -> None:
@@ -458,14 +458,14 @@ class TestFeishuBotRouting:
         assert bot._orchestrator.handle_message.await_args.args[1] == "/cm"
         bot._send_card_to_chat_ref.assert_awaited_once()
         card = bot._send_card_to_chat_ref.await_args.args[1]
-        assert card["header"]["title"]["content"] == "Claude Native Commands"
+        assert card["header"]["title"]["content"] == "Native Commands"
         markdown_blocks = [
             element["content"]
             for element in card["elements"]
             if element.get("tag") == "markdown"
         ]
         assert any("`/compact`" in block for block in markdown_blocks)
-        assert any("`/remote-control`" in block for block in markdown_blocks)
+        assert any("current CLI" in block for block in markdown_blocks)
         assert any("`/back`" in block for block in markdown_blocks)
         bot._orchestrator.handle_message_streaming.assert_not_awaited()
 

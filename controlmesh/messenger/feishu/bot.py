@@ -50,8 +50,8 @@ from controlmesh.messenger.feishu.bundled_runtime import (
     run_bundled_codex_turn,
 )
 from controlmesh.messenger.feishu.command_center_card import (
-    build_claude_native_command_card,
     build_command_center_card,
+    build_native_command_card,
     parse_command_center_action,
 )
 from controlmesh.messenger.feishu.media import ResolveMediaRequest, is_supported_media_message_type
@@ -114,7 +114,7 @@ _FEISHU_COMMAND_GUIDE_VERSION = 2
 _FEISHU_COMMAND_GUIDE_TEXT = (
     "ControlMesh 已接入。\n\n"
     "常用命令:\n"
-    "/cm — 打开 Claude 原生命令\n"
+    "/cm — 打开当前 CLI 的 Native Commands\n"
     "/back — 返回 ControlMesh 命令\n"
     "/status — 查看当前状态\n"
     "/model — 切换模型\n"
@@ -573,7 +573,7 @@ class FeishuBot:
                 )
             await self._send_card_to_chat_ref(
                 message.chat_id,
-                build_claude_native_command_card(self._effective_config()),
+                build_native_command_card(self._effective_config()),
                 reply_to_message_id=reply_to_message_id,
             )
             return True
@@ -591,16 +591,6 @@ class FeishuBot:
             return True
         if command not in {"/help", "/start", "/info"}:
             return False
-        if (
-            command == "/help"
-            and self._orchestrator is not None
-            and hasattr(self._orchestrator, "_sessions")
-        ):
-            session = await self._orchestrator._sessions.get_active(
-                SessionKey.for_transport("fs", chat_id, topic_id)
-            )
-            if session is not None and session.command_mode != "cm":
-                return False
         await self._send_card_to_chat_ref(
             message.chat_id,
             build_command_center_card(self._effective_config()),

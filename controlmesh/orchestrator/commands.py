@@ -68,8 +68,8 @@ logger = logging.getLogger(__name__)
 _DEFAULT_HISTORY_LIMIT = 6
 _MAX_HISTORY_LIMIT = 20
 _CONTROL_MODE = "cm"
-_CLAUDE_NATIVE_REGISTRY = (
-    "**Claude 原生命令**\n\n"
+_NATIVE_COMMAND_PROVIDERS = frozenset({"claude", "codex", "gemini", "claw", "opencode"})
+_CLAUDE_NATIVE_COMMANDS = (
     "- `/add-dir` 添加工作目录\n"
     "- `/agents` 管理 Claude agents\n"
     "- `/bug` 上报 Claude Code 问题\n"
@@ -95,13 +95,16 @@ _CLAUDE_NATIVE_REGISTRY = (
     "- `/vim` Vim 模式\n"
     "- `/remote-control` Claude Remote Control\n"
     "- `/rc` Remote Control 简写\n"
-    "- `/back` 返回 ControlMesh 命令\n\n"
-    "当前菜单：Claude 原生命令。上面的 `/xxx` 会直接发给 Claude。"
+)
+_GENERIC_NATIVE_COMMANDS = (
+    "- 发送该 CLI 支持的 `/xxx` 原生命令\n"
+    "- 例如 Codex/OpenCode/Gemini/Claw-Code 自己实现的 slash commands\n"
+    "- ControlMesh 已注册命令仍由 ControlMesh 处理，避免 `/model`、`/help` 被误吞\n"
 )
 _CONTROL_MESH_REGISTRY = (
     "**ControlMesh 命令**\n\n"
     "- `/new` 新会话\n"
-    "- `/cm` 打开 Claude 原生命令\n"
+    "- `/cm` 打开当前 CLI 的 Native Commands\n"
     "- `/back` 返回 ControlMesh 命令\n"
     "- `/model` 模型/通道\n"
     "- `/tasks` 后台任务\n"
@@ -117,14 +120,14 @@ _CONTROL_MESH_REGISTRY = (
 _TASKS_TOPOLOGY_OFF_TOKENS = frozenset({"off", "none", "manual", "unset"})
 _COMMAND_MENU_LABELS = {
     "cm": "ControlMesh",
-    "claude": "Claude 原生命令",
-    "codex": "Codex",
-    "gemini": "Gemini",
-    "claw": "Claw-Code",
-    "opencode": "OpenCode",
+    "claude": "Native: Claude",
+    "codex": "Native: Codex",
+    "gemini": "Native: Gemini",
+    "claw": "Native: Claw-Code",
+    "opencode": "Native: OpenCode",
 }
 _CLAUDE_NATIVE_BUTTONS = ButtonGrid(rows=[[Button(text="返回 ControlMesh", callback_data="/back")]])
-_CONTROL_MESH_BUTTONS = ButtonGrid(rows=[[Button(text="Claude 原生命令", callback_data="/cm")]])
+_CONTROL_MESH_BUTTONS = ButtonGrid(rows=[[Button(text="Native Commands", callback_data="/cm")]])
 
 
 class HistoryRequestKind(StrEnum):
@@ -296,38 +299,50 @@ async def _cmd_settings_messaging_update(
     return None
 
 
-async def _switch_to_claude_native_registry(
+def _native_registry_text(provider: str, model: str) -> str:
+    label = _command_menu_label(provider).removeprefix("Native: ")
+    command_lines = _CLAUDE_NATIVE_COMMANDS if provider == "claude" else _GENERIC_NATIVE_COMMANDS
+    return (
+        f"**Native Commands: {label}**\n\n"
+        f"Target model: `{model}`\n\n"
+        f"{command_lines}"
+        "- `/back` 返回 ControlMesh 命令\n\n"
+        "当前菜单：Native Commands。ControlMesh 命令仍优先由 ControlMesh 处理；"
+        "未注册的 `/xxx` 会直接发给当前 CLI。"
+    )
+
+
+async def _switch_to_native_registry(
     orch: Orchestrator,
     key: SessionKey,
 ) -> OrchestratorResult:
     active = await orch._sessions.get_active(key)
-    if active is not None and active.provider == "claude":
+    if active is not None:
+        provider = active.provider
         model = active.model
     else:
         model, provider = orch.resolve_runtime_target(orch._config.model)
-        if provider != "claude":
-            model = await _resolve_command_mode_model(orch, key, "claude") or ""
 
-    if not model:
+    if provider not in _NATIVE_COMMAND_PROVIDERS or not model:
         return OrchestratorResult(
-            text="Claude 原生命令不可用：当前没有可用的 Claude provider/model。"
+            text="Native Commands 不可用：当前 provider 不支持 CLI 原生命令透传。"
         )
 
     session, _is_new = await orch._sessions.resolve_session(
         key,
-        provider="claude",
+        provider=provider,
         model=model,
         preserve_existing_target=True,
     )
-    await orch._sessions.sync_command_mode(session, mode="claude", model=model)
-    return OrchestratorResult(text=_CLAUDE_NATIVE_REGISTRY, buttons=_CLAUDE_NATIVE_BUTTONS)
+    await orch._sessions.sync_command_mode(session, mode=provider, model=model)
+    return OrchestratorResult(text=_native_registry_text(provider, model), buttons=_CLAUDE_NATIVE_BUTTONS)
 
 
 async def cmd_controlmesh(orch: Orchestrator, key: SessionKey, text: str) -> OrchestratorResult:
-    """Handle /cm as the Claude native registry or /cm <command> as a CM escape hatch."""
+    """Handle /cm as the native registry or /cm <command> as a CM escape hatch."""
     parts = text.strip().split(None, 1)
     if len(parts) < 2 or not parts[1].strip():
-        return await _switch_to_claude_native_registry(orch, key)
+        return await _switch_to_native_registry(orch, key)
     nested = parts[1].strip()
     if not nested.startswith("/"):
         nested = f"/{nested}"

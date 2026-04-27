@@ -224,7 +224,7 @@ def test_chinese_command_descriptions_are_localized() -> None:
     store = TranslationStore("zh")
 
     assert store.cmd("bot.new") == "开始新会话"
-    assert store.cmd("bot.cm") == "Claude 原生命令"
+    assert store.cmd("bot.cm") == "Native Commands"
     assert store.cmd("multiagent.stop_all") == "停止全部"
 
 

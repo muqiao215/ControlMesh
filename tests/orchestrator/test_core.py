@@ -140,20 +140,34 @@ async def test_claude_command_menu_cm_escape_still_hits_controlmesh(orch: Orches
     assert "Model:" in result.text
 
 
-async def test_cm_switches_registered_slash_commands_to_claude_native(orch: Orchestrator) -> None:
+async def test_cm_switches_unclaimed_slash_commands_to_native_cli(orch: Orchestrator) -> None:
     key = SessionKey(chat_id=1)
     await orch.handle_message(key, "/cm")
 
-    mock_execute = AsyncMock(return_value=_mock_response(result="Claude native status"))
+    mock_execute = AsyncMock(return_value=_mock_response(result="Claude native compact"))
     object.__setattr__(orch._cli_service, "execute", mock_execute)
 
-    result = await orch.handle_message(key, "/status")
+    result = await orch.handle_message(key, "/compact")
 
-    assert result.text == "Claude native status"
+    assert result.text == "Claude native compact"
     request = mock_execute.call_args[0][0]
-    assert request.prompt == "/status"
+    assert request.prompt == "/compact"
     assert request.provider_override == "claude"
     assert request.model_override == "opus"
+
+
+async def test_controlmesh_commands_win_inside_native_menu(orch: Orchestrator) -> None:
+    key = SessionKey(chat_id=1)
+    session, _ = await orch._sessions.resolve_session(key, provider="claude", model="opus")
+    await orch._sessions.sync_command_mode(session, mode="codex", model="gpt-5.2-codex")
+
+    mock_execute = AsyncMock(return_value=_mock_response(result="should not run"))
+    object.__setattr__(orch._cli_service, "execute", mock_execute)
+
+    result = await orch.handle_message(key, "/model")
+
+    assert "Model Selector" in result.text
+    mock_execute.assert_not_awaited()
 
 
 async def test_back_command_returns_from_claude_command_menu(orch: Orchestrator) -> None:

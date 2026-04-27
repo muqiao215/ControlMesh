@@ -120,7 +120,7 @@ async def test_status_prefers_session_model_over_config(orch: Orchestrator) -> N
     assert "Model: gpt-5.2-codex (configured: opus)" in result.text
 
 
-async def test_cm_without_nested_command_switches_to_claude_native_registry(
+async def test_cm_without_nested_command_switches_to_native_registry(
     orch: Orchestrator,
 ) -> None:
     key = SessionKey(chat_id=1)
@@ -129,7 +129,7 @@ async def test_cm_without_nested_command_switches_to_claude_native_registry(
 
     result = await cmd_controlmesh(orch, key, "/cm")
 
-    assert "Claude 原生命令" in result.text
+    assert "Native Commands: Claude" in result.text
     assert "/clear" in result.text
     assert "/compact" in result.text
     assert "/remote-control" in result.text
@@ -146,6 +146,21 @@ async def test_cm_without_nested_command_switches_to_claude_native_registry(
     assert session.command_mode_model == "opus"
 
 
+async def test_cm_uses_active_provider_for_native_registry(orch: Orchestrator) -> None:
+    key = SessionKey(chat_id=1)
+    await orch._sessions.resolve_session(key, provider="codex", model="gpt-5.2-codex")
+
+    result = await cmd_controlmesh(orch, key, "/cm")
+
+    assert "Native Commands: Codex" in result.text
+    assert "ControlMesh 已注册命令仍由 ControlMesh 处理" in result.text
+
+    session = await orch._sessions.get_active(key)
+    assert session is not None
+    assert session.command_mode == "codex"
+    assert session.command_mode_model == "gpt-5.2-codex"
+
+
 async def test_back_returns_to_controlmesh_command_registry(orch: Orchestrator) -> None:
     key = SessionKey(chat_id=1)
     session, _ = await orch._sessions.resolve_session(key, provider="claude", model="opus")
@@ -159,7 +174,7 @@ async def test_back_returns_to_controlmesh_command_registry(orch: Orchestrator) 
     assert "`/claude_native`" not in result.text
     assert result.buttons is not None
     assert result.buttons.rows[0][0].callback_data == "/cm"
-    assert result.buttons.rows[0][0].text == "Claude 原生命令"
+    assert result.buttons.rows[0][0].text == "Native Commands"
 
     session = await orch._sessions.get_active(key)
     assert session is not None
