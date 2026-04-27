@@ -20,15 +20,15 @@ class SlotScore:
 def score_slot(slot: AgentSlot, unit: WorkUnit) -> SlotScore:
     """Score one slot against a WorkUnit."""
     caps = unit.requirements.capabilities
-    if caps:
-        capability_match = sum(slot.capability_score(cap) for cap in caps) / len(caps)
-    else:
-        capability_match = 0.5
+    capability_match = (
+        sum(slot.capability_score(cap) for cap in caps) / len(caps) if caps else 0.5
+    )
 
     permission = 0.0
-    if unit.requirements.can_edit is False and not slot.can_edit:
-        permission = 0.08
-    elif unit.requirements.can_edit is True and slot.can_edit:
+    if (
+        (unit.requirements.can_edit is False and not slot.can_edit)
+        or (unit.requirements.can_edit is True and slot.can_edit)
+    ):
         permission = 0.08
     elif unit.requirements.can_edit is False and slot.can_edit:
         permission = -0.05

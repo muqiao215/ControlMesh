@@ -188,10 +188,7 @@ async def check_parent_updates(
         )
 
     count = len(updates)
-    if count == 0:
-        summary = "No new parent updates."
-    else:
-        summary = f"Read {count} parent update(s)."
+    summary = "No new parent updates." if count == 0 else f"Read {count} parent update(s)."
     return ToolResultEnvelope.success(
         "check_parent_updates",
         summary=summary,

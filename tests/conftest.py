@@ -6,6 +6,16 @@ from unittest.mock import patch
 
 import pytest
 
+from controlmesh.i18n import init as init_i18n
+
+
+@pytest.fixture(autouse=True)
+def _reset_i18n_language() -> object:
+    """Keep global i18n state from leaking between tests."""
+    init_i18n("en")
+    yield
+    init_i18n("en")
+
 
 @pytest.fixture(autouse=True)
 def _no_real_process_signals() -> object:

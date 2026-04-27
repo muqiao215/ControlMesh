@@ -162,10 +162,7 @@ def _slot_from_mapping(name: str, payload: dict[str, Any]) -> AgentSlot:
     if isinstance(capabilities_raw, dict):
         for cap, value in capabilities_raw.items():
             if isinstance(cap, str):
-                if isinstance(value, dict):
-                    raw_score = value.get("score", 0.0)
-                else:
-                    raw_score = value
+                raw_score = value.get("score", 0.0) if isinstance(value, dict) else value
                 try:
                     capabilities[cap] = float(raw_score)
                 except (TypeError, ValueError):

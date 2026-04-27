@@ -225,9 +225,11 @@ async def test_send_builds_sdk_agent_with_runtime_tools(monkeypatch: Any) -> Non
         "create_background_task",
         "resume_background_task",
         "ask_parent",
+        "check_parent_updates",
+        "tell_background_task",
         "send_async_to_agent",
     }
-    assert len(wrapped_tools) == 4
+    assert len(wrapped_tools) == 6
 
 
 def _fake_run_sdk(result: _FakeRunResult) -> Any:
