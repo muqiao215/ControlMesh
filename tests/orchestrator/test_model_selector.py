@@ -263,10 +263,12 @@ async def test_callback_provider_codex_fallback(orch: Orchestrator) -> None:
     assert any("o3" in label.lower() for label in labels) or "<< Back" in labels
 
 
-async def test_callback_provider_opencode_requires_known_runtime_model(orch: Orchestrator) -> None:
+async def test_callback_provider_opencode_uses_runtime_default_model(orch: Orchestrator) -> None:
     resp = await handle_model_callback(orch, SessionKey(chat_id=1), "ms:p:opencode")
-    assert "Cannot switch to OpenCode yet" in resp.text
+    assert "Select OpenCode model" in resp.text
     assert resp.buttons is not None
+    labels = [btn.text for row in resp.buttons.rows for btn in row]
+    assert "openai/gpt-4.1" in labels
 
 
 async def test_callback_provider_opencode_shows_current_runtime_model(orch: Orchestrator) -> None:

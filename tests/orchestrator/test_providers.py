@@ -215,8 +215,16 @@ class TestDefaultModelForProvider:
         pm = _pm(model="sonnet", provider="claw")
         assert pm.default_model_for_provider("claw") == "sonnet"
 
+    def test_claw_when_not_active_provider(self) -> None:
+        pm = _pm(model="gpt-5.4", provider="codex")
+        assert pm.default_model_for_provider("claw") == "sonnet"
+
     def test_opencode(self) -> None:
         pm = _pm(model="openai/gpt-4.1", provider="opencode")
+        assert pm.default_model_for_provider("opencode") == "openai/gpt-4.1"
+
+    def test_opencode_when_not_active_provider(self) -> None:
+        pm = _pm(model="gpt-5.4", provider="codex")
         assert pm.default_model_for_provider("opencode") == "openai/gpt-4.1"
 
     def test_unknown_provider(self) -> None:

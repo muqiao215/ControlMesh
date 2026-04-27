@@ -171,8 +171,7 @@ async def test_mode_switch_sets_session_local_takeover_target(orch: Orchestrator
 async def test_mode_switch_supports_opencode_runtime_channel(orch: Orchestrator) -> None:
     key = SessionKey(chat_id=1)
 
-    with patch.object(orch._providers, "default_model_for_provider", return_value="openai/gpt-4.1"):
-        result = await cmd_mode(orch, key, "/mode opencode")
+    result = await cmd_mode(orch, key, "/mode opencode")
 
     assert "Takeover mode: OpenCode" in result.text
     assert "openai/gpt-4.1" in result.text

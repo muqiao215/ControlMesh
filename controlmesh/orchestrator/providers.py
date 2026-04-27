@@ -45,6 +45,10 @@ _PROVIDER_PUBLIC_TOKENS = {
     "opencode": "opencode",
     "openai_agents": "openai_agents",
 }
+_EXPLICIT_RUNTIME_DEFAULT_MODELS = {
+    "claw": "sonnet",
+    "opencode": "openai/gpt-4.1",
+}
 
 
 def normalize_provider_name(provider: str | None) -> str:
@@ -200,8 +204,12 @@ class ProviderManager:
                 if self._config.provider == "openai_agents"
                 else self._config.agent_graph.openai_agents_model
             )
-        if provider in {"claw", "opencode"}:
-            return self._config.model if self._config.provider == provider else ""
+        if provider in _EXPLICIT_RUNTIME_DEFAULT_MODELS:
+            return (
+                self._config.model
+                if self._config.provider == provider
+                else _EXPLICIT_RUNTIME_DEFAULT_MODELS[provider]
+            )
         return {"gemini": ""}.get(provider, "")
 
     def resolve_session_directive(self, key: str) -> tuple[str, str] | None:
