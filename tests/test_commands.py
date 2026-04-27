@@ -14,8 +14,22 @@ def test_commands_is_list_of_tuples() -> None:
 
 def test_expected_commands_present() -> None:
     names = {cmd for cmd, _ in BOT_COMMANDS}
-    expected = {"new", "model", "mode", "cm", "tasks", "session", "agents", "cron", "status", "memory", "stop", "interrupt", "help"}
+    expected = {
+        "new",
+        "model",
+        "cm",
+        "tasks",
+        "session",
+        "agents",
+        "cron",
+        "status",
+        "memory",
+        "stop",
+        "interrupt",
+        "help",
+    }
     assert expected.issubset(names)
+    assert "mode" not in names
 
 
 def test_rare_commands_not_in_popup_menu() -> None:

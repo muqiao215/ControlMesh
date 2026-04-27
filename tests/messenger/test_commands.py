@@ -70,16 +70,17 @@ class TestCommandSetIntegrity:
 
         assert "cm" in command_names
         assert "agents" in command_names
+        assert "mode" not in command_names
         assert "agent_commands" not in command_names
         assert command_names[:8] == [
             "new",
             "model",
-            "mode",
             "cm",
             "tasks",
             "session",
             "agents",
             "cron",
+            "status",
         ]
 
     def test_telegram_menu_hides_rare_maintenance_commands(self) -> None:
