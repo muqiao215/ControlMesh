@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -21,6 +22,7 @@ from controlmesh.infra.restart import EXIT_RESTART
 from controlmesh.workspace.paths import resolve_paths
 
 _console = Console()
+logger = logging.getLogger(__name__)
 
 
 def _re_exec_bot() -> NoReturn:
@@ -31,6 +33,19 @@ def _re_exec_bot() -> NoReturn:
     """
     subprocess.Popen([sys.executable, "-m", "controlmesh"])
     sys.exit(0)
+
+
+def _resume_after_upgrade() -> None:
+    """Restart through the service manager when a managed service exists."""
+    try:
+        from controlmesh.infra.service import is_service_installed, start_service
+
+        if is_service_installed():
+            start_service(_console)
+            return
+    except Exception:
+        logger.debug("Failed to resume ControlMesh through service manager", exc_info=True)
+    _re_exec_bot()
 
 
 def _stop_service_if_running() -> None:
@@ -278,11 +293,11 @@ def upgrade() -> None:
         _console.print(t_rich("lifecycle.upgrade.unchanged", version=actual))
         if mode == "dev":
             _console.print(t_rich("lifecycle.upgrade.restarting"))
-            _re_exec_bot()
+            _resume_after_upgrade()
         return
 
     _console.print(t_rich("lifecycle.upgrade.complete", old=current, new=actual))
 
     # 3. Re-exec with new version
     _console.print(t_rich("lifecycle.upgrade.restarting"))
-    _re_exec_bot()
+    _resume_after_upgrade()

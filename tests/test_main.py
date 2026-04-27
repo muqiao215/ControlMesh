@@ -651,6 +651,29 @@ class TestUpgradeCli:
         mock_pipeline.assert_called_once()
         mock_exec.assert_called_once()
 
+    def test_upgrade_with_installed_service_resumes_service_not_foreground(
+        self, tmp_path: Path
+    ) -> None:
+        from controlmesh.cli_commands.lifecycle import upgrade
+
+        paths = _make_paths(tmp_path)
+        paths.controlmesh_home.mkdir(parents=True)
+        with (
+            patch("controlmesh.infra.install.detect_install_mode", return_value="pip"),
+            patch(f"{_LIFECYCLE}.resolve_paths", return_value=paths),
+            patch(
+                "controlmesh.infra.updater.perform_upgrade_pipeline",
+                new=AsyncMock(return_value=(True, "9.9.9", "installed controlmesh-9.9.9")),
+            ),
+            patch("controlmesh.infra.service.is_service_installed", return_value=True),
+            patch("controlmesh.infra.service.start_service") as mock_start_service,
+            patch(f"{_LIFECYCLE}._re_exec_bot") as mock_exec,
+            patch(f"{_LIFECYCLE}.stop_bot"),
+        ):
+            upgrade()
+        mock_start_service.assert_called_once()
+        mock_exec.assert_not_called()
+
     def test_upgrade_version_unchanged_no_restart(self, tmp_path: Path) -> None:
         from controlmesh.cli_commands.lifecycle import upgrade
 
@@ -777,6 +800,39 @@ class TestUpgradeCli:
         mock_stop.assert_called_once()
         mock_pipeline.assert_called_once()
         mock_exec.assert_called_once()
+
+    def test_upgrade_dev_failure_after_stop_resumes_installed_service(
+        self, tmp_path: Path
+    ) -> None:
+        from controlmesh.cli_commands.lifecycle import upgrade
+
+        paths = _make_paths(tmp_path)
+        paths.controlmesh_home.mkdir(parents=True)
+        with (
+            patch("controlmesh.infra.install.detect_install_mode", return_value="dev"),
+            patch(f"{_LIFECYCLE}.resolve_paths", return_value=paths),
+            patch(
+                "controlmesh.infra.updater.check_source_upgrade_status",
+                new=AsyncMock(
+                    return_value=SimpleNamespace(
+                        actionable=True,
+                        output="can fast-forward",
+                    )
+                ),
+            ),
+            patch(
+                "controlmesh.infra.updater.perform_upgrade_pipeline",
+                new=AsyncMock(return_value=(False, get_current_version(), "pull failed")),
+            ),
+            patch("controlmesh.infra.service.is_service_installed", return_value=True),
+            patch("controlmesh.infra.service.start_service") as mock_start_service,
+            patch(f"{_LIFECYCLE}.stop_bot") as mock_stop,
+            patch(f"{_LIFECYCLE}._re_exec_bot") as mock_exec,
+        ):
+            upgrade()
+        mock_stop.assert_called_once()
+        mock_start_service.assert_called_once()
+        mock_exec.assert_not_called()
 
 
 class TestReExecBot:
