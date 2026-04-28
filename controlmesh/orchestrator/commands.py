@@ -56,7 +56,7 @@ from controlmesh.orchestrator.selectors.settings_selector import (
 from controlmesh.orchestrator.selectors.task_selector import task_selector_start
 from controlmesh.team.contracts import TEAM_TOPOLOGIES, ensure_team_topology
 from controlmesh.text.response_format import SEP, fmt, new_session_text
-from controlmesh.workspace.loader import read_file, read_mainmemory
+from controlmesh.workspace.loader import read_file
 
 if TYPE_CHECKING:
     from controlmesh.memory.models import MemoryScope
@@ -589,18 +589,15 @@ def _build_authority_scope_summary(authority_text: str) -> str:
 
 
 async def _cmd_memory_full(orch: Orchestrator) -> OrchestratorResult:
-    """Render the full /memory output (authority + legacy)."""
-    legacy = await asyncio.to_thread(read_mainmemory, orch.paths)
+    """Render the full /memory output from the canonical authority file."""
     authority = await asyncio.to_thread(read_file, orch.paths.authority_memory_path) or ""
     sections: list[str] = []
     if authority.strip():
         scope_summary = _build_authority_scope_summary(authority)
         if scope_summary:
-            sections.extend([f"## Authority Memory (v2) {scope_summary}", authority.strip()])
+            sections.extend([f"## Memory {scope_summary}", authority.strip()])
         else:
-            sections.extend(["## Authority Memory (v2)", authority.strip()])
-    if legacy.strip():
-        sections.extend(["## Legacy Compatibility Memory", legacy.strip()])
+            sections.extend(["## Memory", authority.strip()])
 
     if not sections:
         return OrchestratorResult(

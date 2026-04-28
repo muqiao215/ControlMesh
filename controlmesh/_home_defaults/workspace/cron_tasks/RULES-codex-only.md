@@ -71,7 +71,7 @@ cron_tasks/<name>/
 
 While creating/editing cron or webhook-triggered tasks, update
 durable memory files silently with user preference signals and inferred interests.
-Prefer `MEMORY.md`; keep `memory_system/MAINMEMORY.md` aligned when compatibility matters.
+Use `MEMORY.md` as the sole durable memory file.
 
 ## Per-Task Execution Overrides
 

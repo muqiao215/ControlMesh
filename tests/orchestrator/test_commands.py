@@ -421,15 +421,17 @@ async def test_settings_language_shows_in_usage_text() -> None:
 
 
 async def test_memory_shows_content(orch: Orchestrator) -> None:
-    orch.paths.mainmemory_path.write_text("# My Memories\n- Learned X")
+    orch.paths.authority_memory_path.write_text(
+        "# ControlMesh Memory\n\n## Durable Memory\n\n### Fact\n- Learned X\n",
+        encoding="utf-8",
+    )
     result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory")
-    assert "My Memories" in result.text
+    assert "Learned X" in result.text
 
 
 async def test_memory_shows_authority_memory_content(orch: Orchestrator) -> None:
-    orch.paths.mainmemory_path.write_text("")
     orch.paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n## Durable Memory\n\n### Decision\n- Keep memory local.\n",
+        "# ControlMesh Memory\n\n## Durable Memory\n\n### Decision\n- Keep memory local.\n",
         encoding="utf-8",
     )
     result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory")
@@ -437,7 +439,6 @@ async def test_memory_shows_authority_memory_content(orch: Orchestrator) -> None
 
 
 async def test_memory_empty(orch: Orchestrator) -> None:
-    orch.paths.mainmemory_path.write_text("")
     orch.paths.authority_memory_path.write_text("")
     result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory")
     assert "empty" in result.text.lower()
@@ -515,7 +516,7 @@ async def test_memory_search_no_results(orch: Orchestrator) -> None:
 async def test_memory_search_shows_shared_scope_for_shared_authority_hit(orch: Orchestrator) -> None:
     """Test /memory search shows [shared] for shared authority entries."""
     orch.paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n"
+        "# ControlMesh Memory\n\n"
         "## Durable Memory\n\n"
         "### Decision\n"
         "- Team uses shared memory for cross-agent context. _(id: sh001; status: active; scope: shared; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_\n",
@@ -531,7 +532,7 @@ async def test_memory_search_shows_shared_scope_for_shared_authority_hit(orch: O
 async def test_memory_search_shows_local_scope_for_local_authority_hit(orch: Orchestrator) -> None:
     """Test /memory search shows [local] for local authority entries."""
     orch.paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n"
+        "# ControlMesh Memory\n\n"
         "## Durable Memory\n\n"
         "### Preference\n"
         "- User prefers dark mode. _(id: loc001; status: active; scope: local; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_\n",
@@ -676,7 +677,7 @@ async def test_memory_search_mixed_scope_same_file_resolves_correctly(orch: Orch
     # Write MEMORY.md with one shared and one local entry, each with unique content.
     # Use query terms that FTS5 handles reliably (no hyphens in multi-word terms).
     orch.paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n"
+        "# ControlMesh Memory\n\n"
         "## Durable Memory\n\n"
         "### Decision\n"
         "- Shared context across agents. _(id: s001; status: active; scope: shared; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_\n"
@@ -701,7 +702,7 @@ async def test_memory_why_returns_provenance(orch: Orchestrator) -> None:
     """Test /memory why explains an authority entry's provenance."""
     # Write authority memory with a Phase-4 style entry containing metadata
     orch.paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n"
+        "# ControlMesh Memory\n\n"
         "## Durable Memory\n\n"
         "### Decision\n"
         "- Keep memory local. _(id: abc12345; status: active; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_\n",
@@ -725,7 +726,7 @@ async def test_memory_why_unknown_id(orch: Orchestrator) -> None:
 async def test_memory_why_shared_entry_shows_scope(orch: Orchestrator) -> None:
     """Test /memory why shows scope: shared for shared authority entries."""
     orch.paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n"
+        "# ControlMesh Memory\n\n"
         "## Durable Memory\n\n"
         "### Decision\n"
         "- Team uses shared memory for cross-agent context. _(id: sh001; status: active; scope: shared; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_\n",
@@ -742,7 +743,7 @@ async def test_memory_why_shared_entry_shows_scope(orch: Orchestrator) -> None:
 async def test_memory_why_local_entry_shows_scope(orch: Orchestrator) -> None:
     """Test /memory why shows scope: local for local authority entries."""
     orch.paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n"
+        "# ControlMesh Memory\n\n"
         "## Durable Memory\n\n"
         "### Preference\n"
         "- User prefers dark mode. _(id: loc001; status: active; scope: local; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_\n",
@@ -764,7 +765,7 @@ async def test_memory_review_shows_summary(orch: Orchestrator) -> None:
 
     # Create authority memory with entries
     orch.paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n"
+        "# ControlMesh Memory\n\n"
         "## Durable Memory\n\n"
         "### Decision\n"
         "- Keep memory local. _(id: d1; status: active; source: memory/2026-04-24.md#L2; promoted: 2026-04-24)_\n\n"
@@ -795,7 +796,7 @@ async def test_memory_review_shows_summary(orch: Orchestrator) -> None:
 async def test_memory_review_shows_mixed_authority_scope_summary(orch: Orchestrator) -> None:
     """Unscoped /memory review shows the local/shared split for authority memory."""
     orch.paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n"
+        "# ControlMesh Memory\n\n"
         "## Durable Memory\n\n"
         "### Decision\n"
         "- Local decision. _(id: d1; status: active; scope: local; source: memory/2026-04-24.md#L2; promoted: 2026-04-24)_\n"
@@ -817,7 +818,7 @@ async def test_memory_review_shows_legacy_authority_entries_as_local_in_category
 ) -> None:
     """Unscoped /memory review treats legacy authority entries as local per category."""
     orch.paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n"
+        "# ControlMesh Memory\n\n"
         "## Durable Memory\n\n"
         "### Fact\n"
         "- Legacy fact. _(source: memory/2026-04-22.md#L5; promoted: 2026-04-22)_\n"
@@ -838,7 +839,7 @@ async def test_memory_review_shows_explicit_scope_labels_in_review_items(orch: O
     from controlmesh.memory.store import ensure_daily_note
 
     orch.paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n"
+        "# ControlMesh Memory\n\n"
         "## Durable Memory\n\n"
         "### Decision\n"
         "- Existing decision. _(id: d1; status: active; scope: local; source: memory/2026-04-24.md#L2; promoted: 2026-04-24)_\n",
@@ -881,7 +882,7 @@ async def test_memory_review_scope_local_filters_entries(orch: Orchestrator) -> 
 
     # Create authority memory with mixed local and shared entries
     orch.paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n"
+        "# ControlMesh Memory\n\n"
         "## Durable Memory\n\n"
         "### Decision\n"
         "- Local decision. _(id: d1; status: active; scope: local; source: memory/2026-04-24.md#L2; promoted: 2026-04-24)_\n"
@@ -951,7 +952,7 @@ async def test_memory_review_scope_shared_filters_entries(orch: Orchestrator) ->
 
     # Create authority memory with mixed local and shared entries
     orch.paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n"
+        "# ControlMesh Memory\n\n"
         "## Durable Memory\n\n"
         "### Decision\n"
         "- Local decision. _(id: d1; status: active; scope: local; source: memory/2026-04-24.md#L2; promoted: 2026-04-24)_\n"
@@ -1020,7 +1021,7 @@ async def test_memory_review_scope_shared_omits_empty_recent_and_open_sections(o
     from controlmesh.memory.store import ensure_daily_note
 
     orch.paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n"
+        "# ControlMesh Memory\n\n"
         "## Durable Memory\n\n"
         "### Decision\n"
         "- Local decision only. _(id: d1; status: active; scope: local; source: memory/2026-04-24.md#L2; promoted: 2026-04-24)_\n",
@@ -1058,7 +1059,7 @@ async def test_memory_review_invalid_scope_shows_usage(orch: Orchestrator) -> No
     """Test /memory review with invalid scope value shows usage, not unfiltered review."""
     # Create authority memory so we can distinguish usage from actual review output
     orch.paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n"
+        "# ControlMesh Memory\n\n"
         "## Durable Memory\n\n"
         "### Decision\n"
         "- Some decision. _(id: d1; status: active; scope: local; source: memory/2026-04-24.md#L2; promoted: 2026-04-24)_\n",
@@ -1075,7 +1076,7 @@ async def test_memory_review_missing_scope_value_shows_usage(orch: Orchestrator)
     """Test /memory review --scope without a value shows usage, not unfiltered review."""
     # Create authority memory so we can distinguish usage from actual review output
     orch.paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n"
+        "# ControlMesh Memory\n\n"
         "## Durable Memory\n\n"
         "### Decision\n"
         "- Some decision. _(id: d1; status: active; scope: local; source: memory/2026-04-24.md#L2; promoted: 2026-04-24)_\n",
@@ -1340,7 +1341,7 @@ async def test_memory_semantic_shows_shared_scope_for_shared_authority_hit(orch:
     auth_path = orch.paths.authority_memory_path
     auth_path.parent.mkdir(parents=True, exist_ok=True)
     auth_path.write_text(
-        r"""# ControlMesh Memory v2
+        r"""# ControlMesh Memory
 
 ## Durable Memory
 
@@ -1361,7 +1362,7 @@ async def test_memory_semantic_shows_local_scope_for_local_authority_hit(orch: O
     auth_path = orch.paths.authority_memory_path
     auth_path.parent.mkdir(parents=True, exist_ok=True)
     auth_path.write_text(
-        r"""# ControlMesh Memory v2
+        r"""# ControlMesh Memory
 
 ## Durable Memory
 
@@ -1512,7 +1513,7 @@ async def test_memory_unknown_subcommand_shows_usage_with_semantic(orch: Orchest
 async def test_memory_full_shows_scope_summary_with_shared_entries(orch: Orchestrator) -> None:
     """Test /memory output surfaces shared scope in the authority section header."""
     orch.paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n"
+        "# ControlMesh Memory\n\n"
         "## Durable Memory\n\n"
         "### Decision\n"
         "- Shared decision for all agents. _(id: sd001; status: active; scope: shared; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_\n"
@@ -1522,7 +1523,7 @@ async def test_memory_full_shows_scope_summary_with_shared_entries(orch: Orchest
 
     result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory")
 
-    assert "Authority Memory (v2)" in result.text
+    assert "## Memory" in result.text
     # Scope summary must appear in header showing both counts
     assert "1 local, 1 shared" in result.text
     # Entry content must still be present
@@ -1533,7 +1534,7 @@ async def test_memory_full_shows_scope_summary_with_shared_entries(orch: Orchest
 async def test_memory_full_shows_scope_summary_with_local_only_entries(orch: Orchestrator) -> None:
     """Test /memory output surfaces local/default scope in the authority section header when no shared entries exist."""
     orch.paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n"
+        "# ControlMesh Memory\n\n"
         "## Durable Memory\n\n"
         "### Preference\n"
         "- User prefers dark mode. _(id: pf001; status: active; scope: local; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_\n"
@@ -1543,7 +1544,7 @@ async def test_memory_full_shows_scope_summary_with_local_only_entries(orch: Orc
 
     result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory")
 
-    assert "Authority Memory (v2)" in result.text
+    assert "## Memory" in result.text
     # When no shared entries, only local count shown
     assert "2 local)" in result.text
     assert "shared" not in result.text.lower()
@@ -1552,11 +1553,10 @@ async def test_memory_full_shows_scope_summary_with_local_only_entries(orch: Orc
     assert "User prefers light mode" in result.text
 
 
-async def test_memory_full_legacy_compatibility_not_regressed(orch: Orchestrator) -> None:
-    """Test /memory with legacy compatibility section is not regressed by scope annotation."""
-    orch.paths.mainmemory_path.write_text("# Legacy Memory\n- Old memory entry.\n")
+async def test_memory_full_shows_only_memory_section(orch: Orchestrator) -> None:
+    """Test /memory renders only the canonical MEMORY.md section."""
     orch.paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n"
+        "# ControlMesh Memory\n\n"
         "## Durable Memory\n\n"
         "### Fact\n"
         "- A fact. _(id: fact01; status: active; scope: local; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_\n",
@@ -1565,35 +1565,23 @@ async def test_memory_full_legacy_compatibility_not_regressed(orch: Orchestrator
 
     result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory")
 
-    # Both sections must be present
-    assert "Authority Memory (v2)" in result.text
-    assert "Legacy Compatibility Memory" in result.text
-    # Legacy content must still be present
-    assert "Legacy Memory" in result.text
-    assert "Old memory entry" in result.text
-    # Authority content must still be present
+    assert "## Memory" in result.text
     assert "A fact" in result.text
-    # Scope annotation must be present
     assert "1 local)" in result.text
 
 
-async def test_memory_full_empty_authority_no_scope_annotation(orch: Orchestrator) -> None:
-    """Test /memory with only legacy memory (no authority entries) shows no scope annotation."""
-    orch.paths.mainmemory_path.write_text("# My Memory\n- Some memory.\n")
+async def test_memory_full_empty_authority_shows_empty_state(orch: Orchestrator) -> None:
+    """Test /memory with no durable memory content shows the empty state."""
     orch.paths.authority_memory_path.write_text("", encoding="utf-8")
 
     result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory")
 
-    # No authority section scope annotation when authority is empty
-    assert "Authority Memory (v2)" not in result.text
-    # Legacy section still works
-    assert "Legacy Compatibility Memory" in result.text
-    assert "Some memory" in result.text
+    assert "## Memory" not in result.text
+    assert "empty" in result.text.lower()
 
 
 async def test_memory_full_empty_memory_not_regressed(orch: Orchestrator) -> None:
     """Test /memory with empty memory shows empty state and does not crash."""
-    orch.paths.mainmemory_path.write_text("")
     orch.paths.authority_memory_path.write_text("", encoding="utf-8")
 
     result = await cmd_memory(orch, SessionKey(chat_id=0), "/memory")
@@ -1808,7 +1796,7 @@ async def test_memory_promote_preview_shows_scope_for_shared_candidates(orch: Or
 async def test_memory_deprecate_command_updates_memory(orch: Orchestrator) -> None:
     """Test /memory deprecate <id> marks the entry deprecated in MEMORY.md."""
     orch.paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n"
+        "# ControlMesh Memory\n\n"
         "## Durable Memory\n\n"
         "### Fact\n"
         "- Old fact to deprecate. _(id: dep001; status: active; scope: local; source: memory/2026-04-20.md#L3; promoted: 2026-04-20)_\n",
@@ -1827,7 +1815,7 @@ async def test_memory_deprecate_command_updates_memory(orch: Orchestrator) -> No
 async def test_memory_deprecate_not_found(orch: Orchestrator) -> None:
     """Test /memory deprecate with unknown id returns clear not-found message."""
     orch.paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n"
+        "# ControlMesh Memory\n\n"
         "## Durable Memory\n\n"
         "### Fact\n"
         "- Real fact. _(id: real001; status: active; scope: local; source: memory/2026-04-20.md#L3; promoted: 2026-04-20)_\n",
@@ -1845,7 +1833,7 @@ async def test_memory_deprecate_not_found(orch: Orchestrator) -> None:
 async def test_memory_deprecate_command_idempotent(orch: Orchestrator) -> None:
     """Test /memory deprecate on already-deprecated entry succeeds and is idempotent."""
     orch.paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n"
+        "# ControlMesh Memory\n\n"
         "## Durable Memory\n\n"
         "### Fact\n"
         "- Deprecated fact. _(id: dep002; status: deprecated; scope: local; source: memory/2026-04-20.md#L3; promoted: 2026-04-20)_\n",
@@ -1864,7 +1852,7 @@ async def test_memory_deprecate_command_idempotent(orch: Orchestrator) -> None:
 async def test_memory_dispute_command_updates_memory(orch: Orchestrator) -> None:
     """Test /memory dispute <id> marks the entry disputed in MEMORY.md."""
     orch.paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n"
+        "# ControlMesh Memory\n\n"
         "## Durable Memory\n\n"
         "### Fact\n"
         "- Disputed fact to fix. _(id: dis001; status: active; scope: local; source: memory/2026-04-21.md#L3; promoted: 2026-04-21)_\n",
@@ -1882,7 +1870,7 @@ async def test_memory_dispute_command_updates_memory(orch: Orchestrator) -> None
 async def test_memory_dispute_not_found(orch: Orchestrator) -> None:
     """Test /memory dispute with unknown id returns clear not-found message."""
     orch.paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n"
+        "# ControlMesh Memory\n\n"
         "## Durable Memory\n\n"
         "### Fact\n"
         "- Real fact. _(id: real002; status: active; scope: local; source: memory/2026-04-21.md#L3; promoted: 2026-04-21)_\n",
@@ -1899,7 +1887,7 @@ async def test_memory_dispute_not_found(orch: Orchestrator) -> None:
 async def test_memory_dispute_command_idempotent(orch: Orchestrator) -> None:
     """Test /memory dispute on already-disputed entry succeeds and is idempotent."""
     orch.paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n"
+        "# ControlMesh Memory\n\n"
         "## Durable Memory\n\n"
         "### Fact\n"
         "- Disputed fact. _(id: dis002; status: disputed; scope: local; source: memory/2026-04-21.md#L3; promoted: 2026-04-21)_\n",
@@ -1917,7 +1905,7 @@ async def test_memory_dispute_command_idempotent(orch: Orchestrator) -> None:
 async def test_memory_supersede_command_updates_status_and_superseded_by(orch: Orchestrator) -> None:
     """Test /memory supersede <old-id> <new-id> updates status and superseded_by in MEMORY.md."""
     orch.paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n"
+        "# ControlMesh Memory\n\n"
         "## Durable Memory\n\n"
         "### Decision\n"
         "- Old decision being replaced. _(id: sup001; status: active; scope: local; source: memory/2026-04-22.md#L3; promoted: 2026-04-22)_\n",
@@ -1937,7 +1925,7 @@ async def test_memory_supersede_command_updates_status_and_superseded_by(orch: O
 async def test_memory_supersede_not_found(orch: Orchestrator) -> None:
     """Test /memory supersede with unknown old id returns clear not-found message."""
     orch.paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n"
+        "# ControlMesh Memory\n\n"
         "## Durable Memory\n\n"
         "### Decision\n"
         "- Real decision. _(id: real003; status: active; scope: local; source: memory/2026-04-22.md#L3; promoted: 2026-04-22)_\n",
@@ -1954,7 +1942,7 @@ async def test_memory_supersede_not_found(orch: Orchestrator) -> None:
 async def test_memory_supersede_command_idempotent(orch: Orchestrator) -> None:
     """Test /memory supersede on already-superseded entry succeeds and is idempotent."""
     orch.paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n"
+        "# ControlMesh Memory\n\n"
         "## Durable Memory\n\n"
         "### Decision\n"
         "- Old decision. _(id: sup002; status: superseded; scope: local; superseded_by: sameref; source: memory/2026-04-22.md#L3; promoted: 2026-04-22)_\n",
@@ -1977,7 +1965,7 @@ async def test_memory_supersede_command_idempotent(orch: Orchestrator) -> None:
 async def test_memory_deprecate_command_includes_local_scope_in_response(orch: Orchestrator) -> None:
     """Test /memory deprecate success response includes [local] scope indicator."""
     orch.paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n"
+        "# ControlMesh Memory\n\n"
         "## Durable Memory\n\n"
         "### Fact\n"
         "- Local fact to deprecate. _(id: ph18dl001; status: active; scope: local; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_\n",
@@ -1994,7 +1982,7 @@ async def test_memory_deprecate_command_includes_local_scope_in_response(orch: O
 async def test_memory_deprecate_command_includes_shared_scope_in_response(orch: Orchestrator) -> None:
     """Test /memory deprecate success response includes [shared] scope indicator."""
     orch.paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n"
+        "# ControlMesh Memory\n\n"
         "## Durable Memory\n\n"
         "### Decision\n"
         "- Shared decision to deprecate. _(id: ph18ds001; status: active; scope: shared; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_\n",
@@ -2011,7 +1999,7 @@ async def test_memory_deprecate_command_includes_shared_scope_in_response(orch: 
 async def test_memory_dispute_command_includes_local_scope_in_response(orch: Orchestrator) -> None:
     """Test /memory dispute success response includes [local] scope indicator."""
     orch.paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n"
+        "# ControlMesh Memory\n\n"
         "## Durable Memory\n\n"
         "### Fact\n"
         "- Local fact to dispute. _(id: ph18dpl001; status: active; scope: local; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_\n",
@@ -2028,7 +2016,7 @@ async def test_memory_dispute_command_includes_local_scope_in_response(orch: Orc
 async def test_memory_dispute_command_includes_shared_scope_in_response(orch: Orchestrator) -> None:
     """Test /memory dispute success response includes [shared] scope indicator."""
     orch.paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n"
+        "# ControlMesh Memory\n\n"
         "## Durable Memory\n\n"
         "### Decision\n"
         "- Shared decision to dispute. _(id: ph18dps001; status: active; scope: shared; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_\n",
@@ -2045,7 +2033,7 @@ async def test_memory_dispute_command_includes_shared_scope_in_response(orch: Or
 async def test_memory_supersede_command_includes_local_scope_in_response(orch: Orchestrator) -> None:
     """Test /memory supersede success response includes [local] scope indicator."""
     orch.paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n"
+        "# ControlMesh Memory\n\n"
         "## Durable Memory\n\n"
         "### Decision\n"
         "- Local decision to supersede. _(id: ph18supl001; status: active; scope: local; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_\n",
@@ -2062,7 +2050,7 @@ async def test_memory_supersede_command_includes_local_scope_in_response(orch: O
 async def test_memory_supersede_command_includes_shared_scope_in_response(orch: Orchestrator) -> None:
     """Test /memory supersede success response includes [shared] scope indicator."""
     orch.paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n"
+        "# ControlMesh Memory\n\n"
         "## Durable Memory\n\n"
         "### Decision\n"
         "- Shared decision to supersede. _(id: ph18sups001; status: active; scope: shared; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_\n",

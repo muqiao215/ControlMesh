@@ -299,16 +299,13 @@ class TestStartSubAgent:
 
         assert "sub1" not in supervisor._stacks
 
-    async def test_syncs_shared_knowledge_to_v2_and_legacy_memory(
-        self, supervisor: AgentSupervisor
-    ) -> None:
+    async def test_syncs_shared_knowledge_to_memory(self, supervisor: AgentSupervisor) -> None:
         sub_cfg = SubAgentConfig(name="sub1", telegram_token="tok:1")
 
         mock_stack = MagicMock()
         mock_stack.bot = MagicMock()
         mock_stack.bot.on_async_interagent_result = AsyncMock()
         mock_stack.paths = MagicMock()
-        mock_stack.paths.mainmemory_path = Path("/tmp/sub1/memory_system/MAINMEMORY.md")
         mock_stack.paths.authority_memory_path = Path("/tmp/sub1/MEMORY.md")
 
         supervisor._shared_knowledge = MagicMock()
@@ -325,8 +322,7 @@ class TestStartSubAgent:
             await supervisor._start_sub_agent(sub_cfg)
 
         supervisor._shared_knowledge.sync_agent.assert_awaited_once_with(
-            mock_stack.paths.mainmemory_path,
-            mock_stack.paths.authority_memory_path,
+            mock_stack.paths.authority_memory_path
         )
 
 

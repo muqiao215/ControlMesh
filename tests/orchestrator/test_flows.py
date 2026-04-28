@@ -56,8 +56,11 @@ async def test_normal_returns_result(orch: Orchestrator) -> None:
     assert not result.stream_fallback
 
 
-async def test_normal_new_session_injects_mainmemory(orch: Orchestrator) -> None:
-    orch.paths.mainmemory_path.write_text("# Important Context")
+async def test_normal_new_session_injects_memory(orch: Orchestrator) -> None:
+    orch.paths.authority_memory_path.write_text(
+        "# ControlMesh Memory\n\n## Durable Memory\n\n### Fact\n- Important Context\n",
+        encoding="utf-8",
+    )
     mock_execute = AsyncMock(return_value=_mock_response())
     object.__setattr__(orch._cli_service, "execute", mock_execute)
 
@@ -73,9 +76,8 @@ async def test_normal_new_session_injects_mainmemory(orch: Orchestrator) -> None
 async def test_normal_new_session_injects_authority_memory_when_meaningful(
     orch: Orchestrator,
 ) -> None:
-    orch.paths.mainmemory_path.write_text("")
     orch.paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n## Durable Memory\n\n### Decision\n- Keep context local.\n",
+        "# ControlMesh Memory\n\n## Durable Memory\n\n### Decision\n- Keep context local.\n",
         encoding="utf-8",
     )
     mock_execute = AsyncMock(return_value=_mock_response())
@@ -85,7 +87,7 @@ async def test_normal_new_session_injects_authority_memory_when_meaningful(
 
     request = mock_execute.call_args[0][0]
     assert request.append_system_prompt is not None
-    assert "Authority Memory (v2)" in request.append_system_prompt
+    assert "## Memory" in request.append_system_prompt
     assert "Keep context local." in request.append_system_prompt
 
 

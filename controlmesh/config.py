@@ -79,7 +79,6 @@ class DockerConfig(BaseModel):
 _DEFAULT_HEARTBEAT_PROMPT = (
     "You are running as a background heartbeat check. Review the current workspace context:\n"
     "- Read MEMORY.md, DREAMS.md, and memory/ for primary user context\n"
-    "- Read memory_system/MAINMEMORY.md only for compatibility context if needed\n"
     "- Check cron_tasks/ for active projects\n"
     "- Think about what might be useful, interesting, or fun for the user\n"
     "\n"

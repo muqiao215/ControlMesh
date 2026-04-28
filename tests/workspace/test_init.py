@@ -34,7 +34,7 @@ def _setup_home_defaults(fw_root: Path) -> None:
     (inner / "CLAUDE.md").write_text("# Framework CLAUDE.md")
 
     # Subdirectory CLAUDE.md files
-    for subdir in ("memory_system", "cron_tasks", "output_to_user", "telegram_files"):
+    for subdir in ("cron_tasks", "output_to_user", "telegram_files"):
         d = inner / subdir
         d.mkdir()
         (d / "CLAUDE.md").write_text(f"# {subdir} CLAUDE.md")
@@ -153,15 +153,15 @@ def test_subdirectory_claude_md_updated_on_reinit(tmp_path: Path) -> None:
     init_workspace(paths)
 
     # User modifies a subdirectory CLAUDE.md (should be overwritten)
-    mem_claude = paths.memory_system_dir / "CLAUDE.md"
+    mem_claude = paths.cron_tasks_dir / "CLAUDE.md"
     mem_claude.write_text("# User modification")
 
     # Simulate framework update to the template
-    template = paths.home_defaults / "workspace" / "memory_system" / "CLAUDE.md"
-    template.write_text("# Updated memory_system CLAUDE.md")
+    template = paths.home_defaults / "workspace" / "cron_tasks" / "CLAUDE.md"
+    template.write_text("# Updated cron_tasks CLAUDE.md")
 
     init_workspace(paths)
-    assert mem_claude.read_text() == "# Updated memory_system CLAUDE.md"
+    assert mem_claude.read_text() == "# Updated cron_tasks CLAUDE.md"
 
 
 def test_subdirectory_agents_md_created_from_claude_md(tmp_path: Path) -> None:
@@ -169,7 +169,7 @@ def test_subdirectory_agents_md_created_from_claude_md(tmp_path: Path) -> None:
     paths = _make_paths(tmp_path)
     init_workspace(paths)
 
-    for subdir in ("memory_system", "cron_tasks", "output_to_user", "telegram_files"):
+    for subdir in ("cron_tasks", "output_to_user", "telegram_files"):
         agents = paths.workspace / subdir / "AGENTS.md"
         claude = paths.workspace / subdir / "CLAUDE.md"
         assert agents.exists(), f"AGENTS.md missing in {subdir}"
@@ -195,10 +195,10 @@ def test_replaces_stale_symlinks_with_copies(tmp_path: Path) -> None:
 # -- Zone 3: seed defaults (never overwrite) --
 
 
-def test_does_not_seed_mainmemory_by_default(tmp_path: Path) -> None:
+def test_does_not_create_memory_system_dir_by_default(tmp_path: Path) -> None:
     paths = _make_paths(tmp_path)
     init_workspace(paths)
-    assert not paths.mainmemory_path.exists()
+    assert not (paths.workspace / "memory_system").exists()
 
 
 def test_seeds_memory_v2_files(tmp_path: Path) -> None:
@@ -228,15 +228,6 @@ def test_seeds_tools_agents_md_mirrors_claude_md(tmp_path: Path) -> None:
 
 
 # -- Zone 3: never overwrite user files --
-
-
-def test_does_not_overwrite_mainmemory(tmp_path: Path) -> None:
-    paths = _make_paths(tmp_path)
-    paths.memory_system_dir.mkdir(parents=True)
-    paths.mainmemory_path.write_text("My custom memories")
-
-    init_workspace(paths)
-    assert paths.mainmemory_path.read_text() == "My custom memories"
 
 
 def test_seeds_tool_subdirectories(tmp_path: Path) -> None:
@@ -317,7 +308,7 @@ def test_idempotent_double_init(tmp_path: Path) -> None:
 
     assert paths.workspace.is_dir()
     assert (paths.workspace / "CLAUDE.md").exists()
-    assert not paths.mainmemory_path.exists()
+    assert not (paths.workspace / "memory_system").exists()
 
 
 # -- orphan symlink cleanup --

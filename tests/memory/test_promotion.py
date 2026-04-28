@@ -12,11 +12,6 @@ from controlmesh.memory.commands import (
     render_daily_note_summary,
     render_memory_review,
 )
-from controlmesh.memory.compat import (
-    _COMPAT_END_MARKER,
-    _COMPAT_START_MARKER,
-    sync_authority_to_legacy_mainmemory,
-)
 from controlmesh.memory.models import LifecycleStatus, MemoryCategory, MemoryScope
 from controlmesh.memory.promotion import (
     parse_authority_entry,
@@ -90,74 +85,6 @@ def test_preview_and_apply_daily_note_promotions(tmp_path: Path) -> None:
     second = apply_daily_note_promotions(paths, date(2026, 4, 8), min_score=0.8)
     assert second.applied_count == 0
     assert second.skipped_existing == 1
-
-    legacy_text = paths.mainmemory_path.read_text(encoding="utf-8")
-    assert _COMPAT_START_MARKER in legacy_text
-    assert _COMPAT_END_MARKER in legacy_text
-    assert "Keep canonical authority file-backed and human-readable." in legacy_text
-
-
-def test_sync_authority_to_legacy_mainmemory_replaces_existing_compat_block(tmp_path: Path) -> None:
-    paths = _make_paths(tmp_path)
-    paths.memory_system_dir.mkdir(parents=True, exist_ok=True)
-    paths.workspace.mkdir(parents=True, exist_ok=True)
-    paths.mainmemory_path.write_text(
-        "# Main Memory\n\n"
-        "--- MEMORY V2 COMPAT START ---\nold mirror\n--- MEMORY V2 COMPAT END ---\n\n"
-        "--- SHARED KNOWLEDGE START ---\nshared\n--- SHARED KNOWLEDGE END ---\n",
-        encoding="utf-8",
-    )
-
-    written = sync_authority_to_legacy_mainmemory(
-        paths,
-        authority_text="# ControlMesh Memory v2\n\n## Durable Memory\n\n### Decision\n- New mirror.\n",
-    )
-
-    assert written is True
-    legacy_text = paths.mainmemory_path.read_text(encoding="utf-8")
-    assert "old mirror" not in legacy_text
-    assert "New mirror." in legacy_text
-    assert "shared" in legacy_text
-    assert legacy_text.count(_COMPAT_START_MARKER) == 1
-    assert legacy_text.count(_COMPAT_END_MARKER) == 1
-
-
-def test_sync_authority_to_legacy_mainmemory_creates_file_on_first_compat_sync(
-    tmp_path: Path,
-) -> None:
-    paths = _make_paths(tmp_path)
-    assert not paths.mainmemory_path.exists()
-
-    written = sync_authority_to_legacy_mainmemory(
-        paths,
-        authority_text="# ControlMesh Memory v2\n\n## Durable Memory\n\n### Decision\n- First compat sync.\n",
-    )
-
-    assert written is True
-    assert paths.mainmemory_path.exists()
-    legacy_text = paths.mainmemory_path.read_text(encoding="utf-8")
-    assert _COMPAT_START_MARKER in legacy_text
-    assert "First compat sync." in legacy_text
-
-
-def test_sync_authority_to_legacy_mainmemory_removes_empty_compat_block(tmp_path: Path) -> None:
-    paths = _make_paths(tmp_path)
-    paths.memory_system_dir.mkdir(parents=True, exist_ok=True)
-    paths.mainmemory_path.write_text(
-        "# Main Memory\n\n"
-        "--- MEMORY V2 COMPAT START ---\nold mirror\n--- MEMORY V2 COMPAT END ---\n",
-        encoding="utf-8",
-    )
-
-    written = sync_authority_to_legacy_mainmemory(
-        paths,
-        authority_text="# ControlMesh Memory v2\n\n## Durable Memory\n\n### Decision\n",
-    )
-
-    assert written is True
-    legacy_text = paths.mainmemory_path.read_text(encoding="utf-8")
-    assert _COMPAT_START_MARKER not in legacy_text
-    assert "old mirror" not in legacy_text
 
 
 def test_parse_authority_entry_metadata_with_full_metadata() -> None:
@@ -369,7 +296,7 @@ def test_parse_authority_entry_unknown_scope_defaults_to_local() -> None:
 
 def test_count_authority_entries_filters_by_scope() -> None:
     """Authority entry counting respects scope filter."""
-    authority_text = """# ControlMesh Memory v2
+    authority_text = """# ControlMesh Memory
 
 ## Durable Memory
 
@@ -401,7 +328,7 @@ def test_count_authority_entries_filters_by_scope() -> None:
 
 def test_count_authority_entries_legacy_entries_default_to_local() -> None:
     """Legacy entries without scope are counted as LOCAL."""
-    authority_text = """# ControlMesh Memory v2
+    authority_text = """# ControlMesh Memory
 
 ## Durable Memory
 
@@ -432,7 +359,7 @@ def test_deprecate_authority_entry_by_id(tmp_path: Path) -> None:
 
     # Inject an active entry directly into MEMORY.md
     entry_line = "- Fact entry for deprecation. _(id: dep001; status: active; scope: local; source: memory/2026-04-20.md#L3; promoted: 2026-04-20)_"
-    authority_text = f"# ControlMesh Memory v2\n\n### Fact\n\n{entry_line}\n"
+    authority_text = f"# ControlMesh Memory\n\n### Fact\n\n{entry_line}\n"
     paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
 
     success, scope = deprecate_authority_entry(paths, "dep001")
@@ -451,7 +378,7 @@ def test_deprecate_authority_entry_not_found(tmp_path: Path) -> None:
 
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
-    paths.authority_memory_path.write_text("# ControlMesh Memory v2\n", encoding="utf-8")
+    paths.authority_memory_path.write_text("# ControlMesh Memory\n", encoding="utf-8")
 
     success, scope = deprecate_authority_entry(paths, "nonexistent")
     assert success is False
@@ -466,7 +393,7 @@ def test_deprecate_authority_entry_idempotent(tmp_path: Path) -> None:
     initialize_memory_v2(paths)
 
     entry_line = "- Fact entry. _(id: dep002; status: deprecated; scope: local; source: memory/2026-04-20.md#L3; promoted: 2026-04-20)_"
-    authority_text = f"# ControlMesh Memory v2\n\n### Fact\n\n{entry_line}\n"
+    authority_text = f"# ControlMesh Memory\n\n### Fact\n\n{entry_line}\n"
     paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
 
     success, scope = deprecate_authority_entry(paths, "dep002")
@@ -486,7 +413,7 @@ def test_dispute_authority_entry_by_id(tmp_path: Path) -> None:
     initialize_memory_v2(paths)
 
     entry_line = "- Fact entry for disputing. _(id: dis001; status: active; scope: local; source: memory/2026-04-21.md#L3; promoted: 2026-04-21)_"
-    authority_text = f"# ControlMesh Memory v2\n\n### Fact\n\n{entry_line}\n"
+    authority_text = f"# ControlMesh Memory\n\n### Fact\n\n{entry_line}\n"
     paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
 
     success, scope = dispute_authority_entry(paths, "dis001")
@@ -505,7 +432,7 @@ def test_dispute_authority_entry_not_found(tmp_path: Path) -> None:
 
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
-    paths.authority_memory_path.write_text("# ControlMesh Memory v2\n", encoding="utf-8")
+    paths.authority_memory_path.write_text("# ControlMesh Memory\n", encoding="utf-8")
 
     success, scope = dispute_authority_entry(paths, "nonexistent")
     assert success is False
@@ -520,7 +447,7 @@ def test_dispute_authority_entry_idempotent(tmp_path: Path) -> None:
     initialize_memory_v2(paths)
 
     entry_line = "- Fact entry. _(id: dis002; status: disputed; scope: local; source: memory/2026-04-21.md#L3; promoted: 2026-04-21)_"
-    authority_text = f"# ControlMesh Memory v2\n\n### Fact\n\n{entry_line}\n"
+    authority_text = f"# ControlMesh Memory\n\n### Fact\n\n{entry_line}\n"
     paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
 
     success, scope = dispute_authority_entry(paths, "dis002")
@@ -539,7 +466,7 @@ def test_supersede_authority_entry(tmp_path: Path) -> None:
     initialize_memory_v2(paths)
 
     entry_line = "- Old fact being superseded. _(id: sup001; status: active; scope: local; source: memory/2026-04-22.md#L3; promoted: 2026-04-22)_"
-    authority_text = f"# ControlMesh Memory v2\n\n### Fact\n\n{entry_line}\n"
+    authority_text = f"# ControlMesh Memory\n\n### Fact\n\n{entry_line}\n"
     paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
 
     success, scope = supersede_authority_entry(paths, "sup001", "new001")
@@ -559,7 +486,7 @@ def test_supersede_authority_entry_not_found(tmp_path: Path) -> None:
 
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
-    paths.authority_memory_path.write_text("# ControlMesh Memory v2\n", encoding="utf-8")
+    paths.authority_memory_path.write_text("# ControlMesh Memory\n", encoding="utf-8")
 
     success, scope = supersede_authority_entry(paths, "nonexistent", "new001")
     assert success is False
@@ -574,7 +501,7 @@ def test_supersede_authority_entry_idempotent(tmp_path: Path) -> None:
     initialize_memory_v2(paths)
 
     entry_line = "- Old fact. _(id: sup002; status: superseded; scope: local; superseded_by: new002; source: memory/2026-04-22.md#L3; promoted: 2026-04-22)_"
-    authority_text = f"# ControlMesh Memory v2\n\n### Fact\n\n{entry_line}\n"
+    authority_text = f"# ControlMesh Memory\n\n### Fact\n\n{entry_line}\n"
     paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
 
     success, scope = supersede_authority_entry(paths, "sup002", "new002")
@@ -594,7 +521,7 @@ def test_supersede_authority_entry_updates_superseded_by_field(tmp_path: Path) -
     initialize_memory_v2(paths)
 
     entry_line = "- Old fact. _(id: sup003; status: superseded; scope: local; superseded_by: old_new; source: memory/2026-04-22.md#L3; promoted: 2026-04-22)_"
-    authority_text = f"# ControlMesh Memory v2\n\n### Fact\n\n{entry_line}\n"
+    authority_text = f"# ControlMesh Memory\n\n### Fact\n\n{entry_line}\n"
     paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
 
     success, scope = supersede_authority_entry(paths, "sup003", "updated_new")
@@ -1431,7 +1358,7 @@ def test_render_memory_review_unscoped_authority_summary_shows_local_only_count(
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
     paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n"
+        "# ControlMesh Memory\n\n"
         "## Durable Memory\n\n"
         "### Decision\n"
         "- Keep memory local. _(id: d1; status: active; scope: local; source: memory/2026-04-24.md#L2; promoted: 2026-04-24)_\n\n"
@@ -1454,7 +1381,7 @@ def test_render_memory_review_unscoped_authority_summary_shows_local_shared_spli
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
     paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n"
+        "# ControlMesh Memory\n\n"
         "## Durable Memory\n\n"
         "### Decision\n"
         "- Local decision. _(id: d1; status: active; scope: local; source: memory/2026-04-24.md#L2; promoted: 2026-04-24)_\n"
@@ -1478,7 +1405,7 @@ def test_render_memory_review_unscoped_authority_summary_counts_legacy_entries_a
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
     paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n"
+        "# ControlMesh Memory\n\n"
         "## Durable Memory\n\n"
         "### Fact\n"
         "- Legacy fact. _(source: memory/2026-04-22.md#L5; promoted: 2026-04-22)_\n"
@@ -1708,7 +1635,7 @@ def test_explain_authority_entry_shows_scope_for_shared_entry(tmp_path: Path) ->
     initialize_memory_v2(paths)
 
     entry_line = "- Team uses shared memory for cross-agent context. _(id: why001; status: active; scope: shared; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_"
-    authority_text = f"# ControlMesh Memory v2\n\n### Fact\n\n{entry_line}\n"
+    authority_text = f"# ControlMesh Memory\n\n### Fact\n\n{entry_line}\n"
     paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
 
     result = explain_authority_entry(paths, "why001")
@@ -1727,7 +1654,7 @@ def test_explain_authority_entry_shows_scope_for_local_entry(tmp_path: Path) -> 
     initialize_memory_v2(paths)
 
     entry_line = "- User prefers dark mode. _(id: why002; status: active; scope: local; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_"
-    authority_text = f"# ControlMesh Memory v2\n\n### Fact\n\n{entry_line}\n"
+    authority_text = f"# ControlMesh Memory\n\n### Fact\n\n{entry_line}\n"
     paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
 
     result = explain_authority_entry(paths, "why002")
@@ -1744,7 +1671,7 @@ def test_explain_authority_entry_not_found_returns_none(tmp_path: Path) -> None:
 
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
-    paths.authority_memory_path.write_text("# ControlMesh Memory v2\n", encoding="utf-8")
+    paths.authority_memory_path.write_text("# ControlMesh Memory\n", encoding="utf-8")
 
     result = explain_authority_entry(paths, "nonexistent")
 
@@ -1760,7 +1687,7 @@ def test_explain_authority_entry_missing_scope_defaults_to_local(tmp_path: Path)
 
     # Legacy entry format: no scope field in metadata
     entry_line = "- Legacy fact without scope. _(id: why003; status: active; source: memory/2026-04-01.md#L3; promoted: 2026-04-01)_"
-    authority_text = f"# ControlMesh Memory v2\n\n### Fact\n\n{entry_line}\n"
+    authority_text = f"# ControlMesh Memory\n\n### Fact\n\n{entry_line}\n"
     paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
 
     result = explain_authority_entry(paths, "why003")
@@ -1781,7 +1708,7 @@ def test_explain_authority_entry_command_output_includes_scope(tmp_path: Path) -
     shared_line = "- Shared team decision. _(id: cmd001; status: active; scope: shared; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_"
     # Local entry
     local_line = "- Local user preference. _(id: cmd002; status: active; scope: local; source: memory/2026-04-25.md#L4; promoted: 2026-04-25)_"
-    authority_text = f"# ControlMesh Memory v2\n\n### Decision\n\n{shared_line}\n\n### Preference\n\n{local_line}\n"
+    authority_text = f"# ControlMesh Memory\n\n### Decision\n\n{shared_line}\n\n### Preference\n\n{local_line}\n"
     paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
 
     shared_result = explain_authority_entry(paths, "cmd001")
@@ -1807,7 +1734,7 @@ def test_deprecate_authority_entry_returns_scope_for_local_entry(tmp_path: Path)
     initialize_memory_v2(paths)
 
     entry_line = "- Local fact being deprecated. _(id: ph18dl001; status: active; scope: local; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_"
-    authority_text = f"# ControlMesh Memory v2\n\n### Fact\n\n{entry_line}\n"
+    authority_text = f"# ControlMesh Memory\n\n### Fact\n\n{entry_line}\n"
     paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
 
     success, scope = deprecate_authority_entry(paths, "ph18dl001")
@@ -1823,7 +1750,7 @@ def test_deprecate_authority_entry_returns_scope_for_shared_entry(tmp_path: Path
     initialize_memory_v2(paths)
 
     entry_line = "- Shared decision being deprecated. _(id: ph18ds001; status: active; scope: shared; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_"
-    authority_text = f"# ControlMesh Memory v2\n\n### Decision\n\n{entry_line}\n"
+    authority_text = f"# ControlMesh Memory\n\n### Decision\n\n{entry_line}\n"
     paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
 
     success, scope = deprecate_authority_entry(paths, "ph18ds001")
@@ -1839,7 +1766,7 @@ def test_dispute_authority_entry_returns_scope_for_local_entry(tmp_path: Path) -
     initialize_memory_v2(paths)
 
     entry_line = "- Local fact being disputed. _(id: ph18dpl001; status: active; scope: local; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_"
-    authority_text = f"# ControlMesh Memory v2\n\n### Fact\n\n{entry_line}\n"
+    authority_text = f"# ControlMesh Memory\n\n### Fact\n\n{entry_line}\n"
     paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
 
     success, scope = dispute_authority_entry(paths, "ph18dpl001")
@@ -1855,7 +1782,7 @@ def test_dispute_authority_entry_returns_scope_for_shared_entry(tmp_path: Path) 
     initialize_memory_v2(paths)
 
     entry_line = "- Shared decision being disputed. _(id: ph18dps001; status: active; scope: shared; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_"
-    authority_text = f"# ControlMesh Memory v2\n\n### Decision\n\n{entry_line}\n"
+    authority_text = f"# ControlMesh Memory\n\n### Decision\n\n{entry_line}\n"
     paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
 
     success, scope = dispute_authority_entry(paths, "ph18dps001")
@@ -1871,7 +1798,7 @@ def test_supersede_authority_entry_returns_scope_for_local_entry(tmp_path: Path)
     initialize_memory_v2(paths)
 
     entry_line = "- Local fact being superseded. _(id: ph18supl001; status: active; scope: local; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_"
-    authority_text = f"# ControlMesh Memory v2\n\n### Fact\n\n{entry_line}\n"
+    authority_text = f"# ControlMesh Memory\n\n### Fact\n\n{entry_line}\n"
     paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
 
     success, scope = supersede_authority_entry(paths, "ph18supl001", "new_entry_id")
@@ -1887,7 +1814,7 @@ def test_supersede_authority_entry_returns_scope_for_shared_entry(tmp_path: Path
     initialize_memory_v2(paths)
 
     entry_line = "- Shared decision being superseded. _(id: ph18sups001; status: active; scope: shared; source: memory/2026-04-25.md#L3; promoted: 2026-04-25)_"
-    authority_text = f"# ControlMesh Memory v2\n\n### Decision\n\n{entry_line}\n"
+    authority_text = f"# ControlMesh Memory\n\n### Decision\n\n{entry_line}\n"
     paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
 
     success, scope = supersede_authority_entry(paths, "ph18sups001", "new_entry_id")
@@ -1901,7 +1828,7 @@ def test_deprecate_authority_entry_not_found_returns_none_scope(tmp_path: Path) 
 
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
-    paths.authority_memory_path.write_text("# ControlMesh Memory v2\n", encoding="utf-8")
+    paths.authority_memory_path.write_text("# ControlMesh Memory\n", encoding="utf-8")
 
     success, scope = deprecate_authority_entry(paths, "nonexistent")
     assert success is False
@@ -1914,7 +1841,7 @@ def test_dispute_authority_entry_not_found_returns_none_scope(tmp_path: Path) ->
 
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
-    paths.authority_memory_path.write_text("# ControlMesh Memory v2\n", encoding="utf-8")
+    paths.authority_memory_path.write_text("# ControlMesh Memory\n", encoding="utf-8")
 
     success, scope = dispute_authority_entry(paths, "nonexistent")
     assert success is False
@@ -1927,7 +1854,7 @@ def test_supersede_authority_entry_not_found_returns_none_scope(tmp_path: Path) 
 
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
-    paths.authority_memory_path.write_text("# ControlMesh Memory v2\n", encoding="utf-8")
+    paths.authority_memory_path.write_text("# ControlMesh Memory\n", encoding="utf-8")
 
     success, scope = supersede_authority_entry(paths, "nonexistent", "new_id")
     assert success is False
@@ -1943,7 +1870,7 @@ def test_deprecate_authority_entry_legacy_entry_defaults_to_local_scope(tmp_path
 
     # Legacy entry format: no scope field in metadata
     entry_line = "- Legacy fact without scope. _(id: ph18leg001; status: active; source: memory/2026-04-01.md#L3; promoted: 2026-04-01)_"
-    authority_text = f"# ControlMesh Memory v2\n\n### Fact\n\n{entry_line}\n"
+    authority_text = f"# ControlMesh Memory\n\n### Fact\n\n{entry_line}\n"
     paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
 
     success, scope = deprecate_authority_entry(paths, "ph18leg001")
@@ -1961,7 +1888,7 @@ def test_dispute_authority_entry_legacy_entry_defaults_to_local_scope(tmp_path: 
 
     # Legacy entry format: no scope field in metadata
     entry_line = "- Legacy preference without scope. _(id: ph18leg002; status: active; source: memory/2026-04-01.md#L3; promoted: 2026-04-01)_"
-    authority_text = f"# ControlMesh Memory v2\n\n### Preference\n\n{entry_line}\n"
+    authority_text = f"# ControlMesh Memory\n\n### Preference\n\n{entry_line}\n"
     paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
 
     success, scope = dispute_authority_entry(paths, "ph18leg002")
@@ -1979,7 +1906,7 @@ def test_supersede_authority_entry_legacy_entry_defaults_to_local_scope(tmp_path
 
     # Legacy entry format: no scope field in metadata
     entry_line = "- Legacy decision without scope. _(id: ph18leg003; status: active; source: memory/2026-04-01.md#L3; promoted: 2026-04-01)_"
-    authority_text = f"# ControlMesh Memory v2\n\n### Decision\n\n{entry_line}\n"
+    authority_text = f"# ControlMesh Memory\n\n### Decision\n\n{entry_line}\n"
     paths.authority_memory_path.write_text(authority_text, encoding="utf-8")
 
     success, scope = supersede_authority_entry(paths, "ph18leg003", "new_entry")

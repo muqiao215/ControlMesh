@@ -9,7 +9,7 @@ Read in this order:
 
 1. the workspace runtime guide (main behavior + Telegram rules)
 2. the workspace tools guide (tool routing)
-3. `workspace/MEMORY.md`, `workspace/DREAMS.md`, `workspace/memory/`, and `workspace/memory_system/MAINMEMORY.md` (memory context)
+3. `workspace/MEMORY.md`, `workspace/DREAMS.md`, and `workspace/memory/` (memory context)
 4. the config guide (only for config changes)
 
 ## Top-Level Layout
@@ -57,7 +57,7 @@ for the full agent management command set.
 `~/.controlmesh/SHAREDMEMORY.md` contains facts shared across all agents
 (server info, user preferences, infrastructure). Changes are automatically
 synced into every agent's `workspace/MEMORY.md` authority and
-`workspace/memory_system/MAINMEMORY.md` compatibility layer by the Supervisor.
+`workspace/MEMORY.md` authority by the Supervisor.
 
 - For agent-specific knowledge: prefer your own durable memory files
   (`workspace/MEMORY.md`, `workspace/DREAMS.md`, and `workspace/memory/`).
@@ -73,5 +73,4 @@ Then tell the user to run `/restart`.
 - Save user-facing generated files in `workspace/output_to_user/` and send with
 `<file:/absolute/path/to/output_to_user/...>`.
 - Update durable memory silently when durable user facts or preferences are learned.
-  Prefer `workspace/MEMORY.md`; keep `workspace/memory_system/MAINMEMORY.md`
-  aligned when compatibility matters.
+  Use `workspace/MEMORY.md` as the sole durable memory file.

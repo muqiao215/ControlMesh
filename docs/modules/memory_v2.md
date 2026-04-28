@@ -7,9 +7,7 @@ Additive memory-v2 primitives inspired by OpenClaw's mature split between:
 - dream diary output (`DREAMS.md`)
 - machine-managed dreaming state (`memory/.dreams/`)
 
-`MEMORY.md` is now the primary durable memory surface.
-`memory_system/MAINMEMORY.md` remains only as a lazy compatibility layer that
-is created when legacy consumers still need it.
+`MEMORY.md` is now the sole durable memory surface.
 
 ## What Exists in Cut 2
 
@@ -18,9 +16,6 @@ is created when legacy consumers still need it.
 - `workspace/MEMORY.md`
   - human-readable durable authority for promoted items
   - grouped into fixed sections: `Fact`, `Preference`, `Decision`, `Project`, `Person`
-- `workspace/memory_system/MAINMEMORY.md`
-  - legacy compatibility mirror
-  - no longer seeded at workspace init; created lazily by compat sync
 - `workspace/memory/YYYY-MM-DD.md`
   - daily note skeleton with explicit `## Promotion Candidates`
 - `workspace/DREAMS.md`
@@ -193,8 +188,6 @@ conservative, not guaranteed exact per-entry attribution.
 - non-candidate daily-note hits remain scope-less in both exact and semantic
   search
 - `DREAMS.md` remains unchanged by scope-visibility work
-- `memory_system/MAINMEMORY.md` remains a compatibility mirror; this work does
-  not add a separate scope-specific presentation layer there
 
 Future contributors should treat this as the current boundary: scoped coverage
 is intentional on the surfaces above, and missing scope elsewhere is also

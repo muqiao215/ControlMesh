@@ -1,4 +1,4 @@
-"""File bootstrap helpers for ControlMesh memory-v2."""
+"""File bootstrap helpers for durable ControlMesh memory."""
 
 from __future__ import annotations
 
@@ -9,11 +9,10 @@ from controlmesh.infra.atomic_io import atomic_text_save
 from controlmesh.memory.models import DreamingSweepState
 from controlmesh.workspace.paths import ControlMeshPaths
 
-_AUTHORITY_TEMPLATE = """# ControlMesh Memory v2
+_AUTHORITY_TEMPLATE = """# ControlMesh Memory
 
 This file is the additive, human-readable authority for durable memory promoted
-from daily notes and future dreaming/search layers. It does not replace the
-legacy `memory_system/MAINMEMORY.md` yet.
+from daily notes and future dreaming/search layers.
 
 ## Durable Memory
 
@@ -33,6 +32,33 @@ _DREAM_DIARY_TEMPLATE = """# ControlMesh Dream Diary
 This file stores cross-day synthesis output. Entries are append-only and
 reviewable; machine state lives under `memory/.dreams/`.
 """
+
+
+_MEMORY_TEMPLATE_LINES = frozenset(
+    {
+        "# ControlMesh Memory",
+        "This file is the additive, human-readable authority for durable memory promoted",
+        "from daily notes and future dreaming/search layers.",
+        "## Durable Memory",
+        "### Fact",
+        "### Preference",
+        "### Decision",
+        "### Project",
+        "### Person",
+    }
+)
+
+
+def has_meaningful_memory_content(content: str) -> bool:
+    """Return True when ``MEMORY.md`` contains promoted memory entries."""
+    for raw_line in content.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line in _MEMORY_TEMPLATE_LINES:
+            continue
+        return True
+    return False
 
 
 def daily_note_path(paths: ControlMeshPaths, note_date: date) -> Path:

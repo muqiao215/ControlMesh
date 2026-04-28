@@ -29,4 +29,4 @@ clear progress/check commands.
 
 When creating scripts that indicate recurring user workflows or preferences,
 update durable memory silently. Prefer `MEMORY.md`; keep
-`memory_system/MAINMEMORY.md` aligned when compatibility matters.
+`MEMORY.md` is the sole durable memory file.

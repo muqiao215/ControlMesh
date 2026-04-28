@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from controlmesh.workspace.loader import read_file, read_mainmemory, read_startup_memory_context
+from controlmesh.workspace.loader import read_file, read_startup_memory_context
 from controlmesh.workspace.paths import ControlMeshPaths
 
 
@@ -34,47 +34,25 @@ def test_read_empty_file(tmp_path: Path) -> None:
     assert read_file(f) == ""
 
 
-# -- read_mainmemory --
-
-
-def test_read_mainmemory_exists(tmp_path: Path) -> None:
+def test_read_startup_memory_context_returns_meaningful_authority(tmp_path: Path) -> None:
     paths = _make_paths(tmp_path)
-    paths.memory_system_dir.mkdir(parents=True)
-    paths.mainmemory_path.write_text("# Memories\n- Learned X")
-    result = read_mainmemory(paths)
-    assert result == "# Memories\n- Learned X"
-
-
-def test_read_mainmemory_missing(tmp_path: Path) -> None:
-    paths = _make_paths(tmp_path)
-    assert read_mainmemory(paths) == ""
-
-
-def test_read_startup_memory_context_prefers_meaningful_authority_and_legacy(
-    tmp_path: Path,
-) -> None:
-    paths = _make_paths(tmp_path)
-    paths.memory_system_dir.mkdir(parents=True)
     paths.workspace.mkdir(parents=True, exist_ok=True)
     paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n## Durable Memory\n\n### Fact\n- File-backed context wins.\n",
+        "# ControlMesh Memory\n\n## Durable Memory\n\n### Fact\n- File-backed context wins.\n",
         encoding="utf-8",
     )
-    paths.mainmemory_path.write_text("legacy memory", encoding="utf-8")
 
     result = read_startup_memory_context(paths)
 
-    assert "Authority Memory (v2)" in result
+    assert "## Memory" in result
     assert "File-backed context wins." in result
-    assert "Legacy Compatibility Memory" in result
-    assert "legacy memory" in result
 
 
 def test_read_startup_memory_context_ignores_empty_authority_template(tmp_path: Path) -> None:
     paths = _make_paths(tmp_path)
     paths.workspace.mkdir(parents=True, exist_ok=True)
     paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n## Durable Memory\n\n### Fact\n\n### Preference\n",
+        "# ControlMesh Memory\n\n## Durable Memory\n\n### Fact\n\n### Preference\n",
         encoding="utf-8",
     )
 
@@ -87,7 +65,7 @@ def test_read_startup_memory_context_treats_shared_block_as_meaningful_authority
     paths = _make_paths(tmp_path)
     paths.workspace.mkdir(parents=True, exist_ok=True)
     paths.authority_memory_path.write_text(
-        "# ControlMesh Memory v2\n\n"
+        "# ControlMesh Memory\n\n"
         "## Durable Memory\n\n"
         "### Fact\n\n"
         "--- SHARED KNOWLEDGE START ---\n"
@@ -97,20 +75,5 @@ def test_read_startup_memory_context_treats_shared_block_as_meaningful_authority
     )
 
     result = read_startup_memory_context(paths)
-    assert "Authority Memory (v2)" in result
+    assert "## Memory" in result
     assert "Shared context only." in result
-
-
-def test_read_mainmemory_strips_authority_compat_mirror(tmp_path: Path) -> None:
-    paths = _make_paths(tmp_path)
-    paths.memory_system_dir.mkdir(parents=True)
-    paths.mainmemory_path.write_text(
-        "# Main Memory\n\n"
-        "--- MEMORY V2 COMPAT START ---\n"
-        "## Authority Memory (v2 compatibility mirror)\n\n"
-        "# ControlMesh Memory v2\n\n## Durable Memory\n\n### Decision\n- Keep state local.\n"
-        "--- MEMORY V2 COMPAT END ---\n",
-        encoding="utf-8",
-    )
-
-    assert read_mainmemory(paths) == "# Main Memory"

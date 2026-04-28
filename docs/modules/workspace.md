@@ -170,4 +170,4 @@ See `docs/modules/skill_system.md`.
 ## Loader helpers
 
 - `read_file(path) -> str | None`
-- `read_mainmemory(paths) -> str`
+- `read_startup_memory_context(paths) -> str`

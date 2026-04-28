@@ -67,7 +67,7 @@ from controlmesh.orchestrator.flows import (
 from controlmesh.orchestrator.hooks import (
     DELEGATION_BRIEF,
     DELEGATION_REMINDER,
-    MAINMEMORY_REMINDER,
+    MEMORY_REMINDER,
     MessageHookRegistry,
 )
 from controlmesh.orchestrator.observers import ObserverManager
@@ -200,7 +200,7 @@ class Orchestrator:
         self._api_stop: Callable[[], Awaitable[None]] | None = None
         self._inflight_tracker = InflightTracker(paths.inflight_turns_path)
         self._hook_registry = MessageHookRegistry()
-        self._hook_registry.register(MAINMEMORY_REMINDER)
+        self._hook_registry.register(MEMORY_REMINDER)
         self._hook_registry.register(DELEGATION_BRIEF)
         self._hook_registry.register(DELEGATION_REMINDER)
         self._supervisor: AgentSupervisor | None = None  # Set by AgentSupervisor after creation

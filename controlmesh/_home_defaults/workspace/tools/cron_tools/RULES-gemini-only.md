@@ -101,7 +101,7 @@ Do not edit task-folder provider rule files manually.
 
 Update durable memory silently with inferred preference signals from the user's
 requested automation (not just "created job"). Prefer `MEMORY.md`; keep
-`memory_system/MAINMEMORY.md` aligned when compatibility matters.
+`MEMORY.md` is the sole durable memory file.
 
 ## Pitfalls
 

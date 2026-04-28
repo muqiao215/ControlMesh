@@ -27,7 +27,7 @@ def test_initialize_memory_v2_bootstraps_layout(tmp_path: Path) -> None:
     assert paths.authority_memory_path.exists()
     assert paths.dream_diary_path.exists()
     assert paths.memory_v2_machine_state_dir.exists()
-    assert "ControlMesh Memory v2" in paths.authority_memory_path.read_text(encoding="utf-8")
+    assert "ControlMesh Memory" in paths.authority_memory_path.read_text(encoding="utf-8")
     assert "ControlMesh Dream Diary" in paths.dream_diary_path.read_text(encoding="utf-8")
 
     state = load_sweep_state(paths)

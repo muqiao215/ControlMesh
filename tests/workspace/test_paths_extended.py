@@ -24,11 +24,6 @@ def test_tools_dir(tmp_path: Path) -> None:
     assert p.tools_dir == p.workspace / "tools"
 
 
-def test_mainmemory_path(tmp_path: Path) -> None:
-    p = _paths(tmp_path)
-    assert p.mainmemory_path == p.workspace / "memory_system" / "MAINMEMORY.md"
-
-
 def test_config_example_path(tmp_path: Path) -> None:
     p = _paths(tmp_path)
     fw = tmp_path / "fw"

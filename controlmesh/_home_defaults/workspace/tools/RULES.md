@@ -46,5 +46,4 @@ No tool script needed — just create the file.
 
 - Save user deliverables in `../output_to_user/`.
 - Update durable memory silently for durable user facts/preferences.
-  Prefer `../MEMORY.md`; keep `../memory_system/MAINMEMORY.md` aligned when
-  compatibility matters.
+  Use `../MEMORY.md` as the sole durable memory file.

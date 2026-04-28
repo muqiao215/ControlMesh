@@ -206,7 +206,7 @@ HTTP statuses:
 
 After creating/editing webhook automation, update durable memory silently with
 inferred user workflow preferences and interests. Prefer `MEMORY.md`; keep
-`memory_system/MAINMEMORY.md` aligned when compatibility matters.
+`MEMORY.md` is the sole durable memory file.
 
 ## Per-Webhook Execution Overrides
 

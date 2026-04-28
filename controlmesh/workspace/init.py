@@ -288,7 +288,6 @@ def _clean_orphan_symlinks(paths: ControlMeshPaths) -> None:
 
 _REQUIRED_DIRS = (
     "workspace",
-    "workspace/memory_system",
     "workspace/cron_tasks",
     "workspace/tools",
     "workspace/tools/user_tools",

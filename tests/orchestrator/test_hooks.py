@@ -10,8 +10,8 @@ from controlmesh.cli.types import AgentResponse
 from controlmesh.orchestrator.core import Orchestrator
 from controlmesh.orchestrator.flows import normal
 from controlmesh.orchestrator.hooks import (
-    MAINMEMORY_REMINDER,
     HookContext,
+    MEMORY_REMINDER,
     MessageHook,
     MessageHookRegistry,
     every_n_messages,
@@ -103,17 +103,15 @@ class TestMessageHookRegistry:
 
 class TestMainmemoryReminder:
     def test_fires_on_6th(self) -> None:
-        assert MAINMEMORY_REMINDER.condition(_ctx(message_count=5)) is True
+        assert MEMORY_REMINDER.condition(_ctx(message_count=5)) is True
 
     def test_does_not_fire_on_5th(self) -> None:
-        assert MAINMEMORY_REMINDER.condition(_ctx(message_count=4)) is False
+        assert MEMORY_REMINDER.condition(_ctx(message_count=4)) is False
 
     def test_suffix_contains_key_phrases(self) -> None:
-        assert "MAINMEMORY.md" in MAINMEMORY_REMINDER.suffix
-        assert "MEMORY.md" in MAINMEMORY_REMINDER.suffix
-        assert "DREAMS.md" in MAINMEMORY_REMINDER.suffix
-        assert "compatibility context" in MAINMEMORY_REMINDER.suffix
-        assert "MEMORY CHECK" in MAINMEMORY_REMINDER.suffix
+        assert "MEMORY.md" in MEMORY_REMINDER.suffix
+        assert "DREAMS.md" in MEMORY_REMINDER.suffix
+        assert "MEMORY CHECK" in MEMORY_REMINDER.suffix
 
 
 # ---------------------------------------------------------------------------
@@ -155,8 +153,6 @@ async def test_hook_injects_into_prompt_on_6th_message(orch: Orchestrator) -> No
     request = sixth_call[0][0]
     assert "MEMORY CHECK" in request.prompt
     assert "MEMORY.md" in request.prompt
-    assert "memory_system/MAINMEMORY.md" in request.prompt
-    assert "compatibility context" in request.prompt
 
 
 async def test_hook_not_injected_before_6th(orch: Orchestrator) -> None:

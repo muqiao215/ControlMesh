@@ -46,7 +46,6 @@ def _format_overview(paths: ControlMeshPaths) -> str:
         ("matrix_files", paths.matrix_files_dir),
         ("tools", paths.tools_dir),
         ("cron_tasks", paths.cron_tasks_dir),
-        ("memory_system", paths.memory_system_dir),
         ("skills", paths.skills_dir),
     ]
 

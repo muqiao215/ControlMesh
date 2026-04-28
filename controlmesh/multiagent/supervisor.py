@@ -538,12 +538,9 @@ class AgentSupervisor:
             name=f"agent:{name}",
         )
 
-        # Sync shared knowledge into the new agent's v2 and legacy memory files.
+        # Sync shared knowledge into the new agent's durable memory file.
         if self._shared_knowledge:
-            await self._shared_knowledge.sync_agent(
-                stack.paths.mainmemory_path,
-                stack.paths.authority_memory_path,
-            )
+            await self._shared_knowledge.sync_agent(stack.paths.authority_memory_path)
 
         logger.info("Sub-agent '%s' started (home=%s)", name, agent_home)
 

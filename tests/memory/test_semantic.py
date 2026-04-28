@@ -95,7 +95,7 @@ def test_extract_authority_entries_parses_section_and_metadata(tmp_path: Path) -
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
     paths.authority_memory_path.write_text(
-        r"""# ControlMesh Memory v2
+        r"""# ControlMesh Memory
 
 ## Durable Memory
 
@@ -168,7 +168,7 @@ def test_sync_semantic_index_builds_json_sidecar(tmp_path: Path) -> None:
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
     paths.authority_memory_path.write_text(
-        r"""# ControlMesh Memory v2
+        r"""# ControlMesh Memory
 
 ## Durable Memory
 
@@ -211,7 +211,7 @@ def test_sync_semantic_index_is_rebuildable_and_deterministic(tmp_path: Path) ->
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
     paths.authority_memory_path.write_text(
-        r"""# ControlMesh Memory v2
+        r"""# ControlMesh Memory
 
 ## Durable Memory
 
@@ -246,7 +246,7 @@ def test_search_semantic_index_returns_similar_entries(tmp_path: Path) -> None:
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
     paths.authority_memory_path.write_text(
-        r"""# ControlMesh Memory v2
+        r"""# ControlMesh Memory
 
 ## Durable Memory
 
@@ -276,7 +276,7 @@ def test_search_semantic_index_covers_daily_note_entries(tmp_path: Path) -> None
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
     paths.authority_memory_path.write_text(
-        r"""# ControlMesh Memory v2
+        r"""# ControlMesh Memory
 
 ## Durable Memory
 
@@ -310,7 +310,7 @@ def test_search_semantic_index_returns_authority_entry_ids(tmp_path: Path) -> No
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
     paths.authority_memory_path.write_text(
-        r"""# ControlMesh Memory v2
+        r"""# ControlMesh Memory
 
 ## Durable Memory
 
@@ -332,7 +332,7 @@ def test_search_semantic_index_graceful_when_index_missing(tmp_path: Path) -> No
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
     paths.authority_memory_path.write_text(
-        r"""# ControlMesh Memory v2
+        r"""# ControlMesh Memory
 
 ## Durable Memory
 
@@ -357,7 +357,7 @@ def test_search_semantic_index_rebuild_flag(tmp_path: Path) -> None:
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
     paths.authority_memory_path.write_text(
-        r"""# ControlMesh Memory v2
+        r"""# ControlMesh Memory
 
 ## Durable Memory
 
@@ -370,7 +370,7 @@ def test_search_semantic_index_rebuild_flag(tmp_path: Path) -> None:
 
     # Add new entry
     paths.authority_memory_path.write_text(
-        r"""# ControlMesh Memory v2
+        r"""# ControlMesh Memory
 
 ## Durable Memory
 
@@ -396,7 +396,7 @@ def test_search_semantic_index_respects_limit(tmp_path: Path) -> None:
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
     paths.authority_memory_path.write_text(
-        r"""# ControlMesh Memory v2
+        r"""# ControlMesh Memory
 
 ## Durable Memory
 
@@ -417,7 +417,7 @@ def test_search_semantic_index_short_query_returns_empty(tmp_path: Path) -> None
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
     paths.authority_memory_path.write_text(
-        r"""# ControlMesh Memory v2
+        r"""# ControlMesh Memory
 
 ## Durable Memory
 
@@ -489,7 +489,7 @@ def test_search_semantic_index_returns_shared_scope_for_shared_authority_hit(tmp
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
     paths.authority_memory_path.write_text(
-        r"""# ControlMesh Memory v2
+        r"""# ControlMesh Memory
 
 ## Durable Memory
 
@@ -513,7 +513,7 @@ def test_search_semantic_index_returns_local_scope_for_local_authority_hit(tmp_p
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
     paths.authority_memory_path.write_text(
-        r"""# ControlMesh Memory v2
+        r"""# ControlMesh Memory
 
 ## Durable Memory
 
@@ -538,7 +538,7 @@ def test_search_semantic_index_defaults_to_local_for_legacy_entries(tmp_path: Pa
     initialize_memory_v2(paths)
     # Legacy format without scope field
     paths.authority_memory_path.write_text(
-        r"""# ControlMesh Memory v2
+        r"""# ControlMesh Memory
 
 ## Durable Memory
 
@@ -562,7 +562,7 @@ def test_search_semantic_index_daily_notes_have_no_scope(tmp_path: Path) -> None
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
     paths.authority_memory_path.write_text(
-        r"""# ControlMesh Memory v2
+        r"""# ControlMesh Memory
 
 ## Durable Memory
 
@@ -686,7 +686,7 @@ def test_search_semantic_index_scope_in_index_record(tmp_path: Path) -> None:
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
     paths.authority_memory_path.write_text(
-        r"""# ControlMesh Memory v2
+        r"""# ControlMesh Memory
 
 ## Durable Memory
 

@@ -24,7 +24,7 @@ def test_sync_memory_index_indexes_authority_dreams_and_daily_notes(tmp_path: Pa
     paths = _make_paths(tmp_path)
     initialize_memory_v2(paths)
     paths.authority_memory_path.write_text(
-        """# ControlMesh Memory v2
+        """# ControlMesh Memory
 
 ## Durable Memory
 

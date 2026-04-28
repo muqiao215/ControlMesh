@@ -10,7 +10,6 @@ from pathlib import Path
 
 from controlmesh.infra.atomic_io import atomic_text_save
 from controlmesh.infra.json_store import atomic_json_save, load_json
-from controlmesh.memory.compat import sync_authority_to_legacy_mainmemory
 from controlmesh.memory.models import (
     AuthorityEntryMetadata,
     LifecycleStatus,
@@ -155,7 +154,6 @@ def apply_candidates(
     for candidate in preview.selected:
         updated = _insert_candidate(updated, candidate, applied_on=applied_on)
     atomic_text_save(paths.authority_memory_path, updated)
-    sync_authority_to_legacy_mainmemory(paths, authority_text=updated)
 
     promotion_log = _load_promotion_log(paths)
     promoted_on = (applied_on or datetime.now(UTC).date()).isoformat()
@@ -358,7 +356,6 @@ def update_authority_entry_status(
 
     updated_text = "\n".join(updated_lines) + "\n"
     atomic_text_save(authority_path, updated_text)
-    sync_authority_to_legacy_mainmemory(paths, authority_text=updated_text)
     return (True, found_scope)
 
 

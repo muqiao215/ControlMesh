@@ -2,7 +2,7 @@
 """View or edit the shared knowledge file (SHAREDMEMORY.md).
 
 SHAREDMEMORY.md is automatically synced into every agent's MEMORY.md authority
-and MAINMEMORY.md compatibility layer by the AgentSupervisor. Use this tool to
+and MEMORY.md authority by the AgentSupervisor. Use this tool to
 read or update shared knowledge without needing to know the file path.
 
 Usage:

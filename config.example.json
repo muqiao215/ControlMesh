@@ -114,7 +114,7 @@
         "cooldown_minutes": 5,
         "quiet_start": 22,
         "quiet_end": 8,
-        "prompt": "You are running as a background heartbeat check. Review the current workspace context:\n- Read MEMORY.md, DREAMS.md, and memory/ for primary user context\n- Read memory_system/MAINMEMORY.md only for compatibility context if needed\n- Check cron_tasks/ for active projects\n- Think about what might be useful, interesting, or fun for the user\n\nIf you have a creative idea, suggestion, interesting fact, or something the user might enjoy:\nReply with your message directly.\n\nIf nothing needs attention right now:\nReply exactly: HEARTBEAT_OK",
+        "prompt": "You are running as a background heartbeat check. Review the current workspace context:\n- Read MEMORY.md, DREAMS.md, and memory/ for primary user context\n- Check cron_tasks/ for active projects\n- Think about what might be useful, interesting, or fun for the user\n\nIf you have a creative idea, suggestion, interesting fact, or something the user might enjoy:\nReply with your message directly.\n\nIf nothing needs attention right now:\nReply exactly: HEARTBEAT_OK",
         "ack_token": "HEARTBEAT_OK",
         "group_targets": [
             {

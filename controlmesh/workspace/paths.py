@@ -96,10 +96,6 @@ class ControlMeshPaths:
         return self.workspace / "api_files"
 
     @property
-    def memory_system_dir(self) -> Path:
-        return self.workspace / "memory_system"
-
-    @property
     def skills_dir(self) -> Path:
         return self.workspace / "skills"
 
@@ -165,13 +161,8 @@ class ControlMeshPaths:
         return self.controlmesh_home / ".env"
 
     @property
-    def mainmemory_path(self) -> Path:
-        """Legacy compatibility memory path, created lazily when compat sync needs it."""
-        return self.memory_system_dir / "MAINMEMORY.md"
-
-    @property
     def authority_memory_path(self) -> Path:
-        """Canonical long-term memory authority for the additive memory-v2 layer."""
+        """Canonical long-term durable memory authority."""
         return self.workspace / "MEMORY.md"
 
     @property

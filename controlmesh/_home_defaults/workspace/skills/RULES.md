@@ -42,4 +42,4 @@ To customize one, replace the symlink with a real directory of the same name.
 
 When the user creates or customizes skills, update durable memory silently with
 inferred interests and workflow preferences. Prefer `MEMORY.md`; keep
-`memory_system/MAINMEMORY.md` aligned when compatibility matters.
+`MEMORY.md` is the sole durable memory file.

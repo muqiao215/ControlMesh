@@ -158,8 +158,7 @@ This enables task submission from any agent while preserving owner routing.
 ## Shared knowledge sync
 
 `SharedKnowledgeSync` watches `~/.controlmesh/SHAREDMEMORY.md`, writes into each
-agent's `MEMORY.md`, and mirrors that authority content into
-`MAINMEMORY.md` only as a compatibility layer.
+agent's `MEMORY.md`.
 
 Legacy HTML marker format is migrated to current block markers when rewritten.
 

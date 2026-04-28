@@ -8,11 +8,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from controlmesh.infra.file_watcher import FileWatcher
-from controlmesh.memory.compat import (
-    _COMPAT_END_MARKER,
-    _COMPAT_START_MARKER,
-    sync_authority_text_to_legacy_mainmemory,
-)
 
 if TYPE_CHECKING:
     from controlmesh.multiagent.supervisor import AgentSupervisor
@@ -36,7 +31,7 @@ def _find_markers(text: str) -> tuple[str, str] | None:
     return None
 
 
-def _sync_agent_io(shared_path: Path, mainmemory_path: Path) -> bool:
+def _sync_agent_io(shared_path: Path, memory_path: Path) -> bool:
     """Synchronous file I/O for injecting shared knowledge into one agent.
 
     Returns True if the file was written.
@@ -48,10 +43,10 @@ def _sync_agent_io(shared_path: Path, mainmemory_path: Path) -> bool:
         return False
     inject_block = f"{_START_MARKER}\n{shared_content}\n{_END_MARKER}"
 
-    if not mainmemory_path.is_file():
+    if not memory_path.is_file():
         return False
 
-    current = mainmemory_path.read_text(encoding="utf-8")
+    current = memory_path.read_text(encoding="utf-8")
 
     markers = _find_markers(current)
     if markers:
@@ -65,74 +60,22 @@ def _sync_agent_io(shared_path: Path, mainmemory_path: Path) -> bool:
         new_content = f"{current.rstrip()}\n\n{inject_block}\n"
 
     if new_content != current:
-        mainmemory_path.write_text(new_content, encoding="utf-8")
+        memory_path.write_text(new_content, encoding="utf-8")
         return True
     return False
 
 
-def _remove_shared_block(memory_path: Path) -> bool:
-    """Remove direct shared-knowledge injection from a legacy target."""
-    if not memory_path.is_file():
-        return False
-
-    current = memory_path.read_text(encoding="utf-8")
-    if _COMPAT_START_MARKER in current and _COMPAT_END_MARKER in current:
-        compat_start = current.find(_COMPAT_START_MARKER)
-        compat_end = current.find(_COMPAT_END_MARKER) + len(_COMPAT_END_MARKER)
-        before_compat = current[:compat_start]
-        compat_block = current[compat_start:compat_end]
-        after_compat = current[compat_end:]
-        new_content = (
-            _remove_shared_block_from_segment(before_compat)
-            + compat_block
-            + _remove_shared_block_from_segment(after_compat)
-        )
-    else:
-        new_content = _remove_shared_block_from_segment(current)
-
-    if new_content == current:
-        return False
-
-    memory_path.write_text(new_content, encoding="utf-8")
-    return True
-
-
-def _remove_shared_block_from_segment(content: str) -> str:
-    """Remove a direct shared block from one content segment, if present."""
-    markers = _find_markers(content)
-    if markers is None:
-        return content
-
-    start, end = markers
-    before = content.split(start, 1)[0]
-    after_parts = content.split(end, 1)
-    after = after_parts[1] if len(after_parts) > 1 else ""
-    trimmed = (
-        f"{before.rstrip()}\n{after.lstrip()}"
-        if before.strip() and after.strip()
-        else before + after
-    )
-    return trimmed.rstrip() + ("\n" if trimmed.strip() else "")
-
-
 def _sync_agent_files(
     shared_path: Path,
-    mainmemory_path: Path,
     authority_memory_path: Path | None = None,
 ) -> tuple[Path, ...]:
-    """Sync shared knowledge into authority memory, then mirror legacy compat."""
+    """Sync shared knowledge into one agent's canonical memory file."""
     written: list[Path] = []
     if authority_memory_path is None or not authority_memory_path.is_file():
         return tuple(written)
 
     if _sync_agent_io(shared_path, authority_memory_path):
         written.append(authority_memory_path)
-
-    authority_text = authority_memory_path.read_text(encoding="utf-8")
-    removed_legacy_block = _remove_shared_block(mainmemory_path)
-    synced_legacy = sync_authority_text_to_legacy_mainmemory(mainmemory_path, authority_text)
-    if removed_legacy_block or synced_legacy:
-        written.append(mainmemory_path)
     return tuple(written)
 
 
@@ -148,10 +91,9 @@ class SharedKnowledgeSync:
     Legacy HTML comment markers (``<!-- SHARED:START/END -->``) are detected
     on read and automatically migrated to the new format on write.
 
-    Sync targets are:
+    Sync target:
 
-    - ``workspace/MEMORY.md`` (memory-v2 authority)
-    - ``workspace/memory_system/MAINMEMORY.md`` (legacy compatibility layer)
+    - ``workspace/MEMORY.md`` (durable memory authority)
     """
 
     def __init__(self, shared_path: Path, supervisor: AgentSupervisor) -> None:
@@ -174,8 +116,7 @@ class SharedKnowledgeSync:
             self._path.write_text(
                 "# Shared Knowledge — All Agents\n\n"
                 "Knowledge written here is automatically synced into every\n"
-                "agent's MEMORY.md authority and MAINMEMORY.md compatibility\n"
-                "layer by the Supervisor.\n",
+                "agent's MEMORY.md authority by the Supervisor.\n",
                 encoding="utf-8",
             )
             logger.info("Created seed SHAREDMEMORY.md at %s", self._path)
@@ -191,26 +132,20 @@ class SharedKnowledgeSync:
         logger.info("SHAREDMEMORY.md changed, syncing to all agents")
         await self._sync_all()
 
-    async def sync_agent(
-        self, mainmemory_path: Path, authority_memory_path: Path | None = None
-    ) -> None:
-        """Inject shared knowledge into a single agent's v2 and legacy memory files."""
+    async def sync_agent(self, authority_memory_path: Path | None = None) -> None:
+        """Inject shared knowledge into a single agent's durable memory file."""
         written = await asyncio.to_thread(
             _sync_agent_files,
             self._path,
-            mainmemory_path,
             authority_memory_path,
         )
         for path in written:
             logger.info("Synced shared knowledge to %s", path)
 
     async def _sync_all(self) -> None:
-        """Inject into all registered agents' v2 and legacy memory files."""
+        """Inject into all registered agents' durable memory files."""
         for name, stack in self._supervisor.stacks.items():
             try:
-                await self.sync_agent(
-                    stack.paths.mainmemory_path,
-                    stack.paths.authority_memory_path,
-                )
+                await self.sync_agent(stack.paths.authority_memory_path)
             except Exception:
                 logger.exception("Failed to sync shared knowledge to agent '%s'", name)
