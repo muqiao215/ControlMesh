@@ -31,19 +31,22 @@ from __future__ import annotations
 import os
 import sys
 
-from controlmesh.orchestrator.providers import normalize_provider_name
-
 
 _HELP_FLAGS = {"--help", "-h"}
 
 
-def _load_shared() -> tuple[object, object, object]:
+def _load_shared() -> tuple[object, object, object, object]:
     tools_dir = os.path.dirname(__file__)
     if tools_dir not in sys.path:
         sys.path.insert(0, tools_dir)
-    from _shared import detect_agent_name, get_api_url, post_json
+    from _shared import (
+        detect_agent_name,
+        get_api_url,
+        normalize_provider_name,
+        post_json,
+    )
 
-    return get_api_url, post_json, detect_agent_name
+    return get_api_url, post_json, detect_agent_name, normalize_provider_name
 
 
 def main() -> None:
@@ -52,7 +55,7 @@ def main() -> None:
         print((__doc__ or "").strip())
         return
 
-    get_api_url, post_json, detect_agent_name = _load_shared()
+    get_api_url, post_json, detect_agent_name, normalize_provider_name = _load_shared()
     name = ""
     provider = ""
     model = ""

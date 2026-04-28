@@ -1,4 +1,4 @@
-"""Shared HTTP helpers for task tool scripts."""
+"""Shared helpers for task tool scripts."""
 
 from __future__ import annotations
 
@@ -8,6 +8,9 @@ import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
+
+
+_PROVIDER_NAME_ALIASES = {"claw-code": "claw"}
 
 
 def detect_agent_name() -> str:
@@ -28,6 +31,12 @@ def detect_agent_name() -> str:
             return agent_home.name
     # Fallback to env var
     return os.environ.get("CONTROLMESH_AGENT_NAME", "main")
+
+
+def normalize_provider_name(provider: str | None) -> str:
+    """Normalize external provider aliases to internal provider IDs."""
+    normalized = (provider or "").strip().lower()
+    return _PROVIDER_NAME_ALIASES.get(normalized, normalized)
 
 
 def get_api_url(path: str) -> str:
