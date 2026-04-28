@@ -967,7 +967,8 @@ class TestCallbackQueryHandler:
 
         orch.handle_message_streaming.assert_called_once()
         sent_text = orch.handle_message_streaming.call_args[0][1]
-        assert "set up ControlMesh" in sent_text
+        assert "我们先互相认识" in sent_text
+        assert "Let's get to know each other" in sent_text
 
     async def test_welcome_callback_shows_button_label_in_indicator(self) -> None:
         tg_bot, bot_instance = _make_tg_bot()
@@ -978,7 +979,7 @@ class TestCallbackQueryHandler:
 
         call_kwargs = bot_instance.edit_message_text.call_args
         text = call_kwargs.kwargs["text"]
-        assert "Let&#x27;s get to know each other!" in text
+        assert "先认识一下 / Get Started" in text
         assert "w:1" not in text
 
     async def test_welcome_callback_unknown_key_returns_early(self) -> None:

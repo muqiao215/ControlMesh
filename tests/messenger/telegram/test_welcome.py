@@ -46,8 +46,10 @@ class TestBuildWelcomeText:
         }
         text = build_welcome_text("Alice", auth_results, _config(model="sonnet"))
 
+        assert "欢迎来到 ControlMesh, Alice" in text
         assert "Welcome to ControlMesh, Alice!" in text
-        assert "Claude Code + Codex authenticated" in text
+        assert "已认证 CLI: Claude Code + Codex" in text
+        assert "Authenticated CLI: Claude Code + Codex" in text
         assert "Sonnet" in text
 
     def test_only_claude_authenticated(self) -> None:
@@ -59,9 +61,10 @@ class TestBuildWelcomeText:
         }
         text = build_welcome_text("Bob", auth_results, _config(model="haiku"))
 
-        assert "Claude Code authenticated" in text
+        assert "已认证 CLI: Claude Code" in text
+        assert "Authenticated CLI: Claude Code" in text
         assert "Haiku" in text
-        assert "Codex authenticated" not in text
+        assert "已认证 CLI: Codex" not in text
 
     def test_only_codex_authenticated(self) -> None:
         from controlmesh.messenger.telegram.welcome import build_welcome_text
@@ -73,7 +76,7 @@ class TestBuildWelcomeText:
         cfg = _config(model="gpt-5.2-codex", provider="codex", reasoning_effort="high")
         text = build_welcome_text("Carol", auth_results, cfg)
 
-        assert "Codex authenticated" in text
+        assert "已认证 CLI: Codex" in text
         assert "gpt-5.2-codex" in text
 
     def test_only_gemini_authenticated(self) -> None:
@@ -87,7 +90,7 @@ class TestBuildWelcomeText:
         cfg = _config(model="gemini-2.5-pro", provider="gemini")
         text = build_welcome_text("Gina", auth_results, cfg)
 
-        assert "Gemini authenticated" in text
+        assert "已认证 CLI: Gemini" in text
         assert "gemini-2.5-pro" in text
 
     def test_no_providers_authenticated(self) -> None:
@@ -99,7 +102,8 @@ class TestBuildWelcomeText:
         }
         text = build_welcome_text("Dave", auth_results, _config())
 
-        assert "No CLI authenticated" in text
+        assert "还没有完成 CLI 认证" in text
+        assert "No CLI authenticated yet" in text
         assert "claude auth" in text
         assert "codex auth" in text
 
@@ -108,19 +112,20 @@ class TestBuildWelcomeText:
 
         text = build_welcome_text("Eve", {}, _config())
 
-        assert "No CLI authenticated" in text
+        assert "No CLI authenticated yet" in text
 
     def test_user_name_present(self) -> None:
         from controlmesh.messenger.telegram.welcome import build_welcome_text
 
         text = build_welcome_text("Zara", {}, _config())
+        assert "欢迎来到 ControlMesh, Zara" in text
         assert "Welcome to ControlMesh, Zara!" in text
 
     def test_user_name_empty(self) -> None:
         from controlmesh.messenger.telegram.welcome import build_welcome_text
 
         text = build_welcome_text("", {}, _config())
-        assert "Welcome to ControlMesh!" in text
+        assert "欢迎来到 ControlMesh / Welcome to ControlMesh!" in text
         assert "Welcome to ControlMesh, " not in text
 
     def test_static_content_present(self) -> None:
@@ -128,9 +133,9 @@ class TestBuildWelcomeText:
 
         text = build_welcome_text("X", {}, _config())
 
-        assert "Chat-native task runtime" in text
-        assert "background tasks, memory" in text
-        assert "Claude Code" in text
+        assert "多智能体协作平台" in text
+        assert "Multi-agent collaboration for real work." in text
+        assert "任务拆解、智能分发、执行协同、结果汇总、长期记忆" in text
         assert "/model" in text
         assert "/help" in text
         assert "/info" in text
@@ -173,6 +178,8 @@ class TestBuildAuthBlock:
         block = _build_auth_block(auth_results, _config(model="opus"))
 
         assert "Claude Code + Codex" in block
+        assert "已认证 CLI:" in block
+        assert "Authenticated CLI:" in block
         assert "Opus" in block
 
     def test_codex_only_shows_model(self) -> None:
@@ -185,7 +192,7 @@ class TestBuildAuthBlock:
         cfg = _config(model="gpt-5.1-codex-mini", provider="codex", reasoning_effort="low")
         block = _build_auth_block(auth_results, cfg)
 
-        assert "Codex authenticated" in block
+        assert "已认证 CLI: Codex" in block
         assert "gpt-5.1-codex-mini" in block
 
     def test_claude_missing_from_dict(self) -> None:
@@ -194,7 +201,7 @@ class TestBuildAuthBlock:
         auth_results: dict[str, AuthResult] = {"codex": _auth("codex")}
         block = _build_auth_block(auth_results, _config(provider="codex"))
 
-        assert "Codex authenticated" in block
+        assert "Authenticated CLI: Codex" in block
 
     def test_codex_missing_from_dict(self) -> None:
         from controlmesh.messenger.telegram.welcome import _build_auth_block
@@ -202,7 +209,7 @@ class TestBuildAuthBlock:
         auth_results: dict[str, AuthResult] = {"claude": _auth("claude")}
         block = _build_auth_block(auth_results, _config(model="sonnet"))
 
-        assert "Claude Code authenticated" in block
+        assert "Authenticated CLI: Claude Code" in block
         assert "Sonnet" in block
 
 
@@ -297,9 +304,9 @@ class TestResolveWelcomeCallback:
     @pytest.mark.parametrize(
         ("key", "expected_substring"),
         [
-            ("w:1", "ControlMesh"),
-            ("w:2", "system"),
-            ("w:3", "introduce"),
+            ("w:1", "互相认识"),
+            ("w:2", "巡检"),
+            ("w:3", "介绍你自己"),
         ],
     )
     def test_known_keys_return_prompt(self, key: str, expected_substring: str) -> None:

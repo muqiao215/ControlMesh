@@ -266,33 +266,42 @@ unknown_action = "Unknown action. Refreshed cron list."
 # -- Welcome (Telegram) -------------------------------------------------------
 
 [welcome]
-header = "**Welcome to ControlMesh{name}!**"
+header = "**欢迎来到 ControlMesh{name} / Welcome to ControlMesh{name}!**"
 tagline = """\
-Chat-native task runtime for Claude Code, Codex & Gemini.
-Sessions, background tasks, memory, and tool routing -- straight from Telegram."""
-hint_model = "/model — switch models"
-hint_info = "/info — docs & links"
-hint_help = "/help — all commands"
+多智能体协作平台，让复杂工作自动跑起来。
+任务拆解、智能分发、执行协同、结果汇总、长期记忆。
 
-no_auth = "No CLI authenticated yet. Run `claude auth`, `codex auth`, or authenticate in `gemini` to get started."
-auth_line = "{providers} authenticated.\nModel: **{model}**"
+Multi-agent collaboration for real work.
+Break tasks down, route them, execute together, deliver results, and keep durable memory."""
+hint_model = "/model — 切换模型 / switch models"
+hint_info = "/info — 文档与链接 / docs & links"
+hint_help = "/help — 全部命令 / all commands"
 
-btn_know = "Let's get to know each other!"
-btn_system = "Check out the system!"
-btn_who = "Who are you? Who am I?"
+no_auth = """\
+还没有完成 CLI 认证。请运行 `claude auth`、`codex auth`，或在 `gemini` 中完成认证后开始。
+No CLI authenticated yet. Run `claude auth`, `codex auth`, or authenticate in `gemini` to get started."""
+auth_line = """\
+已认证 CLI: {providers}
+当前模型: **{model}**
+Authenticated CLI: {providers}
+Current model: **{model}**"""
+
+btn_know = "先认识一下 / Get Started"
+btn_system = "看看系统 / Explore System"
+btn_who = "你是谁 / Who Are You"
 
 prompt_know = """\
-Hey, I just set up ControlMesh and I want you to get to know me. \
-Ask me everything you need to know so we can work well together -- \
-my name, what I do, what I'm working on, how I like to communicate. \
-Save what you learn to your memory."""
+我们先互相认识。请优先用中文了解我是谁、我在做什么、正在推进什么项目、我的沟通偏好，以及你应该长期记住的信息，并把关键信息写入记忆。
+
+Let's get to know each other. Ask what you need to know about me, my work, current projects, communication preferences, and anything you should remember long term. Save the key facts to memory."""
 prompt_system = """\
-Take a look around the system you're running on. \
-Check the OS, installed tools, project folders, whatever you find interesting. \
-Give me a quick summary of what you see."""
+请先巡检你当前运行的系统和工作区：操作系统、可用工具、仓库、工作目录，以及任何会影响协作的关键信息。先用中文总结，再补一段简短英文 summary。
+
+Inspect the system and workspace you're running in: OS, installed tools, repos, working directories, and anything important for collaboration. Summarize in Chinese first, then add a short English summary."""
 prompt_who = """\
-Let's get started! Introduce yourself -- who are you, what can you do for me? \
-Then ask me who I am and what I need help with."""
+先用中文、再用英文介绍你自己：你是谁、你能做什么、你会如何与我协作。然后问我是谁，以及我现在最需要你解决什么问题。
+
+Introduce yourself in Chinese first, then in English: who you are, what you can do, and how you work with me. Then ask who I am and what I need help with right now."""
 
 # -- Info ----------------------------------------------------------------------
 
