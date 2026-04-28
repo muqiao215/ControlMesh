@@ -16,7 +16,8 @@ from typing import TYPE_CHECKING
 
 from controlmesh.bus.bus import MessageBus
 from controlmesh.bus.lock_pool import LockPool
-from controlmesh.commands import BOT_COMMANDS, MULTIAGENT_SUB_COMMANDS
+from controlmesh.command_registry import is_command_available_for_agent
+from controlmesh.commands import get_bot_commands
 from controlmesh.config import AgentConfig
 from controlmesh.files.allowed_roots import resolve_allowed_roots
 from controlmesh.i18n import t
@@ -399,6 +400,12 @@ class MatrixBot:
             text = "/" + text[1:]
         key = SessionKey.matrix(chat_id)
 
+        if not is_command_available_for_agent(cmd, agent_name=self._agent_name) and classify_command(
+            cmd
+        ) != "unknown":
+            await self._send_rich(room_id, self._build_help_text())
+            return
+
         handler = self._COMMAND_DISPATCH.get(cmd)
         if handler is not None:
             if cmd in self._IMMEDIATE_COMMANDS:
@@ -644,28 +651,34 @@ class MatrixBot:
     )
 
     def _build_help_text(self) -> str:
-        """Build help text with commands grouped by category.
+        """Build help text from the shared registry with a small curated tail."""
+        cmd_desc = dict(get_bot_commands(agent_name=self._agent_name))
 
-        Grouping and ordering are intentional — descriptions
-        come from BOT_COMMANDS but the categories are curated
-        manually.
-        """
-        cmd_desc = {**dict(BOT_COMMANDS), **dict(MULTIAGENT_SUB_COMMANDS)}
+        def _line(command: str, description: str | None = None) -> str:
+            if not is_command_available_for_agent(command, agent_name=self._agent_name):
+                return ""
+            desc = description if description is not None else cmd_desc.get(command, "")
+            if not desc:
+                desc = command.replace("_", " ")
+            return f"`!{command}` — {desc}"
 
-        def _line(c: str) -> str:
-            desc = cmd_desc.get(c, "")
-            return f"`!{c}` — {desc}" if desc else f"`!{c}`"
+        visible_lines = [line for line in (_line(command) for command in cmd_desc) if line]
+        extra_lines = [
+            line
+            for line in (
+                _line("showfiles"),
+                _line("info"),
+                _line("restart"),
+                _line("agent_commands"),
+            )
+            if line
+        ]
 
         return fmt(
             t("help.header"),
             SEP,
-            f"**{t('help.cat_daily')}**\n{_line('new')}\n{_line('stop')}\n{_line('stop_all')}\n"
-            f"{_line('model')}\n{_line('status')}\n{_line('memory')}",
-            f"**{t('help.cat_automation')}**\n{_line('session')}\n{_line('tasks')}\n{_line('cron')}",
-            f"**{t('help.cat_multiagent')}**\n{_line('agent_commands')}\n{_line('agents')}\n"
-            f"{_line('agent_start')}\n{_line('agent_stop')}\n{_line('agent_restart')}",
-            f"**{t('help.cat_browse')}**\n{_line('showfiles')}\n{_line('info')}\n{_line('help')}",
-            f"**{t('help.cat_maintenance')}**\n{_line('diagnose')}\n{_line('upgrade')}\n{_line('restart')}",
+            "**ControlMesh**\n" + "\n".join(visible_lines),
+            "**More**\n" + "\n".join(extra_lines) if extra_lines else "",
             SEP,
             t("help.matrix_footer"),
         )

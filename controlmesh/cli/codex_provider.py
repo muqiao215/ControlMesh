@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import AsyncGenerator
 from pathlib import Path
 from shutil import which
@@ -14,6 +15,7 @@ from controlmesh.cli.base import (
     CLIConfig,
     docker_wrap,
 )
+from controlmesh.cli.introspection import ProviderIntrospection, auth_status_for_provider, probe_command_output
 from controlmesh.cli.codex_events import (
     CodexThinkingFilter,
     parse_codex_jsonl,
@@ -32,6 +34,7 @@ from controlmesh.cli.stream_events import (
     SystemInitEvent,
 )
 from controlmesh.cli.types import CLIResponse
+from controlmesh.native_commands import fallback_native_commands
 
 if TYPE_CHECKING:
     from controlmesh.cli.timeout_controller import TimeoutController
@@ -215,6 +218,27 @@ class CodexCLI(BaseCLI):
             post_handler=post_handler,
         ):
             yield event
+
+    async def introspect(self) -> ProviderIntrospection:
+        """Return runtime/native-command state for Codex CLI."""
+        version, errors = await probe_command_output(
+            [self._cli, "--version"],
+            cwd=self._working_dir,
+            timeout_seconds=1.0,
+        )
+        return ProviderIntrospection(
+            provider="codex",
+            model=self._config.model or "",
+            installed=True,
+            executable=self._cli,
+            version=version,
+            auth_status=auth_status_for_provider("codex"),
+            permission_mode=self._config.permission_mode,
+            native_commands=fallback_native_commands("codex"),
+            supports_live_command_registry=False,
+            errors=errors,
+            expires_at=time.time() + 120.0,
+        )
 
     @staticmethod
     def _parse_output(

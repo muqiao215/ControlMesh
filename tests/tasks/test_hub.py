@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from controlmesh.config import AgentConfig
+from controlmesh.routing.score_events import read_score_events
 from controlmesh.tasks.hub import TaskHub
 from controlmesh.tasks.models import TaskResult, TaskSubmit
 from controlmesh.tasks.registry import TaskRegistry
+from controlmesh.workspace.paths import ControlMeshPaths
 
 
 @pytest.fixture
@@ -209,6 +212,81 @@ class TestSubmit:
         assert entry.provider == "claude"
         assert entry.model == "opus"
         assert entry.workunit_kind == "test_execution"
+
+        await hub.shutdown()
+
+    async def test_workunit_writes_evaluation_and_score_event(
+        self,
+        registry: TaskRegistry,
+        tmp_path: Path,
+    ) -> None:
+        paths = ControlMeshPaths(controlmesh_home=tmp_path / "home")
+
+        async def _execute_with_evidence(request: object) -> MagicMock:
+            task_id = request.process_label.removeprefix("task:")
+            folder = registry.task_folder(task_id)
+            (folder / "EVIDENCE.json").write_text(
+                json.dumps(
+                    {
+                        "task_id": task_id,
+                        "workunit_kind": "code_review",
+                        "status": "done",
+                        "summary": "Reviewed the diff with evidence.",
+                        "items": [
+                            {
+                                "kind": "finding",
+                                "title": "Diff inspected",
+                                "command": "git diff main",
+                                "exit_code": 0,
+                            }
+                        ],
+                        "verification_commands": ["git diff --check"],
+                        "confidence": 0.9,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            response = MagicMock()
+            response.result = "review output"
+            response.session_id = "sess-1"
+            response.is_error = False
+            response.timed_out = False
+            response.num_turns = 1
+            return response
+
+        cli = _make_cli_service("review output")
+        cli.execute = AsyncMock(side_effect=_execute_with_evidence)
+        hub = TaskHub(
+            registry,
+            paths,
+            cli_service=cli,
+            config=_make_config(),
+            runtime_config=AgentConfig(controlmesh_home=str(tmp_path)),
+        )
+        delivered: list[TaskResult] = []
+        hub.set_result_handler("main", AsyncMock(side_effect=delivered.append))
+
+        submit = _submit(prompt="Review the current diff", name="Review diff")
+        submit.route = "auto"
+        submit.workunit_kind = "code_review"
+        submit.target = "git diff main"
+        task_id = hub.submit(submit)
+        await asyncio.sleep(0.1)
+
+        folder = registry.task_folder(task_id)
+        assert (folder / "WORKUNIT.json").is_file()
+        assert (folder / "RESULT.md").is_file()
+        assert (folder / "EVALUATION.json").is_file()
+        evaluation = json.loads((folder / "EVALUATION.json").read_text(encoding="utf-8"))
+        assert evaluation["decision"] == "accept"
+        assert delivered
+        assert "Evaluator Verdict" in delivered[0].result_text
+
+        events = read_score_events(paths.routing_score_events_path)
+        assert len(events) == 1
+        assert events[0].agent_slot
+        assert events[0].success is True
+        assert events[0].evidence_quality >= 0.55
 
         await hub.shutdown()
 

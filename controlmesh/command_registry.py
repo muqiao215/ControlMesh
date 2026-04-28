@@ -88,6 +88,14 @@ def is_controlmesh_owned_command(text_or_cmd: str) -> bool:
     return get_command_spec(text_or_cmd) is not None
 
 
+def is_command_available_for_agent(text_or_cmd: str, *, agent_name: str = "main") -> bool:
+    """Return True when the command is owned and allowed for the current agent."""
+    spec = get_command_spec(text_or_cmd)
+    if spec is None:
+        return False
+    return not (spec.main_agent_only and agent_name != "main")
+
+
 def classify_command(text_or_cmd: str) -> str:
     """Classify a command as direct/orchestrator/multiagent/unknown."""
     spec = get_command_spec(text_or_cmd)

@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from controlmesh.cli.introspection import ProviderIntrospection
 from controlmesh.cli.stream_events import StreamEvent
 from controlmesh.cli.types import CLIResponse
 
@@ -226,3 +227,15 @@ class BaseCLI(ABC):
         timeout_seconds: float | None = None,
         timeout_controller: TimeoutController | None = None,
     ) -> AsyncGenerator[StreamEvent, None]: ...
+
+    async def introspect(self) -> ProviderIntrospection:
+        """Return provider runtime/native-command state."""
+        return ProviderIntrospection(
+            provider=self._config.provider,
+            model=self._config.model or "",
+            installed=False,
+            executable="",
+            auth_status="unknown",
+            permission_mode=self._config.permission_mode,
+            errors=("introspection not implemented",),
+        )

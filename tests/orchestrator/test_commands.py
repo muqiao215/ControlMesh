@@ -129,7 +129,8 @@ async def test_cm_without_nested_command_switches_to_native_registry(
 
     result = await cmd_controlmesh(orch, key, "/cm")
 
-    assert "Native Commands: Claude" in result.text
+    assert "**Native Commands**" in result.text
+    assert "Provider: `claude`" in result.text
     assert "/clear" in result.text
     assert "/compact" in result.text
     assert "/remote-control" in result.text
@@ -152,8 +153,9 @@ async def test_cm_uses_active_provider_for_native_registry(orch: Orchestrator) -
 
     result = await cmd_controlmesh(orch, key, "/cm")
 
-    assert "Native Commands: Codex" in result.text
-    assert "ControlMesh 已注册命令仍由 ControlMesh 处理" in result.text
+    assert "**Native Commands**" in result.text
+    assert "Provider: `codex`" in result.text
+    assert "只有未注册的 `/xxx` 才透传给当前 CLI" in result.text
 
     session = await orch._sessions.get_active(key)
     assert session is not None

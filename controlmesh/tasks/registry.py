@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import secrets
 import shutil
@@ -11,6 +12,7 @@ from typing import Any
 
 from controlmesh.infra.json_store import atomic_json_save, load_json
 from controlmesh.messenger.address import ChatRef
+from controlmesh.tasks.evidence import result_path, write_evidence_template
 from controlmesh.tasks.models import TaskEntry, TaskSubmit
 from controlmesh.tasks.task_policy import build_task_agent_rules
 
@@ -126,6 +128,7 @@ class TaskRegistry:
             workunit_kind=submit.workunit_kind,
             required_capabilities=list(submit.required_capabilities),
             evaluator=submit.evaluator,
+            route_slot=submit.route_slot,
             command=submit.command,
             target=submit.target,
             evidence=submit.evidence,
@@ -284,3 +287,37 @@ def _seed_task_folder(
     for name in ("CLAUDE.md", "AGENTS.md", "GEMINI.md"):
         rules_path = folder / name
         rules_path.write_text(rules_content, encoding="utf-8")
+
+    workunit_path = folder / "WORKUNIT.json"
+    if not workunit_path.exists():
+        payload = {
+            "task_id": entry.task_id,
+            "name": entry.name,
+            "workunit_kind": entry.workunit_kind,
+            "route": entry.route,
+            "route_reason": entry.route_reason,
+            "provider": provider,
+            "model": model,
+            "topology": entry.topology,
+            "command": entry.command,
+            "target": entry.target,
+            "evidence": entry.evidence,
+            "required_capabilities": list(entry.required_capabilities),
+            "evaluator": entry.evaluator,
+            "route_slot": entry.route_slot,
+        }
+        workunit_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    write_evidence_template(
+        folder,
+        task_id=entry.task_id,
+        workunit_kind=entry.workunit_kind,
+    )
+
+    result_file = result_path(folder)
+    if not result_file.exists():
+        result_file.write_text(
+            f"# Result: {entry.name}\n\n"
+            "Write the final worker-facing result here before finishing.\n",
+            encoding="utf-8",
+        )

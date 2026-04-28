@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections.abc import AsyncGenerator
 from pathlib import Path
 from shutil import which
@@ -15,6 +16,7 @@ from controlmesh.cli.base import (
     CLIConfig,
     docker_wrap,
 )
+from controlmesh.cli.introspection import ProviderIntrospection, auth_status_for_provider, probe_command_output
 from controlmesh.cli.executor import (
     SubprocessSpec,
     run_oneshot_subprocess,
@@ -25,6 +27,7 @@ from controlmesh.cli.stream_events import (
     parse_stream_line,
 )
 from controlmesh.cli.types import CLIResponse
+from controlmesh.native_commands import fallback_native_commands
 
 if TYPE_CHECKING:
     from controlmesh.cli.timeout_controller import TimeoutController
@@ -149,6 +152,27 @@ class ClaudeCodeCLI(BaseCLI):
             provider_label="CLI",
         ):
             yield event
+
+    async def introspect(self) -> ProviderIntrospection:
+        """Return runtime/native-command state for Claude Code."""
+        version, errors = await probe_command_output(
+            [self._cli, "--version"],
+            cwd=self._working_dir,
+            timeout_seconds=1.0,
+        )
+        return ProviderIntrospection(
+            provider="claude",
+            model=self._config.model or "",
+            installed=True,
+            executable=self._cli,
+            version=version,
+            auth_status=auth_status_for_provider("claude"),
+            permission_mode=self._config.permission_mode,
+            native_commands=fallback_native_commands("claude"),
+            supports_live_command_registry=False,
+            errors=errors,
+            expires_at=time.time() + 120.0,
+        )
 
 
 async def _claude_line_handler(line: str) -> AsyncGenerator[StreamEvent, None]:

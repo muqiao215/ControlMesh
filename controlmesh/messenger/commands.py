@@ -8,6 +8,13 @@ from __future__ import annotations
 
 from controlmesh.command_registry import COMMAND_SPECS, CommandTarget, classify_command
 
+__all__ = [
+    "DIRECT_COMMANDS",
+    "MULTIAGENT_COMMANDS",
+    "ORCHESTRATOR_COMMANDS",
+    "classify_command",
+]
+
 # Compatibility exports derived from the shared command ownership registry.
 DIRECT_COMMANDS: frozenset[str] = frozenset(
     name for name, spec in COMMAND_SPECS.items() if spec.target is CommandTarget.DIRECT

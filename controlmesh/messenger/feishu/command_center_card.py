@@ -36,7 +36,6 @@ def build_command_center_card(
         f"Progress mode: `{config.feishu.progress_mode}`"
     )
     commands = _command_center_markdown(
-        config,
         agent_name=agent_name,
         runtime_note=runtime_note,
     )
@@ -68,21 +67,27 @@ def build_command_center_card(
 
 
 def build_native_command_card(
-    config: AgentConfig,
     *,
+    config: AgentConfig | None = None,
     agent_name: str = "main",
+    body_markdown: str | None = None,
     note: str | None = None,
 ) -> dict[str, Any]:
     """Build the Feishu-visible native slash command registry."""
-    runtime_note = (
-        f"Feishu runtime: `{config.feishu.runtime_mode}`\n"
-        f"Progress mode: `{config.feishu.progress_mode}`"
-    )
-    commands = _native_command_markdown(
-        config,
-        agent_name=agent_name,
-        runtime_note=runtime_note,
-    )
+    if body_markdown is None:
+        if config is None:
+            msg = "config is required when body_markdown is not provided"
+            raise ValueError(msg)
+        runtime_note = (
+            f"Feishu runtime: `{config.feishu.runtime_mode}`\n"
+            f"Progress mode: `{config.feishu.progress_mode}`"
+        )
+        commands = _native_command_markdown(
+            agent_name=agent_name,
+            runtime_note=runtime_note,
+        )
+    else:
+        commands = body_markdown
 
     elements: list[dict[str, Any]] = [{"tag": "markdown", "content": commands}]
     if note:
@@ -158,10 +163,15 @@ def build_command_guide_text(
         f"Feishu runtime: {config.feishu.runtime_mode}\n"
         f"Progress mode: {config.feishu.progress_mode}"
     )
+    visible = dict(get_bot_commands(agent_name=agent_name))
     controlmesh_lines = [
-        f"/{cmd} — {desc}"
-        for cmd, desc in get_bot_commands(agent_name=agent_name)
-        if cmd in {"cm", "back", "status", "model", "tasks", "settings", "help"}
+        f"/cm — {visible.get('cm', '打开 Native Commands')}",
+        "/back — 返回 ControlMesh 命令",
+        *[
+            f"/{cmd} — {visible[cmd]}"
+            for cmd in ("status", "model", "tasks", "settings", "help")
+            if cmd in visible
+        ],
     ]
     guide_lines = [
         "ControlMesh 已接入。",
@@ -184,7 +194,6 @@ def build_command_guide_text(
 
 
 def _command_center_markdown(
-    config: AgentConfig,
     *,
     agent_name: str,
     runtime_note: str,
@@ -202,7 +211,6 @@ def _command_center_markdown(
 
 
 def _native_command_markdown(
-    config: AgentConfig,
     *,
     agent_name: str,
     runtime_note: str,

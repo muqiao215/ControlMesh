@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 from controlmesh.routing.capabilities import (
+    AgentSlot,
     CapabilityRegistry,
     default_capability_registry,
     load_capability_registry,
@@ -15,7 +17,8 @@ from controlmesh.routing.policy import (
     detect_workunit_kind,
     normalize_topology,
 )
-from controlmesh.routing.scorer import rank_slots
+from controlmesh.routing.scorer import RouteScoringContext, rank_slots
+from controlmesh.routing.scorer import SlotRuntimeState
 from controlmesh.routing.workunit import WorkUnit, build_workunit_contract, requirements_for_kind
 
 
@@ -48,6 +51,8 @@ def resolve_route(
     topology: str = "",
     required_capabilities: tuple[str, ...] = (),
     registry: CapabilityRegistry | None = None,
+    scoring_context: RouteScoringContext | None = None,
+    slot_state_resolver: Callable[[AgentSlot], SlotRuntimeState | None] | None = None,
 ) -> RouteDecision | None:
     """Resolve a task route when routing is enabled or explicitly requested."""
     routing_cfg = getattr(config, "agent_routing", None)
@@ -85,7 +90,15 @@ def resolve_route(
         requirements=requirements,
     )
     registry = registry or _registry_from_config(config)
-    ranked = rank_slots(registry.candidates(mode="background"), unit)
+    candidates = registry.candidates(mode="background")
+    if slot_state_resolver is not None:
+        states = dict((scoring_context or RouteScoringContext()).slot_state)
+        for slot in candidates:
+            state = slot_state_resolver(slot)
+            if state is not None:
+                states[slot.name] = state
+        scoring_context = RouteScoringContext(slot_state=states)
+    ranked = rank_slots(candidates, unit, scoring_context)
     if not ranked:
         return None
 

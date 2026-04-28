@@ -32,6 +32,7 @@ class TaskSubmit:
     evidence: str = ""
     required_capabilities: list[str] = field(default_factory=list)
     evaluator: str = ""
+    route_slot: str = ""
 
 
 @dataclass(slots=True)
@@ -64,6 +65,7 @@ class TaskEntry:
     route_reason: str = ""
     required_capabilities: list[str] = field(default_factory=list)
     evaluator: str = ""
+    route_slot: str = ""
     command: str = ""
     target: str = ""
     evidence: str = ""
@@ -97,6 +99,7 @@ class TaskEntry:
             "route_reason": self.route_reason,
             "required_capabilities": list(self.required_capabilities),
             "evaluator": self.evaluator,
+            "route_slot": self.route_slot,
             "command": self.command,
             "target": self.target,
             "evidence": self.evidence,
@@ -134,6 +137,7 @@ class TaskEntry:
             route_reason=d.get("route_reason", ""),
             required_capabilities=list(d.get("required_capabilities") or []),
             evaluator=d.get("evaluator", ""),
+            route_slot=d.get("route_slot", ""),
             command=d.get("command", ""),
             target=d.get("target", ""),
             evidence=d.get("evidence", ""),

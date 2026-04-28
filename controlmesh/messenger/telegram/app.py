@@ -19,7 +19,7 @@ from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 from aiogram.filters import Command, CommandStart
 from aiogram.types import BotCommand, ChatMemberUpdated, FSInputFile, ReplyParameters
 
-from controlmesh.command_registry import CommandTarget, get_command_names
+from controlmesh.command_registry import CommandTarget, get_command_names, is_command_available_for_agent
 from controlmesh.bus.bus import MessageBus
 from controlmesh.bus.lock_pool import LockPool
 from controlmesh.commands import BOT_COMMANDS as _COMMAND_DEFS
@@ -904,6 +904,9 @@ class TelegramBot:
         if self._is_for_others(message):
             return
         if self._config.group_mention_only and not self._is_addressed(message):
+            return
+        if not is_command_available_for_agent("stop_all", agent_name=self._agent_name):
+            await self._on_help(message)
             return
         await handle_abort_all(
             self._orchestrator,

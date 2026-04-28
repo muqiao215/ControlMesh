@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from collections.abc import AsyncGenerator
 from pathlib import Path
 from shutil import which
@@ -12,8 +13,10 @@ from typing import TYPE_CHECKING, Any
 
 from controlmesh.cli.base import BaseCLI, CLIConfig, docker_wrap
 from controlmesh.cli.executor import SubprocessSpec, run_oneshot_subprocess
+from controlmesh.cli.introspection import ProviderIntrospection, auth_status_for_provider, probe_command_output
 from controlmesh.cli.stream_events import ResultEvent, StreamEvent, SystemInitEvent
 from controlmesh.cli.types import CLIResponse
+from controlmesh.native_commands import fallback_native_commands
 
 if TYPE_CHECKING:
     from controlmesh.cli.timeout_controller import TimeoutController
@@ -118,6 +121,27 @@ class ClawCLI(BaseCLI):
             result=response.result,
             is_error=response.is_error,
             returncode=response.returncode,
+        )
+
+    async def introspect(self) -> ProviderIntrospection:
+        """Return runtime/native-command state for Claw."""
+        version, errors = await probe_command_output(
+            [self._cli, "--version"],
+            cwd=self._working_dir,
+            timeout_seconds=1.0,
+        )
+        return ProviderIntrospection(
+            provider="claw",
+            model=self._config.model or "",
+            installed=True,
+            executable=self._cli,
+            version=version,
+            auth_status=auth_status_for_provider("claw"),
+            permission_mode=self._config.permission_mode,
+            native_commands=fallback_native_commands("claw"),
+            supports_live_command_registry=False,
+            errors=errors,
+            expires_at=time.time() + 120.0,
         )
 
     async def _read_state_session_id(self, timeout_seconds: float | None) -> str | None:

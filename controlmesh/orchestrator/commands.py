@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 from dataclasses import dataclass
 from datetime import date
@@ -36,6 +37,12 @@ from controlmesh.memory.commands import (
 from controlmesh.memory.frequency import find_repeated_patterns, render_patterns_summary
 from controlmesh.memory.promotion import parse_authority_entry
 from controlmesh.memory.semantic import search_semantic_index
+from controlmesh.cli.introspection import ProviderIntrospection, auth_status_for_provider
+from controlmesh.native_commands import (
+    fallback_native_commands,
+    render_native_command_registry,
+    render_native_runtime_summary,
+)
 from controlmesh.orchestrator.registry import OrchestratorResult
 from controlmesh.orchestrator.selectors.cron_selector import cron_selector_start
 from controlmesh.orchestrator.selectors.model_selector import model_selector_start, switch_model
@@ -69,38 +76,6 @@ _DEFAULT_HISTORY_LIMIT = 6
 _MAX_HISTORY_LIMIT = 20
 _CONTROL_MODE = "cm"
 _NATIVE_COMMAND_PROVIDERS = frozenset({"claude", "codex", "gemini", "claw", "opencode"})
-_CLAUDE_NATIVE_COMMANDS = (
-    "- `/add-dir` 添加工作目录\n"
-    "- `/agents` 管理 Claude agents\n"
-    "- `/bug` 上报 Claude Code 问题\n"
-    "- `/clear` 清空当前上下文\n"
-    "- `/compact` 压缩上下文\n"
-    "- `/config` Claude Code 配置\n"
-    "- `/cost` 查看用量成本\n"
-    "- `/doctor` 诊断 Claude Code 环境\n"
-    "- `/help` Claude 原生帮助\n"
-    "- `/ide` IDE 集成\n"
-    "- `/init` 初始化项目上下文\n"
-    "- `/install-github-app` 安装 GitHub App\n"
-    "- `/login` 登录 Claude\n"
-    "- `/logout` 退出 Claude\n"
-    "- `/mcp` 管理 MCP server\n"
-    "- `/memory` Claude 记忆\n"
-    "- `/model` Claude 模型选择\n"
-    "- `/permissions` Claude 工具权限\n"
-    "- `/pr_comments` 拉取 PR 评论\n"
-    "- `/review` 代码审查\n"
-    "- `/status` Claude 会话状态\n"
-    "- `/terminal-setup` 终端集成\n"
-    "- `/vim` Vim 模式\n"
-    "- `/remote-control` Claude Remote Control\n"
-    "- `/rc` Remote Control 简写\n"
-)
-_GENERIC_NATIVE_COMMANDS = (
-    "- 发送该 CLI 支持的 `/xxx` 原生命令\n"
-    "- 例如 Codex/OpenCode/Gemini/Claw-Code 自己实现的 slash commands\n"
-    "- ControlMesh 已注册命令仍由 ControlMesh 处理，避免 `/model`、`/help` 被误吞\n"
-)
 _CONTROL_MESH_REGISTRY = (
     "**ControlMesh 命令**\n\n"
     "- `/new` 新会话\n"
@@ -299,19 +274,6 @@ async def _cmd_settings_messaging_update(
     return None
 
 
-def _native_registry_text(provider: str, model: str) -> str:
-    label = _command_menu_label(provider).removeprefix("Native: ")
-    command_lines = _CLAUDE_NATIVE_COMMANDS if provider == "claude" else _GENERIC_NATIVE_COMMANDS
-    return (
-        f"**Native Commands: {label}**\n\n"
-        f"Target model: `{model}`\n\n"
-        f"{command_lines}"
-        "- `/back` 返回 ControlMesh 命令\n\n"
-        "当前菜单：Native Commands。ControlMesh 命令仍优先由 ControlMesh 处理；"
-        "未注册的 `/xxx` 会直接发给当前 CLI。"
-    )
-
-
 async def _switch_to_native_registry(
     orch: Orchestrator,
     key: SessionKey,
@@ -335,7 +297,38 @@ async def _switch_to_native_registry(
         preserve_existing_target=True,
     )
     await orch._sessions.sync_command_mode(session, mode=provider, model=model)
-    return OrchestratorResult(text=_native_registry_text(provider, model), buttons=_CLAUDE_NATIVE_BUTTONS)
+    snapshot = await _safe_provider_snapshot(orch, provider=provider, model=model)
+    return OrchestratorResult(
+        text=render_native_command_registry(snapshot),
+        buttons=_CLAUDE_NATIVE_BUTTONS,
+    )
+
+
+async def _safe_provider_snapshot(
+    orch: Orchestrator,
+    *,
+    provider: str,
+    model: str,
+) -> ProviderIntrospection:
+    """Return a provider snapshot, tolerating older sync mocks in tests."""
+    method = getattr(orch.cli_service, "introspect", None)
+    if callable(method):
+        snapshot = method(provider=provider, model=model)
+        if inspect.isawaitable(snapshot):
+            resolved = await snapshot
+            if isinstance(resolved, ProviderIntrospection):
+                return resolved
+        elif isinstance(snapshot, ProviderIntrospection):
+            return snapshot
+    auth_status = auth_status_for_provider(provider)
+    return ProviderIntrospection(
+        provider=provider,
+        model=model,
+        installed=auth_status != "not_found",
+        auth_status=auth_status,
+        permission_mode=getattr(orch._config, "permission_mode", ""),
+        native_commands=fallback_native_commands(provider),
+    )
 
 
 async def cmd_controlmesh(orch: Orchestrator, key: SessionKey, text: str) -> OrchestratorResult:
@@ -1093,7 +1086,11 @@ async def _build_status(orch: Orchestrator, key: SessionKey) -> str:
         return t("status.model_line_configured", model=model_name, configured=configured_model)
 
     session = await orch._sessions.get_active(key)
+    native_provider = ""
+    native_model = ""
     if session:
+        native_provider = session.provider
+        native_model = session.model
         topic_line = (
             f"{t('status.topic_line', topic=session.topic_name)}\n" if session.topic_name else ""
         )
@@ -1107,6 +1104,8 @@ async def _build_status(orch: Orchestrator, key: SessionKey) -> str:
             f"{_model_line(session.model)}"
         )
     else:
+        native_provider = _runtime_provider
+        native_model = runtime_model
         session_block = f"{t('status.no_session')}\n{_model_line(runtime_model)}"
 
     bg_tasks = orch.active_background_tasks(key.chat_id)
@@ -1128,11 +1127,17 @@ async def _build_status(orch: Orchestrator, key: SessionKey) -> str:
     auth_block = t("status.auth_header") + "\n" + "\n".join(auth_lines)
 
     agent_block = _build_agent_health_block(orch)
+    native_block = ""
+    if native_provider in _NATIVE_COMMAND_PROVIDERS:
+        snapshot = await _safe_provider_snapshot(orch, provider=native_provider, model=native_model)
+        native_block = render_native_runtime_summary(snapshot)
 
     blocks = [t("status.header"), SEP, session_block]
     if bg_block:
         blocks += [SEP, bg_block]
     blocks += [SEP, auth_block]
+    if native_block:
+        blocks += [SEP, native_block]
     if agent_block:
         blocks += [SEP, agent_block]
     return fmt(*blocks)

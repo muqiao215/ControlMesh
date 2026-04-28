@@ -120,6 +120,11 @@ class ControlMeshPaths:
         return self.controlmesh_home / "tasks.json"
 
     @property
+    def routing_score_events_path(self) -> Path:
+        """Append-only WorkUnit routing outcome events."""
+        return self.controlmesh_home / "routing" / "score_events.jsonl"
+
+    @property
     def transcripts_dir(self) -> Path:
         """Frontstage-visible transcript storage root."""
         return self.controlmesh_home / "transcripts"

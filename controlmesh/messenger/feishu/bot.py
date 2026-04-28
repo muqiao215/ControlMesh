@@ -554,16 +554,21 @@ class FeishuBot:
     ) -> bool:
         command = normalize_command_name(message.text)
         if command == "cm":
+            native_text: str | None = None
             if self._orchestrator is not None:
-                await self._orchestrator.handle_message(
+                result = await self._orchestrator.handle_message(
                     SessionKey.for_transport("fs", chat_id, topic_id),
                     "/cm",
                 )
+                native_text = getattr(result, "text", None)
+                if native_text is not None and "/" not in native_text:
+                    native_text = None
             await self._send_card_to_chat_ref(
                 message.chat_id,
                 build_native_command_card(
-                    self._effective_config(),
+                    config=self._effective_config(),
                     agent_name=self._agent_name,
+                    body_markdown=native_text,
                 ),
                 reply_to_message_id=reply_to_message_id,
             )

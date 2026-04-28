@@ -7,6 +7,7 @@ import contextlib
 import json
 import logging
 import os
+import time
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,11 +30,13 @@ from controlmesh.cli.gemini_utils import (
     find_gemini_cli,
     find_gemini_cli_js,
 )
+from controlmesh.cli.introspection import ProviderIntrospection, auth_status_for_provider, probe_command_output
 from controlmesh.cli.stream_events import ResultEvent, StreamEvent, SystemInitEvent
 from controlmesh.cli.types import CLIResponse
 from controlmesh.config import NULLISH_TEXT_VALUES
 from controlmesh.infra.platform import CREATION_FLAGS as _CREATION_FLAGS
 from controlmesh.infra.process_tree import force_kill_process_tree
+from controlmesh.native_commands import fallback_native_commands
 from controlmesh.workspace.paths import resolve_paths
 
 if TYPE_CHECKING:
@@ -277,6 +280,29 @@ class GeminiCLI(BaseCLI):
                 yield final_event
         finally:
             await _cleanup_file(system_prompt_path)
+
+    async def introspect(self) -> ProviderIntrospection:
+        """Return runtime/native-command state for Gemini CLI."""
+        command = ["node", self._cli_js, "--version"] if self._cli_js else [self._cli, "--version"]
+        version, errors = await probe_command_output(
+            command,
+            cwd=self._working_dir,
+            env=self._prepare_env(),
+            timeout_seconds=1.0,
+        )
+        return ProviderIntrospection(
+            provider="gemini",
+            model=self._config.model or "",
+            installed=True,
+            executable=self._cli_js or self._cli,
+            version=version,
+            auth_status=auth_status_for_provider("gemini"),
+            permission_mode=self._config.permission_mode,
+            native_commands=fallback_native_commands("gemini"),
+            supports_live_command_registry=False,
+            errors=errors,
+            expires_at=time.time() + 120.0,
+        )
 
     async def _stream_events(
         self,

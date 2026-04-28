@@ -9,6 +9,7 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from controlmesh.infra.json_store import atomic_json_save, load_json
@@ -19,14 +20,27 @@ from controlmesh.memory.runtime_capture import (
 )
 from controlmesh.messenger.address import ChatRef, TopicRef
 from controlmesh.runtime import RuntimeEvent, RuntimeEventStore
+from controlmesh.routing.capabilities import AgentSlot
 from controlmesh.routing.router import resolve_route
+from controlmesh.routing.score_events import (
+    RouteScoreEvent,
+    append_score_event,
+    read_score_events,
+    summarize_score_events,
+)
+from controlmesh.routing.scorer import SlotRuntimeState, state_from_score_stats
 from controlmesh.session import SessionKey
+from controlmesh.tasks.evaluator import (
+    EvaluatorDecision,
+    EvaluatorVerdict,
+    deterministic_verdict,
+    write_verdict,
+)
+from controlmesh.tasks.evidence import evidence_path, load_evidence, result_path
 from controlmesh.tasks.models import TaskEntry, TaskInFlight, TaskResult, TaskSubmit
 from controlmesh.team.contracts import ensure_team_topology
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from controlmesh.cli.service import CLIService
     from controlmesh.config import AgentConfig, TasksConfig
     from controlmesh.tasks.registry import TaskRegistry
@@ -64,7 +78,18 @@ python3 tools/task_tools/check_task_updates.py
 Use it before expensive or irreversible steps, before finalizing output, and
 periodically during longer runs. Treat new parent updates as newer instructions.
 
-After finishing, update your task memory: {taskmemory_path}
+Before finishing, update these task artifacts in your task folder:
+1. TASKMEMORY.md: {taskmemory_path}
+2. EVIDENCE.json: {evidence_path}
+3. RESULT.md: {result_path}
+
+EVIDENCE.json is mandatory for routed WorkUnits. It must include:
+- exact commands run and exit codes
+- files inspected or changed
+- important logs, excerpts, or findings
+- verification commands where applicable
+- remaining risks
+- confidence
 """
 
 _RESUME_REMINDER = """
@@ -74,13 +99,31 @@ REMINDER: You are a background task agent with NO direct user access.
 - Need more info? Use: python3 tools/task_tools/ask_parent.py "question"
 - Need to see whether the parent changed requirements? Use: python3 tools/task_tools/check_task_updates.py
 - Do NOT put questions in your response — the user cannot see them.
-- When done, write your final results to: {taskmemory_path}
+- When done, update TASKMEMORY.md, EVIDENCE.json, and RESULT.md in your task folder.
 """
 
 
 def _format_workunit_contract(*, contract: str, reason: str) -> str:
     """Attach router-selected WorkUnit instructions before the user prompt."""
     return f"{contract}\n\nRoute decision: {reason}"
+
+
+def _auth_status_is_routable(status: str) -> bool | None:
+    """Map provider auth status strings to routing availability."""
+    normalized = status.strip().lower()
+    if normalized in {"authenticated", "installed"}:
+        return True
+    if normalized in {"not_found", "unavailable", "missing"}:
+        return False
+    return None
+
+
+def _routing_score_events_path(paths: object) -> str | Path | None:
+    """Return a real score-events path, avoiding MagicMock test paths."""
+    raw = getattr(paths, "routing_score_events_path", None)
+    if isinstance(raw, (str, Path)):
+        return raw
+    return None
 
 
 class TaskHub:
@@ -194,11 +237,13 @@ class TaskHub:
                 name=submit.name,
                 topology=topology,
                 required_capabilities=tuple(submit.required_capabilities),
+                slot_state_resolver=self._route_slot_state_resolver(),
             )
             if decision is not None:
                 submit.workunit_kind = decision.workunit.kind.value
                 submit.required_capabilities = list(decision.required_capabilities)
                 submit.evaluator = submit.evaluator or decision.evaluator
+                submit.route_slot = decision.slot_name
                 if not provider:
                     provider = decision.provider
                 if not model:
@@ -234,11 +279,16 @@ class TaskHub:
 
         # Build prompt with mandatory suffix
         taskmemory = self._registry.taskmemory_path(entry.task_id)
+        task_folder = self._registry.task_folder(entry.task_id)
         full_prompt = (
             f"{workunit_contract}\n\n---\nOriginal task prompt:\n{submit.prompt}"
             if workunit_contract
             else submit.prompt
-        ) + TASK_PROMPT_SUFFIX.format(taskmemory_path=taskmemory)
+        ) + TASK_PROMPT_SUFFIX.format(
+            taskmemory_path=taskmemory,
+            evidence_path=evidence_path(task_folder),
+            result_path=result_path(task_folder),
+        )
 
         self._spawn(entry, full_prompt, thinking)
 
@@ -250,6 +300,46 @@ class TaskHub:
             entry.provider or "(parent default)",
         )
         return entry.task_id
+
+    def _route_slot_state_resolver(self) -> Callable[[AgentSlot], SlotRuntimeState | None]:
+        """Build a sync-safe resolver for routing health/history signals."""
+        score_path = _routing_score_events_path(self._paths)
+        events = read_score_events(score_path) if score_path is not None else ()
+        stats_by_slot = summarize_score_events(events)
+        cli = self._cli_service
+
+        def resolve(slot: AgentSlot) -> SlotRuntimeState | None:
+            historical = stats_by_slot.get(slot.name)
+            base = state_from_score_stats(historical) if historical is not None else None
+            snapshot = None
+            cached_introspection = getattr(cli, "cached_introspection", None)
+            if callable(cached_introspection) and slot.provider:
+                with contextlib.suppress(Exception):
+                    snapshot = cached_introspection(provider=slot.provider, model=slot.model)
+
+            if snapshot is None:
+                return base
+
+            healthy = bool(snapshot.healthy)
+            authenticated = _auth_status_is_routable(snapshot.auth_status)
+            reason_parts = [
+                f"provider={snapshot.provider}",
+                f"auth={snapshot.auth_status}",
+                f"installed={snapshot.installed}",
+            ]
+            if base is not None and base.reason:
+                reason_parts.append(base.reason)
+            return SlotRuntimeState(
+                healthy=healthy,
+                authenticated=authenticated,
+                recent_success_rate=base.recent_success_rate if base else 0.5,
+                evidence_quality=base.evidence_quality if base else 0.5,
+                cost_penalty=base.cost_penalty if base else 0.0,
+                latency_penalty=base.latency_penalty if base else 0.0,
+                reason=", ".join(reason_parts),
+            )
+
+        return resolve
 
     def resume(self, task_id: str, follow_up: str, *, parent_agent: str = "") -> str:
         """Resume a completed task's CLI session with a follow-up. Returns task_id."""
@@ -610,11 +700,48 @@ class TaskHub:
 
             result_text = response.result or ""
             session_id = response.session_id or ""
+            verdict = None
 
             # Append TASKMEMORY.md content so the parent gets the full picture
             if status == "done":
+                task_folder = self._registry.task_folder(entry.task_id)
                 taskmemory = self._registry.taskmemory_path(entry.task_id)
                 result_text = _append_taskmemory(result_text, taskmemory)
+                if entry.workunit_kind or entry.evaluator:
+                    evidence = load_evidence(task_folder)
+                    verdict = deterministic_verdict(
+                        evidence,
+                        workunit_kind=entry.workunit_kind,
+                    )
+                    write_verdict(task_folder, verdict)
+                    result_text = _append_evaluator_verdict(result_text, verdict)
+                    if verdict.decision is not EvaluatorDecision.ACCEPT:
+                        self._registry.update_status(
+                            entry.task_id,
+                            status,
+                            error=verdict.summary,
+                        )
+
+            if entry.route == "auto" and entry.workunit_kind:
+                quality = verdict.quality if verdict is not None else 0.0
+                success = status == "done" and (
+                    verdict is None or verdict.decision is EvaluatorDecision.ACCEPT
+                )
+                score_path = _routing_score_events_path(self._paths)
+                if score_path is not None:
+                    append_score_event(
+                        score_path,
+                        RouteScoreEvent(
+                            agent_slot=entry.route_slot or entry.provider or "unknown",
+                            workunit_kind=entry.workunit_kind,
+                            success=success,
+                            elapsed_seconds=elapsed,
+                            evidence_quality=quality,
+                            needed_human_fix=bool(
+                                verdict and verdict.decision is not EvaluatorDecision.ACCEPT
+                            ),
+                        ),
+                    )
 
             # Append resume hint so the parent agent knows it can follow up
             if status == "done" and session_id:
@@ -809,6 +936,26 @@ def _append_taskmemory(result_text: str, taskmemory_path: Path) -> str:
         content = content[:_TASKMEMORY_MAX_LEN] + "\n[... truncated]"
 
     return f"{result_text}\n\n---\nCONTENT FROM TASKMEMORY.MD ({taskmemory_path}):\n\n{content}"
+
+
+def _append_evaluator_verdict(result_text: str, verdict: EvaluatorVerdict) -> str:
+    """Append the deterministic evaluator verdict for the parent controller."""
+    lines = [
+        result_text,
+        "",
+        "---",
+        "## Evaluator Verdict",
+        f"- decision: `{verdict.decision.value}`",
+        f"- quality: `{verdict.quality:.2f}`",
+        f"- summary: {verdict.summary}",
+    ]
+    if verdict.required_followups:
+        lines.append("- required follow-ups:")
+        lines.extend(f"  - {item}" for item in verdict.required_followups)
+    if verdict.risks:
+        lines.append("- risks:")
+        lines.extend(f"  - {item}" for item in verdict.risks)
+    return "\n".join(lines)
 
 
 def _read_task_updates(updates_path: Path) -> list[dict[str, Any]]:

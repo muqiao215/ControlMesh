@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 from controlmesh.cli.base import CLIConfig
 from controlmesh.cli.factory import create_cli
+from controlmesh.cli.introspection import ProviderIntrospection
 from controlmesh.cli.stream_events import (
     AssistantTextDelta,
     CompactBoundaryEvent,
@@ -146,6 +147,7 @@ class CLIService:
         self._models = models
         self._available_providers = available_providers
         self._process_registry = process_registry
+        self._introspection_cache: dict[tuple[str, str], ProviderIntrospection] = {}
 
     def update_available_providers(self, providers: frozenset[str]) -> None:
         self._available_providers = providers
@@ -345,6 +347,70 @@ class CLIService:
             return self._config.provider, request.model_override or self._config.default_model
         model = request.model_override or self._config.default_model
         return self._models.provider_for(model), model
+
+    async def introspect(
+        self,
+        *,
+        provider: str = "",
+        model: str = "",
+        fresh: bool = False,
+    ) -> ProviderIntrospection:
+        """Return a cached provider runtime/native-command snapshot."""
+        request = AgentRequest(
+            prompt="",
+            provider_override=provider or None,
+            model_override=model or None,
+            chat_id=0,
+            process_label="provider-introspection",
+            timeout_seconds=10.0,
+        )
+        resolved_provider, resolved_model = self.resolve_provider(request)
+        key = (resolved_provider, resolved_model)
+        cached = self._introspection_cache.get(key)
+        now = time.time()
+        if cached is not None and not fresh and (cached.expires_at <= 0 or cached.expires_at > now):
+            return cached
+
+        try:
+            cli = self._make_cli(request)
+            snapshot = await cli.introspect()
+        except Exception as exc:
+            logger.exception("Provider introspection failed provider=%s model=%s", resolved_provider, resolved_model)
+            snapshot = ProviderIntrospection(
+                provider=resolved_provider,
+                model=resolved_model,
+                installed=False,
+                auth_status="unknown",
+                errors=(str(exc),),
+                expires_at=now + 30.0,
+            )
+
+        self._introspection_cache[key] = snapshot
+        return snapshot
+
+    def cached_introspection(
+        self,
+        *,
+        provider: str = "",
+        model: str = "",
+    ) -> ProviderIntrospection | None:
+        """Return a non-expired cached introspection snapshot without probing."""
+        request = AgentRequest(
+            prompt="",
+            provider_override=provider or None,
+            model_override=model or None,
+            chat_id=0,
+            process_label="provider-introspection-cache",
+            timeout_seconds=0.0,
+        )
+        resolved_provider, resolved_model = self.resolve_provider(request)
+        cached = self._introspection_cache.get((resolved_provider, resolved_model))
+        if cached is None:
+            return None
+        now = time.time()
+        if cached.expires_at > 0 and cached.expires_at <= now:
+            return None
+        return cached
 
     def _make_cli(self, request: AgentRequest) -> BaseCLI:
         """Create a BaseCLI instance for the given request."""
