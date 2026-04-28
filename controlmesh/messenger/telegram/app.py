@@ -19,6 +19,7 @@ from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 from aiogram.filters import Command, CommandStart
 from aiogram.types import BotCommand, ChatMemberUpdated, FSInputFile, ReplyParameters
 
+from controlmesh.command_registry import CommandTarget, get_command_names
 from controlmesh.bus.bus import MessageBus
 from controlmesh.bus.lock_pool import LockPool
 from controlmesh.commands import BOT_COMMANDS as _COMMAND_DEFS
@@ -127,9 +128,12 @@ def _rebuild_commands() -> None:
 
 def _bot_commands_for_agent(agent_name: str) -> list[BotCommand]:
     """Return the Telegram popup commands applicable to one agent."""
-    if agent_name == "main":
-        return _BOT_COMMANDS
-    return [command for command in _BOT_COMMANDS if command.command != "agents"]
+    from controlmesh.commands import get_bot_commands
+
+    return [
+        BotCommand(command=cmd, description=desc)
+        for cmd, desc in get_bot_commands(agent_name=agent_name)
+    ]
 
 
 def _help_line(command: str) -> str:
@@ -395,20 +399,10 @@ class TelegramBot:
         r.message(Command("tasks", ignore_case=True))(self._on_tasks)
         r.message(Command("showfiles", ignore_case=True))(self._on_showfiles)
         r.message(Command("agent_commands", ignore_case=True))(self._on_agent_commands)
-        base_cmds = [
-            "status",
-            "memory",
-            "history",
-            "model",
-            "cm",
-            "back",
-            "settings",
-            "cron",
-            "diagnose",
-            "upgrade",
-        ]
-        if self._agent_name == "main":
-            base_cmds += ["agents", "agent_start", "agent_stop", "agent_restart"]
+        base_cmds = get_command_names(
+            agent_name=self._agent_name,
+            targets=frozenset({CommandTarget.ORCHESTRATOR, CommandTarget.MULTIAGENT}),
+        )
         for cmd in base_cmds:
             r.message(Command(cmd, ignore_case=True))(self._on_command)
         r.message(F.forum_topic_created)(self._on_forum_topic_created)

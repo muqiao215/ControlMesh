@@ -409,6 +409,8 @@ class TestFeishuBotRouting:
         self,
         tmp_path: Path,
     ) -> None:
+        from controlmesh.commands import get_bot_commands
+
         bot = _make_bot(tmp_path)
         bot._orchestrator = _make_settings_orchestrator(bot, tmp_path)
         bot._send_card_to_chat_ref = AsyncMock(return_value="om_help")  # type: ignore[method-assign]
@@ -432,10 +434,56 @@ class TestFeishuBotRouting:
             for element in card["elements"]
             if element.get("tag") == "markdown"
         ]
-        assert any("`/cm`" in block for block in markdown_blocks)
-        assert any("`/settings`" in block for block in markdown_blocks)
+        for command, _desc in get_bot_commands():
+            assert any(f"`/{command}`" in block for block in markdown_blocks)
         assert any("`/feishu_auth_useful`" in block for block in markdown_blocks)
         bot._orchestrator.handle_message_streaming.assert_not_awaited()
+
+    async def test_worker_help_card_excludes_main_only_commands(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        from controlmesh.commands import get_bot_commands
+
+        bot = FeishuBot(
+            AgentConfig(
+                transport="feishu",
+                transports=["feishu"],
+                controlmesh_home=str(tmp_path),
+                provider="claude",
+                model="sonnet",
+                feishu={
+                    "mode": "bot_only",
+                    "brand": "feishu",
+                    "app_id": "cli_123",
+                    "app_secret": "sec_456",
+                },
+            ),
+            agent_name="worker",
+        )
+        bot.send_text = AsyncMock()  # type: ignore[method-assign]
+        bot.broadcast_text = AsyncMock()  # type: ignore[method-assign]
+        bot._orchestrator = _make_settings_orchestrator(bot, tmp_path)
+        bot._send_card_to_chat_ref = AsyncMock(return_value="om_help")  # type: ignore[method-assign]
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="/help",
+            )
+        )
+
+        card = bot._send_card_to_chat_ref.await_args.args[1]
+        markdown_blocks = [
+            element["content"]
+            for element in card["elements"]
+            if element.get("tag") == "markdown"
+        ]
+        for command, _desc in get_bot_commands(agent_name="worker"):
+            assert any(f"`/{command}`" in block for block in markdown_blocks)
+        assert not any("`/agents`" in block for block in markdown_blocks)
 
     async def test_handle_incoming_text_cm_command_sends_native_card(
         self,
@@ -467,6 +515,7 @@ class TestFeishuBotRouting:
         assert any("`/compact`" in block for block in markdown_blocks)
         assert any("current CLI" in block for block in markdown_blocks)
         assert any("`/back`" in block for block in markdown_blocks)
+        assert any("owned commands still stay in ControlMesh" in block for block in markdown_blocks)
         bot._orchestrator.handle_message_streaming.assert_not_awaited()
 
     async def test_handle_incoming_text_back_command_sends_command_center_card(
@@ -961,6 +1010,8 @@ class TestFeishuBotRouting:
         first_call = bot._send_plain_text_to_chat_ref.await_args_list[0]
         assert first_call.args[0] == "oc_chat_1"
         assert "/feishu_auth_all" in first_call.args[1]
+        assert "/status" in first_call.args[1]
+        assert "/help" in first_call.args[1]
         assert first_call.kwargs == {"reply_to_message_id": "om_1"}
         assert bot._send_text_to_chat_ref.await_count == 2
         assert bot._send_text_to_chat_ref.await_args_list[0].args[1] == "pong"

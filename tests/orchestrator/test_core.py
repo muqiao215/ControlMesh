@@ -170,6 +170,20 @@ async def test_controlmesh_commands_win_inside_native_menu(orch: Orchestrator) -
     mock_execute.assert_not_awaited()
 
 
+async def test_hidden_owned_commands_win_inside_native_menu(orch: Orchestrator) -> None:
+    key = SessionKey(chat_id=1)
+    session, _ = await orch._sessions.resolve_session(key, provider="claude", model="opus")
+    await orch._sessions.sync_command_mode(session, mode="codex", model="gpt-5.2-codex")
+
+    mock_execute = AsyncMock(return_value=_mock_response(result="should not run"))
+    object.__setattr__(orch._cli_service, "execute", mock_execute)
+
+    result = await orch.handle_message(key, "/history today")
+
+    assert result.text != "should not run"
+    mock_execute.assert_not_awaited()
+
+
 async def test_back_command_returns_from_claude_command_menu(orch: Orchestrator) -> None:
     key = SessionKey(chat_id=1)
     session, _ = await orch._sessions.resolve_session(key, provider="claude", model="opus")

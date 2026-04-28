@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from controlmesh.command_registry import get_reserved_commands, is_controlmesh_owned_command
 from controlmesh.commands import BOT_COMMANDS, MULTIAGENT_SUB_COMMANDS, get_bot_commands
 from controlmesh.messenger.commands import (
     DIRECT_COMMANDS,
@@ -33,6 +34,11 @@ class TestClassifyCommand:
 
     def test_history_is_orchestrator_command(self) -> None:
         assert classify_command("history") == "orchestrator"
+
+    def test_classification_normalizes_slash_mentions_and_args(self) -> None:
+        assert classify_command("/model sonnet") == "orchestrator"
+        assert classify_command("/agent_start@cm_bot worker") == "multiagent"
+        assert classify_command("/help@cm_bot") == "direct"
 
 
 class TestCommandSetIntegrity:
@@ -95,3 +101,10 @@ class TestCommandSetIntegrity:
             "upgrade",
             "restart",
         } & command_names
+
+    def test_owned_hidden_commands_remain_reserved(self) -> None:
+        assert "history" in get_reserved_commands()
+        assert "back" in get_reserved_commands()
+        assert is_controlmesh_owned_command("/history today")
+        assert is_controlmesh_owned_command("/back")
+        assert not is_controlmesh_owned_command("/compact")

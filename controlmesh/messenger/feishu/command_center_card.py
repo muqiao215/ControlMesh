@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from controlmesh.commands import get_bot_commands
 from controlmesh.config import AgentConfig
 from controlmesh.messenger.feishu.card_action_payload import extract_card_action_target
 from controlmesh.messenger.feishu.settings_card import SettingsTab
@@ -26,6 +27,7 @@ class ParsedCommandCenterAction:
 def build_command_center_card(
     config: AgentConfig,
     *,
+    agent_name: str = "main",
     note: str | None = None,
 ) -> dict[str, Any]:
     """Build a compact Feishu-visible command/help panel."""
@@ -33,23 +35,10 @@ def build_command_center_card(
         f"Feishu runtime: `{config.feishu.runtime_mode}`\n"
         f"Progress mode: `{config.feishu.progress_mode}`"
     )
-    commands = (
-        "**ControlMesh**\n"
-        "- `/new` new session\n"
-        "- `/model` switch or inspect active model\n"
-        "- `/cm` open current CLI Native Commands\n"
-        "- `/tasks` inspect background tasks\n"
-        "- `/session` session entry\n"
-        "- `/agents` agent queue\n"
-        "- `/cron` scheduled automation\n"
-        "- `/status` current runtime status\n"
-        "- `/memory` main memory\n"
-        "- `/settings` interactive settings panel\n\n"
-        "**Feishu**\n"
-        "- `/feishu_auth_all` narrow native auth path\n"
-        "- `/feishu_auth_useful` bulk auth excluding heavy enterprise domains\n\n"
-        "Use `/cm` to open Native Commands for the current CLI.\n\n"
-        f"{runtime_note}"
+    commands = _command_center_markdown(
+        config,
+        agent_name=agent_name,
+        runtime_note=runtime_note,
     )
 
     elements: list[dict[str, Any]] = [
@@ -81,6 +70,7 @@ def build_command_center_card(
 def build_native_command_card(
     config: AgentConfig,
     *,
+    agent_name: str = "main",
     note: str | None = None,
 ) -> dict[str, Any]:
     """Build the Feishu-visible native slash command registry."""
@@ -88,19 +78,10 @@ def build_native_command_card(
         f"Feishu runtime: `{config.feishu.runtime_mode}`\n"
         f"Progress mode: `{config.feishu.progress_mode}`"
     )
-    commands = (
-        "**Native Commands**\n"
-        "- Send slash commands supported by the current CLI\n"
-        "- ControlMesh commands still stay in ControlMesh\n"
-        "- Unknown `/xxx` commands pass through to the current CLI\n"
-        "- `/back` return to ControlMesh commands\n\n"
-        "**Claude examples**\n"
-        "- `/compact` compact context\n"
-        "- `/review` review code\n"
-        "- `/permissions` Claude tool permissions\n"
-        "- `/mcp` manage MCP servers\n"
-        "Current menu: Native Commands.\n\n"
-        f"{runtime_note}"
+    commands = _native_command_markdown(
+        config,
+        agent_name=agent_name,
+        runtime_note=runtime_note,
     )
 
     elements: list[dict[str, Any]] = [{"tag": "markdown", "content": commands}]
@@ -165,3 +146,83 @@ def _button(
             "tab": tab,
         },
     }
+
+
+def build_command_guide_text(
+    config: AgentConfig,
+    *,
+    agent_name: str = "main",
+) -> str:
+    """Build the one-time plain-text command guide for Feishu native runtime chats."""
+    runtime_note = (
+        f"Feishu runtime: {config.feishu.runtime_mode}\n"
+        f"Progress mode: {config.feishu.progress_mode}"
+    )
+    controlmesh_lines = [
+        f"/{cmd} — {desc}"
+        for cmd, desc in get_bot_commands(agent_name=agent_name)
+        if cmd in {"cm", "back", "status", "model", "tasks", "settings", "help"}
+    ]
+    guide_lines = [
+        "ControlMesh 已接入。",
+        "",
+        "常用命令:",
+        *controlmesh_lines,
+        "/feishu_auth_all — 批量补齐飞书原生权限",
+        "/feishu_auth_useful — 除黑名单外批量补齐应用已开放权限",
+        "",
+        "Native Commands 提示:",
+        "/compact — native compact context",
+        "/review — native code review",
+        "/back — 返回 ControlMesh 命令",
+        "",
+        runtime_note,
+        "",
+        "不知道发什么时, 直接说需求也可以。",
+    ]
+    return "\n".join(guide_lines)
+
+
+def _command_center_markdown(
+    config: AgentConfig,
+    *,
+    agent_name: str,
+    runtime_note: str,
+) -> str:
+    command_lines = [f"- `/{cmd}` {desc}" for cmd, desc in get_bot_commands(agent_name=agent_name)]
+    return (
+        "**ControlMesh**\n"
+        + "\n".join(command_lines)
+        + "\n\n**Feishu**\n"
+        + "- `/feishu_auth_all` narrow native auth path\n"
+        + "- `/feishu_auth_useful` bulk auth excluding heavy enterprise domains\n\n"
+        + "Use `/cm` to open Native Commands for the current CLI.\n\n"
+        + runtime_note
+    )
+
+
+def _native_command_markdown(
+    config: AgentConfig,
+    *,
+    agent_name: str,
+    runtime_note: str,
+) -> str:
+    back_line = next(
+        (desc for cmd, desc in get_bot_commands(agent_name=agent_name) if cmd == "cm"),
+        "open Native Commands",
+    )
+    return (
+        "**Native Commands**\n"
+        "- Send slash commands supported by the current CLI\n"
+        "- ControlMesh owned commands still stay in ControlMesh\n"
+        "- Unknown `/xxx` commands pass through to the current CLI\n"
+        "- `/back` return to ControlMesh commands\n\n"
+        "**Common native examples**\n"
+        "- `/compact` compact context\n"
+        "- `/review` review code\n"
+        "- `/permissions` native tool permissions\n"
+        "- `/mcp` manage MCP servers\n"
+        f"- `/cm` {back_line}\n"
+        "Current menu: Native Commands.\n\n"
+        f"{runtime_note}"
+    )

@@ -16,6 +16,7 @@ from controlmesh.bus.envelope import Envelope, Origin
 from controlmesh.cli.process_registry import ProcessRegistry
 from controlmesh.cli.service import CLIService, CLIServiceConfig
 from controlmesh.cli.stream_events import ToolResultEvent, ToolUseEvent
+from controlmesh.command_registry import is_controlmesh_owned_command
 from controlmesh.config import AgentConfig
 from controlmesh.cron.manager import CronManager
 from controlmesh.errors import (
@@ -702,7 +703,7 @@ class Orchestrator:
         head = normalized.split(None, 1)[0].split("@", 1)[0]
         if head in {"/back", "/cm"}:
             return None
-        if self._command_registry.matches(normalized):
+        if is_controlmesh_owned_command(normalized):
             return None
 
         session = await self._sessions.get_active(dispatch.key)

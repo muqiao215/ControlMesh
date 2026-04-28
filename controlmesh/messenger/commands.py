@@ -6,62 +6,17 @@ and which are routed to the orchestrator (ORCHESTRATOR).
 
 from __future__ import annotations
 
-# Commands handled directly by each transport's bot class.
-# Each transport implements these with its own UI patterns.
+from controlmesh.command_registry import COMMAND_SPECS, CommandTarget, classify_command
+
+# Compatibility exports derived from the shared command ownership registry.
 DIRECT_COMMANDS: frozenset[str] = frozenset(
-    {
-        "stop",
-        "interrupt",
-        "stop_all",
-        "restart",
-        "new",
-        "help",
-        "start",
-        "info",
-        "agent_commands",
-        "showfiles",
-        "session",
-    }
+    name for name, spec in COMMAND_SPECS.items() if spec.target is CommandTarget.DIRECT
 )
 
-# Commands routed to the Orchestrator's CommandRegistry.
 ORCHESTRATOR_COMMANDS: frozenset[str] = frozenset(
-    {
-        "status",
-        "model",
-        "cm",
-        "back",
-        "memory",
-        "history",
-        "cron",
-        "diagnose",
-        "settings",
-        "upgrade",
-        "sessions",
-        "tasks",
-    }
+    name for name, spec in COMMAND_SPECS.items() if spec.target is CommandTarget.ORCHESTRATOR
 )
 
-# Multi-agent commands (only registered for main agent).
 MULTIAGENT_COMMANDS: frozenset[str] = frozenset(
-    {
-        "agents",
-        "agent_start",
-        "agent_stop",
-        "agent_restart",
-    }
+    name for name, spec in COMMAND_SPECS.items() if spec.target is CommandTarget.MULTIAGENT
 )
-
-
-def classify_command(cmd: str) -> str:
-    """Classify a command name.
-
-    Returns "direct", "orchestrator", "multiagent", or "unknown".
-    """
-    if cmd in DIRECT_COMMANDS:
-        return "direct"
-    if cmd in ORCHESTRATOR_COMMANDS:
-        return "orchestrator"
-    if cmd in MULTIAGENT_COMMANDS:
-        return "multiagent"
-    return "unknown"

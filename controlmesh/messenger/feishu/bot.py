@@ -20,6 +20,7 @@ from controlmesh.bus.envelope import Envelope
 from controlmesh.bus.lock_pool import LockPool
 from controlmesh.cli.stream_events import ToolResultEvent, ToolUseEvent
 from controlmesh.cli.types import AgentRequest
+from controlmesh.command_registry import normalize_command_name
 from controlmesh.config import AgentConfig
 from controlmesh.files.allowed_roots import resolve_allowed_roots
 from controlmesh.files.storage import sanitize_filename as _sanitize_filename
@@ -50,6 +51,7 @@ from controlmesh.messenger.feishu.bundled_runtime import (
     run_bundled_codex_turn,
 )
 from controlmesh.messenger.feishu.command_center_card import (
+    build_command_guide_text,
     build_command_center_card,
     build_native_command_card,
     parse_command_center_action,
@@ -110,21 +112,7 @@ _FEISHU_PROGRESS_MAX_MESSAGES = 8
 _TextStreamCallback = Callable[[str], Awaitable[None]]
 _StatusStreamCallback = Callable[[str | None], Awaitable[None]]
 _ToolEventStreamCallback = Callable[[ToolUseEvent | ToolResultEvent], Awaitable[None]]
-_FEISHU_COMMAND_GUIDE_VERSION = 2
-_FEISHU_COMMAND_GUIDE_TEXT = (
-    "ControlMesh 已接入。\n\n"
-    "常用命令:\n"
-    "/cm — 打开当前 CLI 的 Native Commands\n"
-    "/back — 返回 ControlMesh 命令\n"
-    "/status — 查看当前状态\n"
-    "/model — 切换模型\n"
-    "/compact — Claude 原生压缩上下文\n"
-    "/remote-control — Claude Remote Control\n"
-    "/feishu_auth_all — 批量补齐飞书原生权限\n"
-    "/feishu_auth_useful — 除黑名单外批量补齐应用已开放权限\n"
-    "/help — 查看命令中心\n\n"
-    "不知道发什么时, 直接说需求也可以。"
-)
+_FEISHU_COMMAND_GUIDE_VERSION = 3
 
 
 def _stream_callbacks_for_output_mode(
@@ -564,8 +552,8 @@ class FeishuBot:
         topic_id: int | None,
         reply_to_message_id: str | None,
     ) -> bool:
-        command = message.text.strip().split(maxsplit=1)[0].lower()
-        if command == "/cm":
+        command = normalize_command_name(message.text)
+        if command == "cm":
             if self._orchestrator is not None:
                 await self._orchestrator.handle_message(
                     SessionKey.for_transport("fs", chat_id, topic_id),
@@ -573,11 +561,14 @@ class FeishuBot:
                 )
             await self._send_card_to_chat_ref(
                 message.chat_id,
-                build_native_command_card(self._effective_config()),
+                build_native_command_card(
+                    self._effective_config(),
+                    agent_name=self._agent_name,
+                ),
                 reply_to_message_id=reply_to_message_id,
             )
             return True
-        if command == "/back":
+        if command == "back":
             if self._orchestrator is not None:
                 await self._orchestrator.handle_message(
                     SessionKey.for_transport("fs", chat_id, topic_id),
@@ -585,15 +576,21 @@ class FeishuBot:
                 )
             await self._send_card_to_chat_ref(
                 message.chat_id,
-                build_command_center_card(self._effective_config()),
+                build_command_center_card(
+                    self._effective_config(),
+                    agent_name=self._agent_name,
+                ),
                 reply_to_message_id=reply_to_message_id,
             )
             return True
-        if command not in {"/help", "/start", "/info"}:
+        if command not in {"help", "start", "info"}:
             return False
         await self._send_card_to_chat_ref(
             message.chat_id,
-            build_command_center_card(self._effective_config()),
+            build_command_center_card(
+                self._effective_config(),
+                agent_name=self._agent_name,
+            ),
             reply_to_message_id=reply_to_message_id,
         )
         return True
@@ -724,7 +721,10 @@ class FeishuBot:
                 target,
                 receive_id_type="open_chat_id",
                 msg_type="interactive",
-                content=build_command_center_card(self._effective_config()),
+                content=build_command_center_card(
+                    self._effective_config(),
+                    agent_name=self._agent_name,
+                ),
             )
         return True
 
@@ -748,7 +748,10 @@ class FeishuBot:
 
         event_key = event.get("event_key")
         if event_key == "cm_help":
-            card = build_command_center_card(self._effective_config())
+            card = build_command_center_card(
+                self._effective_config(),
+                agent_name=self._agent_name,
+            )
         elif event_key == "cm_settings":
             card = build_settings_card(self._effective_config(), selected_tab="streaming")
         else:
@@ -1253,7 +1256,10 @@ class FeishuBot:
         try:
             await self._send_plain_text_to_chat_ref(
                 message.chat_id,
-                _FEISHU_COMMAND_GUIDE_TEXT,
+                build_command_guide_text(
+                    self._effective_config(),
+                    agent_name=self._agent_name,
+                ),
                 reply_to_message_id=reply_to_message_id,
             )
         except Exception:
