@@ -47,7 +47,6 @@ _PROVIDER_PUBLIC_TOKENS = {
 }
 _EXPLICIT_RUNTIME_DEFAULT_MODELS = {
     "claw": "sonnet",
-    "opencode": "openai/gpt-4.1",
 }
 
 
@@ -204,6 +203,13 @@ class ProviderManager:
                 if self._config.provider == "openai_agents"
                 else self._config.agent_graph.openai_agents_model
             )
+        if provider == "opencode":
+            if self._config.provider == "opencode":
+                return self._config.model
+            from controlmesh.cli.auth import read_opencode_default_model
+
+            configured = read_opencode_default_model().strip()
+            return configured or "openai/gpt-4.1"
         if provider in _EXPLICIT_RUNTIME_DEFAULT_MODELS:
             return (
                 self._config.model

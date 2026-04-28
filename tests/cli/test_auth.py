@@ -16,6 +16,7 @@ from controlmesh.cli.auth import (
     check_opencode_auth,
     format_age,
     gemini_uses_api_key_mode,
+    read_opencode_default_model,
 )
 
 if TYPE_CHECKING:
@@ -361,6 +362,20 @@ def test_check_opencode_auth_config_file(tmp_path: Path, monkeypatch: pytest.Mon
     assert result.provider == "opencode"
     assert result.status == AuthStatus.AUTHENTICATED
     assert result.auth_file == config_file
+
+
+def test_read_opencode_default_model_from_jsonc(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    xdg = tmp_path / ".config"
+    runtime_dir = xdg / "opencode"
+    runtime_dir.mkdir(parents=True)
+    runtime_file = runtime_dir / "opencode.jsonc"
+    runtime_file.write_text(
+        '{\n  "//": "comment",\n  "model": "zhipuai/glm-5.1",\n  "small_model": "zhipuai/glm-4.5-air"\n}'
+    )
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+
+    assert read_opencode_default_model() == "zhipuai/glm-5.1"
 
 
 # -- Gemini auth --

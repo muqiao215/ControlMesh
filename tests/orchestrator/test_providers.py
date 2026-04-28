@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from unittest.mock import MagicMock
+from unittest.mock import patch
 
 import pytest
 
@@ -225,7 +226,16 @@ class TestDefaultModelForProvider:
 
     def test_opencode_when_not_active_provider(self) -> None:
         pm = _pm(model="gpt-5.4", provider="codex")
-        assert pm.default_model_for_provider("opencode") == "openai/gpt-4.1"
+        with patch(
+            "controlmesh.cli.auth.read_opencode_default_model",
+            return_value="zhipuai/glm-5.1",
+        ):
+            assert pm.default_model_for_provider("opencode") == "zhipuai/glm-5.1"
+
+    def test_opencode_when_not_active_provider_falls_back_when_config_missing(self) -> None:
+        pm = _pm(model="gpt-5.4", provider="codex")
+        with patch("controlmesh.cli.auth.read_opencode_default_model", return_value=""):
+            assert pm.default_model_for_provider("opencode") == "openai/gpt-4.1"
 
     def test_unknown_provider(self) -> None:
         pm = _pm()

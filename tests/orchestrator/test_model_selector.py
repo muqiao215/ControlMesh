@@ -264,11 +264,12 @@ async def test_callback_provider_codex_fallback(orch: Orchestrator) -> None:
 
 
 async def test_callback_provider_opencode_uses_runtime_default_model(orch: Orchestrator) -> None:
-    resp = await handle_model_callback(orch, SessionKey(chat_id=1), "ms:p:opencode")
+    with patch("controlmesh.cli.auth.read_opencode_default_model", return_value="zhipuai/glm-5.1"):
+        resp = await handle_model_callback(orch, SessionKey(chat_id=1), "ms:p:opencode")
     assert "Select OpenCode model" in resp.text
     assert resp.buttons is not None
     labels = [btn.text for row in resp.buttons.rows for btn in row]
-    assert "openai/gpt-4.1" in labels
+    assert "zhipuai/glm-5.1" in labels
 
 
 async def test_callback_provider_opencode_shows_current_runtime_model(orch: Orchestrator) -> None:
@@ -329,6 +330,40 @@ async def test_callback_runtime_provider_switches_to_opencode(orch: Orchestrator
     assert "opencode" in resp.text
     assert orch._config.provider == "opencode"
     assert orch._config.model == "openai/gpt-4.1"
+
+
+async def test_switch_model_provider_change_to_opencode_resets_target_session(orch: Orchestrator) -> None:
+    session, _ = await orch._sessions.resolve_session(
+        SessionKey(chat_id=1), provider="codex", model="gpt-5.4"
+    )
+    session.session_id = "codex-sid"
+    session.provider_sessions["opencode"] = type(session._current_provider_data())(
+        session_id="old-opencode-sid",
+        message_count=3,
+    )
+    await orch._sessions.update_session(session)
+
+    mock_kill = AsyncMock(return_value=0)
+    object.__setattr__(orch._process_registry, "kill_all", mock_kill)
+    with patch.object(orch._sessions, "reset_provider_session", wraps=orch._sessions.reset_provider_session) as reset_mock:
+        result = await switch_model(
+            orch,
+            SessionKey(chat_id=1),
+            "zhipuai/glm-5.1",
+            provider_override="opencode",
+        )
+
+    reset_mock.assert_called_once_with(
+        SessionKey(chat_id=1),
+        provider="opencode",
+        model="zhipuai/glm-5.1",
+    )
+    assert "Resuming session" not in result
+    active = await orch._sessions.get_active(SessionKey(chat_id=1))
+    assert active is not None
+    assert active.provider == "opencode"
+    assert active.model == "zhipuai/glm-5.1"
+    assert active.session_id == ""
 
 
 # -- handle_model_callback: reasoning selection --

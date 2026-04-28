@@ -43,6 +43,7 @@ _RUNTIME_PROVIDER_BUTTONS: tuple[tuple[str, str], ...] = (
     ("claw", "CLAW-CODE"),
     ("opencode", "OPENCODE"),
 )
+_RESET_ON_PROVIDER_SWITCH: frozenset[str] = frozenset({"claw", "opencode"})
 
 
 @dataclass(frozen=True)
@@ -273,19 +274,29 @@ async def switch_model(
         else orch.models.provider_for(model_id)
     )
     provider_changed = old_provider != new_provider
-    resume_session_id, resume_message_count = _resume_state_for_provider(
-        active_session,
-        new_provider,
-    )
+    reset_target_session = provider_changed and new_provider in _RESET_ON_PROVIDER_SWITCH
+    resume_session_id, resume_message_count = ("", 0)
+    if not reset_target_session:
+        resume_session_id, resume_message_count = _resume_state_for_provider(
+            active_session,
+            new_provider,
+        )
 
     if not same_model:
         await orch._process_registry.kill_all(key.chat_id)
         if active_session is not None:
-            await orch._sessions.sync_session_target(
-                active_session,
-                provider=new_provider,
-                model=model_id,
-            )
+            if reset_target_session:
+                active_session = await orch._sessions.reset_provider_session(
+                    key,
+                    provider=new_provider,
+                    model=model_id,
+                )
+            else:
+                await orch._sessions.sync_session_target(
+                    active_session,
+                    provider=new_provider,
+                    model=model_id,
+                )
 
     if not is_topic:
         # Global config: update only from main chat / DM (not from topics).

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import subprocess
 from importlib.util import find_spec
 from dataclasses import dataclass
@@ -276,10 +277,40 @@ def _find_opencode_config_file() -> Path | None:
     return None
 
 
-def _read_opencode_config_auth(config_file: Path) -> tuple[Path | None, datetime | None]:
+def _find_opencode_runtime_config_file() -> Path | None:
+    home = Path.home()
+    xdg = Path(os.environ.get("XDG_CONFIG_HOME", home / ".config"))
+    candidates = [
+        xdg / "opencode" / "opencode.jsonc",
+        xdg / "opencode" / "opencode.json",
+    ]
+    for path in candidates:
+        if path.is_file():
+            return path
+    return None
+
+
+def _load_opencode_json(path: Path) -> dict[str, object] | None:
     try:
-        data = json.loads(config_file.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError, TypeError):
+        raw = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        # Accept simple JSONC config files without adding a new parser dependency.
+        stripped = re.sub(r"/\*.*?\*/", "", raw, flags=re.DOTALL)
+        stripped = re.sub(r"^\s*//.*$", "", stripped, flags=re.MULTILINE)
+        try:
+            return json.loads(stripped)
+        except json.JSONDecodeError:
+            return None
+
+
+def _read_opencode_config_auth(config_file: Path) -> tuple[Path | None, datetime | None]:
+    data = _load_opencode_json(config_file)
+    if not isinstance(data, dict):
         return None, None
     providers = data.get("providers")
     if not isinstance(providers, dict):
@@ -291,6 +322,18 @@ def _read_opencode_config_auth(config_file: Path) -> tuple[Path | None, datetime
         if api_key:
             return config_file, datetime.fromtimestamp(config_file.stat().st_mtime, tz=UTC)
     return None, None
+
+
+def read_opencode_default_model() -> str:
+    """Return the configured OpenCode default model, if one is declared locally."""
+    config_file = _find_opencode_runtime_config_file()
+    if config_file is None:
+        return ""
+    data = _load_opencode_json(config_file)
+    if not isinstance(data, dict):
+        return ""
+    model = data.get("model")
+    return model.strip() if isinstance(model, str) else ""
 
 
 def check_gemini_auth() -> AuthResult:
