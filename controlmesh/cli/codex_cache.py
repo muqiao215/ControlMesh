@@ -60,6 +60,62 @@ _FALLBACK_CODEX_MODELS: tuple[CodexModelInfo, ...] = (
     ),
 )
 
+_FALLBACK_DEFAULT_MODEL_ID = next(
+    model.id for model in _FALLBACK_CODEX_MODELS if model.is_default
+)
+
+
+def _merge_with_fallback_catalog(
+    models: list[CodexModelInfo],
+) -> list[CodexModelInfo]:
+    """Keep the built-in Codex baseline visible even when discovery is stale.
+
+    Codex discovery can return an older non-empty catalog that omits newer
+    productized baseline models such as ``gpt-5.5``. Merge the discovered
+    catalog with the built-in fallback catalog so selectors and validation do
+    not regress to an older menu just because the runtime discovery endpoint
+    lagged behind.
+    """
+    if not models:
+        return models
+
+    # Keep the fallback baseline only for the legacy/stale Codex 5.x catalog
+    # family that can omit newer baseline entries like gpt-5.5. Do not inject
+    # fallback models into unrelated synthetic or future discovery catalogs.
+    if not any(
+        model.id in {fallback.id for fallback in _FALLBACK_CODEX_MODELS}
+        or model.id.startswith("gpt-5")
+        for model in models
+    ):
+        return models
+
+    discovered_by_id = {model.id: model for model in models}
+    merged: list[CodexModelInfo] = []
+    seen: set[str] = set()
+
+    for fallback in _FALLBACK_CODEX_MODELS:
+        merged_model = discovered_by_id.get(fallback.id, fallback)
+        merged.append(merged_model)
+        seen.add(merged_model.id)
+
+    for model in models:
+        if model.id in seen:
+            continue
+        merged.append(model)
+        seen.add(model.id)
+
+    return [
+        CodexModelInfo(
+            id=model.id,
+            display_name=model.display_name,
+            description=model.description,
+            supported_efforts=model.supported_efforts,
+            default_effort=model.default_effort,
+            is_default=model.id == _FALLBACK_DEFAULT_MODEL_ID,
+        )
+        for model in merged
+    ]
+
 
 @dataclass(frozen=True)
 class CodexModelCache(BaseModelCache):
@@ -74,7 +130,8 @@ class CodexModelCache(BaseModelCache):
 
     @classmethod
     async def _discover(cls) -> list[CodexModelInfo]:
-        return await discover_codex_models()
+        models = await discover_codex_models()
+        return _merge_with_fallback_catalog(models)
 
     @classmethod
     def _empty_models(cls) -> list[CodexModelInfo]:

@@ -9,7 +9,10 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from controlmesh.cli.codex_cache import _FALLBACK_CODEX_MODELS, CodexModelCache
+from controlmesh.cli.codex_cache import (
+    _FALLBACK_CODEX_MODELS,
+    CodexModelCache,
+)
 from controlmesh.cli.codex_discovery import CodexModelInfo
 
 
@@ -421,6 +424,44 @@ async def test_successful_discovery_overwrites_disk_cache(tmp_path: Path) -> Non
     assert result.models[0].id == "new-model"
     disk_data = json.loads(cache_path.read_text())
     assert disk_data["models"][0]["id"] == "new-model"
+
+
+async def test_successful_discovery_keeps_fallback_baseline_visible(tmp_path: Path) -> None:
+    """Older non-empty discovery results should still expose the fallback baseline."""
+    cache_path = tmp_path / "codex_models.json"
+    stale_catalog = [
+        CodexModelInfo(
+            id="gpt-5.3-codex",
+            display_name="gpt-5.3-codex",
+            description="Older default",
+            supported_efforts=("low", "medium", "high", "xhigh"),
+            default_effort="medium",
+            is_default=True,
+        ),
+        CodexModelInfo(
+            id="gpt-5.4",
+            display_name="gpt-5.4",
+            description="Older frontier model",
+            supported_efforts=("low", "medium", "high", "xhigh"),
+            default_effort="medium",
+            is_default=False,
+        ),
+    ]
+
+    with patch(
+        "controlmesh.cli.codex_cache.discover_codex_models",
+        AsyncMock(return_value=stale_catalog),
+    ):
+        result = await CodexModelCache.load_or_refresh(cache_path, force_refresh=True)
+
+    ids = [model.id for model in result.models]
+    assert ids[:4] == ["gpt-5.5", "gpt-5.3-codex", "gpt-5.4", "gpt-5.4-mini"]
+    defaults = [model.id for model in result.models if model.is_default]
+    assert defaults == ["gpt-5.5"]
+
+    disk_data = json.loads(cache_path.read_text())
+    disk_ids = [model["id"] for model in disk_data["models"]]
+    assert disk_ids[:4] == ["gpt-5.5", "gpt-5.3-codex", "gpt-5.4", "gpt-5.4-mini"]
 
 
 def test_fallback_models_have_thinking_levels() -> None:
