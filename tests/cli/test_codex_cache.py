@@ -438,6 +438,7 @@ def test_fallback_models_have_exactly_one_default() -> None:
     """Exactly one fallback model must be marked as default."""
     defaults = [m for m in _FALLBACK_CODEX_MODELS if m.is_default]
     assert len(defaults) == 1
+    assert defaults[0].id == "gpt-5.5"
 
 
 def test_serialize_deserialize(fresh_cache: CodexModelCache) -> None:

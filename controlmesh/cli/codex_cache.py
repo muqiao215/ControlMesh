@@ -11,17 +11,33 @@ from controlmesh.cli.model_cache import BaseModelCache
 # Hardcoded fallback when discovery and disk cache both fail.
 _FALLBACK_CODEX_MODELS: tuple[CodexModelInfo, ...] = (
     CodexModelInfo(
-        id="gpt-5.3-codex",
-        display_name="gpt-5.3-codex",
+        id="gpt-5.5",
+        display_name="GPT-5.5",
         description="Latest frontier agentic coding model.",
         supported_efforts=("low", "medium", "high", "xhigh"),
         default_effort="medium",
         is_default=True,
     ),
     CodexModelInfo(
+        id="gpt-5.3-codex",
+        display_name="gpt-5.3-codex",
+        description="Frontier agentic coding model.",
+        supported_efforts=("low", "medium", "high", "xhigh"),
+        default_effort="medium",
+        is_default=False,
+    ),
+    CodexModelInfo(
         id="gpt-5.4",
         display_name="gpt-5.4",
-        description="Latest frontier agentic coding model.",
+        description="Frontier agentic coding model.",
+        supported_efforts=("low", "medium", "high", "xhigh"),
+        default_effort="medium",
+        is_default=False,
+    ),
+    CodexModelInfo(
+        id="gpt-5.4-mini",
+        display_name="GPT-5.4-Mini",
+        description="Small, fast, cost-efficient coding model.",
         supported_efforts=("low", "medium", "high", "xhigh"),
         default_effort="medium",
         is_default=False,
