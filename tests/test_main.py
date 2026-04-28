@@ -625,6 +625,7 @@ class TestUpgradeCli:
                 "controlmesh.infra.updater.perform_upgrade_pipeline",
                 new=AsyncMock(return_value=(True, "9.9.9", "upgraded controlmesh")),
             ) as mock_pipeline,
+            patch("controlmesh.infra.service.is_service_installed", return_value=False),
             patch(f"{_LIFECYCLE}._re_exec_bot") as mock_exec,
             patch(f"{_LIFECYCLE}.stop_bot"),
         ):
@@ -644,6 +645,7 @@ class TestUpgradeCli:
                 "controlmesh.infra.updater.perform_upgrade_pipeline",
                 new=AsyncMock(return_value=(True, "9.9.9", "installed controlmesh-2.0.0")),
             ) as mock_pipeline,
+            patch("controlmesh.infra.service.is_service_installed", return_value=False),
             patch(f"{_LIFECYCLE}._re_exec_bot") as mock_exec,
             patch(f"{_LIFECYCLE}.stop_bot"),
         ):
@@ -734,6 +736,7 @@ class TestUpgradeCli:
                 "controlmesh.infra.updater.perform_upgrade_pipeline",
                 new=AsyncMock(return_value=(True, "9.9.9", "source fast-forwarded")),
             ) as mock_pipeline,
+            patch("controlmesh.infra.service.is_service_installed", return_value=False),
             patch(f"{_LIFECYCLE}.stop_bot") as mock_stop,
             patch(f"{_LIFECYCLE}._re_exec_bot") as mock_exec,
         ):
@@ -793,6 +796,7 @@ class TestUpgradeCli:
                 "controlmesh.infra.updater.perform_upgrade_pipeline",
                 new=AsyncMock(return_value=(False, get_current_version(), "pull failed")),
             ) as mock_pipeline,
+            patch("controlmesh.infra.service.is_service_installed", return_value=False),
             patch(f"{_LIFECYCLE}.stop_bot") as mock_stop,
             patch(f"{_LIFECYCLE}._re_exec_bot") as mock_exec,
         ):
