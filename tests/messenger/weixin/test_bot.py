@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from controlmesh.config import AgentConfig
+from controlmesh.infra.restart import EXIT_RESTART
 from controlmesh.messenger.weixin.auth_state import WeixinAuthStateStore
 from controlmesh.messenger.weixin.auth_store import StoredWeixinCredentials
 from controlmesh.messenger.weixin.bot import WeixinBot
@@ -91,6 +94,30 @@ class TestWeixinBotResilience:
         assert WeixinAuthStateStore(tmp_path).load_state() == "reauth_required"
         assert bot._runtime is None
         assert bot._stop_event.is_set() is True
+
+    async def test_watch_restart_marker_requests_restart(self, tmp_path: Path) -> None:
+        bot = _make_bot(tmp_path)
+
+        with (
+            patch.object(asyncio, "sleep", new_callable=AsyncMock),
+            patch.object(asyncio, "to_thread", new_callable=AsyncMock) as mock_to_thread,
+        ):
+            mock_to_thread.return_value = True
+            await bot._watch_restart_marker()
+
+        assert bot._exit_code == EXIT_RESTART
+        assert bot._stop_event.is_set() is True
+
+    async def test_watch_restart_marker_handles_cancellation(self, tmp_path: Path) -> None:
+        bot = _make_bot(tmp_path)
+
+        with patch.object(
+            asyncio, "sleep", new_callable=AsyncMock, side_effect=asyncio.CancelledError
+        ):
+            await bot._watch_restart_marker()
+
+        assert bot._exit_code == 0
+        assert bot._stop_event.is_set() is False
 
     async def test_proactive_send_unknown_chat_fails_explicitly(self, tmp_path: Path) -> None:
         bot = _make_bot(tmp_path)

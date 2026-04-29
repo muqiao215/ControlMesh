@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+from dataclasses import dataclass
 from typing import Any, cast
 from urllib.parse import quote, urljoin
 from uuid import uuid4
@@ -19,14 +20,36 @@ from controlmesh.messenger.weixin.runtime import WeixinUpdateBatch
 class WeixinIlinkApiError(Exception):
     """Raised for non-zero iLink API responses."""
 
-    def __init__(self, message: str, *, status: int, code: int | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        status: int,
+        code: int | None = None,
+        endpoint: str | None = None,
+        content_type: str | None = None,
+        body_snippet: str | None = None,
+    ) -> None:
         super().__init__(message)
         self.status = status
         self.code = code
+        self.endpoint = endpoint
+        self.content_type = content_type
+        self.body_snippet = body_snippet
 
     @property
     def is_session_expired(self) -> bool:
         return self.code == -14
+
+
+@dataclass(frozen=True, slots=True)
+class WeixinIlinkProbeResult:
+    """Bounded transport probe result used by the CLI doctor."""
+
+    mode: str
+    ok: bool
+    elapsed_ms: int
+    detail: str
 
 
 class WeixinIlinkHttpClient:
@@ -98,15 +121,31 @@ class WeixinIlinkHttpClient:
         return {"channel_version": self._config.channel_version}
 
 
-async def fetch_qr_code(base_url: str) -> dict[str, Any]:
-    return await _get(base_url, "/ilink/bot/get_bot_qrcode?bot_type=3")
+async def fetch_qr_code(
+    base_url: str,
+    *,
+    trust_env: bool = False,
+    timeout_seconds: float | None = None,
+) -> dict[str, Any]:
+    return await _get(
+        base_url,
+        "/ilink/bot/get_bot_qrcode?bot_type=3",
+        trust_env=trust_env,
+        timeout_seconds=timeout_seconds,
+    )
 
 
-async def poll_qr_status(base_url: str, qrcode: str) -> dict[str, Any]:
+async def poll_qr_status(
+    base_url: str,
+    qrcode: str,
+    *,
+    trust_env: bool = False,
+) -> dict[str, Any]:
     return await _get(
         base_url,
         f"/ilink/bot/get_qrcode_status?qrcode={quote(qrcode, safe='')}",
         headers={"iLink-App-ClientVersion": "1"},
+        trust_env=trust_env,
     )
 
 
@@ -145,12 +184,46 @@ def build_headers(token: str) -> dict[str, str]:
 
 async def _parse_json_response(response: aiohttp.ClientResponse, label: str) -> dict[str, Any]:
     text = await response.text()
-    payload = cast("dict[str, Any]", json.loads(text) if text else {})
+    content_type = response.headers.get("Content-Type", "")
+    try:
+        parsed = json.loads(text) if text else {}
+    except json.JSONDecodeError as exc:
+        raise WeixinIlinkApiError(
+            _format_ilink_payload_error(
+                label,
+                response.status,
+                content_type,
+                text,
+                reason="returned invalid JSON",
+            ),
+            status=response.status,
+            endpoint=label,
+            content_type=content_type,
+            body_snippet=_body_snippet(text),
+        ) from exc
+    if not isinstance(parsed, dict):
+        raise WeixinIlinkApiError(
+            _format_ilink_payload_error(
+                label,
+                response.status,
+                content_type,
+                text,
+                reason=f"returned malformed JSON payload ({type(parsed).__name__})",
+            ),
+            status=response.status,
+            endpoint=label,
+            content_type=content_type,
+            body_snippet=_body_snippet(text),
+        )
+    payload = cast("dict[str, Any]", parsed)
     if response.status < 200 or response.status >= 300:
         raise WeixinIlinkApiError(
             str(payload.get("errmsg") or f"{label} failed with HTTP {response.status}"),
             status=response.status,
             code=_coerce_int(payload.get("errcode")),
+            endpoint=label,
+            content_type=content_type,
+            body_snippet=_body_snippet(text),
         )
     ret = payload.get("ret")
     if isinstance(ret, int) and ret != 0:
@@ -158,6 +231,9 @@ async def _parse_json_response(response: aiohttp.ClientResponse, label: str) -> 
             str(payload.get("errmsg") or f"{label} failed"),
             status=response.status,
             code=_coerce_int(payload.get("errcode", ret)),
+            endpoint=label,
+            content_type=content_type,
+            body_snippet=_body_snippet(text),
         )
     return payload
 
@@ -167,11 +243,19 @@ async def _get(
     path: str,
     *,
     headers: dict[str, str] | None = None,
+    trust_env: bool = False,
+    timeout_seconds: float | None = None,
 ) -> dict[str, Any]:
     url = urljoin(f"{base_url.rstrip('/')}/", path.lstrip("/"))
-    async with aiohttp.ClientSession() as session, session.get(
+    timeout = (
+        aiohttp.ClientTimeout(total=timeout_seconds)
+        if timeout_seconds is not None
+        else None
+    )
+    async with aiohttp.ClientSession(trust_env=trust_env) as session, session.get(
         url,
         headers=headers or {},
+        timeout=timeout,
     ) as response:
         return await _parse_json_response(response, path)
 
@@ -189,3 +273,26 @@ def _chunk_text(text: str, max_chars: int) -> list[str]:
 
 def _coerce_int(value: object) -> int | None:
     return value if isinstance(value, int) else None
+
+
+def _format_ilink_payload_error(
+    endpoint: str,
+    status: int,
+    content_type: str,
+    body: str,
+    *,
+    reason: str,
+) -> str:
+    return (
+        f"{endpoint} {reason} "
+        f"(HTTP {status}, content-type={content_type or 'unknown'}): {_body_snippet(body)}"
+    )
+
+
+def _body_snippet(body: str, limit: int = 160) -> str:
+    normalized = " ".join(body.split())
+    if not normalized:
+        return "<empty>"
+    if len(normalized) <= limit:
+        return normalized
+    return f"{normalized[:limit]}..."

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import contextlib
 import functools
 import json
 import logging
@@ -15,13 +14,16 @@ import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlsplit, urlunsplit
 
 import aiohttp
+import filetype
 from rich.console import Console
 
 from controlmesh.config import AgentConfig
+from controlmesh.infra.restart import write_restart_marker
 from controlmesh.infra.json_store import atomic_json_save
+from controlmesh.infra.pidlock import acquire_lock, release_lock
 from controlmesh.integrations.feishu_auth_kit import run_feishu_auth_kit, run_feishu_auth_kit_json
 from controlmesh.messenger.feishu.auth.device_flow import (
     DeviceAuthorization,
@@ -33,7 +35,7 @@ from controlmesh.messenger.feishu.auth.runtime_auth import (
     get_feishu_auth_status,
     persist_device_flow_auth,
 )
-from controlmesh.messenger.weixin.api import fetch_qr_code, poll_qr_status
+from controlmesh.messenger.weixin.api import WeixinIlinkProbeResult, fetch_qr_code, poll_qr_status
 from controlmesh.messenger.weixin.auth_state import WeixinAuthStateStore
 from controlmesh.messenger.weixin.auth_store import (
     WEIXIN_AUTH_STATE_LOGGED_OUT,
@@ -54,6 +56,7 @@ _console = Console()
 _WEIXIN_QR_POLL_INTERVAL_SECONDS = 2.0
 _WEIXIN_QR_POLL_RETRY_LIMIT = 3
 _WEIXIN_QR_POLL_RETRY_DELAY_SECONDS = 1.0
+_WEIXIN_DOCTOR_TIMEOUT_SECONDS = 8.0
 _WEIXIN_QR_WAITING_STATUSES = frozenset({"waiting", "wait", "created", "new", "init", "unscanned"})
 logger = logging.getLogger(__name__)
 _FEISHU_APP_CONSOLE_URL = "https://open.feishu.cn/app"
@@ -117,8 +120,16 @@ def _cmd_weixin_auth(action: str, action_args: Sequence[str] = ()) -> None:
     if action == "setup":
         _cmd_weixin_setup()
         return
+    if action == "doctor":
+        if action_args:
+            raise SystemExit(1)
+        _cmd_weixin_doctor()
+        return
     if action == "login":
         asyncio.run(_cmd_weixin_login())
+        return
+    if action == "login-complete":
+        asyncio.run(_cmd_weixin_login_complete(_parse_weixin_login_complete_args(action_args)))
         return
     if action == "reauth":
         _cmd_weixin_reauth()
@@ -144,6 +155,165 @@ def _cmd_weixin_setup() -> None:
     _console.print("Weixin setup: checking login and reply prerequisites.")
     _render_transport_state(config)
     asyncio.run(_cmd_weixin_login())
+
+
+def _cmd_weixin_doctor() -> None:
+    config = load_config()
+    asyncio.run(_run_weixin_doctor(config))
+
+
+async def _run_weixin_doctor(config: AgentConfig) -> None:
+    _console.print("Weixin doctor")
+    _console.print(f"Weixin configured: {str(bool(config.weixin.enabled)).lower()}")
+    _render_transport_state(config)
+    _console.print(f"Weixin base_url: {config.weixin.base_url}")
+    _console.print(f"Weixin credentials: {_weixin_store(config).path}")
+
+    proxy_env = _weixin_proxy_environment()
+    has_proxy_route = _weixin_has_proxy_route_env(proxy_env)
+    if proxy_env:
+        _console.print("Weixin proxy env:")
+        for key, value in proxy_env.items():
+            _console.print(f"  {key}={_redact_proxy_url(value)}")
+    else:
+        _console.print("Weixin proxy env: none")
+
+    host = urlparse(config.weixin.base_url).hostname or ""
+    if host:
+        _console.print(
+            f"Weixin NO_PROXY host match: {str(_host_matches_no_proxy(host, _no_proxy_value())).lower()}"
+        )
+
+    probes = [await _probe_weixin_route(config.weixin.base_url, mode="direct", trust_env=False)]
+    if has_proxy_route:
+        probes.append(await _probe_weixin_route(config.weixin.base_url, mode="env-proxy", trust_env=True))
+    else:
+        _console.print("Weixin env-proxy route: skipped (no proxy env configured)")
+
+    for probe in probes:
+        status = "ok" if probe.ok else "failed"
+        _console.print(f"Weixin {probe.mode} route: {status} in {probe.elapsed_ms} ms")
+        _console.print(f"Weixin {probe.mode} detail: {probe.detail}")
+
+    for line in _weixin_doctor_recommendations(probes, host=host):
+        _console.print(line)
+
+
+async def _probe_weixin_route(
+    base_url: str,
+    *,
+    mode: str,
+    trust_env: bool,
+) -> WeixinIlinkProbeResult:
+    started = time.perf_counter()
+    try:
+        payload = await fetch_qr_code(
+            base_url,
+            trust_env=trust_env,
+            timeout_seconds=_WEIXIN_DOCTOR_TIMEOUT_SECONDS,
+        )
+    except Exception as exc:
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        return WeixinIlinkProbeResult(
+            mode=mode,
+            ok=False,
+            elapsed_ms=elapsed_ms,
+            detail=str(exc),
+        )
+    elapsed_ms = int((time.perf_counter() - started) * 1000)
+    qrcode = payload.get("qrcode")
+    qr_url = payload.get("qrcode_img_content")
+    if isinstance(qrcode, str) and isinstance(qr_url, str):
+        return WeixinIlinkProbeResult(
+            mode=mode,
+            ok=True,
+            elapsed_ms=elapsed_ms,
+            detail="iLink QR endpoint returned qrcode and qrcode_img_content",
+        )
+    return WeixinIlinkProbeResult(
+        mode=mode,
+        ok=False,
+        elapsed_ms=elapsed_ms,
+        detail=(
+            "iLink QR endpoint returned an unexpected payload shape "
+            f"(keys={','.join(sorted(str(key) for key in payload)) or '<none>'})"
+        ),
+    )
+
+
+def _weixin_doctor_recommendations(
+    probes: Sequence[WeixinIlinkProbeResult],
+    *,
+    host: str,
+) -> list[str]:
+    by_mode = {probe.mode: probe for probe in probes}
+    direct = by_mode.get("direct")
+    proxied = by_mode.get("env-proxy")
+    lines: list[str] = []
+    if direct and direct.ok and proxied and not proxied.ok:
+        lines.append(
+            f"Recommendation: bypass proxy for {host or 'the Weixin host'} (add it to NO_PROXY) and retry."
+        )
+    elif direct and not direct.ok and proxied and proxied.ok:
+        lines.append("Recommendation: the current environment likely needs the configured proxy path.")
+    elif direct and not direct.ok and proxied and not proxied.ok:
+        lines.append("Recommendation: both direct and proxy-aware probes failed; verify base_url, DNS, and outbound reachability.")
+    elif direct and not direct.ok and proxied is None:
+        lines.append("Recommendation: direct probe failed; if this host normally needs a proxy, retry with HTTPS_PROXY/HTTP_PROXY configured.")
+    elif direct and direct.ok and proxied and proxied.ok and proxied.elapsed_ms > direct.elapsed_ms + 750:
+        lines.append("Recommendation: the proxy route is materially slower than direct; prefer NO_PROXY for Weixin if possible.")
+    elif direct and direct.ok:
+        lines.append("Recommendation: direct route is healthy; focus on credential/runtime state if replies still fail.")
+    return lines
+
+
+def _weixin_proxy_environment() -> dict[str, str]:
+    values: dict[str, str] = {}
+    for key in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy", "NO_PROXY", "no_proxy"):
+        value = (os.environ.get(key) or "").strip()
+        if value:
+            values[key] = value
+    return values
+
+
+def _weixin_has_proxy_route_env(values: dict[str, str]) -> bool:
+    return any(key.lower() in {"https_proxy", "http_proxy", "all_proxy"} for key in values)
+
+
+def _no_proxy_value() -> str:
+    return (
+        (os.environ.get("NO_PROXY") or "").strip()
+        or (os.environ.get("no_proxy") or "").strip()
+    )
+
+
+def _host_matches_no_proxy(host: str, no_proxy_value: str) -> bool:
+    host = host.strip().lower()
+    if not host or not no_proxy_value:
+        return False
+    for item in no_proxy_value.split(","):
+        candidate = item.strip().lower()
+        if not candidate:
+            continue
+        if candidate == "*":
+            return True
+        normalized = candidate.lstrip(".")
+        if host == normalized or host.endswith(f".{normalized}"):
+            return True
+    return False
+
+
+def _redact_proxy_url(url: str) -> str:
+    parts = urlsplit(url)
+    if parts.username is None:
+        return url
+    auth = parts.username
+    if parts.password is not None:
+        auth = f"{auth}:***"
+    host = parts.hostname or ""
+    if parts.port is not None:
+        host = f"{host}:{parts.port}"
+    return urlunsplit((parts.scheme, f"{auth}@{host}", parts.path, parts.query, parts.fragment))
 
 
 def _cmd_feishu_setup() -> None:
@@ -985,17 +1155,51 @@ async def _cmd_weixin_login() -> None:
     while True:
         qr_state = await _reuse_or_create_qr_state(config, qr_state_store)
         _render_qr_login_state(qr_state_store, qr_state)
+        worker_state = _ensure_weixin_completion_worker(config=config, qrcode_id=qr_state.qrcode_id)
+        if worker_state == "active":
+            _console.print("Weixin QR completion worker already active; background confirmation is still running.")
+        else:
+            _console.print("Weixin QR completion worker started in the background.")
+        _console.print("This command can exit now; rerun `controlmesh auth weixin status` to inspect progress.")
+        return
+
+
+async def _cmd_weixin_login_complete(expected_qrcode_id: str | None = None) -> None:
+    config = load_config()
+    _ensure_weixin_enabled(config)
+    qr_state_store = _weixin_qr_state_store(config)
+    initial_state = qr_state_store.load()
+    if not initial_state.has_active_qr:
+        qr_state_store.clear_qr_image()
+        logger.info("Weixin QR completion worker exiting: no pending QR state")
+        return
+    if expected_qrcode_id is not None and initial_state.qrcode_id != expected_qrcode_id:
+        logger.info(
+            "Weixin QR completion worker exiting: expected qrcode %s but found %s",
+            expected_qrcode_id,
+            initial_state.qrcode_id,
+        )
+        return
+
+    worker_lock_path = _weixin_completion_worker_lock_path(config)
+    try:
+        acquire_lock(pid_file=worker_lock_path, kill_existing=False)
+    except SystemExit:
+        logger.info("Weixin QR completion worker already running for %s", initial_state.qrcode_id)
+        return
+
+    try:
         outcome = await _poll_weixin_qr_until_terminal(
             config=config,
-            store=store,
+            store=_weixin_store(config),
             qr_state_store=qr_state_store,
         )
-        if outcome == "confirmed":
-            return
-        _console.print("Weixin auth state: logged_out")
-        _console.print("Weixin QR status: expired")
-        _console.print("This QR code has expired; do not keep scanning it.")
-        _console.print("Weixin QR expired, generating a new code.")
+        if outcome == "expired":
+            _console.print("Weixin auth state: logged_out")
+            _console.print("Weixin QR status: expired")
+            _console.print("This QR code has expired; do not keep scanning it.")
+    finally:
+        release_lock(pid_file=worker_lock_path)
 
 
 def _cmd_weixin_status() -> None:
@@ -1080,9 +1284,21 @@ def _weixin_qr_state_store(config: AgentConfig) -> WeixinQrLoginStateStore:
     return WeixinQrLoginStateStore(config.controlmesh_home)
 
 
+def _weixin_completion_worker_lock_path(config: AgentConfig) -> Path:
+    return Path(config.controlmesh_home).expanduser() / "weixin_store" / "qr_completion.pid"
+
+
 def _ensure_weixin_enabled(config: AgentConfig) -> None:
     if not config.weixin.enabled:
         raise SystemExit(1)
+
+
+def _parse_weixin_login_complete_args(action_args: Sequence[str]) -> str | None:
+    if not action_args:
+        return None
+    if len(action_args) == 2 and action_args[0] == "--qrcode-id":
+        return action_args[1]
+    raise SystemExit(1)
 
 
 async def _reuse_or_create_qr_state(
@@ -1092,17 +1308,17 @@ async def _reuse_or_create_qr_state(
     existing = qr_state_store.load()
     if existing.has_active_qr:
         if not qr_state_store.qr_image_path.exists() and existing.qrcode_url is not None:
-            with contextlib.suppress(Exception):
-                await _save_qr_artifact(existing.qrcode_url, qr_state_store)
+            await _try_save_qr_artifact(existing.qrcode_url, qr_state_store)
         return existing
 
+    qr_state_store.clear_qr_image()
     qr = await fetch_qr_code(config.weixin.base_url)
     qrcode = qr.get("qrcode")
     qr_url = qr.get("qrcode_img_content")
     if not isinstance(qrcode, str) or not isinstance(qr_url, str):
         raise TypeError("Weixin QR login did not return a QR code")
 
-    await _save_qr_artifact(qr_url, qr_state_store)
+    await _try_save_qr_artifact(qr_url, qr_state_store)
     now_ms = _now_ms()
     state = WeixinQrLoginState(
         auth_state=WEIXIN_AUTH_STATE_QR_WAITING_SCAN,
@@ -1114,6 +1330,56 @@ async def _reuse_or_create_qr_state(
     )
     qr_state_store.save(state)
     return state
+
+
+def _ensure_weixin_completion_worker(*, config: AgentConfig, qrcode_id: str | None) -> str:
+    if qrcode_id is None:
+        return "active"
+    if _weixin_completion_worker_is_active(config):
+        return "active"
+    _spawn_weixin_completion_worker(config=config, qrcode_id=qrcode_id)
+    return "started"
+
+
+def _weixin_completion_worker_is_active(config: AgentConfig) -> bool:
+    lock_path = _weixin_completion_worker_lock_path(config)
+    if not lock_path.exists():
+        return False
+    try:
+        pid = int(lock_path.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return False
+    return _pid_is_active(pid)
+
+
+def _spawn_weixin_completion_worker(*, config: AgentConfig, qrcode_id: str) -> None:
+    paths = resolve_paths(controlmesh_home=config.controlmesh_home)
+    paths.logs_dir.mkdir(parents=True, exist_ok=True)
+    log_path = paths.logs_dir / "weixin_qr_completion.log"
+    env = dict(os.environ)
+    env["CONTROLMESH_HOME"] = str(paths.controlmesh_home)
+    command = [
+        sys.executable,
+        "-m",
+        "controlmesh",
+        "auth",
+        "weixin",
+        "login-complete",
+        "--qrcode-id",
+        qrcode_id,
+    ]
+    log_file = log_path.open("ab")
+    try:
+        subprocess.Popen(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            env=env,
+            start_new_session=True,
+        )
+    finally:
+        log_file.close()
 
 
 async def _poll_weixin_qr_until_terminal(
@@ -1165,6 +1431,7 @@ async def _poll_weixin_qr_until_terminal(
             _weixin_auth_state_store(config).clear()
             store.save_credentials(credentials)
             qr_state_store.clear()
+            _request_transport_restart(config)
             _render_logged_in(config=config, credentials=credentials, store=store)
             return "confirmed"
 
@@ -1201,6 +1468,7 @@ async def _poll_weixin_qr_status_with_retry(
 
 
 async def _save_qr_artifact(qr_url: str, qr_state_store: WeixinQrLoginStateStore) -> None:
+    content_type = ""
     if qr_url.startswith("data:"):
         content = _decode_data_url(qr_url)
     else:
@@ -1210,10 +1478,34 @@ async def _save_qr_artifact(qr_url: str, qr_state_store: WeixinQrLoginStateStore
         timeout = aiohttp.ClientTimeout(total=15)
         async with aiohttp.ClientSession(timeout=timeout) as session, session.get(qr_url) as response:
             response.raise_for_status()
+            content_type = response.headers.get("Content-Type", "")
             content = await response.read()
     if not content:
         raise ValueError("empty QR image content")
+    if not _looks_like_qr_image(content, content_type):
+        msg = "QR artifact did not contain an image"
+        raise ValueError(msg)
     qr_state_store.save_qr_image_bytes(content)
+
+
+async def _try_save_qr_artifact(qr_url: str, qr_state_store: WeixinQrLoginStateStore) -> bool:
+    try:
+        await _save_qr_artifact(qr_url, qr_state_store)
+    except Exception as exc:
+        qr_state_store.clear_qr_image()
+        logger.warning("Weixin QR image unavailable for %s: %s", qr_url, exc)
+        _console.print(f"Weixin QR image unavailable locally: {exc}")
+        _console.print("Use the Weixin QR login URL above to scan on another device.")
+        return False
+    return True
+
+
+def _looks_like_qr_image(content: bytes, content_type: str) -> bool:
+    normalized = content_type.partition(";")[0].strip().lower()
+    if normalized.startswith("image/"):
+        return True
+    guessed = filetype.guess_mime(content)
+    return isinstance(guessed, str) and guessed.startswith("image/")
 
 
 def _decode_data_url(data_url: str) -> bytes:
@@ -1221,6 +1513,14 @@ def _decode_data_url(data_url: str) -> bytes:
     if not payload:
         raise ValueError("invalid QR data URL")
     return base64.b64decode(payload)
+
+
+def _request_transport_restart(config: AgentConfig) -> None:
+    if not _is_weixin_transport_configured(config):
+        return
+    marker = Path(config.controlmesh_home).expanduser() / "restart-requested"
+    write_restart_marker(marker_path=marker)
+    _console.print("Restart requested so the running bot can reload the Weixin transport.")
 
 
 def _qr_status_value(status: dict[str, object]) -> str:
@@ -1366,6 +1666,16 @@ def _state_with(
 
 def _now_ms() -> int:
     return int(time.time() * 1000)
+
+
+def _pid_is_active(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
 
 
 def _render_authorization(authorization: DeviceAuthorization) -> None:

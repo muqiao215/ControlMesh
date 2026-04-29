@@ -15,6 +15,7 @@ from controlmesh.bus.bus import MessageBus
 from controlmesh.bus.lock_pool import LockPool
 from controlmesh.config import AgentConfig
 from controlmesh.files.allowed_roots import resolve_allowed_roots
+from controlmesh.infra.restart import EXIT_RESTART, consume_restart_marker
 from controlmesh.messenger.notifications import NotificationService
 from controlmesh.messenger.weixin.api import WeixinIlinkHttpClient
 from controlmesh.messenger.weixin.auth_state import WeixinAuthStateStore
@@ -74,6 +75,7 @@ class WeixinBot:
         self._session: aiohttp.ClientSession | None = None
         self._runtime: WeixinLongPollRuntime | None = None
         self._poll_task: asyncio.Task[None] | None = None
+        self._restart_watcher: asyncio.Task[None] | None = None
         self._shutdown_started = False
         self._exit_code = 0
 
@@ -88,6 +90,7 @@ class WeixinBot:
         self._runtime_state_store = WeixinRuntimeStateStore(config.controlmesh_home)
         self._notification_service: NotificationService = WeixinNotificationService(self)
         self._bus.register_transport(WeixinTransport(self))
+        self._restart_marker = Path(config.controlmesh_home).expanduser() / "restart-requested"
 
     @property
     def orchestrator(self) -> Orchestrator | None:
@@ -125,6 +128,11 @@ class WeixinBot:
                 self._orchestrator.wire_observers_to_bus(self._bus)
 
             self._start_runtime()
+            if self._restart_watcher is None:
+                self._restart_watcher = asyncio.create_task(
+                    self._watch_restart_marker(),
+                    name="weixin:restart-watch",
+                )
             for hook in self._startup_hooks:
                 await hook()
             await self._stop_event.wait()
@@ -280,10 +288,28 @@ class WeixinBot:
         self._credential_store.clear()
         self._runtime_state_store.clear()
 
+    async def _watch_restart_marker(self) -> None:
+        try:
+            while True:
+                await asyncio.sleep(2.0)
+                if await asyncio.to_thread(consume_restart_marker, marker_path=self._restart_marker):
+                    logger.info("Weixin restart marker detected, requesting restart")
+                    self._exit_code = EXIT_RESTART
+                    self._stop_event.set()
+                    return
+        except asyncio.CancelledError:
+            logger.debug("Weixin restart watcher cancelled")
+
     async def _close_runtime(self) -> None:
         if self._shutdown_started:
             return
         self._shutdown_started = True
+
+        if self._restart_watcher is not None:
+            self._restart_watcher.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._restart_watcher
+            self._restart_watcher = None
 
         if self._poll_task is not None:
             self._poll_task.cancel()

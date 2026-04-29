@@ -124,7 +124,8 @@ class MultiBotAdapter:
     async def run(self) -> int:
         """Start all bots: primary first, then secondaries after orchestrator is ready.
 
-        Returns exit code from the first bot that finishes (e.g. 42 for restart).
+        Primary exit remains authoritative. Secondary transports can degrade and
+        exit cleanly without forcing unrelated healthy transports to stop.
         """
         orch_ready = asyncio.Event()
 
@@ -146,17 +147,32 @@ class MultiBotAdapter:
             for i, bot in enumerate(self._secondaries)
         ]
 
-        all_tasks = [primary_task, *secondary_tasks]
-        done, pending = await asyncio.wait(all_tasks, return_when=asyncio.FIRST_COMPLETED)
+        secondary_by_task = dict(zip(secondary_tasks, self._secondaries, strict=False))
+        pending: set[asyncio.Task[int]] = {primary_task, *secondary_tasks}
 
-        for task in pending:
-            task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
+        try:
+            while pending:
+                done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
 
-        for task in done:
-            return task.result()
-        return 0
+                if primary_task in done:
+                    return primary_task.result()
+
+                for task in done:
+                    code = task.result()
+                    bot = secondary_by_task.get(task)
+                    if code == 0:
+                        logger.warning(
+                            "Secondary transport exited cleanly; keeping remaining transports alive",
+                            extra={"transport": getattr(getattr(bot, "config", None), "transport", None)},
+                        )
+                        continue
+                    return code
+            return 0
+        finally:
+            for task in pending:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
 
     async def shutdown(self) -> None:
         """Shut down all bots."""

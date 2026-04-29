@@ -116,6 +116,22 @@ class TestWeixinQrLoginStateStore:
 
         assert store.load() == WeixinQrLoginState()
 
+    def test_clear_removes_state_and_qr_image(self, tmp_path: Path) -> None:
+        store = WeixinQrLoginStateStore(tmp_path)
+        store.save(
+            WeixinQrLoginState(
+                auth_state="qr_waiting_scan",
+                qrcode_id="qr-token",
+                qrcode_url="https://login.example.com/qr.png",
+            )
+        )
+        store.save_qr_image_bytes(b"png-bytes")
+
+        store.clear()
+
+        assert store.path.exists() is False
+        assert store.qr_image_path.exists() is False
+
 
 def test_credentials_from_confirmed_qr_status() -> None:
     credentials = credentials_from_confirmed_qr_status(

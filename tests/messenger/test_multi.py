@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from controlmesh.infra.restart import EXIT_RESTART
 from controlmesh.messenger.multi import MultiBotAdapter
 from controlmesh.messenger.notifications import CompositeNotificationService
 
@@ -369,6 +370,84 @@ class TestMultiBotAdapterRun:
 
         code = await adapter.run()
         assert code == 42
+
+    async def test_run_keeps_primary_alive_when_secondary_exits_cleanly(self) -> None:
+        config = _make_config()
+        fake_tg = _make_bot(name="telegram")
+        fake_mx = _make_bot(name="weixin")
+        fake_tg.orchestrator = MagicMock()
+
+        registered_hooks: list[Callable[[], Awaitable[None]]] = []
+        primary_release = asyncio.Event()
+
+        def capture_hook(hook: Callable[[], Awaitable[None]]) -> None:
+            registered_hooks.append(hook)
+
+        fake_tg.register_startup_hook = MagicMock(side_effect=capture_hook)
+
+        async def primary_run() -> int:
+            for hook in registered_hooks:
+                await hook()
+            await primary_release.wait()
+            return 0
+
+        async def secondary_run() -> int:
+            return 0
+
+        fake_tg.run = primary_run
+        fake_mx.run = secondary_run
+
+        with patch(
+            "controlmesh.messenger.registry._create_single_bot",
+            side_effect=[fake_tg, fake_mx],
+        ):
+            adapter = MultiBotAdapter(config)
+
+        run_task = asyncio.create_task(adapter.run())
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(asyncio.shield(run_task), timeout=0.05)
+
+        primary_release.set()
+        assert await run_task == 0
+
+    async def test_run_returns_restart_when_secondary_requests_restart(self) -> None:
+        config = _make_config()
+        fake_tg = _make_bot(name="telegram")
+        fake_mx = _make_bot(name="weixin")
+        fake_tg.orchestrator = MagicMock()
+
+        registered_hooks: list[Callable[[], Awaitable[None]]] = []
+        primary_cancelled = asyncio.Event()
+
+        def capture_hook(hook: Callable[[], Awaitable[None]]) -> None:
+            registered_hooks.append(hook)
+
+        fake_tg.register_startup_hook = MagicMock(side_effect=capture_hook)
+
+        async def primary_run() -> int:
+            try:
+                for hook in registered_hooks:
+                    await hook()
+                await asyncio.sleep(10)
+            except asyncio.CancelledError:
+                primary_cancelled.set()
+                raise
+            return 0
+
+        async def secondary_run() -> int:
+            return EXIT_RESTART
+
+        fake_tg.run = primary_run
+        fake_mx.run = secondary_run
+
+        with patch(
+            "controlmesh.messenger.registry._create_single_bot",
+            side_effect=[fake_tg, fake_mx],
+        ):
+            adapter = MultiBotAdapter(config)
+
+        assert await adapter.run() == EXIT_RESTART
+        assert primary_cancelled.is_set() is True
 
     async def test_shutdown_all_bots(self) -> None:
         config = _make_config()

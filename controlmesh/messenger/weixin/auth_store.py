@@ -139,6 +139,7 @@ class WeixinQrLoginStateStore:
 
     def clear(self) -> None:
         self.path.unlink(missing_ok=True)
+        self.clear_qr_image()
 
     def clear_qr_image(self) -> None:
         self.qr_image_path.unlink(missing_ok=True)
