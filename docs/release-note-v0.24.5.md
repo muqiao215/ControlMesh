@@ -10,7 +10,7 @@ matches the current product/runtime shape.
   onto OpenCode's `--dangerously-skip-permissions` flag.
 - Headless Telegram /model sessions using `opencode + zhipuai/glm-5.1` no
   longer auto-reject `external_directory` permission requests for common paths
-  like `/root/.cache/{pip,uv,whisper}` and `/usr/local/bin/*` when the bot is
+  such as local cache directories and external binary paths when the bot is
   configured to bypass permissions.
 - Added regression coverage for the OpenCode permission-flag path.
 - Refreshed the public root README so it now presents ControlMesh as a
