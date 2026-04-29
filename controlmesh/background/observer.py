@@ -11,6 +11,7 @@ from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
 from controlmesh.background.models import BackgroundResult, BackgroundSubmit, BackgroundTask
+from controlmesh.cli.timeout_controller import TimeoutConfig, TimeoutController
 from controlmesh.i18n import t
 from controlmesh.infra.task_runner import run_oneshot_task
 
@@ -24,6 +25,8 @@ logger = logging.getLogger(__name__)
 BgResultCallback = Callable[[BackgroundResult], Awaitable[None]]
 
 MAX_TASKS_PER_CHAT = 5
+BACKGROUND_IDLE_TIMEOUT_SECONDS = 15 * 60.0
+BACKGROUND_MAX_RUNTIME_SECONDS = 60 * 60.0
 
 
 class BackgroundObserver:
@@ -193,6 +196,25 @@ class BackgroundObserver:
 
         t0 = time.monotonic()
         process_label = f"ns:{bg_task.session_name}"
+        max_runtime = max(self._timeout_seconds, BACKGROUND_MAX_RUNTIME_SECONDS)
+        timeout_controller = TimeoutController(
+            TimeoutConfig(
+                timeout_seconds=BACKGROUND_IDLE_TIMEOUT_SECONDS,
+                idle_timeout_seconds=BACKGROUND_IDLE_TIMEOUT_SECONDS,
+                max_runtime_seconds=max_runtime,
+                mode="background",
+                warning_intervals=[],
+                extend_on_activity=False,
+                activity_extension=0.0,
+                max_extensions=0,
+            ),
+        )
+        timeout_controller.attach_process(
+            pid=None,
+            chat_id=bg_task.chat_id,
+            turn_id=process_label,
+            mode="background",
+        )
         try:
             request = AgentRequest(
                 prompt=bg_task.prompt,
@@ -201,7 +223,9 @@ class BackgroundObserver:
                 chat_id=bg_task.chat_id,
                 process_label=process_label,
                 resume_session=bg_task.resume_session_id or None,
-                timeout_seconds=self._timeout_seconds,
+                timeout_seconds=BACKGROUND_IDLE_TIMEOUT_SECONDS,
+                hard_timeout_seconds=max_runtime + 30.0,
+                timeout_controller=timeout_controller,
             )
             response = await self._cli_service.execute(request)
 

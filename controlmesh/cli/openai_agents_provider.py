@@ -49,6 +49,7 @@ class OpenAIAgentsCLI(BaseCLI):
         continue_session: bool = False,
         timeout_seconds: float | None = None,
         timeout_controller: TimeoutController | None = None,
+        hard_timeout_seconds: float | None = None,
     ) -> CLIResponse:
         """Run one SDK turn and return a normalized CLIResponse."""
         if resume_session or continue_session:
@@ -84,6 +85,7 @@ class OpenAIAgentsCLI(BaseCLI):
         continue_session: bool = False,
         timeout_seconds: float | None = None,
         timeout_controller: TimeoutController | None = None,
+        hard_timeout_seconds: float | None = None,
     ) -> AsyncGenerator[StreamEvent, None]:
         """Expose a minimal ControlMesh stream envelope for one SDK turn."""
         yield SystemInitEvent(type="system", subtype="init")

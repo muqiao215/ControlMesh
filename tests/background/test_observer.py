@@ -11,7 +11,13 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from controlmesh.background.models import BackgroundResult, BackgroundSubmit
-from controlmesh.background.observer import MAX_TASKS_PER_CHAT, BackgroundObserver
+from controlmesh.background.observer import (
+    BACKGROUND_IDLE_TIMEOUT_SECONDS,
+    BACKGROUND_MAX_RUNTIME_SECONDS,
+    MAX_TASKS_PER_CHAT,
+    BackgroundObserver,
+)
+from controlmesh.cli.types import AgentResponse
 from controlmesh.cli.param_resolver import TaskExecutionConfig
 from controlmesh.cron.execution import OneShotExecutionResult
 from controlmesh.infra.task_runner import TaskResult
@@ -199,6 +205,35 @@ class TestExecution:
 
         bg_result: BackgroundResult = handler.call_args[0][0]
         assert bg_result.status == "error:timeout"
+
+    async def test_named_session_uses_background_watchdog_policy(self, paths: ControlMeshPaths) -> None:
+        cli_service = AsyncMock()
+        cli_service.execute = AsyncMock(return_value=AgentResponse(result="done", session_id="sid"))
+        observer = BackgroundObserver(paths, timeout_seconds=120.0, cli_service=cli_service)
+        observer.set_result_handler(AsyncMock())
+        config = _make_exec_config()
+
+        observer.submit(
+            BackgroundSubmit(
+                chat_id=123,
+                prompt="continue",
+                message_id=1,
+                thread_id=None,
+                session_name="deep-work",
+                resume_session_id="sid0",
+            ),
+            config,
+        )
+        await asyncio.sleep(0.05)
+
+        request = cli_service.execute.call_args[0][0]
+        assert request.timeout_seconds == BACKGROUND_IDLE_TIMEOUT_SECONDS
+        assert request.hard_timeout_seconds == BACKGROUND_MAX_RUNTIME_SECONDS + 30.0
+        assert request.timeout_controller is not None
+        assert request.timeout_controller.idle_timeout_seconds == BACKGROUND_IDLE_TIMEOUT_SECONDS
+        assert request.timeout_controller.max_runtime_seconds == BACKGROUND_MAX_RUNTIME_SECONDS
+        assert request.timeout_controller.state.mode == "background"
+        await observer.shutdown()
 
 
 class TestCancel:

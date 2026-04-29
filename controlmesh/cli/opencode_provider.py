@@ -83,12 +83,20 @@ class OpenCodeCLI(BaseCLI):
         continue_session: bool = False,
         timeout_seconds: float | None = None,
         timeout_controller: TimeoutController | None = None,
+        hard_timeout_seconds: float | None = None,
     ) -> CLIResponse:
         cmd = self._build_command(prompt, resume_session, continue_session)
         exec_cmd, use_cwd = docker_wrap(cmd, self._config)
         return await run_oneshot_subprocess(
             config=self._config,
-            spec=SubprocessSpec(exec_cmd, use_cwd, None, timeout_seconds, timeout_controller),
+            spec=SubprocessSpec(
+                exec_cmd,
+                use_cwd,
+                "",
+                timeout_seconds,
+                timeout_controller,
+                hard_timeout_seconds,
+            ),
             parse_output=self._parse_output,
             provider_label="OpenCode",
         )
@@ -100,6 +108,7 @@ class OpenCodeCLI(BaseCLI):
         continue_session: bool = False,
         timeout_seconds: float | None = None,
         timeout_controller: TimeoutController | None = None,
+        hard_timeout_seconds: float | None = None,
     ) -> AsyncGenerator[StreamEvent, None]:
         response = await self.send(
             prompt,
@@ -107,6 +116,7 @@ class OpenCodeCLI(BaseCLI):
             continue_session=continue_session,
             timeout_seconds=timeout_seconds,
             timeout_controller=timeout_controller,
+            hard_timeout_seconds=hard_timeout_seconds,
         )
         if response.session_id:
             yield SystemInitEvent(type="system", subtype="init", session_id=response.session_id)

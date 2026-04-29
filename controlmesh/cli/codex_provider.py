@@ -166,6 +166,7 @@ class CodexCLI(BaseCLI):
         continue_session: bool = False,
         timeout_seconds: float | None = None,
         timeout_controller: TimeoutController | None = None,
+        hard_timeout_seconds: float | None = None,
     ) -> CLIResponse:
         """Send a prompt and return the final result."""
         if continue_session:
@@ -175,7 +176,14 @@ class CodexCLI(BaseCLI):
         _log_cmd(exec_cmd)
         return await run_oneshot_subprocess(
             config=self._config,
-            spec=SubprocessSpec(exec_cmd, use_cwd, prompt, timeout_seconds, timeout_controller),
+            spec=SubprocessSpec(
+                exec_cmd,
+                use_cwd,
+                prompt,
+                timeout_seconds,
+                timeout_controller,
+                hard_timeout_seconds,
+            ),
             parse_output=self._parse_output,
             provider_label="Codex",
         )
@@ -187,6 +195,7 @@ class CodexCLI(BaseCLI):
         continue_session: bool = False,
         timeout_seconds: float | None = None,
         timeout_controller: TimeoutController | None = None,
+        hard_timeout_seconds: float | None = None,
     ) -> AsyncGenerator[StreamEvent, None]:
         """Send a prompt and yield stream events as they arrive."""
         cmd = self._build_command(prompt, resume_session, json_output=True)
@@ -212,7 +221,14 @@ class CodexCLI(BaseCLI):
 
         async for event in run_streaming_subprocess(
             config=self._config,
-            spec=SubprocessSpec(exec_cmd, use_cwd, prompt, timeout_seconds, timeout_controller),
+            spec=SubprocessSpec(
+                exec_cmd,
+                use_cwd,
+                prompt,
+                timeout_seconds,
+                timeout_controller,
+                hard_timeout_seconds,
+            ),
             line_handler=line_handler,
             provider_label="Codex",
             post_handler=post_handler,

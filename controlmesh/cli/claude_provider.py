@@ -103,6 +103,7 @@ class ClaudeCodeCLI(BaseCLI):
         continue_session: bool = False,
         timeout_seconds: float | None = None,
         timeout_controller: TimeoutController | None = None,
+        hard_timeout_seconds: float | None = None,
     ) -> CLIResponse:
         """Send a prompt and return the final result."""
         cmd = self._build_command(prompt, resume_session, continue_session)
@@ -110,7 +111,14 @@ class ClaudeCodeCLI(BaseCLI):
         _log_cmd(exec_cmd)
         return await run_oneshot_subprocess(
             config=self._config,
-            spec=SubprocessSpec(exec_cmd, use_cwd, prompt, timeout_seconds, timeout_controller),
+            spec=SubprocessSpec(
+                exec_cmd,
+                use_cwd,
+                prompt,
+                timeout_seconds,
+                timeout_controller,
+                hard_timeout_seconds,
+            ),
             parse_output=_parse_response,
             provider_label="CLI",
         )
@@ -139,6 +147,7 @@ class ClaudeCodeCLI(BaseCLI):
         continue_session: bool = False,
         timeout_seconds: float | None = None,
         timeout_controller: TimeoutController | None = None,
+        hard_timeout_seconds: float | None = None,
     ) -> AsyncGenerator[StreamEvent, None]:
         """Send a prompt and yield stream events as they arrive."""
         cmd = self._build_command_streaming(prompt, resume_session, continue_session)
@@ -147,7 +156,14 @@ class ClaudeCodeCLI(BaseCLI):
 
         async for event in run_streaming_subprocess(
             config=self._config,
-            spec=SubprocessSpec(exec_cmd, use_cwd, prompt, timeout_seconds, timeout_controller),
+            spec=SubprocessSpec(
+                exec_cmd,
+                use_cwd,
+                prompt,
+                timeout_seconds,
+                timeout_controller,
+                hard_timeout_seconds,
+            ),
             line_handler=_claude_line_handler,
             provider_label="CLI",
         ):

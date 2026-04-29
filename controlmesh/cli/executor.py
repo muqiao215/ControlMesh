@@ -9,9 +9,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import inspect
 import logging
 from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass
+from asyncio import create_task as _asyncio_create_task
+from asyncio import wait_for as _asyncio_wait_for
 
 from controlmesh.cli.base import (
     _IS_WINDOWS,
@@ -81,6 +84,7 @@ class SubprocessSpec:
     prompt: str
     timeout_seconds: float | None = None
     timeout_controller: TimeoutController | None = None
+    hard_timeout_seconds: float | None = None
 
 
 @dataclass(slots=True)
@@ -152,6 +156,13 @@ async def run_streaming_subprocess(
         raise RuntimeError(msg)
     _win_feed_stdin(process, spec.prompt)
     logger.info("%s subprocess starting pid=%s", provider_label, process.pid)
+    if spec.timeout_controller:
+        spec.timeout_controller.attach_process(
+            pid=process.pid,
+            chat_id=config.chat_id,
+            turn_id=config.process_label,
+            mode=spec.timeout_controller.state.mode,
+        )
 
     reg = config.process_registry
     tracked = (
@@ -166,10 +177,16 @@ async def run_streaming_subprocess(
             yield event
         stderr_bytes = await stderr_drain
     except TimeoutError:
-        force_kill_process_tree(process.pid)
-        await process.wait()
-        timeout_s = spec.timeout_seconds or 0
-        logger.warning("%s stream timed out after %.0fs", provider_label, timeout_s)
+        cleanup = _schedule_timeout_cleanup(process, provider_label=provider_label, spec=spec)
+        if _should_await_timeout_cleanup(spec):
+            await cleanup
+        timeout_s = _reported_timeout_seconds(spec)
+        logger.warning(
+            "%s stream timed out reason=%s after %.0fs",
+            provider_label,
+            _timeout_reason(spec),
+            timeout_s,
+        )
         yield ResultEvent(
             type="result",
             result=f"__TIMEOUT__{int(timeout_s)}",
@@ -234,6 +251,19 @@ async def _stream_with_controller(
     warning_task = tc.start_warning_loop()
 
     try:
+        if tc.uses_idle_liveness is True:
+            while True:
+                async with asyncio.timeout(tc.seconds_until_timeout()):
+                    line_bytes = await process.stdout.readline()  # type: ignore[union-attr]
+                if not line_bytes:
+                    return  # EOF
+                tc.record_output()
+                line = line_bytes.decode(errors="replace").rstrip()
+                logger.debug("Stream line: %s", line[:120])
+                async for event in line_handler(line):
+                    _record_event_activity(tc, event)
+                    yield event
+
         timeout_secs = tc.timeout_seconds
         while True:
             try:
@@ -242,12 +272,15 @@ async def _stream_with_controller(
                         line_bytes = await process.stdout.readline()  # type: ignore[union-attr]
                         if not line_bytes:
                             return  # EOF
-                        tc.record_activity()
+                        tc.record_output()
                         line = line_bytes.decode(errors="replace").rstrip()
                         logger.debug("Stream line: %s", line[:120])
                         async for event in line_handler(line):
+                            _record_event_activity(tc, event)
                             yield event
             except TimeoutError:
+                if tc.uses_idle_liveness:
+                    raise
                 if tc.try_extend():
                     timeout_secs = tc.activity_extension_seconds
                     continue
@@ -299,6 +332,13 @@ async def run_oneshot_subprocess(
         else None
     )
     try:
+        if spec.timeout_controller:
+            spec.timeout_controller.attach_process(
+                pid=process.pid,
+                chat_id=config.chat_id,
+                turn_id=config.process_label,
+                mode=spec.timeout_controller.state.mode,
+            )
         stdin_data = spec.prompt.encode() if _IS_WINDOWS else None
         if spec.timeout_controller:
             communicate_coro = process.communicate(input=stdin_data)
@@ -307,9 +347,15 @@ async def run_oneshot_subprocess(
             async with asyncio.timeout(spec.timeout_seconds):
                 stdout, stderr = await process.communicate(input=stdin_data)
     except TimeoutError:
-        force_kill_process_tree(process.pid)
-        await process.wait()
-        logger.warning("%s timed out after %.0fs", provider_label, spec.timeout_seconds)
+        cleanup = _schedule_timeout_cleanup(process, provider_label=provider_label, spec=spec)
+        if _should_await_timeout_cleanup(spec):
+            await cleanup
+        logger.warning(
+            "%s timed out reason=%s after %.0fs",
+            provider_label,
+            _timeout_reason(spec),
+            _reported_timeout_seconds(spec),
+        )
         return CLIResponse(result="", is_error=True, timed_out=True)
     finally:
         if tracked and reg:
@@ -328,9 +374,116 @@ def _win_stdin_pipe() -> int | None:
     return asyncio.subprocess.PIPE if _IS_WINDOWS else None
 
 
+def _record_event_activity(tc: TimeoutController, event: StreamEvent) -> None:
+    """Treat protocolized stream events as liveness signals."""
+    class_name = event.__class__.__name__
+    event_type = getattr(event, "type", "")
+    if class_name == "AssistantTextDelta":
+        tc.record_token()
+    elif class_name == "SystemStatusEvent":
+        tc.record_activity("status")
+    elif class_name in {"ToolUseEvent", "ToolResultEvent", "ThinkingEvent", "ResultEvent"}:
+        tc.record_activity(class_name.removesuffix("Event").lower())
+    elif event_type:
+        tc.record_activity(event_type)
+
+
+def _timeout_reason(spec: SubprocessSpec) -> str:
+    if spec.timeout_controller:
+        return spec.timeout_controller.timeout_reason
+    return "timeout"
+
+
+def _reported_timeout_seconds(spec: SubprocessSpec) -> float:
+    if spec.timeout_controller:
+        if spec.timeout_controller.timeout_reason == "idle":
+            return spec.timeout_controller.idle_timeout_seconds or 0.0
+        if spec.timeout_controller.timeout_reason == "max_runtime":
+            return spec.timeout_controller.max_runtime_seconds or 0.0
+    return spec.timeout_seconds or 0.0
+
+
 async def _cancel_drain(drain: asyncio.Task[bytes]) -> None:
     """Cancel a stderr drain task and silently absorb any resulting exception."""
     if not drain.done():
         drain.cancel()
         with contextlib.suppress(BaseException):
             await drain
+
+
+_TIMEOUT_CLEANUP_TASKS: set[asyncio.Task[None]] = set()
+
+
+def _schedule_timeout_cleanup(
+    process: asyncio.subprocess.Process,
+    *,
+    provider_label: str,
+    spec: SubprocessSpec,
+) -> asyncio.Task[None]:
+    """Start asynchronous cleanup for a process after a soft timeout."""
+    task = _asyncio_create_task(
+        _cleanup_timed_out_process(
+            process,
+            provider_label=provider_label,
+            soft_timeout_seconds=spec.timeout_seconds,
+            hard_timeout_seconds=spec.hard_timeout_seconds,
+        )
+    )
+    _TIMEOUT_CLEANUP_TASKS.add(task)
+    task.add_done_callback(_TIMEOUT_CLEANUP_TASKS.discard)
+    return task
+
+
+def _should_await_timeout_cleanup(spec: SubprocessSpec) -> bool:
+    """Await cleanup only when the hard-kill grace is short."""
+    soft_timeout = float(spec.timeout_seconds or 0)
+    hard_timeout = float(spec.hard_timeout_seconds or soft_timeout)
+    return max(0.0, hard_timeout - soft_timeout) <= 0.1
+
+
+async def _cleanup_timed_out_process(
+    process: asyncio.subprocess.Process,
+    *,
+    provider_label: str,
+    soft_timeout_seconds: float | None,
+    hard_timeout_seconds: float | None,
+) -> None:
+    """Terminate at soft timeout and force-kill the process tree at hard timeout."""
+    soft_timeout = float(soft_timeout_seconds or 0)
+    hard_timeout = float(hard_timeout_seconds or soft_timeout)
+    hard_grace_seconds = max(0.0, hard_timeout - soft_timeout)
+
+    if process.returncode is not None:
+        await _wait_process(process)
+        return
+
+    with contextlib.suppress(ProcessLookupError):
+        process.terminate()
+
+    try:
+        if hard_grace_seconds <= 0:
+            force_kill_process_tree(process.pid)
+            await _wait_process(process)
+            return
+        await _asyncio_wait_for(_wait_process(process), timeout=hard_grace_seconds)
+    except TimeoutError:
+        logger.warning(
+            "%s subprocess exceeded hard timeout %.0fs; force-killing pid=%s",
+            provider_label,
+            hard_timeout,
+            process.pid,
+        )
+    except ProcessLookupError:
+        return
+
+    force_kill_process_tree(process.pid)
+    with contextlib.suppress(ProcessLookupError):
+        await _wait_process(process)
+
+
+async def _wait_process(process: asyncio.subprocess.Process) -> object:
+    """Await process.wait() when awaitable; tolerate simple test doubles."""
+    result = process.wait()
+    if inspect.isawaitable(result):
+        return await result
+    return result

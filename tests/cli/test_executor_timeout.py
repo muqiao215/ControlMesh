@@ -10,6 +10,7 @@ import pytest
 
 from controlmesh.cli.executor import (
     SubprocessSpec,
+    _cleanup_timed_out_process,
     _stream_with_controller,
     _stream_with_timeout,
 )
@@ -125,6 +126,39 @@ class TestStreamWithController:
             async for _ in _stream_with_controller(process, tc, _line_handler):
                 pass
 
+    async def test_idle_timeout_is_primary_liveness_detector(self) -> None:
+        tc = TimeoutController(
+            TimeoutConfig(
+                timeout_seconds=0.05,
+                idle_timeout_seconds=0.15,
+                max_runtime_seconds=1.0,
+                mode="foreground",
+                extend_on_activity=False,
+            ),
+        )
+        process = _make_process([b"alive\n", b"done\n"], delay=0.08)
+
+        events = [event async for event in _stream_with_controller(process, tc, _line_handler)]
+
+        assert [event.subtype for event in events] == ["alive", "done"]
+
+    async def test_idle_timeout_fires_after_no_output(self) -> None:
+        tc = TimeoutController(
+            TimeoutConfig(
+                timeout_seconds=5.0,
+                idle_timeout_seconds=0.05,
+                max_runtime_seconds=1.0,
+                mode="foreground",
+                extend_on_activity=False,
+            ),
+        )
+        process = _make_process([b"late\n"], delay=0.2)
+
+        with pytest.raises(TimeoutError):
+            async for _ in _stream_with_controller(process, tc, _line_handler):
+                pass
+        assert tc.timeout_reason == "idle"
+
     async def test_activity_extends_timeout(self) -> None:
         """Lines arriving before deadline should trigger extension."""
         tc = TimeoutController(
@@ -214,6 +248,47 @@ class TestOneshotWithController:
 
         with pytest.raises(TimeoutError):
             await tc.run_with_timeout(slow_communicate())
+
+
+class TestSoftHardSubprocessCleanup:
+    """Foreground subprocess timeout cleanup uses soft response + hard kill."""
+
+    async def test_cleanup_terminates_then_force_kills_at_hard_deadline(self) -> None:
+        process = MagicMock()
+        process.pid = 99999
+        process.returncode = None
+        process.terminate = MagicMock()
+
+        wait_released = asyncio.Event()
+        wait_calls = 0
+
+        async def wait() -> int:
+            nonlocal wait_calls
+            wait_calls += 1
+            await wait_released.wait()
+            process.returncode = -9
+            return -9
+
+        process.wait = wait
+
+        def fake_force_kill(pid: int) -> None:
+            assert pid == 99999
+            wait_released.set()
+
+        with pytest.MonkeyPatch.context() as mp:
+            force_kill = MagicMock(side_effect=fake_force_kill)
+            mp.setattr("controlmesh.cli.executor.force_kill_process_tree", force_kill)
+
+            await _cleanup_timed_out_process(
+                process,
+                provider_label="Codex",
+                soft_timeout_seconds=0.01,
+                hard_timeout_seconds=0.02,
+            )
+
+        process.terminate.assert_called_once_with()
+        force_kill.assert_called_once_with(99999)
+        assert wait_calls >= 2
 
 
 class TestBackwardCompat:

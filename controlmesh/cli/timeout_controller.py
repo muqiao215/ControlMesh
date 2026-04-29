@@ -37,10 +37,28 @@ class TimeoutConfig:
     """Grouped configuration for :class:`TimeoutController`."""
 
     timeout_seconds: float
+    idle_timeout_seconds: float | None = None
+    max_runtime_seconds: float | None = None
+    mode: str = "foreground"
     warning_intervals: list[float] = field(default_factory=list)
     extend_on_activity: bool = True
     activity_extension: float = 120.0
     max_extensions: int = 3
+
+
+@dataclass(slots=True)
+class WatchdogState:
+    """Observable runner/watchdog state for one subprocess turn."""
+
+    started_at: float = 0.0
+    last_output_at: float = 0.0
+    last_activity_at: float = 0.0
+    last_token_at: float = 0.0
+    last_status: str = "starting"
+    pid: int | None = None
+    chat_id: int = 0
+    turn_id: str = ""
+    mode: str = "foreground"
 
 
 class TimeoutController:
@@ -73,18 +91,48 @@ class TimeoutController:
         self._last_activity: float = 0.0
         self._started_at: float = 0.0
         self._deadline: float = 0.0
+        self._timeout_reason = "timeout"
+        self.state = WatchdogState(mode=cfg.mode)
 
     # ------------------------------------------------------------------
     # Public helpers
     # ------------------------------------------------------------------
 
-    def record_activity(self) -> None:
-        """Record that the subprocess produced output (non-async, fast)."""
-        self._last_activity = time.monotonic()
+    def record_activity(self, status: str = "activity") -> None:
+        """Record broad subprocess progress (non-async, fast)."""
+        now = time.monotonic()
+        self._last_activity = now
+        self.state.last_activity_at = now
+        self.state.last_status = status
+
+    def record_output(self, status: str = "output") -> None:
+        """Record stdout/stderr output as liveness activity."""
+        now = time.monotonic()
+        self._last_activity = now
+        self.state.last_activity_at = now
+        self.state.last_output_at = now
+        self.state.last_status = status
+
+    def record_token(self) -> None:
+        """Record a streamed token/text delta as liveness activity."""
+        now = time.monotonic()
+        self._last_activity = now
+        self.state.last_activity_at = now
+        self.state.last_token_at = now
+        self.state.last_status = "token"
+
+    def attach_process(self, *, pid: int | None, chat_id: int, turn_id: str, mode: str) -> None:
+        """Attach process identity to the observable watchdog state."""
+        self.state.pid = pid
+        self.state.chat_id = chat_id
+        self.state.turn_id = turn_id
+        self.state.mode = mode
 
     @property
     def remaining(self) -> float:
         """Seconds remaining until timeout (0 if not running)."""
+        if self.uses_idle_liveness:
+            return self.seconds_until_timeout()
         if self._deadline <= 0:
             return 0.0
         return max(0.0, self._deadline - time.monotonic())
@@ -93,6 +141,26 @@ class TimeoutController:
     def timeout_seconds(self) -> float:
         """Configured base timeout in seconds."""
         return self._cfg.timeout_seconds
+
+    @property
+    def idle_timeout_seconds(self) -> float | None:
+        """Configured idle/no-progress timeout in seconds."""
+        return self._cfg.idle_timeout_seconds
+
+    @property
+    def max_runtime_seconds(self) -> float | None:
+        """Configured total runtime backstop in seconds."""
+        return self._cfg.max_runtime_seconds
+
+    @property
+    def uses_idle_liveness(self) -> bool:
+        """Whether idle/no-progress is the primary timeout policy."""
+        return self._cfg.idle_timeout_seconds is not None
+
+    @property
+    def timeout_reason(self) -> str:
+        """Most recent timeout reason: ``idle`` or ``max_runtime``."""
+        return self._timeout_reason
 
     @property
     def activity_extension_seconds(self) -> float:
@@ -104,6 +172,12 @@ class TimeoutController:
         self._started_at = time.monotonic()
         self._deadline = self._started_at + self._cfg.timeout_seconds
         self._last_activity = self._started_at
+        self._timeout_reason = "timeout"
+        self.state.started_at = self._started_at
+        self.state.last_activity_at = self._started_at
+        self.state.last_output_at = 0.0
+        self.state.last_token_at = 0.0
+        self.state.last_status = "running"
 
     def start_warning_loop(self) -> asyncio.Task[None] | None:
         """Start the background warning loop task.
@@ -138,6 +212,27 @@ class TimeoutController:
         )
         return True
 
+    def seconds_until_timeout(self) -> float:
+        """Seconds until the next idle or max-runtime deadline."""
+        if not self.uses_idle_liveness:
+            return max(0.0, self._deadline - time.monotonic())
+        now = time.monotonic()
+        deadlines: list[tuple[str, float]] = []
+        if self._cfg.idle_timeout_seconds is not None:
+            deadlines.append(("idle", self._last_activity + self._cfg.idle_timeout_seconds))
+        if self._cfg.max_runtime_seconds is not None:
+            deadlines.append(("max_runtime", self._started_at + self._cfg.max_runtime_seconds))
+        if not deadlines:
+            return max(0.0, self._deadline - now)
+        reason, deadline = min(deadlines, key=lambda item: item[1])
+        self._timeout_reason = reason
+        return max(0.0, deadline - now)
+
+    def raise_if_timed_out(self) -> None:
+        """Raise ``TimeoutError`` if idle/max-runtime deadline has elapsed."""
+        if self.seconds_until_timeout() <= 0:
+            raise TimeoutError
+
     # ------------------------------------------------------------------
     # Coroutine wrapper (for oneshot / non-generator use)
     # ------------------------------------------------------------------
@@ -156,7 +251,9 @@ class TimeoutController:
 
         try:
             while True:
-                remaining = self._deadline - time.monotonic()
+                remaining = self.seconds_until_timeout()
+                if remaining <= 0 and self.uses_idle_liveness:
+                    raise TimeoutError
                 if remaining <= 0 and not self.try_extend():
                     main_task.cancel()
                     with contextlib.suppress(asyncio.CancelledError):
@@ -172,6 +269,11 @@ class TimeoutController:
                 if main_task in done:
                     return main_task.result()
 
+                if self.uses_idle_liveness and self.seconds_until_timeout() <= 0:
+                    main_task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await main_task
+                    raise TimeoutError
                 if time.monotonic() >= self._deadline and not self.try_extend():
                     main_task.cancel()
                     with contextlib.suppress(asyncio.CancelledError):

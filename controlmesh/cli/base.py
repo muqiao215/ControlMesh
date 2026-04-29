@@ -216,6 +216,7 @@ class BaseCLI(ABC):
         continue_session: bool = False,
         timeout_seconds: float | None = None,
         timeout_controller: TimeoutController | None = None,
+        hard_timeout_seconds: float | None = None,
     ) -> CLIResponse: ...
 
     @abstractmethod
@@ -226,6 +227,7 @@ class BaseCLI(ABC):
         continue_session: bool = False,
         timeout_seconds: float | None = None,
         timeout_controller: TimeoutController | None = None,
+        hard_timeout_seconds: float | None = None,
     ) -> AsyncGenerator[StreamEvent, None]: ...
 
     async def introspect(self) -> ProviderIntrospection:

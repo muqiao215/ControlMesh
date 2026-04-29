@@ -9,6 +9,10 @@ import pytest
 from controlmesh.cli.types import AgentResponse
 from controlmesh.orchestrator.core import Orchestrator
 from controlmesh.orchestrator.flows import (
+    FOREGROUND_IDLE_TIMEOUT_SECONDS,
+    FOREGROUND_HARD_KILL_TIMEOUT_SECONDS,
+    FOREGROUND_MAX_RUNTIME_SECONDS,
+    FOREGROUND_SOFT_TIMEOUT_SECONDS,
     StreamingCallbacks,
     _finish_normal,
     _strip_ack_token,
@@ -140,6 +144,32 @@ async def test_normal_timeout_preserves_session(orch: Orchestrator) -> None:
     assert "Timeout" in result.text
     assert "session has been preserved" in result.text
     assert mock_execute.call_count == 1
+
+
+async def test_normal_uses_foreground_soft_and_hard_timeouts(orch: Orchestrator) -> None:
+    mock_execute = AsyncMock(return_value=_mock_response())
+    object.__setattr__(orch._cli_service, "execute", mock_execute)
+
+    await normal(orch, SessionKey(chat_id=1), "Hello")
+
+    request = mock_execute.call_args[0][0]
+    assert request.timeout_seconds == FOREGROUND_SOFT_TIMEOUT_SECONDS
+    assert request.hard_timeout_seconds == FOREGROUND_HARD_KILL_TIMEOUT_SECONDS
+    assert request.timeout_controller is not None
+    assert request.timeout_controller.idle_timeout_seconds == FOREGROUND_IDLE_TIMEOUT_SECONDS
+    assert request.timeout_controller.max_runtime_seconds == FOREGROUND_MAX_RUNTIME_SECONDS
+    assert request.timeout_controller.state.mode == "foreground"
+
+
+async def test_normal_timeout_cleans_inflight_state(orch: Orchestrator) -> None:
+    mock_execute = AsyncMock(return_value=_mock_response(is_error=True, timed_out=True, result=""))
+    object.__setattr__(orch._cli_service, "execute", mock_execute)
+    object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
+
+    result = await normal(orch, SessionKey(chat_id=1), "Hello")
+
+    assert "Timeout" in result.text
+    assert not orch.paths.inflight_turns_path.exists()
 
 
 async def test_normal_next_message_can_succeed_after_error(orch: Orchestrator) -> None:

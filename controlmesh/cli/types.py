@@ -58,6 +58,7 @@ class AgentRequest:
     resume_session: str | None = None
     continue_session: bool = False
     timeout_seconds: float | None = None
+    hard_timeout_seconds: float | None = None
     timeout_controller: TimeoutController | None = None
 
 

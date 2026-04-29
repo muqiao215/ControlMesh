@@ -203,6 +203,7 @@ class CLIService:
             continue_session=request.continue_session,
             timeout_seconds=request.timeout_seconds,
             timeout_controller=request.timeout_controller,
+            hard_timeout_seconds=request.hard_timeout_seconds,
         )
         elapsed_ms = (time.monotonic() - t0) * 1000
 
@@ -239,6 +240,7 @@ class CLIService:
                 continue_session=request.continue_session,
                 timeout_seconds=request.timeout_seconds,
                 timeout_controller=request.timeout_controller,
+                hard_timeout_seconds=request.hard_timeout_seconds,
             ):
                 if self._process_registry.was_aborted(request.chat_id):
                     logger.info("Streaming aborted mid-stream chat=%d", request.chat_id)
