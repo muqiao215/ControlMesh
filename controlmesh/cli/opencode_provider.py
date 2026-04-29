@@ -55,7 +55,9 @@ class OpenCodeCLI(BaseCLI):
         resume_session: str | None = None,
         continue_session: bool = False,
     ) -> list[str]:
-        cmd = [self._cli, "run", "--format", "json", "--quiet"]
+        # OpenCode 1.14.x dropped `--quiet`; `--format json` is the stable
+        # machine-readable surface we rely on across hosts.
+        cmd = [self._cli, "run", "--format", "json"]
         if self._config.model:
             cmd += ["--model", self._config.model]
         if resume_session:

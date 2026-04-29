@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from controlmesh.cli.base import CLIConfig, docker_wrap
 from controlmesh.cli.claude_provider import ClaudeCodeCLI
 from controlmesh.cli.codex_provider import CodexCLI
+from controlmesh.cli.opencode_provider import OpenCodeCLI
 
 if TYPE_CHECKING:
     import pytest
@@ -200,3 +201,30 @@ def test_codex_build_command_with_images(monkeypatch: pytest.MonkeyPatch) -> Non
     cmd = cli._build_command("hello")
     assert "--image" in cmd
     assert "img.png" in cmd
+
+
+# -- OpenCodeCLI command building --
+
+
+def test_opencode_build_command_uses_json_without_quiet(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("controlmesh.cli.opencode_provider.which", lambda _: "/usr/bin/opencode")
+    cfg = CLIConfig(provider="opencode", model="zhipuai/glm-5.1")
+    cli = OpenCodeCLI(cfg)
+    cmd = cli._build_command("hello")
+
+    assert cmd[:4] == ["/usr/bin/opencode", "run", "--format", "json"]
+    assert "--model" in cmd
+    assert "zhipuai/glm-5.1" in cmd
+    assert "--quiet" not in cmd
+    assert cmd[-1] == "hello"
+
+
+def test_opencode_build_command_with_resume_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("controlmesh.cli.opencode_provider.which", lambda _: "/usr/bin/opencode")
+    cfg = CLIConfig(provider="opencode", model="zhipuai/glm-5.1")
+    cli = OpenCodeCLI(cfg)
+    cmd = cli._build_command("hello", resume_session="sess-123")
+
+    assert "--session" in cmd
+    idx = cmd.index("--session")
+    assert cmd[idx + 1] == "sess-123"
