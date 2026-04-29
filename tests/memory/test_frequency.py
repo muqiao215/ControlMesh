@@ -346,7 +346,7 @@ class TestFindRepeatedPatterns:
             open_candidates=[],
         )
 
-        result = find_repeated_patterns(paths, window_days=7)
+        result = find_repeated_patterns(paths, window_days=7, end_date=date(2026, 4, 24))
 
         assert result.total_patterns == 1
         p = result.patterns[0]
@@ -388,7 +388,7 @@ class TestFindRepeatedPatterns:
                 open_candidates=[cand_text],
             )
 
-        result = find_repeated_patterns(paths, window_days=7)
+        result = find_repeated_patterns(paths, window_days=7, end_date=date(2026, 4, 25))
 
         assert result.total_patterns == 1
         p = result.patterns[0]
@@ -519,7 +519,7 @@ class TestFindRepeatedPatterns:
                 open_candidates=[oc_text],
             )
 
-        result = find_repeated_patterns(paths, window_days=7)
+        result = find_repeated_patterns(paths, window_days=7, end_date=date(2026, 4, 25))
 
         assert result.total_patterns == 3
         by_section = {p.section: p for p in result.patterns}
@@ -634,7 +634,7 @@ class TestFindRepeatedPatterns:
             open_candidates=[],
         )
 
-        result = find_repeated_patterns(paths, window_days=7)
+        result = find_repeated_patterns(paths, window_days=7, end_date=date(2026, 4, 24))
 
         p = result.patterns[0]
         assert len(p.source_refs) == 2
@@ -661,7 +661,7 @@ class TestFindRepeatedPatterns:
                 open_candidates=[],
             )
 
-        result = find_repeated_patterns(paths, window_days=7)
+        result = find_repeated_patterns(paths, window_days=7, end_date=date(2026, 4, 25))
 
         assert result.patterns[0].count == 3
         assert result.patterns[0].section == "Events"
@@ -719,7 +719,7 @@ class TestFindRepeatedPatterns:
             open_candidates=[],
         )
 
-        result = find_repeated_patterns(paths, window_days=7)
+        result = find_repeated_patterns(paths, window_days=7, end_date=date(2026, 4, 24))
 
         assert result.total_patterns == 1
         assert result.patterns[0].count == 2
@@ -745,7 +745,7 @@ class TestPatternAnalysisViaCapture:
             )
             capture_event(paths, event, note_date=date(2026, 4, d))
 
-        result = find_repeated_patterns(paths, window_days=7)
+        result = find_repeated_patterns(paths, window_days=7, end_date=date(2026, 4, 25))
 
         assert result.total_patterns == 1
         assert result.patterns[0].section == "Events"
@@ -766,7 +766,7 @@ class TestPatternAnalysisViaCapture:
             )
             capture_signal(paths, cand, note_date=date(2026, 4, d))
 
-        result = find_repeated_patterns(paths, window_days=7)
+        result = find_repeated_patterns(paths, window_days=7, end_date=date(2026, 4, 25))
 
         assert result.total_patterns == 1
         assert result.patterns[0].section == "Signals"
@@ -787,7 +787,7 @@ class TestPatternAnalysisViaCapture:
             )
             capture_open_candidate(paths, cand, note_date=date(2026, 4, d))
 
-        result = find_repeated_patterns(paths, window_days=7)
+        result = find_repeated_patterns(paths, window_days=7, end_date=date(2026, 4, 25))
 
         assert result.total_patterns == 1
         assert result.patterns[0].section == "Open Candidates"
