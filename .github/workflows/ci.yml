@@ -6,6 +6,12 @@ on:
       - main
   pull_request:
   workflow_dispatch:
+    inputs:
+      notify_test:
+        description: "Trigger a synthetic CI failure to test Telegram notification"
+        required: false
+        type: boolean
+        default: false
 
 env:
   UV_VERSION: "0.11.7"
@@ -14,6 +20,7 @@ env:
 jobs:
   lint:
     name: Lint and type-check
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.notify_test) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -44,6 +51,7 @@ jobs:
 
   test:
     name: Pytest (Python ${{ matrix.python-version }})
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.notify_test) }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -71,6 +79,7 @@ jobs:
 
   build:
     name: Build package
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.notify_test) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -91,3 +100,83 @@ jobs:
           uv sync --all-extras --dev
       - name: Build distribution
         run: uv build
+
+  failure-smoke:
+    name: Synthetic failure for notification test
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.notify_test }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger synthetic failure
+        run: |
+          echo "Synthetic CI failure for Telegram notification test."
+          exit 1
+
+  notify-failure:
+    name: Notify CI failure
+    needs:
+      - lint
+      - test
+      - build
+      - failure-smoke
+    if: ${{ always() && contains(needs.*.result, 'failure') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Telegram notification
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_MESSAGE_THREAD_ID: ${{ secrets.TELEGRAM_MESSAGE_THREAD_ID }}
+          REPOSITORY: ${{ github.repository }}
+          REF_NAME: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+          ACTOR: ${{ github.actor }}
+          SERVER_URL: ${{ github.server_url }}
+          RUN_ID: ${{ github.run_id }}
+          WORKFLOW: ${{ github.workflow }}
+          LINT_RESULT: ${{ needs.lint.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          SMOKE_RESULT: ${{ needs.failure-smoke.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
+            echo "Telegram notification skipped: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is not configured."
+            exit 0
+          fi
+
+          python - <<'PY' > message.txt
+          import os
+
+          lines = [
+              "ControlMesh CI failed",
+              f"repo: {os.environ['REPOSITORY']}",
+              f"ref: {os.environ['REF_NAME']}",
+              f"sha: {os.environ['SHA']}",
+              f"actor: {os.environ['ACTOR']}",
+              f"workflow: {os.environ['WORKFLOW']}",
+              f"lint: {os.environ['LINT_RESULT']}",
+              f"test: {os.environ['TEST_RESULT']}",
+              f"build: {os.environ['BUILD_RESULT']}",
+              f"synthetic_failure: {os.environ['SMOKE_RESULT']}",
+              f"run: {os.environ['RUN_URL']}",
+          ]
+          print("\n".join(lines))
+          PY
+
+      - name: Post Telegram message
+        if: ${{ secrets.TELEGRAM_BOT_TOKEN != '' && secrets.TELEGRAM_CHAT_ID != '' }}
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_MESSAGE_THREAD_ID: ${{ secrets.TELEGRAM_MESSAGE_THREAD_ID }}
+        run: |
+          thread_args=()
+          if [ -n "$TELEGRAM_MESSAGE_THREAD_ID" ]; then
+            thread_args+=(--data-urlencode "message_thread_id=${TELEGRAM_MESSAGE_THREAD_ID}")
+          fi
+
+          curl --fail --silent --show-error \
+            -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            "${thread_args[@]}" \
+            --data-urlencode "text=$(cat message.txt)"
