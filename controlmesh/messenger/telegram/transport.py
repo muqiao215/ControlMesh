@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 from controlmesh.bus.cron_sanitize import sanitize_cron_result_text
 from controlmesh.bus.envelope import Envelope, Origin
 from controlmesh.messenger.telegram.sender import SendRichOpts, send_rich
-from controlmesh.text.response_format import SEP, compact_transport_text, fmt
+from controlmesh.text.response_format import SEP, fmt
 
 if TYPE_CHECKING:
     from controlmesh.messenger.telegram.app import TelegramBot
@@ -91,17 +91,21 @@ class TelegramTransport:
             await send_rich(self._bot.bot_instance, env.chat_id, text, self._opts(env))
 
     @staticmethod
+    def _visible_body(text: str) -> str:
+        return text or "_No output._"
+
+    @staticmethod
     def _format_named_session(env: Envelope, elapsed: str) -> str:
         name = env.session_name
         if env.status == "aborted":
             return fmt(f"**[{name}] Cancelled**", SEP, f"_{env.prompt_preview}_")
         if env.is_error:
-            body = compact_transport_text(env.result_text) if env.result_text else "_No output._"
+            body = TelegramTransport._visible_body(env.result_text)
             return fmt(f"**[{name}] Failed** ({elapsed})", SEP, body)
         return fmt(
             f"**[{name}] Complete** ({elapsed})",
             SEP,
-            compact_transport_text(env.result_text) or "_No output._",
+            TelegramTransport._visible_body(env.result_text),
         )
 
     @staticmethod
@@ -119,12 +123,12 @@ class TelegramTransport:
                 SEP,
                 f"Task `{task_id}` failed ({env.status}).\n"
                 f"Prompt: _{env.prompt_preview}_\n\n"
-                + (compact_transport_text(env.result_text) if env.result_text else "_No output._"),
+                + TelegramTransport._visible_body(env.result_text),
             )
         return fmt(
             f"**Background Task Complete** ({elapsed})",
             SEP,
-            compact_transport_text(env.result_text) or "_No output._",
+            TelegramTransport._visible_body(env.result_text),
         )
 
     async def _deliver_heartbeat(self, env: Envelope) -> None:
@@ -186,7 +190,7 @@ class TelegramTransport:
             await send_rich(
                 self._bot.bot_instance,
                 env.chat_id,
-                compact_transport_text(delivery_text),
+                delivery_text,
                 SendRichOpts(allowed_roots=roots),
             )
 
@@ -216,7 +220,7 @@ class TelegramTransport:
             await send_rich(
                 self._bot.bot_instance,
                 env.chat_id,
-                compact_transport_text(delivery_text),
+                delivery_text,
                 opts,
             )
 
@@ -235,7 +239,7 @@ class TelegramTransport:
             await send_rich(
                 self._bot.bot_instance,
                 env.chat_id,
-                compact_transport_text(delivery_text),
+                delivery_text,
                 opts,
             )
 

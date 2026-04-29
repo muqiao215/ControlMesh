@@ -458,7 +458,7 @@ class TestTaskResultDelivery:
         note = mock_send.call_args_list[0][0][2]
         assert "cancelled" in note
 
-    async def test_done_injection_is_trimmed_for_chat_view(self) -> None:
+    async def test_done_injection_keeps_full_text_for_chat_view(self) -> None:
         transport, _, _ = _make_transport()
         env = _env(
             origin=Origin.TASK_RESULT,
@@ -477,9 +477,25 @@ class TestTaskResultDelivery:
             await transport.deliver(env)
 
         injected = mock_send.call_args_list[1][0][2]
-        assert "Output trimmed for chat view" in injected
         assert "line 0" in injected
-        assert "line 39" not in injected
+        assert "line 39" in injected
+
+    async def test_interagent_long_delivery_keeps_full_text(self) -> None:
+        transport, _, _ = _make_transport()
+        env = _env(
+            origin=Origin.INTERAGENT,
+            delivery_text="\n".join(f"line {idx}" for idx in range(40)),
+        )
+
+        with patch(
+            "controlmesh.messenger.telegram.transport.send_rich", new_callable=AsyncMock
+        ) as mock_send:
+            await transport.deliver(env)
+
+        delivered = mock_send.call_args[0][2]
+        assert "Output trimmed for chat view" not in delivered
+        assert "line 0" in delivered
+        assert "line 39" in delivered
 
 
 # ---------------------------------------------------------------------------
