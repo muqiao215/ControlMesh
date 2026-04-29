@@ -14,6 +14,7 @@ from controlmesh.infra.updater import (
     _build_package_spec,
     _build_upgrade_command,
     consume_upgrade_sentinel,
+    ensure_update_observer_started,
     perform_upgrade_pipeline,
     write_upgrade_sentinel,
 )
@@ -656,3 +657,54 @@ class TestUpdateObserver:
             await observer.stop()
 
         assert notify.call_count == 2
+
+
+class TestEnsureUpdateObserverStarted:
+    async def test_starts_when_enabled_for_main_agent(self) -> None:
+        notify = AsyncMock()
+        with patch("controlmesh.infra.updater.is_upgradeable", return_value=True):
+            observer = ensure_update_observer_started(
+                None,
+                update_check=True,
+                agent_name="main",
+                notify=notify,
+            )
+
+        assert observer is not None
+        assert isinstance(observer, UpdateObserver)
+        assert observer._task is not None
+        await observer.stop()
+
+    def test_reuses_existing_observer(self) -> None:
+        existing = UpdateObserver(notify=AsyncMock())
+        with patch("controlmesh.infra.updater.is_upgradeable", return_value=True):
+            observer = ensure_update_observer_started(
+                existing,
+                update_check=True,
+                agent_name="main",
+                notify=AsyncMock(),
+            )
+
+        assert observer is existing
+
+    def test_skips_when_disabled(self) -> None:
+        with patch("controlmesh.infra.updater.is_upgradeable", return_value=True):
+            observer = ensure_update_observer_started(
+                None,
+                update_check=False,
+                agent_name="main",
+                notify=AsyncMock(),
+            )
+
+        assert observer is None
+
+    def test_skips_for_non_main_agent(self) -> None:
+        with patch("controlmesh.infra.updater.is_upgradeable", return_value=True):
+            observer = ensure_update_observer_started(
+                None,
+                update_check=True,
+                agent_name="worker",
+                notify=AsyncMock(),
+            )
+
+        assert observer is None

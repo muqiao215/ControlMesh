@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 async def run_matrix_startup(bot: MatrixBot) -> None:
-    """Matrix-specific startup: orchestrator, observers, recovery.
+    """Matrix-specific startup: orchestrator and recovery.
 
     When ``bot._orchestrator`` is already set (secondary transport mode),
     orchestrator creation and all primary-only steps are skipped.
@@ -42,24 +42,6 @@ async def run_matrix_startup(bot: MatrixBot) -> None:
             await bot.notification_service.notify_all(
                 t("startup.matrix_restart", reason=restart_reason)
             )
-
-        # Update checker
-        try:
-            from controlmesh.infra.install import is_upgradeable
-            from controlmesh.infra.updater import UpdateObserver
-            from controlmesh.infra.version import VersionInfo
-
-            if is_upgradeable() and bot._config.update_check and bot._agent_name == "main":
-
-                async def _on_update(info: VersionInfo) -> None:
-                    await bot.notification_service.notify_all(
-                        t("startup.matrix_update", version=info.latest)
-                    )
-
-                bot._update_observer = UpdateObserver(notify=_on_update)
-                bot._update_observer.start()
-        except ImportError:
-            pass
 
     logger.info(
         "Matrix bot online: %s on %s",

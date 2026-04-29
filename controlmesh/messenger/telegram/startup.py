@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 from controlmesh.i18n import t
 from controlmesh.infra.restart import consume_restart_sentinel
-from controlmesh.infra.updater import UpdateObserver, consume_upgrade_sentinel
+from controlmesh.infra.updater import consume_upgrade_sentinel
 from controlmesh.infra.version import get_current_version
 
 if TYPE_CHECKING:
@@ -80,7 +80,7 @@ async def _handle_recovery(bot: TelegramBot, sentinel: dict[str, object] | None)
 
 
 async def _run_primary_startup(bot: TelegramBot) -> None:
-    """Create orchestrator, handle sentinels, recovery, and update observer.
+    """Create orchestrator, handle sentinels, and recovery.
 
     Called only when the bot is the primary transport (owns the orchestrator).
     """
@@ -119,16 +119,8 @@ async def _run_primary_startup(bot: TelegramBot) -> None:
 
     await _handle_recovery(bot, sentinel)
 
-    # Start background version checker (skip for dev/source installs)
-    from controlmesh.infra.install import is_upgradeable
-
-    if is_upgradeable() and bot.config.update_check and bot._agent_name == "main":
-        bot._update_observer = UpdateObserver(notify=bot._on_update_available)
-        bot._update_observer.start()
-
-
 async def run_startup(bot: TelegramBot) -> None:
-    """Execute full startup sequence: orchestrator, sentinels, recovery, update observer.
+    """Execute full startup sequence: orchestrator, sentinels, and recovery.
 
     When ``bot._orchestrator`` is already set (secondary transport mode),
     orchestrator creation and all primary-only steps are skipped.

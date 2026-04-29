@@ -27,7 +27,11 @@ from controlmesh.files.storage import sanitize_filename as _sanitize_filename
 from controlmesh.files.tags import FILE_PATH_RE, extract_file_paths
 from controlmesh.infra.json_store import atomic_json_save, load_json
 from controlmesh.infra.restart import EXIT_RESTART
-from controlmesh.infra.updater import perform_upgrade_pipeline, write_upgrade_sentinel
+from controlmesh.infra.updater import (
+    UpdateObserver,
+    perform_upgrade_pipeline,
+    write_upgrade_sentinel,
+)
 from controlmesh.infra.version import VersionInfo, check_latest_version, get_current_version
 from controlmesh.log_context import set_log_context
 from controlmesh.messenger.feishu.auth.card_auth_runner import FeishuCardAuthRunner
@@ -278,6 +282,7 @@ class FeishuBot:
         self._exit_code = 0
         self._upgrade_lock = asyncio.Lock()
         self._upgrade_task: asyncio.Task[None] | None = None
+        self._update_observer: UpdateObserver | None = None
         self._background_tasks: set[asyncio.Task[None]] = set()
         self._paths = ControlMeshPaths(Path(config.controlmesh_home).expanduser())
         self._dedup = DedupeCache(
@@ -386,6 +391,9 @@ class FeishuBot:
 
         if self._inbound_server is not None:
             await self._inbound_server.stop()
+
+        if self._update_observer is not None:
+            await self._update_observer.stop()
 
         await self._cancel_background_tasks()
 

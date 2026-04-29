@@ -11,10 +11,13 @@ from typing import TYPE_CHECKING
 from controlmesh.config import AgentConfig, update_config_file_async
 from controlmesh.infra.file_watcher import FileWatcher
 from controlmesh.infra.restart import EXIT_RESTART
+from controlmesh.infra.updater import UpdateObserver, ensure_update_observer_started
+from controlmesh.i18n import t
 from controlmesh.multiagent.health import AgentHealth
 from controlmesh.multiagent.models import SubAgentConfig, merge_sub_agent_config
 from controlmesh.multiagent.registry import AgentRegistry
 from controlmesh.multiagent.stack import AgentStack
+from controlmesh.text.response_format import SEP, fmt
 from controlmesh.workspace.paths import resolve_paths
 
 if TYPE_CHECKING:
@@ -133,6 +136,7 @@ class AgentSupervisor:
         self._main_done: asyncio.Event = asyncio.Event()
         self._main_ready: asyncio.Event = asyncio.Event()
         self._agents_lock = asyncio.Lock()
+        self._update_observer: UpdateObserver | None = None
 
         # Bus, internal API, shared knowledge, task hub — created lazily in start()
         self._bus: InterAgentBus | None = None
@@ -424,6 +428,12 @@ class AgentSupervisor:
                     await controller.recover_live_runtimes()
                 orch.register_multiagent_commands()
                 stack.bot.set_abort_all_callback(supervisor.abort_all_agents)
+                supervisor._update_observer = ensure_update_observer_started(
+                    supervisor._update_observer,
+                    update_check=stack.config.update_check,
+                    agent_name=stack.name,
+                    notify=supervisor._on_update_available,
+                )
                 supervisor._main_ready.set()
 
             # Wire task hub: set CLI service and register handlers
@@ -645,6 +655,21 @@ class AgentSupervisor:
         except Exception:
             logger.exception("Failed to notify main agent")
 
+    async def _on_update_available(self, info) -> None:
+        main = self._stacks.get("main")
+        if main is None:
+            return
+        try:
+            await main.bot.notification_service.notify_all(
+                fmt(
+                    t("upgrade.available_header"),
+                    SEP,
+                    t("upgrade.available_body", current=info.current, latest=info.latest),
+                )
+            )
+        except Exception:
+            logger.exception("Failed to notify main agent about available update")
+
     # -- Abort all ----------------------------------------------------------
 
     async def abort_all_agents(self) -> int:
@@ -703,6 +728,8 @@ class AgentSupervisor:
         await self._watcher.stop()
         if self._shared_knowledge:
             await self._shared_knowledge.stop()
+        if self._update_observer:
+            await self._update_observer.stop()
 
         # Cancel in-flight async tasks before tearing down agents
         if self._bus:

@@ -66,6 +66,31 @@ class TestStartupFailures:
             await supervisor.start()
 
 
+class TestUpdateObserverHook:
+    async def test_main_startup_hook_starts_update_observer(
+        self,
+        supervisor: AgentSupervisor,
+    ) -> None:
+        mock_stack = MagicMock()
+        mock_stack.is_main = True
+        mock_stack.name = "main"
+        mock_stack.config = MagicMock(update_check=True)
+        mock_stack.bot = MagicMock()
+        mock_stack.bot.orchestrator = MagicMock()
+        mock_stack.bot.set_abort_all_callback = MagicMock()
+        mock_stack.bot.register_startup_hook = MagicMock()
+
+        with patch(
+            "controlmesh.multiagent.supervisor.ensure_update_observer_started",
+            return_value=MagicMock(),
+        ) as mock_start:
+            supervisor._inject_supervisor_hook(mock_stack)
+            hook = mock_stack.bot.register_startup_hook.call_args.args[0]
+            await hook()
+            mock_start.assert_called_once()
+        assert supervisor._main_ready.is_set()
+
+
 class TestStopAgent:
     """Test stop_agent() behavior."""
 
