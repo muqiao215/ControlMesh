@@ -20,7 +20,7 @@ SOURCE_TASK_TOOLS = (
 
 
 class _TaskAPIHandler(BaseHTTPRequestHandler):
-    def do_POST(self) -> None:  # noqa: N802
+    def do_POST(self) -> None:
         length = int(self.headers.get("Content-Length", "0"))
         body = self.rfile.read(length)
         payload = json.loads(body.decode("utf-8"))
@@ -32,7 +32,7 @@ class _TaskAPIHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(response)
 
-    def log_message(self, format: str, *args: object) -> None:
+    def log_message(self, message_format: str, *args: object) -> None:
         return
 
 

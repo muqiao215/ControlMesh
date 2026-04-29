@@ -27,4 +27,4 @@ def read_startup_memory_context(paths: ControlMeshPaths) -> str:
     authority = read_file(paths.authority_memory_path) or ""
     if not has_meaningful_memory_content(authority):
         return ""
-    return "\n\n".join(["## Memory", authority.strip()])
+    return f"## Memory\n\n{authority.strip()}"
