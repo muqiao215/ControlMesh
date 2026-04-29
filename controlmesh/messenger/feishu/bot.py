@@ -88,7 +88,6 @@ from controlmesh.messenger.notifications import NotificationService
 from controlmesh.messenger.telegram.dedup import DedupeCache
 from controlmesh.orchestrator.selectors.settings_selector import handle_settings_callback
 from controlmesh.session.key import SessionKey
-from controlmesh.text.frontstage_delivery import prepare_frontstage_text
 from controlmesh.text.tool_event_format import format_tool_event_text
 from controlmesh.workspace.paths import ControlMeshPaths
 
@@ -1099,10 +1098,7 @@ class FeishuBot:
                     reply_to_message_id=reply_to_message_id,
                 )
             return
-        deliver_text = prepare_frontstage_text(
-            result_text,
-            output_dir=self._paths.output_to_user_dir,
-        )
+        deliver_text = result_text
         file_tags = extract_file_paths(deliver_text)
         visible_text = FILE_PATH_RE.sub("", deliver_text).strip() if file_tags else deliver_text
         progress_text = visible_text or ("已发送附件。" if file_tags else result_text)

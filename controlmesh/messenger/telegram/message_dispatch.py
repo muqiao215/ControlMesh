@@ -19,7 +19,6 @@ from controlmesh.messenger.telegram.streaming import create_stream_editor
 from controlmesh.messenger.telegram.typing import TypingContext
 from controlmesh.orchestrator.registry import OrchestratorResult
 from controlmesh.session.key import SessionKey
-from controlmesh.text.frontstage_delivery import prepare_frontstage_text
 from controlmesh.text.tool_event_format import format_tool_event_text
 
 if TYPE_CHECKING:
@@ -114,10 +113,7 @@ async def run_non_streaming_message(
 
     footer = _build_footer(result, dispatch.scene_config)
     result.text += footer
-    deliver_text = prepare_frontstage_text(
-        result.text,
-        output_dir=dispatch.orchestrator.paths.output_to_user_dir,
-    )
+    deliver_text = result.text
     reply_id = dispatch.reply_to.message_id if dispatch.reply_to else None
     await send_rich(
         dispatch.bot,
@@ -215,10 +211,7 @@ async def run_streaming_message(
     if footer:
         await editor.append_text(footer)
         result.text += footer
-    deliver_text = prepare_frontstage_text(
-        result.text,
-        output_dir=dispatch.orchestrator.paths.output_to_user_dir,
-    )
+    deliver_text = result.text
     await editor.finalize(deliver_text)
 
     logger.info(

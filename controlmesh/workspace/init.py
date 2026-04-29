@@ -378,7 +378,7 @@ _TRANSPORT_TELEGRAM = """
 - Replies are Telegram messages (4096-char limit; auto-split is handled).
 - Keep responses mobile-friendly and structured.
 - To send files, use `<file:/absolute/path>`.
-- Save generated deliverables in `output_to_user/`.
+- Only save generated deliverables in `output_to_user/` when you are explicitly sending a file.
 - Do not suggest GUI-only actions like `xdg-open`.
 
 ### Quick Reply Buttons
@@ -403,7 +403,7 @@ _TRANSPORT_MATRIX = """
 - Messages are formatted as HTML (Markdown is auto-converted by the framework).
 - Keep responses structured and scannable.
 - To send files, use `<file:/absolute/path>`.
-- Save generated deliverables in `output_to_user/`.
+- Only save generated deliverables in `output_to_user/` when you are explicitly sending a file.
 - Do not suggest GUI-only actions like `xdg-open`.
 - Commands use `!` prefix (e.g. `!help`, `!status`). \
 `/` also works but may conflict with Element's built-in commands.

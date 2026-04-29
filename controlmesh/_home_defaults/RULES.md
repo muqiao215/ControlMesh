@@ -70,7 +70,8 @@ synced into every agent's `workspace/MEMORY.md` authority and
 Do not manually edit `cron_jobs.json` or `webhooks.json` for normal operations.
 - When config changes are requested, edit only requested keys in `config/config.json`.
 Then tell the user to run `/restart`.
-- Save user-facing generated files in `workspace/output_to_user/` and send with
+- Only save user-facing generated files in `workspace/output_to_user/` when you
+are explicitly sending an attachment, then send with
 `<file:/absolute/path/to/output_to_user/...>`.
 - Update durable memory silently when durable user facts or preferences are learned.
   Use `workspace/MEMORY.md` as the sole durable memory file.

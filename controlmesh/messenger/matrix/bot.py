@@ -32,7 +32,6 @@ from controlmesh.messenger.matrix.streaming_mode import stream_callbacks_for_mod
 from controlmesh.messenger.matrix.typing import MatrixTypingContext
 from controlmesh.messenger.notifications import NotificationService
 from controlmesh.session.key import SessionKey
-from controlmesh.text.frontstage_delivery import prepare_frontstage_text
 from controlmesh.text.response_format import SEP, fmt
 
 if TYPE_CHECKING:
@@ -710,10 +709,7 @@ class MatrixBot:
                 on_system_status=system_cb,
             )
         self._maybe_append_footer(result)
-        deliver_text = prepare_frontstage_text(
-            result.text,
-            output_dir=orch.paths.output_to_user_dir,
-        )
+        deliver_text = result.text
         await editor.finalize(deliver_text)
 
     async def _run_non_streaming(
@@ -729,10 +725,7 @@ class MatrixBot:
 
         self._maybe_append_footer(result)
         if result.text:
-            deliver_text = prepare_frontstage_text(
-                result.text,
-                output_dir=orch.paths.output_to_user_dir,
-            )
+            deliver_text = result.text
             formatted = self._button_tracker.extract_and_format(room_id, deliver_text)
             await self._send_rich(room_id, formatted)
 

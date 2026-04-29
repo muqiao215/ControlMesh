@@ -12,6 +12,7 @@ from controlmesh.cli.stream_events import ToolResultEvent, ToolUseEvent
 from controlmesh.config import StreamingConfig
 from controlmesh.messenger.telegram.message_dispatch import (
     StreamingDispatch,
+    run_non_streaming_message,
     run_streaming_message,
 )
 from controlmesh.session.key import SessionKey
@@ -45,6 +46,40 @@ def _make_dispatch(*, output_mode: str, tool_display: str = "name") -> tuple[Str
         allowed_roots=None,
     )
     return dispatch, orchestrator
+
+
+@pytest.mark.asyncio
+async def test_non_streaming_long_reply_stays_full_without_auto_attachment() -> None:
+    message = _make_message()
+    orchestrator = MagicMock()
+    orchestrator.handle_message = AsyncMock(
+        return_value=SimpleNamespace(
+            text=("line\n" * 80).strip(),
+            metadata={},
+            model_name=None,
+        )
+    )
+    orchestrator.paths.output_to_user_dir = MagicMock()
+    dispatch = SimpleNamespace(
+        bot=MagicMock(),
+        orchestrator=orchestrator,
+        reply_to=message,
+        key=SessionKey(chat_id=1),
+        text="hello",
+        allowed_roots=None,
+        thread_id=None,
+        scene_config=None,
+    )
+
+    with patch(
+        "controlmesh.messenger.telegram.message_dispatch.send_rich", new_callable=AsyncMock
+    ) as mock_send:
+        await run_non_streaming_message(dispatch)
+
+    delivered = mock_send.await_args.args[2]
+    assert "Output trimmed for chat view" not in delivered
+    assert "<file:" not in delivered
+    assert delivered.count("line") == 80
 
 
 @pytest.mark.asyncio
