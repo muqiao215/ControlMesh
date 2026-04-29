@@ -152,10 +152,17 @@ class OpenCodeCLI(BaseCLI):
         if len(events) == 1 and isinstance(events[0], dict):
             data = events[0]
             usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+            result_text = _extract_text(data)
+            is_error = (returncode not in (0, None)) or _has_error(data) or not result_text
             return CLIResponse(
                 session_id=_extract_session_id(data),
-                result=_extract_text(data) or raw,
-                is_error=(returncode not in (0, None)) or _has_error(data),
+                result=_finalize_result_text(
+                    result_text,
+                    raw=raw,
+                    stderr_text=stderr_text,
+                    is_error=is_error,
+                ),
+                is_error=is_error or not result_text,
                 returncode=returncode,
                 stderr=stderr_text,
                 usage=usage,
@@ -164,20 +171,28 @@ class OpenCodeCLI(BaseCLI):
         usage: dict[str, Any] = {}
         session_id: str | None = None
         texts: list[str] = []
+        saw_error = False
         for event in events:
             if isinstance(event, dict):
                 session_id = session_id or _extract_session_id(event)
                 if isinstance(event.get("usage"), dict):
                     usage = event["usage"]
+                saw_error = saw_error or _has_error(event)
                 text = _extract_text(event)
                 if text:
                     texts.append(text)
             elif isinstance(event, str):
                 texts.append(event)
+        is_error = (returncode not in (0, None)) or saw_error or not texts
         return CLIResponse(
             session_id=session_id,
-            result="\n".join(part for part in texts if part).strip() or raw,
-            is_error=(returncode not in (0, None)) or any(_has_error(e) for e in events),
+            result=_finalize_result_text(
+                "\n".join(part for part in texts if part).strip(),
+                raw=raw,
+                stderr_text=stderr_text,
+                is_error=is_error,
+            ),
+            is_error=is_error,
             returncode=returncode,
             stderr=stderr_text,
             usage=usage,
@@ -186,6 +201,20 @@ class OpenCodeCLI(BaseCLI):
 
 def _has_error(data: Any) -> bool:
     return isinstance(data, dict) and bool(data.get("error") or data.get("is_error"))
+
+
+def _finalize_result_text(
+    text: str,
+    *,
+    raw: str,
+    stderr_text: str,
+    is_error: bool,
+) -> str:
+    if text:
+        return text
+    if is_error:
+        return stderr_text or "OpenCode returned no assistant text."
+    return raw
 
 
 def _extract_session_id(data: Any) -> str | None:
@@ -214,6 +243,11 @@ def _extract_text(data: Any) -> str:
         parts = [_extract_text(item) for item in data]
         return "\n".join(part for part in parts if part).strip()
     if isinstance(data, dict):
+        part = data.get("part")
+        if isinstance(part, dict) and part.get("type") == "text":
+            text = _extract_text(part.get("text"))
+            if text:
+                return text
         for key in ("result", "output", "text", "message", "response", "content"):
             value = data.get(key)
             text = _extract_text(value)

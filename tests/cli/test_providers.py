@@ -228,3 +228,31 @@ def test_opencode_build_command_with_resume_session(monkeypatch: pytest.MonkeyPa
     assert "--session" in cmd
     idx = cmd.index("--session")
     assert cmd[idx + 1] == "sess-123"
+
+
+def test_opencode_parse_output_extracts_text_event() -> None:
+    raw = (
+        '{"type":"step_start","timestamp":1,"sessionID":"ses_123","part":{"type":"step-start"}}\n'
+        '{"type":"text","timestamp":2,"sessionID":"ses_123","part":{"type":"text","text":"OK"}}\n'
+        '{"type":"step_finish","timestamp":3,"sessionID":"ses_123","part":{"type":"step-finish"}}'
+    )
+
+    resp = OpenCodeCLI._parse_output(raw.encode(), b"", 0)
+
+    assert resp.session_id == "ses_123"
+    assert resp.result == "OK"
+    assert resp.is_error is False
+
+
+def test_opencode_parse_output_metadata_only_becomes_clean_error() -> None:
+    raw = (
+        '{"type":"step_start","timestamp":1,"sessionID":"ses_123",'
+        '"part":{"type":"step-start","messageID":"msg_123"}}'
+    )
+
+    resp = OpenCodeCLI._parse_output(raw.encode(), b"", 0)
+
+    assert resp.session_id == "ses_123"
+    assert resp.is_error is True
+    assert resp.result == "OpenCode returned no assistant text."
+    assert "step_start" not in resp.result
