@@ -49,6 +49,12 @@ class OpenCodeCLI(BaseCLI):
             parts.append(self._config.append_system_prompt)
         return "\n\n".join(parts)
 
+    def _permission_flags(self) -> list[str]:
+        """Map ControlMesh permission_mode onto OpenCode's CLI surface."""
+        if self._config.permission_mode == "bypassPermissions":
+            return ["--dangerously-skip-permissions"]
+        return []
+
     def _build_command(
         self,
         prompt: str,
@@ -58,6 +64,7 @@ class OpenCodeCLI(BaseCLI):
         # OpenCode 1.14.x dropped `--quiet`; `--format json` is the stable
         # machine-readable surface we rely on across hosts.
         cmd = [self._cli, "run", "--format", "json"]
+        cmd.extend(self._permission_flags())
         if self._config.model:
             cmd += ["--model", self._config.model]
         if resume_session:

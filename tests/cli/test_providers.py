@@ -219,6 +219,21 @@ def test_opencode_build_command_uses_json_without_quiet(monkeypatch: pytest.Monk
     assert cmd[-1] == "hello"
 
 
+def test_opencode_build_command_respects_bypass_permissions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("controlmesh.cli.opencode_provider.which", lambda _: "/usr/bin/opencode")
+    cfg = CLIConfig(
+        provider="opencode",
+        model="zhipuai/glm-5.1",
+        permission_mode="bypassPermissions",
+    )
+    cli = OpenCodeCLI(cfg)
+    cmd = cli._build_command("hello")
+
+    assert "--dangerously-skip-permissions" in cmd
+
+
 def test_opencode_build_command_with_resume_session(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("controlmesh.cli.opencode_provider.which", lambda _: "/usr/bin/opencode")
     cfg = CLIConfig(provider="opencode", model="zhipuai/glm-5.1")
