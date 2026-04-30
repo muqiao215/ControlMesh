@@ -9,6 +9,9 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import yaml
+
+from controlmesh.config import deep_merge_config
 from controlmesh.infra.atomic_io import atomic_text_save
 from controlmesh.memory.store import initialize_memory_v2
 from controlmesh.workspace.cron_tasks import ensure_task_rule_files
@@ -251,12 +254,40 @@ def _smart_merge_config(paths: ControlMeshPaths) -> None:
     except (json.JSONDecodeError, OSError):
         logger.warning("Failed to parse config: %s, skipping merge", paths.config_path)
         return
-    merged = {**defaults, **existing}
+    merged, changed = deep_merge_config(existing, defaults)
 
-    if merged != existing:
+    if changed:
         from controlmesh.infra.json_store import atomic_json_save
 
         atomic_json_save(paths.config_path, merged)
+
+
+def _merge_seeded_yaml_defaults(target_path: Path, default_path: Path) -> None:
+    """Additively merge new bundled YAML defaults into a user-owned seeded file."""
+    if not default_path.exists() or not target_path.exists():
+        return
+    try:
+        defaults = yaml.safe_load(default_path.read_text(encoding="utf-8")) or {}
+        existing = yaml.safe_load(target_path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        logger.warning("Failed to parse seeded YAML for migration: %s", target_path)
+        return
+    if not isinstance(defaults, dict) or not isinstance(existing, dict):
+        return
+    merged, changed = deep_merge_config(existing, defaults)
+    if not changed:
+        return
+    target_path.write_text(yaml.safe_dump(merged, sort_keys=False), encoding="utf-8")
+    logger.info("Workspace migration merged new defaults into %s", target_path)
+
+
+def _apply_workspace_migrations(paths: ControlMeshPaths) -> None:
+    """Apply additive migrations to seeded user-owned workspace files."""
+    _smart_merge_config(paths)
+    _merge_seeded_yaml_defaults(
+        paths.workspace / "routing" / "capabilities.yaml",
+        paths.home_defaults / "workspace" / "routing" / "capabilities.yaml",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -328,7 +359,7 @@ def init_workspace(paths: ControlMeshPaths) -> None:
 
     ensure_task_rule_files(paths.cron_tasks_dir)
     sync_rule_files(paths.workspace)
-    _smart_merge_config(paths)
+    _apply_workspace_migrations(paths)
     _clean_orphan_symlinks(paths)
     sync_skills(paths)
     initialize_memory_v2(paths)

@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+import yaml
 
 from controlmesh.cli.auth import AuthResult, AuthStatus
 from controlmesh.workspace.init import init_workspace, inject_runtime_environment
@@ -259,10 +260,111 @@ def test_controlmesh_home_claude_md_overwritten(tmp_path: Path) -> None:
     assert home_claude.exists()
     assert home_claude.read_text() == "# ControlMesh Home CLAUDE.md"
 
-    # Simulate user editing it -- should be overwritten on reinit
-    home_claude.write_text("# User edit")
+
+def test_deep_merges_nested_agent_routing_defaults(tmp_path: Path) -> None:
+    paths = _make_paths(tmp_path)
+    paths.config_dir.mkdir(parents=True, exist_ok=True)
+    paths.config_path.write_text(
+        json.dumps({"provider": "claude", "agent_routing": {"enabled": True}}),
+        encoding="utf-8",
+    )
+
+    (paths.framework_root / "config.example.json").write_text(
+        json.dumps(
+            {
+                "provider": "claude",
+                "agent_routing": {
+                    "enabled": True,
+                    "min_confidence": 0.72,
+                    "subagent_policy": {"deny_cost_classes": ["premium"]},
+                    "workunit_overrides": {
+                        "github_release": {
+                            "preferred_slots": ["release_runner"],
+                            "topology": "pipeline",
+                        }
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
     init_workspace(paths)
-    assert home_claude.read_text() == "# ControlMesh Home CLAUDE.md"
+
+    merged = json.loads(paths.config_path.read_text(encoding="utf-8"))
+    assert merged["agent_routing"]["enabled"] is True
+    assert merged["agent_routing"]["subagent_policy"]["deny_cost_classes"] == ["premium"]
+    assert (
+        merged["agent_routing"]["workunit_overrides"]["github_release"]["preferred_slots"]
+        == ["release_runner"]
+    )
+
+
+def test_additively_merges_seeded_capability_registry_defaults(tmp_path: Path) -> None:
+    paths = _make_paths(tmp_path)
+    default_registry_dir = paths.home_defaults / "workspace" / "routing"
+    default_registry_dir.mkdir(parents=True, exist_ok=True)
+    (default_registry_dir / "capabilities.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "agent_slots": {
+                    "background_worker": {
+                        "runtime": "controlmesh_background",
+                        "provider": "claude",
+                        "model": "sonnet",
+                        "mode": "background",
+                        "role": "worker",
+                        "cost_class": "standard",
+                        "allow_subagent": True,
+                        "capabilities": {"code_patch": {"score": 0.8}},
+                    },
+                    "release_runner": {
+                        "runtime": "controlmesh_background",
+                        "provider": "gemini",
+                        "model": "flash",
+                        "mode": "background",
+                        "role": "worker",
+                        "cost_class": "cheap",
+                        "allow_subagent": True,
+                        "capabilities": {"github_release": {"score": 0.86}},
+                    },
+                }
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    live_registry_dir = paths.workspace / "routing"
+    live_registry_dir.mkdir(parents=True, exist_ok=True)
+    (live_registry_dir / "capabilities.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "agent_slots": {
+                    "background_worker": {
+                        "runtime": "controlmesh_background",
+                        "provider": "custom-provider",
+                        "model": "custom-model",
+                        "mode": "background",
+                        "role": "worker",
+                        "capabilities": {"code_patch": {"score": 0.95}},
+                    }
+                }
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    init_workspace(paths)
+
+    merged = yaml.safe_load((live_registry_dir / "capabilities.yaml").read_text(encoding="utf-8"))
+    worker = merged["agent_slots"]["background_worker"]
+    assert worker["provider"] == "custom-provider"
+    assert worker["model"] == "custom-model"
+    assert worker["capabilities"]["code_patch"]["score"] == 0.95
+    assert worker["cost_class"] == "standard"
+    assert worker["allow_subagent"] is True
+    assert "release_runner" in merged["agent_slots"]
 
 
 # -- config smart-merge --

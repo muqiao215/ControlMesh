@@ -110,6 +110,11 @@ class ControlMeshPaths:
         return self.workspace / "tasks"
 
     @property
+    def plans_dir(self) -> Path:
+        """File-backed plan artifact root."""
+        return self.controlmesh_home / "plans"
+
+    @property
     def team_state_dir(self) -> Path:
         """Canonical additive team state root under the workspace."""
         return self.workspace / "team-state"

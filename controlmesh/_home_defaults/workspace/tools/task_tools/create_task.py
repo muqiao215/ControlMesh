@@ -21,6 +21,10 @@ Options:
     --evidence PATH    Evidence/log path for patch candidates
     --capability CAP   Required capability hint (repeatable)
     --evaluator NAME   Evaluator hint, e.g. foreground
+    --plan-id ID       PlanFiles plan id
+    --plan-file PATH   Read PLAN.md content from file
+    --phase-id ID      PlanFiles phase id
+    --phase-title TXT  PlanFiles phase title
 
 Environment variables CONTROLMESH_AGENT_NAME and CONTROLMESH_INTERAGENT_PORT are
 automatically set by the ControlMesh framework.
@@ -68,6 +72,10 @@ def main() -> None:
     evidence = ""
     required_capabilities: list[str] = []
     evaluator = ""
+    plan_id = ""
+    plan_file = ""
+    phase_id = ""
+    phase_title = ""
 
     # Parse named options
     while args:
@@ -106,6 +114,18 @@ def main() -> None:
             args = args[2:]
         elif args[0] == "--evaluator" and len(args) >= 2:
             evaluator = args[1]
+            args = args[2:]
+        elif args[0] == "--plan-id" and len(args) >= 2:
+            plan_id = args[1]
+            args = args[2:]
+        elif args[0] == "--plan-file" and len(args) >= 2:
+            plan_file = args[1]
+            args = args[2:]
+        elif args[0] == "--phase-id" and len(args) >= 2:
+            phase_id = args[1]
+            args = args[2:]
+        elif args[0] == "--phase-title" and len(args) >= 2:
+            phase_title = args[1]
             args = args[2:]
         else:
             break
@@ -147,6 +167,15 @@ def main() -> None:
         body["required_capabilities"] = required_capabilities
     if evaluator:
         body["evaluator"] = evaluator
+    if plan_id:
+        body["plan_id"] = plan_id
+    if plan_file:
+        with open(plan_file, encoding="utf-8") as handle:
+            body["plan_markdown"] = handle.read()
+    if phase_id:
+        body["phase_id"] = phase_id
+    if phase_title:
+        body["phase_title"] = phase_title
 
     # Propagate sender context so task results route back to the originating chat/topic
     chat_id = os.environ.get("CONTROLMESH_CHAT_ID", "")

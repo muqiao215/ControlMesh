@@ -8,6 +8,7 @@ import json
 import logging
 import time
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -39,6 +40,14 @@ from controlmesh.tasks.evaluator import (
 from controlmesh.tasks.evidence import evidence_path, load_evidence, result_path
 from controlmesh.tasks.models import TaskEntry, TaskInFlight, TaskResult, TaskSubmit
 from controlmesh.team.contracts import ensure_team_topology
+from controlmesh.planning_files import (
+    PlanPhase,
+    create_plan_files,
+    ensure_phase_artifacts,
+    phase_dir_for,
+    plan_dir_for,
+    update_phase_state,
+)
 
 if TYPE_CHECKING:
     from controlmesh.cli.service import CLIService
@@ -52,10 +61,20 @@ _FINISHED = frozenset({"done", "failed", "cancelled"})
 _RESUMABLE = frozenset({"done", "failed", "cancelled", "waiting"})
 _MAINTENANCE_INTERVAL = 5 * 3600  # 5 hours
 _TOPOLOGY_STATE_FILENAME = "topology_execution.json"
+_PLAN_PHASE_WORKUNITS = frozenset({"phase_execution", "phase_review"})
+_PLAN_MANIFEST_WORKUNITS = frozenset({"plan_with_files"})
 
 TaskResultCallback = Callable[[TaskResult], Awaitable[None]]
 QuestionHandler = Callable[[str, str, str, ChatRef, TopicRef], Awaitable[None]]
 # QuestionHandler(task_id, question, prompt_preview, chat_id, thread_id) -> None
+
+
+@dataclass(frozen=True, slots=True)
+class _TaskArtifactPaths:
+    folder: Path
+    taskmemory: Path
+    evidence: Path
+    result: Path
 
 TASK_PROMPT_SUFFIX = """
 
@@ -275,20 +294,20 @@ class TaskHub:
             refreshed = self._registry.get(entry.task_id)
             if refreshed is not None:
                 entry = refreshed
+        entry = self._prepare_plan_artifacts(entry, submit)
         self._append_runtime_lifecycle_event(entry, "task.lifecycle.created")
 
         # Build prompt with mandatory suffix
-        taskmemory = self._registry.taskmemory_path(entry.task_id)
-        task_folder = self._registry.task_folder(entry.task_id)
+        artifacts = self._artifact_paths(entry)
         full_prompt = (
             f"{workunit_contract}\n\n---\nOriginal task prompt:\n{submit.prompt}"
             if workunit_contract
             else submit.prompt
         ) + TASK_PROMPT_SUFFIX.format(
-            taskmemory_path=taskmemory,
-            evidence_path=evidence_path(task_folder),
-            result_path=result_path(task_folder),
-        )
+            taskmemory_path=artifacts.taskmemory,
+            evidence_path=artifacts.evidence,
+            result_path=artifacts.result,
+        ) + self._plan_artifact_notice(entry)
 
         self._spawn(entry, full_prompt, thinking)
 
@@ -382,8 +401,12 @@ class TaskHub:
 
         # Append a short system reminder so the task agent remembers how to
         # communicate (ask_parent, TASKMEMORY, no direct user access).
-        taskmemory = self._registry.taskmemory_path(entry.task_id)
-        full_prompt = follow_up + _RESUME_REMINDER.format(taskmemory_path=taskmemory)
+        artifacts = self._artifact_paths(entry)
+        full_prompt = (
+            follow_up
+            + _RESUME_REMINDER.format(taskmemory_path=artifacts.taskmemory)
+            + self._plan_artifact_notice(entry)
+        )
         self._spawn(entry, full_prompt, entry.thinking, resume_session=entry.session_id)
 
         logger.info(
@@ -704,16 +727,15 @@ class TaskHub:
 
             # Append TASKMEMORY.md content so the parent gets the full picture
             if status == "done":
-                task_folder = self._registry.task_folder(entry.task_id)
-                taskmemory = self._registry.taskmemory_path(entry.task_id)
-                result_text = _append_taskmemory(result_text, taskmemory)
+                artifacts = self._artifact_paths(entry)
+                result_text = _append_taskmemory(result_text, artifacts.taskmemory)
                 if entry.workunit_kind or entry.evaluator:
-                    evidence = load_evidence(task_folder)
+                    evidence = load_evidence(artifacts.folder)
                     verdict = deterministic_verdict(
                         evidence,
                         workunit_kind=entry.workunit_kind,
                     )
-                    write_verdict(task_folder, verdict)
+                    write_verdict(artifacts.folder, verdict)
                     result_text = _append_evaluator_verdict(result_text, verdict)
                     if verdict.decision is not EvaluatorDecision.ACCEPT:
                         self._registry.update_status(
@@ -765,16 +787,17 @@ class TaskHub:
                 transport=entry.transport,
                 session_id=session_id,
                 error=error,
-                task_folder=str(self._registry.task_folder(entry.task_id)),
+                task_folder=str(self._artifact_paths(entry).folder),
                 original_prompt=entry.original_prompt,
                 thread_id=entry.thread_id,
             )
             if status in _FINISHED:
+                artifacts = self._artifact_paths(entry)
                 capture_task_result(
                     self._paths,
                     task_result,
                     completed_at=datetime.now(UTC),
-                    taskmemory_path=self._registry.taskmemory_path(entry.task_id),
+                    taskmemory_path=artifacts.taskmemory,
                 )
             await self._deliver(task_result)
 
@@ -807,7 +830,7 @@ class TaskHub:
                     self._paths,
                     task_result,
                     completed_at=datetime.now(UTC),
-                    taskmemory_path=self._registry.taskmemory_path(entry.task_id),
+                    taskmemory_path=self._artifact_paths(entry).taskmemory,
                 )
                 await self._deliver(task_result)
             raise
@@ -845,7 +868,7 @@ class TaskHub:
                     self._paths,
                     task_result,
                     completed_at=datetime.now(UTC),
-                    taskmemory_path=self._registry.taskmemory_path(entry.task_id),
+                    taskmemory_path=self._artifact_paths(entry).taskmemory,
                 )
                 await self._deliver(task_result)
 
@@ -905,14 +928,159 @@ class TaskHub:
 
     def _update_task_status(self, task_id: str, *, status: str, **kwargs: object) -> None:
         self._registry.update_status(task_id, status, **kwargs)
+        entry = self._registry.get(task_id)
+        if entry is None:
+            return
+        self._sync_plan_tracking(entry)
         if status in _FINISHED:
-            entry = self._registry.get(task_id)
-            if entry is not None:
-                self._append_runtime_lifecycle_event(
-                    entry,
-                    "task.lifecycle.terminal",
+            self._append_runtime_lifecycle_event(
+                entry,
+                "task.lifecycle.terminal",
+                status=status,
+            )
+
+    def _prepare_plan_artifacts(self, entry: TaskEntry, submit: TaskSubmit) -> TaskEntry:
+        """Create or update real PlanFiles artifacts for plan/phase work units."""
+        if entry.workunit_kind not in _PLAN_PHASE_WORKUNITS | _PLAN_MANIFEST_WORKUNITS:
+            return entry
+
+        updates: dict[str, object] = {}
+        if not entry.plan_id:
+            updates["plan_id"] = submit.plan_id or entry.task_id
+        if not entry.phase_id and submit.phase_id:
+            updates["phase_id"] = submit.phase_id
+        if not entry.phase_title and submit.phase_title:
+            updates["phase_title"] = submit.phase_title
+        if updates:
+            self._registry.update_status(entry.task_id, entry.status, **updates)
+            refreshed = self._registry.get(entry.task_id)
+            if refreshed is not None:
+                entry = refreshed
+
+        if entry.workunit_kind in _PLAN_MANIFEST_WORKUNITS:
+            create_plan_files(
+                self._paths.plans_dir,
+                plan_id=entry.plan_id or entry.task_id,
+                plan_markdown=submit.plan_markdown or submit.prompt,
+                phases=self._coerce_plan_phases(submit.plan_phases),
+                status="planning",
+            )
+            return entry
+
+        if entry.plan_id and entry.phase_id:
+            update_phase_state(
+                self._paths.plans_dir,
+                plan_id=entry.plan_id,
+                phase_id=entry.phase_id,
+                phase_title=entry.phase_title or entry.name or entry.phase_id,
+                workunit_kind=entry.workunit_kind,
+                route=entry.route or "auto",
+                allowed_edit=self._phase_allows_edit(entry),
+                phase_status="running",
+                plan_status="executing",
+            )
+        return entry
+
+    def _artifact_paths(self, entry: TaskEntry) -> _TaskArtifactPaths:
+        """Resolve the active TASKMEMORY/EVIDENCE/RESULT paths for one task."""
+        if entry.plan_id and entry.phase_id and entry.workunit_kind in _PLAN_PHASE_WORKUNITS:
+            folder = ensure_phase_artifacts(
+                self._paths.plans_dir,
+                plan_id=entry.plan_id,
+                phase_id=entry.phase_id,
+            )
+            return _TaskArtifactPaths(
+                folder=folder,
+                taskmemory=folder / "TASKMEMORY.md",
+                evidence=folder / "EVIDENCE.json",
+                result=folder / "RESULT.md",
+            )
+
+        folder = self._registry.task_folder(entry.task_id)
+        return _TaskArtifactPaths(
+            folder=folder,
+            taskmemory=self._registry.taskmemory_path(entry.task_id),
+            evidence=evidence_path(folder),
+            result=result_path(folder),
+        )
+
+    def _plan_artifact_notice(self, entry: TaskEntry) -> str:
+        """Tell plan-aware workers where canonical plan artifacts live."""
+        if not entry.plan_id:
+            return ""
+        plan_dir = plan_dir_for(self._paths.plans_dir, entry.plan_id)
+        lines = [
+            "\n\n---\nPLANFILES ARTIFACTS:",
+            f"- plan_root: {plan_dir}",
+            f"- plan_markdown: {plan_dir / 'PLAN.md'}",
+            f"- phases_manifest: {plan_dir / 'PHASES.json'}",
+            f"- controller_state: {plan_dir / 'STATE.json'}",
+        ]
+        if entry.phase_id:
+            phase_dir = phase_dir_for(self._paths.plans_dir, entry.plan_id, entry.phase_id)
+            lines.extend(
+                [
+                    f"- phase_root: {phase_dir}",
+                    f"- phase_taskmemory: {phase_dir / 'TASKMEMORY.md'}",
+                    f"- phase_evidence: {phase_dir / 'EVIDENCE.json'}",
+                    f"- phase_result: {phase_dir / 'RESULT.md'}",
+                ]
+            )
+        return "\n".join(lines)
+
+    def _sync_plan_tracking(self, entry: TaskEntry) -> None:
+        """Reflect task lifecycle into PlanFiles state for phase-bound work."""
+        if not entry.plan_id or not entry.phase_id or entry.workunit_kind not in _PLAN_PHASE_WORKUNITS:
+            return
+        phase_status = {
+            "running": "running",
+            "waiting": "ask",
+            "done": "completed",
+            "failed": "repair",
+            "cancelled": "repair",
+        }.get(entry.status)
+        if phase_status is None:
+            return
+        plan_status = "repair" if phase_status == "repair" else "executing"
+        update_phase_state(
+            self._paths.plans_dir,
+            plan_id=entry.plan_id,
+            phase_id=entry.phase_id,
+            phase_title=entry.phase_title or entry.name or entry.phase_id,
+            workunit_kind=entry.workunit_kind,
+            route=entry.route or "auto",
+            allowed_edit=self._phase_allows_edit(entry),
+            phase_status=phase_status,
+            plan_status=plan_status,
+        )
+
+    def _phase_allows_edit(self, entry: TaskEntry) -> bool:
+        """Conservative edit-permission default for phase-bound tasks."""
+        return entry.workunit_kind == "phase_execution"
+
+    def _coerce_plan_phases(self, raw: list[dict[str, Any]]) -> tuple[PlanPhase, ...]:
+        """Normalize incoming JSON phases into PlanPhase values."""
+        phases: list[PlanPhase] = []
+        for index, item in enumerate(raw, start=1):
+            if not isinstance(item, dict):
+                continue
+            phase_id = str(item.get("id") or f"phase-{index:03d}")
+            title = str(item.get("title") or phase_id)
+            workunit_kind = str(item.get("workunit_kind") or "phase_execution")
+            route = str(item.get("route") or "auto")
+            allowed_edit = bool(item.get("allowed_edit", workunit_kind == "phase_execution"))
+            status = str(item.get("status") or "pending")
+            phases.append(
+                PlanPhase(
+                    id=phase_id,
+                    title=title,
+                    workunit_kind=workunit_kind,
+                    route=route,
+                    allowed_edit=allowed_edit,
                     status=status,
                 )
+            )
+        return tuple(phases)
 
 
 _RESULT_PREVIEW_LEN = 200

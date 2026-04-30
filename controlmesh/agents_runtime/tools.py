@@ -17,6 +17,9 @@ async def create_background_task(
     model_override: str = "",
     thinking_override: str = "",
     topology: str = "",
+    plan_id: str = "",
+    phase_id: str = "",
+    phase_title: str = "",
 ) -> ToolResultEnvelope:
     """Create a background task via the existing TaskHub."""
     if ctx.task_hub is None:
@@ -40,6 +43,9 @@ async def create_background_task(
                 model_override=model_override,
                 thinking_override=thinking_override,
                 topology=topology,
+                plan_id=plan_id,
+                phase_id=phase_id,
+                phase_title=phase_title,
             )
         )
     except Exception as exc:

@@ -101,6 +101,37 @@ class TestTaskCreate:
         assert submit.required_capabilities == ["shell_execution"]
         assert submit.evaluator == "foreground"
 
+    async def test_forwards_plan_fields_to_task_submit(self, api_client: TestClient) -> None:
+        hub = api_client.app["_test_hub"]
+
+        resp = await api_client.post(
+            "/tasks/create",
+            json={
+                "from": "main",
+                "prompt": "Create a phased plan",
+                "workunit_kind": "plan_with_files",
+                "plan_id": "demo-plan",
+                "plan_markdown": "# Demo\n",
+                "plan_phases": [
+                    {
+                        "id": "phase-001",
+                        "title": "Audit repository",
+                        "workunit_kind": "repo_audit",
+                    }
+                ],
+                "phase_id": "phase-001",
+                "phase_title": "Audit repository",
+            },
+        )
+
+        assert resp.status == 200
+        submit = hub.submit.call_args.args[0]
+        assert submit.plan_id == "demo-plan"
+        assert submit.plan_markdown == "# Demo\n"
+        assert submit.plan_phases[0]["workunit_kind"] == "repo_audit"
+        assert submit.phase_id == "phase-001"
+        assert submit.phase_title == "Audit repository"
+
     async def test_missing_prompt(self, api_client: TestClient) -> None:
         resp = await api_client.post("/tasks/create", json={"from": "main"})
         assert resp.status == 400

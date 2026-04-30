@@ -33,6 +33,11 @@ class TaskSubmit:
     required_capabilities: list[str] = field(default_factory=list)
     evaluator: str = ""
     route_slot: str = ""
+    plan_id: str = ""
+    plan_markdown: str = ""
+    plan_phases: list[dict[str, Any]] = field(default_factory=list)
+    phase_id: str = ""
+    phase_title: str = ""
 
 
 @dataclass(slots=True)
@@ -69,6 +74,9 @@ class TaskEntry:
     command: str = ""
     target: str = ""
     evidence: str = ""
+    plan_id: str = ""
+    phase_id: str = ""
+    phase_title: str = ""
     tasks_dir: str = ""  # Agent's tasks directory (for per-agent folder resolution)
     thread_id: TopicRef = None  # Forum topic ID (for routing results back to topic)
 
@@ -103,6 +111,9 @@ class TaskEntry:
             "command": self.command,
             "target": self.target,
             "evidence": self.evidence,
+            "plan_id": self.plan_id,
+            "phase_id": self.phase_id,
+            "phase_title": self.phase_title,
             "tasks_dir": self.tasks_dir,
         }
         if self.thread_id is not None:
@@ -141,6 +152,9 @@ class TaskEntry:
             command=d.get("command", ""),
             target=d.get("target", ""),
             evidence=d.get("evidence", ""),
+            plan_id=d.get("plan_id", ""),
+            phase_id=d.get("phase_id", ""),
+            phase_title=d.get("phase_title", ""),
             tasks_dir=d.get("tasks_dir", ""),
             thread_id=d.get("thread_id"),
         )

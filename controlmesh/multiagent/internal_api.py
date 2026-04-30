@@ -302,6 +302,11 @@ class InternalAgentAPI:
             evidence=data.get("evidence") or "",
             required_capabilities=[str(item) for item in required_capabilities],
             evaluator=data.get("evaluator") or "",
+            plan_id=data.get("plan_id") or "",
+            plan_markdown=data.get("plan_markdown") or "",
+            plan_phases=data.get("plan_phases") if isinstance(data.get("plan_phases"), list) else [],
+            phase_id=data.get("phase_id") or "",
+            phase_title=data.get("phase_title") or "",
         )
 
         try:

@@ -120,6 +120,28 @@ class TestTaskEntry:
         assert restored.command == "uv run pytest tests/test_x.py -q"
         assert restored.evidence == "logs/pytest.log"
 
+    def test_plan_metadata_roundtrip(self) -> None:
+        entry = TaskEntry(
+            task_id="p1",
+            chat_id=1,
+            parent_agent="main",
+            name="phase task",
+            prompt_preview="execute phase",
+            provider="claude",
+            model="opus",
+            status="running",
+            workunit_kind="phase_execution",
+            plan_id="demo-plan",
+            phase_id="phase-002",
+            phase_title="Implement policy",
+        )
+
+        restored = TaskEntry.from_dict(entry.to_dict())
+
+        assert restored.plan_id == "demo-plan"
+        assert restored.phase_id == "phase-002"
+        assert restored.phase_title == "Implement policy"
+
     def test_string_refs_roundtrip(self) -> None:
         entry = TaskEntry(
             task_id="qq1",
@@ -152,6 +174,25 @@ class TestTaskSubmit:
         assert sub.thinking_override == ""
         assert sub.route == ""
         assert sub.required_capabilities == []
+
+    def test_plan_fields_default_and_assign(self) -> None:
+        sub = TaskSubmit(
+            chat_id=1,
+            prompt="do something",
+            message_id=10,
+            thread_id=None,
+            parent_agent="main",
+            plan_id="demo-plan",
+            plan_markdown="# Demo",
+            plan_phases=[{"id": "phase-001", "title": "Audit", "workunit_kind": "repo_audit"}],
+            phase_id="phase-001",
+            phase_title="Audit",
+        )
+        assert sub.plan_id == "demo-plan"
+        assert sub.plan_markdown == "# Demo"
+        assert sub.plan_phases[0]["workunit_kind"] == "repo_audit"
+        assert sub.phase_id == "phase-001"
+        assert sub.phase_title == "Audit"
 
     def test_string_refs_are_allowed(self) -> None:
         sub = TaskSubmit(

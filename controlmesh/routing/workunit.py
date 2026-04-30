@@ -157,7 +157,7 @@ def requirements_for_kind(kind: WorkUnitKind) -> WorkUnitRouteRequirements:
         )
     if kind is WorkUnitKind.PLAN_WITH_FILES:
         return WorkUnitRouteRequirements(
-            capabilities=("planning", "phase_execution", "evidence_writer"),
+            capabilities=("planning", "evidence_writer"),
             can_edit=True,
             evaluator_required=True,
             promotion_allowed=False,
@@ -204,9 +204,18 @@ def build_workunit_contract(unit: WorkUnit) -> str:
             "- Capture exact commands, relevant URLs, versions, and unresolved blockers.\n"
             "- Wait for the controller to perform or explicitly approve publish actions."
         )
-    if unit.kind in {WorkUnitKind.PLAN_WITH_FILES, WorkUnitKind.PHASE_EXECUTION}:
+    if unit.kind is WorkUnitKind.PLAN_WITH_FILES:
         return (
-            f"## WorkUnit Contract: {unit.kind.value}\n"
+            "## WorkUnit Contract: plan_with_files\n"
+            "Create or update the canonical file-backed execution plan.\n"
+            "- Maintain PLAN.md, PHASES.json, and STATE.json.\n"
+            "- Define clear phase titles, workunit kinds, and edit permissions.\n"
+            "- Do not guess missing requirements; ask the parent when blocked.\n"
+            "- Treat the plan files as the source of truth for later phase execution."
+        )
+    if unit.kind is WorkUnitKind.PHASE_EXECUTION:
+        return (
+            "## WorkUnit Contract: phase_execution\n"
             "Execute the assigned plan phase and write durable phase artifacts.\n"
             "- Keep work scoped to the assigned phase.\n"
             "- Write TASKMEMORY.md, EVIDENCE.json, and RESULT.md for controller review.\n"

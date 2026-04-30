@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from controlmesh.config import AgentConfig
+from controlmesh.tasks.evaluator import verdict_path
 from controlmesh.routing.score_events import read_score_events
 from controlmesh.tasks.hub import TaskHub
 from controlmesh.tasks.models import TaskResult, TaskSubmit
@@ -287,6 +288,118 @@ class TestSubmit:
         assert events[0].agent_slot
         assert events[0].success is True
         assert events[0].evidence_quality >= 0.55
+
+        await hub.shutdown()
+
+    async def test_plan_with_files_creates_real_plan_artifacts(
+        self,
+        registry: TaskRegistry,
+        tmp_path: Path,
+    ) -> None:
+        paths = ControlMeshPaths(controlmesh_home=tmp_path / "home")
+        cli = _make_cli_service("plan created")
+        hub = TaskHub(
+            registry,
+            paths,
+            cli_service=cli,
+            config=_make_config(),
+        )
+
+        submit = _submit(prompt="Create a phased plan", name="Plan task")
+        submit.workunit_kind = "plan_with_files"
+        submit.plan_id = "demo-plan"
+        submit.plan_markdown = "# Demo Plan\n"
+        submit.plan_phases = [
+            {
+                "id": "phase-001",
+                "title": "Audit repository",
+                "workunit_kind": "repo_audit",
+            }
+        ]
+
+        hub.submit(submit)
+        await asyncio.sleep(0.1)
+
+        plan_dir = paths.plans_dir / "demo-plan"
+        assert (plan_dir / "PLAN.md").exists()
+        manifest = json.loads((plan_dir / "PHASES.json").read_text(encoding="utf-8"))
+        assert manifest["phases"][0]["id"] == "phase-001"
+        request = cli.execute.await_args.args[0]
+        assert "PLANFILES ARTIFACTS:" in request.prompt
+        assert str(plan_dir / "PHASES.json") in request.prompt
+
+        await hub.shutdown()
+
+    async def test_phase_execution_uses_plan_phase_artifact_dir(
+        self,
+        registry: TaskRegistry,
+        tmp_path: Path,
+    ) -> None:
+        paths = ControlMeshPaths(controlmesh_home=tmp_path / "home")
+
+        async def _execute_with_phase_artifacts(request: object) -> MagicMock:
+            phase_dir = paths.plans_dir / "demo-plan" / "phase-002"
+            phase_dir.mkdir(parents=True, exist_ok=True)
+            (phase_dir / "TASKMEMORY.md").write_text("# Phase memory\n", encoding="utf-8")
+            (phase_dir / "EVIDENCE.json").write_text(
+                json.dumps(
+                    {
+                        "task_id": request.process_label.removeprefix("task:"),
+                        "workunit_kind": "phase_execution",
+                        "status": "done",
+                        "summary": "Phase executed with evidence.",
+                        "items": [
+                            {
+                                "kind": "command",
+                                "title": "Ran targeted check",
+                                "command": "uv run pytest tests/test_x.py -q",
+                                "exit_code": 0,
+                            }
+                        ],
+                        "verification_commands": ["uv run pytest tests/test_x.py -q"],
+                        "risks": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (phase_dir / "RESULT.md").write_text("# Phase result\n", encoding="utf-8")
+            response = MagicMock()
+            response.result = "phase done"
+            response.session_id = "sess-phase"
+            response.is_error = False
+            response.timed_out = False
+            response.num_turns = 2
+            return response
+
+        cli = _make_cli_service()
+        cli.execute = AsyncMock(side_effect=_execute_with_phase_artifacts)
+        hub = TaskHub(
+            registry,
+            paths,
+            cli_service=cli,
+            config=_make_config(),
+        )
+
+        submit = _submit(prompt="Execute phase 2", name="Phase task")
+        submit.workunit_kind = "phase_execution"
+        submit.plan_id = "demo-plan"
+        submit.phase_id = "phase-002"
+        submit.phase_title = "Implement policy"
+        task_id = hub.submit(submit)
+        await asyncio.sleep(0.1)
+
+        phase_dir = paths.plans_dir / "demo-plan" / "phase-002"
+        entry = registry.get(task_id)
+        assert entry is not None
+        assert entry.status == "done"
+        assert (phase_dir / "EVALUATION.json").exists()
+        assert not (registry.task_folder(task_id) / "EVALUATION.json").exists()
+        manifest = json.loads((paths.plans_dir / "demo-plan" / "PHASES.json").read_text(encoding="utf-8"))
+        assert manifest["phases"][0]["status"] == "completed"
+        request = cli.execute.await_args.args[0]
+        assert str(phase_dir / "TASKMEMORY.md") in request.prompt
+        assert str(phase_dir / "EVIDENCE.json") in request.prompt
+        assert str(phase_dir / "RESULT.md") in request.prompt
 
         await hub.shutdown()
 

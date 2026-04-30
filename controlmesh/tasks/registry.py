@@ -132,6 +132,9 @@ class TaskRegistry:
             command=submit.command,
             target=submit.target,
             evidence=submit.evidence,
+            plan_id=submit.plan_id,
+            phase_id=submit.phase_id,
+            phase_title=submit.phase_title,
             tasks_dir=str(resolved_dir),
             thread_id=submit.thread_id,
         )
@@ -305,6 +308,9 @@ def _seed_task_folder(
             "required_capabilities": list(entry.required_capabilities),
             "evaluator": entry.evaluator,
             "route_slot": entry.route_slot,
+            "plan_id": entry.plan_id,
+            "phase_id": entry.phase_id,
+            "phase_title": entry.phase_title,
         }
         workunit_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
