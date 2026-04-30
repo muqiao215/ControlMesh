@@ -353,6 +353,8 @@ class AgentRoutingConfig(BaseModel):
     capability_registry: str = "routing/capabilities.yaml"
     score_memory_path: str = "routing/score_events.jsonl"
     min_confidence: float = 0.72
+    subagent_policy: dict[str, object] = Field(default_factory=dict)
+    workunit_overrides: dict[str, dict[str, object]] = Field(default_factory=dict)
 
 
 class TimeoutConfig(BaseModel):

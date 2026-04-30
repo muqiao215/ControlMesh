@@ -19,7 +19,14 @@ from controlmesh.routing.policy import (
 )
 from controlmesh.routing.scorer import RouteScoringContext, rank_slots
 from controlmesh.routing.scorer import SlotRuntimeState
-from controlmesh.routing.workunit import WorkUnit, build_workunit_contract, requirements_for_kind
+from controlmesh.routing.workunit import (
+    WorkUnit,
+    WorkUnitKind,
+    build_workunit_contract,
+    requirements_for_kind,
+)
+
+_COST_RANK: dict[str, int] = {"cheap": 0, "standard": 1, "premium": 2}
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,12 +78,26 @@ def resolve_route(
         return None
 
     requirements = requirements_for_kind(kind)
-    if required_capabilities:
+    routing_cfg = getattr(config, "agent_routing", None)
+    overrides = _workunit_overrides(routing_cfg, kind)
+    override_capabilities = _tuple_field(overrides, "capabilities")
+    if override_capabilities:
+        required_capabilities = override_capabilities
+    override_can_edit = requirements.can_edit
+    if "can_edit" in overrides:
+        override_can_edit = _bool_field(overrides, "can_edit", bool(requirements.can_edit))
+    if "allowed_edit" in overrides:
+        override_can_edit = _bool_field(overrides, "allowed_edit", bool(requirements.can_edit))
+    if required_capabilities or overrides:
         requirements = type(requirements)(
-            capabilities=tuple(required_capabilities),
+            capabilities=tuple(required_capabilities or requirements.capabilities),
             avoid_capabilities=requirements.avoid_capabilities,
-            can_edit=requirements.can_edit,
-            evaluator_required=requirements.evaluator_required,
+            can_edit=override_can_edit,
+            evaluator_required=_bool_field(
+                overrides,
+                "requires_foreground_approval",
+                requirements.evaluator_required,
+            ),
             promotion_allowed=requirements.promotion_allowed,
         )
     unit = WorkUnit(
@@ -90,7 +111,11 @@ def resolve_route(
         requirements=requirements,
     )
     registry = registry or _registry_from_config(config)
-    candidates = registry.candidates(mode="background")
+    candidates = _apply_subagent_policy(
+        registry.candidates(mode="background"),
+        routing_cfg=routing_cfg,
+        overrides=overrides,
+    )
     if slot_state_resolver is not None:
         states = dict((scoring_context or RouteScoringContext()).slot_state)
         for slot in candidates:
@@ -103,13 +128,17 @@ def resolve_route(
         return None
 
     best = ranked[0]
+    min_confidence = float(getattr(routing_cfg, "min_confidence", 0.0) or 0.0)
+    confidence = max(0.0, min(1.0, best.score))
+    if confidence < min_confidence:
+        return None
     requested_topology = normalize_topology(topology)
     selected_topology = (
         requested_topology
+        or normalize_topology(str(overrides.get("topology", "") or ""))
         or best.slot.topology_preferences.get(kind.value, "")
         or default_topology_for_kind(kind)
     )
-    confidence = max(0.0, min(1.0, best.score))
     evaluator = "foreground" if requirements.evaluator_required else ""
     return RouteDecision(
         workunit=unit,
@@ -134,3 +163,75 @@ def _registry_from_config(config: object) -> CapabilityRegistry:
             path = str(home / path)
         return load_capability_registry(path, config)
     return default_capability_registry(config)
+
+
+def _workunit_overrides(routing_cfg: object, kind: WorkUnitKind) -> dict[str, object]:
+    raw = getattr(routing_cfg, "workunit_overrides", {}) if routing_cfg is not None else {}
+    if not isinstance(raw, dict):
+        return {}
+    payload = raw.get(kind.value, {})
+    return payload if isinstance(payload, dict) else {}
+
+
+def _tuple_field(payload: dict[str, object], key: str) -> tuple[str, ...]:
+    raw = payload.get(key, ())
+    if isinstance(raw, str):
+        return (raw,)
+    if isinstance(raw, list | tuple):
+        return tuple(str(item) for item in raw if str(item))
+    return ()
+
+
+def _bool_field(payload: dict[str, object], key: str, default: bool) -> bool:
+    raw = payload.get(key, default)
+    return raw if isinstance(raw, bool) else default
+
+
+def _apply_subagent_policy(
+    slots: tuple[AgentSlot, ...],
+    *,
+    routing_cfg: object,
+    overrides: dict[str, object],
+) -> tuple[AgentSlot, ...]:
+    policy = getattr(routing_cfg, "subagent_policy", {}) if routing_cfg is not None else {}
+    if not isinstance(policy, dict):
+        policy = {}
+
+    deny_providers = set(_tuple_field(policy, "deny_providers")) | set(
+        _tuple_field(overrides, "deny_providers")
+    )
+    allow_providers = set(_tuple_field(policy, "allow_providers")) | set(
+        _tuple_field(overrides, "allow_providers")
+    )
+    deny_slots = set(_tuple_field(policy, "deny_slots")) | set(_tuple_field(overrides, "deny_slots"))
+    allow_slots = set(_tuple_field(policy, "allow_slots")) | set(_tuple_field(overrides, "allow_slots"))
+    preferred_slots = set(_tuple_field(overrides, "preferred_slots"))
+    deny_cost_classes = set(_tuple_field(policy, "deny_cost_classes")) | set(
+        _tuple_field(overrides, "deny_cost_classes")
+    )
+    max_cost_class = str(overrides.get("max_cost_class") or policy.get("max_cost_class") or "")
+
+    filtered: list[AgentSlot] = []
+    for slot in slots:
+        if not slot.allow_subagent:
+            continue
+        if allow_slots and slot.name not in allow_slots:
+            continue
+        if slot.name in deny_slots:
+            continue
+        if allow_providers and slot.provider not in allow_providers:
+            continue
+        if slot.provider in deny_providers:
+            continue
+        if slot.cost_class in deny_cost_classes:
+            continue
+        if max_cost_class and _COST_RANK.get(slot.cost_class, 99) > _COST_RANK.get(max_cost_class, 99):
+            continue
+        filtered.append(slot)
+
+    if preferred_slots:
+        preferred = [slot for slot in filtered if slot.name in preferred_slots]
+        rest = [slot for slot in filtered if slot.name not in preferred_slots]
+        filtered = [*preferred, *rest]
+
+    return tuple(filtered)

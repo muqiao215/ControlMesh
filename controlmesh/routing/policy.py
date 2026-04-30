@@ -21,6 +21,9 @@ _TEST_COMMAND_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
 
 _REVIEW_WORDS = ("review", "审查", "复查", "code review")
 _PATCH_WORDS = ("fix", "修复", "patch", "改代码", "补丁")
+_RELEASE_WORDS = ("github release", "release notes", "发布 release", "发版", "打 tag")
+_AUDIT_WORDS = ("repo audit", "audit repository", "仓库审计", "巡检仓库")
+_TRIAGE_WORDS = ("test triage", "triage tests", "测试分诊", "分析测试失败")
 
 TOPOLOGY_ALIASES: dict[str, str] = {
     "background_single": "",
@@ -33,6 +36,14 @@ DEFAULT_TOPOLOGY_BY_KIND: dict[WorkUnitKind, str] = {
     WorkUnitKind.TEST_EXECUTION: "",
     WorkUnitKind.CODE_REVIEW: "fanout_merge",
     WorkUnitKind.PATCH_CANDIDATE: "director_worker",
+    WorkUnitKind.PLAN_WITH_FILES: "pipeline",
+    WorkUnitKind.PHASE_EXECUTION: "pipeline",
+    WorkUnitKind.PHASE_REVIEW: "fanout_merge",
+    WorkUnitKind.GITHUB_RELEASE: "pipeline",
+    WorkUnitKind.DOCS_PUBLISH: "pipeline",
+    WorkUnitKind.REPO_AUDIT: "fanout_merge",
+    WorkUnitKind.DEPENDENCY_UPDATE: "pipeline",
+    WorkUnitKind.TEST_TRIAGE: "pipeline",
 }
 
 
@@ -51,6 +62,12 @@ def detect_workunit_kind(
     if command and any(pattern.search(command) for pattern in _TEST_COMMAND_PATTERNS):
         return WorkUnitKind.TEST_EXECUTION
     haystack = " ".join(part for part in (prompt, target, evidence, command) if part).lower()
+    if any(word in haystack for word in _RELEASE_WORDS):
+        return WorkUnitKind.GITHUB_RELEASE
+    if any(word in haystack for word in _AUDIT_WORDS):
+        return WorkUnitKind.REPO_AUDIT
+    if any(word in haystack for word in _TRIAGE_WORDS):
+        return WorkUnitKind.TEST_TRIAGE
     if any(word in haystack for word in _PATCH_WORDS):
         return WorkUnitKind.PATCH_CANDIDATE
     if any(word in haystack for word in _REVIEW_WORDS):

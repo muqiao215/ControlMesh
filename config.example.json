@@ -240,7 +240,21 @@
         "mode": "auto",
         "capability_registry": "routing/capabilities.yaml",
         "score_memory_path": "routing/score_events.jsonl",
-        "min_confidence": 0.72
+        "min_confidence": 0.72,
+        "subagent_policy": {
+            "deny_cost_classes": ["premium"]
+        },
+        "workunit_overrides": {
+            "patch_candidate": {
+                "topology": "director_worker",
+                "requires_foreground_approval": true
+            },
+            "github_release": {
+                "preferred_slots": ["release_runner"],
+                "topology": "pipeline",
+                "requires_foreground_approval": true
+            }
+        }
     },
 
     "interagent_port": 8799

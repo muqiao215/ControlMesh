@@ -32,6 +32,32 @@ agent_slots:
     assert len(registry.slots) == 1
     assert registry.slots[0].name == "opencode.explore"
     assert registry.slots[0].capability_score("code_review") == 0.8
+    assert registry.slots[0].allow_subagent is True
+
+
+def test_loads_slot_policy_metadata(tmp_path: Path) -> None:
+    path = tmp_path / "capabilities.yaml"
+    path.write_text(
+        """
+agent_slots:
+  codex_cli:
+    runtime: codex_cli
+    provider: codex
+    mode: background
+    role: worker
+    cost_class: premium
+    allow_subagent: false
+    capabilities:
+      code_review:
+        score: 0.9
+""",
+        encoding="utf-8",
+    )
+
+    registry = load_capability_registry(path, AgentConfig())
+
+    assert registry.slots[0].cost_class == "premium"
+    assert registry.slots[0].allow_subagent is False
 
 
 def test_missing_registry_falls_back_to_defaults(tmp_path: Path) -> None:

@@ -19,6 +19,8 @@ class AgentSlot:
     model: str = ""
     mode: str = "background"
     role: str = "worker"
+    cost_class: str = "standard"
+    allow_subagent: bool = True
     capabilities: dict[str, float] = field(default_factory=dict)
     tools: tuple[str, ...] = ()
     can_edit: bool = False
@@ -52,6 +54,8 @@ def default_capability_registry(config: object | None = None) -> CapabilityRegis
             model=model,
             mode="foreground",
             role="controller",
+            cost_class="premium",
+            allow_subagent=False,
             canonical_write=True,
             capabilities={
                 "planning": 0.9,
@@ -67,6 +71,8 @@ def default_capability_registry(config: object | None = None) -> CapabilityRegis
             model=model,
             mode="background",
             role="worker",
+            cost_class="standard",
+            allow_subagent=True,
             can_edit=True,
             capabilities={
                 "shell_execution": 0.72,
@@ -79,12 +85,31 @@ def default_capability_registry(config: object | None = None) -> CapabilityRegis
             },
         ),
         AgentSlot(
+            name="release_runner",
+            runtime="controlmesh_background",
+            provider="gemini",
+            model="flash",
+            mode="background",
+            role="worker",
+            cost_class="cheap",
+            allow_subagent=True,
+            capabilities={
+                "github_release": 0.86,
+                "shell_execution": 0.75,
+                "release_notes": 0.85,
+                "evidence_writer": 0.82,
+            },
+            topology_preferences={"github_release": "pipeline"},
+        ),
+        AgentSlot(
             name="codex_cli",
             runtime="codex_cli",
             provider="codex",
             model="",
             mode="background",
             role="worker",
+            cost_class="premium",
+            allow_subagent=False,
             can_edit=True,
             capabilities={
                 "code_review": 0.9,
@@ -108,6 +133,8 @@ def default_capability_registry(config: object | None = None) -> CapabilityRegis
             model="",
             mode="background",
             role="worker",
+            cost_class="standard",
+            allow_subagent=True,
             capabilities={
                 "code_review": 0.86,
                 "adversarial_review": 0.88,
@@ -123,6 +150,8 @@ def default_capability_registry(config: object | None = None) -> CapabilityRegis
             model="",
             mode="background",
             role="worker",
+            cost_class="cheap",
+            allow_subagent=True,
             capabilities={
                 "code_search": 0.86,
                 "code_review": 0.78,
@@ -186,6 +215,8 @@ def _slot_from_mapping(name: str, payload: dict[str, Any]) -> AgentSlot:
         model=model,
         mode=str(payload.get("mode", "background")),
         role=str(payload.get("role", "worker")),
+        cost_class=str(payload.get("cost_class", "standard")),
+        allow_subagent=bool(payload.get("allow_subagent", True)),
         capabilities=capabilities,
         tools=tuple(str(tool) for tool in tools),
         can_edit=bool(payload.get("can_edit", permissions.get("edit", False))),

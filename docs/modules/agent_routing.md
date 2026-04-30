@@ -2,11 +2,19 @@
 
 Capability-based routing layer between the foreground controller and `TaskHub`.
 
-The first implementation supports three WorkUnit kinds:
+The routing layer supports small code WorkUnits and longer workflow WorkUnits:
 
 - `test_execution`: run tests/checks, collect logs, summarize failure causes, no edits
 - `code_review`: review a target/diff with evidence, no writes
 - `patch_candidate`: produce a minimal candidate patch with verification evidence
+- `plan_with_files`: create a file-backed phased plan
+- `phase_execution`: execute one approved plan phase
+- `phase_review`: review phase artifacts and classify approve/repair/ask
+- `github_release`: prepare release evidence and notes; publishing requires foreground approval
+- `docs_publish`: update documentation with evidence
+- `repo_audit`: inspect a repository without writes
+- `dependency_update`: prepare a dependency update candidate
+- `test_triage`: analyze test failures without writes
 
 ## Flow
 
@@ -14,6 +22,8 @@ The first implementation supports three WorkUnit kinds:
 route_task.py or /tasks/create route=auto
   -> WorkUnit classification
   -> CapabilityRegistry slot ranking
+  -> subagent policy and WorkUnit override filters
+  -> min_confidence gate
   -> provider/model/topology fill-in
   -> TaskHub execution
   -> evidence delivered to parent/controller
@@ -21,6 +31,16 @@ route_task.py or /tasks/create route=auto
 
 Explicit `provider`, `model`, and `topology` values are never overwritten by
 the router. Empty fields may be filled from the route decision.
+
+`allow_subagent: false` on an `AgentSlot` keeps a runtime available for explicit
+foreground use while preventing automatic background routing. This is preferable
+to hard-coding provider names because a future cheap provider/model slot can be
+allowed independently from a premium slot using the same provider.
+
+`agent_routing.workunit_overrides` can set per-kind topology, preferred slots,
+foreground-approval requirements, and allow/deny filters. For example,
+`github_release` can prefer a cheap `release_runner` slot while `patch_candidate`
+keeps the `director_worker` topology and controller approval gate.
 
 ## Files
 
@@ -53,3 +73,13 @@ existing runtime names:
 - `review_fanout` -> `fanout_merge`
 - `patch_lane` -> `director_worker`
 - `background_single` and `test_lane` -> plain background task
+
+## PlanFiles artifacts
+
+File-backed plans live under `.controlmesh/plans/<plan_id>/`:
+
+- `PLAN.md`: controller-authored plan
+- `PHASES.json`: phase manifest aligned with `plan/approve/execute/verify/repair`
+- `STATE.json`: current controller state
+- `phase-xxx/TASKMEMORY.md`, `phase-xxx/EVIDENCE.json`, `phase-xxx/RESULT.md`:
+  worker-authored phase evidence for foreground review

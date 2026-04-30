@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from controlmesh.routing.policy import detect_workunit_kind, normalize_topology
+from controlmesh.routing.policy import default_topology_for_kind
 from controlmesh.routing.workunit import WorkUnitKind
 
 
@@ -23,3 +24,11 @@ def test_detects_patch_prompt_as_patch_candidate() -> None:
 
 def test_normalizes_review_fanout_alias() -> None:
     assert normalize_topology("review_fanout") == "fanout_merge"
+
+
+def test_detects_github_release_prompt() -> None:
+    assert detect_workunit_kind(prompt="prepare GitHub release notes") is WorkUnitKind.GITHUB_RELEASE
+
+
+def test_release_defaults_to_pipeline() -> None:
+    assert default_topology_for_kind(WorkUnitKind.GITHUB_RELEASE) == "pipeline"

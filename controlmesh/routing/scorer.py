@@ -85,6 +85,7 @@ def score_slot(
 
     topology = 0.03 if unit.kind.value in slot.topology_preferences else 0.0
     role = 0.04 if slot.role == "worker" else 0.0
+    cost = {"cheap": 0.03, "standard": 0.0, "premium": -0.04}.get(slot.cost_class, 0.0)
     reliability = 0.12 * state.recent_success_rate
     evidence = 0.08 * state.evidence_quality
     penalties = state.cost_penalty + state.latency_penalty
@@ -95,6 +96,7 @@ def score_slot(
         + permission
         + topology
         + role
+        + cost
         + reliability
         + evidence
         + health
@@ -104,6 +106,7 @@ def score_slot(
     reason = (
         f"{slot.name}: capability={capability_match:.2f} "
         f"permission={permission:+.2f} topology={topology:+.2f} "
+        f"cost={cost:+.2f} "
         f"reliability={reliability:+.2f} evidence={evidence:+.2f} "
         f"health={health:+.2f} auth={auth:+.2f} penalties={penalties:+.2f}"
     )

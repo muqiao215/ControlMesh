@@ -35,12 +35,35 @@ agent_slots:
       evidence_writer:
         score: 0.84
 
+  release_runner:
+    runtime: controlmesh_background
+    provider: gemini
+    model: flash
+    mode: background
+    role: worker
+    cost_class: cheap
+    allow_subagent: true
+    can_edit: false
+    capabilities:
+      github_release:
+        score: 0.86
+      shell_execution:
+        score: 0.75
+      release_notes:
+        score: 0.85
+      evidence_writer:
+        score: 0.82
+    topology_preferences:
+      github_release: pipeline
+
   codex_cli:
     runtime: codex_cli
     provider: codex
     model: auto
     mode: background
     role: worker
+    cost_class: premium
+    allow_subagent: false
     can_edit: true
     capabilities:
       code_review:
