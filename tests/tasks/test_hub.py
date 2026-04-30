@@ -10,7 +10,6 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from controlmesh.config import AgentConfig
-from controlmesh.tasks.evaluator import verdict_path
 from controlmesh.routing.score_events import read_score_events
 from controlmesh.tasks.hub import TaskHub
 from controlmesh.tasks.models import TaskResult, TaskSubmit

@@ -288,7 +288,7 @@ def test_release_task_claude_preference_sets_route(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
 
     requests: list[tuple[str, dict[str, Any]]] = server.requests  # type: ignore[attr-defined]
-    for req_path, req_body in requests:
+    for _req_path, req_body in requests:
         assert req_body["route"] == "claude"
 
 
