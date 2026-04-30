@@ -21,7 +21,17 @@ _TEST_COMMAND_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
 
 _REVIEW_WORDS = ("review", "审查", "复查", "code review")
 _PATCH_WORDS = ("fix", "修复", "patch", "改代码", "补丁")
-_RELEASE_WORDS = ("github release", "release notes", "发布 release", "发版", "打 tag")
+_RELEASE_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in (
+        r"(?<!\w)github\s+release(?!\w)",
+        r"(?<!\w)release\s+notes(?!\w)",
+        r"发布\s*release",
+        r"发版",
+        r"打\s*tag\b",
+        r"发布(?:新)?版本(?:$|[\s。！，、,.!?？；;:：])",
+    )
+)
 _AUDIT_WORDS = ("repo audit", "audit repository", "仓库审计", "巡检仓库")
 _TRIAGE_WORDS = ("test triage", "triage tests", "测试分诊", "分析测试失败")
 
@@ -62,7 +72,7 @@ def detect_workunit_kind(
     if command and any(pattern.search(command) for pattern in _TEST_COMMAND_PATTERNS):
         return WorkUnitKind.TEST_EXECUTION
     haystack = " ".join(part for part in (prompt, target, evidence, command) if part).lower()
-    if any(word in haystack for word in _RELEASE_WORDS):
+    if any(pattern.search(haystack) for pattern in _RELEASE_PATTERNS):
         return WorkUnitKind.GITHUB_RELEASE
     if any(word in haystack for word in _AUDIT_WORDS):
         return WorkUnitKind.REPO_AUDIT

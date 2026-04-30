@@ -6,6 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from controlmesh.routing.activation import ActivationIntent
 from controlmesh.routing.capabilities import (
     AgentSlot,
     CapabilityRegistry,
@@ -60,6 +61,7 @@ def resolve_route(
     registry: CapabilityRegistry | None = None,
     scoring_context: RouteScoringContext | None = None,
     slot_state_resolver: Callable[[AgentSlot], SlotRuntimeState | None] | None = None,
+    activation_intent: ActivationIntent | None = None,
 ) -> RouteDecision | None:
     """Resolve a task route when routing is enabled or explicitly requested."""
     routing_cfg = getattr(config, "agent_routing", None)
@@ -80,6 +82,18 @@ def resolve_route(
     requirements = requirements_for_kind(kind)
     routing_cfg = getattr(config, "agent_routing", None)
     overrides = _workunit_overrides(routing_cfg, kind)
+
+    # Merge activation intent constraints into overrides (policy takes precedence over scoring)
+    # Foreground-required is a hard block for auto-routing: if route=auto and the matched
+    # policy says foreground_required, we cannot satisfy it in the auto background path,
+    # so return None immediately rather than scoring against background slots.
+    if activation_intent and activation_intent.matched_policy:
+        if activation_intent.execution_mode == "foreground_required":
+            # Policy blocks auto background routing — nothing in the auto path can satisfy
+            # a foreground-required task, so stop here with no route decision.
+            return None
+        _merge_activation_intent(overrides, activation_intent)
+
     override_capabilities = _tuple_field(overrides, "capabilities")
     if override_capabilities:
         required_capabilities = override_capabilities
@@ -88,16 +102,17 @@ def resolve_route(
         override_can_edit = _bool_field(overrides, "can_edit", bool(requirements.can_edit))
     if "allowed_edit" in overrides:
         override_can_edit = _bool_field(overrides, "allowed_edit", bool(requirements.can_edit))
+    evaluator_required = _bool_field(
+        overrides,
+        "requires_foreground_approval",
+        requirements.evaluator_required,
+    )
     if required_capabilities or overrides:
         requirements = type(requirements)(
             capabilities=tuple(required_capabilities or requirements.capabilities),
             avoid_capabilities=requirements.avoid_capabilities,
             can_edit=override_can_edit,
-            evaluator_required=_bool_field(
-                overrides,
-                "requires_foreground_approval",
-                requirements.evaluator_required,
-            ),
+            evaluator_required=evaluator_required,
             promotion_allowed=requirements.promotion_allowed,
         )
     unit = WorkUnit(
@@ -185,6 +200,29 @@ def _tuple_field(payload: dict[str, object], key: str) -> tuple[str, ...]:
 def _bool_field(payload: dict[str, object], key: str, default: bool) -> bool:
     raw = payload.get(key, default)
     return raw if isinstance(raw, bool) else default
+
+
+def _merge_activation_intent(
+    overrides: dict[str, object],
+    intent: ActivationIntent,
+) -> None:
+    """Merge activation intent constraints into the overrides dict in-place.
+
+    Activation policy constraints take precedence over workunit-level overrides
+    because the policy layer is evaluated before scoring.
+    """
+    if intent.preferred_slots:
+        overrides["preferred_slots"] = list(intent.preferred_slots)
+    if intent.deny_slots:
+        overrides["deny_slots"] = list(intent.deny_slots)
+    if intent.deny_providers:
+        overrides["deny_providers"] = list(intent.deny_providers)
+    if intent.max_cost_class:
+        overrides["max_cost_class"] = intent.max_cost_class
+    if intent.topology:
+        overrides["topology"] = intent.topology
+    if intent.requires_foreground_approval:
+        overrides["requires_foreground_approval"] = True
 
 
 def _apply_subagent_policy(

@@ -288,6 +288,10 @@ def _apply_workspace_migrations(paths: ControlMeshPaths) -> None:
         paths.workspace / "routing" / "capabilities.yaml",
         paths.home_defaults / "workspace" / "routing" / "capabilities.yaml",
     )
+    _merge_seeded_yaml_defaults(
+        paths.workspace / "routing" / "activation_policies.yaml",
+        paths.home_defaults / "workspace" / "routing" / "activation_policies.yaml",
+    )
 
 
 # ---------------------------------------------------------------------------

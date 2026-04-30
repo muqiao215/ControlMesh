@@ -351,6 +351,7 @@ class AgentRoutingConfig(BaseModel):
     enabled: bool = True
     mode: str = "auto"
     capability_registry: str = "routing/capabilities.yaml"
+    activation_policy_file: str = "routing/activation_policies.yaml"
     score_memory_path: str = "routing/score_events.jsonl"
     min_confidence: float = 0.72
     subagent_policy: dict[str, object] = Field(default_factory=dict)

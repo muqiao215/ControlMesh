@@ -19,6 +19,7 @@ def prepare_frontstage_text(
     text: str,
     *,
     output_dir: Path | None,
+    transport: str = "tg",
     supports_attachments: bool = True,
     filename_prefix: str = "controlmesh-reply",
 ) -> str:
@@ -30,6 +31,8 @@ def prepare_frontstage_text(
     """
     clean = (text or "").strip()
     if not clean or FILE_PATH_RE.search(clean):
+        return text
+    if transport == "tg":
         return text
     if not _should_attach(clean):
         return text

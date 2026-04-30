@@ -109,7 +109,11 @@ async def run_non_streaming_message(
 ) -> str:
     """Execute one non-streaming turn and deliver the result to Telegram."""
     async with TypingContext(dispatch.bot, dispatch.key.chat_id, thread_id=dispatch.thread_id):
-        result = await dispatch.orchestrator.handle_message(dispatch.key, dispatch.text)
+        result = await dispatch.orchestrator.handle_message(
+            dispatch.key,
+            dispatch.text,
+            message_id=dispatch.reply_to.message_id if dispatch.reply_to else 0,
+        )
 
     footer = _build_footer(result, dispatch.scene_config)
     result.text += footer
@@ -199,6 +203,7 @@ async def run_streaming_message(
         result = await dispatch.orchestrator.handle_message_streaming(
             dispatch.key,
             dispatch.text,
+            message_id=dispatch.message.message_id,
             on_text_delta=text_cb,
             on_tool_activity=tool_cb,
             on_tool_event=tool_event_cb,

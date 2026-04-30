@@ -30,5 +30,13 @@ def test_detects_github_release_prompt() -> None:
     assert detect_workunit_kind(prompt="prepare GitHub release notes") is WorkUnitKind.GITHUB_RELEASE
 
 
+def test_detects_github_release_from_chinese_new_version_prompt() -> None:
+    assert detect_workunit_kind(prompt="请帮我发布新版本") is WorkUnitKind.GITHUB_RELEASE
+
+
+def test_does_not_false_positive_on_non_release_version_control_phrase() -> None:
+    assert detect_workunit_kind(prompt="请解释发布版本控制策略") is None
+
+
 def test_release_defaults_to_pipeline() -> None:
     assert default_topology_for_kind(WorkUnitKind.GITHUB_RELEASE) == "pipeline"

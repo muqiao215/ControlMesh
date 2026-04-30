@@ -16,12 +16,21 @@ def test_prepare_frontstage_text_keeps_short_reply_unchanged(tmp_path: Path) -> 
     assert list(tmp_path.iterdir()) == []
 
 
+def test_prepare_frontstage_text_keeps_long_telegram_reply_unchanged(tmp_path: Path) -> None:
+    text = ("line\n" * 80).strip()
+
+    result = prepare_frontstage_text(text, output_dir=tmp_path, transport="tg")
+
+    assert result == text
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_prepare_frontstage_text_converts_long_reply_to_preview_and_attachment(
     tmp_path: Path,
 ) -> None:
     text = ("line\n" * 80).strip()
 
-    result = prepare_frontstage_text(text, output_dir=tmp_path)
+    result = prepare_frontstage_text(text, output_dir=tmp_path, transport="fs")
 
     files = list(tmp_path.iterdir())
     assert len(files) == 1
@@ -41,6 +50,7 @@ def test_prepare_frontstage_text_without_attachment_support_returns_preview_only
     result = prepare_frontstage_text(
         text,
         output_dir=tmp_path,
+        transport="fs",
         supports_attachments=False,
     )
 

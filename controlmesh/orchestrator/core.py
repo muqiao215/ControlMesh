@@ -46,6 +46,7 @@ from controlmesh.orchestrator.commands import (
     cmd_history,
     cmd_memory,
     cmd_model,
+    cmd_route,
     cmd_reset,
     cmd_sessions,
     cmd_settings,
@@ -74,10 +75,18 @@ from controlmesh.orchestrator.observers import ObserverManager
 from controlmesh.orchestrator.providers import ProviderManager
 from controlmesh.orchestrator.registry import CommandRegistry, OrchestratorResult
 from controlmesh.orchestrator.selectors.agent_router import RouteDecisionKind, decide_backend_route
+from controlmesh.routing.activation import (
+    load_activation_policies,
+    resolve_activation_intent,
+    resolve_activation_policy_path,
+)
+from controlmesh.routing.policy import detect_workunit_kind
+from controlmesh.routing.router import resolve_route
 from controlmesh.security import detect_suspicious_patterns
 from controlmesh.session import SessionKey, SessionManager
 from controlmesh.session.manager import SessionData
 from controlmesh.session.named import NamedSessionRegistry
+from controlmesh.tasks.models import TaskSubmit
 from controlmesh.webhook.manager import WebhookManager
 from controlmesh.workspace.paths import ControlMeshPaths
 
@@ -117,6 +126,7 @@ class _MessageDispatch:
     key: SessionKey
     text: str
     cmd: str
+    message_id: int = 0
     streaming: bool = False
     on_text_delta: _TextCallback | None = None
     on_tool_activity: _TextCallback | None = None
@@ -310,9 +320,20 @@ class Orchestrator:
         """Human-readable name for the active CLI provider."""
         return self._providers.active_provider_name
 
-    async def handle_message(self, key: SessionKey, text: str) -> OrchestratorResult:
+    async def handle_message(
+        self,
+        key: SessionKey,
+        text: str,
+        *,
+        message_id: int = 0,
+    ) -> OrchestratorResult:
         """Main entry point: route message to appropriate handler."""
-        dispatch = _MessageDispatch(key=key, text=text, cmd=text.strip().lower())
+        dispatch = _MessageDispatch(
+            key=key,
+            text=text,
+            cmd=text.strip().lower(),
+            message_id=message_id,
+        )
         return await self._handle_message_impl(dispatch)
 
     async def handle_message_streaming(
@@ -320,6 +341,7 @@ class Orchestrator:
         key: SessionKey,
         text: str,
         *,
+        message_id: int = 0,
         on_text_delta: _TextCallback | None = None,
         on_tool_activity: _TextCallback | None = None,
         on_tool_event: _ToolEventCallback | None = None,
@@ -330,6 +352,7 @@ class Orchestrator:
             key=key,
             text=text,
             cmd=text.strip().lower(),
+            message_id=message_id,
             streaming=True,
             on_text_delta=on_text_delta,
             on_tool_activity=on_tool_activity,
@@ -509,6 +532,9 @@ class Orchestrator:
         routed = await self._route_with_backend_decision(dispatch, prompt_text, directives)
         if routed is not None:
             return routed
+        delegated = self._route_with_activation_policy(dispatch, prompt_text, directives)
+        if delegated is not None:
+            return delegated
 
         if dispatch.streaming:
             return await normal_streaming(
@@ -565,6 +591,103 @@ class Orchestrator:
             text="That route is recognized but not wired yet. Please use the legacy path."
         )
 
+    def _route_with_activation_policy(
+        self,
+        dispatch: _MessageDispatch,
+        prompt_text: str,
+        directives: ParsedDirectives,
+    ) -> OrchestratorResult | None:
+        """Auto-submit policy-required background tasks from ordinary chat."""
+        if self._task_hub is None:
+            return None
+        if directives.has_model or directives.raw_directives:
+            return None
+
+        workunit_kind = detect_workunit_kind(prompt=prompt_text)
+        if workunit_kind is None:
+            return None
+
+        policies = self._load_activation_policies()
+        activation_intent = resolve_activation_intent(
+            policies,
+            workunit_kind=workunit_kind.value,
+            prompt=prompt_text,
+            name=self._activation_task_name(workunit_kind.value, prompt_text),
+            explicit_route="",
+        )
+        if not activation_intent.matched_policy:
+            return None
+        if activation_intent.execution_mode != "background_required":
+            return None
+
+        decision = resolve_route(
+            self._config,
+            prompt=prompt_text,
+            route="auto",
+            workunit_kind=workunit_kind.value,
+            name=self._activation_task_name(workunit_kind.value, prompt_text),
+            activation_intent=activation_intent,
+        )
+        if decision is None:
+            return OrchestratorResult(
+                text=(
+                    "Matched activation policy but no eligible background route was available.\n"
+                    f"- policy: {activation_intent.matched_policy}\n"
+                    f"- workunit: {workunit_kind.value}\n"
+                    "- next step: run it explicitly in foreground, for example with @sonnet <request>"
+                )
+            )
+
+        submit = TaskSubmit(
+            chat_id=dispatch.key.chat_id,
+            prompt=prompt_text,
+            message_id=dispatch.message_id,
+            thread_id=dispatch.key.topic_id,
+            parent_agent="main",
+            transport=dispatch.key.transport,
+            name=self._activation_task_name(workunit_kind.value, prompt_text),
+            route="auto",
+            workunit_kind=workunit_kind.value,
+            topology=decision.topology,
+            evaluator="foreground" if activation_intent.requires_foreground_approval else "",
+        )
+        try:
+            task_id = self._task_hub.submit(submit)
+        except (RuntimeError, ValueError) as exc:
+            return OrchestratorResult(text=f"Background delegation blocked: {exc}")
+
+        approval = "foreground required" if activation_intent.requires_foreground_approval else "none"
+        lines = [
+            "Delegated to background by activation policy.",
+            f"- policy: {activation_intent.matched_policy}",
+            f"- workunit: {workunit_kind.value}",
+            f"- slot: {decision.slot_name}",
+            f"- provider/model: {decision.provider}/{decision.model}",
+            f"- topology: {decision.topology or 'background_single'}",
+            f"- approval: {approval}",
+            f"- task: {task_id}",
+            "- results: completion or approval follow-ups will return here",
+        ]
+        return OrchestratorResult(text="\n".join(lines))
+
+    def _load_activation_policies(self) -> tuple:
+        """Load activation policies with the same fallback chain as TaskHub."""
+        policy_path = resolve_activation_policy_path(self._config, self._paths.controlmesh_home)
+        if policy_path and policy_path.is_file():
+            return load_activation_policies(policy_path)
+        fallback = self._paths.home_defaults / "workspace" / "routing" / "activation_policies.yaml"
+        if fallback.is_file():
+            return load_activation_policies(fallback)
+        return ()
+
+    @staticmethod
+    def _activation_task_name(workunit_kind: str, prompt_text: str) -> str:
+        """Build a stable auto-task name for foreground-triggered delegation."""
+        preview = " ".join(prompt_text.split())
+        if len(preview) > 72:
+            preview = preview[:69] + "..."
+        return f"{workunit_kind}: {preview}" if preview else workunit_kind
+
     def _register_commands(self) -> None:
         reg = self._command_registry
         reg.register_async("/new", cmd_reset)
@@ -586,6 +709,8 @@ class Orchestrator:
         reg.register_async("/upgrade", cmd_upgrade)
         reg.register_async("/sessions", cmd_sessions)
         reg.register_async("/tasks", cmd_tasks)
+        reg.register_async("/route", cmd_route)
+        reg.register_async("/route ", cmd_route)
 
     def register_multiagent_commands(self) -> None:
         """Register /agents, /agent_start, /agent_stop, /agent_restart commands.

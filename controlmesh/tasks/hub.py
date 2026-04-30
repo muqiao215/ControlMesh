@@ -21,6 +21,12 @@ from controlmesh.memory.runtime_capture import (
 )
 from controlmesh.messenger.address import ChatRef, TopicRef
 from controlmesh.runtime import RuntimeEvent, RuntimeEventStore
+from controlmesh.routing.activation import (
+    ActivationIntent,
+    load_activation_policies,
+    resolve_activation_intent,
+    resolve_activation_policy_path,
+)
 from controlmesh.routing.capabilities import AgentSlot
 from controlmesh.routing.router import resolve_route
 from controlmesh.routing.score_events import (
@@ -243,6 +249,27 @@ class TaskHub:
         topology = submit.topology or ""
         workunit_contract = ""
         route_reason = ""
+
+        # Resolve activation intent BEFORE resolve_route (policy -> activate -> score -> execute)
+        activation_intent: ActivationIntent | None = None
+        if submit.route == "auto":
+            route_config = self._runtime_config or self._config
+            policies = _load_activation_policies_for_config(route_config, self._paths)
+            activation_intent = resolve_activation_intent(
+                policies,
+                workunit_kind=submit.workunit_kind,
+                command=submit.command,
+                prompt=submit.prompt,
+                name=submit.name,
+                phase_id=submit.phase_id,
+                phase_title=submit.phase_title,
+                plan_id=submit.plan_id,
+                # Pass empty string: route=auto means "no explicit user directive" in this path.
+                # allow_explicit_override=False should block actual explicit overrides (e.g.
+                # route=foreground), not the automatic routing mode itself.
+                explicit_route="",
+            )
+
         if submit.route == "auto":
             route_config = self._runtime_config or self._config
             decision = resolve_route(
@@ -257,6 +284,7 @@ class TaskHub:
                 topology=topology,
                 required_capabilities=tuple(submit.required_capabilities),
                 slot_state_resolver=self._route_slot_state_resolver(),
+                activation_intent=activation_intent,
             )
             if decision is not None:
                 submit.workunit_kind = decision.workunit.kind.value
@@ -274,6 +302,11 @@ class TaskHub:
                     reason=decision.reason,
                 )
                 route_reason = decision.reason
+            if activation_intent and activation_intent.matched_policy:
+                if route_reason:
+                    route_reason = f"policy={activation_intent.matched_policy}; {route_reason}"
+                else:
+                    route_reason = f"policy={activation_intent.matched_policy}"
         elif not topology:
             topology = default_topology or ""
         if topology:
@@ -1169,3 +1202,23 @@ def _read_task_updates_cursor(cursor_path: Path) -> int:
 def _write_task_updates_cursor(cursor_path: Path, last_sequence: int) -> None:
     """Persist the latest consumed parent-update sequence for one task."""
     atomic_json_save(cursor_path, {_TASK_UPDATES_CURSOR_KEY: last_sequence})
+
+
+def _load_activation_policies_for_config(
+    config: object,
+    paths: ControlMeshPaths,
+) -> tuple:
+    """Load activation policies from the configured policy file.
+
+    Resolves the path from ``agent_routing.activation_policy_file`` relative to
+    ``controlmesh_home``, falling back to the bundled defaults directory.
+    """
+    policy_path = resolve_activation_policy_path(config, paths.controlmesh_home)
+    if policy_path and policy_path.is_file():
+        return load_activation_policies(policy_path)
+
+    # Fall back to bundled defaults
+    fallback = paths.home_defaults / "workspace" / "routing" / "activation_policies.yaml"
+    if fallback.is_file():
+        return load_activation_policies(fallback)
+    return ()

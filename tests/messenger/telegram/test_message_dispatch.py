@@ -76,6 +76,11 @@ async def test_non_streaming_long_reply_stays_full_without_auto_attachment() -> 
     ) as mock_send:
         await run_non_streaming_message(dispatch)
 
+    orchestrator.handle_message.assert_awaited_once_with(
+        SessionKey(chat_id=1),
+        "hello",
+        message_id=10,
+    )
     delivered = mock_send.await_args.args[2]
     assert "Output trimmed for chat view" not in delivered
     assert "<file:" not in delivered
@@ -130,6 +135,7 @@ async def test_streaming_full_mode_shows_tools_and_system_status() -> None:
         result = await run_streaming_message(dispatch)
 
     assert result == "stream body"
+    assert orchestrator.handle_message_streaming.await_args.kwargs["message_id"] == 10
     editor.append_text.assert_awaited()
     editor.append_tool.assert_awaited_once_with("Bash")
     editor.append_system.assert_awaited_once_with("THINKING")
@@ -246,6 +252,7 @@ async def test_streaming_tool_details_mode_renders_command_and_output() -> None:
         on_tool_activity: AsyncMock | None,
         on_system_status: AsyncMock | None,
         on_tool_event: AsyncMock | None = None,
+        **_kwargs: object,
     ) -> SimpleNamespace:
         assert on_text_delta is not None
         assert on_tool_activity is None

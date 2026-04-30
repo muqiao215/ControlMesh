@@ -1,0 +1,92 @@
+# Activation Policies — strong routing rules evaluated before capability scoring
+#
+# Routing order: detect -> policy -> activate -> score -> execute
+#
+# Priority order per match:
+#   1. safety/security reject  (not yet implemented)
+#   2. explicit user directive
+#   3. repo-local policy (first match wins)
+#   4. user activation policy (first match wins)
+#   5. agent activation rules (first match wins)
+#   6. capability scoring
+#   7. fallback foreground
+#
+# Policy fields:
+#   execution:           background_required | background_preferred | foreground_required
+#   match:              criteria that must be satisfied for this policy to activate
+#   preferred_slots:    slot names to prefer (others deprioritized)
+#   deny_slots:         slot names that cannot be selected
+#   deny_providers:     provider names that cannot be selected
+#   max_cost_class:     cheapest acceptable cost class (cheap | standard | premium)
+#   topology:           forced topology override
+#   requires_foreground_approval: force evaluator requirement
+#   allow_explicit_override: if False, policy cannot be bypassed by explicit route=
+#
+# Match criteria (all optional, AND'd together):
+#   workunit_kinds:       list of workunit kinds to match
+#   command_patterns:     list of regex patterns (matched against command)
+#   prompt_contains:      list of substrings (case-insensitive, any match)
+#   name_starts_with:     prefix that name must start with
+#   name_ends_with:       suffix that name must end with
+#   name_equals:         exact name match
+#   phase_ids:            list of phase IDs
+#   phase_titles:         list of phase title substrings (case-insensitive)
+#   plan_ids:             list of plan IDs
+
+activation_policies:
+
+  # github_release: always goes to background — release prep should never run foreground
+  github_release_always_background:
+    execution: background_required
+    match:
+      workunit_kinds:
+        - github_release
+    deny_slots: []
+    topology: pipeline
+    requires_foreground_approval: true
+    allow_explicit_override: false
+
+  # phase_execution with plan_id/phase_id: pipeline to background with foreground approval gate.
+  # Matches by kind — phase_title is not required (pipeline routing is determined by the
+  # phase_execution workunit class, not the specific phase label).
+  planfiles_background_phase:
+    execution: background_required
+    match:
+      workunit_kinds:
+        - phase_execution
+    topology: pipeline
+    requires_foreground_approval: true
+    allow_explicit_override: true
+
+  # plan_with_files: always pipeline background with foreground approval
+  plan_with_files_background:
+    execution: background_required
+    match:
+      workunit_kinds:
+        - plan_with_files
+    topology: pipeline
+    requires_foreground_approval: true
+    allow_explicit_override: true
+
+  # codex: only for explicit user routing — never auto-route to codex.
+  # Stable policy: deny the codex_cli slot so auto-scoring cannot select it.
+  # execution=background_required means routing continues normally (other slots eligible)
+  # while deny_slots=[codex_cli] ensures that specific slot is never auto-selected.
+  # Use execution=foreground_required only for tasks that truly cannot run in background.
+  codex_explicit_only:
+    execution: background_required
+    match:
+      workunit_kinds:
+        - code_review
+    deny_slots:
+      - codex_cli
+    allow_explicit_override: false
+
+  # long tasks (by command complexity or explicit naming): prefer background
+  long_task_prefer_background:
+    execution: background_preferred
+    match:
+      command_patterns:
+        - "(?i)(rebase|merge|deploy|build|test all|full test|integration test|python -m pytest)"
+        - "(?i)(analyze|audit|scan|search.*repo)"
+    allow_explicit_override: true

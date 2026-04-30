@@ -215,6 +215,50 @@ class TestSubmit:
 
         await hub.shutdown()
 
+    async def test_auto_route_records_activation_policy_in_route_reason(
+        self,
+        registry: TaskRegistry,
+        tmp_path: Path,
+    ) -> None:
+        cli = _make_cli_service("review output")
+        home = tmp_path / "home"
+        (home / "routing").mkdir(parents=True, exist_ok=True)
+        (home / "routing" / "activation_policies.yaml").write_text(
+            """
+activation_policies:
+  review_background:
+    execution: background_required
+    match:
+      workunit_kinds:
+        - code_review
+    deny_slots:
+      - codex_cli
+""".strip()
+            + "\n",
+            encoding="utf-8",
+        )
+
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path, controlmesh_home=home, home_defaults=home),
+            cli_service=cli,
+            config=_make_config(),
+            runtime_config=AgentConfig(controlmesh_home=str(home)),
+        )
+
+        submit = _submit(prompt="Review the current diff", name="Review diff")
+        submit.route = "auto"
+        submit.workunit_kind = "code_review"
+        submit.target = "git diff main"
+        task_id = hub.submit(submit)
+        await asyncio.sleep(0.1)
+
+        entry = registry.get(task_id)
+        assert entry is not None
+        assert entry.route_reason.startswith("policy=review_background; ")
+
+        await hub.shutdown()
+
     async def test_workunit_writes_evaluation_and_score_event(
         self,
         registry: TaskRegistry,

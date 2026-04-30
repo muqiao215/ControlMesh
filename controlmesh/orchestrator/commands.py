@@ -697,6 +697,87 @@ async def cmd_tasks(orch: Orchestrator, key: SessionKey, _text: str) -> Orchestr
     return OrchestratorResult(text=resp.text, buttons=resp.buttons)
 
 
+async def cmd_route(orch: Orchestrator, key: SessionKey, text: str) -> OrchestratorResult:
+    """Handle /route status and /route why <task_id>."""
+    logger.info("Route debug requested")
+    parts = text.strip().split()
+    if len(parts) == 1 or parts[1].lower() == "status":
+        return await _cmd_route_status(orch, key)
+    if parts[1].lower() == "why":
+        if len(parts) < 3:
+            return OrchestratorResult(text=_route_usage_text())
+        return _cmd_route_why(orch, parts[2])
+    return OrchestratorResult(text=_route_usage_text())
+
+
+async def _cmd_route_status(orch: Orchestrator, key: SessionKey) -> OrchestratorResult:
+    policies = orch._load_activation_policies()
+    lines = ["Route status", SEP]
+    lines.append(f"- activation policies: {len(policies)}")
+    lines.extend(f"  - {policy.name}: {policy.execution}" for policy in policies[:5])
+    if len(policies) > 5:
+        lines.append(f"  - ... {len(policies) - 5} more")
+
+    hub = orch.task_hub
+    if hub is None:
+        lines.extend(
+            [
+                "- automatic background tasks: unavailable (TaskHub disabled)",
+                "- Use `/tasks` for background task management when enabled.",
+                "- `/agents` is for persistent sub-agents, not one-shot background tasks.",
+            ]
+        )
+        return OrchestratorResult(text="\n".join(lines))
+
+    entries = hub.registry.list_all(chat_id=key.chat_id)
+    auto_entries = [entry for entry in entries if entry.route == "auto" or entry.route_reason]
+    lines.append(f"- automatic background tasks: {len(auto_entries)}")
+    for entry in auto_entries[:5]:
+        slot = f" slot={entry.route_slot}" if entry.route_slot else ""
+        kind = f" workunit={entry.workunit_kind}" if entry.workunit_kind else ""
+        lines.append(f"  - {entry.task_id}: {entry.status}{kind}{slot}")
+    if len(auto_entries) > 5:
+        lines.append(f"  - ... {len(auto_entries) - 5} more")
+    if auto_entries:
+        lines.append(f"- Use `/route why {auto_entries[0].task_id}` for routing details.")
+    else:
+        lines.append("- Use `/route why <task_id>` after an automatic background task is created.")
+    lines.append("- Use `/tasks` for one-shot background task lifecycle and results.")
+    lines.append("- `/agents` is for persistent sub-agents, not one-shot background tasks.")
+    return OrchestratorResult(text="\n".join(lines))
+
+
+def _cmd_route_why(orch: Orchestrator, task_id: str) -> OrchestratorResult:
+    hub = orch.task_hub
+    if hub is None:
+        return OrchestratorResult(text="Route debug is unavailable because TaskHub is disabled.")
+
+    entry = hub.registry.get(task_id)
+    if entry is None:
+        return OrchestratorResult(text=f"No background task found with id: {task_id}")
+
+    approval = entry.evaluator or "none"
+    reason = entry.route_reason or "No route reason was recorded."
+    lines = [
+        f"Route why {entry.task_id}",
+        SEP,
+        f"- status: {entry.status}",
+        f"- route: {entry.route or 'manual'}",
+        f"- workunit: {entry.workunit_kind or 'unknown'}",
+        f"- slot: {entry.route_slot or 'none'}",
+        f"- provider/model: {entry.provider or 'parent-default'}/{entry.model or 'parent-default'}",
+        f"- topology: {entry.topology or 'background_single'}",
+        f"- approval: {approval}",
+        f"- reason: {reason}",
+        f"- prompt: {entry.prompt_preview}",
+    ]
+    return OrchestratorResult(text="\n".join(lines))
+
+
+def _route_usage_text() -> str:
+    return "Usage: /route status | /route why <task_id>"
+
+
 async def _cmd_tasks_topology(
     orch: Orchestrator,
     args: list[str],
