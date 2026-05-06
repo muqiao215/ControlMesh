@@ -41,13 +41,23 @@ class _FakeWebSocket:
 
 
 class _FakeSession:
-    def __init__(self, websocket: _FakeWebSocket) -> None:
-        self.websocket = websocket
+    def __init__(self, websocket: _FakeWebSocket | list[_FakeWebSocket]) -> None:
+        if isinstance(websocket, list):
+            self._websockets = list(websocket)
+            self.websocket = self._websockets[0]
+        else:
+            self._websockets = [websocket]
+            self.websocket = websocket
         self.ws_connect_calls: list[dict[str, object]] = []
 
     async def ws_connect(self, url: str, *, headers: dict[str, str] | None = None) -> _FakeWebSocket:
         self.ws_connect_calls.append({"url": url, "headers": headers or {}})
-        return self.websocket
+        if not self._websockets:
+            msg = "No fake websocket prepared for ws_connect"
+            raise RuntimeError(msg)
+        websocket = self._websockets.pop(0)
+        self.websocket = websocket
+        return websocket
 
 
 def _account() -> QQBotRuntimeAccount:
@@ -155,6 +165,55 @@ async def test_gateway_uses_resume_when_session_state_exists(tmp_path) -> None:
     }
     assert store.load_state("1903891442") == QQBotSessionState(
         session_id="sess-1",
+        last_seq=42,
+        gateway_url="wss://gateway.example/ws",
+    )
+
+
+async def test_gateway_resume_timeout_falls_back_to_identify(tmp_path) -> None:
+    store = QQBotSessionStore(tmp_path)
+    store.save_state(
+        "1903891442",
+        QQBotSessionState(session_id="sess-1", last_seq=41, gateway_url="wss://gateway.example/ws"),
+    )
+    resume_websocket = _FakeWebSocket(
+        [
+            {"op": 10, "d": {"heartbeat_interval": 60000}},
+        ]
+    )
+    identify_websocket = _FakeWebSocket(
+        [
+            {"op": 10, "d": {"heartbeat_interval": 60000}},
+            {"op": 0, "t": "READY", "s": 42, "d": {"session_id": "sess-2"}},
+        ]
+    )
+    session = _FakeSession([resume_websocket, identify_websocket])
+    api_client = SimpleNamespace(fetch_gateway_url=AsyncMock(return_value="wss://gateway.example/ws"))
+    token_manager = SimpleNamespace(
+        get_access_token=AsyncMock(
+            return_value=QQBotAccessToken("TOKEN123", 7200, 9_999_999_999.0)
+        ),
+        clear_cache=AsyncMock(),
+    )
+
+    gateway = QQBotGatewayClient(
+        session=session,
+        api_client=api_client,
+        token_manager=token_manager,
+        session_store=store,
+        account=_account(),
+        ready_timeout_seconds=0.01,
+        user_agent="ControlMesh/Test",
+    )
+
+    await gateway.start()
+    await gateway.close()
+
+    assert len(session.ws_connect_calls) == 2
+    assert resume_websocket.sent_json[0]["op"] == 6
+    assert identify_websocket.sent_json[0]["op"] == 2
+    assert store.load_state("1903891442") == QQBotSessionState(
+        session_id="sess-2",
         last_seq=42,
         gateway_url="wss://gateway.example/ws",
     )

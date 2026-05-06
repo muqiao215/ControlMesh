@@ -157,6 +157,20 @@ async def test_record_frontstage_assistant_turn_tolerates_missing_attachment_pat
 
 
 @pytest.mark.asyncio
+async def test_record_frontstage_user_turn_accepts_string_native_chat_refs(
+    orch: Orchestrator,
+) -> None:
+    key = SessionKey.for_transport("qqbot", "qqbot:c2c:OPENID")
+
+    await orch._record_frontstage_user_turn(key, "hello qq")
+
+    turns = orch._transcripts.read_recent(key, limit=10)
+    assert len(turns) == 1
+    assert turns[0].chat_id == "qqbot:c2c:OPENID"
+    assert turns[0].visible_content == "hello qq"
+
+
+@pytest.mark.asyncio
 async def test_record_frontstage_delivery_records_injected_task_result(
     orch: Orchestrator,
     tmp_path: object,

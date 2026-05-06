@@ -12,6 +12,7 @@ from controlmesh.history.index import (
     IndexedTaskCatalogRow,
     IndexedTranscriptTurn,
 )
+from controlmesh.messenger.address import ChatRef, TopicRef
 from controlmesh.workspace.paths import ControlMeshPaths
 
 DEFAULT_CATALOG_LIMIT = 50
@@ -22,8 +23,8 @@ MAX_CATALOG_LIMIT = 100
 class _SessionSummary:
     session_key: str
     transport: str
-    chat_id: int
-    topic_id: int | None
+    chat_id: ChatRef
+    topic_id: TopicRef
     transcript_count: int = 0
     runtime_count: int = 0
     transcript_last_seen: str = ""

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from controlmesh.history.models import TranscriptAttachment, TranscriptTurn
+from controlmesh.messenger.address import ChatRef, TopicRef
 from controlmesh.runtime.models import RuntimeEvent
 from controlmesh.tasks.models import TaskEntry
 from controlmesh.team.models import (
@@ -85,8 +86,8 @@ class IndexedTranscriptTurn:
     session_key: str
     surface_session_id: str
     transport: str
-    chat_id: int
-    topic_id: int | None
+    chat_id: ChatRef
+    topic_id: TopicRef
     role: str
     created_at: str
     visible_content: str
@@ -106,8 +107,8 @@ class IndexedRuntimeEvent:
     line_no: int
     session_key: str
     transport: str
-    chat_id: int
-    topic_id: int | None
+    chat_id: ChatRef
+    topic_id: TopicRef
     event_type: str
     created_at: str
     payload_json: str
@@ -320,8 +321,8 @@ class HistoryIndex:
                 session_key=str(row["session_key"]),
                 surface_session_id=str(row["surface_session_id"]),
                 transport=str(row["transport"]),
-                chat_id=int(row["chat_id"]),
-                topic_id=int(row["topic_id"]) if row["topic_id"] is not None else None,
+                chat_id=_sqlite_ref(row["chat_id"]),
+                topic_id=_sqlite_optional_ref(row["topic_id"]),
                 role=str(row["role"]),
                 created_at=str(row["created_at"]),
                 visible_content=str(row["visible_content"]),
@@ -373,8 +374,8 @@ class HistoryIndex:
                 line_no=int(row["line_no"]),
                 session_key=str(row["session_key"]),
                 transport=str(row["transport"]),
-                chat_id=int(row["chat_id"]),
-                topic_id=int(row["topic_id"]) if row["topic_id"] is not None else None,
+                chat_id=_sqlite_ref(row["chat_id"]),
+                topic_id=_sqlite_optional_ref(row["topic_id"]),
                 event_type=str(row["event_type"]),
                 created_at=str(row["created_at"]),
                 payload_json=str(row["payload_json"]),
@@ -1301,6 +1302,18 @@ def _attachments_json(attachments: list[TranscriptAttachment]) -> str:
 
 def _canonical_json(payload: Any) -> str:
     return json.dumps(payload, separators=(",", ":"), sort_keys=True)
+
+
+def _sqlite_ref(value: object) -> ChatRef:
+    if isinstance(value, int):
+        return value
+    return str(value)
+
+
+def _sqlite_optional_ref(value: object | None) -> TopicRef:
+    if value is None:
+        return None
+    return _sqlite_ref(value)
 
 
 def _task_key(source_key: str, task_id: str) -> str:

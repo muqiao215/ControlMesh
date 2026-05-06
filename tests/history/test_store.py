@@ -74,3 +74,25 @@ def test_transcript_store_read_recent_limits_tail(tmp_path: Path) -> None:
 
     turns = store.read_recent(key, limit=2)
     assert [turn.visible_content for turn in turns] == ["m1", "m2"]
+
+
+def test_transcript_store_accepts_string_native_refs(tmp_path: Path) -> None:
+    store = TranscriptStore(_paths(tmp_path))
+    key = SessionKey.for_transport("qqbot", "qqbot:c2c:OPENID")
+    store.append_turn(
+        TranscriptTurn(
+            session_key=key.storage_key,
+            surface_session_id=key.storage_key,
+            role="user",
+            visible_content="hello qq",
+            source="normal_chat",
+            transport=key.transport,
+            chat_id=key.chat_id,
+            topic_id=key.topic_id,
+        )
+    )
+
+    turns = store.read_recent(key, limit=10)
+    assert len(turns) == 1
+    assert turns[0].chat_id == "qqbot:c2c:OPENID"
+    assert turns[0].visible_content == "hello qq"

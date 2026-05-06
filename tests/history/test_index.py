@@ -132,6 +132,49 @@ def test_history_index_sync_indexes_runtime_rows_from_jsonl(tmp_path: Path) -> N
     assert index.list_transcript_turns() == []
 
 
+def test_history_index_preserves_string_native_refs_for_transcript_and_runtime(
+    tmp_path: Path,
+) -> None:
+    paths = _paths(tmp_path)
+    key = SessionKey.for_transport("qqbot", "qqbot:c2c:OPENID")
+    TranscriptStore(paths).append_turn(
+        TranscriptTurn(
+            turn_id="turn-qq-1",
+            session_key=key.storage_key,
+            surface_session_id=key.storage_key,
+            role="user",
+            visible_content="hello qq",
+            source="normal_chat",
+            created_at="2026-04-10T12:03:00+00:00",
+            transport=key.transport,
+            chat_id=key.chat_id,
+            topic_id=key.topic_id,
+        )
+    )
+    RuntimeEventStore(paths).append_event(
+        RuntimeEvent(
+            event_id="event-qq-1",
+            session_key=key.storage_key,
+            event_type="worker.started",
+            payload={"lease_id": "lease-qq-1"},
+            created_at="2026-04-10T12:03:01+00:00",
+            transport=key.transport,
+            chat_id=key.chat_id,
+            topic_id=key.topic_id,
+        )
+    )
+
+    index = HistoryIndex(paths)
+    index.sync()
+
+    transcript_rows = index.list_transcript_turns()
+    runtime_rows = index.list_runtime_events()
+    assert transcript_rows[0].chat_id == "qqbot:c2c:OPENID"
+    assert transcript_rows[0].topic_id is None
+    assert runtime_rows[0].chat_id == "qqbot:c2c:OPENID"
+    assert runtime_rows[0].topic_id is None
+
+
 def test_history_index_sync_indexes_task_registry_rows(tmp_path: Path) -> None:
     paths = _paths(tmp_path)
     registry = TaskRegistry(paths.tasks_registry_path, paths.tasks_dir)

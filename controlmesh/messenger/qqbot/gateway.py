@@ -74,11 +74,11 @@ class QQBotGatewayClient:
         can_resume = bool(state.session_id) and state.last_seq is not None
         try:
             await self._connect(state=state, resume=can_resume)
-        except _ResumeRejectedError:
-            await self.close()
-            self._closed = asyncio.Event()
-            self._background_error = None
-            self._stop_requested = False
+        except (_ResumeRejectedError, TimeoutError) as exc:
+            if not can_resume:
+                raise
+            logger.warning("QQ gateway resume failed; retrying with fresh identify", exc_info=exc)
+            await self._reset_failed_start()
             self._session_store.clear(self._account.app_id)
             await self._connect(state=QQBotSessionState(), resume=False)
 
@@ -101,6 +101,12 @@ class QQBotGatewayClient:
         await self._closed.wait()
         if self._background_error is not None:
             raise self._background_error
+
+    async def _reset_failed_start(self) -> None:
+        await self.close()
+        self._closed = asyncio.Event()
+        self._background_error = None
+        self._stop_requested = False
 
     async def _connect(self, *, state: QQBotSessionState, resume: bool) -> None:
         self._session_id = state.session_id
