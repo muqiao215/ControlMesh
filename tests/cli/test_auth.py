@@ -347,6 +347,20 @@ def test_check_opencode_auth_env_key(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.status == AuthStatus.AUTHENTICATED
 
 
+def test_check_opencode_auth_env_anthropic_auth_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import controlmesh.cli.auth as _auth_mod
+
+    monkeypatch.setattr(_auth_mod, "which", lambda _name: "/usr/bin/opencode")
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "test-token")
+
+    result = check_opencode_auth()
+
+    assert result.provider == "opencode"
+    assert result.status == AuthStatus.AUTHENTICATED
+
+
 def test_check_opencode_auth_config_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import controlmesh.cli.auth as _auth_mod
 
@@ -356,6 +370,26 @@ def test_check_opencode_auth_config_file(tmp_path: Path, monkeypatch: pytest.Mon
         monkeypatch.delenv(env_name, raising=False)
     config_file = tmp_path / ".opencode.json"
     config_file.write_text('{"providers":{"openai":{"apiKey":"sk-config"}}}')
+
+    result = check_opencode_auth()
+
+    assert result.provider == "opencode"
+    assert result.status == AuthStatus.AUTHENTICATED
+    assert result.auth_file == config_file
+
+
+def test_check_opencode_auth_config_file_env_anthropic_auth_token(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import controlmesh.cli.auth as _auth_mod
+
+    monkeypatch.setattr(_auth_mod, "which", lambda _name: "/usr/bin/opencode")
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    for env_name in _auth_mod._OPENCODE_AUTH_ENV_KEYS:
+        monkeypatch.delenv(env_name, raising=False)
+    config_file = tmp_path / ".opencode.json"
+    config_file.write_text('{"providers":{"anthropic":{"apiKey":"env.ANTHROPIC_AUTH_TOKEN"}}}')
 
     result = check_opencode_auth()
 

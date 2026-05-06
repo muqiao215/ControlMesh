@@ -44,6 +44,7 @@ _CLAW_AUTH_ENV_KEYS = frozenset(
 _OPENCODE_AUTH_ENV_KEYS = frozenset(
     {
         "ANTHROPIC_API_KEY",
+        "ANTHROPIC_AUTH_TOKEN",
         "OPENAI_API_KEY",
         "GEMINI_API_KEY",
         "GITHUB_TOKEN",
@@ -318,8 +319,7 @@ def _read_opencode_config_auth(config_file: Path) -> tuple[Path | None, datetime
     for provider_cfg in providers.values():
         if not isinstance(provider_cfg, dict):
             continue
-        api_key = _normalize_key_like_value(str(provider_cfg.get("apiKey", "")))
-        if api_key:
+        if _opencode_provider_uses_auth_signal(provider_cfg):
             return config_file, datetime.fromtimestamp(config_file.stat().st_mtime, tz=UTC)
     return None, None
 
@@ -567,6 +567,15 @@ def _normalize_key_like_value(raw: str) -> str:
     if not value or value.lower() in NULLISH_TEXT_VALUES:
         return ""
     return value
+
+
+def _opencode_provider_uses_auth_signal(provider_cfg: dict[str, object]) -> bool:
+    api_key = _normalize_key_like_value(str(provider_cfg.get("apiKey", "")))
+    if not api_key:
+        return False
+    if api_key.startswith("env."):
+        return api_key[4:] in _OPENCODE_AUTH_ENV_KEYS
+    return True
 
 
 _CHECKERS: dict[str, Callable[[], AuthResult]] = {

@@ -13,8 +13,10 @@ from controlmesh.messenger.qqbot.inbound import QQBotIncomingText, QQBotInteract
 from controlmesh.messenger.qqbot.outbound import reset_reply_tracker
 from controlmesh.messenger.qqbot.ref_index import QQBotRefIndexEntry
 from controlmesh.messenger.qqbot.types import QQBotRuntimeAccount
+from controlmesh.multiagent.bus import AsyncInterAgentResult
 from controlmesh.orchestrator.selectors.models import Button, ButtonGrid
 from controlmesh.session.key import SessionKey
+from controlmesh.tasks.models import TaskResult
 
 
 @pytest.fixture(autouse=True)
@@ -220,6 +222,66 @@ async def test_broadcast_text_ignores_discovered_targets_when_allowlist_policy(t
             call("TOKEN123", "qqbot:group:GROUP_CFG", "hello"),
         ]
     )
+
+
+async def test_on_async_interagent_result_uses_bus_injection_for_live_qq_target(
+    tmp_path: Path,
+) -> None:
+    config = AgentConfig(
+        transport="qqbot",
+        controlmesh_home=str(tmp_path),
+        qqbot={"app_id": "1903891442", "client_secret": "secret"},
+    )
+    bot = QQBotBot(config)
+    injector = AsyncMock()
+    injector.inject_prompt = AsyncMock(return_value="checked frontstage interagent reply")
+    bot._bus.set_injector(injector)
+    bot.send_text = AsyncMock()  # type: ignore[method-assign]
+    result = AsyncInterAgentResult(
+        task_id="ia-1",
+        sender="agent-a",
+        recipient="agent-b",
+        message_preview="delegate qqbot check",
+        result_text="internal interagent payload",
+        success=True,
+        elapsed_seconds=1.0,
+        original_message="delegate qqbot check",
+        chat_id="qqbot:c2c:USER_A",
+    )
+
+    await bot.on_async_interagent_result(result)
+
+    bot.send_text.assert_awaited_once_with(
+        "qqbot:c2c:USER_A",
+        "checked frontstage interagent reply",
+    )
+
+
+async def test_on_async_interagent_result_falls_back_to_broadcast_without_live_target(
+    tmp_path: Path,
+) -> None:
+    config = AgentConfig(
+        transport="qqbot",
+        controlmesh_home=str(tmp_path),
+        qqbot={"app_id": "1903891442", "client_secret": "secret"},
+    )
+    bot = QQBotBot(config)
+    bot.broadcast_text = AsyncMock()  # type: ignore[method-assign]
+    result = AsyncInterAgentResult(
+        task_id="ia-2",
+        sender="agent-a",
+        recipient="agent-b",
+        message_preview="delegate qqbot check",
+        result_text="internal fallback text",
+        success=True,
+        elapsed_seconds=1.0,
+        original_message="delegate qqbot check",
+        chat_id=0,
+    )
+
+    await bot.on_async_interagent_result(result)
+
+    bot.broadcast_text.assert_awaited_once_with("internal fallback text")
 
 
 async def test_handle_incoming_text_routes_to_orchestrator_and_replies(tmp_path: Path) -> None:
@@ -1244,12 +1306,57 @@ async def test_on_task_result_uses_live_qq_target(tmp_path: Path) -> None:
         qqbot={"app_id": "1903891442", "client_secret": "secret"},
     )
     bot = QQBotBot(config)
+    injector = AsyncMock()
+    injector.inject_prompt = AsyncMock(return_value="done")
+    bot._bus.set_injector(injector)
     bot.send_text = AsyncMock()  # type: ignore[method-assign]
-    result = SimpleNamespace(chat_id="qqbot:c2c:USER_A", result_text="done")
+    result = TaskResult(
+        task_id="task-1",
+        chat_id="qqbot:c2c:USER_A",
+        parent_agent="main",
+        name="qq-task",
+        prompt_preview="preview",
+        result_text="internal payload",
+        status="done",
+        elapsed_seconds=1.0,
+        provider="codex",
+        model="gpt-5.5",
+        original_prompt="Inspect qqbot wiring",
+        transport="qqbot",
+    )
 
     await bot.on_task_result(result)
 
     bot.send_text.assert_awaited_once_with("qqbot:c2c:USER_A", "done")
+
+
+async def test_on_task_result_prefers_delivery_text_for_live_qq_target(tmp_path: Path) -> None:
+    config = AgentConfig(
+        transport="qqbot",
+        controlmesh_home=str(tmp_path),
+        qqbot={"app_id": "1903891442", "client_secret": "secret"},
+    )
+    bot = QQBotBot(config)
+    bot.send_text = AsyncMock()  # type: ignore[method-assign]
+    result = TaskResult(
+        task_id="task-1",
+        chat_id="qqbot:c2c:USER_A",
+        parent_agent="main",
+        name="qq-task",
+        prompt_preview="preview",
+        result_text="internal review payload",
+        status="done",
+        elapsed_seconds=1.0,
+        provider="codex",
+        model="gpt-5.5",
+        delivery_text="visible summary",
+        original_prompt="Inspect qqbot wiring",
+        transport="qqbot",
+    )
+
+    await bot.on_task_result(result)
+
+    bot.send_text.assert_awaited_once_with("qqbot:c2c:USER_A", "visible summary")
 
 
 async def test_on_task_question_uses_live_qq_target(tmp_path: Path) -> None:
@@ -1259,6 +1366,9 @@ async def test_on_task_question_uses_live_qq_target(tmp_path: Path) -> None:
         qqbot={"app_id": "1903891442", "client_secret": "secret"},
     )
     bot = QQBotBot(config)
+    injector = AsyncMock()
+    injector.inject_prompt = AsyncMock(return_value="Ask the user for UTF-8")
+    bot._bus.set_injector(injector)
     bot.send_text = AsyncMock()  # type: ignore[method-assign]
 
     await bot.on_task_question(
@@ -1268,9 +1378,7 @@ async def test_on_task_question_uses_live_qq_target(tmp_path: Path) -> None:
         "qqbot:group:GROUP_A",
     )
 
-    bot.send_text.assert_awaited_once()
-    assert bot.send_text.await_args.args[0] == "qqbot:group:GROUP_A"
-    assert "task-1" in bot.send_text.await_args.args[1]
+    bot.send_text.assert_awaited_once_with("qqbot:group:GROUP_A", "Ask the user for UTF-8")
 
 
 async def test_send_text_sends_clean_text_then_image_attachment(tmp_path: Path) -> None:

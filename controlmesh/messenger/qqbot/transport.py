@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from controlmesh.bus.envelope import Envelope
 from controlmesh.messenger.address import require_string_chat_ref
+from controlmesh.text.response_format import compact_transport_text
 
 if TYPE_CHECKING:
     from controlmesh.messenger.qqbot.bot import QQBotSender
@@ -22,12 +23,21 @@ class QQBotTransport:
         return "qqbot"
 
     async def deliver(self, envelope: Envelope) -> None:
-        if not envelope.result_text:
+        text = _visible_text(envelope)
+        if not text:
             return
         target = require_string_chat_ref(envelope.chat_id)
-        await self._sender.send_text(target, envelope.result_text)
+        await self._sender.send_text(target, text)
 
     async def deliver_broadcast(self, envelope: Envelope) -> None:
-        if not envelope.result_text:
+        text = _visible_text(envelope)
+        if not text:
             return
-        await self._sender.broadcast_text(envelope.result_text)
+        await self._sender.broadcast_text(text)
+
+
+def _visible_text(envelope: Envelope) -> str:
+    """Return the user-visible payload for simple QQ bus delivery."""
+    return compact_transport_text(
+        envelope.delivery_text or envelope.result_text or envelope.prompt,
+    )

@@ -32,6 +32,31 @@ async def test_transport_delivers_to_string_target() -> None:
     sender.send_text.assert_awaited_once_with("qqbot:c2c:OPENID", "hello")
 
 
+async def test_transport_prefers_delivery_text_for_injected_task_payload() -> None:
+    sender = AsyncMock()
+    transport = QQBotTransport(sender)
+
+    env = _env(
+        origin=Origin.TASK_QUESTION,
+        prompt="internal question",
+        result_text="internal response",
+        delivery_text="Ask the user for UTF-8.",
+    )
+    await transport.deliver(env)
+
+    sender.send_text.assert_awaited_once_with("qqbot:c2c:OPENID", "Ask the user for UTF-8.")
+
+
+async def test_transport_falls_back_to_prompt_for_task_question_without_injector() -> None:
+    sender = AsyncMock()
+    transport = QQBotTransport(sender)
+
+    env = _env(origin=Origin.TASK_QUESTION, prompt="What encoding?")
+    await transport.deliver(env)
+
+    sender.send_text.assert_awaited_once_with("qqbot:c2c:OPENID", "What encoding?")
+
+
 async def test_transport_rejects_non_string_target() -> None:
     sender = AsyncMock()
     transport = QQBotTransport(sender)
@@ -49,6 +74,16 @@ async def test_transport_broadcast_uses_sender_broadcast() -> None:
     await transport.deliver_broadcast(env)
 
     sender.broadcast_text.assert_awaited_once_with("hello all")
+
+
+async def test_transport_broadcast_prefers_delivery_text() -> None:
+    sender = AsyncMock()
+    transport = QQBotTransport(sender)
+
+    env = _env(delivery=DeliveryMode.BROADCAST, result_text="internal", delivery_text="visible")
+    await transport.deliver_broadcast(env)
+
+    sender.broadcast_text.assert_awaited_once_with("visible")
 
 
 async def test_notification_service_accepts_string_target() -> None:

@@ -175,6 +175,8 @@ def test_from_interagent_success() -> None:
     assert env.delivery == DeliveryMode.UNICAST
     assert env.lock_mode == LockMode.REQUIRED
     assert env.needs_injection
+    assert "INTER-AGENT TASK COMPLETED" in env.prompt
+    assert "X is done" in env.prompt
     assert env.metadata["sender"] == "agent-a"
 
 

@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 import aiohttp
 
 from controlmesh.bus.bus import MessageBus
+from controlmesh.bus.envelope import Envelope
 from controlmesh.bus.lock_pool import LockPool
 from controlmesh.config import AgentConfig, QQBotAccountConfig
 from controlmesh.files.allowed_roots import resolve_allowed_roots
@@ -176,12 +177,23 @@ class QQBotBot(BotProtocol):
         self._abort_all_callback = callback
 
     async def on_async_interagent_result(self, result: AsyncInterAgentResult) -> None:
-        if result.result_text:
-            await self.broadcast_text(result.result_text)
+        from controlmesh.bus.adapters import from_interagent_result
+
+        if isinstance(result.chat_id, str) and result.chat_id:
+            await self._submit_qq_envelope(from_interagent_result(result, result.chat_id))
+            return
+
+        text = getattr(result, "delivery_text", "") or result.result_text
+        if text:
+            await self.broadcast_text(text)
 
     async def on_task_result(self, result: TaskResult) -> None:
-        if isinstance(result.chat_id, str) and result.result_text:
-            await self.send_text(result.chat_id, result.result_text)
+        from controlmesh.bus.adapters import from_task_result
+
+        if not isinstance(result.chat_id, str) or not result.chat_id:
+            logger.warning("No QQ target for task result delivery (task=%s)", result.task_id)
+            return
+        await self._submit_qq_envelope(from_task_result(result))
 
     async def on_task_question(
         self,
@@ -191,12 +203,21 @@ class QQBotBot(BotProtocol):
         chat_id: ChatRef,
         thread_id: TopicRef = None,
     ) -> None:
-        del thread_id
-        if isinstance(chat_id, str):
-            await self.send_text(
+        from controlmesh.bus.adapters import from_task_question
+
+        if not isinstance(chat_id, str) or not chat_id:
+            logger.warning("No QQ target for task question delivery (task=%s)", task_id)
+            return
+        await self._submit_qq_envelope(
+            from_task_question(
+                task_id,
+                question,
+                prompt_preview,
                 chat_id,
-                f"Task `{task_id}` has a question:\n{question}\n\n{prompt_preview}",
+                topic_id=thread_id,
+                transport="qqbot",
             )
+        )
 
     def file_roots(self, paths: ControlMeshPaths) -> list[Path] | None:
         return resolve_allowed_roots(self._config.file_access, paths.workspace)
@@ -280,6 +301,11 @@ class QQBotBot(BotProtocol):
             return
         for target in dict.fromkeys(targets):
             await self.send_text(target, text)
+
+    async def _submit_qq_envelope(self, envelope: Envelope) -> None:
+        """Route bus deliveries explicitly through the QQ transport."""
+        envelope.transport = "qqbot"
+        await self._bus.submit(envelope)
 
     async def handle_incoming_text(self, message: QQBotIncomingText) -> None:
         if self._orchestrator is None:

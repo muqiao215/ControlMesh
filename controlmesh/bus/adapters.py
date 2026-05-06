@@ -182,6 +182,7 @@ def from_interagent_result(result: AsyncInterAgentResult, chat_id: ChatRef) -> E
         origin=Origin.INTERAGENT,
         chat_id=delivery_chat_id,
         topic_id=result.topic_id,
+        prompt=_build_interagent_injection_prompt(result),
         prompt_preview=result.message_preview,
         result_text=result.result_text,
         status="success",
@@ -191,6 +192,26 @@ def from_interagent_result(result: AsyncInterAgentResult, chat_id: ChatRef) -> E
         elapsed_seconds=result.elapsed_seconds,
         session_name=result.session_name,
         metadata=meta,
+    )
+
+
+# -- Inter-agent results ------------------------------------------------------
+
+
+def _build_interagent_injection_prompt(result: AsyncInterAgentResult) -> str:
+    """Build the prompt injected into the parent session for inter-agent results."""
+    task_id = result.task_id
+    return (
+        f"[INTER-AGENT TASK COMPLETED: task_id='{task_id}' recipient='{result.recipient}']\n"
+        f"Duration: {result.elapsed_seconds:.0f}s\n\n"
+        f"{result.result_text}\n\n"
+        f"[END INTER-AGENT RESULT]\n\n"
+        f"Original request: {result.original_message or result.message_preview}\n\n"
+        f"Review this inter-agent result critically:\n"
+        f"- Does it fully answer the original request?\n"
+        f"- Is anything missing, incomplete, or unclear?\n"
+        f"- If yes -> continue locally or send a focused follow-up to the same agent\n"
+        f"- If the result is complete -> summarize it for the user\n"
     )
 
 
