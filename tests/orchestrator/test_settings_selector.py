@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+from controlmesh.infra.updater import SourceUpgradeStatus
 from controlmesh.infra.version import VersionInfo
 from controlmesh.orchestrator.core import Orchestrator
 from controlmesh.orchestrator.selectors.settings_selector import (
@@ -141,6 +143,60 @@ async def test_settings_version_refresh_callback_shows_upgrade_actions(orch: Orc
     assert "upg:yes:0.16.0" in callback_values
     labels = [button.text for row in resp.buttons.rows for button in row]
     assert any("github@main" in label for label in labels)
+
+
+async def test_settings_version_refresh_callback_shows_source_upgrade_action_for_dev(
+    orch: Orchestrator,
+) -> None:
+    info = VersionInfo(
+        current="0.15.0",
+        latest="0.16.0",
+        update_available=True,
+        summary="release",
+        source="pypi",
+    )
+    source_status = SourceUpgradeStatus(
+        current_version="0.15.0",
+        repo_root=Path("/repo/controlmesh"),
+        current_commit="abcdef123456",
+        branch="main",
+        upstream="origin/main",
+        behind=4,
+        actionable=True,
+        message="Source checkout can fast-forward `main` -> `origin/main` (4 commits behind).",
+        output="status output",
+    )
+    with (
+        patch(
+            "controlmesh.orchestrator.selectors.settings_selector.detect_install_mode",
+            return_value="dev",
+        ),
+        patch(
+            "controlmesh.orchestrator.selectors.settings_selector.detect_install_info",
+        ) as mock_install_info,
+        patch(
+            "controlmesh.orchestrator.selectors.settings_selector.get_current_version",
+            return_value="0.15.0",
+        ),
+        patch(
+            "controlmesh.orchestrator.selectors.settings_selector.check_latest_version",
+            new=AsyncMock(return_value=info),
+        ),
+        patch(
+            "controlmesh.orchestrator.selectors.settings_selector.check_source_upgrade_status",
+            new=AsyncMock(return_value=source_status),
+        ),
+    ):
+        mock_install_info.return_value.source = "dev"
+        mock_install_info.return_value.requested_revision = None
+        mock_install_info.return_value.local_path = "/repo/controlmesh"
+        resp = await handle_settings_callback(orch, "st:v:refresh")
+
+    assert "Source status: `update available`" in resp.text
+    assert resp.buttons is not None
+    callback_values = [button.callback_data for row in resp.buttons.rows for button in row]
+    assert "upg:cl:0.16.0" in callback_values
+    assert "upg:yes:source" in callback_values
 
 
 async def test_settings_language_section_appears(orch: Orchestrator) -> None:

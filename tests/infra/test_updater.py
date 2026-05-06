@@ -662,13 +662,12 @@ class TestUpdateObserver:
 class TestEnsureUpdateObserverStarted:
     async def test_starts_when_enabled_for_main_agent(self) -> None:
         notify = AsyncMock()
-        with patch("controlmesh.infra.updater.is_upgradeable", return_value=True):
-            observer = ensure_update_observer_started(
-                None,
-                update_check=True,
-                agent_name="main",
-                notify=notify,
-            )
+        observer = ensure_update_observer_started(
+            None,
+            update_check=True,
+            agent_name="main",
+            notify=notify,
+        )
 
         assert observer is not None
         assert isinstance(observer, UpdateObserver)
@@ -677,34 +676,31 @@ class TestEnsureUpdateObserverStarted:
 
     def test_reuses_existing_observer(self) -> None:
         existing = UpdateObserver(notify=AsyncMock())
-        with patch("controlmesh.infra.updater.is_upgradeable", return_value=True):
-            observer = ensure_update_observer_started(
-                existing,
-                update_check=True,
-                agent_name="main",
-                notify=AsyncMock(),
-            )
+        observer = ensure_update_observer_started(
+            existing,
+            update_check=True,
+            agent_name="main",
+            notify=AsyncMock(),
+        )
 
         assert observer is existing
 
     def test_skips_when_disabled(self) -> None:
-        with patch("controlmesh.infra.updater.is_upgradeable", return_value=True):
-            observer = ensure_update_observer_started(
-                None,
-                update_check=False,
-                agent_name="main",
-                notify=AsyncMock(),
-            )
+        observer = ensure_update_observer_started(
+            None,
+            update_check=False,
+            agent_name="main",
+            notify=AsyncMock(),
+        )
 
         assert observer is None
 
     def test_skips_for_non_main_agent(self) -> None:
-        with patch("controlmesh.infra.updater.is_upgradeable", return_value=True):
-            observer = ensure_update_observer_started(
-                None,
-                update_check=True,
-                agent_name="worker",
-                notify=AsyncMock(),
-            )
+        observer = ensure_update_observer_started(
+            None,
+            update_check=True,
+            agent_name="worker",
+            notify=AsyncMock(),
+        )
 
         assert observer is None

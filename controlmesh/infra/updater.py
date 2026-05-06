@@ -13,7 +13,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from controlmesh.infra.install import InstallInfo, detect_install_info, is_upgradeable
+from controlmesh.infra.install import InstallInfo, detect_install_info
 from controlmesh.infra.version import (
     VersionInfo,
     _parse_version,
@@ -97,7 +97,7 @@ def ensure_update_observer_started(
     """Start an observer from any runtime entrypoint, independent of startup hooks."""
     if observer is not None:
         return observer
-    if not is_upgradeable() or not update_check or agent_name != "main":
+    if not update_check or agent_name != "main":
         return None
     observer = UpdateObserver(notify=notify)
     observer.start()

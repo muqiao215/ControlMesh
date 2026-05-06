@@ -8,6 +8,7 @@ from controlmesh.config import update_config_file_async
 from controlmesh.i18n import LANGUAGES
 from controlmesh.i18n import init as init_i18n
 from controlmesh.infra.install import detect_install_info, detect_install_mode
+from controlmesh.infra.updater import SourceUpgradeStatus, check_source_upgrade_status
 from controlmesh.infra.version import VersionInfo, check_latest_version, get_current_version
 from controlmesh.orchestrator.selectors.models import Button, ButtonGrid, SelectorResponse
 
@@ -53,9 +54,15 @@ async def settings_selector_start(
     note: str | None = None,
     *,
     version_info: VersionInfo | None = None,
+    source_upgrade_status: SourceUpgradeStatus | None = None,
 ) -> SelectorResponse:
     """Build the advanced settings panel."""
-    return _render_settings_panel(orch, note=note, version_info=version_info)
+    return _render_settings_panel(
+        orch,
+        note=note,
+        version_info=version_info,
+        source_upgrade_status=source_upgrade_status,
+    )
 
 
 async def set_streaming_output_mode(
@@ -123,8 +130,22 @@ async def set_language(
 async def refresh_version_info(orch: Orchestrator) -> SelectorResponse:
     """Refresh latest-version status and return the updated panel."""
     info = await check_latest_version(fresh=True)
-    note = "Version status refreshed." if info is not None else "Version check failed."
-    return _render_settings_panel(orch, note=note, version_info=info)
+    source_upgrade_status: SourceUpgradeStatus | None = None
+    if detect_install_mode() == "dev":
+        source_upgrade_status = await check_source_upgrade_status(
+            current_version=get_current_version()
+        )
+    note = (
+        "Version status refreshed."
+        if info is not None or source_upgrade_status is not None
+        else "Version check failed."
+    )
+    return _render_settings_panel(
+        orch,
+        note=note,
+        version_info=info,
+        source_upgrade_status=source_upgrade_status,
+    )
 
 
 async def show_messaging_help(
@@ -247,6 +268,7 @@ def _render_settings_panel(
     *,
     note: str | None = None,
     version_info: VersionInfo | None = None,
+    source_upgrade_status: SourceUpgradeStatus | None = None,
 ) -> SelectorResponse:
     output_mode = orch._config.streaming.output_mode
     tool_display = orch._config.streaming.tool_display
@@ -310,6 +332,7 @@ def _render_settings_panel(
             f"Install mode: `{install_mode}`",
             f"Install source: `{_format_install_source(install_info)}`",
             _version_status_line(version_info),
+            _source_upgrade_status_line(source_upgrade_status, install_mode),
             "- Refresh checks the newest version your current install source can actually upgrade to.",
             "- Upgrade follows the active install source; GitHub direct installs stay on their tracked ref.",
             "- GitHub branch installs verify commit changes as well as version changes after update.",
@@ -376,7 +399,7 @@ def _render_settings_panel(
         ],
         *_language_button_rows(current_language),
         [Button(text="Check latest", callback_data="st:v:refresh")],
-        *_version_action_rows(version_info, install_mode, install_info),
+        *_version_action_rows(version_info, install_mode, install_info, source_upgrade_status),
         [Button(text="Refresh", callback_data="st:r:root")],
     ]
     return SelectorResponse(text="\n".join(lines), buttons=ButtonGrid(rows=rows))
@@ -392,6 +415,26 @@ def _version_status_line(version_info: VersionInfo | None) -> str:
         return "Latest: `not available from current install source`"
     state = "update available" if version_info.update_available else "up to date"
     return f"Latest: `{version_info.latest}` ({version_info.source}, {state})"
+
+
+def _source_upgrade_status_line(
+    source_upgrade_status: SourceUpgradeStatus | None,
+    install_mode: str,
+) -> str:
+    if install_mode != "dev":
+        return ""
+    if source_upgrade_status is None:
+        return "Source status: `not checked`"
+    if source_upgrade_status.actionable:
+        upstream = source_upgrade_status.upstream or "upstream"
+        behind = source_upgrade_status.behind
+        suffix = "commit" if behind == 1 else "commits"
+        return f"Source status: `update available` ({upstream}, {behind} {suffix} behind)"
+    if source_upgrade_status.message.startswith("Source checkout already matches upstream"):
+        return "Source status: `up to date`"
+    if source_upgrade_status.message:
+        return f"Source status: `blocked` ({source_upgrade_status.message})"
+    return "Source status: `unknown`"
 
 
 def _messaging_status_line(label: str, state: str) -> str:
@@ -447,19 +490,30 @@ def _version_action_rows(
     version_info: VersionInfo | None,
     install_mode: str,
     install_info: object,
+    source_upgrade_status: SourceUpgradeStatus | None = None,
 ) -> list[list[Button]]:
-    if version_info is None:
-        return []
-
-    rows: list[list[Button]] = [
-        [
-            Button(
-                text=f"Changelog v{version_info.latest}",
-                callback_data=f"upg:cl:{version_info.latest}",
+    rows: list[list[Button]] = []
+    if version_info is not None:
+        rows.append(
+            [
+                Button(
+                    text=f"Changelog v{version_info.latest}",
+                    callback_data=f"upg:cl:{version_info.latest}",
+                )
+            ]
+        )
+    if install_mode == "dev":
+        if source_upgrade_status is not None and source_upgrade_status.actionable:
+            rows.append(
+                [
+                    Button(
+                        text=f"Upgrade {_format_install_source(install_info)}",
+                        callback_data="upg:yes:source",
+                    )
+                ]
             )
-        ]
-    ]
-    if version_info.update_available and install_mode != "dev":
+        return rows
+    if version_info is not None and version_info.update_available:
         source_label = _format_install_source(install_info)
         if str(getattr(install_info, "source", "")) == "github":
             action_label = f"Upgrade {source_label}"

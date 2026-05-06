@@ -241,8 +241,9 @@ def check_opencode_auth() -> AuthResult:
         logger.debug("Auth check provider=%s status=%s (env key)", result.provider, result.status)
         return result
 
-    config_file = _find_opencode_config_file()
-    if config_file is not None:
+    installed_config: Path | None = None
+    installed_age: datetime | None = None
+    for config_file in _iter_opencode_config_files():
         auth_file, auth_age = _read_opencode_config_auth(config_file)
         if auth_file is not None:
             result = AuthResult("opencode", AuthStatus.AUTHENTICATED, auth_file, auth_age)
@@ -252,7 +253,11 @@ def check_opencode_auth() -> AuthResult:
                 result.status,
             )
             return result
-        result = AuthResult("opencode", AuthStatus.INSTALLED, config_file, auth_age)
+        if installed_config is None:
+            installed_config = config_file
+            installed_age = datetime.fromtimestamp(config_file.stat().st_mtime, tz=UTC)
+    if installed_config is not None:
+        result = AuthResult("opencode", AuthStatus.INSTALLED, installed_config, installed_age)
         logger.debug("Auth check provider=%s status=%s", result.provider, result.status)
         return result
 
@@ -266,16 +271,21 @@ def _openai_agents_sdk_installed() -> bool:
 
 
 def _find_opencode_config_file() -> Path | None:
+    for path in _iter_opencode_config_files():
+        return path
+    return None
+
+
+def _iter_opencode_config_files() -> tuple[Path, ...]:
     home = Path.home()
     xdg = Path(os.environ.get("XDG_CONFIG_HOME", home / ".config"))
-    candidates = [
+    candidates = (
         home / ".opencode.json",
         xdg / "opencode" / ".opencode.json",
-    ]
-    for path in candidates:
-        if path.is_file():
-            return path
-    return None
+        xdg / "opencode" / "opencode.jsonc",
+        xdg / "opencode" / "opencode.json",
+    )
+    return tuple(path for path in candidates if path.is_file())
 
 
 def _find_opencode_runtime_config_file() -> Path | None:
@@ -313,6 +323,8 @@ def _read_opencode_config_auth(config_file: Path) -> tuple[Path | None, datetime
     data = _load_opencode_json(config_file)
     if not isinstance(data, dict):
         return None, None
+    if _opencode_env_uses_auth_signal(data.get("env")):
+        return config_file, datetime.fromtimestamp(config_file.stat().st_mtime, tz=UTC)
     providers = data.get("providers")
     if not isinstance(providers, dict):
         return None, None
@@ -576,6 +588,16 @@ def _opencode_provider_uses_auth_signal(provider_cfg: dict[str, object]) -> bool
     if api_key.startswith("env."):
         return api_key[4:] in _OPENCODE_AUTH_ENV_KEYS
     return True
+
+
+def _opencode_env_uses_auth_signal(env_cfg: object) -> bool:
+    if not isinstance(env_cfg, dict):
+        return False
+    for key in _OPENCODE_AUTH_ENV_KEYS:
+        raw = env_cfg.get(key)
+        if isinstance(raw, str) and _normalize_key_like_value(raw):
+            return True
+    return False
 
 
 _CHECKERS: dict[str, Callable[[], AuthResult]] = {
