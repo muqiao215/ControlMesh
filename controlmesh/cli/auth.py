@@ -276,28 +276,39 @@ def _find_opencode_config_file() -> Path | None:
     return None
 
 
+def _iter_opencode_config_roots() -> tuple[Path, ...]:
+    home = Path.home()
+    default_xdg = home / ".config"
+    configured_xdg = Path(os.environ.get("XDG_CONFIG_HOME", default_xdg))
+    roots: list[Path] = []
+    for root in (configured_xdg, default_xdg):
+        if root not in roots:
+            roots.append(root)
+    return tuple(roots)
+
+
 def _iter_opencode_config_files() -> tuple[Path, ...]:
     home = Path.home()
-    xdg = Path(os.environ.get("XDG_CONFIG_HOME", home / ".config"))
-    candidates = (
-        home / ".opencode.json",
-        xdg / "opencode" / ".opencode.json",
-        xdg / "opencode" / "opencode.jsonc",
-        xdg / "opencode" / "opencode.json",
-    )
+    candidates: list[Path] = [home / ".opencode.json"]
+    for root in _iter_opencode_config_roots():
+        candidates.extend(
+            (
+                root / "opencode" / ".opencode.json",
+                root / "opencode" / "opencode.jsonc",
+                root / "opencode" / "opencode.json",
+            )
+        )
     return tuple(path for path in candidates if path.is_file())
 
 
 def _find_opencode_runtime_config_file() -> Path | None:
-    home = Path.home()
-    xdg = Path(os.environ.get("XDG_CONFIG_HOME", home / ".config"))
-    candidates = [
-        xdg / "opencode" / "opencode.jsonc",
-        xdg / "opencode" / "opencode.json",
-    ]
-    for path in candidates:
-        if path.is_file():
-            return path
+    for root in _iter_opencode_config_roots():
+        for path in (
+            root / "opencode" / "opencode.jsonc",
+            root / "opencode" / "opencode.json",
+        ):
+            if path.is_file():
+                return path
     return None
 
 
