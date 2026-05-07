@@ -347,21 +347,15 @@ def _read_opencode_config_auth(config_file: Path) -> tuple[Path | None, datetime
     return None, None
 
 
-def read_opencode_default_model() -> str:
-    """Return the configured OpenCode default model, if one is declared locally."""
-    config_file = _find_opencode_runtime_config_file()
-    if config_file is None:
-        return ""
-    data = _load_opencode_json(config_file)
-    if not isinstance(data, dict):
-        return ""
+def _read_opencode_model_declaration(data: dict[str, object]) -> tuple[str, bool]:
+    """Return ``(model, is_explicit)`` from runtime config data."""
     model = data.get("model")
     if isinstance(model, str) and model.strip():
-        return _normalize_opencode_model_name(model)
+        return _normalize_opencode_model_name(model), True
 
     env_cfg = data.get("env")
     if not isinstance(env_cfg, dict):
-        return ""
+        return "", False
 
     for key in (
         "ANTHROPIC_MODEL",
@@ -372,8 +366,35 @@ def read_opencode_default_model() -> str:
     ):
         value = env_cfg.get(key)
         if isinstance(value, str) and value.strip():
-            return _normalize_opencode_model_name(value)
-    return ""
+            return _normalize_opencode_model_name(value), False
+    return "", False
+
+
+def read_opencode_default_model() -> str:
+    """Return the configured OpenCode default model, if one is declared locally."""
+    config_file = _find_opencode_runtime_config_file()
+    if config_file is None:
+        return ""
+    data = _load_opencode_json(config_file)
+    if not isinstance(data, dict):
+        return ""
+    model, _is_explicit = _read_opencode_model_declaration(data)
+    return model
+
+
+def opencode_model_uses_runtime_env_default(model: str) -> bool:
+    """Return True when *model* is supplied by env-backed OpenCode defaults."""
+    normalized = _normalize_opencode_model_name(model)
+    if not normalized:
+        return False
+    config_file = _find_opencode_runtime_config_file()
+    if config_file is None:
+        return False
+    data = _load_opencode_json(config_file)
+    if not isinstance(data, dict):
+        return False
+    configured, is_explicit = _read_opencode_model_declaration(data)
+    return bool(configured) and not is_explicit and configured == normalized
 
 
 def _normalize_opencode_model_name(value: str) -> str:

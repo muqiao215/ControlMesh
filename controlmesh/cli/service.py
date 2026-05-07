@@ -417,6 +417,11 @@ class CLIService:
     def _make_cli(self, request: AgentRequest) -> BaseCLI:
         """Create a BaseCLI instance for the given request."""
         provider, model = self.resolve_provider(request)
+        if provider == "opencode" and model:
+            from controlmesh.cli.auth import opencode_model_uses_runtime_env_default
+
+            if opencode_model_uses_runtime_env_default(model):
+                model = ""
 
         return create_cli(
             CLIConfig(

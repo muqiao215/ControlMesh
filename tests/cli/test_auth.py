@@ -16,6 +16,7 @@ from controlmesh.cli.auth import (
     check_opencode_auth,
     format_age,
     gemini_uses_api_key_mode,
+    opencode_model_uses_runtime_env_default,
     read_opencode_default_model,
 )
 
@@ -501,6 +502,34 @@ def test_read_opencode_default_model_prefers_top_level_model_over_env(
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
 
     assert read_opencode_default_model() == "openai/gpt-4.1"
+
+
+def test_opencode_model_uses_runtime_env_default_for_env_declared_glm(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_dir = tmp_path / ".config" / "opencode"
+    runtime_dir.mkdir(parents=True)
+    runtime_file = runtime_dir / "opencode.jsonc"
+    runtime_file.write_text('{"env":{"ANTHROPIC_MODEL":"GLM-5.1"}}')
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+
+    assert opencode_model_uses_runtime_env_default("zhipuai/glm-5.1") is True
+
+
+def test_opencode_model_uses_runtime_env_default_false_for_explicit_top_level_model(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_dir = tmp_path / ".config" / "opencode"
+    runtime_dir.mkdir(parents=True)
+    runtime_file = runtime_dir / "opencode.jsonc"
+    runtime_file.write_text('{"model":"openai/gpt-4.1","env":{"ANTHROPIC_MODEL":"GLM-5.1"}}')
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+
+    assert opencode_model_uses_runtime_env_default("openai/gpt-4.1") is False
 
 
 def test_read_opencode_default_model_falls_back_to_reasoning_model(

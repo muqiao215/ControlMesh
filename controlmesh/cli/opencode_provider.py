@@ -154,7 +154,12 @@ class OpenCodeCLI(BaseCLI):
         stderr_text = stderr.decode(errors="replace")[:2000] if stderr else ""
         raw = stdout.decode(errors="replace").strip()
         if not raw:
-            return CLIResponse(result="", is_error=True, returncode=returncode, stderr=stderr_text)
+            return CLIResponse(
+                result=stderr_text or "OpenCode returned no assistant text.",
+                is_error=True,
+                returncode=returncode,
+                stderr=stderr_text,
+            )
 
         events: list[Any] = []
         for line in raw.splitlines():

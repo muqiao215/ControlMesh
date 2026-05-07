@@ -271,3 +271,16 @@ def test_opencode_parse_output_metadata_only_becomes_clean_error() -> None:
     assert resp.is_error is True
     assert resp.result == "OpenCode returned no assistant text."
     assert "step_start" not in resp.result
+
+
+def test_opencode_parse_output_stderr_only_failure_surfaces_detail() -> None:
+    resp = OpenCodeCLI._parse_output(
+        b"",
+        b"Configuration is invalid at /root/.config/opencode/opencode.json\n"
+        b"Unrecognized keys: permissions",
+        1,
+    )
+
+    assert resp.is_error is True
+    assert "Configuration is invalid" in resp.result
+    assert resp.stderr.startswith("Configuration is invalid")

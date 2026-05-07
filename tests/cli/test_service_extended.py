@@ -84,6 +84,22 @@ def test_make_cli_respects_opencode_service_provider(tmp_path: Path) -> None:
     assert call_args.model == "openai/gpt-4.1"
 
 
+def test_make_cli_omits_explicit_opencode_model_when_runtime_env_declares_default(
+    tmp_path: Path,
+) -> None:
+    svc = _make_service(tmp_path, default_model="zhipuai/glm-5.1", provider="opencode")
+    with (
+        patch("controlmesh.cli.service.create_cli") as mock_create,
+        patch("controlmesh.cli.auth.opencode_model_uses_runtime_env_default", return_value=True),
+    ):
+        mock_create.return_value = MagicMock()
+        svc._make_cli(AgentRequest(prompt="test", chat_id=1))
+
+    call_args = mock_create.call_args[0][0]
+    assert call_args.provider == "opencode"
+    assert call_args.model == ""
+
+
 def test_make_cli_with_model_override(tmp_path: Path) -> None:
     svc = _make_service(tmp_path)
     with patch("controlmesh.cli.service.create_cli") as mock_create:
