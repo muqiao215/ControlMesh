@@ -61,6 +61,21 @@ def _collapse_blank_lines(text: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", text)
 
 
+def _parse_button_spec(spec: str) -> tuple[str, str] | None:
+    """Parse ``Label`` or ``Label|callback`` button syntax."""
+    raw = spec.strip()
+    if not raw:
+        return None
+    if "|" not in raw:
+        return raw, raw
+    label, callback = raw.split("|", 1)
+    label = label.strip()
+    callback = callback.strip() or label
+    if not label:
+        return None
+    return label, callback
+
+
 def extract_buttons(text: str) -> tuple[str, InlineKeyboardMarkup | None]:
     """Extract ``[button:...]`` markers and return cleaned text + keyboard.
 
@@ -81,13 +96,14 @@ def extract_buttons(text: str) -> tuple[str, InlineKeyboardMarkup | None]:
             return line
         btns: list[InlineKeyboardButton] = []
         for m in matches:
-            label = m.group(1).strip()
-            if not label:
+            parsed = _parse_button_spec(m.group(1))
+            if parsed is None:
                 continue
+            label, callback = parsed
             btns.append(
                 InlineKeyboardButton(
                     text=label,
-                    callback_data=_truncate_callback_data(label),
+                    callback_data=_truncate_callback_data(callback),
                 ),
             )
         if btns:

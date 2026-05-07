@@ -17,6 +17,21 @@ import re
 BUTTON_RE = re.compile(r"\[button:([^\]]+)\]")
 
 
+def parse_button_spec(spec: str) -> tuple[str, str] | None:
+    """Parse ``Label`` or ``Label|callback`` button syntax."""
+    raw = spec.strip()
+    if not raw:
+        return None
+    if "|" not in raw:
+        return raw, raw
+    label, callback = raw.split("|", 1)
+    label = label.strip()
+    callback = callback.strip() or label
+    if not label:
+        return None
+    return label, callback
+
+
 def strip_button_markers(text: str) -> str:
     """Remove ``[button:...]`` markers from text."""
     return BUTTON_RE.sub("", text).rstrip()

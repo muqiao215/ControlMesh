@@ -26,6 +26,17 @@ class TestButtonTracker:
         # For [button:] markers, callback_data == label
         assert bt.match_input("!room:s", "1") == "Alpha"
 
+    def test_match_input_uses_callback_override(self) -> None:
+        bt = ButtonTracker()
+        formatted = bt.extract_and_format(
+            "!room:s",
+            "Choose [button:Approve|/agents approve plan-1] [button:Status|/agents status plan-1]",
+        )
+        assert "Approve" in formatted
+        assert "/agents approve" not in formatted
+        assert bt.match_input("!room:s", "1") == "/agents approve plan-1"
+        assert bt.match_input("!room:s", "2") is None
+
     def test_match_input_second_option(self) -> None:
         bt = ButtonTracker()
         bt.extract_and_format("!room:s", "Choose [button:A] [button:B] [button:C]")

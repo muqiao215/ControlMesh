@@ -502,6 +502,17 @@ class Orchestrator:
         dispatch: _MessageDispatch,
     ) -> OrchestratorResult:
         """Route a message that was not claimed by ControlMesh commands."""
+        if self._supervisor is not None:
+            from controlmesh.multiagent.plan_review_loop import consume_pending_repair_feedback
+
+            repair_result = await consume_pending_repair_feedback(
+                self,
+                dispatch.key,
+                dispatch.text,
+            )
+            if repair_result is not None:
+                return OrchestratorResult(text=repair_result)
+
         await self._ensure_docker()
 
         directives = parse_directives(dispatch.text, self._providers._known_model_ids)

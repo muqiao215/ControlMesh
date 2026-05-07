@@ -434,6 +434,53 @@ def test_read_opencode_default_model_from_jsonc(tmp_path: Path, monkeypatch: pyt
     assert read_opencode_default_model() == "zhipuai/glm-5.1"
 
 
+def test_read_opencode_default_model_from_env_anthropic_model(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    xdg = tmp_path / ".config"
+    runtime_dir = xdg / "opencode"
+    runtime_dir.mkdir(parents=True)
+    runtime_file = runtime_dir / "opencode.jsonc"
+    runtime_file.write_text('{"env":{"ANTHROPIC_MODEL":"GLM-5.1"}}')
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+
+    assert read_opencode_default_model() == "zhipuai/glm-5.1"
+
+
+def test_read_opencode_default_model_prefers_top_level_model_over_env(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    xdg = tmp_path / ".config"
+    runtime_dir = xdg / "opencode"
+    runtime_dir.mkdir(parents=True)
+    runtime_file = runtime_dir / "opencode.jsonc"
+    runtime_file.write_text(
+        '{"model":"openai/gpt-4.1","env":{"ANTHROPIC_MODEL":"GLM-5.1"}}'
+    )
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+
+    assert read_opencode_default_model() == "openai/gpt-4.1"
+
+
+def test_read_opencode_default_model_falls_back_to_reasoning_model(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    xdg = tmp_path / ".config"
+    runtime_dir = xdg / "opencode"
+    runtime_dir.mkdir(parents=True)
+    runtime_file = runtime_dir / "opencode.jsonc"
+    runtime_file.write_text('{"env":{"ANTHROPIC_REASONING_MODEL":"GLM-4.5-Air"}}')
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+
+    assert read_opencode_default_model() == "zhipuai/glm-4.5-air"
+
+
 # -- Gemini auth --
 
 

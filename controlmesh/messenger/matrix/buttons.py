@@ -14,6 +14,7 @@ import logging
 from dataclasses import dataclass
 
 from controlmesh.messenger.matrix.formatting import BUTTON_RE as _BUTTON_RE
+from controlmesh.messenger.matrix.formatting import parse_button_spec
 
 logger = logging.getLogger(__name__)
 
@@ -77,26 +78,26 @@ class ButtonTracker:
         Returns the modified text with buttons replaced by a numbered list.
         If no buttons are found, returns text unchanged.
 
-        Note: [button:] markers only carry labels, not callback_data.
-        These are tracked for text-input matching only (no reaction support).
+        Supports both ``[button:Label]`` and ``[button:Label|callback]``.
         """
-        buttons: list[str] = _BUTTON_RE.findall(text)
-        if not buttons:
+        button_specs = _BUTTON_RE.findall(text)
+        if not button_specs:
             return text
 
         cleaned = _BUTTON_RE.sub("", text).rstrip()
-        # [button:Label] markers from agent text carry only the
-        # display label.  Unlike selector buttons (which have
-        # separate IDs), here the label IS the callback_data —
-        # the label text is routed as the callback.
+        parsed_buttons = [parsed for spec in button_specs if (parsed := parse_button_spec(spec))]
+        if not parsed_buttons:
+            return cleaned
+        labels = [label for label, _callback in parsed_buttons]
+        callback_data = [callback for _label, callback in parsed_buttons]
         self._active[room_id] = _PendingButtons(
-            labels=buttons,
-            callback_data=buttons,
+            labels=labels,
+            callback_data=callback_data,
             event_id="",
         )
         numbered = "\n".join(
             f"  {REACTION_DIGITS[i]} {label}" if i < len(REACTION_DIGITS) else f"  {i + 1}. {label}"
-            for i, label in enumerate(buttons)
+            for i, label in enumerate(labels)
         )
         return f"{cleaned}\n\n{numbered}"
 

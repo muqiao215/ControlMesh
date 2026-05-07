@@ -204,6 +204,24 @@ class TestExtractButtons:
         texts = {b.text for b in all_buttons}
         assert texts == {"A", "B", "C"}
 
+    def test_button_callback_override(self) -> None:
+        from controlmesh.messenger.telegram.buttons import extract_buttons
+
+        _clean, markup = extract_buttons("[button:Approve|/agents approve plan-1]")
+        assert markup is not None
+        btn = markup.inline_keyboard[0][0]
+        assert btn.text == "Approve"
+        assert btn.callback_data == "/agents approve plan-1"
+
+    def test_button_callback_override_keeps_old_label_when_callback_empty(self) -> None:
+        from controlmesh.messenger.telegram.buttons import extract_buttons
+
+        _clean, markup = extract_buttons("[button:Status|   ]")
+        assert markup is not None
+        btn = markup.inline_keyboard[0][0]
+        assert btn.text == "Status"
+        assert btn.callback_data == "Status"
+
 
 class TestStripButtonSyntax:
     """Test the strip function used by the formatting pipeline."""

@@ -468,6 +468,16 @@ class AgentSupervisor:
         hub.set_agent_paths(name, stack.paths)
 
         async def _deliver_task_result(result):
+            from controlmesh.multiagent.plan_review_loop import handle_task_result
+
+            note = await handle_task_result(orch, result)
+            if note:
+                suffix = f"\n\n---\n{note}"
+                result.result_text = (result.result_text or "") + suffix
+                if result.delivery_text:
+                    result.delivery_text += suffix
+                else:
+                    result.delivery_text = note
             await stack.bot.on_task_result(result)
 
         async def _deliver_task_question(

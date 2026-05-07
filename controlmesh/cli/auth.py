@@ -345,7 +345,36 @@ def read_opencode_default_model() -> str:
     if not isinstance(data, dict):
         return ""
     model = data.get("model")
-    return model.strip() if isinstance(model, str) else ""
+    if isinstance(model, str) and model.strip():
+        return _normalize_opencode_model_name(model)
+
+    env_cfg = data.get("env")
+    if not isinstance(env_cfg, dict):
+        return ""
+
+    for key in (
+        "ANTHROPIC_MODEL",
+        "ANTHROPIC_REASONING_MODEL",
+        "ANTHROPIC_DEFAULT_SONNET_MODEL",
+        "ANTHROPIC_DEFAULT_OPUS_MODEL",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+    ):
+        value = env_cfg.get(key)
+        if isinstance(value, str) and value.strip():
+            return _normalize_opencode_model_name(value)
+    return ""
+
+
+def _normalize_opencode_model_name(value: str) -> str:
+    """Normalize OpenCode model declarations into ControlMesh-facing ids."""
+    model = value.strip()
+    if not model:
+        return ""
+    if "/" in model:
+        return model
+    if model.upper().startswith("GLM-"):
+        return f"zhipuai/{model.lower()}"
+    return model
 
 
 def check_gemini_auth() -> AuthResult:
