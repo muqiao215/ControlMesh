@@ -303,24 +303,52 @@ async def test_callback_provider_codex_fallback(orch: Orchestrator) -> None:
 
 
 async def test_callback_provider_opencode_uses_runtime_default_model(orch: Orchestrator) -> None:
-    with patch("controlmesh.cli.auth.read_opencode_default_model", return_value="zhipuai/glm-5.1"):
+    with (
+        patch("controlmesh.cli.auth.read_opencode_default_model", return_value="zhipuai/glm-5.1"),
+        patch(
+            "controlmesh.cli.opencode_discovery.discover_opencode_models",
+            AsyncMock(return_value=("zhipuai/glm-5.1", "zhipuai/glm-4.5-air")),
+        ),
+    ):
         resp = await handle_model_callback(orch, SessionKey(chat_id=1), "ms:p:opencode")
     assert "Select OpenCode model" in resp.text
     assert resp.buttons is not None
     labels = [btn.text for row in resp.buttons.rows for btn in row]
     assert "zhipuai/glm-5.1" in labels
+    assert "zhipuai/glm-4.5-air" in labels
 
 
 async def test_callback_provider_opencode_shows_current_runtime_model(orch: Orchestrator) -> None:
     orch._config.provider = "opencode"
     orch._config.model = "openai/gpt-4.1"
 
-    resp = await handle_model_callback(orch, SessionKey(chat_id=1), "ms:p:opencode")
+    with patch(
+        "controlmesh.cli.opencode_discovery.discover_opencode_models",
+        AsyncMock(return_value=("zhipuai/glm-5.1",)),
+    ):
+        resp = await handle_model_callback(orch, SessionKey(chat_id=1), "ms:p:opencode")
 
     assert "Select OpenCode model" in resp.text
     assert resp.buttons is not None
     labels = [btn.text for row in resp.buttons.rows for btn in row]
     assert "openai/gpt-4.1" in labels
+    assert "zhipuai/glm-5.1" in labels
+
+
+async def test_callback_provider_opencode_without_discovery_shows_runtime_warning(
+    orch: Orchestrator,
+) -> None:
+    with (
+        patch("controlmesh.cli.auth.read_opencode_default_model", return_value=""),
+        patch(
+            "controlmesh.cli.opencode_discovery.discover_opencode_models",
+            AsyncMock(return_value=()),
+        ),
+    ):
+        resp = await handle_model_callback(orch, SessionKey(chat_id=1), "ms:p:opencode")
+
+    assert "no runtime models were discovered" in resp.text.lower()
+    assert resp.buttons is not None
 
 
 # -- handle_model_callback: model selection --

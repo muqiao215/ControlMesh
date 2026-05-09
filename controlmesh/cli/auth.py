@@ -242,12 +242,23 @@ def check_opencode_auth() -> AuthResult:
         logger.debug("Auth check provider=%s status=%s (env key)", result.provider, result.status)
         return result
 
+    auth_file = _find_opencode_auth_file()
+    auth_age = None
+    auth_providers: set[str] = set()
+    if auth_file is not None:
+        auth_age = datetime.fromtimestamp(auth_file.stat().st_mtime, tz=UTC)
+        auth_providers = _read_opencode_auth_provider_ids(auth_file)
+
     installed_config: Path | None = None
     installed_age: datetime | None = None
     for config_file in _iter_opencode_config_files():
-        auth_file, auth_age = _read_opencode_config_auth(config_file)
-        if auth_file is not None:
-            result = AuthResult("opencode", AuthStatus.AUTHENTICATED, auth_file, auth_age)
+        auth_source, source_age = _read_opencode_config_auth(
+            config_file,
+            auth_file=auth_file,
+            auth_provider_ids=auth_providers,
+        )
+        if auth_source is not None:
+            result = AuthResult("opencode", AuthStatus.AUTHENTICATED, auth_source, source_age)
             logger.debug(
                 "Auth check provider=%s status=%s (config key)",
                 result.provider,
@@ -257,6 +268,16 @@ def check_opencode_auth() -> AuthResult:
         if installed_config is None:
             installed_config = config_file
             installed_age = datetime.fromtimestamp(config_file.stat().st_mtime, tz=UTC)
+
+    if auth_file is not None and auth_providers:
+        result = AuthResult("opencode", AuthStatus.AUTHENTICATED, auth_file, auth_age)
+        logger.debug(
+            "Auth check provider=%s status=%s (auth file)",
+            result.provider,
+            result.status,
+        )
+        return result
+
     if installed_config is not None:
         diagnostic = _missing_runtime_env_diagnostic("opencode", _OPENCODE_AUTH_ENV_KEYS)
         result = AuthResult(
@@ -310,6 +331,25 @@ def _iter_opencode_config_files() -> tuple[Path, ...]:
     return tuple(path for path in candidates if path.is_file())
 
 
+def _iter_opencode_data_roots() -> tuple[Path, ...]:
+    home = Path.home()
+    default_xdg = home / ".local" / "share"
+    configured_xdg = Path(os.environ.get("XDG_DATA_HOME", default_xdg))
+    roots: list[Path] = []
+    for root in (configured_xdg, default_xdg):
+        if root not in roots:
+            roots.append(root)
+    return tuple(roots)
+
+
+def _find_opencode_auth_file() -> Path | None:
+    for root in _iter_opencode_data_roots():
+        path = root / "opencode" / "auth.json"
+        if path.is_file():
+            return path
+    return None
+
+
 def _find_opencode_runtime_config_file() -> Path | None:
     for root in _iter_opencode_config_roots():
         for path in (
@@ -339,21 +379,48 @@ def _load_opencode_json(path: Path) -> dict[str, object] | None:
             return None
 
 
-def _read_opencode_config_auth(config_file: Path) -> tuple[Path | None, datetime | None]:
+def _read_opencode_config_auth(
+    config_file: Path,
+    *,
+    auth_file: Path | None = None,
+    auth_provider_ids: set[str] | None = None,
+) -> tuple[Path | None, datetime | None]:
     data = _load_opencode_json(config_file)
     if not isinstance(data, dict):
         return None, None
     if _opencode_env_uses_auth_signal(data.get("env")):
         return config_file, datetime.fromtimestamp(config_file.stat().st_mtime, tz=UTC)
-    providers = data.get("providers")
-    if not isinstance(providers, dict):
-        return None, None
-    for provider_cfg in providers.values():
-        if not isinstance(provider_cfg, dict):
-            continue
+    for provider_cfg in _iter_opencode_provider_configs(data):
         if _opencode_provider_uses_auth_signal(provider_cfg):
             return config_file, datetime.fromtimestamp(config_file.stat().st_mtime, tz=UTC)
+    provider_ids = _read_opencode_runtime_provider_ids(data)
+    if auth_file is not None and auth_provider_ids and (
+        not provider_ids or provider_ids & auth_provider_ids
+    ):
+        return auth_file, datetime.fromtimestamp(auth_file.stat().st_mtime, tz=UTC)
     return None, None
+
+
+def _read_opencode_runtime_provider_ids(data: dict[str, object]) -> set[str]:
+    provider_ids: set[str] = set()
+    for key in ("provider", "providers"):
+        raw = data.get(key)
+        if not isinstance(raw, dict):
+            continue
+        for provider_id, cfg in raw.items():
+            if isinstance(provider_id, str) and provider_id.strip() and isinstance(cfg, dict):
+                provider_ids.add(provider_id.strip())
+    return provider_ids
+
+
+def _iter_opencode_provider_configs(data: dict[str, object]) -> tuple[dict[str, object], ...]:
+    configs: list[dict[str, object]] = []
+    for key in ("provider", "providers"):
+        raw = data.get(key)
+        if not isinstance(raw, dict):
+            continue
+        configs.extend(cfg for cfg in raw.values() if isinstance(cfg, dict))
+    return tuple(configs)
 
 
 def _read_opencode_model_declaration(data: dict[str, object]) -> tuple[str, bool]:
@@ -391,6 +458,37 @@ def read_opencode_default_model() -> str:
     return model
 
 
+def read_opencode_primary_provider() -> str:
+    """Return the most likely active OpenCode provider from runtime config/auth."""
+    config_file = _find_opencode_runtime_config_file()
+    data: dict[str, object] | None = None
+    provider_ids: set[str] = set()
+    if config_file is not None:
+        loaded = _load_opencode_json(config_file)
+        if isinstance(loaded, dict):
+            data = loaded
+            provider_ids = _read_opencode_runtime_provider_ids(loaded)
+
+    if data is not None:
+        configured_model, _is_explicit = _read_opencode_model_declaration(data)
+        if "/" in configured_model:
+            model_provider = configured_model.split("/", 1)[0].strip()
+            if model_provider and (not provider_ids or model_provider in provider_ids):
+                return model_provider
+
+    if len(provider_ids) == 1:
+        return next(iter(provider_ids))
+
+    auth_file = _find_opencode_auth_file()
+    auth_provider_ids = _read_opencode_auth_provider_ids(auth_file) if auth_file is not None else set()
+    overlap = provider_ids & auth_provider_ids
+    if len(overlap) == 1:
+        return next(iter(overlap))
+    if not provider_ids and len(auth_provider_ids) == 1:
+        return next(iter(auth_provider_ids))
+    return ""
+
+
 def opencode_model_uses_runtime_env_default(model: str) -> bool:
     """Return True when *model* is supplied by env-backed OpenCode defaults."""
     normalized = _normalize_opencode_model_name(model)
@@ -416,6 +514,19 @@ def _normalize_opencode_model_name(value: str) -> str:
     if model.upper().startswith("GLM-"):
         return f"zhipuai/{model.lower()}"
     return model
+
+
+def _read_opencode_auth_provider_ids(auth_file: Path) -> set[str]:
+    data = _load_opencode_json(auth_file)
+    if not isinstance(data, dict):
+        return set()
+    provider_ids: set[str] = set()
+    for provider_id, provider_cfg in data.items():
+        if not isinstance(provider_id, str) or not provider_id.strip():
+            continue
+        if isinstance(provider_cfg, dict) and _opencode_auth_entry_has_signal(provider_cfg):
+            provider_ids.add(provider_id.strip())
+    return provider_ids
 
 
 def check_gemini_auth() -> AuthResult:
@@ -705,6 +816,14 @@ def _opencode_provider_uses_auth_signal(provider_cfg: dict[str, object]) -> bool
     if api_key.startswith("env."):
         return api_key[4:] in _OPENCODE_AUTH_ENV_KEYS
     return True
+
+
+def _opencode_auth_entry_has_signal(provider_cfg: dict[str, object]) -> bool:
+    for key in ("key", "token", "apiKey", "api_key"):
+        raw = provider_cfg.get(key)
+        if isinstance(raw, str) and _normalize_key_like_value(raw):
+            return True
+    return False
 
 
 def _opencode_env_uses_auth_signal(env_cfg: object) -> bool:

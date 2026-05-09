@@ -18,6 +18,7 @@ from controlmesh.cli.auth import (
     format_age,
     gemini_uses_api_key_mode,
     opencode_model_uses_runtime_env_default,
+    read_opencode_primary_provider,
     read_opencode_default_model,
 )
 
@@ -476,6 +477,33 @@ def test_check_opencode_auth_config_file_top_level_env_ignores_unrelated_xdg_ove
     assert result.auth_file == config_file
 
 
+def test_check_opencode_auth_runtime_provider_with_auth_json(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import controlmesh.cli.auth as _auth_mod
+
+    monkeypatch.setattr(_auth_mod, "which", lambda _name: "/usr/bin/opencode")
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    for env_name in _auth_mod._OPENCODE_AUTH_ENV_KEYS:
+        monkeypatch.delenv(env_name, raising=False)
+    config_dir = tmp_path / ".config" / "opencode"
+    config_dir.mkdir(parents=True)
+    (config_dir / "opencode.json").write_text(
+        '{"provider":{"zhipuai":{"api":"https://open.bigmodel.cn/api/coding/paas/v4"}}}'
+    )
+    data_dir = tmp_path / ".local" / "share" / "opencode"
+    data_dir.mkdir(parents=True)
+    auth_file = data_dir / "auth.json"
+    auth_file.write_text('{"zhipuai":{"type":"api","key":"test-key"}}')
+
+    result = check_opencode_auth()
+
+    assert result.provider == "opencode"
+    assert result.status == AuthStatus.AUTHENTICATED
+    assert result.auth_file == auth_file
+
+
 def test_read_opencode_default_model_from_jsonc(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     xdg = tmp_path / ".config"
     runtime_dir = xdg / "opencode"
@@ -577,6 +605,38 @@ def test_read_opencode_default_model_falls_back_to_reasoning_model(
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
 
     assert read_opencode_default_model() == "zhipuai/glm-4.5-air"
+
+
+def test_read_opencode_primary_provider_from_runtime_provider_block(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_dir = tmp_path / ".config" / "opencode"
+    runtime_dir.mkdir(parents=True)
+    runtime_file = runtime_dir / "opencode.jsonc"
+    runtime_file.write_text(
+        '{"provider":{"zhipuai":{"api":"https://open.bigmodel.cn/api/coding/paas/v4"}}}'
+    )
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+
+    assert read_opencode_primary_provider() == "zhipuai"
+
+
+def test_read_opencode_primary_provider_prefers_model_prefix_when_matching_provider(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_dir = tmp_path / ".config" / "opencode"
+    runtime_dir.mkdir(parents=True)
+    runtime_file = runtime_dir / "opencode.jsonc"
+    runtime_file.write_text(
+        '{"model":"zhipuai/glm-5.1","provider":{"zhipuai":{"api":"https://open.bigmodel.cn/api/coding/paas/v4"}}}'
+    )
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+
+    assert read_opencode_primary_provider() == "zhipuai"
 
 
 # -- Gemini auth --

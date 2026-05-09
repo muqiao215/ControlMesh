@@ -119,6 +119,43 @@ def _gemini_models_for_selector() -> list[str]:
     return [*stable, *preview]
 
 
+async def _opencode_models_for_selector(
+    orch: Orchestrator,
+    key: SessionKey,
+) -> list[str]:
+    """Return OpenCode models from active session, config, discovery, and runtime default."""
+    discovered: list[str] = []
+    from controlmesh.cli.auth import read_opencode_default_model
+    from controlmesh.cli.opencode_discovery import discover_opencode_models
+
+    active_session = await orch._sessions.get_active(key)
+    if (
+        active_session is not None
+        and active_session.provider == "opencode"
+        and active_session.model.strip()
+    ):
+        discovered.append(active_session.model.strip())
+
+    configured_model, configured_provider = orch.resolve_runtime_target(orch._config.model)
+    if configured_provider == "opencode" and configured_model.strip():
+        discovered.append(configured_model.strip())
+
+    discovered.extend(await discover_opencode_models())
+
+    runtime_default = read_opencode_default_model().strip()
+    if runtime_default:
+        discovered.append(runtime_default)
+
+    seen: set[str] = set()
+    models: list[str] = []
+    for model in discovered:
+        if not model or model in seen:
+            continue
+        seen.add(model)
+        models.append(model)
+    return models
+
+
 def _button_label(model_id: str) -> str:
     """Compact button label while preserving identity in callback data."""
     return model_id.removeprefix("gemini-").removeprefix("auto-")
@@ -453,7 +490,25 @@ async def _build_model_step(
         keyboard = ButtonGrid(rows=gemini_rows)
         return SelectorResponse(text=f"{header}\n\n{t('model.select_gemini')}", buttons=keyboard)
 
-    if provider in {"claw", "opencode"}:
+    if provider == "opencode":
+        opencode_models = await _opencode_models_for_selector(orch, key)
+        back = [Button(text=t("model.btn_back"), callback_data="ms:b:root")]
+        if not opencode_models:
+            return SelectorResponse(
+                text=(
+                    f"{header}\n\nCannot switch to OpenCode yet: no runtime models were discovered.\n"
+                    "Make sure OpenCode has an active provider and reachable model catalog, then retry."
+                ),
+                buttons=ButtonGrid(rows=[back]),
+            )
+        rows = _chunk_buttons(opencode_models, columns=2)
+        rows.append(back)
+        return SelectorResponse(
+            text=f"{header}\n\nSelect OpenCode model",
+            buttons=ButtonGrid(rows=rows),
+        )
+
+    if provider == "claw":
         model_id = await _resolve_runtime_provider_model(orch, key, provider)
         back = [Button(text=t("model.btn_back"), callback_data="ms:b:root")]
         if not model_id:

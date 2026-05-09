@@ -235,8 +235,7 @@ class ProviderManager:
                 return self._config.model
             from controlmesh.cli.auth import read_opencode_default_model
 
-            configured = read_opencode_default_model().strip()
-            return configured or "openai/gpt-4.1"
+            return read_opencode_default_model().strip()
         if provider in _EXPLICIT_RUNTIME_DEFAULT_MODELS:
             return (
                 self._config.model
