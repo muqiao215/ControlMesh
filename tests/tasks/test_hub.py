@@ -468,12 +468,77 @@ class TestRunAndDeliver:
         assert delivered[0].status == "done"
         assert delivered[0].result_text.startswith("task output")
         assert "resume_task.py" in delivered[0].result_text  # resume hint appended
-        assert delivered[0].delivery_text == "task output"
+        assert delivered[0].delivery_text.startswith("task output")
+        assert "resume_task.py" not in delivered[0].delivery_text
+        assert f"Task id: `{task_id}`" in delivered[0].delivery_text
         assert delivered[0].name == "Test Task"
 
         entry = registry.get(task_id)
         assert entry is not None
         assert entry.status == "done"
+
+        await hub.shutdown()
+
+    async def test_direct_delivery_uses_curated_result_and_hides_internal_payload(
+        self, registry: TaskRegistry, tmp_path: Path
+    ) -> None:
+        raw = "\n".join(
+            [
+                "raw cli output",
+                "---",
+                "CONTENT FROM TASKMEMORY.MD (/tmp/tasks/t1/TASKMEMORY.md):",
+                "internal progress notes",
+                "---",
+                "## Evaluator Verdict",
+                "- decision: `accept`",
+                "---",
+                "To continue this task's conversation, use:",
+                'python3 tools/task_tools/resume_task.py abc123 "follow-up"',
+            ]
+            + [f"log line {idx}" for idx in range(200)]
+        )
+
+        async def _execute_with_result(request: object) -> MagicMock:
+            task_id = request.process_label.removeprefix("task:")
+            folder = registry.task_folder(task_id)
+            (folder / "RESULT.md").write_text(
+                "# User-facing result\n\n"
+                "Implemented the scoped fix and verified the focused tests.\n\n"
+                "```python\nprint('small useful example')\n```\n",
+                encoding="utf-8",
+            )
+            response = MagicMock()
+            response.result = raw
+            response.session_id = "sess-1"
+            response.is_error = False
+            response.timed_out = False
+            response.num_turns = 1
+            return response
+
+        cli = _make_cli_service(raw)
+        cli.execute = AsyncMock(side_effect=_execute_with_result)
+        delivered: list[TaskResult] = []
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=cli,
+            config=_make_config(),
+        )
+        hub.set_result_handler("main", AsyncMock(side_effect=delivered.append))
+
+        hub.submit(_submit())
+        await asyncio.sleep(0.1)
+
+        assert len(delivered) == 1
+        direct = delivered[0].delivery_text
+        assert "Implemented the scoped fix" in direct
+        assert "CONTENT FROM TASKMEMORY.MD" not in direct
+        assert "Evaluator Verdict" not in direct
+        assert "resume_task.py" not in direct
+        assert "log line 199" not in direct
+        assert delivered[0].result_text != direct
+        assert "CONTENT FROM TASKMEMORY.MD" in delivered[0].result_text
+        assert "resume_task.py" in delivered[0].result_text
 
         await hub.shutdown()
 

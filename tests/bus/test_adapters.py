@@ -227,15 +227,12 @@ def test_from_task_result_done() -> None:
     assert env.topic_id is None
     assert env.transport == "tg"
     assert env.status == "done"
-    assert env.lock_mode == LockMode.REQUIRED
-    assert env.needs_injection
+    assert env.lock_mode == LockMode.NONE
+    assert not env.needs_injection
+    assert env.prompt == ""
     assert not env.is_error
     assert env.metadata["name"] == "research"
     assert env.delivery_text == "short found it"
-    assert "BACKGROUND TASK COMPLETED" in env.prompt
-    assert "task_id='t1'" in env.prompt
-    assert "found it" in env.prompt
-    assert "Review this result critically" in env.prompt
 
 
 def test_from_task_result_with_topic() -> None:
@@ -246,12 +243,11 @@ def test_from_task_result_with_topic() -> None:
 
 def test_from_task_result_failed() -> None:
     env = from_task_result(_FakeTaskResult(status="failed", error="crash"))
-    assert env.lock_mode == LockMode.REQUIRED
-    assert env.needs_injection
+    assert env.lock_mode == LockMode.NONE
+    assert not env.needs_injection
     assert env.is_error
     assert env.metadata["error"] == "crash"
-    assert "BACKGROUND TASK FAILED" in env.prompt
-    assert "crash" in env.prompt
+    assert env.prompt == ""
 
 
 def test_from_task_result_cancelled() -> None:

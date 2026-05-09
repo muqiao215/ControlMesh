@@ -233,6 +233,31 @@ async def test_task_result_injection_writes_delivery_text_not_payload() -> None:
     t.deliver.assert_awaited_once_with(env)
 
 
+async def test_task_result_without_injection_does_not_resume_session() -> None:
+    bus = MessageBus()
+    t = _mock_transport()
+    bus.register_transport(t)
+
+    injector = AsyncMock()
+    injector.inject_prompt = AsyncMock(return_value="should not be used")
+    bus.set_injector(injector)
+
+    env = _env(
+        origin=Origin.TASK_RESULT,
+        needs_injection=False,
+        prompt="",
+        result_text="Raw task payload with taskmemory and resume hint",
+        delivery_text="Direct user-facing summary",
+        lock_mode=LockMode.NONE,
+        chat_id=10,
+    )
+    await bus.submit(env)
+
+    injector.inject_prompt.assert_not_awaited()
+    assert env.delivery_text == "Direct user-facing summary"
+    t.deliver.assert_awaited_once_with(env)
+
+
 async def test_interagent_injection_writes_delivery_text_not_payload() -> None:
     bus = MessageBus()
     t = _mock_transport()

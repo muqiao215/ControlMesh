@@ -221,25 +221,24 @@ def _build_interagent_injection_prompt(result: AsyncInterAgentResult) -> str:
 def from_task_result(result: TaskResult) -> Envelope:
     """Convert a background task result.
 
-    done/failed: acquire lock, inject into parent session.
-    cancelled/timeout: unicast notification only (no injection).
+    Task results are direct frontstage deliveries.  The raw result payload may
+    contain task memory, evidence, logs, or follow-up instructions for the
+    controller; it must not be resumed into the active foreground LLM session.
     """
-    needs_inject = result.status in ("done", "failed")
-    prompt = _build_task_injection_prompt(result) if needs_inject else ""
     return Envelope(
         origin=Origin.TASK_RESULT,
         chat_id=result.chat_id,
         topic_id=result.thread_id,
         transport=getattr(result, "transport", "tg"),
-        prompt=prompt,
+        prompt="",
         prompt_preview=result.prompt_preview,
         result_text=result.result_text,
         delivery_text=getattr(result, "delivery_text", ""),
         status=result.status,
         is_error=result.status == "failed",
         delivery=DeliveryMode.UNICAST,
-        lock_mode=LockMode.REQUIRED if needs_inject else LockMode.NONE,
-        needs_injection=needs_inject,
+        lock_mode=LockMode.NONE,
+        needs_injection=False,
         elapsed_seconds=result.elapsed_seconds,
         provider=result.provider,
         model=result.model,

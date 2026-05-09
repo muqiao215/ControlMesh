@@ -46,6 +46,7 @@ from controlmesh.tasks.evaluator import (
 from controlmesh.tasks.evidence import evidence_path, load_evidence, result_path
 from controlmesh.tasks.models import TaskEntry, TaskInFlight, TaskResult, TaskSubmit
 from controlmesh.team.contracts import ensure_team_topology
+from controlmesh.text.response_format import SEP, compact_transport_text, fmt
 from controlmesh.planning_files import (
     PlanPhase,
     create_plan_files,
@@ -812,7 +813,14 @@ class TaskHub:
                 name=entry.name,
                 prompt_preview=entry.prompt_preview,
                 result_text=result_text,
-                delivery_text=response.result or "",
+                delivery_text=_task_delivery_text(
+                    status=status,
+                    response_text=response.result or "",
+                    result_path=self._artifact_paths(entry).result,
+                    error=error,
+                    task_id=entry.task_id,
+                    session_id=session_id,
+                ),
                 status=status,
                 elapsed_seconds=elapsed,
                 provider=entry.provider,
@@ -1157,6 +1165,81 @@ def _append_evaluator_verdict(result_text: str, verdict: EvaluatorVerdict) -> st
         lines.append("- risks:")
         lines.extend(f"  - {item}" for item in verdict.risks)
     return "\n".join(lines)
+
+
+_RESULT_TEMPLATE_TEXT = "Write the final worker-facing result here before finishing."
+_TASK_DELIVERY_MAX_CHARS = 1800
+_TASK_DELIVERY_MAX_LINES = 28
+
+
+def _task_delivery_text(
+    *,
+    status: str,
+    response_text: str,
+    result_path: Path,
+    error: str,
+    task_id: str,
+    session_id: str,
+) -> str:
+    """Build the direct user-facing task delivery text.
+
+    Prefer the task agent's curated ``RESULT.md`` artifact.  Fall back to a
+    compact preview of CLI output, but never expose appended controller-only
+    payload such as TASKMEMORY/evaluator context or resume commands.
+    """
+    if status == "done":
+        body = _read_curated_result(result_path) or response_text
+        body = _strip_internal_task_payload(body)
+        body = compact_transport_text(
+            body,
+            max_chars=_TASK_DELIVERY_MAX_CHARS,
+            max_lines=_TASK_DELIVERY_MAX_LINES,
+        )
+        hints = [f"Task id: `{task_id}`"]
+        if session_id:
+            hints.append("Follow-up work can resume this background task by id.")
+        return fmt(body, SEP, "\n".join(hints))
+
+    if status == "failed":
+        return fmt(
+            f"Task `{task_id}` failed.",
+            f"Reason: {error or 'unknown'}",
+            "Use the task folder artifacts for logs and evidence.",
+        )
+
+    if status == "cancelled":
+        return f"Task `{task_id}` was cancelled."
+
+    return _strip_internal_task_payload(response_text)
+
+
+def _read_curated_result(path: Path) -> str:
+    """Return RESULT.md content when the worker replaced the seeded template."""
+    try:
+        if not path.is_file():
+            return ""
+        text = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        logger.debug("Could not read RESULT.md at %s", path)
+        return ""
+    if not text or _RESULT_TEMPLATE_TEXT in text:
+        return ""
+    return text
+
+
+def _strip_internal_task_payload(text: str) -> str:
+    """Remove controller-only sections from text before direct chat delivery."""
+    clean = (text or "").strip()
+    markers = (
+        "\n---\nCONTENT FROM TASKMEMORY.MD",
+        "\n---\n## Evaluator Verdict",
+        "\n---\nTo continue this task's conversation",
+    )
+    for marker in markers:
+        idx = clean.find(marker)
+        if idx >= 0:
+            clean = clean[:idx].rstrip()
+    return clean
 
 
 def _read_task_updates(updates_path: Path) -> list[dict[str, Any]]:
