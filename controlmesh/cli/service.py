@@ -15,7 +15,11 @@ from typing import TYPE_CHECKING
 from controlmesh.cli.base import CLIConfig
 from controlmesh.cli.factory import create_cli
 from controlmesh.cli.introspection import ProviderIntrospection
-from controlmesh.cli.opencode_discovery import pick_opencode_runtime_model_sync
+from controlmesh.cli.opencode_discovery import (
+    pick_opencode_runtime_model_sync,
+    probe_opencode_model_sync,
+    resolve_opencode_runnable_model_sync,
+)
 from controlmesh.cli.stream_events import (
     AssistantTextDelta,
     CompactBoundaryEvent,
@@ -28,6 +32,7 @@ from controlmesh.cli.stream_events import (
     ToolUseEvent,
 )
 from controlmesh.cli.types import AgentRequest, AgentResponse, CLIResponse
+from controlmesh.provider_binding import validate_provider_model_binding
 
 if TYPE_CHECKING:
     from controlmesh.cli.base import BaseCLI
@@ -358,6 +363,7 @@ class CLIService:
             return self.resolve_runtime_provider_target(
                 self._config.provider,
                 request.model_override or self._config.default_model,
+                preflight_requested_model=bool(request.provider_override or request.model_override),
             )
         model = request.model_override or self._config.default_model
         return self._models.provider_for(model), model
@@ -366,20 +372,35 @@ class CLIService:
         self,
         provider: str,
         requested_model: str = "",
+        *,
+        preflight_requested_model: bool = True,
     ) -> tuple[str, str]:
         """Resolve a runtime-backed provider target with live discovery when needed."""
+        provider, requested_model = validate_provider_model_binding(
+            provider,
+            requested_model,
+            model_provider_resolver=self._models.provider_for,
+        )
         if provider not in _EXPLICIT_RUNTIME_PROVIDERS:
-            return provider, requested_model or self._config.default_model
+            return provider, requested_model
 
         if requested_model:
+            if (
+                provider == "opencode"
+                and preflight_requested_model
+                and not probe_opencode_model_sync(requested_model)
+            ):
+                msg = f"error:opencode_model_unrunnable model={requested_model}"
+                raise ValueError(msg)
             return provider, requested_model
 
         if provider == "opencode":
-            model = pick_opencode_runtime_model_sync()
+            model = resolve_opencode_runnable_model_sync()
             if model:
                 return provider, model
             if self._config.provider == "opencode" and self._config.default_model:
-                return provider, self._config.default_model
+                if probe_opencode_model_sync(self._config.default_model):
+                    return provider, self._config.default_model
             msg = "error:opencode_default_model_unresolved"
             raise ValueError(msg)
 

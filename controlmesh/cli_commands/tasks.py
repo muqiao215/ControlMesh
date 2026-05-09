@@ -9,6 +9,7 @@ from rich.console import Console
 from rich.table import Table
 
 from controlmesh.config import AgentConfig
+from controlmesh.provider_binding import provider_model_label
 from controlmesh.tasks.registry import TaskRegistry
 from controlmesh.tasks.task_policy import (
     TASK_RUNTIME_PRIMITIVES,
@@ -99,11 +100,11 @@ def _cmd_tasks_list() -> None:
     table.add_column("Name", style="bold")
     table.add_column("Status")
     table.add_column("Owner")
-    table.add_column("Provider")
+    table.add_column("Target")
     table.add_column("Elapsed", justify="right")
     table.add_column("Preview")
     for entry in entries:
-        provider = "/".join(part for part in (entry.provider, entry.model) if part) or "-"
+        provider = provider_model_label(entry.provider, entry.model, default_provider="-", default_model="-")
         elapsed = f"{entry.elapsed_seconds:.0f}s" if entry.elapsed_seconds else "-"
         table.add_row(
             entry.task_id,

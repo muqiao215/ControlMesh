@@ -168,10 +168,38 @@ activation_policies:
         result = await orch.handle_message(SessionKey(chat_id=1), "请帮我发布新版本")
 
     hub.submit.assert_not_called()
-    assert "Matched activation policy but no eligible background route was available." in result.text
+    assert "Matched activation policy suggestion but no eligible background route was available." in result.text
     assert "policy: github_release_always_background" in result.text
     assert "workunit: github_release" in result.text
     assert "run it explicitly in foreground" in result.text
+
+
+async def test_activation_policy_only_suggests_background_candidate_without_dispatch(
+    orch: Orchestrator,
+) -> None:
+    _write_activation_policy(
+        orch,
+        """
+activation_policies:
+  github_release_always_background:
+    execution: background_required
+    match:
+      workunit_kinds: [github_release]
+""".strip()
+        + "\n",
+    )
+    hub = MagicMock()
+    hub.submit = MagicMock(return_value="task1234")
+    hub.start_maintenance = MagicMock()
+    orch.set_task_hub(hub)
+
+    with patch("controlmesh.orchestrator.core.resolve_route", return_value=_release_decision("请帮我发布新版本")):
+        result = await orch.handle_message(SessionKey(chat_id=1), "请帮我发布新版本")
+
+    hub.submit.assert_not_called()
+    assert "Activation policy suggests a background candidate." in result.text
+    assert "dispatch: blocked until foreground agent explicitly submits a task" in result.text
+    assert "task:" not in result.text
 
 
 async def test_github_release_without_activation_policy_stays_in_foreground(
@@ -264,5 +292,5 @@ async def test_route_why_explains_auto_background_task(orch: Orchestrator) -> No
     assert "workunit: github_release" in result.text
     assert "policy=github_release_always_background" in result.text
     assert "slot: release_runner" in result.text
-    assert "provider/model: gemini/flash" in result.text
+    assert "target: gemini / flash" in result.text
     assert "approval: foreground" in result.text

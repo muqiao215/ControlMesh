@@ -12,6 +12,7 @@ from typing import Any
 
 from controlmesh.infra.json_store import atomic_json_save, load_json
 from controlmesh.messenger.address import ChatRef
+from controlmesh.provider_binding import provider_model_label
 from controlmesh.tasks.evidence import result_path, write_evidence_template
 from controlmesh.tasks.models import TaskEntry, TaskSubmit
 from controlmesh.tasks.task_policy import build_task_agent_rules
@@ -277,7 +278,7 @@ def _seed_task_folder(
         taskmemory.write_text(
             f"# Task: {entry.name}\n\n"
             f"Created: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
-            f"Provider: {provider}/{model}\n\n"
+            f"Target: {provider_model_label(provider, model, default_provider='-', default_model='-')}\n\n"
             f"## Task Description\n\n"
             f"{prompt[:500]}\n\n"
             f"## Progress\n\n"

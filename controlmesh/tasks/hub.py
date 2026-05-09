@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from controlmesh.config import ModelRegistry
 from controlmesh.infra.json_store import atomic_json_save, load_json
 from controlmesh.memory.runtime_capture import (
     capture_task_question,
@@ -47,6 +48,7 @@ from controlmesh.tasks.evidence import evidence_path, load_evidence, result_path
 from controlmesh.tasks.models import TaskEntry, TaskInFlight, TaskResult, TaskSubmit
 from controlmesh.team.contracts import ensure_team_topology
 from controlmesh.text.response_format import SEP, compact_transport_text, fmt
+from controlmesh.provider_binding import validate_provider_model_binding
 from controlmesh.planning_files import (
     PlanPhase,
     create_plan_files,
@@ -73,6 +75,7 @@ _PLAN_MANIFEST_WORKUNITS = frozenset({"plan_with_files"})
 _RUNTIME_PROVIDER_ERRORS = frozenset(
     {
         "error:opencode_default_model_unresolved",
+        "error:missing_provider",
     }
 )
 _RUNTIME_BACKED_PROVIDERS = frozenset({"openai_agents", "claw", "opencode"})
@@ -326,6 +329,13 @@ class TaskHub:
             topology = ensure_team_topology(topology, "topology")
         submit.topology = topology
 
+        if provider:
+            provider, model = self._validate_provider_binding(
+                provider,
+                model,
+                parent_agent=submit.parent_agent,
+            )
+
         # Resolve per-agent tasks_dir for folder isolation
         agent_tasks_dir = self._agent_tasks_dirs.get(submit.parent_agent)
         entry = self._registry.create(
@@ -419,9 +429,16 @@ class TaskHub:
         Precedence: submit explicit model, route capability model, live runtime
         discovery via CLIService, then static CLIService fallback.
         """
-        if not provider or provider not in _RUNTIME_BACKED_PROVIDERS:
+        if not provider:
             return provider, submit_model or route_model
-        model = submit_model or route_model
+        provider, resolved_model = self._validate_provider_binding(
+            provider,
+            submit_model or route_model,
+            parent_agent=parent_agent,
+        )
+        if not provider or provider not in _RUNTIME_BACKED_PROVIDERS:
+            return provider, resolved_model
+        model = resolved_model
         if model:
             return provider, model
         cli = self._cli_services.get(parent_agent) or self._cli_service
@@ -429,6 +446,23 @@ class TaskHub:
         if callable(resolver):
             return resolver(provider, "")
         return provider, model
+
+    def _validate_provider_binding(
+        self,
+        provider: str,
+        model: str,
+        *,
+        parent_agent: str = "",
+    ) -> tuple[str, str]:
+        """Validate a provider/model pair with the same model resolver as CLIService."""
+        cli = self._cli_services.get(parent_agent) or self._cli_service
+        models = getattr(cli, "_models", None) if cli is not None else None
+        resolver = models.provider_for if isinstance(models, ModelRegistry) else ModelRegistry.provider_for
+        return validate_provider_model_binding(
+            provider,
+            model,
+            model_provider_resolver=resolver,
+        )
 
     def resume(self, task_id: str, follow_up: str, *, parent_agent: str = "") -> str:
         """Resume a completed task's CLI session with a follow-up. Returns task_id."""
@@ -794,10 +828,11 @@ class TaskHub:
             result_text = response.result or ""
             session_id = response.session_id or ""
             verdict = None
+            artifacts = self._artifact_paths(entry)
 
             # Append TASKMEMORY.md content so the parent gets the full picture
             if status == "done":
-                artifacts = self._artifact_paths(entry)
+                _persist_worker_result_artifact(artifacts.result, response.result or "")
                 result_text = _append_taskmemory(result_text, artifacts.taskmemory)
                 if entry.workunit_kind or entry.evaluator:
                     evidence = load_evidence(artifacts.folder)
@@ -852,7 +887,7 @@ class TaskHub:
                 delivery_text=_task_delivery_text(
                     status=status,
                     response_text=response.result or "",
-                    result_path=self._artifact_paths(entry).result,
+                    result_path=artifacts.result,
                     error=error,
                     task_id=entry.task_id,
                     session_id=session_id,
@@ -869,7 +904,6 @@ class TaskHub:
                 thread_id=entry.thread_id,
             )
             if status in _FINISHED:
-                artifacts = self._artifact_paths(entry)
                 capture_task_result(
                     self._paths,
                     task_result,
@@ -1315,6 +1349,24 @@ def _read_curated_result(path: Path) -> str:
     if not text or _RESULT_TEMPLATE_TEXT in text:
         return ""
     return text
+
+
+def _persist_worker_result_artifact(path: Path, response_text: str) -> None:
+    """Persist the worker's final response when RESULT.md was left as a template."""
+    body = (response_text or "").strip()
+    if not body:
+        return
+    try:
+        existing = path.read_text(encoding="utf-8").strip() if path.is_file() else ""
+    except OSError:
+        logger.debug("Could not read RESULT.md at %s", path)
+        return
+    if existing and _RESULT_TEMPLATE_TEXT not in existing:
+        return
+    try:
+        path.write_text(body + "\n", encoding="utf-8")
+    except OSError:
+        logger.debug("Could not persist worker final response to RESULT.md at %s", path)
 
 
 def _strip_internal_task_payload(text: str) -> str:

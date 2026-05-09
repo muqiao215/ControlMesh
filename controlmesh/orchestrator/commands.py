@@ -44,6 +44,7 @@ from controlmesh.native_commands import (
     render_native_runtime_summary,
 )
 from controlmesh.orchestrator.registry import OrchestratorResult
+from controlmesh.provider_binding import provider_model_label
 from controlmesh.orchestrator.selectors.cron_selector import cron_selector_start
 from controlmesh.orchestrator.selectors.model_selector import model_selector_start, switch_model
 from controlmesh.orchestrator.selectors.models import Button, ButtonGrid, SelectorResponse
@@ -765,7 +766,7 @@ def _cmd_route_why(orch: Orchestrator, task_id: str) -> OrchestratorResult:
         f"- route: {entry.route or 'manual'}",
         f"- workunit: {entry.workunit_kind or 'unknown'}",
         f"- slot: {entry.route_slot or 'none'}",
-        f"- provider/model: {entry.provider or 'parent-default'}/{entry.model or 'parent-default'}",
+        f"- target: {provider_model_label(entry.provider, entry.model)}",
         f"- topology: {entry.topology or 'background_single'}",
         f"- approval: {approval}",
         f"- reason: {reason}",

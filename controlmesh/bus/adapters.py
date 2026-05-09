@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from controlmesh.bus.envelope import DeliveryMode, Envelope, LockMode, Origin
 from controlmesh.messenger.address import ChatRef, TopicRef
+from controlmesh.provider_binding import provider_model_label
 
 if TYPE_CHECKING:
     from controlmesh.background.models import BackgroundResult
@@ -280,7 +281,7 @@ def _build_task_injection_prompt(result: TaskResult) -> str:
         return (
             f"[BACKGROUND TASK FAILED: task_id='{task_id}' name='{result.name}']\n"
             f"Error: {result.error}\n"
-            f"Provider: {result.provider}/{result.model} | "
+            f"Target: {provider_model_label(result.provider, result.model)} | "
             f"Duration: {result.elapsed_seconds:.0f}s\n\n"
             f"Original task: {result.original_prompt}\n\n"
             f"Inform the user that the background task '{result.name}' failed "
@@ -288,7 +289,7 @@ def _build_task_injection_prompt(result: TaskResult) -> str:
         )
     return (
         f"[BACKGROUND TASK COMPLETED: task_id='{task_id}' name='{result.name}']\n"
-        f"Provider: {result.provider}/{result.model} | "
+        f"Target: {provider_model_label(result.provider, result.model)} | "
         f"Duration: {result.elapsed_seconds:.0f}s\n\n"
         f"{result.result_text}\n\n"
         f"[END TASK RESULT]\n\n"

@@ -304,6 +304,53 @@ agent_slots:
 
         await hub.shutdown()
 
+    async def test_explicit_provider_binding_rejects_invalid_provider_token(
+        self,
+        registry: TaskRegistry,
+        tmp_path: Path,
+    ) -> None:
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=_make_cli_service(),
+            config=_make_config(),
+        )
+
+        submit = _submit(prompt="Run test command", name="Bad provider token")
+        submit.provider_override = "claude/gpt-5.5"
+
+        with pytest.raises(ValueError, match=r"^error:invalid_provider_token provider=claude/gpt-5.5$"):
+            hub.submit(submit)
+
+        await hub.shutdown()
+
+    async def test_explicit_provider_binding_rejects_cross_provider_model_mismatch(
+        self,
+        registry: TaskRegistry,
+        tmp_path: Path,
+    ) -> None:
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=_make_cli_service(),
+            config=_make_config(),
+        )
+
+        submit = _submit(prompt="Run test command", name="Bad model binding")
+        submit.provider_override = "claude"
+        submit.model_override = "gpt-5.5"
+
+        with pytest.raises(
+            ValueError,
+            match=(
+                r"^error:model_provider_mismatch "
+                r"provider=claude model=gpt-5\.5 inferred_provider=codex$"
+            ),
+        ):
+            hub.submit(submit)
+
+        await hub.shutdown()
+
     async def test_auto_route_records_activation_policy_in_route_reason(
         self,
         registry: TaskRegistry,
@@ -420,6 +467,35 @@ activation_policies:
         assert events[0].agent_slot
         assert events[0].success is True
         assert events[0].evidence_quality >= 0.55
+
+        await hub.shutdown()
+
+    async def test_worker_final_response_backfills_result_artifact_when_template_left_in_place(
+        self,
+        registry: TaskRegistry,
+        tmp_path: Path,
+    ) -> None:
+        cli = _make_cli_service("Complete architecture review from worker response.")
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=cli,
+            config=_make_config(),
+        )
+        delivered: list[TaskResult] = []
+        hub.set_result_handler("main", AsyncMock(side_effect=delivered.append))
+
+        task_id = hub.submit(_submit(prompt="Review memory architecture", name="Architecture review"))
+        await asyncio.sleep(0.1)
+
+        folder = registry.task_folder(task_id)
+        result_path = folder / "RESULT.md"
+        assert result_path.is_file()
+        assert "Complete architecture review from worker response." in result_path.read_text(
+            encoding="utf-8"
+        )
+        assert delivered
+        assert "Complete architecture review from worker response." in delivered[0].delivery_text
 
         await hub.shutdown()
 

@@ -374,6 +374,7 @@ def test_check_opencode_auth_env_key(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(_auth_mod, "which", lambda _name: "/usr/bin/opencode")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.setattr(_auth_mod, "_opencode_runnable_diagnostic", lambda: "")
 
     result = check_opencode_auth()
 
@@ -388,6 +389,7 @@ def test_check_opencode_auth_env_anthropic_auth_token(
 
     monkeypatch.setattr(_auth_mod, "which", lambda _name: "/usr/bin/opencode")
     monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "test-token")
+    monkeypatch.setattr(_auth_mod, "_opencode_runnable_diagnostic", lambda: "")
 
     result = check_opencode_auth()
 
@@ -400,6 +402,7 @@ def test_check_opencode_auth_config_file(tmp_path: Path, monkeypatch: pytest.Mon
 
     monkeypatch.setattr(_auth_mod, "which", lambda _name: "/usr/bin/opencode")
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(_auth_mod, "_opencode_runnable_diagnostic", lambda: "")
     for env_name in _auth_mod._OPENCODE_AUTH_ENV_KEYS:
         monkeypatch.delenv(env_name, raising=False)
     config_file = tmp_path / ".opencode.json"
@@ -420,6 +423,7 @@ def test_check_opencode_auth_config_file_env_anthropic_auth_token(
 
     monkeypatch.setattr(_auth_mod, "which", lambda _name: "/usr/bin/opencode")
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(_auth_mod, "_opencode_runnable_diagnostic", lambda: "")
     for env_name in _auth_mod._OPENCODE_AUTH_ENV_KEYS:
         monkeypatch.delenv(env_name, raising=False)
     config_file = tmp_path / ".opencode.json"
@@ -440,6 +444,7 @@ def test_check_opencode_auth_config_file_top_level_env_anthropic_auth_token(
 
     monkeypatch.setattr(_auth_mod, "which", lambda _name: "/usr/bin/opencode")
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(_auth_mod, "_opencode_runnable_diagnostic", lambda: "")
     for env_name in _auth_mod._OPENCODE_AUTH_ENV_KEYS:
         monkeypatch.delenv(env_name, raising=False)
     config_dir = tmp_path / ".config" / "opencode"
@@ -462,6 +467,7 @@ def test_check_opencode_auth_config_file_top_level_env_ignores_unrelated_xdg_ove
 
     monkeypatch.setattr(_auth_mod, "which", lambda _name: "/usr/bin/opencode")
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(_auth_mod, "_opencode_runnable_diagnostic", lambda: "")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg-override"))
     for env_name in _auth_mod._OPENCODE_AUTH_ENV_KEYS:
         monkeypatch.delenv(env_name, raising=False)
@@ -485,6 +491,7 @@ def test_check_opencode_auth_runtime_provider_with_auth_json(
 
     monkeypatch.setattr(_auth_mod, "which", lambda _name: "/usr/bin/opencode")
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(_auth_mod, "_opencode_runnable_diagnostic", lambda: "")
     for env_name in _auth_mod._OPENCODE_AUTH_ENV_KEYS:
         monkeypatch.delenv(env_name, raising=False)
     config_dir = tmp_path / ".config" / "opencode"
@@ -502,6 +509,26 @@ def test_check_opencode_auth_runtime_provider_with_auth_json(
     assert result.provider == "opencode"
     assert result.status == AuthStatus.AUTHENTICATED
     assert result.auth_file == auth_file
+
+
+def test_check_opencode_auth_downgrades_to_installed_when_no_runnable_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import controlmesh.cli.auth as _auth_mod
+
+    monkeypatch.setattr(_auth_mod, "which", lambda _name: "/usr/bin/opencode")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.setattr(
+        _auth_mod,
+        "_opencode_runnable_diagnostic",
+        lambda: "OpenCode is installed/configured, but no runnable runtime model passed preflight.",
+    )
+
+    result = check_opencode_auth()
+
+    assert result.provider == "opencode"
+    assert result.status == AuthStatus.INSTALLED
+    assert "no runnable runtime model passed preflight" in result.diagnostic
 
 
 def test_read_opencode_default_model_from_jsonc(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

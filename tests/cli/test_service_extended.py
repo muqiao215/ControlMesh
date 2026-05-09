@@ -124,10 +124,52 @@ def test_make_cli_with_provider_override(tmp_path: Path) -> None:
     assert call_args.provider == "codex"
 
 
+def test_resolve_provider_uses_provider_default_model_instead_of_global_default(tmp_path: Path) -> None:
+    svc = _make_service(tmp_path, default_model="gpt-5.5", provider="codex")
+    provider, model = svc.resolve_provider(
+        AgentRequest(prompt="test", provider_override="claude", chat_id=1)
+    )
+
+    assert provider == "claude"
+    assert model == "sonnet"
+
+
+def test_resolve_provider_rejects_invalid_provider_token(tmp_path: Path) -> None:
+    svc = _make_service(tmp_path)
+    try:
+        svc.resolve_provider(
+            AgentRequest(prompt="test", provider_override="claude/gpt-5.5", chat_id=1)
+        )
+    except ValueError as exc:
+        assert str(exc) == "error:invalid_provider_token provider=claude/gpt-5.5"
+    else:
+        raise AssertionError("expected ValueError")
+
+
+def test_resolve_provider_rejects_cross_provider_model_mismatch(tmp_path: Path) -> None:
+    svc = _make_service(tmp_path)
+    try:
+        svc.resolve_provider(
+            AgentRequest(
+                prompt="test",
+                provider_override="claude",
+                model_override="gpt-5.5",
+                chat_id=1,
+            )
+        )
+    except ValueError as exc:
+        assert (
+            str(exc)
+            == "error:model_provider_mismatch provider=claude model=gpt-5.5 inferred_provider=codex"
+        )
+    else:
+        raise AssertionError("expected ValueError")
+
+
 def test_resolve_provider_uses_live_opencode_discovery_for_empty_override(tmp_path: Path) -> None:
     svc = _make_service(tmp_path)
     with patch(
-        "controlmesh.cli.service.pick_opencode_runtime_model_sync",
+        "controlmesh.cli.service.resolve_opencode_runnable_model_sync",
         return_value="zhipuai/glm-5.1",
     ):
         provider, model = svc.resolve_provider(
@@ -140,11 +182,29 @@ def test_resolve_provider_uses_live_opencode_discovery_for_empty_override(tmp_pa
 
 def test_resolve_provider_errors_when_opencode_model_unresolved(tmp_path: Path) -> None:
     svc = _make_service(tmp_path)
-    with patch("controlmesh.cli.service.pick_opencode_runtime_model_sync", return_value=""):
+    with patch("controlmesh.cli.service.resolve_opencode_runnable_model_sync", return_value=""):
         try:
             svc.resolve_provider(AgentRequest(prompt="test", provider_override="opencode", chat_id=1))
         except ValueError as exc:
             assert str(exc) == "error:opencode_default_model_unresolved"
+        else:
+            raise AssertionError("expected ValueError")
+
+
+def test_resolve_provider_errors_when_explicit_opencode_model_is_unrunnable(tmp_path: Path) -> None:
+    svc = _make_service(tmp_path)
+    with patch("controlmesh.cli.service.probe_opencode_model_sync", return_value=False):
+        try:
+            svc.resolve_provider(
+                AgentRequest(
+                    prompt="test",
+                    provider_override="opencode",
+                    model_override="openai/gpt-4.1",
+                    chat_id=1,
+                )
+            )
+        except ValueError as exc:
+            assert str(exc) == "error:opencode_model_unrunnable model=openai/gpt-4.1"
         else:
             raise AssertionError("expected ValueError")
 

@@ -13,6 +13,8 @@ from controlmesh.infra.platform import CREATION_FLAGS as _CREATION_FLAGS
 logger = logging.getLogger(__name__)
 
 DISCOVERY_TIMEOUT = 10.0
+PROBE_TIMEOUT = 15.0
+_PROBE_PROMPT = "Reply with exactly PONG."
 
 
 async def discover_opencode_models(*, deadline: float = DISCOVERY_TIMEOUT) -> tuple[str, ...]:
@@ -129,6 +131,59 @@ def pick_opencode_runtime_model_sync(*, deadline: float = DISCOVERY_TIMEOUT) -> 
 
     discovered = discover_opencode_models_sync(deadline=deadline)
     return discovered[0] if discovered else ""
+
+
+def probe_opencode_model_sync(model: str, *, deadline: float = PROBE_TIMEOUT) -> bool:
+    """Return True when OpenCode can run a minimal prompt with *model*."""
+    normalized = model.strip()
+    opencode_path = which("opencode")
+    if not opencode_path or not normalized:
+        return False
+
+    cmd = [opencode_path, "run", "--format", "json", "--model", normalized, _PROBE_PROMPT]
+    try:
+        result = subprocess.run(
+            cmd,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=deadline,
+            creationflags=_CREATION_FLAGS,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        logger.warning("OpenCode probe failed model=%s", normalized, exc_info=True)
+        return False
+
+    if result.returncode not in (0, None):
+        logger.warning(
+            "OpenCode probe exited rc=%s model=%s detail=%s",
+            result.returncode,
+            normalized,
+            (result.stderr or "").strip()[:500],
+        )
+        return False
+
+    output = (result.stdout or "").strip()
+    return "PONG" in output
+
+
+def resolve_opencode_runnable_model_sync(*, deadline: float = DISCOVERY_TIMEOUT) -> str:
+    """Return the first runtime-backed OpenCode model that passes a minimal probe."""
+    configured = read_opencode_default_model().strip()
+    candidates: list[str] = []
+    if configured:
+        candidates.append(configured)
+    candidates.extend(discover_opencode_models_sync(deadline=deadline))
+
+    seen: set[str] = set()
+    for model in candidates:
+        normalized = model.strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        if probe_opencode_model_sync(normalized):
+            return normalized
+    return ""
 
 
 def _parse_models(raw: str) -> tuple[str, ...]:

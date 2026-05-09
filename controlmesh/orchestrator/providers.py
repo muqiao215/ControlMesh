@@ -18,6 +18,11 @@ from controlmesh.orchestrator.selectors.capability_registry import (
     CapabilityRegistry,
     default_capability_registry,
 )
+from controlmesh.provider_binding import (
+    normalize_provider_name,
+    provider_model_label,
+    validate_provider_model_binding,
+)
 
 if TYPE_CHECKING:
     from controlmesh.cli.auth import AuthResult, AuthStatus
@@ -29,7 +34,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _EXPLICIT_RUNTIME_PROVIDERS = frozenset({"openai_agents", "claw", "opencode"})
-_PROVIDER_NAME_ALIASES = {"claw-code": "claw"}
 _PROVIDER_DISPLAY_NAMES = {
     "claude": "Claude Code",
     "codex": "Codex",
@@ -58,12 +62,6 @@ class ProviderAvailability:
     provider: str
     status: str
     diagnostic: str = ""
-
-
-def normalize_provider_name(provider: str | None) -> str:
-    """Normalize external provider aliases to internal provider IDs."""
-    normalized = (provider or "").strip().lower()
-    return _PROVIDER_NAME_ALIASES.get(normalized, normalized)
 
 
 def provider_display_name(provider: str | None) -> str:
@@ -202,8 +200,19 @@ class ProviderManager:
         if self._config.provider in _EXPLICIT_RUNTIME_PROVIDERS and (
             requested_model is None or requested_model == self._config.model
         ):
-            return model_name, self._config.provider
-        return model_name, self._models.provider_for(model_name)
+            provider_name, model_name = validate_provider_model_binding(
+                self._config.provider,
+                model_name,
+                model_provider_resolver=self._models.provider_for,
+            )
+            return model_name, provider_name
+        provider_name = self._models.provider_for(model_name)
+        provider_name, model_name = validate_provider_model_binding(
+            provider_name,
+            model_name,
+            model_provider_resolver=self._models.provider_for,
+        )
+        return model_name, provider_name
 
     def is_known_model(self, candidate: str) -> bool:
         """Return True if *candidate* is a recognized model ID for any provider."""
@@ -233,9 +242,9 @@ class ProviderManager:
         if provider == "opencode":
             if self._config.provider == "opencode":
                 return self._config.model
-            from controlmesh.cli.opencode_discovery import pick_opencode_runtime_model_sync
+            from controlmesh.cli.opencode_discovery import resolve_opencode_runnable_model_sync
 
-            return pick_opencode_runtime_model_sync()
+            return resolve_opencode_runnable_model_sync()
         if provider in _EXPLICIT_RUNTIME_DEFAULT_MODELS:
             return (
                 self._config.model

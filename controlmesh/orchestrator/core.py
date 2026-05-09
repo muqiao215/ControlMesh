@@ -73,6 +73,7 @@ from controlmesh.orchestrator.hooks import (
 )
 from controlmesh.orchestrator.observers import ObserverManager
 from controlmesh.orchestrator.providers import ProviderManager
+from controlmesh.provider_binding import provider_model_label
 from controlmesh.orchestrator.registry import CommandRegistry, OrchestratorResult
 from controlmesh.orchestrator.selectors.agent_router import RouteDecisionKind, decide_backend_route
 from controlmesh.routing.activation import (
@@ -610,9 +611,7 @@ class Orchestrator:
         prompt_text: str,
         directives: ParsedDirectives,
     ) -> OrchestratorResult | None:
-        """Auto-submit policy-required background tasks from ordinary chat."""
-        if self._task_hub is None:
-            return None
+        """Surface policy-suggested background routes without auto-dispatching."""
         if directives.has_model or directives.raw_directives:
             return None
 
@@ -644,42 +643,24 @@ class Orchestrator:
         if decision is None:
             return OrchestratorResult(
                 text=(
-                    "Matched activation policy but no eligible background route was available.\n"
+                    "Matched activation policy suggestion but no eligible background route was available.\n"
                     f"- policy: {activation_intent.matched_policy}\n"
                     f"- workunit: {workunit_kind.value}\n"
                     "- next step: run it explicitly in foreground, for example with @sonnet <request>"
                 )
             )
 
-        submit = TaskSubmit(
-            chat_id=dispatch.key.chat_id,
-            prompt=prompt_text,
-            message_id=dispatch.message_id,
-            thread_id=dispatch.key.topic_id,
-            parent_agent="main",
-            transport=dispatch.key.transport,
-            name=self._activation_task_name(workunit_kind.value, prompt_text),
-            route="auto",
-            workunit_kind=workunit_kind.value,
-            topology=decision.topology,
-            evaluator="foreground" if activation_intent.requires_foreground_approval else "",
-        )
-        try:
-            task_id = self._task_hub.submit(submit)
-        except (RuntimeError, ValueError) as exc:
-            return OrchestratorResult(text=f"Background delegation blocked: {exc}")
-
         approval = "foreground required" if activation_intent.requires_foreground_approval else "none"
         lines = [
-            "Delegated to background by activation policy.",
+            "Activation policy suggests a background candidate.",
             f"- policy: {activation_intent.matched_policy}",
             f"- workunit: {workunit_kind.value}",
             f"- slot: {decision.slot_name}",
-            f"- provider/model: {decision.provider}/{decision.model}",
+            f"- target: {provider_model_label(decision.provider, decision.model)}",
             f"- topology: {decision.topology or 'background_single'}",
             f"- approval: {approval}",
-            f"- task: {task_id}",
-            "- results: completion or approval follow-ups will return here",
+            "- dispatch: blocked until foreground agent explicitly submits a task",
+            "- next step: decide in foreground whether to delegate or keep it frontstage",
         ]
         return OrchestratorResult(text="\n".join(lines))
 

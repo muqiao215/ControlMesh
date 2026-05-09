@@ -9,6 +9,7 @@ import pytest
 
 from controlmesh.config import AgentConfig, reset_gemini_models, set_gemini_models
 from controlmesh.orchestrator.providers import ProviderManager
+from controlmesh.provider_binding import provider_model_label, validate_provider_model_binding
 
 
 @pytest.fixture(autouse=True)
@@ -227,14 +228,17 @@ class TestDefaultModelForProvider:
     def test_opencode_when_not_active_provider(self) -> None:
         pm = _pm(model="gpt-5.4", provider="codex")
         with patch(
-            "controlmesh.cli.opencode_discovery.pick_opencode_runtime_model_sync",
+            "controlmesh.cli.opencode_discovery.resolve_opencode_runnable_model_sync",
             return_value="zhipuai/glm-5.1",
         ):
             assert pm.default_model_for_provider("opencode") == "zhipuai/glm-5.1"
 
     def test_opencode_when_not_active_provider_falls_back_when_config_missing(self) -> None:
         pm = _pm(model="gpt-5.4", provider="codex")
-        with patch("controlmesh.cli.opencode_discovery.pick_opencode_runtime_model_sync", return_value=""):
+        with patch(
+            "controlmesh.cli.opencode_discovery.resolve_opencode_runnable_model_sync",
+            return_value="",
+        ):
             assert pm.default_model_for_provider("opencode") == ""
 
     def test_unknown_provider(self) -> None:
@@ -368,3 +372,31 @@ class TestOnGeminiModelsRefresh:
         pm._gemini_api_key_mode = True
         pm.on_gemini_models_refresh(("gemini-2.5-pro",))
         assert pm._gemini_api_key_mode is None
+
+
+class TestProviderBindingHelpers:
+    def test_provider_model_label_renders_defaults(self) -> None:
+        assert provider_model_label("", "") == "parent-default / parent-default"
+
+    def test_validate_binding_normalizes_provider_alias(self) -> None:
+        provider, model = validate_provider_model_binding("claw-code", "")
+        assert provider == "claw"
+        assert model == "sonnet"
+
+    def test_validate_binding_rejects_provider_token_with_slash(self) -> None:
+        with pytest.raises(ValueError, match=r"^error:invalid_provider_token provider=claude/opus$"):
+            validate_provider_model_binding("claude/opus", "")
+
+    def test_validate_binding_rejects_codex_model_on_claude_provider(self) -> None:
+        with pytest.raises(
+            ValueError,
+            match=(
+                r"^error:model_provider_mismatch "
+                r"provider=claude model=gpt-5\.5 inferred_provider=codex$"
+            ),
+        ):
+            validate_provider_model_binding(
+                "claude",
+                "gpt-5.5",
+                model_provider_resolver=ProviderManager(AgentConfig()).models.provider_for,
+            )

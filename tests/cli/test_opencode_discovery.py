@@ -11,6 +11,8 @@ from controlmesh.cli.opencode_discovery import (
     discover_opencode_models,
     discover_opencode_models_sync,
     pick_opencode_runtime_model_sync,
+    probe_opencode_model_sync,
+    resolve_opencode_runnable_model_sync,
 )
 
 
@@ -136,5 +138,50 @@ def test_pick_opencode_runtime_model_sync_falls_back_to_live_discovery() -> None
         ),
     ):
         model = pick_opencode_runtime_model_sync()
+
+    assert model == "zhipuai/glm-5.1"
+
+
+def test_probe_opencode_model_sync_returns_true_on_pong() -> None:
+    result = subprocess.CompletedProcess(
+        args=["opencode", "run"],
+        returncode=0,
+        stdout='{"type":"item.completed","item":{"type":"agent_message","text":"PONG"}}\n',
+        stderr="",
+    )
+    with (
+        patch("controlmesh.cli.opencode_discovery.which", return_value="/usr/bin/opencode"),
+        patch("controlmesh.cli.opencode_discovery.subprocess.run", return_value=result),
+    ):
+        assert probe_opencode_model_sync("zhipuai/glm-5.1") is True
+
+
+def test_probe_opencode_model_sync_returns_false_on_failure() -> None:
+    result = subprocess.CompletedProcess(
+        args=["opencode", "run"],
+        returncode=1,
+        stdout="",
+        stderr="bad model",
+    )
+    with (
+        patch("controlmesh.cli.opencode_discovery.which", return_value="/usr/bin/opencode"),
+        patch("controlmesh.cli.opencode_discovery.subprocess.run", return_value=result),
+    ):
+        assert probe_opencode_model_sync("openai/gpt-4.1") is False
+
+
+def test_resolve_opencode_runnable_model_sync_prefers_first_probeable_candidate() -> None:
+    with (
+        patch("controlmesh.cli.opencode_discovery.read_opencode_default_model", return_value="openai/gpt-4.1"),
+        patch(
+            "controlmesh.cli.opencode_discovery.discover_opencode_models_sync",
+            return_value=("openai/gpt-4.1", "zhipuai/glm-5.1"),
+        ),
+        patch(
+            "controlmesh.cli.opencode_discovery.probe_opencode_model_sync",
+            side_effect=lambda model: model == "zhipuai/glm-5.1",
+        ),
+    ):
+        model = resolve_opencode_runnable_model_sync()
 
     assert model == "zhipuai/glm-5.1"
