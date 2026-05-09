@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from controlmesh.cli.auth import (
     AuthResult,
     AuthStatus,
+    _missing_runtime_env_diagnostic,
     check_claude_auth,
     check_claw_auth,
     check_codex_auth,
@@ -125,6 +126,37 @@ def test_check_claude_auth_env_key_empty_ignored(
     _patch_claude_cli_fallback(monkeypatch)
     result = check_claude_auth()
     assert result.status == AuthStatus.NOT_FOUND
+
+
+def test_missing_runtime_env_diagnostic_when_dotenv_not_loaded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    controlmesh_home = tmp_path / ".controlmesh"
+    controlmesh_home.mkdir()
+    (controlmesh_home / ".env").write_text("ANTHROPIC_AUTH_TOKEN=test-token\n", encoding="utf-8")
+    monkeypatch.delenv("CONTROLMESH_HOME", raising=False)
+    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+
+    diagnostic = _missing_runtime_env_diagnostic("opencode", {"ANTHROPIC_AUTH_TOKEN"})
+
+    assert "missing from the current process environment" in diagnostic
+    assert str(controlmesh_home / ".env") in diagnostic
+
+
+def test_missing_runtime_env_diagnostic_empty_when_env_loaded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    controlmesh_home = tmp_path / ".controlmesh"
+    controlmesh_home.mkdir()
+    (controlmesh_home / ".env").write_text("ANTHROPIC_AUTH_TOKEN=test-token\n", encoding="utf-8")
+    monkeypatch.delenv("CONTROLMESH_HOME", raising=False)
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "test-token")
+
+    diagnostic = _missing_runtime_env_diagnostic("opencode", {"ANTHROPIC_AUTH_TOKEN"})
+
+    assert diagnostic == ""
 
 
 def test_check_claude_auth_cli_fallback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

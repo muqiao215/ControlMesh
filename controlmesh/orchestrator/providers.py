@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from controlmesh.config import (
@@ -50,6 +51,15 @@ _EXPLICIT_RUNTIME_DEFAULT_MODELS = {
 }
 
 
+@dataclass(frozen=True, slots=True)
+class ProviderAvailability:
+    """User-facing provider availability snapshot."""
+
+    provider: str
+    status: str
+    diagnostic: str = ""
+
+
 def normalize_provider_name(provider: str | None) -> str:
     """Normalize external provider aliases to internal provider IDs."""
     normalized = (provider or "").strip().lower()
@@ -85,6 +95,7 @@ class ProviderManager:
         self._capabilities = default_capability_registry()
         self._known_model_ids: frozenset[str] = frozenset()
         self._available_providers: frozenset[str] = frozenset()
+        self._provider_availability: dict[str, ProviderAvailability] = {}
         self._gemini_api_key_mode: bool | None = None
         self._codex_cache_fn = codex_cache_fn
         self.refresh_known_model_ids()
@@ -105,6 +116,11 @@ class ProviderManager:
     def available_providers(self) -> frozenset[str]:
         """The set of authenticated provider names."""
         return self._available_providers
+
+    @property
+    def provider_availability(self) -> dict[str, ProviderAvailability]:
+        """Return the latest provider auth/install availability snapshot."""
+        return dict(self._provider_availability)
 
     @property
     def gemini_api_key_mode(self) -> bool:
@@ -134,17 +150,28 @@ class ProviderManager:
         authenticated = auth_status_enum.AUTHENTICATED
         installed = auth_status_enum.INSTALLED
 
+        availability: dict[str, ProviderAvailability] = {}
         for provider, result in auth_results.items():
             if result.status == authenticated:
                 logger.info("Provider [%s]: authenticated", provider)
+                availability[provider] = ProviderAvailability(provider, "authenticated")
             elif result.status == installed:
                 logger.warning("Provider [%s]: installed but NOT authenticated", provider)
+                if result.diagnostic:
+                    logger.warning("Provider [%s] diagnostic: %s", provider, result.diagnostic)
+                availability[provider] = ProviderAvailability(
+                    provider,
+                    "installed",
+                    diagnostic=result.diagnostic,
+                )
             else:
                 logger.info("Provider [%s]: not found", provider)
+                availability[provider] = ProviderAvailability(provider, "not_found")
 
         self._available_providers = frozenset(
             name for name, res in auth_results.items() if res.is_authenticated
         )
+        self._provider_availability = availability
         cli_service.update_available_providers(self._available_providers)
 
     def init_gemini_state(self, paths_workspace: object) -> None:

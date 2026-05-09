@@ -28,6 +28,7 @@ _AUTHED_CODEX = AuthResult("codex", AuthStatus.AUTHENTICATED)
 _AUTHED_GEMINI = AuthResult("gemini", AuthStatus.AUTHENTICATED)
 _AUTHED_CLAW = AuthResult("claw", AuthStatus.AUTHENTICATED)
 _AUTHED_OPENCODE = AuthResult("opencode", AuthStatus.AUTHENTICATED)
+_INSTALLED_OPENCODE = AuthResult("opencode", AuthStatus.INSTALLED)
 _NOT_FOUND_CLAUDE = AuthResult("claude", AuthStatus.NOT_FOUND)
 _NOT_FOUND_CODEX = AuthResult("codex", AuthStatus.NOT_FOUND)
 _NOT_FOUND_GEMINI = AuthResult("gemini", AuthStatus.NOT_FOUND)
@@ -232,6 +233,44 @@ async def test_start_runtime_providers_get_their_own_row(orch: Orchestrator) -> 
     labels = [btn.text for row in resp.buttons.rows for btn in row]
     assert "CLAW-CODE" in labels
     assert "OPENCODE" in labels
+
+
+async def test_start_shows_installed_provider_in_disabled_state(orch: Orchestrator) -> None:
+    with _patch_auth(
+        {
+            "claude": _AUTHED_CLAUDE,
+            "codex": _AUTHED_CODEX,
+            "gemini": _NOT_FOUND_GEMINI,
+            "claw": _NOT_FOUND_CLAW,
+            "opencode": _INSTALLED_OPENCODE,
+        }
+    ):
+        resp = await model_selector_start(orch, SessionKey(chat_id=1))
+    assert resp.buttons is not None
+    labels = [btn.text for row in resp.buttons.rows for btn in row]
+    assert "OPENCODE (AUTH)" in labels
+    assert "Installed but unavailable: OpenCode: auth missing." in resp.text
+
+
+async def test_start_no_auth_includes_installed_provider_hint(orch: Orchestrator) -> None:
+    installed = AuthResult(
+        "opencode",
+        AuthStatus.INSTALLED,
+        diagnostic="opencode auth keys exist in /tmp/.controlmesh/.env but are missing.",
+    )
+    with _patch_auth(
+        {
+            "claude": _NOT_FOUND_CLAUDE,
+            "codex": _NOT_FOUND_CODEX,
+            "gemini": _NOT_FOUND_GEMINI,
+            "claw": _NOT_FOUND_CLAW,
+            "opencode": installed,
+        }
+    ):
+        resp = await model_selector_start(orch, SessionKey(chat_id=1))
+    assert "No authenticated providers" in resp.text
+    assert "Installed but unavailable: OpenCode: auth missing." in resp.text
+    assert "missing." in resp.text
 
 
 # -- handle_model_callback: provider selection --

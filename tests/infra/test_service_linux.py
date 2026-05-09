@@ -34,6 +34,11 @@ class TestGenerateServiceUnit:
         assert "[Unit]" in unit
         assert "[Install]" in unit
 
+    def test_includes_controlmesh_env_file(self, tmp_path: Path) -> None:
+        with patch("controlmesh.infra.service_linux.Path.home", return_value=tmp_path):
+            unit = _generate_service_unit("controlmesh")
+        assert f"EnvironmentFile=-{tmp_path}/.controlmesh/.env" in unit
+
     def test_does_not_install_legacy_alias(self) -> None:
         unit = _generate_service_unit("controlmesh")
         assert "Alias=" not in unit

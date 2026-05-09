@@ -67,6 +67,7 @@ def _run_systemctl(*args: str, user: bool = True) -> subprocess.CompletedProcess
 def _generate_service_unit(binary_path: str) -> str:
     """Generate the systemd service unit file content."""
     home = Path.home()
+    env_file = home / ".controlmesh" / ".env"
     path_dirs = [
         str(home / ".local" / "bin"),
         "/usr/local/bin",
@@ -95,6 +96,7 @@ RestartSec=5
 Environment=PATH={path_value}
 Environment=HOME={home}
 Environment=CONTROLMESH_SUPERVISOR=1
+EnvironmentFile=-{env_file}
 
 [Install]
 WantedBy=default.target

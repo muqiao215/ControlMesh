@@ -79,6 +79,7 @@ class AuthResult:
     status: AuthStatus
     auth_file: Path | None = None
     auth_age: datetime | None = None
+    diagnostic: str = ""
 
     @property
     def is_authenticated(self) -> bool:
@@ -257,11 +258,19 @@ def check_opencode_auth() -> AuthResult:
             installed_config = config_file
             installed_age = datetime.fromtimestamp(config_file.stat().st_mtime, tz=UTC)
     if installed_config is not None:
-        result = AuthResult("opencode", AuthStatus.INSTALLED, installed_config, installed_age)
+        diagnostic = _missing_runtime_env_diagnostic("opencode", _OPENCODE_AUTH_ENV_KEYS)
+        result = AuthResult(
+            "opencode",
+            AuthStatus.INSTALLED,
+            installed_config,
+            installed_age,
+            diagnostic=diagnostic,
+        )
         logger.debug("Auth check provider=%s status=%s", result.provider, result.status)
         return result
 
-    result = AuthResult("opencode", AuthStatus.INSTALLED)
+    diagnostic = _missing_runtime_env_diagnostic("opencode", _OPENCODE_AUTH_ENV_KEYS)
+    result = AuthResult("opencode", AuthStatus.INSTALLED, diagnostic=diagnostic)
     logger.debug("Auth check provider=%s status=%s", result.provider, result.status)
     return result
 
@@ -453,6 +462,22 @@ def _has_nonempty_env(name: str) -> bool:
     return bool(_normalize_key_like_value(os.environ.get(name, "")))
 
 
+def _missing_runtime_env_diagnostic(provider: str, keys: set[str] | frozenset[str]) -> str:
+    """Describe when ``~/.controlmesh/.env`` has provider auth keys but process env does not."""
+    controlmesh_env = _controlmesh_env_path()
+    dotenv_keys = _read_dotenv_keys_generic(controlmesh_env)
+    present_in_dotenv = sorted(key for key in keys if key in dotenv_keys)
+    present_in_env = sorted(key for key in keys if _has_nonempty_env(key))
+    if not present_in_dotenv or present_in_env:
+        return ""
+    joined = ", ".join(present_in_dotenv)
+    return (
+        f"{provider} auth keys exist in {controlmesh_env} but are missing from the current process "
+        f"environment: {joined}. If ControlMesh runs as a service, make sure the service loads that "
+        "env file."
+    )
+
+
 def _is_nonempty_file(path: Path) -> bool:
     return path.is_file() and path.stat().st_size > 0
 
@@ -545,6 +570,31 @@ def _read_dotenv_keys(path: Path) -> set[str]:
     return found
 
 
+def _read_dotenv_keys_generic(path: Path) -> set[str]:
+    """Return all non-empty dotenv keys in *path*."""
+    if not path.is_file():
+        return set()
+    found: set[str] = set()
+    try:
+        for raw_line in path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("export "):
+                line = line.removeprefix("export ").strip()
+            key, separator, value = line.partition("=")
+            if separator != "=":
+                continue
+            key = key.strip()
+            if not key:
+                continue
+            if _normalize_dotenv_value(value):
+                found.add(key)
+    except OSError:
+        return set()
+    return found
+
+
 def _normalize_dotenv_value(raw: str) -> str:
     value = raw.strip()
     if not value:
@@ -620,6 +670,12 @@ def _controlmesh_config_path() -> Path:
     from controlmesh.workspace.paths import resolve_paths
 
     return resolve_paths().config_path
+
+
+def _controlmesh_env_path() -> Path:
+    from controlmesh.workspace.paths import resolve_paths
+
+    return resolve_paths().env_file
 
 
 def _has_active_google_account(accounts_file: Path) -> bool:

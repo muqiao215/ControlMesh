@@ -294,6 +294,29 @@ class TestApplyAuthResults:
         )
         assert pm.available_providers == frozenset({"claude", "codex", "gemini"})
 
+    def test_records_installed_provider_diagnostic(self) -> None:
+        pm = _pm()
+        cli_service = MagicMock()
+
+        auth_status = MagicMock()
+        auth_status.AUTHENTICATED = "auth"
+        auth_status.INSTALLED = "inst"
+
+        result_opencode = MagicMock()
+        result_opencode.status = "inst"
+        result_opencode.is_authenticated = False
+        result_opencode.diagnostic = "env file exists but service did not load it"
+
+        pm.apply_auth_results(
+            {"opencode": result_opencode},
+            auth_status_enum=auth_status,
+            cli_service=cli_service,
+        )
+
+        snapshot = pm.provider_availability
+        assert snapshot["opencode"].status == "installed"
+        assert snapshot["opencode"].diagnostic == "env file exists but service did not load it"
+
 
 # ---------------------------------------------------------------------------
 # active_provider_name

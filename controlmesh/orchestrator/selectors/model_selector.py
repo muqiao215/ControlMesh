@@ -7,7 +7,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from controlmesh.cli.auth import AuthStatus, check_all_auth
+from controlmesh.cli.auth import AuthResult, AuthStatus, check_all_auth
 from controlmesh.config import CLAUDE_MODELS_ORDERED, get_gemini_models, update_config_file_async
 from controlmesh.i18n import t
 from controlmesh.multiagent.registry import update_agent_fields
@@ -44,6 +44,10 @@ _RUNTIME_PROVIDER_BUTTONS: tuple[tuple[str, str], ...] = (
     ("opencode", "OPENCODE"),
 )
 _RESET_ON_PROVIDER_SWITCH: frozenset[str] = frozenset({"claw", "opencode"})
+_ALL_PROVIDER_BUTTONS: tuple[tuple[str, str], ...] = (
+    *_CORE_PROVIDER_BUTTONS,
+    *_RUNTIME_PROVIDER_BUTTONS,
+)
 
 
 @dataclass(frozen=True)
@@ -145,6 +149,36 @@ def is_model_selector_callback(data: str) -> bool:
     return data.startswith(MS_PREFIX)
 
 
+def _provider_buttons(
+    entries: tuple[tuple[str, str], ...],
+    authed: set[str],
+    installed: set[str],
+) -> list[Button]:
+    buttons: list[Button] = []
+    for provider, label in entries:
+        if provider in authed:
+            buttons.append(Button(text=label, callback_data=f"ms:p:{provider}"))
+        elif provider in installed:
+            buttons.append(Button(text=f"{label} (AUTH)", callback_data=f"ms:b:{provider}"))
+    return buttons
+
+
+def _format_installed_provider_hint(auth: dict[str, AuthResult]) -> str:
+    installed_entries = [
+        res
+        for res in auth.values()
+        if res.status == AuthStatus.INSTALLED and res.provider in dict(_ALL_PROVIDER_BUTTONS)
+    ]
+    if not installed_entries:
+        return ""
+    parts = [f"{provider_display_name(res.provider)}: auth missing" for res in installed_entries]
+    diagnostics = [res.diagnostic for res in installed_entries if res.diagnostic]
+    text = "Installed but unavailable: " + "; ".join(parts) + "."
+    if diagnostics:
+        text += "\n" + diagnostics[0]
+    return text
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -161,15 +195,21 @@ async def model_selector_start(
     """
     auth = await asyncio.to_thread(check_all_auth)
     authed = [name for name, res in auth.items() if res.status == AuthStatus.AUTHENTICATED]
+    installed = [name for name, res in auth.items() if res.status == AuthStatus.INSTALLED]
 
     header = await _status_line(orch, key)
 
     if not authed:
+        installed_hint = _format_installed_provider_hint(auth)
+        if installed_hint:
+            return SelectorResponse(
+                text=f"{header}\n\n{t('model.no_auth')}\n\n{installed_hint}",
+            )
         return SelectorResponse(
             text=f"{header}\n\n{t('model.no_auth')}",
         )
 
-    if len(authed) == 1:
+    if len(authed) == 1 and not installed:
         provider = authed[0]
         codex_cache = (
             orch._observers.codex_cache_obs.get_cache() if orch._observers.codex_cache_obs else None
@@ -177,24 +217,21 @@ async def model_selector_start(
         return await _build_model_step(orch, key, provider, header, codex_cache)
 
     authed_set = set(authed)
+    installed_set = set(installed)
     rows: list[list[Button]] = []
-    core_buttons = [
-        Button(text=label, callback_data=f"ms:p:{provider}")
-        for provider, label in _CORE_PROVIDER_BUTTONS
-        if provider in authed_set
-    ]
+    core_buttons = _provider_buttons(_CORE_PROVIDER_BUTTONS, authed_set, installed_set)
     if core_buttons:
         rows.append(core_buttons)
-    runtime_buttons = [
-        Button(text=label, callback_data=f"ms:p:{provider}")
-        for provider, label in _RUNTIME_PROVIDER_BUTTONS
-        if provider in authed_set
-    ]
+    runtime_buttons = _provider_buttons(_RUNTIME_PROVIDER_BUTTONS, authed_set, installed_set)
     if runtime_buttons:
         rows.append(runtime_buttons)
 
     keyboard = ButtonGrid(rows=rows)
-    return SelectorResponse(text=f"{header}\n\n{t('model.pick_provider')}", buttons=keyboard)
+    text = f"{header}\n\n{t('model.pick_provider')}"
+    installed_hint = _format_installed_provider_hint(auth)
+    if installed_hint:
+        text += f"\n\n{installed_hint}"
+    return SelectorResponse(text=text, buttons=keyboard)
 
 
 async def handle_model_callback(
