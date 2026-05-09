@@ -17,6 +17,7 @@ from controlmesh.background import BackgroundObserver, BackgroundResult
 
 if TYPE_CHECKING:
     from controlmesh.bus.bus import MessageBus
+    from controlmesh.tasks.hub import TaskHub
 from controlmesh.cleanup import CleanupObserver
 from controlmesh.cli.codex_cache import CodexModelCache
 from controlmesh.cli.codex_cache_observer import CodexCacheObserver
@@ -228,3 +229,8 @@ class ObserverManager:
             self.webhook.set_result_handler(_on_webhook)
             if wake_handler:
                 self.webhook.set_wake_handler(wake_handler)
+
+    def set_task_hub(self, hub: TaskHub) -> None:
+        """Wire TaskHub-backed webhook task creation when available."""
+        if self.webhook:
+            self.webhook.set_task_hub(hub)

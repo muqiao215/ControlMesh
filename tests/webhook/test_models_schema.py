@@ -23,6 +23,12 @@ def test_webhook_entry_new_fields_defaults() -> None:
     assert entry.model is None
     assert entry.reasoning_effort is None
     assert entry.cli_parameters == []
+    assert entry.task_name is None
+    assert entry.parent_agent is None
+    assert entry.task_transport is None
+    assert entry.workunit_kind is None
+    assert entry.topology is None
+    assert entry.route is None
 
 
 def test_webhook_entry_new_fields_with_values() -> None:
@@ -65,6 +71,12 @@ def test_webhook_entry_to_dict_includes_new_fields() -> None:
     assert data["model"] == "gpt-5.2-codex"
     assert data["reasoning_effort"] == "high"
     assert data["cli_parameters"] == ["--fast"]
+    assert data["task_name"] is None
+    assert data["parent_agent"] is None
+    assert data["task_transport"] is None
+    assert data["workunit_kind"] is None
+    assert data["topology"] is None
+    assert data["route"] is None
 
 
 def test_webhook_entry_to_dict_with_none_values() -> None:
@@ -88,6 +100,18 @@ def test_webhook_entry_to_dict_with_none_values() -> None:
     assert data["reasoning_effort"] is None
     assert "cli_parameters" in data
     assert data["cli_parameters"] == []
+    assert "task_name" in data
+    assert data["task_name"] is None
+    assert "parent_agent" in data
+    assert data["parent_agent"] is None
+    assert "task_transport" in data
+    assert data["task_transport"] is None
+    assert "workunit_kind" in data
+    assert data["workunit_kind"] is None
+    assert "topology" in data
+    assert data["topology"] is None
+    assert "route" in data
+    assert data["route"] is None
 
 
 def test_webhook_entry_from_dict_with_new_fields() -> None:
@@ -157,6 +181,35 @@ def test_webhook_entry_round_trip_serialization() -> None:
     assert restored.model == original.model
     assert restored.reasoning_effort == original.reasoning_effort
     assert restored.cli_parameters == original.cli_parameters
+
+
+def test_webhook_entry_task_mode_fields_round_trip() -> None:
+    original = WebhookEntry(
+        id="task-hook",
+        title="GitHub CI failed",
+        description="Dispatch a background task",
+        mode="task",
+        prompt_template="repo={{repo}}",
+        task_name="CI failure triage",
+        parent_agent="main",
+        task_transport="telegram",
+        provider="codex",
+        model="gpt-5.5",
+        reasoning_effort="high",
+        workunit_kind="test_execution",
+        topology="pipeline",
+        route="auto",
+    )
+
+    restored = WebhookEntry.from_dict(original.to_dict())
+
+    assert restored.mode == "task"
+    assert restored.task_name == "CI failure triage"
+    assert restored.parent_agent == "main"
+    assert restored.task_transport == "telegram"
+    assert restored.workunit_kind == "test_execution"
+    assert restored.topology == "pipeline"
+    assert restored.route == "auto"
 
 
 def test_webhook_entry_json_round_trip(tmp_path: Path) -> None:

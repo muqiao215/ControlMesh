@@ -12,6 +12,7 @@ from controlmesh.cli.param_resolver import TaskOverrides
 from controlmesh.infra.base_task_observer import BaseTaskObserver
 from controlmesh.infra.file_watcher import FileWatcher
 from controlmesh.infra.task_runner import execute_in_task_folder
+from controlmesh.tasks.models import TaskSubmit
 from controlmesh.utils.quiet_hours import check_quiet_hour
 from controlmesh.webhook.models import WebhookResult, render_template
 from controlmesh.webhook.server import WebhookServer
@@ -19,6 +20,7 @@ from controlmesh.webhook.server import WebhookServer
 if TYPE_CHECKING:
     from controlmesh.cli.codex_cache import CodexModelCache
     from controlmesh.config import AgentConfig
+    from controlmesh.tasks.hub import TaskHub
     from controlmesh.webhook.manager import WebhookManager
     from controlmesh.workspace.paths import ControlMeshPaths
 
@@ -54,6 +56,7 @@ class WebhookObserver(BaseTaskObserver):
         self._server: WebhookServer | None = None
         self._on_result: WebhookResultCallback | None = None
         self._handle_wake: WakeHandler | None = None
+        self._task_hub: TaskHub | None = None
         self._running = False
         self._watcher = FileWatcher(
             paths.webhooks_path,
@@ -67,6 +70,10 @@ class WebhookObserver(BaseTaskObserver):
     def set_wake_handler(self, handler: WakeHandler) -> None:
         """Set the function that executes a wake turn (orchestrator.handle_webhook_wake)."""
         self._handle_wake = handler
+
+    def set_task_hub(self, hub: TaskHub) -> None:
+        """Set the TaskHub used for webhook-backed background task creation."""
+        self._task_hub = hub
 
     async def start(self) -> None:
         """Start the webhook server and file watcher."""
@@ -161,6 +168,8 @@ class WebhookObserver(BaseTaskObserver):
                     safe_prompt,
                     overrides,
                 )
+            elif hook.mode == "task":
+                result = await self._dispatch_task(hook_id, hook, safe_prompt)
             else:
                 result = WebhookResult(
                     hook_id=hook_id,
@@ -305,4 +314,74 @@ class WebhookObserver(BaseTaskObserver):
             mode="cron_task",
             result_text=result.result_text,
             status=result.status,
+        )
+
+    async def _dispatch_task(
+        self,
+        hook_id: str,
+        hook: Any,
+        prompt: str,
+    ) -> WebhookResult:
+        """Create a TaskHub background task from an external webhook event."""
+        if self._task_hub is None:
+            return WebhookResult(
+                hook_id=hook_id,
+                hook_title=hook.title,
+                mode="task",
+                result_text="",
+                status="error:no_task_hub",
+            )
+
+        # Prefer the hook's explicit transport; otherwise stay on the runtime's
+        # configured transport so result delivery lands in the current primary
+        # messenger path.
+        transport = hook.task_transport or self._config.transport or "telegram"
+        parent_agent = hook.parent_agent or "main"
+        chat_id = (
+            self._config.allowed_user_ids[0]
+            if self._config.allowed_user_ids
+            else 0
+        )
+        if not chat_id:
+            return WebhookResult(
+                hook_id=hook_id,
+                hook_title=hook.title,
+                mode="task",
+                result_text="",
+                status="error:no_chat_id",
+            )
+
+        submit = TaskSubmit(
+            chat_id=chat_id,
+            prompt=prompt,
+            message_id=0,
+            thread_id=None,
+            parent_agent=parent_agent,
+            transport=transport,
+            name=hook.task_name or hook.title,
+            provider_override=hook.provider or "",
+            model_override=hook.model or "",
+            thinking_override=hook.reasoning_effort or "",
+            topology=hook.topology or "",
+            route=hook.route or "",
+            workunit_kind=hook.workunit_kind or "",
+        )
+
+        try:
+            task_id = self._task_hub.submit(submit)
+        except ValueError as exc:
+            return WebhookResult(
+                hook_id=hook_id,
+                hook_title=hook.title,
+                mode="task",
+                result_text="",
+                status=f"error:{exc}",
+            )
+
+        return WebhookResult(
+            hook_id=hook_id,
+            hook_title=hook.title,
+            mode="task",
+            result_text=f"Background task created: {task_id}",
+            status="success",
         )

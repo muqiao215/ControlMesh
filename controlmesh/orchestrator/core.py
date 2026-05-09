@@ -289,6 +289,7 @@ class Orchestrator:
             task_hub=hub,
             interagent_bus=self._supervisor.bus if self._supervisor is not None else None,
         )
+        self._observers.set_task_hub(hub)
         hub.start_maintenance()
 
     @classmethod

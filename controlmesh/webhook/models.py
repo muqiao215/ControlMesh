@@ -17,7 +17,7 @@ class WebhookEntry:
     id: str
     title: str
     description: str
-    mode: str  # "wake" | "cron_task"
+    mode: str  # "wake" | "cron_task" | "task"
     prompt_template: str
     enabled: bool = True
     task_folder: str | None = None
@@ -47,6 +47,14 @@ class WebhookEntry:
 
     # Optional dependency for sequential execution
     dependency: str | None = None
+
+    # TaskHub-backed task mode settings
+    task_name: str | None = None
+    parent_agent: str | None = None
+    task_transport: str | None = None
+    workunit_kind: str | None = None
+    topology: str | None = None
+    route: str | None = None
 
     def __post_init__(self) -> None:
         if not self.created_at:
@@ -81,6 +89,12 @@ class WebhookEntry:
             "quiet_start": self.quiet_start,
             "quiet_end": self.quiet_end,
             "dependency": self.dependency,
+            "task_name": self.task_name,
+            "parent_agent": self.parent_agent,
+            "task_transport": self.task_transport,
+            "workunit_kind": self.workunit_kind,
+            "topology": self.topology,
+            "route": self.route,
         }
 
     @classmethod
@@ -113,6 +127,12 @@ class WebhookEntry:
             quiet_start=data.get("quiet_start"),
             quiet_end=data.get("quiet_end"),
             dependency=data.get("dependency"),
+            task_name=data.get("task_name"),
+            parent_agent=data.get("parent_agent"),
+            task_transport=data.get("task_transport"),
+            workunit_kind=data.get("workunit_kind"),
+            topology=data.get("topology"),
+            route=data.get("route"),
         )
 
 
