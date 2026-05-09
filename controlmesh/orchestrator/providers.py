@@ -233,9 +233,9 @@ class ProviderManager:
         if provider == "opencode":
             if self._config.provider == "opencode":
                 return self._config.model
-            from controlmesh.cli.auth import read_opencode_default_model
+            from controlmesh.cli.opencode_discovery import pick_opencode_runtime_model_sync
 
-            return read_opencode_default_model().strip()
+            return pick_opencode_runtime_model_sync()
         if provider in _EXPLICIT_RUNTIME_DEFAULT_MODELS:
             return (
                 self._config.model

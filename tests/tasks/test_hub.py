@@ -215,6 +215,34 @@ class TestSubmit:
 
         await hub.shutdown()
 
+    async def test_runtime_provider_missing_model_fails_fast_with_diagnostic(
+        self,
+        registry: TaskRegistry,
+        tmp_path: Path,
+    ) -> None:
+        cli = _make_cli_service()
+        cli.resolve_provider = MagicMock(side_effect=ValueError("error:opencode_default_model_unresolved"))
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=cli,
+            config=_make_config(timeout_seconds=3600.0),
+        )
+
+        submit = _submit(prompt="Run test command", name="OpenCode route")
+        submit.provider_override = "opencode"
+        submit.model_override = ""
+        task_id = hub.submit(submit)
+        await asyncio.sleep(0.1)
+
+        entry = registry.get(task_id)
+        assert entry is not None
+        assert entry.status == "failed"
+        assert entry.error == "error:opencode_default_model_unresolved"
+        cli.execute.assert_not_awaited()
+
+        await hub.shutdown()
+
     async def test_auto_route_records_activation_policy_in_route_reason(
         self,
         registry: TaskRegistry,

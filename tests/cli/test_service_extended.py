@@ -74,14 +74,17 @@ def test_make_cli_respects_claw_service_provider(tmp_path: Path) -> None:
 
 
 def test_make_cli_respects_opencode_service_provider(tmp_path: Path) -> None:
-    svc = _make_service(tmp_path, default_model="openai/gpt-4.1", provider="opencode")
-    with patch("controlmesh.cli.service.create_cli") as mock_create:
+    svc = _make_service(tmp_path, default_model="zhipuai/glm-5.1", provider="opencode")
+    with (
+        patch("controlmesh.cli.service.create_cli") as mock_create,
+        patch("controlmesh.cli.auth.opencode_model_uses_runtime_env_default", return_value=False),
+    ):
         mock_create.return_value = MagicMock()
         svc._make_cli(AgentRequest(prompt="test", chat_id=1))
 
     call_args = mock_create.call_args[0][0]
     assert call_args.provider == "opencode"
-    assert call_args.model == "openai/gpt-4.1"
+    assert call_args.model == "zhipuai/glm-5.1"
 
 
 def test_make_cli_omits_explicit_opencode_model_when_runtime_env_declares_default(
@@ -119,6 +122,31 @@ def test_make_cli_with_provider_override(tmp_path: Path) -> None:
 
     call_args = mock_create.call_args[0][0]
     assert call_args.provider == "codex"
+
+
+def test_resolve_provider_uses_live_opencode_discovery_for_empty_override(tmp_path: Path) -> None:
+    svc = _make_service(tmp_path)
+    with patch(
+        "controlmesh.cli.service.pick_opencode_runtime_model_sync",
+        return_value="zhipuai/glm-5.1",
+    ):
+        provider, model = svc.resolve_provider(
+            AgentRequest(prompt="test", provider_override="opencode", chat_id=1)
+        )
+
+    assert provider == "opencode"
+    assert model == "zhipuai/glm-5.1"
+
+
+def test_resolve_provider_errors_when_opencode_model_unresolved(tmp_path: Path) -> None:
+    svc = _make_service(tmp_path)
+    with patch("controlmesh.cli.service.pick_opencode_runtime_model_sync", return_value=""):
+        try:
+            svc.resolve_provider(AgentRequest(prompt="test", provider_override="opencode", chat_id=1))
+        except ValueError as exc:
+            assert str(exc) == "error:opencode_default_model_unresolved"
+        else:
+            raise AssertionError("expected ValueError")
 
 
 def test_make_cli_with_openai_agents_provider_override(tmp_path: Path) -> None:

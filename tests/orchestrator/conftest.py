@@ -73,5 +73,8 @@ def orch(workspace: tuple[ControlMeshPaths, AgentConfig]) -> Orchestrator:
     mock_cli = MagicMock()
     mock_cli.execute = AsyncMock()
     mock_cli.execute_streaming = AsyncMock()
+    mock_cli.resolve_runtime_provider_target = MagicMock(
+        side_effect=lambda provider, model="": (provider, model)
+    )
     object.__setattr__(o, "_cli_service", mock_cli)
     return o

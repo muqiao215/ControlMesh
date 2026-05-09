@@ -174,15 +174,13 @@ async def _prepare_normal(
 
     Returns (request, session) so the caller can update the session after the CLI call.
     """
-    requested_model = model_override or orch._config.model
     if provider_override is not None:
-        req_provider = provider_override
-        req_model = (
-            model_override
-            or orch._providers.default_model_for_provider(provider_override)
-            or requested_model
+        req_provider, req_model = orch.cli_service.resolve_runtime_provider_target(
+            provider_override,
+            model_override or "",
         )
     else:
+        requested_model = model_override or orch._config.model
         req_model, req_provider = orch.resolve_runtime_target(requested_model)
 
     session, is_new = await orch._sessions.resolve_session(

@@ -70,6 +70,11 @@ _MAINTENANCE_INTERVAL = 5 * 3600  # 5 hours
 _TOPOLOGY_STATE_FILENAME = "topology_execution.json"
 _PLAN_PHASE_WORKUNITS = frozenset({"phase_execution", "phase_review"})
 _PLAN_MANIFEST_WORKUNITS = frozenset({"plan_with_files"})
+_RUNTIME_PROVIDER_ERRORS = frozenset(
+    {
+        "error:opencode_default_model_unresolved",
+    }
+)
 
 TaskResultCallback = Callable[[TaskResult], Awaitable[None]]
 QuestionHandler = Callable[[str, str, str, ChatRef, TopicRef], Awaitable[None]]
@@ -729,7 +734,7 @@ class TaskHub:
 
             # Pre-resolve effective provider/model so the entry is never empty
             eff_provider, eff_model = cli.resolve_provider(request)
-            if eff_provider and not entry.provider:
+            if eff_provider and (not entry.provider or not entry.model):
                 self._registry.update_status(
                     entry.task_id, "running", provider=eff_provider, model=eff_model
                 )
@@ -876,6 +881,50 @@ class TaskHub:
                 await self._deliver(task_result)
             raise
 
+        except ValueError as exc:
+            error_msg = self._runtime_provider_error(exc)
+            logger.warning(
+                "Task runtime target unresolved id=%s provider=%s model=%s error=%s",
+                entry.task_id,
+                entry.provider or "<default>",
+                entry.model or "<default>",
+                error_msg,
+            )
+            elapsed = time.monotonic() - t0
+            self._update_task_status(
+                entry.task_id,
+                status="failed",
+                completed_at=time.time(),
+                elapsed_seconds=elapsed,
+                error=error_msg,
+            )
+            with contextlib.suppress(Exception):
+                task_result = TaskResult(
+                    task_id=entry.task_id,
+                    chat_id=entry.chat_id,
+                    parent_agent=entry.parent_agent,
+                    name=entry.name,
+                    prompt_preview=entry.prompt_preview,
+                    result_text=error_msg,
+                    delivery_text=error_msg,
+                    status="failed",
+                    elapsed_seconds=elapsed,
+                    provider=entry.provider,
+                    model=entry.model,
+                    transport=entry.transport,
+                    error=error_msg,
+                    task_folder=str(self._artifact_paths(entry).folder),
+                    original_prompt=entry.original_prompt,
+                    thread_id=entry.thread_id,
+                )
+                capture_task_result(
+                    self._paths,
+                    task_result,
+                    completed_at=datetime.now(UTC),
+                    taskmemory_path=self._artifact_paths(entry).taskmemory,
+                )
+                await self._deliver(task_result)
+
         except Exception:
             logger.exception("Task failed id=%s name='%s'", entry.task_id, entry.name)
             elapsed = time.monotonic() - t0
@@ -966,6 +1015,16 @@ class TaskHub:
         if inflight and inflight.has_pending_question:
             return "waiting", ""
         return "done", ""
+
+    @staticmethod
+    def _runtime_provider_error(exc: ValueError) -> str:
+        """Normalize runtime-provider resolution failures into user-facing diagnostics."""
+        message = str(exc).strip()
+        if message in _RUNTIME_PROVIDER_ERRORS:
+            return message
+        if message.startswith("error:missing_model_for_runtime_provider"):
+            return message
+        raise exc
 
     def _update_task_status(self, task_id: str, *, status: str, **kwargs: object) -> None:
         self._registry.update_status(task_id, status, **kwargs)

@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import subprocess
 from unittest.mock import AsyncMock, patch
 
-from controlmesh.cli.opencode_discovery import _parse_models, discover_opencode_models
+from controlmesh.cli.opencode_discovery import (
+    _parse_models,
+    discover_opencode_models,
+    discover_opencode_models_sync,
+    pick_opencode_runtime_model_sync,
+)
 
 
 def _make_process_mock(
@@ -90,3 +96,45 @@ async def test_discover_opencode_models_returns_empty_when_missing() -> None:
         models = await discover_opencode_models()
 
     assert models == ()
+
+
+def test_discover_opencode_models_sync_for_active_provider() -> None:
+    result = subprocess.CompletedProcess(
+        args=["opencode", "models", "zhipuai"],
+        returncode=0,
+        stdout="zhipuai/glm-5.1\nzhipuai/glm-4.5\n",
+        stderr="",
+    )
+    with (
+        patch("controlmesh.cli.opencode_discovery.which", return_value="/usr/bin/opencode"),
+        patch("controlmesh.cli.opencode_discovery.read_opencode_primary_provider", return_value="zhipuai"),
+        patch("controlmesh.cli.opencode_discovery.subprocess.run", return_value=result) as run_mock,
+    ):
+        models = discover_opencode_models_sync()
+
+    assert models == ("zhipuai/glm-5.1", "zhipuai/glm-4.5")
+    assert run_mock.call_args.args[0] == ["/usr/bin/opencode", "models", "zhipuai"]
+
+
+def test_pick_opencode_runtime_model_sync_prefers_configured_default() -> None:
+    with (
+        patch("controlmesh.cli.opencode_discovery.read_opencode_default_model", return_value="zhipuai/glm-5.1"),
+        patch("controlmesh.cli.opencode_discovery.discover_opencode_models_sync") as discover_mock,
+    ):
+        model = pick_opencode_runtime_model_sync()
+
+    assert model == "zhipuai/glm-5.1"
+    discover_mock.assert_not_called()
+
+
+def test_pick_opencode_runtime_model_sync_falls_back_to_live_discovery() -> None:
+    with (
+        patch("controlmesh.cli.opencode_discovery.read_opencode_default_model", return_value=""),
+        patch(
+            "controlmesh.cli.opencode_discovery.discover_opencode_models_sync",
+            return_value=("zhipuai/glm-5.1", "zhipuai/glm-4.5"),
+        ),
+    ):
+        model = pick_opencode_runtime_model_sync()
+
+    assert model == "zhipuai/glm-5.1"

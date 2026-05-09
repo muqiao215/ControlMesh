@@ -963,9 +963,9 @@ class Orchestrator:
 
         model_name, provider_name = self.resolve_runtime_target(self._config.model)
         if request.provider_override:
-            provider_name = request.provider_override
-            model_name = request.model_override or self.default_model_for_provider(
-                request.provider_override
+            provider_name, model_name = self.cli_service.resolve_runtime_provider_target(
+                request.provider_override,
+                request.model_override or "",
             )
 
         ns = self._named_sessions.create(chat_id, provider_name, model_name, prompt)

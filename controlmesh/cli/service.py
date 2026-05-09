@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 from controlmesh.cli.base import CLIConfig
 from controlmesh.cli.factory import create_cli
 from controlmesh.cli.introspection import ProviderIntrospection
+from controlmesh.cli.opencode_discovery import pick_opencode_runtime_model_sync
 from controlmesh.cli.stream_events import (
     AssistantTextDelta,
     CompactBoundaryEvent,
@@ -184,9 +185,13 @@ class CLIService:
 
     def _resolve_model(self, request: AgentRequest) -> str:
         """Resolve the effective model for logging and metadata."""
-        if request.provider_override:
-            return request.model_override or f"<{request.provider_override} default>"
-        return request.model_override or self._config.default_model
+        try:
+            provider, model = self.resolve_provider(request)
+        except ValueError:
+            if request.provider_override:
+                return f"<{request.provider_override} unresolved>"
+            return request.model_override or self._config.default_model
+        return model or f"<{provider} unresolved>"
 
     async def execute(self, request: AgentRequest) -> AgentResponse:
         """Execute a CLI call."""
@@ -345,11 +350,51 @@ class CLIService:
     def resolve_provider(self, request: AgentRequest) -> tuple[str, str]:
         """Return ``(provider, model)`` that would be used for *request*."""
         if request.provider_override:
-            return request.provider_override, request.model_override or ""
+            return self.resolve_runtime_provider_target(
+                request.provider_override,
+                request.model_override or "",
+            )
         if self._config.provider in _EXPLICIT_RUNTIME_PROVIDERS:
-            return self._config.provider, request.model_override or self._config.default_model
+            return self.resolve_runtime_provider_target(
+                self._config.provider,
+                request.model_override or self._config.default_model,
+            )
         model = request.model_override or self._config.default_model
         return self._models.provider_for(model), model
+
+    def resolve_runtime_provider_target(
+        self,
+        provider: str,
+        requested_model: str = "",
+    ) -> tuple[str, str]:
+        """Resolve a runtime-backed provider target with live discovery when needed."""
+        if provider not in _EXPLICIT_RUNTIME_PROVIDERS:
+            return provider, requested_model or self._config.default_model
+
+        if requested_model:
+            return provider, requested_model
+
+        if provider == "opencode":
+            model = pick_opencode_runtime_model_sync()
+            if model:
+                return provider, model
+            if self._config.provider == "opencode" and self._config.default_model:
+                return provider, self._config.default_model
+            msg = "error:opencode_default_model_unresolved"
+            raise ValueError(msg)
+
+        if self._config.provider == provider and self._config.default_model:
+            return provider, self._config.default_model
+
+        static_defaults = {
+            "claw": "sonnet",
+        }
+        fallback = static_defaults.get(provider, "")
+        if fallback:
+            return provider, fallback
+
+        msg = f"error:missing_model_for_runtime_provider provider={provider}"
+        raise ValueError(msg)
 
     async def introspect(
         self,

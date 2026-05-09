@@ -1327,7 +1327,8 @@ async def test_on_task_result_uses_live_qq_target(tmp_path: Path) -> None:
 
     await bot.on_task_result(result)
 
-    bot.send_text.assert_awaited_once_with("qqbot:c2c:USER_A", "done")
+    injector.inject_prompt.assert_not_awaited()
+    bot.send_text.assert_awaited_once_with("qqbot:c2c:USER_A", "internal payload")
 
 
 async def test_on_task_result_prefers_delivery_text_for_live_qq_target(tmp_path: Path) -> None:
