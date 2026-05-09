@@ -105,7 +105,8 @@ class CodexCLI(BaseCLI):
         cmd = [self._cli, "exec", "resume"]
         if json_output:
             cmd.append("--json")
-        cmd += self._sandbox_flags()
+        if self._config.permission_mode == "bypassPermissions":
+            cmd.append("--dangerously-bypass-approvals-and-sandbox")
         cmd += ["--", session_id]
         if not _IS_WINDOWS:
             cmd.append(final_prompt)

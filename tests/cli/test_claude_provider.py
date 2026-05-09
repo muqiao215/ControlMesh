@@ -129,6 +129,24 @@ class TestInit:
 
 
 class TestBuildCommand:
+    def test_bypass_permissions_preserved_for_non_root(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("controlmesh.cli.claude_provider.os.geteuid", lambda: 1000)
+        cli = _make_cli(monkeypatch, permission_mode="bypassPermissions")
+        cmd = cli._build_command("go")
+        idx = cmd.index("--permission-mode")
+        assert cmd[idx + 1] == "bypassPermissions"
+
+    def test_bypass_permissions_downgraded_under_root(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("controlmesh.cli.claude_provider.os.geteuid", lambda: 0)
+        cli = _make_cli(monkeypatch, permission_mode="bypassPermissions")
+        cmd = cli._build_command("go")
+        idx = cmd.index("--permission-mode")
+        assert cmd[idx + 1] == "default"
+
     def test_max_budget_usd(self, monkeypatch: pytest.MonkeyPatch) -> None:
         cli = _make_cli(monkeypatch, max_budget_usd=2.5)
         cmd = cli._build_command("go")

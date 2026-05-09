@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from collections.abc import AsyncGenerator
 from pathlib import Path
@@ -64,7 +65,7 @@ class ClaudeCodeCLI(BaseCLI):
         cfg = self._config
         cmd = [self._cli, "-p", "--output-format", "json"]
 
-        _add_opt(cmd, "--permission-mode", cfg.permission_mode)
+        _add_opt(cmd, "--permission-mode", self._permission_mode())
         _add_opt(cmd, "--model", cfg.model)
         _add_opt(cmd, "--system-prompt", cfg.system_prompt)
         _add_opt(cmd, "--append-system-prompt", cfg.append_system_prompt)
@@ -95,6 +96,17 @@ class ClaudeCodeCLI(BaseCLI):
             cmd.append("--")
             cmd.append(prompt)
         return cmd
+
+    def _permission_mode(self) -> str:
+        """Return a Claude-compatible permission mode for the current runtime."""
+        mode = self._config.permission_mode
+        geteuid = getattr(os, "geteuid", None)
+        if mode == "bypassPermissions" and callable(geteuid) and geteuid() == 0:
+            logger.warning(
+                "Claude bypassPermissions is unsupported under root; falling back to default"
+            )
+            return "default"
+        return mode
 
     async def send(
         self,

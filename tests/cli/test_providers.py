@@ -39,6 +39,7 @@ def test_docker_wrap_with_container(tmp_path: Path) -> None:
 
 def test_claude_build_command_basic(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("controlmesh.cli.claude_provider.which", lambda _: "/usr/bin/claude")
+    monkeypatch.setattr("controlmesh.cli.claude_provider.os.geteuid", lambda: 1000)
     cfg = CLIConfig(provider="claude", model="opus", permission_mode="bypassPermissions")
     cli = ClaudeCodeCLI(cfg)
     cmd = cli._build_command("hello")
