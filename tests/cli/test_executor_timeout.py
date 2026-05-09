@@ -257,7 +257,6 @@ class TestSoftHardSubprocessCleanup:
         process = MagicMock()
         process.pid = 99999
         process.returncode = None
-        process.terminate = MagicMock()
 
         wait_released = asyncio.Event()
         wait_calls = 0
@@ -276,7 +275,9 @@ class TestSoftHardSubprocessCleanup:
             wait_released.set()
 
         with pytest.MonkeyPatch.context() as mp:
+            terminate_tree = MagicMock()
             force_kill = MagicMock(side_effect=fake_force_kill)
+            mp.setattr("controlmesh.cli.executor.terminate_process_tree", terminate_tree)
             mp.setattr("controlmesh.cli.executor.force_kill_process_tree", force_kill)
 
             await _cleanup_timed_out_process(
@@ -286,7 +287,7 @@ class TestSoftHardSubprocessCleanup:
                 hard_timeout_seconds=0.02,
             )
 
-        process.terminate.assert_called_once_with()
+        terminate_tree.assert_called_once_with(99999)
         force_kill.assert_called_once_with(99999)
         assert wait_calls >= 2
 

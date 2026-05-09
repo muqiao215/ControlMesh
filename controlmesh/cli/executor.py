@@ -25,7 +25,10 @@ from controlmesh.cli.stream_events import ResultEvent, StreamEvent
 from controlmesh.cli.timeout_controller import TimeoutController
 from controlmesh.cli.types import CLIResponse
 from controlmesh.infra.platform import CREATION_FLAGS as _CREATION_FLAGS
-from controlmesh.infra.process_tree import force_kill_process_tree
+from controlmesh.infra.process_tree import (
+    force_kill_process_tree,
+    terminate_process_tree,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -457,8 +460,11 @@ async def _cleanup_timed_out_process(
         await _wait_process(process)
         return
 
+    # Gracefully terminate the whole tree first. Some CLIs spawn a real worker
+    # under a short-lived launcher process; signalling only the root can leave
+    # the worker orphaned and still running after the timeout path returns.
     with contextlib.suppress(ProcessLookupError):
-        process.terminate()
+        terminate_process_tree(process.pid)
 
     try:
         if hard_grace_seconds <= 0:
