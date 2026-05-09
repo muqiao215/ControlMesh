@@ -29,12 +29,15 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-FOREGROUND_IDLE_TIMEOUT_SECONDS = 90.0
-FOREGROUND_MAX_RUNTIME_SECONDS = 600.0
-FOREGROUND_HARD_KILL_TIMEOUT_SECONDS = 630.0
+FOREGROUND_IDLE_TIMEOUT_SECONDS = 300.0
+FOREGROUND_HARD_KILL_GRACE_SECONDS = 30.0
 
 # Backward-compatible alias used by existing tests/imports.
 FOREGROUND_SOFT_TIMEOUT_SECONDS = FOREGROUND_IDLE_TIMEOUT_SECONDS
+FOREGROUND_MAX_RUNTIME_SECONDS = 1800.0
+FOREGROUND_HARD_KILL_TIMEOUT_SECONDS = (
+    FOREGROUND_IDLE_TIMEOUT_SECONDS + FOREGROUND_HARD_KILL_GRACE_SECONDS
+)
 
 
 @dataclass(slots=True)
@@ -100,13 +103,13 @@ def _make_timeout_controller(orch: Orchestrator, kind: str) -> TimeoutController
     )
 
 
-def _make_foreground_watchdog(request: AgentRequest) -> TimeoutController:
+def _make_foreground_watchdog(request: AgentRequest, *, max_runtime_seconds: float) -> TimeoutController:
     """Create idle-first foreground liveness watchdog state."""
     controller = TimeoutController(
         TCConfig(
             timeout_seconds=FOREGROUND_IDLE_TIMEOUT_SECONDS,
             idle_timeout_seconds=FOREGROUND_IDLE_TIMEOUT_SECONDS,
-            max_runtime_seconds=FOREGROUND_MAX_RUNTIME_SECONDS,
+            max_runtime_seconds=max_runtime_seconds,
             mode="foreground",
             warning_intervals=[],
             extend_on_activity=False,
@@ -123,13 +126,20 @@ def _make_foreground_watchdog(request: AgentRequest) -> TimeoutController:
     return controller
 
 
-def _with_foreground_watchdog(request: AgentRequest) -> AgentRequest:
+def _with_foreground_watchdog(
+    orch: Orchestrator,
+    request: AgentRequest,
+) -> AgentRequest:
     """Attach foreground idle watchdog without changing provider request fields."""
+    max_runtime_seconds = _foreground_max_runtime(orch)
     return replace(
         request,
         timeout_seconds=FOREGROUND_IDLE_TIMEOUT_SECONDS,
-        hard_timeout_seconds=FOREGROUND_HARD_KILL_TIMEOUT_SECONDS,
-        timeout_controller=_make_foreground_watchdog(request),
+        hard_timeout_seconds=_foreground_hard_timeout(orch),
+        timeout_controller=_make_foreground_watchdog(
+            request,
+            max_runtime_seconds=max_runtime_seconds,
+        ),
     )
 
 
@@ -138,8 +148,16 @@ def _foreground_soft_timeout(_orch: Orchestrator | None = None) -> float:
     return FOREGROUND_SOFT_TIMEOUT_SECONDS
 
 
-def _foreground_hard_timeout() -> float:
+def _foreground_max_runtime(orch: Orchestrator | None = None) -> float:
+    """Return the max runtime backstop for foreground chat turns."""
+    if orch is None:
+        return FOREGROUND_MAX_RUNTIME_SECONDS
+    return max(FOREGROUND_IDLE_TIMEOUT_SECONDS, resolve_timeout(orch._config, "normal"))
+
+
+def _foreground_hard_timeout(orch: Orchestrator | None = None) -> float:
     """Return the approved hard-kill deadline for foreground chat subprocesses."""
+    del orch
     return FOREGROUND_HARD_KILL_TIMEOUT_SECONDS
 
 
@@ -218,7 +236,7 @@ async def _prepare_normal(
         topic_id=key.topic_id,
         resume_session=None if is_new else session.session_id,
         timeout_seconds=timeout_secs,
-        hard_timeout_seconds=_foreground_hard_timeout(),
+        hard_timeout_seconds=_foreground_hard_timeout(orch),
         timeout_controller=None,
     )
     return request, session
@@ -283,6 +301,11 @@ async def _handle_timeout(
     )
 
     timeout_s = request.timeout_seconds or 0
+    if request.timeout_controller is not None:
+        if request.timeout_controller.timeout_reason == "idle":
+            timeout_s = request.timeout_controller.idle_timeout_seconds or timeout_s
+        elif request.timeout_controller.timeout_reason == "max_runtime":
+            timeout_s = request.timeout_controller.max_runtime_seconds or timeout_s
     logger.warning("Session timed out after %.0fs model=%s", timeout_s, model_name)
     return OrchestratorResult(text=timeout_error_text(model_name, timeout_s))
 
@@ -471,7 +494,7 @@ async def _normal_with_options(
 
     _begin_inflight(orch, request, session, is_recovery=options.is_recovery)
     try:
-        request = _with_foreground_watchdog(request)
+        request = _with_foreground_watchdog(orch, request)
         response = await orch._cli_service.execute(request)
         session_recovered = False
         _reg = orch._process_registry
@@ -610,7 +633,7 @@ async def _normal_streaming_with_options(
     _begin_inflight(orch, request, session, is_recovery=False)
     try:
         cb = options.cbs or StreamingCallbacks()
-        request = _with_foreground_watchdog(request)
+        request = _with_foreground_watchdog(orch, request)
         response = await orch._cli_service.execute_streaming(
             request,
             on_text_delta=cb.on_text_delta,
@@ -788,10 +811,10 @@ async def named_session_flow(
         process_label=f"ns:{session_name}",
         resume_session=ns.session_id or None,
         timeout_seconds=_foreground_soft_timeout(orch),
-        hard_timeout_seconds=_foreground_hard_timeout(),
+        hard_timeout_seconds=_foreground_hard_timeout(orch),
         timeout_controller=None,
     )
-    request = _with_foreground_watchdog(request)
+    request = _with_foreground_watchdog(orch, request)
     response = await orch._cli_service.execute(request)
 
     _reg = orch._process_registry
@@ -836,10 +859,10 @@ async def named_session_streaming(
         process_label=f"ns:{session_name}",
         resume_session=ns.session_id or None,
         timeout_seconds=_foreground_soft_timeout(orch),
-        hard_timeout_seconds=_foreground_hard_timeout(),
+        hard_timeout_seconds=_foreground_hard_timeout(orch),
         timeout_controller=None,
     )
-    request = _with_foreground_watchdog(request)
+    request = _with_foreground_watchdog(orch, request)
 
     tag_sent = False
 

@@ -161,6 +161,22 @@ async def test_normal_uses_foreground_soft_and_hard_timeouts(orch: Orchestrator)
     assert request.timeout_controller.state.mode == "foreground"
 
 
+async def test_normal_foreground_watchdog_respects_custom_normal_timeout(
+    orch: Orchestrator,
+) -> None:
+    object.__setattr__(orch._config.timeouts, "normal", 2700.0)
+    mock_execute = AsyncMock(return_value=_mock_response())
+    object.__setattr__(orch._cli_service, "execute", mock_execute)
+
+    await normal(orch, SessionKey(chat_id=1), "Hello")
+
+    request = mock_execute.call_args[0][0]
+    assert request.timeout_seconds == FOREGROUND_SOFT_TIMEOUT_SECONDS
+    assert request.hard_timeout_seconds == FOREGROUND_HARD_KILL_TIMEOUT_SECONDS
+    assert request.timeout_controller is not None
+    assert request.timeout_controller.max_runtime_seconds == 2700.0
+
+
 async def test_normal_timeout_cleans_inflight_state(orch: Orchestrator) -> None:
     mock_execute = AsyncMock(return_value=_mock_response(is_error=True, timed_out=True, result=""))
     object.__setattr__(orch._cli_service, "execute", mock_execute)
