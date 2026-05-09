@@ -10,7 +10,7 @@ The routing layer supports small code WorkUnits and longer workflow WorkUnits:
 - `plan_with_files`: create a file-backed phased plan
 - `phase_execution`: execute one approved plan phase
 - `phase_review`: review phase artifacts and classify approve/repair/ask
-- `github_release`: prepare release evidence and notes; publishing requires foreground approval
+- `github_release`: prepare release evidence and notes; actual publishing should stay under foreground controller judgment
 - `docs_publish`: update documentation with evidence
 - `repo_audit`: inspect a repository without writes
 - `dependency_update`: prepare a dependency update candidate
@@ -39,8 +39,14 @@ allowed independently from a premium slot using the same provider.
 
 `agent_routing.workunit_overrides` can set per-kind topology, preferred slots,
 foreground-approval requirements, and allow/deny filters. For example,
-`github_release` can prefer a cheap `release_runner` slot while `patch_candidate`
-keeps the `director_worker` topology and controller approval gate.
+`github_release` can prefer a cheap `release_runner` slot for release preparation
+while `patch_candidate` keeps the `director_worker` topology and controller approval gate.
+
+Important boundary:
+
+- do not force all `github_release` work into background through activation policy
+- release prep can be delegated
+- real tag/push/publish execution must remain a foreground decision unless the selected runner is explicitly trusted for repo access and external publishing
 
 ## Files
 

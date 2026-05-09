@@ -5,6 +5,14 @@ agent_slots:
     model: gpt-5.4
     mode: foreground
     role: controller
+    sandbox: host
+    approval_policy: foreground
+    cwd: workspace
+    visible_paths:
+      - workspace
+    tools:
+      - controlmesh
+    output_policy: summarized_only
     canonical_write: true
     capabilities:
       planning:
@@ -22,6 +30,16 @@ agent_slots:
     model: gpt-5.4
     mode: background
     role: worker
+    sandbox: controlmesh_background
+    approval_policy: never
+    cwd: workspace
+    visible_paths:
+      - workspace
+    tools:
+      - shell
+      - python
+      - pytest
+    output_policy: summarized_only
     can_edit: true
     capabilities:
       code_patch:
@@ -43,6 +61,15 @@ agent_slots:
     role: worker
     cost_class: cheap
     allow_subagent: true
+    sandbox: controlmesh_background
+    approval_policy: never
+    cwd: workspace
+    visible_paths:
+      - workspace
+    tools:
+      - shell
+      - git
+    output_policy: summarized_only
     can_edit: false
     capabilities:
       github_release:
@@ -64,6 +91,17 @@ agent_slots:
     role: worker
     cost_class: premium
     allow_subagent: false
+    sandbox: codex_cli
+    approval_policy: never
+    cwd: workspace
+    visible_paths:
+      - workspace
+    tools:
+      - shell
+      - python
+      - pytest
+      - git
+    output_policy: summarized_only
     can_edit: true
     capabilities:
       code_review:
@@ -92,9 +130,15 @@ agent_slots:
     model: ""
     mode: background
     role: worker
+    sandbox: claude_code
+    approval_policy: never
+    cwd: workspace
+    visible_paths:
+      - workspace
     can_edit: false
     tools:
       - codex-plugin-cc
+    output_policy: summarized_only
     capabilities:
       code_review:
         score: 0.86
@@ -113,6 +157,15 @@ agent_slots:
     model: ""
     mode: background
     role: worker
+    sandbox: opencode
+    approval_policy: never
+    cwd: workspace
+    visible_paths:
+      - workspace
+    tools:
+      - shell
+      - python
+    output_policy: summarized_only
     can_edit: false
     capabilities:
       code_search:
@@ -134,6 +187,16 @@ agent_slots:
     model: ""
     mode: background
     role: worker
+    sandbox: opencode
+    approval_policy: never
+    cwd: workspace
+    visible_paths:
+      - workspace
+    tools:
+      - shell
+      - python
+      - pytest
+    output_policy: summarized_only
     can_edit: true
     capabilities:
       code_patch:

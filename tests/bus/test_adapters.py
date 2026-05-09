@@ -250,6 +250,20 @@ def test_from_task_result_failed() -> None:
     assert env.prompt == ""
 
 
+def test_from_task_result_summarized_only_never_uses_raw_payload_as_delivery() -> None:
+    env = from_task_result(
+        _FakeTaskResult(
+            result_text='{"type":"item.completed","payload":{"artifact":"raw"}}',
+            delivery_text="",
+        )
+    )
+
+    assert env.output_policy == "summarized_only"
+    assert "item.completed" in env.result_text
+    assert "item.completed" not in env.delivery_text
+    assert "completed" in env.delivery_text
+
+
 def test_from_task_result_cancelled() -> None:
     env = from_task_result(_FakeTaskResult(status="cancelled"))
     assert env.lock_mode == LockMode.NONE

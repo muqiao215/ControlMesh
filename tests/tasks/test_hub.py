@@ -215,6 +215,67 @@ class TestSubmit:
 
         await hub.shutdown()
 
+    async def test_auto_route_resolves_runtime_provider_model_before_execute(
+        self,
+        registry: TaskRegistry,
+        tmp_path: Path,
+    ) -> None:
+        home = tmp_path / "home"
+        (home / "routing").mkdir(parents=True)
+        (home / "routing" / "capabilities.yaml").write_text(
+            """
+agent_slots:
+  opencode.explore:
+    runtime: opencode
+    provider: opencode
+    model: ""
+    mode: background
+    role: worker
+    sandbox: opencode
+    approval_policy: never
+    cwd: /repo
+    visible_paths:
+      - /repo
+    tools:
+      - shell
+    output_policy: summarized_only
+    capabilities:
+      code_review:
+        score: 0.9
+      diff_understanding:
+        score: 0.9
+      evidence_writer:
+        score: 0.9
+""",
+            encoding="utf-8",
+        )
+        cli = _make_cli_service("review output")
+        cli.resolve_runtime_provider_target = MagicMock(
+            return_value=("opencode", "zhipuai/glm-5.1")
+        )
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=cli,
+            config=_make_config(),
+            runtime_config=AgentConfig(controlmesh_home=str(home)),
+        )
+
+        submit = _submit(prompt="Review the current diff", name="Runtime model route")
+        submit.route = "auto"
+        submit.workunit_kind = "code_review"
+        submit.target = "git diff main"
+        task_id = hub.submit(submit)
+        await asyncio.sleep(0.1)
+
+        entry = registry.get(task_id)
+        assert entry is not None
+        assert entry.provider == "opencode"
+        assert entry.model == "zhipuai/glm-5.1"
+        cli.resolve_runtime_provider_target.assert_called_once_with("opencode", "")
+
+        await hub.shutdown()
+
     async def test_runtime_provider_missing_model_fails_fast_with_diagnostic(
         self,
         registry: TaskRegistry,

@@ -24,6 +24,9 @@ from controlmesh.routing.workunit import (
     WorkUnit,
     WorkUnitKind,
     build_workunit_contract,
+    force_foreground,
+    intent_for_kind,
+    may_background,
     requirements_for_kind,
 )
 
@@ -125,12 +128,22 @@ def resolve_route(
         topology=topology,
         requirements=requirements,
     )
+    intent = intent_for_kind(kind, requirements)
+    if force_foreground(intent):
+        return None
     registry = registry or _registry_from_config(config)
     candidates = _apply_subagent_policy(
         registry.candidates(mode="background"),
         routing_cfg=routing_cfg,
         overrides=overrides,
     )
+    candidates = tuple(
+        slot
+        for slot in candidates
+        if slot.declares_worker_contract() and may_background(intent, slot)
+    )
+    if not candidates:
+        return None
     if slot_state_resolver is not None:
         states = dict((scoring_context or RouteScoringContext()).slot_state)
         for slot in candidates:

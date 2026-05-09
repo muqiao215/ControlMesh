@@ -75,6 +75,7 @@ _RUNTIME_PROVIDER_ERRORS = frozenset(
         "error:opencode_default_model_unresolved",
     }
 )
+_RUNTIME_BACKED_PROVIDERS = frozenset({"openai_agents", "claw", "opencode"})
 
 TaskResultCallback = Callable[[TaskResult], Awaitable[None]]
 QuestionHandler = Callable[[str, str, str, ChatRef, TopicRef], Awaitable[None]]
@@ -301,6 +302,12 @@ class TaskHub:
                     provider = decision.provider
                 if not model:
                     model = decision.model
+                provider, model = self._resolve_routed_provider_model(
+                    provider,
+                    model,
+                    decision.model,
+                    parent_agent=submit.parent_agent,
+                )
                 if not topology:
                     topology = decision.topology
                 workunit_contract = _format_workunit_contract(
@@ -398,6 +405,30 @@ class TaskHub:
             )
 
         return resolve
+
+    def _resolve_routed_provider_model(
+        self,
+        provider: str,
+        submit_model: str,
+        route_model: str,
+        *,
+        parent_agent: str = "",
+    ) -> tuple[str, str]:
+        """Resolve runtime-backed routed models before task execution.
+
+        Precedence: submit explicit model, route capability model, live runtime
+        discovery via CLIService, then static CLIService fallback.
+        """
+        if not provider or provider not in _RUNTIME_BACKED_PROVIDERS:
+            return provider, submit_model or route_model
+        model = submit_model or route_model
+        if model:
+            return provider, model
+        cli = self._cli_services.get(parent_agent) or self._cli_service
+        resolver = getattr(cli, "resolve_runtime_provider_target", None)
+        if callable(resolver):
+            return resolver(provider, "")
+        return provider, model
 
     def resume(self, task_id: str, follow_up: str, *, parent_agent: str = "") -> str:
         """Resume a completed task's CLI session with a follow-up. Returns task_id."""

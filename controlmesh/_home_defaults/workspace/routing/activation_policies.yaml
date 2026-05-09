@@ -35,17 +35,6 @@
 
 activation_policies:
 
-  # github_release: always goes to background — release prep should never run foreground
-  github_release_always_background:
-    execution: background_required
-    match:
-      workunit_kinds:
-        - github_release
-    deny_slots: []
-    topology: pipeline
-    requires_foreground_approval: true
-    allow_explicit_override: false
-
   # phase_execution with plan_id/phase_id: pipeline to background with foreground approval gate.
   # Matches by kind — phase_title is not required (pipeline routing is determined by the
   # phase_execution workunit class, not the specific phase label).

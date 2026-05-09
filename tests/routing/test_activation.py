@@ -352,8 +352,8 @@ def test_resolve_route_with_activation_intent_deny_slots() -> None:
     assert decision.slot_name != "background_worker"
 
 
-def test_resolve_route_with_activation_intent_topology() -> None:
-    """Activation intent topology overrides the scored topology."""
+def test_resolve_route_blocks_release_even_when_activation_prefers_background() -> None:
+    """Activation policy is advisory only after force-foreground safety gates."""
     from controlmesh.routing.activation import ActivationIntent
 
     intent = ActivationIntent(
@@ -371,9 +371,7 @@ def test_resolve_route_with_activation_intent_topology() -> None:
         activation_intent=intent,
     )
 
-    assert decision is not None
-    assert decision.topology == "pipeline"
-    assert decision.evaluator == "foreground"
+    assert decision is None
 
 
 def test_resolve_route_with_activation_intent_max_cost_class() -> None:

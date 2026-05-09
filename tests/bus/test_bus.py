@@ -258,6 +258,30 @@ async def test_task_result_without_injection_does_not_resume_session() -> None:
     t.deliver.assert_awaited_once_with(env)
 
 
+async def test_summarized_only_task_result_without_summary_gets_safe_fallback() -> None:
+    bus = MessageBus()
+    t = _mock_transport()
+    bus.register_transport(t)
+
+    env = _env(
+        origin=Origin.TASK_RESULT,
+        needs_injection=False,
+        prompt="",
+        result_text='{"type":"command_execution","output":"raw"}',
+        delivery_text="",
+        output_policy="summarized_only",
+        lock_mode=LockMode.NONE,
+        chat_id=10,
+    )
+    env.metadata["task_id"] = "abc123"
+    await bus.submit(env)
+
+    assert "command_execution" in env.result_text
+    assert "command_execution" not in env.delivery_text
+    assert "abc123" in env.delivery_text
+    t.deliver.assert_awaited_once_with(env)
+
+
 async def test_interagent_injection_writes_delivery_text_not_payload() -> None:
     bus = MessageBus()
     t = _mock_transport()

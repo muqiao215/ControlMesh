@@ -6,6 +6,36 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 
+class RoutingRisk(StrEnum):
+    """Risk levels used by the background admission gate."""
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+FORCE_FOREGROUND_CAPS: frozenset[str] = frozenset(
+    {
+        "repo_write",
+        "git_write",
+        "network_write",
+        "github_release",
+        "publish",
+    }
+)
+
+_WRITE_SIDE_EFFECTS: frozenset[str] = frozenset(
+    {
+        "repo_write",
+        "git_write",
+        "network_write",
+        "publish",
+        "release_create",
+        "external_write",
+    }
+)
+
+
 class WorkUnitKind(StrEnum):
     """Supported capability-routed work units."""
 
@@ -31,6 +61,17 @@ class WorkUnitRouteRequirements:
     can_edit: bool | None = None
     evaluator_required: bool = False
     promotion_allowed: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class RoutingIntent:
+    """Explicit safety intent for a WorkUnit before worker scoring."""
+
+    risk: RoutingRisk = RoutingRisk.LOW
+    required_caps: frozenset[str] = frozenset()
+    side_effects: frozenset[str] = frozenset()
+    requires_user_approval: bool = False
+    output_policy: str = "summarized_only"
 
 
 @dataclass(frozen=True, slots=True)
@@ -168,6 +209,67 @@ def requirements_for_kind(kind: WorkUnitKind) -> WorkUnitRouteRequirements:
         evaluator_required=True,
         promotion_allowed=False,
     )
+
+
+def intent_for_kind(
+    kind: WorkUnitKind,
+    requirements: WorkUnitRouteRequirements | None = None,
+) -> RoutingIntent:
+    """Return the conservative routing intent for a WorkUnit kind."""
+    requirements = requirements or requirements_for_kind(kind)
+    required_caps = set(requirements.capabilities)
+    side_effects: set[str] = set()
+    risk = RoutingRisk.LOW
+
+    if kind is WorkUnitKind.PATCH_CANDIDATE:
+        required_caps.add("repo_write")
+        side_effects.add("repo_write")
+        risk = RoutingRisk.MEDIUM
+
+    if kind is WorkUnitKind.GITHUB_RELEASE:
+        required_caps.update({"github_release", "publish"})
+        side_effects.update({"git_write", "network_write", "publish", "release_create"})
+        risk = RoutingRisk.HIGH
+    elif kind is WorkUnitKind.DOCS_PUBLISH:
+        required_caps.update({"publish", "network_write"})
+        side_effects.update({"repo_write", "network_write", "publish", "external_write"})
+        risk = RoutingRisk.HIGH
+    elif kind is WorkUnitKind.DEPENDENCY_UPDATE:
+        required_caps.update({"repo_write", "network_write"})
+        side_effects.update({"repo_write", "network_write"})
+        risk = RoutingRisk.HIGH
+
+    return RoutingIntent(
+        risk=risk,
+        required_caps=frozenset(required_caps),
+        side_effects=frozenset(side_effects),
+        requires_user_approval=bool(side_effects & _WRITE_SIDE_EFFECTS),
+        output_policy="summarized_only",
+    )
+
+
+def force_foreground(intent: RoutingIntent) -> bool:
+    """Return True when the intent cannot be admitted to background routing."""
+    return (
+        intent.risk == RoutingRisk.HIGH
+        or bool(intent.required_caps & FORCE_FOREGROUND_CAPS)
+        or bool(intent.side_effects & FORCE_FOREGROUND_CAPS)
+        or intent.requires_user_approval
+    )
+
+
+def may_background(intent: RoutingIntent, worker: object) -> bool:
+    """P0 background admission predicate for a resolved intent and worker slot."""
+    if intent.risk == RoutingRisk.HIGH:
+        return False
+    if intent.side_effects & _WRITE_SIDE_EFFECTS:
+        return False
+    capabilities = frozenset(getattr(worker, "capabilities", {}) or {})
+    if not intent.required_caps.issubset(capabilities):
+        return False
+    if getattr(worker, "output_channel", getattr(worker, "output_policy", "")) != "summarized_only":
+        return False
+    return getattr(worker, "mode", "") == "background"
 
 
 def build_workunit_contract(unit: WorkUnit) -> str:

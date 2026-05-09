@@ -167,6 +167,9 @@ class MessageBus:
         if self._pre_deliver:
             await self._pre_deliver(envelope)
 
+        if envelope.output_policy == "summarized_only" and not envelope.delivery_text:
+            envelope.delivery_text = _summarized_only_delivery_fallback(envelope)
+
         await self._deliver(envelope)
 
     async def _deliver(self, envelope: Envelope) -> None:
@@ -236,3 +239,14 @@ class MessageBus:
                 await others[0].deliver_broadcast(fallback_env)
             except Exception:
                 logger.exception("Fallback delivery also failed")
+
+
+def _summarized_only_delivery_fallback(envelope: Envelope) -> str:
+    """Avoid exposing raw background payloads when no summary was provided."""
+    task_id = envelope.metadata.get("task_id", "")
+    task_ref = f" `{task_id}`" if task_id else ""
+    if envelope.is_error or envelope.status in {"failed", "error"}:
+        return f"Background task{task_ref} failed. Check task artifacts for details."
+    if envelope.status == "cancelled":
+        return f"Background task{task_ref} was cancelled."
+    return f"Background task{task_ref} completed. Check task artifacts for details."

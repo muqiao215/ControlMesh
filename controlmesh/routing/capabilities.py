@@ -23,12 +23,36 @@ class AgentSlot:
     allow_subagent: bool = True
     capabilities: dict[str, float] = field(default_factory=dict)
     tools: tuple[str, ...] = ()
+    sandbox: str = ""
+    approval_policy: str = ""
+    cwd: str = ""
+    visible_paths: tuple[str, ...] = ()
+    output_policy: str = "summarized_only"
     can_edit: bool = False
     canonical_write: bool = False
     topology_preferences: dict[str, str] = field(default_factory=dict)
 
+    @property
+    def output_channel(self) -> str:
+        """Alias used by the admission predicate."""
+        return self.output_policy
+
     def capability_score(self, capability: str) -> float:
         return float(self.capabilities.get(capability, 0.0))
+
+    def declares_worker_contract(self) -> bool:
+        """Return True when the slot declares the P0 worker contract."""
+        return all(
+            (
+                bool(self.sandbox),
+                bool(self.approval_policy),
+                bool(self.cwd),
+                bool(self.visible_paths),
+                bool(self.tools),
+                bool(self.capabilities),
+                bool(self.output_policy),
+            )
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +80,11 @@ def default_capability_registry(config: object | None = None) -> CapabilityRegis
             role="controller",
             cost_class="premium",
             allow_subagent=False,
+            sandbox="host",
+            approval_policy="foreground",
+            cwd="workspace",
+            visible_paths=("workspace",),
+            tools=("controlmesh",),
             canonical_write=True,
             capabilities={
                 "planning": 0.9,
@@ -73,6 +102,11 @@ def default_capability_registry(config: object | None = None) -> CapabilityRegis
             role="worker",
             cost_class="standard",
             allow_subagent=True,
+            sandbox="controlmesh_background",
+            approval_policy="never",
+            cwd="workspace",
+            visible_paths=("workspace",),
+            tools=("shell", "python", "pytest"),
             can_edit=True,
             capabilities={
                 "shell_execution": 0.72,
@@ -93,6 +127,11 @@ def default_capability_registry(config: object | None = None) -> CapabilityRegis
             role="worker",
             cost_class="cheap",
             allow_subagent=True,
+            sandbox="controlmesh_background",
+            approval_policy="never",
+            cwd="workspace",
+            visible_paths=("workspace",),
+            tools=("shell", "git"),
             capabilities={
                 "github_release": 0.86,
                 "shell_execution": 0.75,
@@ -110,6 +149,11 @@ def default_capability_registry(config: object | None = None) -> CapabilityRegis
             role="worker",
             cost_class="premium",
             allow_subagent=False,
+            sandbox="codex_cli",
+            approval_policy="never",
+            cwd="workspace",
+            visible_paths=("workspace",),
+            tools=("shell", "python", "pytest", "git"),
             can_edit=True,
             capabilities={
                 "code_review": 0.9,
@@ -135,6 +179,11 @@ def default_capability_registry(config: object | None = None) -> CapabilityRegis
             role="worker",
             cost_class="standard",
             allow_subagent=True,
+            sandbox="claude_code",
+            approval_policy="never",
+            cwd="workspace",
+            visible_paths=("workspace",),
+            tools=("codex-plugin-cc",),
             capabilities={
                 "code_review": 0.86,
                 "adversarial_review": 0.88,
@@ -152,6 +201,11 @@ def default_capability_registry(config: object | None = None) -> CapabilityRegis
             role="worker",
             cost_class="cheap",
             allow_subagent=True,
+            sandbox="opencode",
+            approval_policy="never",
+            cwd="workspace",
+            visible_paths=("workspace",),
+            tools=("shell", "python"),
             capabilities={
                 "code_search": 0.86,
                 "code_review": 0.78,
@@ -202,6 +256,11 @@ def _slot_from_mapping(name: str, payload: dict[str, Any]) -> AgentSlot:
     tools = payload.get("tools", ())
     if not isinstance(tools, list):
         tools = []
+    visible_paths = payload.get("visible_paths", ())
+    if isinstance(visible_paths, str):
+        visible_paths = [visible_paths]
+    if not isinstance(visible_paths, list):
+        visible_paths = []
     topology_preferences = payload.get("topology_preferences", {})
     if not isinstance(topology_preferences, dict):
         topology_preferences = {}
@@ -219,6 +278,11 @@ def _slot_from_mapping(name: str, payload: dict[str, Any]) -> AgentSlot:
         allow_subagent=bool(payload.get("allow_subagent", True)),
         capabilities=capabilities,
         tools=tuple(str(tool) for tool in tools),
+        sandbox=str(payload.get("sandbox", "")),
+        approval_policy=str(payload.get("approval_policy", "")),
+        cwd=str(payload.get("cwd", "")),
+        visible_paths=tuple(str(path) for path in visible_paths),
+        output_policy=str(payload.get("output_policy", "summarized_only") or "summarized_only"),
         can_edit=bool(payload.get("can_edit", permissions.get("edit", False))),
         canonical_write=bool(
             payload.get("canonical_write", permissions.get("canonical_write", False))

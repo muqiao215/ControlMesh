@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from controlmesh.config import AgentConfig
+from controlmesh.routing.capabilities import AgentSlot, CapabilityRegistry
 from controlmesh.routing.router import resolve_route
 
 
@@ -53,9 +54,9 @@ def test_resolve_route_keeps_explicit_topology_alias() -> None:
 def test_auto_route_skips_slots_disallowed_for_subagents() -> None:
     decision = resolve_route(
         AgentConfig(),
-        prompt="Fix failing test",
+        prompt="Review the failing diff",
         route="auto",
-        workunit_kind="patch_candidate",
+        workunit_kind="code_review",
     )
 
     assert decision is not None
@@ -63,7 +64,7 @@ def test_auto_route_skips_slots_disallowed_for_subagents() -> None:
     assert decision.provider != "codex"
 
 
-def test_github_release_prefers_release_runner() -> None:
+def test_github_release_forces_foreground_even_with_preferred_release_runner() -> None:
     config = AgentConfig()
     config.agent_routing.workunit_overrides = {
         "github_release": {
@@ -80,11 +81,82 @@ def test_github_release_prefers_release_runner() -> None:
         workunit_kind="github_release",
     )
 
-    assert decision is not None
-    assert decision.slot_name == "release_runner"
-    assert decision.topology == "pipeline"
-    assert decision.evaluator == "foreground"
-    assert "Do not publish" in decision.contract
+    assert decision is None
+
+
+def test_patch_candidate_repo_write_forces_foreground() -> None:
+    decision = resolve_route(
+        AgentConfig(),
+        prompt="Fix the failing test",
+        route="auto",
+        workunit_kind="patch_candidate",
+    )
+
+    assert decision is None
+
+
+def test_worker_slot_without_p0_contract_is_ineligible() -> None:
+    registry = CapabilityRegistry(
+        slots=(
+            AgentSlot(
+                name="legacy_worker",
+                provider="claude",
+                model="sonnet",
+                mode="background",
+                allow_subagent=True,
+                capabilities={
+                    "code_review": 0.9,
+                    "diff_understanding": 0.9,
+                    "evidence_writer": 0.9,
+                },
+            ),
+        )
+    )
+
+    decision = resolve_route(
+        AgentConfig(),
+        prompt="Review the diff",
+        route="auto",
+        workunit_kind="code_review",
+        registry=registry,
+    )
+
+    assert decision is None
+
+
+def test_worker_slot_with_raw_output_policy_is_ineligible() -> None:
+    registry = CapabilityRegistry(
+        slots=(
+            AgentSlot(
+                name="raw_worker",
+                provider="claude",
+                model="sonnet",
+                mode="background",
+                allow_subagent=True,
+                sandbox="host",
+                approval_policy="never",
+                cwd="/repo",
+                visible_paths=("/repo",),
+                tools=("shell",),
+                output_policy="raw_events",
+                capabilities={
+                    "code_review": 0.9,
+                    "diff_understanding": 0.9,
+                    "evidence_writer": 0.9,
+                },
+            ),
+        )
+    )
+
+    decision = resolve_route(
+        AgentConfig(),
+        prompt="Review the diff",
+        route="auto",
+        workunit_kind="code_review",
+        registry=registry,
+    )
+
+    assert decision is None
 
 
 def test_min_confidence_gate_rejects_weak_route() -> None:

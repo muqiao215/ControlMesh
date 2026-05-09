@@ -184,6 +184,7 @@ class TaskResult:
     provider: str
     model: str
     delivery_text: str = ""
+    output_policy: str = "summarized_only"
     transport: str = "tg"
     session_id: str = ""
     error: str = ""

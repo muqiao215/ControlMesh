@@ -19,6 +19,14 @@ agent_slots:
     model: ""
     mode: background
     role: worker
+    sandbox: opencode
+    approval_policy: never
+    cwd: /repo
+    visible_paths:
+      - /repo
+    tools:
+      - shell
+    output_policy: summarized_only
     can_edit: false
     capabilities:
       code_review:
@@ -33,6 +41,13 @@ agent_slots:
     assert registry.slots[0].name == "opencode.explore"
     assert registry.slots[0].capability_score("code_review") == 0.8
     assert registry.slots[0].allow_subagent is True
+    assert registry.slots[0].sandbox == "opencode"
+    assert registry.slots[0].approval_policy == "never"
+    assert registry.slots[0].cwd == "/repo"
+    assert registry.slots[0].visible_paths == ("/repo",)
+    assert registry.slots[0].tools == ("shell",)
+    assert registry.slots[0].output_policy == "summarized_only"
+    assert registry.slots[0].declares_worker_contract()
 
 
 def test_loads_slot_policy_metadata(tmp_path: Path) -> None:
@@ -58,6 +73,7 @@ agent_slots:
 
     assert registry.slots[0].cost_class == "premium"
     assert registry.slots[0].allow_subagent is False
+    assert not registry.slots[0].declares_worker_contract()
 
 
 def test_missing_registry_falls_back_to_defaults(tmp_path: Path) -> None:

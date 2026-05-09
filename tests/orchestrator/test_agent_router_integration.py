@@ -11,7 +11,7 @@ from controlmesh.orchestrator.core import Orchestrator
 from controlmesh.routing.router import RouteDecision
 from controlmesh.routing.workunit import WorkUnit, WorkUnitKind, requirements_for_kind
 from controlmesh.session.key import SessionKey
-from controlmesh.tasks.models import TaskEntry, TaskSubmit
+from controlmesh.tasks.models import TaskEntry
 
 
 @pytest.fixture
@@ -115,54 +115,6 @@ async def test_claude_command_menu_still_wins_over_router(orch: Orchestrator) ->
     assert request.provider_override == "claude"
 
 
-async def test_activation_policy_background_required_submits_taskhub_from_chat(
-    orch: Orchestrator,
-) -> None:
-    _write_activation_policy(
-        orch,
-        """
-activation_policies:
-  github_release_always_background:
-    execution: background_required
-    match:
-      workunit_kinds: [github_release]
-    preferred_slots: [release_runner]
-    topology: pipeline
-    requires_foreground_approval: true
-""".strip()
-        + "\n",
-    )
-    hub = MagicMock()
-    hub.submit = MagicMock(return_value="task1234")
-    hub.start_maintenance = MagicMock()
-    orch.set_task_hub(hub)
-
-    with patch(
-        "controlmesh.orchestrator.core.resolve_route",
-        return_value=_release_decision("请帮我发布新版本"),
-    ):
-        result = await orch.handle_message(
-            SessionKey(chat_id=1),
-            "请帮我发布新版本",
-            message_id=321,
-        )
-
-    hub.submit.assert_called_once()
-    submit = hub.submit.call_args.args[0]
-    assert isinstance(submit, TaskSubmit)
-    assert submit.message_id == 321
-    assert submit.route == "auto"
-    assert submit.workunit_kind == "github_release"
-    assert submit.topology == "pipeline"
-    assert submit.evaluator == "foreground"
-    assert "policy: github_release_always_background" in result.text
-    assert "workunit: github_release" in result.text
-    assert "slot: release_runner" in result.text
-    assert "provider/model: gemini/flash" in result.text
-    assert "task: task1234" in result.text
-    assert "results: completion or approval follow-ups will return here" in result.text
-
-
 async def test_activation_policy_skips_background_intercept_for_explicit_model_directive(
     orch: Orchestrator,
 ) -> None:
@@ -220,6 +172,24 @@ activation_policies:
     assert "policy: github_release_always_background" in result.text
     assert "workunit: github_release" in result.text
     assert "run it explicitly in foreground" in result.text
+
+
+async def test_github_release_without_activation_policy_stays_in_foreground(
+    orch: Orchestrator,
+) -> None:
+    hub = MagicMock()
+    hub.submit = MagicMock(return_value="task1234")
+    hub.start_maintenance = MagicMock()
+    orch.set_task_hub(hub)
+    mock_execute = AsyncMock(return_value=_mock_response(result="foreground release flow"))
+    object.__setattr__(orch._cli_service, "execute", mock_execute)
+
+    result = await orch.handle_message(SessionKey(chat_id=1), "请帮我发布新版本")
+
+    hub.submit.assert_not_called()
+    assert result.text == "foreground release flow"
+    request = mock_execute.call_args[0][0]
+    assert request.prompt.startswith("请帮我发布新版本")
 
 
 async def test_route_status_explains_background_routing_surface(orch: Orchestrator) -> None:

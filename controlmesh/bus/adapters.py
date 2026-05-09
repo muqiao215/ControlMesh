@@ -225,6 +225,10 @@ def from_task_result(result: TaskResult) -> Envelope:
     contain task memory, evidence, logs, or follow-up instructions for the
     controller; it must not be resumed into the active foreground LLM session.
     """
+    output_policy = getattr(result, "output_policy", "summarized_only") or "summarized_only"
+    delivery_text = getattr(result, "delivery_text", "") or ""
+    if output_policy == "summarized_only":
+        delivery_text = delivery_text or _summarized_only_fallback(result)
     return Envelope(
         origin=Origin.TASK_RESULT,
         chat_id=result.chat_id,
@@ -233,7 +237,8 @@ def from_task_result(result: TaskResult) -> Envelope:
         prompt="",
         prompt_preview=result.prompt_preview,
         result_text=result.result_text,
-        delivery_text=getattr(result, "delivery_text", ""),
+        delivery_text=delivery_text,
+        output_policy=output_policy,
         status=result.status,
         is_error=result.status == "failed",
         delivery=DeliveryMode.UNICAST,
@@ -251,6 +256,21 @@ def from_task_result(result: TaskResult) -> Envelope:
             "task_folder": result.task_folder,
         },
     )
+
+
+def _summarized_only_fallback(result: TaskResult) -> str:
+    """Return a non-raw fallback when a task omitted its delivery summary."""
+    if result.status == "done":
+        return (
+            f"Task `{result.task_id}` completed. "
+            "Open the task artifacts for detailed logs and evidence."
+        )
+    if result.status == "failed":
+        reason = result.error or "unknown"
+        return f"Task `{result.task_id}` failed. Reason: {reason}"
+    if result.status == "cancelled":
+        return f"Task `{result.task_id}` was cancelled."
+    return f"Task `{result.task_id}` status: {result.status or 'unknown'}."
 
 
 def _build_task_injection_prompt(result: TaskResult) -> str:

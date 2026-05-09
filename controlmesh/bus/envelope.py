@@ -61,6 +61,7 @@ class Envelope:
     # -- Result (what to deliver) --
     result_text: str = ""
     delivery_text: str = ""
+    output_policy: str = ""
     status: str = ""
     is_error: bool = False
 
