@@ -248,17 +248,18 @@ class TestBuildCommand:
         assert cmd[2] == "resume"
         assert "--json" in cmd
         assert "--dangerously-bypass-approvals-and-sandbox" in cmd
+        assert "--skip-git-repo-check" in cmd
         assert "thread-abc" in cmd
-        # resume does not include --model, --color, --skip-git-repo-check
+        # resume does not include --model or --color
         assert "--model" not in cmd
         assert "--color" not in cmd
-        assert "--skip-git-repo-check" not in cmd
 
     def test_resume_session_omits_sandbox_flags(self, monkeypatch: pytest.MonkeyPatch) -> None:
         cli = _make_cli(monkeypatch, permission_mode="default", sandbox_mode="read-only")
         cmd = cli._build_command("hello", resume_session="thread-abc")
         assert "--sandbox" not in cmd
         assert "--full-auto" not in cmd
+        assert "--skip-git-repo-check" in cmd
 
     def test_resume_session_json_output_false(self, monkeypatch: pytest.MonkeyPatch) -> None:
         cli = _make_cli(monkeypatch)

@@ -107,6 +107,7 @@ class CodexCLI(BaseCLI):
             cmd.append("--json")
         if self._config.permission_mode == "bypassPermissions":
             cmd.append("--dangerously-bypass-approvals-and-sandbox")
+        cmd.append("--skip-git-repo-check")
         cmd += ["--", session_id]
         if not _IS_WINDOWS:
             cmd.append(final_prompt)
