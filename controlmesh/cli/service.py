@@ -110,6 +110,7 @@ class CLIServiceConfig:
     max_turns: int | None
     max_budget_usd: float | None
     permission_mode: str
+    claude_root_permission_mode: str = "dontAsk"
     reasoning_effort: str = "medium"
     gemini_api_key: str | None = None
     docker_container: str = ""
@@ -433,6 +434,7 @@ class CLIService:
                 max_turns=self._config.max_turns,
                 max_budget_usd=self._config.max_budget_usd,
                 permission_mode=self._config.permission_mode,
+                claude_root_permission_mode=self._config.claude_root_permission_mode,
                 reasoning_effort=self._config.reasoning_effort,
                 gemini_api_key=self._config.gemini_api_key,
                 docker_container=self._config.docker_container,

@@ -85,6 +85,7 @@ class CLIConfig:
     allowed_tools: list[str] = field(default_factory=list)
     disallowed_tools: list[str] = field(default_factory=list)
     permission_mode: str = "bypassPermissions"
+    claude_root_permission_mode: str = "dontAsk"
     docker_container: str = ""
     # Codex-specific fields (ignored by Claude provider):
     sandbox_mode: str = "read-only"

@@ -484,6 +484,7 @@ class AgentConfig(BaseModel):
     max_turns: int | None = None
     max_session_messages: int | None = None
     permission_mode: str = "bypassPermissions"
+    claude_root_permission_mode: str = "dontAsk"
     cli_timeout: float = 1800.0
     reasoning_effort: str = "medium"
     file_access: str = "all"

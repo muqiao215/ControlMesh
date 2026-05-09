@@ -43,6 +43,7 @@ def test_agent_config_defaults() -> None:
     assert cfg.daily_reset_hour == 4
     assert cfg.cli_timeout == 1800.0
     assert cfg.permission_mode == "bypassPermissions"
+    assert cfg.claude_root_permission_mode == "dontAsk"
     assert cfg.gemini_api_key is None
     assert cfg.telegram_token == ""
     assert cfg.allowed_user_ids == []

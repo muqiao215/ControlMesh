@@ -102,10 +102,12 @@ class ClaudeCodeCLI(BaseCLI):
         mode = self._config.permission_mode
         geteuid = getattr(os, "geteuid", None)
         if mode == "bypassPermissions" and callable(geteuid) and geteuid() == 0:
+            fallback = self._config.claude_root_permission_mode or "dontAsk"
             logger.warning(
-                "Claude bypassPermissions is unsupported under root; falling back to default"
+                "Claude bypassPermissions is unsupported under root; falling back to %s",
+                fallback,
             )
-            return "default"
+            return fallback
         return mode
 
     async def send(

@@ -19,6 +19,7 @@
     "max_session_messages": null,
 
     "permission_mode": "bypassPermissions",
+    "claude_root_permission_mode": "dontAsk",
     "cli_timeout": 600.0,
     "reasoning_effort": "medium",
     "file_access": "all",
