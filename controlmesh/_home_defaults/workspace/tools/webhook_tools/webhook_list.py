@@ -39,6 +39,13 @@ def main() -> None:
         if task_folder:
             entry["task_folder"] = task_folder
             entry["task_folder_exists"] = (CRON_TASKS_DIR / task_folder).is_dir()
+        if h.get("mode") == "task":
+            entry["task_name"] = h.get("task_name")
+            entry["parent_agent"] = h.get("parent_agent")
+            entry["task_transport"] = h.get("task_transport")
+            entry["workunit_kind"] = h.get("workunit_kind")
+            entry["route"] = h.get("route")
+            entry["topology"] = h.get("topology")
         hooks.append(entry)
 
     server_info = {
@@ -55,9 +62,18 @@ def main() -> None:
                 "count": len(hooks),
                 "server": server_info,
                 "how_to_create": (
+                "python tools/webhook_tools/webhook_add.py "
+                '--name "..." --title "..." --description "..." '
+                '--mode "wake" --prompt-template "..."'
+            ),
+                "how_to_create_task_mode": (
                     "python tools/webhook_tools/webhook_add.py "
-                    '--name "..." --title "..." --description "..." '
-                    '--mode "wake" --prompt-template "..."'
+                    '--name "github-ci-failed" --title "GitHub CI Failed" '
+                    '--description "Create a background triage task for failed CI runs" '
+                    '--mode "task" --prompt-template "repo={{repo}} sha={{sha}} run={{run_url}}" '
+                    '--provider "codex" --model "gpt-5.5" --reasoning-effort "high" '
+                    '--task-name "CI failure triage" --workunit-kind "test_execution" '
+                    '--route "auto" --topology "pipeline"'
                 ),
                 "how_to_expose": "cloudflared tunnel --url http://localhost:8742",
                 "how_to_rotate_tokens": (

@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       notify_test:
-        description: "Trigger a synthetic CI failure to test Telegram notification"
+        description: "Trigger a synthetic CI failure to test failure notification delivery"
         required: false
         type: boolean
         default: false
@@ -121,6 +121,53 @@ jobs:
     if: ${{ always() && contains(needs.*.result, 'failure') }}
     runs-on: ubuntu-latest
     steps:
+      - name: Send ControlMesh webhook
+        env:
+          CONTROLMESH_WEBHOOK_URL: ${{ secrets.CONTROLMESH_WEBHOOK_URL }}
+          CONTROLMESH_WEBHOOK_BEARER_TOKEN: ${{ secrets.CONTROLMESH_WEBHOOK_BEARER_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          REF_NAME: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+          ACTOR: ${{ github.actor }}
+          SERVER_URL: ${{ github.server_url }}
+          RUN_ID: ${{ github.run_id }}
+          WORKFLOW: ${{ github.workflow }}
+          LINT_RESULT: ${{ needs.lint.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          SMOKE_RESULT: ${{ needs.failure-smoke.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$CONTROLMESH_WEBHOOK_URL" ] || [ -z "$CONTROLMESH_WEBHOOK_BEARER_TOKEN" ]; then
+            echo "ControlMesh webhook skipped: CONTROLMESH_WEBHOOK_URL or CONTROLMESH_WEBHOOK_BEARER_TOKEN is not configured."
+            exit 0
+          fi
+
+          python - <<'PY' > webhook-payload.json
+          import json
+          import os
+
+          payload = {
+              "repo": os.environ["REPOSITORY"],
+              "ref": os.environ["REF_NAME"],
+              "sha": os.environ["SHA"],
+              "actor": os.environ["ACTOR"],
+              "workflow": os.environ["WORKFLOW"],
+              "run_url": os.environ["RUN_URL"],
+              "lint_result": os.environ["LINT_RESULT"],
+              "test_result": os.environ["TEST_RESULT"],
+              "build_result": os.environ["BUILD_RESULT"],
+              "synthetic_failure_result": os.environ["SMOKE_RESULT"],
+          }
+          print(json.dumps(payload))
+          PY
+
+          curl --fail --silent --show-error \
+            -X POST "$CONTROLMESH_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${CONTROLMESH_WEBHOOK_BEARER_TOKEN}" \
+            --data @webhook-payload.json
+
       - name: Send Telegram notification
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}

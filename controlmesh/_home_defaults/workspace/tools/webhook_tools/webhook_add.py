@@ -31,7 +31,8 @@ REQUIRED PARAMETERS:
   --name              Unique hook ID (lowercase, hyphens ok)
   --title             Short human-readable title
   --description       What this webhook does
-  --mode              "wake" (resume main session) or "cron_task" (run task folder)
+  --mode              "wake" (resume main session), "cron_task" (run task folder),
+                      or "task" (submit a TaskHub background task)
   --prompt-template   Template with {{field}} placeholders from the payload
 
 OPTIONAL:
@@ -43,11 +44,19 @@ OPTIONAL:
   --hmac-header       Header name containing the HMAC signature (required for --auth-mode hmac).
                       Examples: "X-Hub-Signature-256" (GitHub), "Stripe-Signature" (Stripe).
 
-EXECUTION OVERRIDES (optional, for mode "cron_task"):
+EXECUTION OVERRIDES (optional):
   --provider          CLI provider: 'claude' or 'codex'
   --model             Model name (e.g. 'opus', 'sonnet', 'gpt-5.2-codex')
   --reasoning-effort  Thinking level for Codex: 'low', 'medium', 'high', 'xhigh'
   --cli-parameters    Additional CLI flags as JSON array (e.g. '["--chrome"]')
+
+TASK MODE OPTIONS (optional, only for mode "task"):
+  --task-name         Human-readable background task name (default: hook title)
+  --parent-agent      Parent agent for delivery/routing (default: main)
+  --task-transport    Explicit task transport override (e.g. telegram, qqbot, matrix)
+  --workunit-kind     Route hint such as test_execution, code_review, patch_candidate
+  --route             Routing mode (e.g. auto)
+  --topology          Explicit topology (pipeline, fanout_merge, director_worker)
 
 QUIET HOURS (optional, prevent hooks from running during specific hours):
   --quiet-start       Start of quiet hours (0-23, hook WON'T run during this time)
@@ -130,6 +139,17 @@ EXAMPLES:
       --description "Code-Review bei neuem PR" \\
       --mode "cron_task" --task-folder "github-review" \\
       --prompt-template "Review PR #{{number}}: {{title}}"
+
+  # Task mode: create a real background task for CI failure triage
+  python tools/webhook_tools/webhook_add.py \\
+      --name "github-ci-failed" --title "GitHub CI Failed" \\
+      --description "Create a background triage task for failed CI runs" \\
+      --mode "task" \\
+      --prompt-template "Repository: {{repo}}\\nWorkflow: {{workflow}}\\nSHA: {{sha}}\\nRun URL: {{run_url}}\\nSummarize the failure, inspect likely causes, and recommend the next fix." \\
+      --provider "codex" --model "gpt-5.5" --reasoning-effort "high" \\
+      --task-name "CI failure triage" --parent-agent "main" \\
+      --task-transport "telegram" --workunit-kind "test_execution" \\
+      --route "auto" --topology "pipeline"
 """
 
 
@@ -189,7 +209,7 @@ def main() -> None:
     parser.add_argument("--name", help="Unique hook ID")
     parser.add_argument("--title", help="Short human-readable title")
     parser.add_argument("--description", help="What this webhook does")
-    parser.add_argument("--mode", choices=["wake", "cron_task"], help="wake or cron_task")
+    parser.add_argument("--mode", choices=["wake", "cron_task", "task"], help="wake, cron_task, or task")
     parser.add_argument("--prompt-template", help="Template with {{field}} placeholders")
     parser.add_argument("--task-folder", help="cron_tasks/<folder> (required for cron_task mode)")
     parser.add_argument(
@@ -272,6 +292,21 @@ def main() -> None:
         help="Resource dependency (e.g. 'chrome_browser'). "
         "Hooks with same dependency run sequentially, different dependencies run in parallel.",
     )
+    parser.add_argument("--task-name", help="Human-readable TaskHub task name (task mode only)")
+    parser.add_argument("--parent-agent", help="Parent agent for TaskHub delivery (task mode only)")
+    parser.add_argument(
+        "--task-transport",
+        help="Transport override for TaskHub delivery (task mode only)",
+    )
+    parser.add_argument(
+        "--workunit-kind",
+        help="TaskHub workunit kind (e.g. test_execution, code_review)",
+    )
+    parser.add_argument("--route", help='TaskHub route mode, e.g. "auto"')
+    parser.add_argument(
+        "--topology",
+        help="TaskHub topology (pipeline, fanout_merge, director_worker, debate_judge)",
+    )
     args = parser.parse_args()
 
     required = ["name", "title", "description", "mode", "prompt_template"]
@@ -284,6 +319,20 @@ def main() -> None:
     if args.mode == "cron_task" and not args.task_folder:
         print(json.dumps({"error": "--task-folder is required for mode 'cron_task'"}))
         sys.exit(1)
+
+    if args.mode != "task":
+        task_only_flags = {
+            "--task-name": args.task_name,
+            "--parent-agent": args.parent_agent,
+            "--task-transport": args.task_transport,
+            "--workunit-kind": args.workunit_kind,
+            "--route": args.route,
+            "--topology": args.topology,
+        }
+        used = [flag for flag, value in task_only_flags.items() if value]
+        if used:
+            print(json.dumps({"error": f"{', '.join(used)} are only valid for mode 'task'"}))
+            sys.exit(1)
 
     if args.auth_mode == "hmac":
         if not args.hmac_secret:
@@ -358,6 +407,12 @@ def main() -> None:
         "quiet_start": args.quiet_start,
         "quiet_end": args.quiet_end,
         "dependency": args.dependency.strip() if args.dependency else None,
+        "task_name": args.task_name,
+        "parent_agent": args.parent_agent,
+        "task_transport": args.task_transport,
+        "workunit_kind": args.workunit_kind,
+        "route": args.route,
+        "topology": args.topology,
     }
     data["hooks"].append(hook)
     save_hooks(HOOKS_PATH, data)
@@ -377,6 +432,15 @@ def main() -> None:
             result["action_required"] = [
                 f"Open cron_tasks/{task_folder}/TASK_DESCRIPTION.md and fill in the Assignment section.",
             ]
+    elif args.mode == "task":
+        result["task_defaults"] = {
+            "task_name": args.task_name or args.title,
+            "parent_agent": args.parent_agent or "main",
+            "task_transport": args.task_transport or "(runtime transport)",
+            "workunit_kind": args.workunit_kind or "",
+            "route": args.route or "",
+            "topology": args.topology or "",
+        }
 
     # Setup instructions for the user (CRITICAL for non-technical users)
     if args.auth_mode == "bearer":
@@ -430,6 +494,12 @@ def main() -> None:
                 f"--payload '{{\"test\": true}}'"
             ),
         }
+    if args.mode == "task":
+        result.setdefault("setup_instructions", {})
+        result["setup_instructions"]["step_6_task_delivery"] = (
+            "This hook creates a background task instead of waking the foreground chat. "
+            "The result will return through the configured parent agent/chat path."
+        )
 
     if name != args.name.strip():
         result["name_sanitized"] = True

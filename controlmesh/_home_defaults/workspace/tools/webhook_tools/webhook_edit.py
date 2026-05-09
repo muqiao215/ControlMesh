@@ -28,6 +28,7 @@ OPTIONS:
   --title "..."         Change the title
   --description "..."   Change the description
   --prompt-template "..." Change the prompt template
+  --mode "..."          Change mode ("wake", "cron_task", "task")
   --task-folder "..."   Change the cron_task folder (cron_task mode only)
   --auth-mode "..."     Change auth mode ("bearer" or "hmac")
   --hmac-secret "..."   Set/change HMAC signing secret
@@ -42,6 +43,12 @@ OPTIONS:
   --model "..."         Change model name
   --reasoning-effort    Change thinking level for Codex (low, medium, high, xhigh)
   --cli-parameters      Change CLI flags as JSON array
+  --task-name "..."     Change TaskHub task name (task mode)
+  --parent-agent "..."  Change TaskHub parent agent (task mode)
+  --task-transport "..." Change TaskHub transport override (task mode)
+  --workunit-kind "..." Change TaskHub workunit kind (task mode)
+  --route "..."         Change TaskHub route mode (task mode)
+  --topology "..."      Change TaskHub topology (task mode)
   --quiet-start <hour>  Start of quiet hours (0-23, webhook won't run during this time)
   --quiet-end <hour>    End of quiet hours (0-23, exclusive)
   --dependency "..."    Resource dependency (e.g. 'chrome_browser', 'api_rate_limit')
@@ -69,6 +76,7 @@ def main() -> None:
     parser.add_argument("--title")
     parser.add_argument("--description")
     parser.add_argument("--prompt-template")
+    parser.add_argument("--mode", choices=["wake", "cron_task", "task"])
     parser.add_argument("--task-folder")
     parser.add_argument("--auth-mode", choices=["bearer", "hmac"])
     parser.add_argument("--hmac-secret")
@@ -101,6 +109,12 @@ def main() -> None:
         "--cli-parameters",
         help="Change CLI flags as JSON array (e.g. '[\"--verbose\"]')",
     )
+    parser.add_argument("--task-name")
+    parser.add_argument("--parent-agent")
+    parser.add_argument("--task-transport")
+    parser.add_argument("--workunit-kind")
+    parser.add_argument("--route")
+    parser.add_argument("--topology")
     parser.add_argument(
         "--quiet-start",
         type=int,
@@ -177,6 +191,9 @@ def main() -> None:
     if args.prompt_template:
         hook["prompt_template"] = args.prompt_template
         changes["prompt_template"] = args.prompt_template
+    if args.mode:
+        hook["mode"] = args.mode
+        changes["mode"] = args.mode
     if args.task_folder:
         hook["task_folder"] = args.task_folder
         changes["task_folder"] = args.task_folder
@@ -240,6 +257,24 @@ def main() -> None:
         except json.JSONDecodeError as e:
             print(json.dumps({"error": f"Invalid --cli-parameters JSON: {e}"}))
             sys.exit(1)
+    if args.task_name is not None:
+        hook["task_name"] = args.task_name
+        changes["task_name"] = args.task_name
+    if args.parent_agent is not None:
+        hook["parent_agent"] = args.parent_agent
+        changes["parent_agent"] = args.parent_agent
+    if args.task_transport is not None:
+        hook["task_transport"] = args.task_transport
+        changes["task_transport"] = args.task_transport
+    if args.workunit_kind is not None:
+        hook["workunit_kind"] = args.workunit_kind
+        changes["workunit_kind"] = args.workunit_kind
+    if args.route is not None:
+        hook["route"] = args.route
+        changes["route"] = args.route
+    if args.topology is not None:
+        hook["topology"] = args.topology
+        changes["topology"] = args.topology
     if args.quiet_start is not None:
         hook["quiet_start"] = args.quiet_start
         changes["quiet_start"] = args.quiet_start

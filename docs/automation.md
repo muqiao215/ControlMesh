@@ -136,10 +136,13 @@ Modes:
 
 - `wake`: inject rendered prompt into active Telegram chat flow
 - `cron_task`: run isolated one-shot execution in task folder
+- `task`: create a real TaskHub background task and deliver its result back through the configured chat/agent path
 
 Prompt payload is wrapped with safety markers before execution.
 
 `cron_task` mode supports the same override/quiet/dependency fields as cron jobs.
+`task` mode supports provider/model overrides plus TaskHub metadata such as `task_name`,
+`parent_agent`, `task_transport`, `workunit_kind`, `route`, and `topology`.
 
 Quiet-hour behavior in `cron_task` mode:
 
@@ -163,7 +166,70 @@ Current transport limitation:
 
 - webhook `wake` depends on a configured wake handler and is currently wired by Telegram startup only
 - Matrix-primary setups do not provide that handler right now, so `wake` returns `error:no_wake_handler`
-- for Matrix-only deployments, use `cron_task` mode instead of `wake`
+- for Matrix-only deployments, use `cron_task` or `task` mode instead of `wake`
+
+### CI failure -> background task
+
+For GitHub Actions failure triage, prefer `mode="task"` over `wake`. It creates a real
+background task with full TaskHub routing, timeout, evidence, and result delivery.
+
+Typical setup:
+
+```bash
+python tools/webhook_tools/webhook_add.py \
+  --name "github-ci-failed" \
+  --title "GitHub CI Failed" \
+  --description "Create a background triage task for failed CI runs" \
+  --mode "task" \
+  --prompt-template "Repository: {{repo}}\nWorkflow: {{workflow}}\nSHA: {{sha}}\nRun URL: {{run_url}}\nInspect the failure, summarize the likely cause, and propose the next fix." \
+  --auth-mode "bearer" \
+  --provider "codex" \
+  --model "gpt-5.5" \
+  --reasoning-effort "high" \
+  --task-name "CI failure triage" \
+  --parent-agent "main" \
+  --task-transport "telegram" \
+  --workunit-kind "test_execution" \
+  --route "auto" \
+  --topology "pipeline"
+```
+
+Your external CI sender only needs to POST JSON with keys matching the template, for example:
+
+```json
+{
+  "repo": "muqiao215/ControlMesh",
+  "workflow": "CI",
+  "sha": "abc123",
+  "run_url": "https://github.com/muqiao215/ControlMesh/actions/runs/123456789"
+}
+```
+
+For GitHub Actions, wire the repository failure job to the hook with two secrets:
+
+- `CONTROLMESH_WEBHOOK_URL`:
+  `https://<public-domain>/hooks/github-ci-failed`
+- `CONTROLMESH_WEBHOOK_BEARER_TOKEN`:
+  the bearer token returned by `webhook_add.py`
+
+Recommended workflow behavior:
+
+- keep the existing Telegram failure message as a human-visible fallback
+- send the webhook first so ControlMesh can create a real background task
+- use `workflow_dispatch.inputs.notify_test=true` to force a synthetic failure and validate the route end to end
+
+Example payload fields used by the built-in CI workflow:
+
+- `repo`
+- `ref`
+- `sha`
+- `actor`
+- `workflow`
+- `run_url`
+- `lint_result`
+- `test_result`
+- `build_result`
+- `synthetic_failure_result`
 
 ## Heartbeat
 

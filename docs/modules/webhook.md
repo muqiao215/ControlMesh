@@ -25,6 +25,7 @@ Core fields:
 
 - `id`, `title`, `mode`, `prompt_template`, `enabled`
 - `task_folder` (`cron_task` mode)
+- `task_name`, `parent_agent`, `task_transport`, `workunit_kind`, `route`, `topology` (`task` mode)
 - trigger/error telemetry fields
 
 Auth fields:
@@ -37,7 +38,7 @@ Bearer fallback behavior:
 - for `auth_mode="bearer"`, validation uses `hook.token` when set
 - otherwise it falls back to global `webhooks.token`
 
-Execution overrides (`cron_task`):
+Execution overrides (`cron_task` and `task`):
 
 - `provider`, `model`, `reasoning_effort`, `cli_parameters`
 - `quiet_start`, `quiet_end`, `dependency`
@@ -87,6 +88,7 @@ When `webhooks.enabled=true`:
 4. route by mode:
    - `wake`
    - `cron_task`
+   - `task`
 5. record trigger + error status
 6. invoke optional result callback
 
@@ -113,11 +115,44 @@ One-shot isolated run in task folder:
 6. execute with timeout
 7. parse result and return `WebhookResult`
 
+## Mode: `task`
+
+TaskHub-backed background task submission:
+
+1. require live `TaskHub`
+2. resolve target chat from `allowed_user_ids`
+3. build `TaskSubmit` from hook fields
+4. submit through the same TaskHub path used by in-chat background tasks
+5. return a webhook result such as `success`, `error:no_task_hub`, `error:no_chat_id`, or `error:<submit_error>`
+
+Task-mode hook fields:
+
+- `task_name` (defaults to hook title)
+- `parent_agent` (defaults to `main`)
+- `task_transport` (defaults to runtime transport)
+- `workunit_kind`
+- `route`
+- `topology`
+
+Recommended use:
+
+- CI failure triage
+- release preflight checks
+- inbound code-review or incident-analysis tasks
+
+Operational note:
+
+- external senders such as GitHub Actions should target the per-hook endpoint directly
+- bearer mode is the simplest setup for CI systems when you control the repository secrets
+- task-mode hooks are the correct fit when the sender should create a background task instead of trying to fake a chat message
+
 ## Common result statuses
 
 - `success`
 - `error:not_found`
 - `error:no_wake_handler`
+- `error:no_task_hub`
+- `error:no_chat_id`
 - `error:no_response`
 - `error:no_task_folder`
 - `error:folder_missing`
