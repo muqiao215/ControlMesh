@@ -46,6 +46,12 @@ class CronJob:
     # Optional dependency for sequential execution
     dependency: str | None = None
 
+    # Execution split: legacy one-shot vs TaskHub-backed background task
+    execution_mode: str = "oneshot"
+    workunit_kind: str | None = None
+    risk: str | None = None
+    output_policy: str | None = None
+
     # Routing: deliver results to the chat/topic where the job was created
     chat_id: int = 0
     topic_id: int | None = None
@@ -74,6 +80,10 @@ class CronJob:
             "quiet_start": self.quiet_start,
             "quiet_end": self.quiet_end,
             "dependency": self.dependency,
+            "execution_mode": self.execution_mode,
+            "workunit_kind": self.workunit_kind,
+            "risk": self.risk,
+            "output_policy": self.output_policy,
             "chat_id": self.chat_id,
             "topic_id": self.topic_id,
             "transport": self.transport,
@@ -103,6 +113,10 @@ class CronJob:
             quiet_start=data.get("quiet_start"),
             quiet_end=data.get("quiet_end"),
             dependency=data.get("dependency"),
+            execution_mode=data.get("execution_mode", "oneshot"),
+            workunit_kind=data.get("workunit_kind"),
+            risk=data.get("risk"),
+            output_policy=data.get("output_policy"),
             chat_id=data.get("chat_id", 0),
             topic_id=data.get("topic_id"),
             transport=data.get("transport", "tg"),

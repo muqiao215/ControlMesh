@@ -24,6 +24,10 @@ def test_cronjob_new_fields_defaults() -> None:
     assert job.model is None
     assert job.reasoning_effort is None
     assert job.cli_parameters == []
+    assert job.execution_mode == "oneshot"
+    assert job.workunit_kind is None
+    assert job.risk is None
+    assert job.output_policy is None
 
 
 def test_cronjob_new_fields_with_values() -> None:
@@ -68,6 +72,10 @@ def test_cronjob_to_dict_includes_new_fields() -> None:
     assert data["model"] == "gpt-5.2-codex"
     assert data["reasoning_effort"] == "high"
     assert data["cli_parameters"] == ["--fast"]
+    assert data["execution_mode"] == "oneshot"
+    assert data["workunit_kind"] is None
+    assert data["risk"] is None
+    assert data["output_policy"] is None
 
 
 def test_cronjob_to_dict_with_none_values() -> None:
@@ -92,6 +100,10 @@ def test_cronjob_to_dict_with_none_values() -> None:
     assert data["reasoning_effort"] is None
     assert "cli_parameters" in data
     assert data["cli_parameters"] == []
+    assert data["execution_mode"] == "oneshot"
+    assert data["workunit_kind"] is None
+    assert data["risk"] is None
+    assert data["output_policy"] is None
 
 
 def test_cronjob_from_dict_with_new_fields() -> None:
@@ -136,6 +148,10 @@ def test_cronjob_from_dict_backward_compatibility() -> None:
     assert job.model is None
     assert job.reasoning_effort is None
     assert job.cli_parameters == []
+    assert job.execution_mode == "oneshot"
+    assert job.workunit_kind is None
+    assert job.risk is None
+    assert job.output_policy is None
 
 
 def test_cronjob_round_trip_serialization() -> None:
@@ -297,3 +313,26 @@ def test_empty_cli_parameters_persists_as_empty_list(tmp_path: Path) -> None:
 
     assert reloaded_job.cli_parameters == []
     assert isinstance(reloaded_job.cli_parameters, list)
+
+
+def test_cronjob_taskhub_fields_round_trip() -> None:
+    """TaskHub cron fields should survive serialization."""
+    original = CronJob(
+        id="taskhub-1",
+        title="CI audit",
+        description="Inspect latest CI failures",
+        schedule="0 9 * * *",
+        task_folder="ci-audit/",
+        agent_instruction="Inspect CI failures and summarize",
+        execution_mode="taskhub",
+        workunit_kind="test_execution",
+        risk="low",
+        output_policy="summarized_only",
+    )
+
+    restored = CronJob.from_dict(original.to_dict())
+
+    assert restored.execution_mode == "taskhub"
+    assert restored.workunit_kind == "test_execution"
+    assert restored.risk == "low"
+    assert restored.output_policy == "summarized_only"

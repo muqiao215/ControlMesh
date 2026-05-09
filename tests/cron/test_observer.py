@@ -21,6 +21,7 @@ from controlmesh.cron.execution import (
 )
 from controlmesh.cron.manager import CronJob, CronManager
 from controlmesh.cron.observer import CronObserver
+from controlmesh.tasks.models import TaskSubmit
 from controlmesh.workspace.paths import ControlMeshPaths
 
 
@@ -258,6 +259,165 @@ class TestCronObserverScheduling:
 
 class TestCronObserverExecution:
     """Job execution tests."""
+
+    async def test_oneshot_mode_uses_legacy_execute_path(self, tmp_path: Path) -> None:
+        paths = _make_paths(tmp_path)
+        mgr = _make_manager(paths)
+        mgr.add_job(_make_job("ops-maint"))
+        observer = _make_observer(paths, mgr)
+
+        fake_result = MagicMock()
+        fake_result.status = "success"
+        fake_result.result_text = "done"
+        fake_result.execution = MagicMock(stdout=b"ok")
+
+        with (
+            time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)),
+            patch("controlmesh.cron.observer.execute_in_task_folder", new=AsyncMock(return_value=fake_result)) as execute_mock,
+        ):
+            await observer._execute_job("ops-maint", "refresh ops notes", "ops-maint")
+
+        execute_mock.assert_awaited_once()
+
+    async def test_taskhub_mode_submits_ci_audit_task(self, tmp_path: Path) -> None:
+        paths = _make_paths(tmp_path)
+        mgr = _make_manager(paths)
+        mgr.add_job(
+            _make_job(
+                "ci-audit",
+                title="CI audit",
+                description="Inspect failed CI runs",
+                chat_id=123456,
+                execution_mode="taskhub",
+                workunit_kind="test_execution",
+                risk="low",
+                output_policy="summarized_only",
+                agent_instruction="Inspect the latest CI failures and summarize root causes.",
+            )
+        )
+        observer = _make_observer(paths, mgr)
+        hub = MagicMock()
+        hub.submit = MagicMock(return_value="task1234")
+        observer.set_task_hub(hub)
+
+        with (
+            time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)),
+            patch("controlmesh.cron.observer.execute_in_task_folder", new=AsyncMock()) as execute_mock,
+        ):
+            await observer._execute_job("ci-audit", "Inspect the latest CI failures and summarize root causes.", "ci-audit")
+
+        execute_mock.assert_not_awaited()
+        hub.submit.assert_called_once()
+        submit = hub.submit.call_args.args[0]
+        assert isinstance(submit, TaskSubmit)
+        assert submit.chat_id == 123456
+        assert submit.name == "CI audit"
+        assert submit.workunit_kind == "test_execution"
+        assert submit.route == "auto"
+
+        job = mgr.get_job("ci-audit")
+        assert job is not None
+        assert job.last_run_status == "success:taskhub_submitted"
+
+    async def test_taskhub_mode_requires_task_hub_without_fallback(self, tmp_path: Path) -> None:
+        paths = _make_paths(tmp_path)
+        mgr = _make_manager(paths)
+        mgr.add_job(
+            _make_job(
+                "memory-sync",
+                title="Memory sync",
+                description="Update ops memory files",
+                chat_id=123456,
+                execution_mode="taskhub",
+                workunit_kind="repo_audit",
+                risk="low",
+                output_policy="summarized_only",
+            )
+        )
+        observer = _make_observer(paths, mgr)
+        callback = AsyncMock()
+        observer.set_result_handler(callback)
+
+        with (
+            time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)),
+            patch("controlmesh.cron.observer.execute_in_task_folder", new=AsyncMock()) as execute_mock,
+        ):
+            await observer._execute_job("memory-sync", "Update ops memory files", "memory-sync")
+
+        execute_mock.assert_not_awaited()
+        callback.assert_awaited_once_with("Memory sync", "", "error:no_task_hub", 123456, None, "tg")
+        job = mgr.get_job("memory-sync")
+        assert job is not None
+        assert job.last_run_status == "error:no_task_hub"
+
+    async def test_taskhub_mode_rejects_foreground_only_release_flow(self, tmp_path: Path) -> None:
+        paths = _make_paths(tmp_path)
+        mgr = _make_manager(paths)
+        mgr.add_job(
+            _make_job(
+                "nightly-release",
+                title="Nightly release",
+                description="Attempt release",
+                chat_id=123456,
+                execution_mode="taskhub",
+                workunit_kind="github_release",
+                risk="high",
+                output_policy="summarized_only",
+                agent_instruction="Prepare and publish the next release.",
+            )
+        )
+        observer = _make_observer(paths, mgr)
+        observer.set_task_hub(MagicMock())
+        callback = AsyncMock()
+        observer.set_result_handler(callback)
+
+        with (
+            time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)),
+            patch("controlmesh.cron.observer.execute_in_task_folder", new=AsyncMock()) as execute_mock,
+        ):
+            await observer._execute_job("nightly-release", "Prepare and publish the next release.", "nightly-release")
+
+        execute_mock.assert_not_awaited()
+        callback.assert_awaited_once_with(
+            "Nightly release",
+            "",
+            "error:cron_taskhub_requires_foreground",
+            123456,
+            None,
+            "tg",
+        )
+        job = mgr.get_job("nightly-release")
+        assert job is not None
+        assert job.last_run_status == "error:cron_taskhub_requires_foreground"
+
+    async def test_taskhub_mode_rejects_non_summary_output_policy(self, tmp_path: Path) -> None:
+        paths = _make_paths(tmp_path)
+        mgr = _make_manager(paths)
+        mgr.add_job(
+            _make_job(
+                "repo-check",
+                title="Repo check",
+                description="Inspect CI and repo health",
+                chat_id=123456,
+                execution_mode="taskhub",
+                workunit_kind="repo_audit",
+                risk="low",
+                output_policy="raw_events",
+            )
+        )
+        observer = _make_observer(paths, mgr)
+        observer.set_task_hub(MagicMock())
+
+        with (
+            time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)),
+            patch("controlmesh.cron.observer.execute_in_task_folder", new=AsyncMock()) as execute_mock,
+        ):
+            await observer._execute_job("repo-check", "Inspect CI and repo health", "repo-check")
+
+        execute_mock.assert_not_awaited()
+        job = mgr.get_job("repo-check")
+        assert job is not None
+        assert job.last_run_status == "error:cron_taskhub_requires_summarized_only"
 
     async def test_handles_missing_task_folder(self, tmp_path: Path) -> None:
         paths = _make_paths(tmp_path)

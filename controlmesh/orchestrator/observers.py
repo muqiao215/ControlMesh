@@ -231,6 +231,8 @@ class ObserverManager:
                 self.webhook.set_wake_handler(wake_handler)
 
     def set_task_hub(self, hub: TaskHub) -> None:
-        """Wire TaskHub-backed webhook task creation when available."""
+        """Wire TaskHub-backed webhook and cron task creation when available."""
+        if self.cron:
+            self.cron.set_task_hub(hub)
         if self.webhook:
             self.webhook.set_task_hub(hub)

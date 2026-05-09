@@ -85,6 +85,17 @@ class TestWireToBus:
         mgr.wire_to_bus(bus, wake_handler=None)
         mgr.webhook.set_wake_handler.assert_not_called()
 
+    def test_set_task_hub_wires_cron_and_webhook(self) -> None:
+        mgr = _make_observers()
+        mgr.cron = MagicMock()
+        mgr.webhook = MagicMock()
+        hub = MagicMock()
+
+        mgr.set_task_hub(hub)
+
+        mgr.cron.set_task_hub.assert_called_once_with(hub)
+        mgr.webhook.set_task_hub.assert_called_once_with(hub)
+
 
 # ---------------------------------------------------------------------------
 # Webhook callback filters wake mode
