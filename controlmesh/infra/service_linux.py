@@ -93,6 +93,7 @@ Type=simple
 ExecStart={binary_path}
 Restart=on-failure
 RestartSec=5
+UnsetEnvironment=PYTHONPATH PYTHONHOME
 Environment=PATH={path_value}
 Environment=HOME={home}
 Environment=CONTROLMESH_SUPERVISOR=1

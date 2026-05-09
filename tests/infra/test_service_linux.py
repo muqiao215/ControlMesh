@@ -39,6 +39,10 @@ class TestGenerateServiceUnit:
             unit = _generate_service_unit("controlmesh")
         assert f"EnvironmentFile=-{tmp_path}/.controlmesh/.env" in unit
 
+    def test_unsets_pythonpath_and_pythonhome(self) -> None:
+        unit = _generate_service_unit("controlmesh")
+        assert "UnsetEnvironment=PYTHONPATH PYTHONHOME" in unit
+
     def test_does_not_install_legacy_alias(self) -> None:
         unit = _generate_service_unit("controlmesh")
         assert "Alias=" not in unit

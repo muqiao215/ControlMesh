@@ -60,6 +60,7 @@ async def test_kill_all_sets_aborted() -> None:
     with patch("controlmesh.cli.process_registry.asyncio.sleep", new_callable=AsyncMock):
         await reg.kill_all(chat_id=1)
     assert reg.was_aborted(1) is True
+    assert reg.was_aborted(1, "main") is True
 
 
 def test_clear_abort() -> None:
@@ -68,6 +69,26 @@ def test_clear_abort() -> None:
     assert reg.was_aborted(1) is True
     reg.clear_abort(1)
     assert reg.was_aborted(1) is False
+
+
+async def test_kill_by_label_sets_only_label_abort() -> None:
+    reg = ProcessRegistry()
+    proc = _mock_process(pid=81)
+    reg.register(chat_id=1, process=proc, label="main")
+    with patch("controlmesh.cli.process_registry.asyncio.sleep", new_callable=AsyncMock):
+        count = await reg.kill_by_label(chat_id=1, label="main")
+    assert count == 1
+    assert reg.was_aborted(1) is False
+    assert reg.was_aborted(1, "main") is True
+    assert reg.was_aborted(1, "task:123") is False
+
+
+def test_clear_label_abort() -> None:
+    reg = ProcessRegistry()
+    reg._aborted_labels.add((1, "main"))
+    assert reg.was_aborted(1, "main") is True
+    reg.clear_label_abort(1, "main")
+    assert reg.was_aborted(1, "main") is False
 
 
 async def test_kill_all_empty_returns_zero() -> None:

@@ -51,6 +51,7 @@ from controlmesh.config import (
     deep_merge_config,
 )
 from controlmesh.i18n import t_rich
+from controlmesh.infra.install import detect_runtime_provenance
 from controlmesh.infra.json_store import atomic_json_save
 from controlmesh.infra.version import get_current_version
 from controlmesh.workspace.init import init_workspace
@@ -468,6 +469,32 @@ def _print_version() -> None:
     _console.print(get_current_version())
 
 
+def _enforce_runtime_provenance() -> None:
+    """Fail fast when packaged installs import controlmesh from the wrong path."""
+    provenance = detect_runtime_provenance()
+    if provenance.matches_expected:
+        return
+
+    _console.print("[red]ControlMesh runtime path drift detected.[/red]")
+    _console.print(f"Install mode: {provenance.install_info.mode}/{provenance.install_info.source}")
+    _console.print(f"Installed version: {provenance.installed_version}")
+    _console.print(f"Imported version: {provenance.imported_version}")
+    _console.print(f"Imported file: {provenance.imported_file}")
+    _console.print(f"Executable: {provenance.executable}")
+    _console.print(f"sys.prefix: {provenance.sys_prefix}")
+    _console.print(f"cwd: {provenance.cwd}")
+    _console.print(f"PYTHONPATH: {provenance.pythonpath or '<empty>'}")
+    if provenance.reason:
+        _console.print(f"Reason: {provenance.reason}")
+    _console.print(
+        "[yellow]Refusing to start because the live process is not importing ControlMesh from the expected installed runtime.[/yellow]"
+    )
+    _console.print(
+        "[dim]Fix the service wrapper or environment so it runs the packaged install directly, then restart the service.[/dim]"
+    )
+    raise SystemExit(2)
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -498,6 +525,7 @@ _Action = Callable[[], None]
 
 def main() -> None:
     """CLI entry point."""
+    _enforce_runtime_provenance()
     args = sys.argv[1:]
     commands = [a for a in args if not a.startswith("-")]
     verbose = "--verbose" in args

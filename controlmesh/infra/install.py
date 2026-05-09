@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import unquote, urlparse
 
+import controlmesh
+
 logger = logging.getLogger(__name__)
 
 InstallMode = Literal["pipx", "pip", "dev"]
@@ -31,6 +33,22 @@ class InstallInfo:
     vcs: str | None = None
     requested_revision: str | None = None
     commit_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeProvenance:
+    """Describe where the live runtime imported controlmesh from."""
+
+    install_info: InstallInfo
+    imported_version: str
+    installed_version: str
+    imported_file: str
+    executable: str
+    sys_prefix: str
+    cwd: str
+    pythonpath: str
+    matches_expected: bool
+    reason: str = ""
 
 
 def _base_install_mode() -> Literal["pipx", "pip"]:
@@ -138,3 +156,66 @@ def detect_install_mode() -> InstallMode:
 def is_upgradeable() -> bool:
     """Return True if the bot can self-upgrade (pipx or pip, not dev)."""
     return detect_install_mode() != "dev"
+
+
+def _normalize_path(value: str | None) -> Path | None:
+    if not value:
+        return None
+    try:
+        return Path(value).expanduser().resolve()
+    except OSError:
+        return None
+
+
+def _installed_distribution_root() -> Path | None:
+    """Return the installed distribution root for packaged installs."""
+    try:
+        dist = distribution(_PACKAGE_NAME)
+        return Path(dist.locate_file("")).resolve()
+    except Exception:
+        return None
+
+
+def detect_runtime_provenance() -> RuntimeProvenance:
+    """Inspect the active runtime import location against install expectations."""
+    info = detect_install_info()
+    imported_file = str(Path(controlmesh.__file__).resolve())
+    imported_version = getattr(controlmesh, "__version__", "0.0.0")
+    installed_version = sys.modules.get("controlmesh.infra.version")
+    del installed_version  # avoid circular helper import at module import time
+
+    from controlmesh.infra.version import get_current_version
+
+    current_version = get_current_version()
+    executable = str(Path(sys.executable).resolve())
+    sys_prefix = str(Path(sys.prefix).resolve())
+    cwd = str(Path.cwd().resolve())
+    pythonpath = os.environ.get("PYTHONPATH", "")
+
+    matches_expected = True
+    reasons: list[str] = []
+
+    if info.mode != "dev":
+        expected_root = _installed_distribution_root()
+        imported_path = Path(imported_file)
+        if expected_root is not None and expected_root not in imported_path.parents:
+            matches_expected = False
+            reasons.append(f"imported module is outside expected runtime root {expected_root}")
+        if imported_version != current_version:
+            matches_expected = False
+            reasons.append(
+                f"imported version {imported_version} does not match installed package version {current_version}"
+            )
+
+    return RuntimeProvenance(
+        install_info=info,
+        imported_version=imported_version,
+        installed_version=current_version,
+        imported_file=imported_file,
+        executable=executable,
+        sys_prefix=sys_prefix,
+        cwd=cwd,
+        pythonpath=pythonpath,
+        matches_expected=matches_expected,
+        reason="; ".join(reasons),
+    )

@@ -3,9 +3,16 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from controlmesh.infra.install import detect_install_info, detect_install_mode, is_upgradeable
+from controlmesh.infra.install import (
+    InstallInfo,
+    detect_install_info,
+    detect_install_mode,
+    detect_runtime_provenance,
+    is_upgradeable,
+)
 
 
 class TestDetectInstallMode:
@@ -178,3 +185,51 @@ class TestIsUpgradeable:
     def test_dev_is_not_upgradeable(self) -> None:
         with patch("controlmesh.infra.install.detect_install_mode", return_value="dev"):
             assert is_upgradeable() is False
+
+
+class TestRuntimeProvenance:
+    def test_packaged_install_matches_expected_runtime_root(self) -> None:
+        info = InstallInfo(mode="pipx", source="pypi")
+        fake_module_file = "/root/.local/share/uv/tools/controlmesh/lib/python3.12/site-packages/controlmesh/__init__.py"
+
+        with (
+            patch("controlmesh.infra.install.detect_install_info", return_value=info),
+            patch(
+                "controlmesh.infra.install._installed_distribution_root",
+                return_value=Path("/root/.local/share/uv/tools/controlmesh/lib/python3.12/site-packages"),
+            ),
+            patch("controlmesh.infra.install.controlmesh.__file__", fake_module_file),
+            patch("controlmesh.infra.install.controlmesh.__version__", "0.24.18"),
+            patch("controlmesh.infra.install.sys.executable", "/usr/bin/python3.12"),
+            patch("controlmesh.infra.install.sys.prefix", "/root/.local/share/uv/tools/controlmesh"),
+            patch("controlmesh.infra.install.Path.cwd", return_value=Path("/root")),
+            patch("controlmesh.infra.install.os.environ", {"PYTHONPATH": ""}),
+            patch("controlmesh.infra.version.importlib.metadata.version", return_value="0.24.18"),
+        ):
+            provenance = detect_runtime_provenance()
+
+        assert provenance.matches_expected is True
+        assert provenance.imported_version == "0.24.18"
+
+    def test_packaged_install_detects_source_tree_drift(self) -> None:
+        info = InstallInfo(mode="pipx", source="pypi")
+
+        with (
+            patch("controlmesh.infra.install.detect_install_info", return_value=info),
+            patch(
+                "controlmesh.infra.install._installed_distribution_root",
+                return_value=Path("/root/.local/share/uv/tools/controlmesh/lib/python3.12/site-packages"),
+            ),
+            patch("controlmesh.infra.install.controlmesh.__file__", "/root/ControlMesh/controlmesh/__init__.py"),
+            patch("controlmesh.infra.install.controlmesh.__version__", "0.23.5"),
+            patch("controlmesh.infra.install.sys.executable", "/usr/bin/python3.12"),
+            patch("controlmesh.infra.install.sys.prefix", "/root/.local/share/uv/tools/controlmesh"),
+            patch("controlmesh.infra.install.Path.cwd", return_value=Path("/root/ControlMesh")),
+            patch("controlmesh.infra.install.os.environ", {"PYTHONPATH": "/root/ControlMesh"}),
+            patch("controlmesh.infra.version.importlib.metadata.version", return_value="0.24.15"),
+        ):
+            provenance = detect_runtime_provenance()
+
+        assert provenance.matches_expected is False
+        assert "outside expected runtime root" in provenance.reason
+        assert "does not match installed package version" in provenance.reason

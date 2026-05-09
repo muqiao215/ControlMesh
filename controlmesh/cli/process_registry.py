@@ -96,9 +96,13 @@ class ProcessRegistry:
             total += await self.kill_all(chat_id)
         return total
 
-    def was_aborted(self, chat_id: int) -> bool:
-        """Check whether *chat_id* has been aborted since last clear."""
-        return chat_id in self._aborted
+    def was_aborted(self, chat_id: int, label: str | None = None) -> bool:
+        """Check whether *chat_id* or a specific *label* has been aborted."""
+        if chat_id in self._aborted:
+            return True
+        if label is None:
+            return False
+        return (chat_id, label) in self._aborted_labels
 
     def clear_abort(self, chat_id: int) -> None:
         """Clear the abort flag for *chat_id*."""

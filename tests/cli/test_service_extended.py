@@ -333,3 +333,37 @@ async def test_execute_streaming_dispatches_structured_tool_events(tmp_path: Pat
     assert [type(event) for event in tool_events] == [ToolUseEvent, ToolResultEvent]
     assert tool_events[0].tool_name == "Bash"
     assert tool_events[1].output == "hi"
+
+
+async def test_execute_streaming_label_abort_stops_only_matching_request(tmp_path: Path) -> None:
+    svc = _make_service(tmp_path)
+    await svc._process_registry.kill_by_label(1, "task:feedbeef")
+
+    class FakeCLI:
+        async def send_streaming(self, **_kwargs: Any) -> Any:
+            yield AssistantTextDelta(type="assistant", text="hello")
+            yield ResultEvent(type="result", result="done", is_error=False, returncode=0)
+
+    with patch("controlmesh.cli.service.create_cli", return_value=FakeCLI()):
+        response = await svc.execute_streaming(
+            AgentRequest(prompt="test", chat_id=1, process_label="main")
+        )
+
+    assert response.result == "done"
+
+
+async def test_execute_streaming_matching_label_abort_returns_empty(tmp_path: Path) -> None:
+    svc = _make_service(tmp_path)
+    await svc._process_registry.kill_by_label(1, "main")
+
+    class FakeCLI:
+        async def send_streaming(self, **_kwargs: Any) -> Any:
+            yield AssistantTextDelta(type="assistant", text="hello")
+            yield ResultEvent(type="result", result="done", is_error=False, returncode=0)
+
+    with patch("controlmesh.cli.service.create_cli", return_value=FakeCLI()):
+        response = await svc.execute_streaming(
+            AgentRequest(prompt="test", chat_id=1, process_label="main")
+        )
+
+    assert response.result == ""

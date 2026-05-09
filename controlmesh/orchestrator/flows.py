@@ -262,12 +262,14 @@ async def _reset_on_error(
     orch: Orchestrator,
     key: SessionKey,
     *,
+    process_label: str,
     model_name: str,
     provider_name: str,
     cli_detail: str = "",
 ) -> OrchestratorResult:
     """Kill processes, preserve session, return user-facing error."""
-    await orch._process_registry.kill_all(key.chat_id)
+    await orch._process_registry.kill_by_label(key.chat_id, process_label)
+    orch._process_registry.clear_label_abort(key.chat_id, process_label)
     logger.warning("Session error preserved model=%s provider=%s", model_name, provider_name)
     return OrchestratorResult(
         text=session_error_text(model_name, cli_detail),
@@ -287,7 +289,8 @@ async def _handle_timeout(
     so that the next user message can ``--resume`` the timed-out session.
     """
     model_name, _provider_name = _request_target(orch, request)
-    await orch._process_registry.kill_all(key.chat_id)
+    await orch._process_registry.kill_by_label(key.chat_id, request.process_label)
+    orch._process_registry.clear_label_abort(key.chat_id, request.process_label)
 
     # Persist the session_id captured from SystemInitEvent so resume works.
     if response.session_id and response.session_id != session.session_id:
@@ -360,6 +363,8 @@ async def _recover_session(
     key: SessionKey,
     text: str,
     ctx: _RecoveryContext,
+    *,
+    process_label: str,
 ) -> tuple[AgentRequest, SessionData, AgentResponse]:
     """Reset the active provider session and retry once.
 
@@ -368,8 +373,8 @@ async def _recover_session(
     logger.warning("recovery.%s chat=%s action=retry", ctx.reason, key.chat_id)
     model_name = ctx.model_override or orch._config.model
     provider_name = ctx.provider_override or orch.models.provider_for(model_name)
-    await orch._process_registry.kill_all(key.chat_id)
-    orch._process_registry.clear_abort(key.chat_id)
+    await orch._process_registry.kill_by_label(key.chat_id, process_label)
+    orch._process_registry.clear_label_abort(key.chat_id, process_label)
     await orch._sessions.reset_provider_session(key, provider=provider_name, model=model_name)
 
     cb = ctx.cbs
@@ -404,6 +409,11 @@ def _request_target(orch: Orchestrator, request: AgentRequest) -> tuple[str, str
     model_name = request.model_override or orch._config.model
     provider_name = request.provider_override or orch.models.provider_for(model_name)
     return model_name, provider_name
+
+
+def _request_was_aborted(orch: Orchestrator, request: AgentRequest) -> bool:
+    """Return True when this request label or whole chat was aborted."""
+    return orch._process_registry.was_aborted(request.chat_id, request.process_label)
 
 
 def _begin_inflight(
@@ -499,7 +509,7 @@ async def _normal_with_options(
         session_recovered = False
         _reg = orch._process_registry
         if (
-            not _reg.was_aborted(key.chat_id)
+            not _request_was_aborted(orch, request)
             and not _reg.was_interrupted(key.chat_id)
             and _needs_session_recovery(response)
         ):
@@ -511,8 +521,10 @@ async def _normal_with_options(
                 provider_override=options.provider_override,
                 prompt_policy=options.prompt_policy,
             )
-            request, session, response = await _recover_session(orch, key, text, ctx)
-        if _reg.was_aborted(key.chat_id) or _reg.was_interrupted(key.chat_id):
+            request, session, response = await _recover_session(
+                orch, key, text, ctx, process_label=request.process_label
+            )
+        if _request_was_aborted(orch, request) or _reg.was_interrupted(key.chat_id):
             _reg.clear_interrupt(key.chat_id)
             logger.info("Normal flow aborted/interrupted by user")
             return OrchestratorResult(text="")
@@ -526,6 +538,7 @@ async def _normal_with_options(
             return await _reset_on_error(
                 orch,
                 key,
+                process_label=request.process_label,
                 model_name=model_name,
                 provider_name=provider_name,
                 cli_detail=response.result,
@@ -643,7 +656,7 @@ async def _normal_streaming_with_options(
         )
         _reg = orch._process_registry
         if (
-            not _reg.was_aborted(key.chat_id)
+            not _request_was_aborted(orch, request)
             and not _reg.was_interrupted(key.chat_id)
             and _needs_session_recovery(response)
         ):
@@ -656,8 +669,10 @@ async def _normal_streaming_with_options(
                 cbs=cb,
                 prompt_policy=options.prompt_policy,
             )
-            request, session, response = await _recover_session(orch, key, text, ctx)
-        if _reg.was_aborted(key.chat_id) or _reg.was_interrupted(key.chat_id):
+            request, session, response = await _recover_session(
+                orch, key, text, ctx, process_label=request.process_label
+            )
+        if _request_was_aborted(orch, request) or _reg.was_interrupted(key.chat_id):
             _reg.clear_interrupt(key.chat_id)
             logger.info("Streaming flow aborted/interrupted by user")
             return OrchestratorResult(text="")
@@ -671,6 +686,7 @@ async def _normal_streaming_with_options(
             return await _reset_on_error(
                 orch,
                 key,
+                process_label=request.process_label,
                 model_name=model_name,
                 provider_name=provider_name,
                 cli_detail=response.result,
@@ -818,7 +834,7 @@ async def named_session_flow(
     response = await orch._cli_service.execute(request)
 
     _reg = orch._process_registry
-    if _reg.was_aborted(key.chat_id) or _reg.was_interrupted(key.chat_id):
+    if _reg.was_aborted(key.chat_id, request.process_label) or _reg.was_interrupted(key.chat_id):
         _reg.clear_interrupt(key.chat_id)
         ns.status = "idle"
         return OrchestratorResult(text="")
@@ -883,7 +899,7 @@ async def named_session_streaming(
     )
 
     _reg2 = orch._process_registry
-    if _reg2.was_aborted(key.chat_id) or _reg2.was_interrupted(key.chat_id):
+    if _reg2.was_aborted(key.chat_id, request.process_label) or _reg2.was_interrupted(key.chat_id):
         _reg2.clear_interrupt(key.chat_id)
         ns.status = "idle"
         return OrchestratorResult(text="")

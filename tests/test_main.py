@@ -1004,6 +1004,34 @@ class TestUninstall:
 
 
 class TestMainDispatch:
+    def test_main_refuses_runtime_path_drift(self) -> None:
+        from controlmesh.__main__ import main
+        from controlmesh.infra.install import InstallInfo, RuntimeProvenance
+
+        provenance = RuntimeProvenance(
+            install_info=InstallInfo(mode="pipx", source="pypi"),
+            imported_version="0.23.5",
+            installed_version="0.24.15",
+            imported_file="/root/ControlMesh/controlmesh/__init__.py",
+            executable="/usr/bin/python3.12",
+            sys_prefix="/root/.local/share/uv/tools/controlmesh",
+            cwd="/root/ControlMesh",
+            pythonpath="/root/ControlMesh",
+            matches_expected=False,
+            reason="imported module is outside expected runtime root /root/.local/share/uv/tools/controlmesh",
+        )
+
+        with (
+            patch("sys.argv", ["controlmesh"]),
+            patch("controlmesh.__main__.detect_runtime_provenance", return_value=provenance),
+            patch("controlmesh.__main__._console.print") as mock_print,
+            pytest.raises(SystemExit) as exc,
+        ):
+            main()
+
+        assert exc.value.code == 2
+        assert mock_print.called
+
     def test_version_short_flag(self) -> None:
         from controlmesh.__main__ import main
 

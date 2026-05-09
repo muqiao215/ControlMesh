@@ -377,6 +377,24 @@ class TestSendStreaming:
         # Should have stopped early due to abort
         assert len(events) <= 1
 
+    async def test_streaming_ignores_other_label_abort(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        reg = ProcessRegistry()
+        cli = _make_cli(monkeypatch, process_registry=reg, chat_id=99, process_label="main")
+
+        lines = [
+            json.dumps({"type": "message", "role": "model", "content": "First"}),
+            json.dumps({"type": "result", "result": "Done"}),
+        ]
+        proc = _make_streaming_process(lines)
+        await reg.kill_by_label(99, "task:feedbeef")
+
+        with patch(
+            "controlmesh.cli.gemini_provider.asyncio.create_subprocess_exec", return_value=proc
+        ):
+            events = [event async for event in cli.send_streaming("Hi")]
+
+        assert any(isinstance(e, ResultEvent) for e in events)
+
     async def test_streaming_nonzero_without_result_emits_error(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

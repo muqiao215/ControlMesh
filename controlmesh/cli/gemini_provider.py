@@ -298,7 +298,9 @@ class GeminiCLI(BaseCLI):
                 stderr_bytes=stderr_bytes,
                 state=state,
             )
-            was_aborted = bool(reg and reg.was_aborted(self._config.chat_id))
+            was_aborted = bool(
+                reg and reg.was_aborted(self._config.chat_id, self._config.process_label)
+            )
             if final_event is not None and not timed_out and not was_aborted:
                 yield final_event
         finally:
@@ -348,6 +350,7 @@ class GeminiCLI(BaseCLI):
                 timeout_seconds=timeout_seconds or _DEFAULT_TIMEOUT,
                 process_registry=reg,
                 chat_id=self._config.chat_id,
+                process_label=self._config.process_label,
             ):
                 yield event
             return
@@ -358,6 +361,7 @@ class GeminiCLI(BaseCLI):
             timeout_controller=timeout_controller,
             process_registry=reg,
             chat_id=self._config.chat_id,
+            process_label=self._config.process_label,
         ):
             yield event
 
@@ -495,12 +499,13 @@ async def _stream_events_plain(
     timeout_seconds: float,
     process_registry: ProcessRegistry | None,
     chat_id: int,
+    process_label: str,
 ) -> AsyncGenerator[StreamEvent, None]:
     """Read stream output with a fixed timeout (legacy behavior)."""
     assert process.stdout is not None
     async with asyncio.timeout(timeout_seconds):
         while True:
-            if process_registry and process_registry.was_aborted(chat_id):
+            if process_registry and process_registry.was_aborted(chat_id, process_label):
                 logger.info("Gemini streaming aborted by user")
                 return
 
@@ -525,6 +530,7 @@ async def _stream_events_with_controller(
     timeout_controller: TimeoutController,
     process_registry: ProcessRegistry | None,
     chat_id: int,
+    process_label: str,
 ) -> AsyncGenerator[StreamEvent, None]:
     """Read stream output with managed timeout extensions + warnings."""
     assert process.stdout is not None
@@ -534,7 +540,7 @@ async def _stream_events_with_controller(
     try:
         if timeout_controller.uses_idle_liveness is True:
             while True:
-                if process_registry and process_registry.was_aborted(chat_id):
+                if process_registry and process_registry.was_aborted(chat_id, process_label):
                     logger.info("Gemini streaming aborted by user")
                     return
 
@@ -558,7 +564,7 @@ async def _stream_events_with_controller(
             try:
                 async with asyncio.timeout(timeout_secs):
                     while True:
-                        if process_registry and process_registry.was_aborted(chat_id):
+                        if process_registry and process_registry.was_aborted(chat_id, process_label):
                             logger.info("Gemini streaming aborted by user")
                             return
 
