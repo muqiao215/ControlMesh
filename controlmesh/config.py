@@ -348,7 +348,7 @@ class TasksConfig(BaseModel):
 class AgentRoutingConfig(BaseModel):
     """Settings for capability-based agent routing."""
 
-    enabled: bool = True
+    enabled: bool = False
     mode: str = "auto"
     capability_registry: str = "routing/capabilities.yaml"
     activation_policy_file: str = "routing/activation_policies.yaml"

@@ -259,10 +259,11 @@ class TaskHub:
         topology = submit.topology or ""
         workunit_contract = ""
         route_reason = ""
+        routing_enabled = bool(getattr(self._config, "agent_routing", None) and self._config.agent_routing.enabled)
 
         # Resolve activation intent BEFORE resolve_route (policy -> activate -> score -> execute)
         activation_intent: ActivationIntent | None = None
-        if submit.route == "auto":
+        if submit.route == "auto" and routing_enabled:
             route_config = self._runtime_config or self._config
             policies = _load_activation_policies_for_config(route_config, self._paths)
             activation_intent = resolve_activation_intent(
@@ -280,7 +281,7 @@ class TaskHub:
                 explicit_route="",
             )
 
-        if submit.route == "auto":
+        if submit.route == "auto" and routing_enabled:
             route_config = self._runtime_config or self._config
             decision = resolve_route(
                 route_config,

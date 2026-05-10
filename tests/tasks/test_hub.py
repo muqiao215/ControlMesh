@@ -161,7 +161,10 @@ class TestSubmit:
             MagicMock(workspace=tmp_path),
             cli_service=cli,
             config=_make_config(),
-            runtime_config=AgentConfig(controlmesh_home=str(tmp_path)),
+            runtime_config=AgentConfig(
+                controlmesh_home=str(tmp_path),
+                agent_routing={"enabled": True},
+            ),
         )
 
         submit = _submit(prompt="Review the current diff", name="Review diff")
@@ -196,7 +199,10 @@ class TestSubmit:
             MagicMock(workspace=tmp_path),
             cli_service=_make_cli_service(),
             config=_make_config(),
-            runtime_config=AgentConfig(controlmesh_home=str(tmp_path)),
+            runtime_config=AgentConfig(
+                controlmesh_home=str(tmp_path),
+                agent_routing={"enabled": True},
+            ),
         )
 
         submit = _submit(prompt="Run tests", name="Run tests")
@@ -258,7 +264,10 @@ agent_slots:
             MagicMock(workspace=tmp_path),
             cli_service=cli,
             config=_make_config(),
-            runtime_config=AgentConfig(controlmesh_home=str(home)),
+            runtime_config=AgentConfig(
+                controlmesh_home=str(home),
+                agent_routing={"enabled": True},
+            ),
         )
 
         submit = _submit(prompt="Review the current diff", name="Runtime model route")
@@ -379,7 +388,10 @@ activation_policies:
             MagicMock(workspace=tmp_path, controlmesh_home=home, home_defaults=home),
             cli_service=cli,
             config=_make_config(),
-            runtime_config=AgentConfig(controlmesh_home=str(home)),
+            runtime_config=AgentConfig(
+                controlmesh_home=str(home),
+                agent_routing={"enabled": True},
+            ),
         )
 
         submit = _submit(prompt="Review the current diff", name="Review diff")
@@ -441,7 +453,10 @@ activation_policies:
             paths,
             cli_service=cli,
             config=_make_config(),
-            runtime_config=AgentConfig(controlmesh_home=str(tmp_path)),
+            runtime_config=AgentConfig(
+                controlmesh_home=str(tmp_path),
+                agent_routing={"enabled": True},
+            ),
         )
         delivered: list[TaskResult] = []
         hub.set_result_handler("main", AsyncMock(side_effect=delivered.append))

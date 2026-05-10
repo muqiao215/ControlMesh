@@ -38,7 +38,7 @@ def test_old_config_loads_with_new_defaults(tmp_path: Path) -> None:
     assert "agent_routing" in merged
     assert merged["cli_parameters"]["claude"] == []
     assert merged["cli_parameters"]["codex"] == []
-    assert merged["agent_routing"]["enabled"] is True
+    assert merged["agent_routing"]["enabled"] is False
 
     # User values should be preserved
     assert merged["log_level"] == "DEBUG"

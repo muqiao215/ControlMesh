@@ -611,6 +611,8 @@ class Orchestrator:
         directives: ParsedDirectives,
     ) -> OrchestratorResult | None:
         """Surface policy-suggested background routes without auto-dispatching."""
+        if not self._config.agent_routing.enabled:
+            return None
         if directives.has_model or directives.raw_directives:
             return None
 

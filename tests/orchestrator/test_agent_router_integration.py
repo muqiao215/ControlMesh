@@ -118,6 +118,7 @@ async def test_claude_command_menu_still_wins_over_router(orch: Orchestrator) ->
 async def test_activation_policy_skips_background_intercept_for_explicit_model_directive(
     orch: Orchestrator,
 ) -> None:
+    orch._config.agent_routing.enabled = True
     _write_activation_policy(
         orch,
         """
@@ -148,6 +149,7 @@ activation_policies:
 async def test_activation_policy_reports_when_no_background_route_is_available(
     orch: Orchestrator,
 ) -> None:
+    orch._config.agent_routing.enabled = True
     _write_activation_policy(
         orch,
         """
@@ -177,6 +179,7 @@ activation_policies:
 async def test_activation_policy_only_suggests_background_candidate_without_dispatch(
     orch: Orchestrator,
 ) -> None:
+    orch._config.agent_routing.enabled = True
     _write_activation_policy(
         orch,
         """
@@ -221,6 +224,7 @@ async def test_github_release_without_activation_policy_stays_in_foreground(
 
 
 async def test_route_status_explains_background_routing_surface(orch: Orchestrator) -> None:
+    orch._config.agent_routing.enabled = True
     _write_activation_policy(
         orch,
         """
