@@ -198,6 +198,21 @@ def start_service(console: Console | None = None) -> None:
         print_start_failed(console, result.stderr.strip())
 
 
+def restart_service(console: Console | None = None) -> None:
+    """Restart the Launch Agent."""
+    console = ensure_console(console)
+
+    if not is_service_installed():
+        print_not_installed(console)
+        return
+
+    result = _run_launchctl("kickstart", "-k", f"gui/{os.getuid()}/{_LABEL}")
+    if result.returncode == 0:
+        print_started(console)
+    else:
+        print_start_failed(console, result.stderr.strip())
+
+
 def stop_service(console: Console | None = None) -> None:
     """Stop the Launch Agent."""
     console = ensure_console(console)

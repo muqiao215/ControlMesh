@@ -12,6 +12,7 @@ from controlmesh.infra.service_linux import (
     is_service_running,
     print_service_logs,
     print_service_status,
+    restart_service,
     start_service,
     stop_service,
     uninstall_service,
@@ -27,7 +28,7 @@ class TestGenerateServiceUnit:
     def test_has_restart_policy(self) -> None:
         unit = _generate_service_unit("controlmesh")
         assert "Restart=on-failure" in unit
-        assert "RestartSec=20" in unit
+        assert "RestartSec=5" in unit
 
     def test_has_service_section(self) -> None:
         unit = _generate_service_unit("controlmesh")
@@ -35,17 +36,9 @@ class TestGenerateServiceUnit:
         assert "[Unit]" in unit
         assert "[Install]" in unit
 
-    def test_includes_systemd_safety_fuses(self) -> None:
+    def test_includes_supervisor_environment(self) -> None:
         unit = _generate_service_unit("controlmesh")
-        assert "StartLimitIntervalSec=300" in unit
-        assert "StartLimitBurst=3" in unit
-        assert "MemoryHigh=900M" in unit
-        assert "MemoryMax=1200M" in unit
-        assert "CPUQuota=80%" in unit
-        assert "TasksMax=256" in unit
-        assert "TimeoutStartSec=60" in unit
-        assert "TimeoutStopSec=30" in unit
-        assert "KillMode=control-group" in unit
+        assert "Environment=CONTROLMESH_SUPERVISOR=1" in unit
 
     def test_includes_controlmesh_env_file(self, tmp_path: Path) -> None:
         with patch("controlmesh.infra.service_linux.Path.home", return_value=tmp_path):
@@ -145,6 +138,22 @@ class TestStopService:
         console = MagicMock()
         stop_service(console)
         mock_run.assert_called_once_with("stop", _SERVICE_NAME)
+
+
+class TestRestartService:
+    @patch("controlmesh.infra.service_linux._run_systemctl")
+    @patch("controlmesh.infra.service_linux.is_service_installed", return_value=True)
+    @patch("controlmesh.infra.service_linux._has_systemd", return_value=True)
+    def test_restart_success(
+        self,
+        _has: MagicMock,
+        _installed: MagicMock,
+        mock_run: MagicMock,
+    ) -> None:
+        mock_run.return_value = make_completed(0)
+        console = MagicMock()
+        restart_service(console)
+        mock_run.assert_called_once_with("restart", _SERVICE_NAME)
 
 
 class TestUninstallService:

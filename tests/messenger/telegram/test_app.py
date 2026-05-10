@@ -478,7 +478,13 @@ class TestOnRestart:
         tg_bot._dp.stop_polling = AsyncMock()
         msg = _make_message(chat_id=77)
 
-        with patch("controlmesh.infra.restart.write_restart_sentinel") as mock_sentinel:
+        with (
+            patch("controlmesh.infra.restart.write_restart_sentinel") as mock_sentinel,
+            patch(
+                "controlmesh.messenger.telegram.app.request_restart",
+                return_value=False,
+            ) as mock_request_restart,
+        ):
             await tg_bot._on_restart(msg)
 
         mock_send.assert_called_once()
@@ -486,6 +492,7 @@ class TestOnRestart:
         assert "Restarting" in text
         assert tg_bot._exit_code == EXIT_RESTART
         mock_sentinel.assert_called_once()
+        mock_request_restart.assert_called_once()
         sentinel_kwargs = mock_sentinel.call_args
         assert sentinel_kwargs[0][0] == 77
 

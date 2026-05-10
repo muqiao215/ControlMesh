@@ -50,6 +50,11 @@ def start_service(console: Console | None = None) -> None:
     _backend.start_service(console)
 
 
+def restart_service(console: Console | None = None) -> None:
+    """Restart the service."""
+    _backend.restart_service(console)
+
+
 def stop_service(console: Console | None = None) -> None:
     """Stop the service."""
     _backend.stop_service(console)

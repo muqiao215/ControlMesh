@@ -90,3 +90,33 @@ class TestExitRestart:
         from controlmesh.infra.restart import EXIT_RESTART
 
         assert EXIT_RESTART == 42
+
+
+class TestRequestRestart:
+    def test_writes_marker_and_returns_false_without_service_manager(self, tmp_path: Path) -> None:
+        from controlmesh.infra.restart import request_restart
+
+        marker = tmp_path / "restart-requested"
+        assert request_restart(marker_path=marker) is False
+        assert marker.exists()
+
+    def test_service_managed_restart_does_not_write_marker(
+        self,
+        monkeypatch,
+        tmp_path: Path,
+    ) -> None:
+        from controlmesh.infra import restart
+
+        marker = tmp_path / "restart-requested"
+        calls: list[str] = []
+
+        monkeypatch.setenv("CONTROLMESH_SUPERVISOR", "1")
+        monkeypatch.setattr("controlmesh.infra.service.is_service_installed", lambda: True)
+        monkeypatch.setattr(
+            "controlmesh.infra.service.restart_service",
+            lambda *_args, **_kwargs: calls.append("restart"),
+        )
+
+        assert restart.request_restart(marker_path=marker) is True
+        assert not marker.exists()
+        assert calls == ["restart"]

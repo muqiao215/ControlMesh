@@ -476,10 +476,10 @@ class MatrixBot:
         self, *, text: str, room_id: str, key: SessionKey, event: object
     ) -> None:
         """Request bot restart via restart marker."""
-        from controlmesh.infra.restart import EXIT_RESTART, write_restart_marker
+        from controlmesh.infra.restart import EXIT_RESTART, request_restart
 
         marker = _expand_marker(self._config.controlmesh_home)
-        write_restart_marker(marker_path=marker)
+        request_restart(marker_path=marker)
         await self._send_rich(
             room_id,
             fmt(t("startup.restart_header"), SEP, t("startup.restart_body")),
@@ -977,7 +977,7 @@ class MatrixBot:
             return
 
         if data.startswith("upg:yes:"):
-            from controlmesh.infra.restart import EXIT_RESTART, write_restart_marker
+            from controlmesh.infra.restart import EXIT_RESTART, request_restart
             from controlmesh.infra.updater import perform_upgrade_pipeline
             from controlmesh.infra.version import get_current_version
 
@@ -988,7 +988,7 @@ class MatrixBot:
             )
             if changed:
                 marker = _expand_marker(self._config.controlmesh_home)
-                write_restart_marker(marker_path=marker)
+                request_restart(marker_path=marker)
                 await self._send_rich(
                     room_id, t("startup.matrix_upgraded_restarting", old=current, new=installed)
                 )

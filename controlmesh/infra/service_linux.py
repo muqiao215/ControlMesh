@@ -224,6 +224,25 @@ def start_service(console: Console | None = None) -> None:
         print_start_failed(console, result.stderr.strip())
 
 
+def restart_service(console: Console | None = None) -> None:
+    """Restart the service."""
+    console = ensure_console(console)
+
+    if not _has_systemd():
+        console.print("[dim]systemd not available.[/dim]")
+        return
+
+    if not is_service_installed():
+        print_not_installed(console)
+        return
+
+    result = _run_systemctl("restart", _SERVICE_NAME)
+    if result.returncode == 0:
+        print_started(console)
+    else:
+        print_start_failed(console, result.stderr.strip())
+
+
 def stop_service(console: Console | None = None) -> None:
     """Stop the service."""
     console = ensure_console(console)
