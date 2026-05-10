@@ -42,6 +42,12 @@ class TaskSubmit:
     phase_id: str = ""
     phase_title: str = ""
     phase_metadata: dict[str, Any] = field(default_factory=dict)
+    repo_root: str = ""
+    expected_repo: str = ""
+    expected_remote: str = ""
+    expected_branch: str = ""
+    tool_use_id: str = ""
+    external_task: bool = False
 
 
 @dataclass(slots=True)
@@ -85,6 +91,12 @@ class TaskEntry:
     phase_id: str = ""
     phase_title: str = ""
     phase_metadata: dict[str, Any] = field(default_factory=dict)
+    repo_root: str = ""
+    expected_repo: str = ""
+    expected_remote: str = ""
+    expected_branch: str = ""
+    tool_use_id: str = ""
+    external_task: bool = False
     tasks_dir: str = ""  # Agent's tasks directory (for per-agent folder resolution)
     thread_id: TopicRef = None  # Forum topic ID (for routing results back to topic)
 
@@ -126,6 +138,12 @@ class TaskEntry:
             "phase_id": self.phase_id,
             "phase_title": self.phase_title,
             "phase_metadata": dict(self.phase_metadata),
+            "repo_root": self.repo_root,
+            "expected_repo": self.expected_repo,
+            "expected_remote": self.expected_remote,
+            "expected_branch": self.expected_branch,
+            "tool_use_id": self.tool_use_id,
+            "external_task": self.external_task,
             "tasks_dir": self.tasks_dir,
         }
         if self.thread_id is not None:
@@ -171,6 +189,12 @@ class TaskEntry:
             phase_id=d.get("phase_id", ""),
             phase_title=d.get("phase_title", ""),
             phase_metadata=dict(d.get("phase_metadata") or {}),
+            repo_root=d.get("repo_root", ""),
+            expected_repo=d.get("expected_repo", ""),
+            expected_remote=d.get("expected_remote", ""),
+            expected_branch=d.get("expected_branch", ""),
+            tool_use_id=d.get("tool_use_id", ""),
+            external_task=bool(d.get("external_task", False)),
             tasks_dir=d.get("tasks_dir", ""),
             thread_id=d.get("thread_id"),
         )
@@ -207,3 +231,5 @@ class TaskResult:
     task_folder: str = ""
     original_prompt: str = ""
     thread_id: TopicRef = None
+    repo_root: str = ""
+    tool_use_id: str = ""

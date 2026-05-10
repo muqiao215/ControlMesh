@@ -365,6 +365,7 @@ class WebhookObserver(BaseTaskObserver):
             topology=hook.topology or "",
             route=hook.route or "",
             workunit_kind=hook.workunit_kind or "",
+            external_task=True,
         )
 
         try:

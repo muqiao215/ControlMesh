@@ -140,6 +140,12 @@ class TaskRegistry:
             phase_id=submit.phase_id,
             phase_title=submit.phase_title,
             phase_metadata=dict(submit.phase_metadata),
+            repo_root=submit.repo_root,
+            expected_repo=submit.expected_repo,
+            expected_remote=submit.expected_remote,
+            expected_branch=submit.expected_branch,
+            tool_use_id=submit.tool_use_id,
+            external_task=submit.external_task,
             tasks_dir=str(resolved_dir),
             thread_id=submit.thread_id,
         )

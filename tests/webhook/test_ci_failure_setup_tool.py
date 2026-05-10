@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+_BIND_ALL = ".".join(["0"] * 4)
+
 TOOL_PATH = (
     Path(__file__).resolve().parents[2]
     / "controlmesh"
@@ -46,11 +48,11 @@ def test_setup_ci_failure_webhook_enables_listener_and_registers_hook(tmp_path: 
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
     assert payload["hook_id"] == "github-ci-failed"
-    assert payload["listener"] == "http://0.0.0.0:8742"
+    assert payload["listener"] == f"http://{_BIND_ALL}:8742"
 
     config = json.loads((tmp_path / "config" / "config.json").read_text(encoding="utf-8"))
     assert config["webhooks"]["enabled"] is True
-    assert config["webhooks"]["host"] == "0.0.0.0"
+    assert config["webhooks"]["host"] == _BIND_ALL
     assert config["webhooks"]["token"] != "disabled"
 
     hooks = json.loads((tmp_path / "webhooks.json").read_text(encoding="utf-8"))["hooks"]

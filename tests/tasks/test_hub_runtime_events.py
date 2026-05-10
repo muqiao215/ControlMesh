@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -101,6 +102,57 @@ async def test_taskhub_success_lifecycle_writes_land_in_runtime_events_not_trans
     assert any("Task id:" in item for item in inbox)
     assert transcript_store.read_recent(key, limit=10) == []
     assert not transcript_store.path_for(key).exists()
+
+    await hub.shutdown()
+
+
+async def test_taskhub_writes_tool_use_and_tool_result_artifacts_and_consumes_once(
+    tmp_path: Path,
+) -> None:
+    paths = _paths(tmp_path)
+    registry = TaskRegistry(paths.tasks_registry_path, paths.tasks_dir)
+    hub = TaskHub(
+        registry,
+        paths,
+        cli_service=_make_cli_service("task output"),
+        config=_make_config(),
+    )
+    hub.set_result_handler("main", AsyncMock())
+
+    submit = _submit()
+    submit.tool_use_id = "toolu_bg_task_1"
+    submit.repo_root = "/root/.controlmesh/dev/ControlMesh"
+    task_id = hub.submit(submit)
+    await asyncio.sleep(0.1)
+
+    entry = registry.get(task_id)
+    assert entry is not None
+    task_dir = registry.task_folder(task_id)
+    tool_use = json.loads((task_dir / "TOOL_USE.json").read_text(encoding="utf-8"))
+    assert tool_use["tool_use_id"] == "toolu_bg_task_1"
+    assert tool_use["task_id"] == task_id
+
+    tool_result_path = task_dir / "TOOL_RESULT.json"
+    tool_result = json.loads(tool_result_path.read_text(encoding="utf-8"))
+    assert tool_result["role"] == "user"
+    assert tool_result["consumed"] is False
+    block = tool_result["content"][0]
+    assert block["type"] == "tool_result"
+    assert block["tool_use_id"] == "toolu_bg_task_1"
+
+    inbox = AgentInboxStore(paths).read_recent("main", limit=5)
+    assert inbox
+    assert inbox[0].payload["tool_result_path"] == str(tool_result_path)
+    assert inbox[0].payload["tool_use_id"] == "toolu_bg_task_1"
+    assert inbox[0].payload["repo_root"] == "/root/.controlmesh/dev/ControlMesh"
+
+    unread = hub.consume_tool_results("main", limit=5)
+    assert len(unread) == 1
+    assert unread[0]["content"][0]["tool_use_id"] == "toolu_bg_task_1"
+
+    persisted = json.loads(tool_result_path.read_text(encoding="utf-8"))
+    assert persisted["consumed"] is True
+    assert hub.consume_tool_results("main", limit=5) == []
 
     await hub.shutdown()
 

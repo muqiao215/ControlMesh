@@ -212,6 +212,26 @@ class TestTaskSubmit:
         assert sub.chat_id == "qqbot:group:GROUP_OPENID"
         assert sub.thread_id == "qqbot:channel:THREAD"
 
+    def test_repo_and_tool_fields_default_and_assign(self) -> None:
+        sub = TaskSubmit(
+            chat_id=1,
+            prompt="review diff",
+            message_id=10,
+            thread_id=None,
+            parent_agent="main",
+            repo_root="/repo/controlmesh",
+            expected_repo="ControlMesh",
+            expected_remote="muqiao215/ControlMesh",
+            expected_branch="main",
+            tool_use_id="toolu_bg_123",
+        )
+        assert sub.repo_root == "/repo/controlmesh"
+        assert sub.expected_repo == "ControlMesh"
+        assert sub.expected_remote == "muqiao215/ControlMesh"
+        assert sub.expected_branch == "main"
+        assert sub.tool_use_id == "toolu_bg_123"
+        assert sub.external_task is False
+
 
 class TestTaskResult:
     def test_fields(self) -> None:

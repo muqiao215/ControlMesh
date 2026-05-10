@@ -9,7 +9,7 @@ import logging
 import re
 import time
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -101,6 +101,8 @@ class _TaskArtifactPaths:
     taskmemory: Path
     evidence: Path
     result: Path
+    tool_use: Path
+    tool_result: Path
 
 TASK_PROMPT_SUFFIX = """
 
@@ -135,6 +137,21 @@ EVIDENCE.json is mandatory for routed WorkUnits. It must include:
 - verification commands where applicable
 - remaining risks
 - confidence
+"""
+
+_REPO_PREFLIGHT_TEMPLATE = """
+
+REPO EXECUTION CONTRACT (MANDATORY):
+- Treat repo_root as the only valid checkout for this task: {repo_root}
+- Before substantive work, run and verify:
+  1. `pwd`
+  2. `test -d .git`
+  3. `git rev-parse --show-toplevel`
+  4. `git remote -v`
+  5. `git status --short`
+- If `git rev-parse --show-toplevel` is not exactly `{repo_root}`, fail immediately.
+- Do not guess alternate checkouts.
+- Run every repo command from repo_root explicitly.
 """
 
 _RESUME_REMINDER = """
@@ -257,6 +274,33 @@ class TaskHub:
             chat_id=chat_id,
             topic_id=topic_id,
         )
+
+    def consume_tool_results(
+        self,
+        agent_name: str,
+        *,
+        limit: int = 20,
+        plan_id: str = "",
+        chat_id: object | None = None,
+        topic_id: object | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return unread task TOOL_RESULT payloads and mark them consumed once."""
+        items = self.read_agent_inbox_filtered(
+            agent_name,
+            limit=limit,
+            plan_id=plan_id,
+            chat_id=chat_id,
+            topic_id=topic_id,
+        )
+        results: list[dict[str, Any]] = []
+        for item in items:
+            path_text = str(item.payload.get("tool_result_path") or "").strip()
+            if not path_text:
+                continue
+            payload = self._consume_tool_result_file(Path(path_text))
+            if payload is not None:
+                results.append(payload)
+        return results
 
     def _check_enabled(self) -> None:
         if not self._config.enabled:
@@ -403,6 +447,7 @@ class TaskHub:
                 entry = refreshed
         entry = self._prepare_plan_artifacts(entry, submit)
         self._prepare_task_runtime_binding(entry)
+        self._write_tool_use_ref(entry)
         self._append_runtime_lifecycle_event(entry, "task.lifecycle.created")
 
         # Build prompt with mandatory suffix
@@ -411,7 +456,10 @@ class TaskHub:
             f"{workunit_contract}\n\n---\nOriginal task prompt:\n{submit.prompt}"
             if workunit_contract
             else submit.prompt
-        ) + TASK_PROMPT_SUFFIX.format(
+        )
+        if entry.repo_root:
+            full_prompt += _REPO_PREFLIGHT_TEMPLATE.format(repo_root=entry.repo_root)
+        full_prompt += TASK_PROMPT_SUFFIX.format(
             taskmemory_path=artifacts.taskmemory,
             evidence_path=artifacts.evidence,
             result_path=artifacts.result,
@@ -971,6 +1019,8 @@ class TaskHub:
                 task_folder=str(self._artifact_paths(entry).folder),
                 original_prompt=entry.original_prompt,
                 thread_id=entry.thread_id,
+                repo_root=entry.repo_root,
+                tool_use_id=entry.tool_use_id,
             )
             if status in _FINISHED:
                 capture_task_result(
@@ -979,6 +1029,7 @@ class TaskHub:
                     completed_at=datetime.now(UTC),
                     taskmemory_path=artifacts.taskmemory,
                 )
+                self._write_tool_result_artifact(entry, task_result)
             await self._deliver(task_result)
 
         except asyncio.CancelledError:
@@ -1005,6 +1056,8 @@ class TaskHub:
                     transport=entry.transport,
                     original_prompt=entry.original_prompt,
                     thread_id=entry.thread_id,
+                    repo_root=entry.repo_root,
+                    tool_use_id=entry.tool_use_id,
                 )
                 capture_task_result(
                     self._paths,
@@ -1012,6 +1065,7 @@ class TaskHub:
                     completed_at=datetime.now(UTC),
                     taskmemory_path=self._artifact_paths(entry).taskmemory,
                 )
+                self._write_tool_result_artifact(entry, task_result)
                 await self._deliver(task_result)
             raise
 
@@ -1050,6 +1104,8 @@ class TaskHub:
                     task_folder=str(self._artifact_paths(entry).folder),
                     original_prompt=entry.original_prompt,
                     thread_id=entry.thread_id,
+                    repo_root=entry.repo_root,
+                    tool_use_id=entry.tool_use_id,
                 )
                 capture_task_result(
                     self._paths,
@@ -1057,6 +1113,7 @@ class TaskHub:
                     completed_at=datetime.now(UTC),
                     taskmemory_path=self._artifact_paths(entry).taskmemory,
                 )
+                self._write_tool_result_artifact(entry, task_result)
                 await self._deliver(task_result)
 
         except Exception:
@@ -1087,6 +1144,8 @@ class TaskHub:
                     error=error_msg,
                     original_prompt=entry.original_prompt,
                     thread_id=entry.thread_id,
+                    repo_root=entry.repo_root,
+                    tool_use_id=entry.tool_use_id,
                 )
                 capture_task_result(
                     self._paths,
@@ -1094,6 +1153,7 @@ class TaskHub:
                     completed_at=datetime.now(UTC),
                     taskmemory_path=self._artifact_paths(entry).taskmemory,
                 )
+                self._write_tool_result_artifact(entry, task_result)
                 await self._deliver(task_result)
 
     async def _deliver(self, result: TaskResult) -> None:
@@ -1182,6 +1242,7 @@ class TaskHub:
         """Persist authoritative task results into the parent agent inbox."""
         summary = result.delivery_text or result.result_text or result.error or result.status
         entry = self._registry.get(result.task_id)
+        tool_result_path = self._artifact_paths(entry).tool_result if entry is not None else Path(result.task_folder) / "TOOL_RESULT.json"
         self._agent_inbox.append(
             AgentInboxItem(
                 to_agent=result.parent_agent,
@@ -1199,6 +1260,9 @@ class TaskHub:
                     "plan_id": entry.plan_id if entry is not None else "",
                     "chat_id": result.chat_id,
                     "topic_id": result.thread_id,
+                    "tool_use_id": result.tool_use_id,
+                    "tool_result_path": str(tool_result_path),
+                    "repo_root": result.repo_root,
                 },
             )
         )
@@ -1389,6 +1453,8 @@ class TaskHub:
                 "route_slot": entry.route_slot,
                 "provider": entry.provider,
                 "model": entry.model,
+                "repo_root": entry.repo_root,
+                "tool_use_id": entry.tool_use_id,
             },
         )
         if not isinstance(getattr(self._paths, "worktrees_dir", None), Path):
@@ -1414,6 +1480,8 @@ class TaskHub:
                 taskmemory=folder / "TASKMEMORY.md",
                 evidence=folder / "EVIDENCE.json",
                 result=folder / "RESULT.md",
+                tool_use=folder / "TOOL_USE.json",
+                tool_result=folder / "TOOL_RESULT.json",
             )
 
         folder = self._registry.task_folder(entry.task_id)
@@ -1422,7 +1490,97 @@ class TaskHub:
             taskmemory=self._registry.taskmemory_path(entry.task_id),
             evidence=evidence_path(folder),
             result=result_path(folder),
+            tool_use=folder / "TOOL_USE.json",
+            tool_result=folder / "TOOL_RESULT.json",
         )
+
+    def _write_tool_use_ref(self, entry: TaskEntry) -> None:
+        """Persist the controller-side tool_use mapping for a background task."""
+        if not entry.tool_use_id:
+            return
+        payload = TaskToolUseRef(
+            task_id=entry.task_id,
+            tool_use_id=entry.tool_use_id,
+            name="background_task.submit",
+            controller_session_id=entry.parent_agent,
+            plan_id=entry.plan_id,
+            chat_id=entry.chat_id,
+            topic_id=entry.thread_id,
+            created_at=datetime.now(UTC).isoformat(),
+        )
+        atomic_json_save(self._artifact_paths(entry).tool_use, payload.to_dict())
+
+    def _write_tool_result_artifact(self, entry: TaskEntry, result: TaskResult) -> Path:
+        """Persist Anthropic-style tool_result payload for controller ingestion."""
+        if not entry.tool_use_id:
+            if entry.external_task:
+                return self._artifact_paths(entry).tool_result
+            return self._artifact_paths(entry).tool_result
+        payload = TaskToolResultPayload(
+            task_id=result.task_id,
+            status=result.status,
+            summary=_tool_result_summary(result),
+            artifact_refs={
+                "result": str(self._artifact_paths(entry).result),
+                "evidence": str(self._artifact_paths(entry).evidence),
+                "taskmemory": str(self._artifact_paths(entry).taskmemory),
+            },
+            finding_count=_finding_count(self._artifact_paths(entry).evidence),
+            max_severity=_max_severity(self._artifact_paths(entry).evidence),
+            needs_controller_action=result.status != "done" or bool(entry.phase_id) or bool(entry.plan_id),
+        )
+        tool_result = {
+            "role": "user",
+            "consumed": False,
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": entry.tool_use_id,
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": json.dumps(payload.to_dict(), ensure_ascii=False),
+                        }
+                    ],
+                    "is_error": result.status in {"failed", "cancelled", "timeout"},
+                }
+            ],
+        }
+        path = self._artifact_paths(entry).tool_result
+        atomic_json_save(path, tool_result)
+        return path
+
+    def _consume_tool_result_file(self, path: Path) -> dict[str, Any] | None:
+        """Read one TOOL_RESULT.json once and mark it consumed."""
+        raw = load_json(path)
+        if not isinstance(raw, dict):
+            return None
+        content = raw.get("content")
+        if not isinstance(content, list) or not content:
+            return None
+        if bool(raw.get("consumed", False)):
+            return None
+        first = content[0]
+        if not isinstance(first, dict):
+            return None
+        tool_use_id = str(first.get("tool_use_id") or "")
+        if not tool_use_id:
+            return None
+        if not self._tool_use_exists(tool_use_id):
+            msg = f"tool_result.tool_use_id '{tool_use_id}' has no matching TOOL_USE.json"
+            raise RuntimeError(msg)
+        raw["consumed"] = True
+        raw["consumed_at"] = datetime.now(UTC).isoformat()
+        atomic_json_save(path, raw)
+        return raw
+
+    def _tool_use_exists(self, tool_use_id: str) -> bool:
+        """Return True when some task folder owns the referenced tool_use_id."""
+        for entry in self._registry.list_all():
+            raw = load_json(self._artifact_paths(entry).tool_use)
+            if isinstance(raw, dict) and str(raw.get("tool_use_id") or "") == tool_use_id:
+                return True
+        return False
 
     def _plan_artifact_notice(self, entry: TaskEntry) -> str:
         """Tell plan-aware workers where canonical plan artifacts live."""
@@ -1515,6 +1673,36 @@ class TaskHub:
 _RESULT_PREVIEW_LEN = 200
 _TASKMEMORY_MAX_LEN = 4000
 _TASK_UPDATES_CURSOR_KEY = "last_sequence"
+_SEVERITY_ORDER = {"info": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
+
+
+@dataclass(frozen=True, slots=True)
+class TaskToolUseRef:
+    task_id: str
+    tool_use_id: str
+    name: str
+    controller_session_id: str
+    plan_id: str
+    chat_id: ChatRef
+    topic_id: TopicRef
+    created_at: str
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+
+@dataclass(frozen=True, slots=True)
+class TaskToolResultPayload:
+    task_id: str
+    status: str
+    summary: str
+    artifact_refs: dict[str, str]
+    finding_count: int
+    max_severity: str
+    needs_controller_action: bool
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
 
 
 def _append_taskmemory(result_text: str, taskmemory_path: Path) -> str:
@@ -1646,6 +1834,40 @@ def _strip_internal_task_payload(text: str) -> str:
         if idx >= 0:
             clean = clean[:idx].rstrip()
     return clean
+
+
+def _tool_result_summary(result: TaskResult) -> str:
+    """Compact controller-facing summary for TOOL_RESULT.json."""
+    text = result.delivery_text or result.result_text or result.error or result.status
+    text = _strip_internal_task_payload(text)
+    return compact_transport_text(text, max_chars=800, max_lines=12).strip()
+
+
+def _finding_count(path: Path) -> int:
+    evidence = load_evidence(path.parent)
+    if evidence is None:
+        return 0
+    return len(evidence.items) + len(evidence.risks)
+
+
+def _max_severity(path: Path) -> str:
+    evidence = load_evidence(path.parent)
+    if evidence is None:
+        return "info"
+    best = "info"
+    for risk in evidence.risks:
+        severity = _severity_from_text(risk)
+        if _SEVERITY_ORDER.get(severity, 0) > _SEVERITY_ORDER.get(best, 0):
+            best = severity
+    return best
+
+
+def _severity_from_text(text: str) -> str:
+    normalized = text.lower()
+    for severity in ("critical", "high", "medium", "low"):
+        if severity in normalized:
+            return severity
+    return "info"
 
 
 def _route_candidate_summary(

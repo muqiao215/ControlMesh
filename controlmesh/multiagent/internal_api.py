@@ -316,6 +316,12 @@ class InternalAgentAPI:
             phase_id=data.get("phase_id") or "",
             phase_title=data.get("phase_title") or "",
             phase_metadata=dict(phase_metadata),
+            repo_root=data.get("repo_root") or "",
+            expected_repo=data.get("expected_repo") or "",
+            expected_remote=data.get("expected_remote") or "",
+            expected_branch=data.get("expected_branch") or "",
+            tool_use_id=data.get("tool_use_id") or "",
+            external_task=bool(data.get("external_task", False)),
         )
 
         try:

@@ -78,6 +78,22 @@ class TestCreate:
         assert entry.worker_business_permissions == ["repo_write"]
         assert entry.evaluator == "foreground"
 
+    def test_create_persists_repo_root_and_tool_use_binding(self, registry: TaskRegistry) -> None:
+        submit = _submit("review repo", name="Review")
+        submit.repo_root = "/root/.controlmesh/dev/ControlMesh"
+        submit.expected_repo = "ControlMesh"
+        submit.expected_remote = "muqiao215/ControlMesh"
+        submit.expected_branch = "main"
+        submit.tool_use_id = "toolu_bg_review"
+
+        entry = registry.create(submit, "claude", "opus")
+
+        assert entry.repo_root == "/root/.controlmesh/dev/ControlMesh"
+        assert entry.expected_repo == "ControlMesh"
+        assert entry.expected_remote == "muqiao215/ControlMesh"
+        assert entry.expected_branch == "main"
+        assert entry.tool_use_id == "toolu_bg_review"
+
 
 class TestGet:
     def test_get_existing(self, registry: TaskRegistry) -> None:

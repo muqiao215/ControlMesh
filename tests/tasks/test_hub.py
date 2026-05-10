@@ -288,6 +288,36 @@ agent_slots:
 
         await hub.shutdown()
 
+    async def test_repo_root_contract_is_embedded_in_worker_prompt(
+        self,
+        registry: TaskRegistry,
+        tmp_path: Path,
+    ) -> None:
+        cli = _make_cli_service("review output")
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=cli,
+            config=_make_config(),
+        )
+        hub.set_result_handler("main", AsyncMock())
+
+        submit = _submit(prompt="Review the current diff", name="Review diff")
+        submit.repo_root = "/root/.controlmesh/dev/ControlMesh"
+        submit.expected_repo = "ControlMesh"
+        submit.expected_remote = "muqiao215/ControlMesh"
+        submit.expected_branch = "main"
+        submit.tool_use_id = "toolu_bg_review_1"
+        hub.submit(submit)
+        await asyncio.sleep(0.1)
+
+        request = cli.execute.await_args.args[0]
+        assert "REPO EXECUTION CONTRACT" in request.prompt
+        assert "/root/.controlmesh/dev/ControlMesh" in request.prompt
+        assert "git rev-parse --show-toplevel" in request.prompt
+
+        await hub.shutdown()
+
     async def test_runtime_provider_missing_model_fails_fast_with_diagnostic(
         self,
         registry: TaskRegistry,
