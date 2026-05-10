@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from aiogram.exceptions import TelegramBadRequest
 
 from controlmesh.i18n import t
-from controlmesh.infra.restart import EXIT_RESTART
+from controlmesh.infra.restart import EXIT_RESTART, request_restart
 from controlmesh.infra.updater import perform_upgrade_pipeline, write_upgrade_sentinel
 from controlmesh.infra.version import VersionInfo, get_current_version
 from controlmesh.messenger.telegram.sender import SendRichOpts, send_rich
@@ -141,8 +141,11 @@ async def handle_upgrade_callback(
             parse_mode=None,
             message_thread_id=thread_id,
         )
+        marker = bot._orch.paths.controlmesh_home / "restart-requested"
+        delegated = await asyncio.to_thread(request_restart, marker_path=marker)
         bot._exit_code = EXIT_RESTART
-        await bot.dispatcher.stop_polling()
+        if not delegated:
+            await bot.dispatcher.stop_polling()
 
 
 async def handle_changelog_callback(

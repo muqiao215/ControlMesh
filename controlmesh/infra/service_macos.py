@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import plistlib
 import shutil
 import subprocess
@@ -192,6 +193,21 @@ def start_service(console: Console | None = None) -> None:
         return
 
     result = _run_launchctl("start", _LABEL)
+    if result.returncode == 0:
+        print_started(console)
+    else:
+        print_start_failed(console, result.stderr.strip())
+
+
+def restart_service(console: Console | None = None) -> None:
+    """Restart the Launch Agent."""
+    console = ensure_console(console)
+
+    if not is_service_installed():
+        print_not_installed(console)
+        return
+
+    result = _run_launchctl("kickstart", "-k", f"gui/{os.getuid()}/{_LABEL}")
     if result.returncode == 0:
         print_started(console)
     else:

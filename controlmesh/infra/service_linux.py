@@ -87,12 +87,21 @@ def _generate_service_unit(binary_path: str) -> str:
 Description=controlmesh - Telegram bot powered by AI CLIs
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=3
 
 [Service]
 Type=simple
 ExecStart={binary_path}
 Restart=on-failure
-RestartSec=5
+RestartSec=20
+MemoryHigh=900M
+MemoryMax=1200M
+CPUQuota=80%
+TasksMax=256
+TimeoutStartSec=60
+TimeoutStopSec=30
+KillMode=control-group
 UnsetEnvironment=PYTHONPATH PYTHONHOME
 Environment=PATH={path_value}
 Environment=HOME={home}
@@ -209,6 +218,25 @@ def start_service(console: Console | None = None) -> None:
         return
 
     result = _run_systemctl("start", _SERVICE_NAME)
+    if result.returncode == 0:
+        print_started(console)
+    else:
+        print_start_failed(console, result.stderr.strip())
+
+
+def restart_service(console: Console | None = None) -> None:
+    """Restart the service."""
+    console = ensure_console(console)
+
+    if not _has_systemd():
+        console.print("[dim]systemd not available.[/dim]")
+        return
+
+    if not is_service_installed():
+        print_not_installed(console)
+        return
+
+    result = _run_systemctl("restart", _SERVICE_NAME)
     if result.returncode == 0:
         print_started(console)
     else:

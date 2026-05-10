@@ -901,11 +901,13 @@ class TestFeishuBotRouting:
                 "controlmesh.messenger.feishu.bot.perform_upgrade_pipeline",
                 new=AsyncMock(return_value=(True, "0.16.0", "ok")),
             ),
+            patch("controlmesh.messenger.feishu.bot.request_restart", return_value=False) as mock_restart,
         ):
             await bot._run_settings_upgrade(handle=handle, target_version="0.16.0")  # type: ignore[arg-type]
 
         assert bot._exit_code == EXIT_RESTART
         assert bot._stop_event.is_set()
+        mock_restart.assert_called_once()
         sentinel = (tmp_path / "upgrade-sentinel.json").read_text(encoding="utf-8")
         assert "0.15.0" in sentinel
         assert "0.16.0" in sentinel

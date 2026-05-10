@@ -26,7 +26,7 @@ from controlmesh.files.allowed_roots import resolve_allowed_roots
 from controlmesh.files.storage import sanitize_filename as _sanitize_filename
 from controlmesh.files.tags import FILE_PATH_RE, extract_file_paths
 from controlmesh.infra.json_store import atomic_json_save, load_json
-from controlmesh.infra.restart import EXIT_RESTART
+from controlmesh.infra.restart import EXIT_RESTART, request_restart
 from controlmesh.infra.updater import (
     UpdateObserver,
     perform_upgrade_pipeline,
@@ -870,6 +870,8 @@ class FeishuBot:
                     ),
                 ),
             )
+            marker = self._paths.controlmesh_home / "restart-requested"
+            await asyncio.to_thread(request_restart, marker_path=marker)
             self._exit_code = EXIT_RESTART
             self._stop_event.set()
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -61,3 +62,37 @@ def consume_restart_marker(*, marker_path: Path) -> bool:
         return False
     marker_path.unlink(missing_ok=True)
     return True
+
+
+def should_delegate_restart_to_service_manager() -> bool:
+    """Return True when the current process is running under a service manager."""
+    return bool(os.environ.get("CONTROLMESH_SUPERVISOR") or os.environ.get("INVOCATION_ID"))
+
+
+def request_restart(*, marker_path: Path) -> bool:
+    """Request a full restart via service manager when possible.
+
+    Writes the restart marker first so the legacy watcher path still works.
+    Returns True when an explicit service-manager restart request was issued.
+    """
+    write_restart_marker(marker_path=marker_path)
+
+    if not should_delegate_restart_to_service_manager():
+        return False
+
+    try:
+        from controlmesh.infra.service import is_service_installed, restart_service
+    except Exception:
+        logger.debug("Service facade unavailable for restart request", exc_info=True)
+        return False
+
+    try:
+        if not is_service_installed():
+            return False
+        restart_service()
+    except Exception:
+        logger.warning("Explicit service-manager restart request failed", exc_info=True)
+        return False
+    else:
+        logger.info("Requested explicit service-manager restart")
+        return True

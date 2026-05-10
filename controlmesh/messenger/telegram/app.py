@@ -27,7 +27,7 @@ from controlmesh.commands import MULTIAGENT_SUB_COMMANDS as _MA_SUB_DEFS
 from controlmesh.config import AgentConfig
 from controlmesh.files.allowed_roots import resolve_allowed_roots
 from controlmesh.i18n import t
-from controlmesh.infra.restart import EXIT_RESTART, consume_restart_marker
+from controlmesh.infra.restart import EXIT_RESTART, consume_restart_marker, request_restart
 from controlmesh.infra.updater import UpdateObserver
 from controlmesh.infra.version import VersionInfo, get_current_version
 from controlmesh.log_context import set_log_context
@@ -1138,8 +1138,11 @@ class TelegramBot:
             text,
             SendRichOpts(reply_to_message_id=message.message_id, thread_id=get_thread_id(message)),
         )
+        marker = paths.controlmesh_home / "restart-requested"
+        delegated = await asyncio.to_thread(request_restart, marker_path=marker)
         self._exit_code = EXIT_RESTART
-        await self._dp.stop_polling()
+        if not delegated:
+            await self._dp.stop_polling()
 
     # -- Callbacks -------------------------------------------------------------
 

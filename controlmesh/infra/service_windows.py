@@ -266,6 +266,22 @@ def start_service(console: Console | None = None) -> None:
         print_start_failed(console, result.stderr.strip())
 
 
+def restart_service(console: Console | None = None) -> None:
+    """Restart the scheduled task."""
+    console = ensure_console(console)
+
+    if not is_service_installed():
+        print_not_installed(console)
+        return
+
+    _run_schtasks("/End", "/TN", _TASK_NAME)
+    result = _run_schtasks("/Run", "/TN", _TASK_NAME)
+    if result.returncode == 0:
+        print_started(console)
+    else:
+        print_start_failed(console, result.stderr.strip())
+
+
 def stop_service(console: Console | None = None) -> None:
     """Stop the scheduled task."""
     console = ensure_console(console)

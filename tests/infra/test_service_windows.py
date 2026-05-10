@@ -14,6 +14,7 @@ from controlmesh.infra.service_windows import (
     is_service_running,
     print_service_logs,
     print_service_status,
+    restart_service,
     start_service,
     stop_service,
     uninstall_service,
@@ -257,6 +258,17 @@ class TestStopService:
         console = MagicMock()
         stop_service(console)
         console.print.assert_called_once()
+
+
+class TestRestartService:
+    @patch("controlmesh.infra.service_windows._run_schtasks")
+    @patch("controlmesh.infra.service_windows.is_service_installed", return_value=True)
+    def test_restart_success(self, _installed: MagicMock, mock_run: MagicMock) -> None:
+        mock_run.side_effect = [make_completed(0), make_completed(0)]
+        console = MagicMock()
+        restart_service(console)
+        assert mock_run.call_args_list[0].args == ("/End", "/TN", _TASK_NAME)
+        assert mock_run.call_args_list[1].args == ("/Run", "/TN", _TASK_NAME)
 
 
 class TestPrintServiceStatus:

@@ -14,6 +14,7 @@ from controlmesh.infra.service_macos import (
     is_service_running,
     print_service_logs,
     print_service_status,
+    restart_service,
     start_service,
     stop_service,
     uninstall_service,
@@ -222,6 +223,22 @@ class TestStopService:
         console = MagicMock()
         stop_service(console)
         console.print.assert_called_once()
+
+
+class TestRestartService:
+    @patch("controlmesh.infra.service_macos.os.getuid", return_value=501)
+    @patch("controlmesh.infra.service_macos._run_launchctl")
+    @patch("controlmesh.infra.service_macos.is_service_installed", return_value=True)
+    def test_restart_success(
+        self,
+        _installed: MagicMock,
+        mock_run: MagicMock,
+        _getuid: MagicMock,
+    ) -> None:
+        mock_run.return_value = make_completed(0)
+        console = MagicMock()
+        restart_service(console)
+        mock_run.assert_called_once_with("kickstart", "-k", f"gui/501/{_LABEL}")
 
 
 class TestPrintServiceStatus:

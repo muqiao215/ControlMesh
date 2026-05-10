@@ -11,6 +11,7 @@ from controlmesh.cli.opencode_discovery import (
     discover_opencode_models,
     discover_opencode_models_sync,
     pick_opencode_runtime_model_sync,
+    resolve_opencode_runnable_model_sync,
 )
 
 
@@ -127,8 +128,20 @@ def test_pick_opencode_runtime_model_sync_prefers_configured_default() -> None:
     discover_mock.assert_not_called()
 
 
-def test_pick_opencode_runtime_model_sync_falls_back_to_live_discovery() -> None:
+def test_pick_opencode_runtime_model_sync_skips_live_discovery_by_default() -> None:
     with (
+        patch("controlmesh.cli.opencode_discovery.read_opencode_default_model", return_value=""),
+        patch("controlmesh.cli.opencode_discovery.discover_opencode_models_sync") as discover_mock,
+    ):
+        model = pick_opencode_runtime_model_sync()
+
+    assert model == ""
+    discover_mock.assert_not_called()
+
+
+def test_pick_opencode_runtime_model_sync_allows_opt_in_live_discovery() -> None:
+    with (
+        patch.dict("os.environ", {"CONTROLMESH_ENABLE_OPENCODE_SYNC_DISCOVERY": "1"}, clear=False),
         patch("controlmesh.cli.opencode_discovery.read_opencode_default_model", return_value=""),
         patch(
             "controlmesh.cli.opencode_discovery.discover_opencode_models_sync",
@@ -138,3 +151,14 @@ def test_pick_opencode_runtime_model_sync_falls_back_to_live_discovery() -> None
         model = pick_opencode_runtime_model_sync()
 
     assert model == "zhipuai/glm-5.1"
+
+
+def test_resolve_opencode_runnable_model_sync_uses_safe_runtime_picker() -> None:
+    with patch(
+        "controlmesh.cli.opencode_discovery.pick_opencode_runtime_model_sync",
+        return_value="zhipuai/glm-5.1",
+    ) as pick_mock:
+        model = resolve_opencode_runnable_model_sync(deadline=3.0)
+
+    assert model == "zhipuai/glm-5.1"
+    pick_mock.assert_called_once_with(deadline=3.0)

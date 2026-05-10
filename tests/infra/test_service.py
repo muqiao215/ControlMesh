@@ -48,6 +48,7 @@ def test_facade_delegates_all_operations(monkeypatch: pytest.MonkeyPatch) -> Non
         install_service=MagicMock(return_value=True),
         uninstall_service=MagicMock(return_value=True),
         start_service=MagicMock(),
+        restart_service=MagicMock(),
         stop_service=MagicMock(),
         print_service_status=MagicMock(),
         print_service_logs=MagicMock(),
@@ -61,6 +62,7 @@ def test_facade_delegates_all_operations(monkeypatch: pytest.MonkeyPatch) -> Non
     assert service.install_service(console) is True
     assert service.uninstall_service(console) is True
     service.start_service(console)
+    service.restart_service(console)
     service.stop_service(console)
     service.print_service_status(console)
     service.print_service_logs(console)
@@ -71,6 +73,7 @@ def test_facade_delegates_all_operations(monkeypatch: pytest.MonkeyPatch) -> Non
     backend.install_service.assert_called_once_with(console)
     backend.uninstall_service.assert_called_once_with(console)
     backend.start_service.assert_called_once_with(console)
+    backend.restart_service.assert_called_once_with(console)
     backend.stop_service.assert_called_once_with(console)
     backend.print_service_status.assert_called_once_with(console)
     backend.print_service_logs.assert_called_once_with(console)

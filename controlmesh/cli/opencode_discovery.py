@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import subprocess
 from shutil import which
 
@@ -13,6 +14,7 @@ from controlmesh.infra.platform import CREATION_FLAGS as _CREATION_FLAGS
 logger = logging.getLogger(__name__)
 
 DISCOVERY_TIMEOUT = 10.0
+_SYNC_DISCOVERY_ENV = "CONTROLMESH_ENABLE_OPENCODE_SYNC_DISCOVERY"
 
 
 async def discover_opencode_models(*, deadline: float = DISCOVERY_TIMEOUT) -> tuple[str, ...]:
@@ -121,14 +123,33 @@ def pick_opencode_runtime_model_sync(*, deadline: float = DISCOVERY_TIMEOUT) -> 
 
     Priority:
     1. explicit/default model declared in local runtime config
-    2. first live-discovered model from ``opencode models <provider>``
+    2. first live-discovered model from ``opencode models <provider>`` when
+       ``CONTROLMESH_ENABLE_OPENCODE_SYNC_DISCOVERY=1`` is explicitly enabled
     """
     configured = read_opencode_default_model().strip()
     if configured:
         return configured
 
+    if os.environ.get(_SYNC_DISCOVERY_ENV, "").strip().lower() not in {"1", "true", "yes", "on"}:
+        logger.info(
+            "OpenCode sync discovery skipped because no default model is configured "
+            "and %s is not enabled",
+            _SYNC_DISCOVERY_ENV,
+        )
+        return ""
+
     discovered = discover_opencode_models_sync(deadline=deadline)
     return discovered[0] if discovered else ""
+
+
+def resolve_opencode_runnable_model_sync(*, deadline: float = DISCOVERY_TIMEOUT) -> str:
+    """Compatibility alias for callers that still expect a sync resolver.
+
+    This must preserve the safer default behavior used by
+    :func:`pick_opencode_runtime_model_sync`: prefer the configured default
+    model and avoid synchronous runtime discovery unless explicitly enabled.
+    """
+    return pick_opencode_runtime_model_sync(deadline=deadline)
 
 
 def _parse_models(raw: str) -> tuple[str, ...]:
