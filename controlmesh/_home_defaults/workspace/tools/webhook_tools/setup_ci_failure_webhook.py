@@ -79,9 +79,9 @@ def main() -> None:
         "trigger_count": int(existing.get("trigger_count", 0)) if existing else 0,
         "last_triggered_at": existing.get("last_triggered_at") if existing else None,
         "last_error": existing.get("last_error") if existing else None,
-        "provider": "codex",
-        "model": "gpt-5.5",
-        "reasoning_effort": "high",
+        "provider": None,
+        "model": None,
+        "reasoning_effort": None,
         "cli_parameters": [],
         "quiet_start": None,
         "quiet_end": None,
@@ -89,10 +89,29 @@ def main() -> None:
         "task_name": "CI failure triage",
         "parent_agent": "main",
         "task_transport": "telegram",
-        "workunit_kind": "test_execution",
+        "workunit_kind": "test_triage",
         "topology": "pipeline",
         "route": "auto",
     }
+    if existing:
+        preserved_fields = (
+            "provider",
+            "model",
+            "reasoning_effort",
+            "cli_parameters",
+            "quiet_start",
+            "quiet_end",
+            "dependency",
+            "task_name",
+            "parent_agent",
+            "task_transport",
+            "workunit_kind",
+            "topology",
+            "route",
+        )
+        for field in preserved_fields:
+            if field in existing:
+                hook[field] = existing[field]
     if existing is None:
         hooks.append(hook)
     else:

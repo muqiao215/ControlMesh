@@ -60,10 +60,10 @@ def _add_task_hook(manager: WebhookManager, **overrides: Any) -> WebhookEntry:
         "task_name": "CI failure triage",
         "parent_agent": "main",
         "task_transport": "telegram",
-        "provider": "codex",
-        "model": "gpt-5.5",
-        "reasoning_effort": "high",
-        "workunit_kind": "test_execution",
+        "provider": None,
+        "model": None,
+        "reasoning_effort": None,
+        "workunit_kind": "test_triage",
         "route": "auto",
         "topology": "pipeline",
     }
@@ -100,10 +100,10 @@ async def test_task_mode_submits_background_task(tmp_path: Path) -> None:
     assert submit.parent_agent == "main"
     assert submit.transport == "telegram"
     assert submit.name == "CI failure triage"
-    assert submit.provider_override == "codex"
-    assert submit.model_override == "gpt-5.5"
-    assert submit.thinking_override == "high"
-    assert submit.workunit_kind == "test_execution"
+    assert submit.provider_override == ""
+    assert submit.model_override == ""
+    assert submit.thinking_override == ""
+    assert submit.workunit_kind == "test_triage"
     assert submit.route == "auto"
     assert submit.topology == "pipeline"
     assert _SAFETY_START in submit.prompt
