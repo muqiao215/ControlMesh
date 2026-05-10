@@ -35,6 +35,20 @@ class TestCmdUpgrade:
         assert "upg:no" in callback_values
         assert "upg:cl:2.0.0" in callback_values
 
+    async def test_explicit_version_bypasses_latest_lookup(self, orch: Orchestrator) -> None:
+        with (
+            patch("controlmesh.orchestrator.commands.detect_install_mode", return_value="pipx"),
+            patch("controlmesh.orchestrator.commands.check_latest_version") as mock_latest,
+        ):
+            result = await cmd_upgrade(orch, 1, "/upgrade v2.5.0")
+
+        assert "Target:" in result.text
+        assert "2.5.0" in result.text
+        assert result.buttons is not None
+        all_buttons = [b for row in result.buttons.rows for b in row]
+        assert any(b.callback_data == "upg:yes:2.5.0" for b in all_buttons)
+        mock_latest.assert_not_called()
+
     async def test_shows_up_to_date_with_changelog_button(self, orch: Orchestrator) -> None:
         info = VersionInfo(current="2.0.0", latest="2.0.0", update_available=False, summary="")
         with (

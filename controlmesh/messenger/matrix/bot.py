@@ -978,13 +978,23 @@ class MatrixBot:
 
         if data.startswith("upg:yes:"):
             from controlmesh.infra.restart import EXIT_RESTART, request_restart
-            from controlmesh.infra.updater import perform_upgrade_pipeline
+            from controlmesh.infra.updater import perform_upgrade_pipeline, resolve_upgrade_target
             from controlmesh.infra.version import get_current_version
 
             current = get_current_version()
+            requested_version = data.split(":", 2)[2] if data.count(":") >= 2 else None
+            _requested, target_version = await resolve_upgrade_target(
+                current_version=current,
+                requested_version=requested_version,
+            )
+            if target_version is None:
+                await self._send_rich(room_id, f"Upgrade could not resolve a target version (still {current}).")
+                return
             await self._send_rich(room_id, "Upgrading...")
             changed, installed, _output = await perform_upgrade_pipeline(
                 current_version=current,
+                target_version=target_version,
+                requested_version=requested_version,
             )
             if changed:
                 marker = _expand_marker(self._config.controlmesh_home)

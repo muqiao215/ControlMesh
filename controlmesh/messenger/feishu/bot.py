@@ -30,6 +30,7 @@ from controlmesh.infra.restart import EXIT_RESTART, request_restart
 from controlmesh.infra.updater import (
     UpdateObserver,
     perform_upgrade_pipeline,
+    resolve_upgrade_target,
     write_upgrade_sentinel,
 )
 from controlmesh.infra.version import VersionInfo, check_latest_version, get_current_version
@@ -822,9 +823,26 @@ class FeishuBot:
     ) -> None:
         async with self._upgrade_lock:
             installed_before = get_current_version()
+            requested_version, resolved_target_version = await resolve_upgrade_target(
+                current_version=installed_before,
+                requested_version=target_version,
+            )
+            if resolved_target_version is None:
+                version_info = await check_latest_version(fresh=True)
+                await self._update_interactive_card(
+                    handle,
+                    build_settings_card(
+                        self._orchestrator._config,
+                        selected_tab="version",
+                        note=f"Upgrade target could not be resolved. Still at `{installed_before}`.",
+                        version_info=version_info,
+                    ),
+                )
+                return
             changed, installed_version, output = await perform_upgrade_pipeline(
                 current_version=installed_before,
-                target_version=target_version,
+                target_version=resolved_target_version,
+                requested_version=requested_version,
             )
 
             if not changed:

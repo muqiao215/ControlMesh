@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import inspect
 import json
 import logging
 import os
@@ -13,7 +14,9 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from controlmesh.infra.install import InstallInfo, detect_install_info
+import controlmesh
+
+from controlmesh.infra.install import InstallInfo, detect_install_info, detect_runtime_provenance
 from controlmesh.infra.version import (
     VersionInfo,
     _parse_version,
@@ -116,6 +119,8 @@ def _normalize_target_version(target_version: str | None) -> str | None:
     normalized = target_version.strip()
     if not normalized or normalized.lower() == "latest":
         return None
+    if normalized.lower().startswith("v"):
+        normalized = normalized[1:]
     return normalized
 
 
@@ -152,6 +157,11 @@ def _build_upgrade_command(
     force_reinstall: bool,
 ) -> list[str]:
     """Build provider-specific upgrade command."""
+    if mode == "uv_tool":
+        cmd = ["uv", "tool", "install", "--force-reinstall", "--refresh"]
+        cmd.append(package_spec)
+        return cmd
+
     if mode == "pipx":
         # On non-Windows, prefer `pipx upgrade` for plain upgrades (no pin).
         if (
@@ -618,6 +628,53 @@ async def _perform_upgrade_impl(
     return False, output
 
 
+def _runtime_import_looks_polluted(imported_file: str) -> bool:
+    normalized = imported_file.replace("\\", "/")
+    return normalized.startswith("/root/ControlMesh/") or "/dev/ControlMesh/" in normalized
+
+
+def _inspect_current_runtime() -> tuple[str, str, str]:
+    """Inspect the live runtime import path in-process."""
+    return (
+        getattr(controlmesh, "__version__", "0.0.0"),
+        inspect.getfile(controlmesh),
+        sys.executable,
+    )
+
+
+async def _inspect_runtime_after_upgrade() -> tuple[str, str, str]:
+    """Inspect a fresh interpreter's runtime import path after upgrade."""
+    proc = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-c",
+        (
+            "import inspect, json, sys, controlmesh; "
+            "print(json.dumps({"
+            "'version': getattr(controlmesh, '__version__', '0.0.0'), "
+            "'file': inspect.getfile(controlmesh), "
+            "'python': sys.executable"
+            "}))"
+        ),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    stdout, _ = await proc.communicate()
+    if not stdout:
+        return "0.0.0", "", sys.executable
+    try:
+        data = json.loads(stdout.decode())
+    except json.JSONDecodeError:
+        return "0.0.0", "", sys.executable
+    version = data.get("version")
+    imported_file = data.get("file")
+    python = data.get("python")
+    return (
+        version if isinstance(version, str) else "0.0.0",
+        imported_file if isinstance(imported_file, str) else "",
+        python if isinstance(python, str) else sys.executable,
+    )
+
+
 async def get_installed_version() -> str:
     """Read the installed package version in a fresh subprocess.
 
@@ -725,37 +782,49 @@ async def _missing_distribution_guidance(current_version: str) -> str:
     return "The new version may not have propagated to all PyPI mirrors yet. Please try again in a few minutes."
 
 
-async def _resolve_retry_target(
+async def resolve_upgrade_target(
+    *,
     current_version: str,
-    target_version: str | None,
-    install_info: InstallInfo,
-) -> str | None:
-    """Resolve retry target version for forced second attempt."""
-    if install_info.source == "github":
-        return target_version if target_version is not None else "latest"
+    requested_version: str | None,
+    install_info: InstallInfo | None = None,
+) -> tuple[str | None, str | None]:
+    """Resolve and freeze the requested upgrade target before execution."""
+    info = install_info or detect_install_info()
+    normalized_requested = _normalize_target_version(requested_version)
 
-    normalized_target = _normalize_target_version(target_version)
-    if normalized_target and _is_newer_version(normalized_target, current_version):
-        return normalized_target
+    if info.mode == "dev":
+        return normalized_requested, normalized_requested
 
-    info = await check_latest_version(fresh=True)
-    if info and _is_newer_version(info.latest, current_version):
-        return info.latest
-    return None
+    if normalized_requested is not None:
+        return normalized_requested, normalized_requested
+
+    latest = await check_latest_version(fresh=True)
+    if latest is None:
+        return None, None
+
+    normalized_latest = _normalize_target_version(latest.latest)
+    if normalized_latest is None:
+        return None, None
+
+    if not _is_newer_version(normalized_latest, current_version):
+        return None, normalized_latest
+
+    return None, normalized_latest
 
 
 async def perform_upgrade_pipeline(
     *,
     current_version: str,
     target_version: str | None = None,
+    requested_version: str | None = None,
 ) -> tuple[bool, str, str]:
     """Upgrade and verify with one deterministic retry path.
 
     Strategy:
     1. Run normal upgrade command.
     2. Verify installed version with short settle polling.
-    3. If unchanged (or initial attempt fails), resolve a retry target and
-       perform one forced reinstall attempt pinned to that version.
+    3. If unchanged (or initial attempt fails), perform one forced reinstall
+       attempt pinned to the same frozen target version.
 
     Returns:
         ``(changed, installed_version, output)``
@@ -767,13 +836,37 @@ async def perform_upgrade_pipeline(
             install_info=install_info,
         )
 
-    outputs: list[str] = []
+    normalized_target = _normalize_target_version(target_version)
+    normalized_requested = _normalize_target_version(requested_version) or normalized_target
+    outputs: list[str] = [
+        (
+            f"requested_version={normalized_requested or 'latest'}\n"
+            f"resolved_target_version={normalized_target or 'none'}"
+        )
+    ]
+
+    provenance = detect_runtime_provenance()
+    pre_version, pre_imported_file, pre_python = _inspect_current_runtime()
+    if _runtime_import_looks_polluted(pre_imported_file) or not provenance.matches_expected:
+        message = (
+            "Refusing upgrade: current runtime import path is polluted.\n"
+            f"version: {pre_version}\n"
+            f"file: {pre_imported_file}\n"
+            f"python: {pre_python}\n"
+            f"reason: {provenance.reason or 'runtime import does not match installed package root'}"
+        )
+        return False, current_version, _combine_outputs([*outputs, message])
+
     previous_state = InstalledState(
         version=current_version,
         commit_id=install_info.commit_id if install_info.source == "github" else None,
     )
 
-    _ok, output = await _perform_upgrade_impl(target_version=None, force_reinstall=False)
+    first_attempt_target = normalized_target if install_info.source != "github" else normalized_target
+    _ok, output = await _perform_upgrade_impl(
+        target_version=first_attempt_target,
+        force_reinstall=False,
+    )
     outputs.append(output)
 
     # Always verify version regardless of the command exit code.  On
@@ -781,10 +874,26 @@ async def perform_upgrade_pipeline(
     # package was upgraded successfully inside the venv.
     installed_state = await _wait_for_install_change(previous_state)
     if _state_changed(installed_state, previous_state):
-        return True, installed_state.version, _combine_outputs(outputs)
+        post_version, post_imported_file, post_python = await _inspect_runtime_after_upgrade()
+        if _runtime_import_looks_polluted(post_imported_file):
+            outputs.append(
+                "Upgrade changed installed package metadata, but post-upgrade runtime still imports "
+                f"from a polluted path: {post_imported_file} (python={post_python})."
+            )
+            return False, current_version, _combine_outputs(outputs)
+        if (
+            install_info.source != "github"
+            and normalized_target is not None
+            and post_version != normalized_target
+        ):
+            outputs.append(
+                "Upgrade changed installed package metadata, but fresh runtime version "
+                f"{post_version or 'unknown'} did not match target_version={normalized_target}."
+            )
+            return False, current_version, _combine_outputs(outputs)
+        return True, post_version or installed_state.version, _combine_outputs(outputs)
 
-    retry_target = await _resolve_retry_target(current_version, target_version, install_info)
-    if retry_target is None:
+    if normalized_target is None:
         outputs = await _append_missing_distribution_guidance(
             outputs,
             current_version=current_version,
@@ -792,14 +901,27 @@ async def perform_upgrade_pipeline(
         return False, current_version, _combine_outputs(outputs)
 
     _retry_ok, retry_output = await _perform_upgrade_impl(
-        target_version=retry_target,
+        target_version=normalized_target,
         force_reinstall=True,
     )
     outputs.append(retry_output)
 
     installed_state = await _wait_for_install_change(previous_state)
     if _state_changed(installed_state, previous_state):
-        return True, installed_state.version, _combine_outputs(outputs)
+        post_version, post_imported_file, post_python = await _inspect_runtime_after_upgrade()
+        if _runtime_import_looks_polluted(post_imported_file):
+            outputs.append(
+                "Forced reinstall changed installed package metadata, but post-upgrade runtime still "
+                f"imports from a polluted path: {post_imported_file} (python={post_python})."
+            )
+            return False, current_version, _combine_outputs(outputs)
+        if install_info.source != "github" and post_version != normalized_target:
+            outputs.append(
+                "Forced reinstall changed installed package metadata, but fresh runtime version "
+                f"{post_version or 'unknown'} did not match target_version={normalized_target}."
+            )
+            return False, current_version, _combine_outputs(outputs)
+        return True, post_version or installed_state.version, _combine_outputs(outputs)
 
     # Detect PyPI CDN propagation delay — the JSON API may announce a
     # version before the package index used by pip has it available.

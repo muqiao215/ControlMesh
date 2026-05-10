@@ -11,7 +11,11 @@ from aiogram.exceptions import TelegramBadRequest
 
 from controlmesh.i18n import t
 from controlmesh.infra.restart import EXIT_RESTART, request_restart
-from controlmesh.infra.updater import perform_upgrade_pipeline, write_upgrade_sentinel
+from controlmesh.infra.updater import (
+    perform_upgrade_pipeline,
+    resolve_upgrade_target,
+    write_upgrade_sentinel,
+)
 from controlmesh.infra.version import VersionInfo, get_current_version
 from controlmesh.messenger.telegram.sender import SendRichOpts, send_rich
 from controlmesh.text.response_format import SEP, fmt
@@ -79,7 +83,7 @@ async def handle_upgrade_callback(
         return
 
     # upg:yes:<version>
-    target_version = data.split(":", 2)[2] if data.count(":") >= 2 else "latest"
+    requested_version = data.split(":", 2)[2] if data.count(":") >= 2 else None
     current_version = get_current_version()
 
     if bot._upgrade_lock.locked():
@@ -92,6 +96,19 @@ async def handle_upgrade_callback(
         return
 
     async with bot._upgrade_lock:
+        requested_logged, target_version = await resolve_upgrade_target(
+            current_version=current_version,
+            requested_version=requested_version,
+        )
+        if target_version is None:
+            await bot.bot_instance.send_message(
+                chat_id,
+                t("upgrade_handler.verification_failed", version=current_version, details=""),
+                parse_mode=None,
+                message_thread_id=thread_id,
+            )
+            return
+
         await bot.bot_instance.send_message(
             chat_id,
             t("upgrade_handler.in_progress", version=target_version),
@@ -102,6 +119,7 @@ async def handle_upgrade_callback(
         changed, installed_version, output = await perform_upgrade_pipeline(
             current_version=current_version,
             target_version=target_version,
+            requested_version=requested_logged,
         )
 
         if not changed:

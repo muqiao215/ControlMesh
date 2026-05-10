@@ -101,6 +101,17 @@ class TestDetectInstallMode:
             mock_sys.prefix = "C:\\Users\\me\\AppData\\Local\\pipx\\venvs\\controlmesh"
             assert detect_install_mode() == "pipx"
 
+    def test_uv_tool_detected_from_sys_prefix(self) -> None:
+        mock_dist = MagicMock()
+        mock_dist.read_text.return_value = None
+
+        with (
+            patch("controlmesh.infra.install.sys") as mock_sys,
+            patch("controlmesh.infra.install.distribution", return_value=mock_dist),
+        ):
+            mock_sys.prefix = "/root/.local/share/uv/tools/controlmesh"
+            assert detect_install_mode() == "uv_tool"
+
     def test_non_editable_direct_url_is_pip(self) -> None:
         direct_url = json.dumps({"dir_info": {"editable": False}, "url": "file:///src"})
         mock_dist = MagicMock()
@@ -169,6 +180,20 @@ class TestDetectInstallInfo:
         assert info.mode == "pipx"
         assert info.source == "github"
         assert info.requested_revision == "v0.15.0"
+
+    def test_uv_tool_pypi_install_keeps_uv_tool_mode(self) -> None:
+        mock_dist = MagicMock()
+        mock_dist.read_text.return_value = None
+
+        with (
+            patch("controlmesh.infra.install.sys") as mock_sys,
+            patch("controlmesh.infra.install.distribution", return_value=mock_dist),
+        ):
+            mock_sys.prefix = "/root/.local/share/uv/tools/controlmesh"
+            info = detect_install_info()
+
+        assert info.mode == "uv_tool"
+        assert info.source == "pypi"
 
 
 class TestIsUpgradeable:

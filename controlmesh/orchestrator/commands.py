@@ -840,6 +840,10 @@ async def cmd_upgrade(_orch: Orchestrator, _key: SessionKey, _text: str) -> Orch
     """Handle /upgrade: check for updates and offer upgrade."""
     logger.info("Upgrade check requested")
     current = get_current_version()
+    requested_version = None
+    parts = _text.strip().split(maxsplit=1)
+    if len(parts) == 2:
+        requested_version = parts[1].strip()
 
     if detect_install_mode() == "dev":
         status = await check_source_upgrade_status(current_version=current)
@@ -891,6 +895,38 @@ async def cmd_upgrade(_orch: Orchestrator, _key: SessionKey, _text: str) -> Orch
                 SEP,
                 status.message or "Source upgrade is not currently actionable.",
             ),
+        )
+
+    if requested_version:
+        requested_normalized = requested_version[1:] if requested_version.lower().startswith("v") else requested_version
+        keyboard = ButtonGrid(
+            rows=[
+                [
+                    Button(
+                        text=t("upgrade.btn_changelog", version=requested_normalized),
+                        callback_data=f"upg:cl:{requested_normalized}",
+                    )
+                ],
+                [
+                    Button(
+                        text=t("upgrade.btn_yes"),
+                        callback_data=f"upg:yes:{requested_normalized}",
+                    ),
+                    Button(text=t("upgrade.btn_not_now"), callback_data="upg:no"),
+                ],
+            ]
+        )
+        return OrchestratorResult(
+            text=fmt(
+                t("upgrade.available_header"),
+                SEP,
+                (
+                    f"Installed: `{current}`\n"
+                    f"Target:    `{requested_normalized}`\n\n"
+                    "Upgrade to the requested version now?"
+                ),
+            ),
+            buttons=keyboard,
         )
 
     info = await check_latest_version(fresh=True)

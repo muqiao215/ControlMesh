@@ -622,6 +622,10 @@ class TestUpgradeCli:
             patch("controlmesh.infra.install.detect_install_mode", return_value="pipx"),
             patch(f"{_LIFECYCLE}.resolve_paths", return_value=paths),
             patch(
+                "controlmesh.infra.updater.resolve_upgrade_target",
+                new=AsyncMock(return_value=(None, "9.9.9")),
+            ),
+            patch(
                 "controlmesh.infra.updater.perform_upgrade_pipeline",
                 new=AsyncMock(return_value=(True, "9.9.9", "upgraded controlmesh")),
             ) as mock_pipeline,
@@ -630,7 +634,11 @@ class TestUpgradeCli:
             patch(f"{_LIFECYCLE}.stop_bot"),
         ):
             upgrade()
-        mock_pipeline.assert_called_once()
+        mock_pipeline.assert_called_once_with(
+            current_version=get_current_version(),
+            target_version="9.9.9",
+            requested_version=None,
+        )
         mock_exec.assert_called_once()
 
     def test_upgrade_with_pip(self, tmp_path: Path) -> None:

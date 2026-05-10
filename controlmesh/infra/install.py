@@ -16,7 +16,7 @@ import controlmesh
 
 logger = logging.getLogger(__name__)
 
-InstallMode = Literal["pipx", "pip", "dev"]
+InstallMode = Literal["pipx", "pip", "uv_tool", "dev"]
 InstallSource = Literal["pypi", "github", "other", "dev"]
 
 _PACKAGE_NAME = "controlmesh"
@@ -51,8 +51,10 @@ class RuntimeProvenance:
     reason: str = ""
 
 
-def _base_install_mode() -> Literal["pipx", "pip"]:
+def _base_install_mode() -> Literal["pipx", "pip", "uv_tool"]:
     """Return the non-dev runtime mode based on the current interpreter prefix."""
+    if "/uv/tools/" in sys.prefix or "\\uv\\tools\\" in sys.prefix:
+        return "uv_tool"
     return "pipx" if "pipx" in sys.prefix else "pip"
 
 
@@ -84,14 +86,16 @@ def _source_checkout_hint() -> str | None:
     return None
 
 
-def _fallback_install_info(base_mode: Literal["pipx", "pip"]) -> InstallInfo:
+def _fallback_install_info(base_mode: Literal["pipx", "pip", "uv_tool"]) -> InstallInfo:
     if base_mode == "pipx":
         return InstallInfo(mode="pipx", source="pypi")
+    if base_mode == "uv_tool":
+        return InstallInfo(mode="uv_tool", source="pypi")
     return InstallInfo(mode="dev", source="dev", local_path=_source_checkout_hint())
 
 
 def _install_info_from_direct_url(
-    base_mode: Literal["pipx", "pip"],
+    base_mode: Literal["pipx", "pip", "uv_tool"],
     direct_url_text: str,
 ) -> InstallInfo:
     url_info = json.loads(direct_url_text)

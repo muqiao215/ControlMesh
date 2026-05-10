@@ -254,7 +254,11 @@ def uninstall() -> None:
 def upgrade() -> None:
     """Stop bot, upgrade package, restart."""
     from controlmesh.infra.install import detect_install_mode
-    from controlmesh.infra.updater import check_source_upgrade_status, perform_upgrade_pipeline
+    from controlmesh.infra.updater import (
+        check_source_upgrade_status,
+        perform_upgrade_pipeline,
+        resolve_upgrade_target,
+    )
     from controlmesh.infra.version import get_current_version
 
     _console.print()
@@ -269,12 +273,25 @@ def upgrade() -> None:
 
     current = get_current_version()
     mode = detect_install_mode()
+    requested_version = sys.argv[2] if len(sys.argv) >= 3 else None
 
     if mode == "dev":
         preflight = asyncio.run(check_source_upgrade_status(current_version=current))
         if preflight.output:
             _console.print(f"[dim]{preflight.output}[/dim]")
         if not preflight.actionable:
+            _console.print(t_rich("lifecycle.upgrade.unchanged", version=current))
+            return
+        resolved_target = requested_version
+    else:
+        requested_logged, resolved_target = asyncio.run(
+            resolve_upgrade_target(
+                current_version=current,
+                requested_version=requested_version,
+            )
+        )
+        requested_version = requested_logged
+        if resolved_target is None:
             _console.print(t_rich("lifecycle.upgrade.unchanged", version=current))
             return
 
@@ -284,7 +301,11 @@ def upgrade() -> None:
     # 2. Upgrade + verification pipeline
     _console.print(t_rich("lifecycle.upgrade.upgrading"))
     changed, actual, output = asyncio.run(
-        perform_upgrade_pipeline(current_version=current),
+        perform_upgrade_pipeline(
+            current_version=current,
+            target_version=resolved_target,
+            requested_version=requested_version,
+        ),
     )
     if output:
         _console.print(f"[dim]{output}[/dim]")
