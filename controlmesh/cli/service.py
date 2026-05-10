@@ -16,7 +16,6 @@ from controlmesh.cli.base import CLIConfig
 from controlmesh.cli.factory import create_cli
 from controlmesh.cli.introspection import ProviderIntrospection
 from controlmesh.cli.opencode_discovery import (
-    pick_opencode_runtime_model_sync,
     probe_opencode_model_sync,
     resolve_opencode_runnable_model_sync,
 )
@@ -398,9 +397,12 @@ class CLIService:
             model = resolve_opencode_runnable_model_sync()
             if model:
                 return provider, model
-            if self._config.provider == "opencode" and self._config.default_model:
-                if probe_opencode_model_sync(self._config.default_model):
-                    return provider, self._config.default_model
+            if (
+                self._config.provider == "opencode"
+                and self._config.default_model
+                and probe_opencode_model_sync(self._config.default_model)
+            ):
+                return provider, self._config.default_model
             msg = "error:opencode_default_model_unresolved"
             raise ValueError(msg)
 

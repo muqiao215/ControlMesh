@@ -20,7 +20,6 @@ from controlmesh.orchestrator.selectors.capability_registry import (
 )
 from controlmesh.provider_binding import (
     normalize_provider_name,
-    provider_model_label,
     validate_provider_model_binding,
 )
 

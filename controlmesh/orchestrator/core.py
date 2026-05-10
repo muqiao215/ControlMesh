@@ -87,7 +87,6 @@ from controlmesh.security import detect_suspicious_patterns
 from controlmesh.session import SessionKey, SessionManager
 from controlmesh.session.manager import SessionData
 from controlmesh.session.named import NamedSessionRegistry
-from controlmesh.tasks.models import TaskSubmit
 from controlmesh.webhook.manager import WebhookManager
 from controlmesh.workspace.paths import ControlMeshPaths
 
