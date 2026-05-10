@@ -215,7 +215,7 @@ scripts/release_github.sh v0.21.0 --notes-file /tmp/release-notes.md
 - 微信/WeChat 设置：[`docs/weixin-setup.md`](docs/weixin-setup.md)
 - Case-pack contract：[`docs/case-pack/README.md`](docs/case-pack/README.md)
 - 文档总览：[`docs/README.md`](docs/README.md)
-- 最新发版说明：[`docs/release-note-v0.24.33.md`](docs/release-note-v0.24.33.md)
+- 最新发版说明：[`docs/release-note-v0.25.1.md`](docs/release-note-v0.25.1.md)
 - Memory v2：[`docs/modules/memory_v2.md`](docs/modules/memory_v2.md)
 - 多代理运行时：[`docs/modules/multiagent.md`](docs/modules/multiagent.md)
 - QQ 迁移变更说明：[`docs/release-note-qqbot-official-runtime.md`](docs/release-note-qqbot-official-runtime.md)
