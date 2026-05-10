@@ -10,6 +10,7 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from controlmesh.cli.base import CLIConfig
@@ -32,6 +33,8 @@ from controlmesh.cli.stream_events import (
 )
 from controlmesh.cli.types import AgentRequest, AgentResponse, CLIResponse
 from controlmesh.provider_binding import validate_provider_model_binding
+from controlmesh.runtime.registry import RuntimeRegistry
+from controlmesh.workspace.paths import resolve_paths
 
 if TYPE_CHECKING:
     from controlmesh.cli.base import BaseCLI
@@ -148,12 +151,21 @@ class CLIService:
         models: ModelRegistry,
         available_providers: frozenset[str],
         process_registry: ProcessRegistry,
+        runtime_registry: RuntimeRegistry | None = None,
     ) -> None:
         self._config = config
         self._models = models
         self._available_providers = available_providers
         self._process_registry = process_registry
         self._introspection_cache: dict[tuple[str, str], ProviderIntrospection] = {}
+        self._runtime_registry = runtime_registry
+        if self._runtime_registry is None:
+            try:
+                working_dir = Path(config.working_dir)
+                home = working_dir.parent if working_dir.name == "workspace" else working_dir
+                self._runtime_registry = RuntimeRegistry(resolve_paths(controlmesh_home=home))
+            except OSError:
+                self._runtime_registry = None
 
     def update_available_providers(self, providers: frozenset[str]) -> None:
         self._available_providers = providers
@@ -457,6 +469,8 @@ class CLIService:
             )
 
         self._introspection_cache[key] = snapshot
+        if self._runtime_registry is not None:
+            self._runtime_registry.record_introspection(snapshot)
         return snapshot
 
     def cached_introspection(
@@ -485,7 +499,17 @@ class CLIService:
 
     def _make_cli(self, request: AgentRequest) -> BaseCLI:
         """Create a BaseCLI instance for the given request."""
+        requested_provider = request.provider_override or self._config.provider
+        requested_model = request.model_override or self._config.default_model
         provider, model = self.resolve_provider(request)
+        if self._runtime_registry is not None:
+            self._runtime_registry.record_provider_binding(
+                requested_provider=requested_provider,
+                requested_model=requested_model,
+                effective_provider=provider,
+                effective_model=model,
+                process_label=request.process_label,
+            )
         if provider == "opencode" and model:
             from controlmesh.cli.auth import opencode_model_uses_runtime_env_default
 

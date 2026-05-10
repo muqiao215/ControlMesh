@@ -41,6 +41,7 @@ class TestCreate:
         folder = registry.task_folder(entry.task_id)
         assert folder.is_dir()
         assert registry.taskmemory_path(entry.task_id).is_file()
+        assert (folder / "events.jsonl").is_file()
 
     def test_auto_name_from_id(self, registry: TaskRegistry) -> None:
         entry = registry.create(_submit(), "claude", "opus")

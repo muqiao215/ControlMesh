@@ -19,6 +19,11 @@ def approval_key(*, repo: str, version: str) -> str:
     return f"release_publish:{repo_name}:{version}"
 
 
+def side_effect_key(*, repo: str, version: str) -> str:
+    """Stable idempotency key for one release publish side effect."""
+    return approval_key(repo=repo, version=version)
+
+
 def gate_state_path(root: str | Path, plan_id: str) -> Path:
     return plan_dir_for(root, plan_id) / "PUBLISH_GATE.json"
 
@@ -58,6 +63,7 @@ def ensure_publish_gate(
         return state
     payload = {
         "approval_key": approval_key(repo=repo, version=version),
+        "side_effect_key": side_effect_key(repo=repo, version=version),
         "plan_id": plan_id,
         "repo": repo,
         "version": version,

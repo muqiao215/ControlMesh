@@ -164,7 +164,7 @@ class Orchestrator:
         self._named_sessions = NamedSessionRegistry(paths.named_sessions_path)
         self._transcripts = TranscriptStore(paths)
         self._history_index = HistoryIndex(paths)
-        self._process_registry = ProcessRegistry()
+        self._process_registry = ProcessRegistry(paths.runtime_processes_path)
         self._cli_service = CLIService(
             config=CLIServiceConfig(
                 working_dir=str(paths.workspace),

@@ -13,6 +13,7 @@ from typing import Any
 from controlmesh.infra.json_store import atomic_json_save, load_json
 from controlmesh.messenger.address import ChatRef
 from controlmesh.provider_binding import provider_model_label
+from controlmesh.runtime.registry import append_task_event
 from controlmesh.tasks.evidence import result_path, write_evidence_template
 from controlmesh.tasks.models import TaskEntry, TaskSubmit
 from controlmesh.tasks.task_policy import build_task_agent_rules
@@ -331,3 +332,13 @@ def _seed_task_folder(
             "Write the final worker-facing result here before finishing.\n",
             encoding="utf-8",
         )
+    append_task_event(
+        folder,
+        "task.folder.seeded",
+        {
+            "task_id": entry.task_id,
+            "provider": provider,
+            "model": model,
+            "workunit_kind": entry.workunit_kind,
+        },
+    )

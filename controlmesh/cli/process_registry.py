@@ -7,12 +7,14 @@ import contextlib
 import logging
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from controlmesh.infra.process_tree import (
     force_kill_process_tree,
     interrupt_process,
     terminate_process_tree,
 )
+from controlmesh.runtime.registry import ProcessLeaseStore
 
 logger = logging.getLogger(__name__)
 
@@ -33,11 +35,15 @@ class TrackedProcess:
 class ProcessRegistry:
     """Global registry of active CLI subprocesses, keyed by *chat_id*."""
 
-    def __init__(self) -> None:
+    def __init__(self, lease_store: ProcessLeaseStore | Path | None = None) -> None:
         self._processes: dict[int, list[TrackedProcess]] = {}
         self._aborted: set[int] = set()
         self._aborted_labels: set[tuple[int, str]] = set()
         self._interrupted: set[int] = set()
+        if isinstance(lease_store, Path):
+            self._lease_store: ProcessLeaseStore | None = ProcessLeaseStore(lease_store)
+        else:
+            self._lease_store = lease_store
 
     def register(
         self,
@@ -61,6 +67,13 @@ class ProcessRegistry:
             label,
             process.pid,
         )
+        if self._lease_store is not None:
+            self._lease_store.register(
+                chat_id=chat_id,
+                topic_id=topic_id,
+                label=label,
+                pid=process.pid,
+            )
         return tracked
 
     def unregister(self, tracked: TrackedProcess) -> None:
@@ -80,6 +93,12 @@ class ProcessRegistry:
             tracked.label,
             tracked.process.pid,
         )
+        if self._lease_store is not None:
+            self._lease_store.unregister(
+                chat_id=tracked.chat_id,
+                label=tracked.label,
+                pid=tracked.process.pid,
+            )
 
     async def kill_all(self, chat_id: int) -> int:
         """Kill every active process for *chat_id*. Returns count killed."""

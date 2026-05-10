@@ -286,6 +286,8 @@ class InternalAgentAPI:
         worker_business_permissions = (
             raw_business_permissions if isinstance(raw_business_permissions, list) else []
         )
+        raw_phase_metadata = data.get("phase_metadata", data.get("metadata", {}))
+        phase_metadata = raw_phase_metadata if isinstance(raw_phase_metadata, dict) else {}
 
         submit = TaskSubmit(
             chat_id=data.get("chat_id", 0),
@@ -313,6 +315,7 @@ class InternalAgentAPI:
             plan_phases=data.get("plan_phases") if isinstance(data.get("plan_phases"), list) else [],
             phase_id=data.get("phase_id") or "",
             phase_title=data.get("phase_title") or "",
+            phase_metadata=dict(phase_metadata),
         )
 
         try:

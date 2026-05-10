@@ -125,6 +125,7 @@ class TestTaskCreate:
                 ],
                 "phase_id": "phase-001",
                 "phase_title": "Audit repository",
+                "phase_metadata": {"gate_kind": "release_publish"},
             },
         )
 
@@ -135,6 +136,7 @@ class TestTaskCreate:
         assert submit.plan_phases[0]["workunit_kind"] == "repo_audit"
         assert submit.phase_id == "phase-001"
         assert submit.phase_title == "Audit repository"
+        assert submit.phase_metadata == {"gate_kind": "release_publish"}
 
     async def test_missing_prompt(self, api_client: TestClient) -> None:
         resp = await api_client.post("/tasks/create", json={"from": "main"})

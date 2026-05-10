@@ -23,7 +23,15 @@ from controlmesh.memory.runtime_capture import (
 )
 from controlmesh.multiagent.release_gate import ensure_publish_gate, load_gate_state
 from controlmesh.messenger.address import ChatRef, TopicRef
-from controlmesh.runtime import AgentInboxItem, AgentInboxStore, RuntimeEvent, RuntimeEventStore
+from controlmesh.runtime import (
+    AgentInboxItem,
+    AgentInboxStore,
+    RepoWorktreeManager,
+    RuntimeEvent,
+    RuntimeEventStore,
+    SlotManager,
+    append_task_event,
+)
 from controlmesh.routing.activation import (
     ActivationIntent,
     load_activation_policies,
@@ -194,6 +202,8 @@ class TaskHub:
         self._maintenance_task: asyncio.Task[None] | None = None
         self._runtime_events = RuntimeEventStore(paths)
         self._agent_inbox = AgentInboxStore(paths)
+        self._slots = SlotManager(paths)
+        self._worktrees = RepoWorktreeManager(paths)
 
     def start_maintenance(self) -> None:
         """Start periodic orphan cleanup (call once after bot startup)."""
@@ -392,6 +402,7 @@ class TaskHub:
             if refreshed is not None:
                 entry = refreshed
         entry = self._prepare_plan_artifacts(entry, submit)
+        self._prepare_task_runtime_binding(entry)
         self._append_runtime_lifecycle_event(entry, "task.lifecycle.created")
 
         # Build prompt with mandatory suffix
@@ -572,13 +583,21 @@ class TaskHub:
     ) -> None:
         """Create the asyncio task and register it in-flight."""
         inflight = TaskInFlight(entry=entry)
+        if entry.route_slot and not self._slots.acquire(entry.route_slot, task_id=entry.task_id):
+            msg = f"Route slot '{entry.route_slot}' is busy"
+            raise ValueError(msg)
         atask = asyncio.create_task(
             self._run(entry, prompt, thinking, resume_session=resume_session),
             name=f"task:{entry.task_id}",
         )
         inflight.asyncio_task = atask
-        atask.add_done_callback(lambda _: self._in_flight.pop(entry.task_id, None))
+        atask.add_done_callback(lambda _: self._finish_inflight(entry))
         self._in_flight[entry.task_id] = inflight
+
+    def _finish_inflight(self, entry: TaskEntry) -> None:
+        self._in_flight.pop(entry.task_id, None)
+        if entry.route_slot:
+            self._slots.release(entry.route_slot, task_id=entry.task_id)
 
     async def forward_question(self, task_id: str, question: str) -> str:
         """Forward a task agent's question to the parent. Returns immediately.
@@ -1119,6 +1138,7 @@ class TaskHub:
                 topic_id=key.topic_id,
             )
         )
+        append_task_event(self._artifact_paths(entry).folder, event_type, payload)
 
     def record_route_candidate(self, entry: TaskEntry) -> None:
         """Persist an internal-only route candidate for the parent agent."""
@@ -1201,8 +1221,29 @@ class TaskHub:
         question: str,
     ) -> tuple[str, bool, str] | None:
         metadata = entry.phase_metadata
-        if not entry.plan_id or metadata.get("gate_kind") != "release_publish":
+        side_effect = str(metadata.get("side_effect_key") or "")
+        is_release_publish = metadata.get("gate_kind") == "release_publish" or side_effect.startswith(
+            "release_publish"
+        )
+        if not entry.plan_id or not is_release_publish:
             return None
+        if not _is_release_publish_phase(entry):
+            append_task_event(
+                self._artifact_paths(entry).folder,
+                "ignored_release_publish_question_from_non_publish_phase",
+                {
+                    "task_id": entry.task_id,
+                    "phase_id": entry.phase_id,
+                    "phase_title": entry.phase_title,
+                    "side_effect_key": side_effect,
+                    "question": question[:200],
+                },
+            )
+            return (
+                "",
+                False,
+                "ignored: only publish phase may request release approval",
+            )
 
         repo = str(metadata.get("repo") or "")
         version = str(metadata.get("version") or "")
@@ -1335,6 +1376,30 @@ class TaskHub:
                 plan_status="executing",
             )
         return entry
+
+    def _prepare_task_runtime_binding(self, entry: TaskEntry) -> None:
+        """Create task-local events and repo binding artifacts."""
+        folder = self._artifact_paths(entry).folder
+        append_task_event(
+            folder,
+            "task.runtime.prepared",
+            {
+                "task_id": entry.task_id,
+                "workunit_kind": entry.workunit_kind,
+                "route_slot": entry.route_slot,
+                "provider": entry.provider,
+                "model": entry.model,
+            },
+        )
+        if not isinstance(getattr(self._paths, "worktrees_dir", None), Path):
+            return
+        try:
+            binding = self._worktrees.bind_task(entry)
+        except (OSError, RuntimeError, TypeError):
+            logger.debug("Could not bind repo worktree for task %s", entry.task_id, exc_info=True)
+            return
+        if binding is not None:
+            append_task_event(folder, "task.repo.bound", binding.to_dict())
 
     def _artifact_paths(self, entry: TaskEntry) -> _TaskArtifactPaths:
         """Resolve the active TASKMEMORY/EVIDENCE/RESULT paths for one task."""
@@ -1641,6 +1706,12 @@ def _format_release_publish_gate_question(gate: dict[str, Any]) -> str:
             ]
         )
     return "\n".join(lines)
+
+
+def _is_release_publish_phase(entry: TaskEntry) -> bool:
+    phase_id = (entry.phase_id or "").strip().lower()
+    phase_title = (entry.phase_title or "").strip().lower()
+    return phase_id == "publish" or phase_title in {"publish", "publish release"}
 
 
 def _read_task_updates(updates_path: Path) -> list[dict[str, Any]]:

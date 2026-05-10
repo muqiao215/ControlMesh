@@ -410,22 +410,6 @@ async def handle_task_result(orch: Orchestrator, result: TaskResult) -> str | No
             f"(task `{task_id}`)."
         )
 
-    if entry.phase_id and entry.workunit_kind == "phase_execution":
-        _set_controller_state(
-            orch,
-            plan_id,
-            status="review_required",
-            current_phase_id=entry.phase_id,
-            awaiting_review_phase_id=entry.phase_id,
-            last_phase_task_id=result.task_id,
-        )
-        return (
-            f"Plan `{plan_id}` phase `{entry.phase_id}` is ready for review.\n"
-            f"- approve: `/agents approve {plan_id}`\n"
-            f"- repair: `/agents repair {plan_id} <feedback>`\n\n"
-            f"{_review_buttons(plan_id)}"
-        )
-
     if entry.phase_id and entry.phase_metadata.get("gate_kind") == "release_publish":
         gate = _active_publish_gate(orch, plan_id)
         mark_executed(
@@ -454,6 +438,22 @@ async def handle_task_result(orch: Orchestrator, result: TaskResult) -> str | No
             f"Plan `{plan_id}` publish phase completed and is ready for review.\n"
             f"- approve: `/agents approve {plan_id}`\n"
             f"- status: `/agents status {plan_id}`"
+        )
+
+    if entry.phase_id and entry.workunit_kind == "phase_execution":
+        _set_controller_state(
+            orch,
+            plan_id,
+            status="review_required",
+            current_phase_id=entry.phase_id,
+            awaiting_review_phase_id=entry.phase_id,
+            last_phase_task_id=result.task_id,
+        )
+        return (
+            f"Plan `{plan_id}` phase `{entry.phase_id}` is ready for review.\n"
+            f"- approve: `/agents approve {plan_id}`\n"
+            f"- repair: `/agents repair {plan_id} <feedback>`\n\n"
+            f"{_review_buttons(plan_id)}"
         )
 
     return None

@@ -892,12 +892,50 @@ class TestForwardQuestion:
         gate = load_gate_state(paths.plans_dir, "release-plan")
         assert gate["status"] == "pending_approval"
         assert gate["requested_by_task"] == entry.task_id
+        assert gate["side_effect_key"] == "release_publish:repo:0.24.33"
 
         question_handler.reset_mock()
         result2 = await hub.forward_question(entry.task_id, "May I push main and tag v0.24.33?")
         assert "already pending" in result2.lower()
         await asyncio.sleep(0.05)
         question_handler.assert_not_called()
+
+    async def test_non_publish_phase_cannot_forward_release_publish_approval(
+        self, registry: TaskRegistry, tmp_path: Path
+    ) -> None:
+        paths = ControlMeshPaths(controlmesh_home=tmp_path / "home")
+        hub = TaskHub(
+            registry,
+            paths,
+            cli_service=_make_cli_service(),
+            config=_make_config(),
+        )
+        question_handler = AsyncMock()
+        hub.set_question_handler("main", question_handler)
+
+        submit = _submit("prepare release", name="Release Prep")
+        submit.plan_id = "release-plan"
+        submit.phase_id = "release_prep"
+        submit.phase_title = "Release Preparation"
+        submit.phase_metadata = {
+            "gate_kind": "release_publish",
+            "side_effect_key": "release_publish:repo:0.24.33",
+            "repo": "https://github.com/org/repo",
+            "version": "0.24.33",
+            "tag": "v0.24.33",
+            "commands": ["git push origin main"],
+        }
+        entry = registry.create(submit, "claude", "sonnet")
+
+        result = await hub.forward_question(entry.task_id, "May I push main and tag v0.24.33?")
+
+        assert "only publish phase may request release approval" in result.lower()
+        await asyncio.sleep(0.05)
+        question_handler.assert_not_called()
+        events_path = registry.task_folder(entry.task_id) / "events.jsonl"
+        assert events_path.is_file()
+        contents = events_path.read_text(encoding="utf-8")
+        assert "ignored_release_publish_question_from_non_publish_phase" in contents
 
 
 class TestWaitingStatus:

@@ -312,6 +312,7 @@ def main() -> None:
             tag = version if version.startswith("v") else f"v{version}"
             phase["metadata"] = {
                 "gate_kind": "release_publish",
+                "side_effect_key": f"release_publish:{Path(repo_url.rstrip('/')).name or 'repo'}:{version}",
                 "repo": repo_url,
                 "version": version,
                 "tag": tag,

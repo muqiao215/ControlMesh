@@ -110,6 +110,41 @@ class ControlMeshPaths:
         return self.workspace / "tasks"
 
     @property
+    def worktrees_dir(self) -> Path:
+        """Per-task git worktree folders."""
+        return self.workspace / "worktrees"
+
+    @property
+    def runtime_dir(self) -> Path:
+        """Lightweight runtime state root."""
+        return self.workspace / "runtime"
+
+    @property
+    def runtime_registry_path(self) -> Path:
+        """Runtime capability/availability registry."""
+        return self.runtime_dir / "runtime_registry.json"
+
+    @property
+    def runtime_health_path(self) -> Path:
+        """Runtime provider health snapshots."""
+        return self.runtime_dir / "runtime_health.json"
+
+    @property
+    def runtime_slots_path(self) -> Path:
+        """Runtime slot state and leases."""
+        return self.runtime_dir / "slots.json"
+
+    @property
+    def runtime_processes_path(self) -> Path:
+        """Runtime process leases for foreground/background subprocesses."""
+        return self.runtime_dir / "processes.json"
+
+    @property
+    def runtime_locks_dir(self) -> Path:
+        """Advisory runtime lock files."""
+        return self.runtime_dir / "locks"
+
+    @property
     def plans_dir(self) -> Path:
         """File-backed plan artifact root."""
         return self.controlmesh_home / "plans"

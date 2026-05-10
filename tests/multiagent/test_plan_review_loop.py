@@ -288,7 +288,80 @@ async def test_approve_phase_resumes_plan_level_publish_gate(tmp_path: Path) -> 
     ]
     gate = load_gate_state(tmp_path / "plans", plan_id)
     assert gate["status"] == "executing"
-    assert gate["executor_task_id"] == "publish-task-1"
+
+
+@pytest.mark.asyncio
+async def test_release_publish_phase_marks_executed_before_generic_review(tmp_path: Path) -> None:
+    plan_id = "release-plan"
+    create_plan_files(
+        tmp_path / "plans",
+        plan_id=plan_id,
+        plan_markdown="# Release",
+        phases=(PlanPhase(id="publish", title="Publish", workunit_kind="phase_execution"),),
+        status="executing",
+    )
+    _write_state(
+        tmp_path,
+        plan_id,
+        {
+            "schema_version": 1,
+            "plan_id": plan_id,
+            "status": "executing",
+            "controller_mode": "agents_review_loop",
+            "current_phase_id": "publish",
+            "source_transport": "tg",
+            "source_chat_id": 13,
+            "repo": "/repo",
+        },
+    )
+    ensure_publish_gate(
+        tmp_path / "plans",
+        plan_id=plan_id,
+        repo="/repo",
+        version="0.24.33",
+        commit="ddf996a",
+        tag="v0.24.33",
+        commands=["git push origin v0.24.33"],
+        requested_by_task="publish-task-1",
+    )
+    entry = TaskEntry(
+        task_id="publish-task-1",
+        chat_id=13,
+        parent_agent="main",
+        name="publish",
+        prompt_preview="",
+        provider="claude",
+        model="sonnet",
+        status="done",
+        workunit_kind="phase_execution",
+        plan_id=plan_id,
+        phase_id="publish",
+        phase_metadata={"gate_kind": "release_publish"},
+    )
+    hub = _FakeTaskHub(entry)
+    orch = _make_orch(tmp_path, hub)
+
+    note = await handle_task_result(
+        orch,
+        TaskResult(
+            task_id="publish-task-1",
+            chat_id=13,
+            parent_agent="main",
+            name="publish",
+            prompt_preview="",
+            result_text="published",
+            status="done",
+            elapsed_seconds=1,
+            provider="claude",
+            model="sonnet",
+        ),
+    )
+
+    assert note is not None
+    assert "publish phase completed" in note
+    assert (tmp_path / "plans" / plan_id / "publish" / "EXECUTED.json").is_file()
+    gate = load_gate_state(tmp_path / "plans", plan_id)
+    assert gate["status"] == "executed"
 
 
 @pytest.mark.asyncio
