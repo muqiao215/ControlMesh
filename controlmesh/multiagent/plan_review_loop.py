@@ -122,6 +122,14 @@ def _phase_route(phase: dict[str, Any]) -> str:
     return str(phase.get("route") or "auto")
 
 
+def _phase_provider(phase: dict[str, Any]) -> str:
+    return str(phase.get("provider") or "")
+
+
+def _phase_model(phase: dict[str, Any]) -> str:
+    return str(phase.get("model") or "")
+
+
 def _phase_allowed_edit(phase: dict[str, Any]) -> bool:
     return bool(phase.get("allowed_edit", _phase_workunit_kind(phase) == "phase_execution"))
 
@@ -305,6 +313,8 @@ async def submit_phase_execution(
         parent_agent="main",
         transport=transport,
         name=f"{phase_id}: {_phase_title(phase)}",
+        provider_override=_phase_provider(phase),
+        model_override=_phase_model(phase),
         route=_phase_route(phase),
         workunit_kind=_phase_workunit_kind(phase),
         evaluator="foreground",
@@ -425,6 +435,8 @@ async def repair_phase(orch: Orchestrator, key: SessionKey, plan_id: str, feedba
         phase_title=_phase_title(phase),
         workunit_kind=_phase_workunit_kind(phase),
         route=_phase_route(phase),
+        provider=_phase_provider(phase),
+        model=_phase_model(phase),
         allowed_edit=_phase_allowed_edit(phase),
         phase_status="repair",
         plan_status="repair",

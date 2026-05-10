@@ -111,7 +111,15 @@ async def test_handle_task_result_autostarts_first_phase(tmp_path: Path) -> None
         tmp_path / "plans",
         plan_id=plan_id,
         plan_markdown="# Plan",
-        phases=(PlanPhase(id="phase-1", title="Contracts", workunit_kind="phase_execution"),),
+        phases=(
+            PlanPhase(
+                id="phase-1",
+                title="Contracts",
+                workunit_kind="phase_execution",
+                provider="claude",
+                model="sonnet",
+            ),
+        ),
         status="ready_for_implementation",
     )
     _write_state(
@@ -164,6 +172,8 @@ async def test_handle_task_result_autostarts_first_phase(tmp_path: Path) -> None
     assert submit.workunit_kind == "phase_execution"
     assert submit.plan_id == plan_id
     assert submit.phase_id == "phase-1"
+    assert submit.provider_override == "claude"
+    assert submit.model_override == "sonnet"
     state = json.loads((plan_dir_for(tmp_path / "plans", plan_id) / "STATE.json").read_text())
     assert state["status"] == "executing"
     assert state["current_phase_id"] == "phase-1"
@@ -178,7 +188,13 @@ async def test_approve_phase_starts_next_pending_phase(tmp_path: Path) -> None:
         plan_markdown="# Plan",
         phases=(
             PlanPhase(id="phase-1", title="Contracts", workunit_kind="phase_execution", status="completed"),
-            PlanPhase(id="phase-2", title="Executor", workunit_kind="phase_execution"),
+            PlanPhase(
+                id="phase-2",
+                title="Executor",
+                workunit_kind="phase_execution",
+                provider="claude",
+                model="sonnet",
+            ),
         ),
         status="executing",
         current_phase=1,
@@ -205,6 +221,8 @@ async def test_approve_phase_starts_next_pending_phase(tmp_path: Path) -> None:
 
     assert "Started next phase `phase-2` automatically" in text
     assert hub.submits[0].phase_id == "phase-2"
+    assert hub.submits[0].provider_override == "claude"
+    assert hub.submits[0].model_override == "sonnet"
     state = json.loads((plan_dir_for(tmp_path / "plans", plan_id) / "STATE.json").read_text())
     assert state["status"] == "executing"
     assert state["current_phase_id"] == "phase-2"

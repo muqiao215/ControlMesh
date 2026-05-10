@@ -13,7 +13,7 @@ Options:
     --name NAME          Override the plan name (default: "release-<timestamp>")
     --provider PROVIDER  Explicit provider hint (claude, codex, gemini, claw)
     --model MODEL        Model hint (opus, sonnet, etc.)
-    --claude             Prefer Claude for all phases (sets route=claude on phases)
+    --claude             Prefer Claude for all phases (sets explicit provider/model)
     --repo-url URL       Repository URL for the release
     --version VERSION    Target version (auto-detected if not provided)
     --dry-run            Create plan but do not submit tasks (shows plan only)
@@ -66,13 +66,6 @@ def _load_shared() -> tuple[object, object, object]:
 
 
 # Default phases for a release workflow.
-# Each phase has:
-#   id: unique phase identifier
-#   title: human-readable phase title
-#   workunit_kind: the WorkUnit kind for routing
-#   route: routing preference ("claude", "auto", etc.)
-#   evaluator: approval requirement ("foreground" = requires controller approval)
-#   description: what the phase does
 DEFAULT_RELEASE_PHASES = (
     {
         "id": "repo_audit",
@@ -105,7 +98,9 @@ DEFAULT_RELEASE_PHASES = (
         "id": "publish",
         "title": "Publish Release",
         "workunit_kind": "github_release",
-        "route": "claude",
+        "route": "auto",
+        "provider": "",
+        "model": "",
         "evaluator": "foreground",
         "description": "Push git tag, create GitHub release, publish to package "
         "registries. REQUIRES FOREGROUND APPROVAL before external side effects.",
@@ -115,6 +110,8 @@ DEFAULT_RELEASE_PHASES = (
         "title": "Post-Release Verification",
         "workunit_kind": "test_execution",
         "route": "auto",
+        "provider": "",
+        "model": "",
         "evaluator": "",
         "description": "Verify release artifacts, check CI pipelines, confirm "
         "package registry visibility.",
@@ -290,10 +287,12 @@ def main() -> None:
     # Build plan_phases for the create_task API
     plan_phases = []
     for phase in DEFAULT_RELEASE_PHASES:
-        # Apply --claude preference
+        # Apply --claude preference as an explicit provider/model binding.
         if claude_preferred:
             phase = dict(phase)
-            phase["route"] = "claude"
+            phase["provider"] = "claude"
+            if not phase.get("model"):
+                phase["model"] = "sonnet"
 
         # Disable foreground approval if requested
         if not foreground_eval and phase["id"] in FOREGROUND_APPROVAL_PHASES:
@@ -335,7 +334,8 @@ def main() -> None:
         print("To submit the plan, run without --dry-run.")
         return
 
-    # Submit phases
+    # Submit only the first phase. The foreground-controlled plan loop is
+    # responsible for advancing later phases one at a time.
     sender = detect_agent_name()
 
     # Propagate sender context
@@ -379,42 +379,9 @@ def main() -> None:
     first_task_id = result.get("task_id", "?")
     print(f"  Task submitted: {first_task_id}")
 
-    # Remaining phases
-    for i, phase in enumerate(phases_to_run[1:], start=2):
-        body: dict[str, object] = {
-            "from": sender,
-            "prompt": f"Execute phase {i} of the release plan.\n\n{description}",
-            "name": f"[{plan_id}] {phase['title']}",
-            "workunit_kind": phase["workunit_kind"],
-            "route": phase["route"],
-            "plan_id": plan_id,
-            "plan_markdown": "",  # Not needed for subsequent phases
-            "phase_id": phase["id"],
-            "phase_title": phase["title"],
-        }
-        if provider:
-            body["provider"] = provider
-        if model:
-            body["model"] = model
-        if phase["evaluator"]:
-            body["evaluator"] = phase["evaluator"]
-        if chat_id:
-            body["chat_id"] = chat_id
-        if topic_id:
-            body["topic_id"] = topic_id
-
-        print(f"Submitting phase {i}: {phase['id']}...")
-        result = post_json(get_api_url("/tasks/create"), body, timeout=10)
-        if not result.get("success"):
-            error = result.get("error", "Unknown error")
-            print(f"Warning: Error submitting phase {i}: {error}", file=sys.stderr)
-            print("  The plan was partially submitted. Check task list for status.", file=sys.stderr)
-        else:
-            task_id = result.get("task_id", "?")
-            print(f"  Task submitted: {task_id}")
-
     print()
     print(f"Release workflow '{plan_id}' submitted.")
+    print("Later phases will be started by the foreground-controlled review loop, one at a time.")
     print("Use `python3 tools/task_tools/list_tasks.py` to monitor progress.")
     print()
     print("PlanFiles artifacts:")

@@ -16,6 +16,8 @@ class PlanPhase:
     title: str
     workunit_kind: str
     route: str = "auto"
+    provider: str = ""
+    model: str = ""
     allowed_edit: bool = False
     status: str = "pending"
 
@@ -25,6 +27,8 @@ class PlanPhase:
             "title": self.title,
             "workunit_kind": self.workunit_kind,
             "route": self.route,
+            "provider": self.provider,
+            "model": self.model,
             "allowed_edit": self.allowed_edit,
             "status": self.status,
         }
@@ -122,6 +126,8 @@ def update_phase_state(
     phase_title: str,
     workunit_kind: str,
     route: str = "auto",
+    provider: str = "",
+    model: str = "",
     allowed_edit: bool = False,
     phase_status: str | None = None,
     plan_status: str | None = None,
@@ -155,6 +161,8 @@ def update_phase_state(
         "title": phase_title,
         "workunit_kind": workunit_kind,
         "route": route,
+        "provider": provider,
+        "model": model,
         "allowed_edit": allowed_edit,
         "status": phase_status or "pending",
     }

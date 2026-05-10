@@ -189,8 +189,8 @@ def test_create_task_supports_plan_phase_flags(tmp_path: Path) -> None:
     ]
 
 
-def test_release_task_submits_all_phases(tmp_path: Path) -> None:
-    """release_task.py submits all 5 release phases with correct metadata."""
+def test_release_task_submits_only_first_phase_with_full_manifest(tmp_path: Path) -> None:
+    """release_task.py should submit only the first phase; later phases stay in the manifest."""
     deployed_dir = _install_deployed_task_tools(tmp_path)
     server, thread = _start_task_api()
     try:
@@ -215,11 +215,11 @@ def test_release_task_submits_all_phases(tmp_path: Path) -> None:
     assert "preflight_checks" in result.stdout
     assert "publish" in result.stdout
     assert "submitted" in result.stdout
+    assert "Later phases will be started by the foreground-controlled review loop" in result.stdout
 
     requests: list[tuple[str, dict[str, Any]]] = server.requests  # type: ignore[attr-defined]
-    assert len(requests) == 5  # All 5 phases submitted
+    assert len(requests) == 1
 
-    # First phase has full plan manifest
     first_request = requests[0]
     assert first_request[0] == "/tasks/create"
     first_body = first_request[1]
@@ -229,16 +229,11 @@ def test_release_task_submits_all_phases(tmp_path: Path) -> None:
     assert len(first_body["plan_phases"]) == 5
     assert first_body["phase_id"] == "repo_audit"
     assert first_body["plan_markdown"]  # Has PLAN.md content
-
-    # Find publish phase
-    publish_req = next(
-        (r for r in requests if r[1]["phase_id"] == "publish"),
-        None,
+    publish_phase = next(
+        phase for phase in first_body["plan_phases"] if phase["id"] == "publish"
     )
-    assert publish_req is not None, f"Expected publish phase, got: {[r[1]['phase_id'] for r in requests]}"
-    publish_body = publish_req[1]
-    assert publish_body["evaluator"] == "foreground"
-    assert publish_body["workunit_kind"] == "github_release"
+    assert publish_phase["evaluator"] == "foreground"
+    assert publish_phase["workunit_kind"] == "github_release"
 
 
 def test_release_task_dry_run_shows_plan_only(tmp_path: Path) -> None:
@@ -268,8 +263,8 @@ def test_release_task_dry_run_shows_plan_only(tmp_path: Path) -> None:
     assert len(requests) == 0  # No tasks submitted
 
 
-def test_release_task_claude_preference_sets_route(tmp_path: Path) -> None:
-    """--claude sets route=claude on all phases."""
+def test_release_task_claude_preference_sets_explicit_provider_in_manifest(tmp_path: Path) -> None:
+    """--claude should bind phases to explicit Claude provider/model, not pseudo-route strings."""
     deployed_dir = _install_deployed_task_tools(tmp_path)
     server, thread = _start_task_api()
     try:
@@ -288,8 +283,12 @@ def test_release_task_claude_preference_sets_route(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
 
     requests: list[tuple[str, dict[str, Any]]] = server.requests  # type: ignore[attr-defined]
-    for _req_path, req_body in requests:
-        assert req_body["route"] == "claude"
+    assert len(requests) == 1
+    first_body = requests[0][1]
+    assert first_body["route"] == "auto"
+    for phase in first_body["plan_phases"]:
+        assert phase["provider"] == "claude"
+        assert phase["model"] == "sonnet"
 
 
 def test_release_task_start_phase_skips_earlier(tmp_path: Path) -> None:
@@ -313,11 +312,14 @@ def test_release_task_start_phase_skips_earlier(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
 
     requests: list[tuple[str, dict[str, Any]]] = server.requests  # type: ignore[attr-defined]
-    # Should have 3 phases: release_prep, publish, verify
-    assert len(requests) == 3
-
+    assert len(requests) == 1
     first_body = requests[0][1]
     assert first_body["phase_id"] == "release_prep"
+    assert [phase["id"] for phase in first_body["plan_phases"]] == [
+        "release_prep",
+        "publish",
+        "verify",
+    ]
 
 
 def test_release_task_no_foreground_eval_disables_approval(tmp_path: Path) -> None:
@@ -340,14 +342,11 @@ def test_release_task_no_foreground_eval_disables_approval(tmp_path: Path) -> No
     assert result.returncode == 0, result.stderr
 
     requests: list[tuple[str, dict[str, Any]]] = server.requests  # type: ignore[attr-defined]
-    publish_req = next(
-        (r for r in requests if r[1]["phase_id"] == "publish"),
-        None,
+    assert len(requests) == 1
+    publish_phase = next(
+        phase for phase in requests[0][1]["plan_phases"] if phase["id"] == "publish"
     )
-    assert publish_req is not None
-    # When --no-foreground-eval, the evaluator key should be absent or empty
-    publish_body = publish_req[1]
-    evaluator_value = publish_body.get("evaluator", "")
+    evaluator_value = publish_phase.get("evaluator", "")
     assert evaluator_value == ""  # No foreground approval
 
 
