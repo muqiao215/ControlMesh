@@ -87,6 +87,8 @@ class TestTaskCreate:
                 "target": "tests/test_x.py",
                 "evidence": "logs/pytest.log",
                 "required_capabilities": ["shell_execution"],
+                "worker_runtime_writeback": True,
+                "worker_business_permissions": ["repo_write"],
                 "evaluator": "foreground",
             },
         )
@@ -99,6 +101,8 @@ class TestTaskCreate:
         assert submit.target == "tests/test_x.py"
         assert submit.evidence == "logs/pytest.log"
         assert submit.required_capabilities == ["shell_execution"]
+        assert submit.worker_runtime_writeback is True
+        assert submit.worker_business_permissions == ["repo_write"]
         assert submit.evaluator == "foreground"
 
     async def test_forwards_plan_fields_to_task_submit(self, api_client: TestClient) -> None:

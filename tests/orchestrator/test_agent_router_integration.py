@@ -50,6 +50,8 @@ def _release_decision(prompt: str) -> RouteDecision:
         topology="pipeline",
         confidence=0.91,
         required_capabilities=unit.requirements.capabilities,
+        runtime_writeback=True,
+        business_permissions=("git_write", "network_write", "publish", "release_create"),
         evaluator="foreground",
         reason="policy matched; selected topology=pipeline",
         contract="",
@@ -163,17 +165,18 @@ activation_policies:
     )
     hub = MagicMock()
     hub.submit = MagicMock(return_value="task1234")
+    hub.record_route_candidate = MagicMock()
     hub.start_maintenance = MagicMock()
     orch.set_task_hub(hub)
+    mock_execute = AsyncMock(return_value=_mock_response(result="Response text"))
+    object.__setattr__(orch._cli_service, "execute", mock_execute)
 
     with patch("controlmesh.orchestrator.core.resolve_route", return_value=None):
         result = await orch.handle_message(SessionKey(chat_id=1), "请帮我发布新版本")
 
     hub.submit.assert_not_called()
-    assert "Matched activation policy suggestion but no eligible background route was available." in result.text
-    assert "policy: github_release_always_background" in result.text
-    assert "workunit: github_release" in result.text
-    assert "run it explicitly in foreground" in result.text
+    assert result.text == "Response text"
+    hub.record_route_candidate.assert_not_called()
 
 
 async def test_activation_policy_only_suggests_background_candidate_without_dispatch(
@@ -193,16 +196,18 @@ activation_policies:
     )
     hub = MagicMock()
     hub.submit = MagicMock(return_value="task1234")
+    hub.record_route_candidate = MagicMock()
     hub.start_maintenance = MagicMock()
     orch.set_task_hub(hub)
+    mock_execute = AsyncMock(return_value=_mock_response(result="Response text"))
+    object.__setattr__(orch._cli_service, "execute", mock_execute)
 
     with patch("controlmesh.orchestrator.core.resolve_route", return_value=_release_decision("请帮我发布新版本")):
         result = await orch.handle_message(SessionKey(chat_id=1), "请帮我发布新版本")
 
     hub.submit.assert_not_called()
-    assert "Activation policy suggests a background candidate." in result.text
-    assert "dispatch: blocked until foreground agent explicitly submits a task" in result.text
-    assert "task:" not in result.text
+    hub.record_route_candidate.assert_called_once()
+    assert result.text == "Response text"
 
 
 async def test_github_release_without_activation_policy_stays_in_foreground(

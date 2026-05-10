@@ -471,4 +471,17 @@ def workflow_status_text(orch: Orchestrator, plan_id: str) -> str:
     last_task_id = str(state.get("last_phase_task_id") or "")
     if last_task_id:
         lines.append(f"- last_task: {last_task_id}")
+    if orch.task_hub is not None:
+        inbox = orch.task_hub.read_agent_inbox_filtered(
+            "main",
+            limit=3,
+            plan_id=plan_id,
+            chat_id=state.get("source_chat_id"),
+            topic_id=state.get("source_topic_id"),
+        )
+        if inbox:
+            lines.append("- main_inbox:")
+            lines.extend(
+                f"  - {item.kind}: {item.summary.splitlines()[0][:120]}" for item in inbox
+            )
     return "\n".join(lines)

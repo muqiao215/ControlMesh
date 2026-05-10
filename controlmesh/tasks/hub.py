@@ -21,7 +21,7 @@ from controlmesh.memory.runtime_capture import (
     capture_task_resume,
 )
 from controlmesh.messenger.address import ChatRef, TopicRef
-from controlmesh.runtime import RuntimeEvent, RuntimeEventStore
+from controlmesh.runtime import AgentInboxItem, AgentInboxStore, RuntimeEvent, RuntimeEventStore
 from controlmesh.routing.activation import (
     ActivationIntent,
     load_activation_policies,
@@ -48,7 +48,7 @@ from controlmesh.tasks.evidence import evidence_path, load_evidence, result_path
 from controlmesh.tasks.models import TaskEntry, TaskInFlight, TaskResult, TaskSubmit
 from controlmesh.team.contracts import ensure_team_topology
 from controlmesh.text.response_format import SEP, compact_transport_text, fmt
-from controlmesh.provider_binding import validate_provider_model_binding
+from controlmesh.provider_binding import provider_model_label, validate_provider_model_binding
 from controlmesh.planning_files import (
     PlanPhase,
     create_plan_files,
@@ -191,6 +191,7 @@ class TaskHub:
         self._agent_chat_ids: dict[str, ChatRef] = {}
         self._maintenance_task: asyncio.Task[None] | None = None
         self._runtime_events = RuntimeEventStore(paths)
+        self._agent_inbox = AgentInboxStore(paths)
 
     def start_maintenance(self) -> None:
         """Start periodic orphan cleanup (call once after bot startup)."""
@@ -222,6 +223,28 @@ class TaskHub:
     def set_agent_chat_id(self, agent_name: str, chat_id: ChatRef) -> None:
         """Register the primary chat_id for an agent (for resolving CLI-submitted tasks)."""
         self._agent_chat_ids[agent_name] = chat_id
+
+    def read_agent_inbox(self, agent_name: str, *, limit: int = 20) -> list[AgentInboxItem]:
+        """Read recent runtime-owned inbox items for one agent."""
+        return self._agent_inbox.read_recent(agent_name, limit=limit)
+
+    def read_agent_inbox_filtered(
+        self,
+        agent_name: str,
+        *,
+        limit: int = 20,
+        plan_id: str = "",
+        chat_id: object | None = None,
+        topic_id: object | None = None,
+    ) -> list[AgentInboxItem]:
+        """Read recent runtime-owned inbox items filtered to one workflow/session."""
+        return self._agent_inbox.read_recent_filtered(
+            agent_name,
+            limit=limit,
+            plan_id=plan_id,
+            chat_id=chat_id,
+            topic_id=topic_id,
+        )
 
     def _check_enabled(self) -> None:
         if not self._config.enabled:
@@ -300,8 +323,23 @@ class TaskHub:
             if decision is not None:
                 submit.workunit_kind = decision.workunit.kind.value
                 submit.required_capabilities = list(decision.required_capabilities)
+                submit.worker_runtime_writeback = decision.runtime_writeback
+                submit.worker_business_permissions = list(decision.business_permissions)
                 submit.evaluator = submit.evaluator or decision.evaluator
                 submit.route_slot = decision.slot_name
+                submit.route_candidate_summary = _route_candidate_summary(
+                    policy_name=activation_intent.matched_policy if activation_intent else "",
+                    workunit_kind=decision.workunit.kind.value,
+                    slot_name=decision.slot_name,
+                    provider=decision.provider,
+                    model=decision.model,
+                    topology=decision.topology or "background_single",
+                    requires_foreground_approval=bool(
+                        activation_intent and activation_intent.requires_foreground_approval
+                    ),
+                    runtime_writeback=decision.runtime_writeback,
+                    business_permissions=decision.business_permissions,
+                )
                 if not provider:
                     provider = decision.provider
                 if not model:
@@ -1030,6 +1068,7 @@ class TaskHub:
 
     async def _deliver(self, result: TaskResult) -> None:
         """Deliver result to the parent agent's registered callback."""
+        self._append_agent_inbox_result(result)
         handler = self._result_handlers.get(result.parent_agent)
         if handler is None:
             logger.warning(
@@ -1067,6 +1106,69 @@ class TaskHub:
                 transport=key.transport,
                 chat_id=key.chat_id,
                 topic_id=key.topic_id,
+            )
+        )
+
+    def record_route_candidate(self, entry: TaskEntry) -> None:
+        """Persist an internal-only route candidate for the parent agent."""
+        if not entry.route_candidate_summary:
+            return
+        key = SessionKey.for_transport(entry.transport, entry.chat_id, entry.thread_id)
+        payload = {
+            "task_id": entry.task_id,
+            "plan_id": entry.plan_id,
+            "workunit_kind": entry.workunit_kind,
+            "route_slot": entry.route_slot,
+            "route_reason": entry.route_reason,
+            "worker_runtime_writeback": entry.worker_runtime_writeback,
+            "worker_business_permissions": list(entry.worker_business_permissions),
+            "chat_id": entry.chat_id,
+            "topic_id": entry.thread_id,
+        }
+        self._runtime_events.append_event(
+            RuntimeEvent(
+                session_key=key.storage_key,
+                event_type="task.route_candidate",
+                payload=payload,
+                transport=key.transport,
+                chat_id=key.chat_id,
+                topic_id=key.topic_id,
+            )
+        )
+        self._agent_inbox.append(
+            AgentInboxItem(
+                to_agent=entry.parent_agent,
+                kind="task.route_candidate",
+                summary=entry.route_candidate_summary,
+                from_task=entry.task_id,
+                source_agent="taskhub",
+                result_ref=f"task:{entry.task_id}/route-candidate",
+                payload=payload,
+            )
+        )
+
+    def _append_agent_inbox_result(self, result: TaskResult) -> None:
+        """Persist authoritative task results into the parent agent inbox."""
+        summary = result.delivery_text or result.result_text or result.error or result.status
+        entry = self._registry.get(result.task_id)
+        self._agent_inbox.append(
+            AgentInboxItem(
+                to_agent=result.parent_agent,
+                kind=f"task.{result.status}",
+                summary=summary[:1200],
+                from_task=result.task_id,
+                source_agent="taskhub",
+                result_ref=f"task:{result.task_id}/result",
+                requires_attention=result.status != "done",
+                payload={
+                    "status": result.status,
+                    "provider": result.provider,
+                    "model": result.model,
+                    "output_policy": result.output_policy,
+                    "plan_id": entry.plan_id if entry is not None else "",
+                    "chat_id": result.chat_id,
+                    "topic_id": result.thread_id,
+                },
             )
         )
 
@@ -1383,6 +1485,37 @@ def _strip_internal_task_payload(text: str) -> str:
         if idx >= 0:
             clean = clean[:idx].rstrip()
     return clean
+
+
+def _route_candidate_summary(
+    *,
+    policy_name: str,
+    workunit_kind: str,
+    slot_name: str,
+    provider: str,
+    model: str,
+    topology: str,
+    requires_foreground_approval: bool,
+    runtime_writeback: bool,
+    business_permissions: tuple[str, ...] | list[str],
+) -> str:
+    approval = "foreground required" if requires_foreground_approval else "none"
+    permission_label = ", ".join(business_permissions) if business_permissions else "read_only"
+    return "\n".join(
+        [
+            "Activation policy suggests a background candidate.",
+            f"- policy: {policy_name or 'none'}",
+            f"- workunit: {workunit_kind}",
+            f"- slot: {slot_name}",
+            f"- target: {provider_model_label(provider, model)}",
+            f"- topology: {topology}",
+            f"- approval: {approval}",
+            f"- runtime_writeback: {'required' if runtime_writeback else 'missing'}",
+            f"- business_permissions: {permission_label}",
+            "- dispatch: blocked until foreground agent explicitly submits a task",
+            "- next step: decide in foreground whether to delegate or keep it frontstage",
+        ]
+    )
 
 
 def _read_task_updates(updates_path: Path) -> list[dict[str, Any]]:

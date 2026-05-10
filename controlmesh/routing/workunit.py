@@ -264,6 +264,8 @@ def may_background(intent: RoutingIntent, worker: object) -> bool:
         return False
     if intent.side_effects & _WRITE_SIDE_EFFECTS:
         return False
+    if not bool(getattr(worker, "runtime_writeback", False)):
+        return False
     capabilities = frozenset(getattr(worker, "capabilities", {}) or {})
     if not intent.required_caps.issubset(capabilities):
         return False

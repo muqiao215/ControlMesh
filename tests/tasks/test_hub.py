@@ -182,6 +182,8 @@ class TestSubmit:
         assert entry.route_reason
         assert "fanout_merge" in entry.route_reason
         assert "diff_understanding" in entry.required_capabilities
+        assert entry.worker_runtime_writeback is True
+        assert entry.worker_business_permissions == []
 
         request = cli.execute.await_args.args[0]
         assert "WorkUnit Contract: code_review" in request.prompt
@@ -404,6 +406,7 @@ activation_policies:
         entry = registry.get(task_id)
         assert entry is not None
         assert entry.route_reason.startswith("policy=review_background; ")
+        assert entry.worker_runtime_writeback is True
 
         await hub.shutdown()
 

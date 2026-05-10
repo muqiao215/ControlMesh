@@ -87,6 +87,14 @@ def test_may_background_requires_summary_only_background_worker() -> None:
         capabilities={"code_review": 0.8},
         output_policy="raw_events",
     )
+    no_writeback = AgentSlot(
+        name="no_writeback",
+        mode="background",
+        capabilities={"code_review": 0.8},
+        output_policy="summarized_only",
+        runtime_writeback=False,
+    )
 
     assert may_background(intent, good)
     assert not may_background(intent, leaky)
+    assert not may_background(intent, no_writeback)

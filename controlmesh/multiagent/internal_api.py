@@ -282,6 +282,10 @@ class InternalAgentAPI:
 
         raw_capabilities = data.get("required_capabilities") or []
         required_capabilities = raw_capabilities if isinstance(raw_capabilities, list) else []
+        raw_business_permissions = data.get("worker_business_permissions") or []
+        worker_business_permissions = (
+            raw_business_permissions if isinstance(raw_business_permissions, list) else []
+        )
 
         submit = TaskSubmit(
             chat_id=data.get("chat_id", 0),
@@ -301,6 +305,8 @@ class InternalAgentAPI:
             target=data.get("target") or "",
             evidence=data.get("evidence") or "",
             required_capabilities=[str(item) for item in required_capabilities],
+            worker_runtime_writeback=bool(data.get("worker_runtime_writeback", False)),
+            worker_business_permissions=[str(item) for item in worker_business_permissions],
             evaluator=data.get("evaluator") or "",
             plan_id=data.get("plan_id") or "",
             plan_markdown=data.get("plan_markdown") or "",

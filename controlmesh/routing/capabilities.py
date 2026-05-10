@@ -28,6 +28,8 @@ class AgentSlot:
     cwd: str = ""
     visible_paths: tuple[str, ...] = ()
     output_policy: str = "summarized_only"
+    runtime_writeback: bool = True
+    business_permissions: tuple[str, ...] = ()
     can_edit: bool = False
     canonical_write: bool = False
     topology_preferences: dict[str, str] = field(default_factory=dict)
@@ -51,6 +53,7 @@ class AgentSlot:
                 bool(self.tools),
                 bool(self.capabilities),
                 bool(self.output_policy),
+                self.runtime_writeback,
             )
         )
 
@@ -107,6 +110,8 @@ def default_capability_registry(config: object | None = None) -> CapabilityRegis
             cwd="workspace",
             visible_paths=("workspace",),
             tools=("shell", "python", "pytest"),
+            runtime_writeback=True,
+            business_permissions=("repo_write",),
             can_edit=True,
             capabilities={
                 "shell_execution": 0.72,
@@ -132,6 +137,8 @@ def default_capability_registry(config: object | None = None) -> CapabilityRegis
             cwd="workspace",
             visible_paths=("workspace",),
             tools=("shell", "git"),
+            runtime_writeback=True,
+            business_permissions=("git_write", "network_write", "publish", "release_create"),
             capabilities={
                 "github_release": 0.86,
                 "shell_execution": 0.75,
@@ -154,6 +161,8 @@ def default_capability_registry(config: object | None = None) -> CapabilityRegis
             cwd="workspace",
             visible_paths=("workspace",),
             tools=("shell", "python", "pytest", "git"),
+            runtime_writeback=True,
+            business_permissions=("repo_write", "git_write"),
             can_edit=True,
             capabilities={
                 "code_review": 0.9,
@@ -184,6 +193,7 @@ def default_capability_registry(config: object | None = None) -> CapabilityRegis
             cwd="workspace",
             visible_paths=("workspace",),
             tools=("codex-plugin-cc",),
+            runtime_writeback=True,
             capabilities={
                 "code_review": 0.86,
                 "adversarial_review": 0.88,
@@ -206,6 +216,7 @@ def default_capability_registry(config: object | None = None) -> CapabilityRegis
             cwd="workspace",
             visible_paths=("workspace",),
             tools=("shell", "python"),
+            runtime_writeback=True,
             capabilities={
                 "code_search": 0.86,
                 "code_review": 0.78,
@@ -253,9 +264,18 @@ def _slot_from_mapping(name: str, payload: dict[str, Any]) -> AgentSlot:
     permissions = payload.get("permissions", {})
     if not isinstance(permissions, dict):
         permissions = {}
+    runtime_writeback = payload.get("runtime_writeback", permissions.get("runtime_writeback", True))
+    business_permissions = payload.get(
+        "business_permissions",
+        permissions.get("business_permissions", ()),
+    )
     tools = payload.get("tools", ())
     if not isinstance(tools, list):
         tools = []
+    if isinstance(business_permissions, str):
+        business_permissions = [business_permissions]
+    if not isinstance(business_permissions, list):
+        business_permissions = []
     visible_paths = payload.get("visible_paths", ())
     if isinstance(visible_paths, str):
         visible_paths = [visible_paths]
@@ -283,6 +303,8 @@ def _slot_from_mapping(name: str, payload: dict[str, Any]) -> AgentSlot:
         cwd=str(payload.get("cwd", "")),
         visible_paths=tuple(str(path) for path in visible_paths),
         output_policy=str(payload.get("output_policy", "summarized_only") or "summarized_only"),
+        runtime_writeback=bool(runtime_writeback),
+        business_permissions=tuple(str(item) for item in business_permissions),
         can_edit=bool(payload.get("can_edit", permissions.get("edit", False))),
         canonical_write=bool(
             payload.get("canonical_write", permissions.get("canonical_write", False))

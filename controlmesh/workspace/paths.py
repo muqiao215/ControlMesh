@@ -140,6 +140,11 @@ class ControlMeshPaths:
         return self.controlmesh_home / "runtime-events"
 
     @property
+    def agent_inbox_dir(self) -> Path:
+        """Dedicated runtime-owned inbox storage root for agent-visible backstage events."""
+        return self.controlmesh_home / "agent-inbox"
+
+    @property
     def history_index_path(self) -> Path:
         """Derived SQLite history index (never authoritative)."""
         return self.workspace / ".history" / "index.sqlite3"

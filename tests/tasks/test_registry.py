@@ -63,6 +63,8 @@ class TestCreate:
         submit.workunit_kind = "test_execution"
         submit.command = "uv run pytest tests/test_x.py -q"
         submit.required_capabilities = ["shell_execution"]
+        submit.worker_runtime_writeback = True
+        submit.worker_business_permissions = ["repo_write"]
         submit.evaluator = "foreground"
 
         entry = registry.create(submit, "codex", "")
@@ -71,6 +73,8 @@ class TestCreate:
         assert entry.workunit_kind == "test_execution"
         assert entry.command == "uv run pytest tests/test_x.py -q"
         assert entry.required_capabilities == ["shell_execution"]
+        assert entry.worker_runtime_writeback is True
+        assert entry.worker_business_permissions == ["repo_write"]
         assert entry.evaluator == "foreground"
 
 

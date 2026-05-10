@@ -47,6 +47,7 @@ agent_slots:
     assert registry.slots[0].visible_paths == ("/repo",)
     assert registry.slots[0].tools == ("shell",)
     assert registry.slots[0].output_policy == "summarized_only"
+    assert registry.slots[0].runtime_writeback is True
     assert registry.slots[0].declares_worker_contract()
 
 
@@ -81,3 +82,4 @@ def test_missing_registry_falls_back_to_defaults(tmp_path: Path) -> None:
 
     assert registry.slots
     assert any(slot.name == "background_worker" for slot in registry.slots)
+    assert all(slot.runtime_writeback for slot in registry.slots if slot.mode == "background")

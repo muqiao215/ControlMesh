@@ -128,6 +128,8 @@ class TaskRegistry:
             route=submit.route,
             workunit_kind=submit.workunit_kind,
             required_capabilities=list(submit.required_capabilities),
+            worker_runtime_writeback=submit.worker_runtime_writeback,
+            worker_business_permissions=list(submit.worker_business_permissions),
             evaluator=submit.evaluator,
             route_slot=submit.route_slot,
             command=submit.command,

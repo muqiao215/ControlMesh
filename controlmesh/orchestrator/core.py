@@ -73,7 +73,6 @@ from controlmesh.orchestrator.hooks import (
 )
 from controlmesh.orchestrator.observers import ObserverManager
 from controlmesh.orchestrator.providers import ProviderManager
-from controlmesh.provider_binding import provider_model_label
 from controlmesh.orchestrator.registry import CommandRegistry, OrchestratorResult
 from controlmesh.orchestrator.selectors.agent_router import RouteDecisionKind, decide_backend_route
 from controlmesh.routing.activation import (
@@ -87,6 +86,8 @@ from controlmesh.security import detect_suspicious_patterns
 from controlmesh.session import SessionKey, SessionManager
 from controlmesh.session.manager import SessionData
 from controlmesh.session.named import NamedSessionRegistry
+from controlmesh.tasks.hub import _route_candidate_summary
+from controlmesh.tasks.models import TaskEntry
 from controlmesh.webhook.manager import WebhookManager
 from controlmesh.workspace.paths import ControlMeshPaths
 
@@ -633,6 +634,8 @@ class Orchestrator:
         if activation_intent.execution_mode != "background_required":
             return None
 
+        if self._task_hub is None:
+            return None
         decision = resolve_route(
             self._config,
             prompt=prompt_text,
@@ -642,28 +645,41 @@ class Orchestrator:
             activation_intent=activation_intent,
         )
         if decision is None:
-            return OrchestratorResult(
-                text=(
-                    "Matched activation policy suggestion but no eligible background route was available.\n"
-                    f"- policy: {activation_intent.matched_policy}\n"
-                    f"- workunit: {workunit_kind.value}\n"
-                    "- next step: run it explicitly in foreground, for example with @sonnet <request>"
-                )
-            )
+            return None
 
-        approval = "foreground required" if activation_intent.requires_foreground_approval else "none"
-        lines = [
-            "Activation policy suggests a background candidate.",
-            f"- policy: {activation_intent.matched_policy}",
-            f"- workunit: {workunit_kind.value}",
-            f"- slot: {decision.slot_name}",
-            f"- target: {provider_model_label(decision.provider, decision.model)}",
-            f"- topology: {decision.topology or 'background_single'}",
-            f"- approval: {approval}",
-            "- dispatch: blocked until foreground agent explicitly submits a task",
-            "- next step: decide in foreground whether to delegate or keep it frontstage",
-        ]
-        return OrchestratorResult(text="\n".join(lines))
+        self._task_hub.record_route_candidate(
+            TaskEntry(
+                task_id=f"candidate-{dispatch.key.chat_id}-{workunit_kind.value}",
+                chat_id=dispatch.key.chat_id,
+                parent_agent="main",
+                name=self._activation_task_name(workunit_kind.value, prompt_text),
+                prompt_preview=prompt_text[:160],
+                provider=decision.provider,
+                model=decision.model,
+                status="candidate",
+                transport=dispatch.key.transport,
+                topology=decision.topology or "",
+                route="auto",
+                workunit_kind=workunit_kind.value,
+                route_reason=f"policy={activation_intent.matched_policy}; {decision.reason}",
+                route_slot=decision.slot_name,
+                route_candidate_summary=_route_candidate_summary(
+                    policy_name=activation_intent.matched_policy,
+                    workunit_kind=workunit_kind.value,
+                    slot_name=decision.slot_name,
+                    provider=decision.provider,
+                    model=decision.model,
+                    topology=decision.topology or "background_single",
+                    requires_foreground_approval=activation_intent.requires_foreground_approval,
+                    runtime_writeback=decision.runtime_writeback,
+                    business_permissions=decision.business_permissions,
+                ),
+                worker_runtime_writeback=decision.runtime_writeback,
+                worker_business_permissions=list(decision.business_permissions),
+                thread_id=dispatch.key.topic_id,
+            )
+        )
+        return None
 
     def _load_activation_policies(self) -> tuple:
         """Load activation policies with the same fallback chain as TaskHub."""

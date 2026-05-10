@@ -104,6 +104,8 @@ class TestTaskEntry:
             workunit_kind="test_execution",
             route_reason="selected by capability",
             required_capabilities=["shell_execution", "test_log_analysis"],
+            worker_runtime_writeback=True,
+            worker_business_permissions=["repo_write"],
             evaluator="foreground",
             command="uv run pytest tests/test_x.py -q",
             target="",
@@ -116,6 +118,8 @@ class TestTaskEntry:
         assert restored.workunit_kind == "test_execution"
         assert restored.route_reason == "selected by capability"
         assert restored.required_capabilities == ["shell_execution", "test_log_analysis"]
+        assert restored.worker_runtime_writeback is True
+        assert restored.worker_business_permissions == ["repo_write"]
         assert restored.evaluator == "foreground"
         assert restored.command == "uv run pytest tests/test_x.py -q"
         assert restored.evidence == "logs/pytest.log"
@@ -174,6 +178,8 @@ class TestTaskSubmit:
         assert sub.thinking_override == ""
         assert sub.route == ""
         assert sub.required_capabilities == []
+        assert sub.worker_runtime_writeback is False
+        assert sub.worker_business_permissions == []
 
     def test_plan_fields_default_and_assign(self) -> None:
         sub = TaskSubmit(

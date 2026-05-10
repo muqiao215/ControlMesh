@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from controlmesh.history import TranscriptStore
-from controlmesh.runtime import RuntimeEvent, RuntimeEventStore
+from controlmesh.runtime import AgentInboxItem, AgentInboxStore, RuntimeEvent, RuntimeEventStore
 from controlmesh.session import SessionKey
 from controlmesh.workspace.paths import ControlMeshPaths
 
@@ -71,3 +71,27 @@ def test_runtime_event_accepts_string_native_refs() -> None:
 
     assert event.chat_id == "qqbot:c2c:OPENID"
     assert event.topic_id == "qqbot:channel:THREAD"
+
+
+def test_agent_inbox_store_uses_dedicated_runtime_root(tmp_path: Path) -> None:
+    paths = _paths(tmp_path)
+    inbox = AgentInboxStore(paths)
+    assert inbox.path_for("main") == tmp_path / ".controlmesh" / "agent-inbox" / "main.jsonl"
+
+
+def test_agent_inbox_store_append_and_read_recent(tmp_path: Path) -> None:
+    paths = _paths(tmp_path)
+    inbox = AgentInboxStore(paths)
+    inbox.append(
+        AgentInboxItem(
+            to_agent="main",
+            kind="task.final",
+            summary="Background review completed",
+            from_task="abc123",
+            result_ref="task:abc123/result",
+        )
+    )
+    items = inbox.read_recent("main", limit=10)
+    assert len(items) == 1
+    assert items[0].to_agent == "main"
+    assert items[0].summary == "Background review completed"

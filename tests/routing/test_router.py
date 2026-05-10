@@ -19,6 +19,8 @@ def test_resolve_route_for_test_execution() -> None:
     assert decision is not None
     assert decision.workunit.kind.value == "test_execution"
     assert "shell_execution" in decision.required_capabilities
+    assert decision.runtime_writeback is True
+    assert isinstance(decision.business_permissions, tuple)
     assert decision.topology == ""
     assert "test_execution" in decision.contract
 
@@ -34,6 +36,7 @@ def test_resolve_route_maps_code_review_to_fanout() -> None:
 
     assert decision is not None
     assert decision.topology == "fanout_merge"
+    assert decision.runtime_writeback is True
     assert decision.evaluator == "foreground"
 
 

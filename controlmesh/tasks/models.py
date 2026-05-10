@@ -31,8 +31,11 @@ class TaskSubmit:
     target: str = ""
     evidence: str = ""
     required_capabilities: list[str] = field(default_factory=list)
+    worker_runtime_writeback: bool = False
+    worker_business_permissions: list[str] = field(default_factory=list)
     evaluator: str = ""
     route_slot: str = ""
+    route_candidate_summary: str = ""
     plan_id: str = ""
     plan_markdown: str = ""
     plan_phases: list[dict[str, Any]] = field(default_factory=list)
@@ -69,8 +72,11 @@ class TaskEntry:
     workunit_kind: str = ""
     route_reason: str = ""
     required_capabilities: list[str] = field(default_factory=list)
+    worker_runtime_writeback: bool = False
+    worker_business_permissions: list[str] = field(default_factory=list)
     evaluator: str = ""
     route_slot: str = ""
+    route_candidate_summary: str = ""
     command: str = ""
     target: str = ""
     evidence: str = ""
@@ -106,8 +112,11 @@ class TaskEntry:
             "workunit_kind": self.workunit_kind,
             "route_reason": self.route_reason,
             "required_capabilities": list(self.required_capabilities),
+            "worker_runtime_writeback": self.worker_runtime_writeback,
+            "worker_business_permissions": list(self.worker_business_permissions),
             "evaluator": self.evaluator,
             "route_slot": self.route_slot,
+            "route_candidate_summary": self.route_candidate_summary,
             "command": self.command,
             "target": self.target,
             "evidence": self.evidence,
@@ -147,8 +156,11 @@ class TaskEntry:
             workunit_kind=d.get("workunit_kind", ""),
             route_reason=d.get("route_reason", ""),
             required_capabilities=list(d.get("required_capabilities") or []),
+            worker_runtime_writeback=bool(d.get("worker_runtime_writeback", False)),
+            worker_business_permissions=list(d.get("worker_business_permissions") or []),
             evaluator=d.get("evaluator", ""),
             route_slot=d.get("route_slot", ""),
+            route_candidate_summary=d.get("route_candidate_summary", ""),
             command=d.get("command", ""),
             target=d.get("target", ""),
             evidence=d.get("evidence", ""),

@@ -44,6 +44,8 @@ class RouteDecision:
     topology: str = ""
     confidence: float = 0.0
     required_capabilities: tuple[str, ...] = ()
+    runtime_writeback: bool = False
+    business_permissions: tuple[str, ...] = ()
     evaluator: str = ""
     reason: str = ""
     contract: str = ""
@@ -176,6 +178,8 @@ def resolve_route(
         topology=selected_topology,
         confidence=confidence,
         required_capabilities=requirements.capabilities,
+        runtime_writeback=best.slot.runtime_writeback,
+        business_permissions=best.slot.business_permissions,
         evaluator=evaluator,
         reason=f"{best.reason}; selected topology={selected_topology or 'background_single'}",
         contract=build_workunit_contract(unit),

@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 from controlmesh.history import TranscriptStore
-from controlmesh.runtime import RuntimeEventStore
+from controlmesh.runtime import AgentInboxStore, RuntimeEventStore
 from controlmesh.session import SessionKey
 from controlmesh.tasks.hub import TaskHub
 from controlmesh.tasks.models import TaskSubmit
@@ -67,6 +67,11 @@ def _lifecycle_shape(paths: ControlMeshPaths, key: SessionKey) -> list[tuple[str
     ]
 
 
+def _inbox_summaries(paths: ControlMeshPaths, agent_name: str = "main") -> list[str]:
+    store = AgentInboxStore(paths)
+    return [item.summary for item in store.read_recent(agent_name, limit=20)]
+
+
 async def test_taskhub_success_lifecycle_writes_land_in_runtime_events_not_transcripts(
     tmp_path: Path,
 ) -> None:
@@ -92,8 +97,55 @@ async def test_taskhub_success_lifecycle_writes_land_in_runtime_events_not_trans
         ("task.lifecycle.started", None, task_id),
         ("task.lifecycle.terminal", "done", task_id),
     ]
+    inbox = _inbox_summaries(paths)
+    assert any("Task id:" in item for item in inbox)
     assert transcript_store.read_recent(key, limit=10) == []
     assert not transcript_store.path_for(key).exists()
+
+    await hub.shutdown()
+
+
+async def test_record_route_candidate_persists_worker_permission_posture(
+    tmp_path: Path,
+) -> None:
+    paths = _paths(tmp_path)
+    registry = TaskRegistry(paths.tasks_registry_path, paths.tasks_dir)
+    hub = TaskHub(
+        registry,
+        paths,
+        cli_service=_make_cli_service("task output"),
+        config=_make_config(),
+    )
+
+    entry = registry.create(_submit(name="Route Candidate"), "claude", "opus")
+    entry.status = "candidate"
+    entry.route = "auto"
+    entry.workunit_kind = "code_review"
+    entry.route_slot = "claude_code.codex_plugin_review"
+    entry.route_reason = "policy=review_background; selected topology=fanout_merge"
+    entry.route_candidate_summary = "candidate summary"
+    entry.worker_runtime_writeback = True
+    entry.worker_business_permissions = ["repo_write"]
+    registry.update_status(
+        entry.task_id,
+        "candidate",
+        route=entry.route,
+        workunit_kind=entry.workunit_kind,
+        route_slot=entry.route_slot,
+        route_reason=entry.route_reason,
+        route_candidate_summary=entry.route_candidate_summary,
+        worker_runtime_writeback=entry.worker_runtime_writeback,
+        worker_business_permissions=entry.worker_business_permissions,
+    )
+
+    hub.record_route_candidate(entry)
+    inbox_items = AgentInboxStore(paths).read_recent("main", limit=5)
+    assert inbox_items
+    assert inbox_items[0].payload["worker_runtime_writeback"] is True
+    assert inbox_items[0].payload["worker_business_permissions"] == ["repo_write"]
+    assert inbox_items[0].payload["plan_id"] == ""
+    assert inbox_items[0].payload["chat_id"] == entry.chat_id
+    assert inbox_items[0].payload["topic_id"] == entry.thread_id
 
     await hub.shutdown()
 

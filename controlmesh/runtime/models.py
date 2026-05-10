@@ -27,3 +27,18 @@ class RuntimeEvent(BaseModel):
     transport: str
     chat_id: ChatRef
     topic_id: TopicRef = None
+
+
+class AgentInboxItem(BaseModel):
+    """One runtime-owned backstage item addressed to an agent inbox."""
+
+    inbox_id: str = Field(default_factory=lambda: uuid4().hex)
+    to_agent: str
+    kind: str
+    summary: str
+    created_at: str = Field(default_factory=utc_now_iso)
+    from_task: str = ""
+    source_agent: str = ""
+    result_ref: str = ""
+    requires_attention: bool = True
+    payload: dict[str, Any] = Field(default_factory=dict)

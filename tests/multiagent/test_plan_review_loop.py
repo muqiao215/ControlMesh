@@ -16,6 +16,7 @@ from controlmesh.multiagent.plan_review_loop import (
 )
 from controlmesh.planning_files import PlanPhase, create_plan_files, plan_dir_for
 from controlmesh.session.key import SessionKey
+from controlmesh.runtime.models import AgentInboxItem
 from controlmesh.tasks.models import TaskEntry, TaskResult, TaskSubmit
 
 
@@ -33,10 +34,36 @@ class _FakeTaskHub:
     def __init__(self, entry: TaskEntry | None = None) -> None:
         self.registry = _FakeRegistry(entry)
         self.submits: list[TaskSubmit] = []
+        self.inbox: list[AgentInboxItem] = []
 
     def submit(self, submit: TaskSubmit) -> str:
         self.submits.append(submit)
         return f"task-{len(self.submits)}"
+
+    def read_agent_inbox(self, agent_name: str, *, limit: int = 20) -> list[AgentInboxItem]:
+        assert agent_name == "main"
+        return self.inbox[-limit:]
+
+    def read_agent_inbox_filtered(
+        self,
+        agent_name: str,
+        *,
+        limit: int = 20,
+        plan_id: str = "",
+        chat_id: object | None = None,
+        topic_id: object | None = None,
+    ) -> list[AgentInboxItem]:
+        assert agent_name == "main"
+        items = list(self.inbox)
+        if plan_id:
+            items = [item for item in items if str(item.payload.get("plan_id") or "") == plan_id]
+        if chat_id not in (None, ""):
+            items = [item for item in items if item.payload.get("chat_id") == chat_id]
+        if topic_id is None and (plan_id or chat_id not in (None, "")):
+            items = [item for item in items if item.payload.get("topic_id") in (None, "")]
+        elif topic_id is not None:
+            items = [item for item in items if item.payload.get("topic_id") == topic_id]
+        return items[-limit:]
 
 
 def _make_orch(tmp_path: Path, hub: _FakeTaskHub) -> SimpleNamespace:
@@ -412,3 +439,57 @@ async def test_phase_completion_note_includes_review_buttons(tmp_path: Path) -> 
     assert "[button:Approve|/agents approve plan-4]" in note
     assert "[button:Repair|/agents repair plan-4]" in note
     assert "[button:Status|/agents status plan-4]" in note
+
+
+def test_workflow_status_includes_recent_main_inbox_items(tmp_path: Path) -> None:
+    plan_id = "plan-inbox"
+    create_plan_files(
+        tmp_path / "plans",
+        plan_id=plan_id,
+        plan_markdown="# Plan",
+        phases=(PlanPhase(id="phase-1", title="Contracts", workunit_kind="phase_execution"),),
+        status="executing",
+    )
+    _write_state(
+        tmp_path,
+        plan_id,
+        {
+            "schema_version": 1,
+            "plan_id": plan_id,
+            "status": "review_required",
+            "controller_mode": "agents_review_loop",
+            "current_phase_id": "phase-1",
+            "awaiting_review_phase_id": "phase-1",
+            "source_transport": "tg",
+            "source_chat_id": 13,
+            "repo": "/repo",
+        },
+    )
+    hub = _FakeTaskHub()
+    hub.inbox.append(
+        AgentInboxItem(
+            to_agent="main",
+            kind="task.done",
+            summary="Phase 1 worker completed with summarized result",
+            from_task="task-1",
+            result_ref="task:task-1/result",
+            payload={"plan_id": plan_id, "chat_id": 13, "topic_id": None},
+        )
+    )
+    hub.inbox.append(
+        AgentInboxItem(
+            to_agent="main",
+            kind="task.done",
+            summary="Unrelated plan result",
+            from_task="task-2",
+            result_ref="task:task-2/result",
+            payload={"plan_id": "other-plan", "chat_id": 13, "topic_id": None},
+        )
+    )
+    orch = _make_orch(tmp_path, hub)
+
+    text = workflow_status_text(orch, plan_id)
+
+    assert "- main_inbox:" in text
+    assert "task.done: Phase 1 worker completed with summarized result" in text
+    assert "Unrelated plan result" not in text
