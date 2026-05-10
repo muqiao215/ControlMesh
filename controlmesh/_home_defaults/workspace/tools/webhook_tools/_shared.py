@@ -4,17 +4,29 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
-from controlmesh._home_defaults.workspace.tools._tool_shared import (
-    available_ids,
-    find_by_id,
-    load_collection_or_default,
-    load_collection_strict,
-    sanitize_name,
-    save_collection,
-)
+try:
+    from controlmesh._home_defaults.workspace.tools._tool_shared import (
+        available_ids,
+        find_by_id,
+        load_collection_or_default,
+        load_collection_strict,
+        sanitize_name,
+        save_collection,
+    )
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from _tool_shared import (  # type: ignore[no-redef]
+        available_ids,
+        find_by_id,
+        load_collection_or_default,
+        load_collection_strict,
+        sanitize_name,
+        save_collection,
+    )
 
 # Re-export so existing tool scripts keep working with ``from _shared import sanitize_name``
 sanitize_name = sanitize_name

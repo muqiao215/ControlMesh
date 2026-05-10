@@ -46,6 +46,7 @@ def test_setup_ci_failure_webhook_enables_listener_and_registers_hook(tmp_path: 
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
     assert payload["hook_id"] == "github-ci-failed"
+    assert payload["listener"] == "http://0.0.0.0:8742"
 
     config = json.loads((tmp_path / "config" / "config.json").read_text(encoding="utf-8"))
     assert config["webhooks"]["enabled"] is True
