@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import subprocess
 from shutil import which
 
@@ -15,6 +16,7 @@ logger = logging.getLogger(__name__)
 DISCOVERY_TIMEOUT = 10.0
 PROBE_TIMEOUT = 15.0
 _PROBE_PROMPT = "Reply with exactly PONG."
+_SYNC_DISCOVERY_ENV = "CONTROLMESH_ENABLE_OPENCODE_SYNC_DISCOVERY"
 
 
 async def discover_opencode_models(*, deadline: float = DISCOVERY_TIMEOUT) -> tuple[str, ...]:
@@ -123,11 +125,20 @@ def pick_opencode_runtime_model_sync(*, deadline: float = DISCOVERY_TIMEOUT) -> 
 
     Priority:
     1. explicit/default model declared in local runtime config
-    2. first live-discovered model from ``opencode models <provider>``
+    2. first live-discovered model from ``opencode models <provider>`` when
+       ``CONTROLMESH_ENABLE_OPENCODE_SYNC_DISCOVERY=1`` is explicitly enabled
     """
     configured = read_opencode_default_model().strip()
     if configured:
         return configured
+
+    if os.environ.get(_SYNC_DISCOVERY_ENV, "").strip().lower() not in {"1", "true", "yes", "on"}:
+        logger.info(
+            "OpenCode sync discovery skipped because no default model is configured "
+            "and %s is not enabled",
+            _SYNC_DISCOVERY_ENV,
+        )
+        return ""
 
     discovered = discover_opencode_models_sync(deadline=deadline)
     return discovered[0] if discovered else ""
@@ -168,22 +179,13 @@ def probe_opencode_model_sync(model: str, *, deadline: float = PROBE_TIMEOUT) ->
 
 
 def resolve_opencode_runnable_model_sync(*, deadline: float = DISCOVERY_TIMEOUT) -> str:
-    """Return the first runtime-backed OpenCode model that passes a minimal probe."""
-    configured = read_opencode_default_model().strip()
-    candidates: list[str] = []
-    if configured:
-        candidates.append(configured)
-    candidates.extend(discover_opencode_models_sync(deadline=deadline))
+    """Compatibility alias for callers that still expect a sync resolver.
 
-    seen: set[str] = set()
-    for model in candidates:
-        normalized = model.strip()
-        if not normalized or normalized in seen:
-            continue
-        seen.add(normalized)
-        if probe_opencode_model_sync(normalized):
-            return normalized
-    return ""
+    This must preserve the safer default behavior used by
+    :func:`pick_opencode_runtime_model_sync`: prefer the configured default
+    model and avoid synchronous runtime discovery unless explicitly enabled.
+    """
+    return pick_opencode_runtime_model_sync(deadline=deadline)
 
 
 def _parse_models(raw: str) -> tuple[str, ...]:

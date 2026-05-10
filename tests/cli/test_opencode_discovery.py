@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import subprocess
 from unittest.mock import AsyncMock, patch
 
@@ -136,10 +137,23 @@ def test_pick_opencode_runtime_model_sync_falls_back_to_live_discovery() -> None
             "controlmesh.cli.opencode_discovery.discover_opencode_models_sync",
             return_value=("zhipuai/glm-5.1", "zhipuai/glm-4.5"),
         ),
+        patch.dict(os.environ, {"CONTROLMESH_ENABLE_OPENCODE_SYNC_DISCOVERY": "1"}, clear=False),
     ):
         model = pick_opencode_runtime_model_sync()
 
     assert model == "zhipuai/glm-5.1"
+
+
+def test_pick_opencode_runtime_model_sync_skips_sync_discovery_by_default() -> None:
+    with (
+        patch("controlmesh.cli.opencode_discovery.read_opencode_default_model", return_value=""),
+        patch("controlmesh.cli.opencode_discovery.discover_opencode_models_sync") as discover_mock,
+        patch.dict(os.environ, {}, clear=True),
+    ):
+        model = pick_opencode_runtime_model_sync()
+
+    assert model == ""
+    discover_mock.assert_not_called()
 
 
 def test_probe_opencode_model_sync_returns_true_on_pong() -> None:
@@ -170,18 +184,25 @@ def test_probe_opencode_model_sync_returns_false_on_failure() -> None:
         assert probe_opencode_model_sync("openai/gpt-4.1") is False
 
 
-def test_resolve_opencode_runnable_model_sync_prefers_first_probeable_candidate() -> None:
+def test_resolve_opencode_runnable_model_sync_prefers_configured_default_without_probe() -> None:
     with (
-        patch("controlmesh.cli.opencode_discovery.read_opencode_default_model", return_value="openai/gpt-4.1"),
-        patch(
-            "controlmesh.cli.opencode_discovery.discover_opencode_models_sync",
-            return_value=("openai/gpt-4.1", "zhipuai/glm-5.1"),
-        ),
-        patch(
-            "controlmesh.cli.opencode_discovery.probe_opencode_model_sync",
-            side_effect=lambda model: model == "zhipuai/glm-5.1",
-        ),
+        patch("controlmesh.cli.opencode_discovery.read_opencode_default_model", return_value="zhipuai/glm-5.1"),
+        patch("controlmesh.cli.opencode_discovery.discover_opencode_models_sync") as discover_mock,
+        patch("controlmesh.cli.opencode_discovery.probe_opencode_model_sync") as probe_mock,
     ):
         model = resolve_opencode_runnable_model_sync()
 
     assert model == "zhipuai/glm-5.1"
+    discover_mock.assert_not_called()
+    probe_mock.assert_not_called()
+
+
+def test_resolve_opencode_runnable_model_sync_uses_safe_pick_path() -> None:
+    with patch(
+        "controlmesh.cli.opencode_discovery.pick_opencode_runtime_model_sync",
+        return_value="zhipuai/glm-5.1",
+    ) as pick_mock:
+        model = resolve_opencode_runnable_model_sync()
+
+    assert model == "zhipuai/glm-5.1"
+    pick_mock.assert_called_once_with(deadline=10.0)

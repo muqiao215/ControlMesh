@@ -87,12 +87,21 @@ def _generate_service_unit(binary_path: str) -> str:
 Description=controlmesh - Telegram bot powered by AI CLIs
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=3
 
 [Service]
 Type=simple
 ExecStart={binary_path}
 Restart=on-failure
-RestartSec=5
+RestartSec=20
+MemoryHigh=900M
+MemoryMax=1200M
+CPUQuota=80%
+TasksMax=256
+TimeoutStartSec=60
+TimeoutStopSec=30
+KillMode=control-group
 UnsetEnvironment=PYTHONPATH PYTHONHOME
 Environment=PATH={path_value}
 Environment=HOME={home}

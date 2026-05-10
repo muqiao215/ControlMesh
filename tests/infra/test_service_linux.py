@@ -27,12 +27,25 @@ class TestGenerateServiceUnit:
     def test_has_restart_policy(self) -> None:
         unit = _generate_service_unit("controlmesh")
         assert "Restart=on-failure" in unit
+        assert "RestartSec=20" in unit
 
     def test_has_service_section(self) -> None:
         unit = _generate_service_unit("controlmesh")
         assert "[Service]" in unit
         assert "[Unit]" in unit
         assert "[Install]" in unit
+
+    def test_includes_systemd_safety_fuses(self) -> None:
+        unit = _generate_service_unit("controlmesh")
+        assert "StartLimitIntervalSec=300" in unit
+        assert "StartLimitBurst=3" in unit
+        assert "MemoryHigh=900M" in unit
+        assert "MemoryMax=1200M" in unit
+        assert "CPUQuota=80%" in unit
+        assert "TasksMax=256" in unit
+        assert "TimeoutStartSec=60" in unit
+        assert "TimeoutStopSec=30" in unit
+        assert "KillMode=control-group" in unit
 
     def test_includes_controlmesh_env_file(self, tmp_path: Path) -> None:
         with patch("controlmesh.infra.service_linux.Path.home", return_value=tmp_path):
