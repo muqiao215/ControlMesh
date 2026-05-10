@@ -493,6 +493,10 @@ class Orchestrator:
             provider, model = native_target
             return await self._route_provider_native_message(dispatch, provider=provider, model=model)
 
+        blocked_native = await self._blocked_native_mode_result(dispatch)
+        if blocked_native is not None:
+            return blocked_native
+
         fallback_target = await self._unknown_slash_native_target(dispatch)
         if fallback_target is not None:
             provider, model = fallback_target
@@ -821,6 +825,8 @@ class Orchestrator:
             return None
         if not session.command_mode_model:
             return None
+        if self._is_blocked_static_native_command(session.command_mode, head):
+            return None
         return session.command_mode, session.command_mode_model
 
     async def _unknown_slash_native_target(
@@ -844,12 +850,52 @@ class Orchestrator:
 
         session = await self._sessions.get_active(dispatch.key)
         if session is not None:
+            if self._is_blocked_static_native_command(session.provider, head):
+                return None
             return session.provider, session.model
 
         model, provider = self.resolve_runtime_target(self._config.model)
         if provider not in _NATIVE_COMMAND_MODE_PROVIDERS:
             return None
+        if self._is_blocked_static_native_command(provider, head):
+            return None
         return provider, model
+
+    async def _blocked_native_mode_result(
+        self,
+        dispatch: _MessageDispatch,
+    ) -> OrchestratorResult | None:
+        """Return a direct explanation when native menu is active but passthrough is unavailable."""
+        normalized = dispatch.cmd.strip()
+        if not normalized.startswith("/"):
+            return None
+
+        head = normalized.split(None, 1)[0].split("@", 1)[0]
+        if head in {"/back", "/cm"} or is_controlmesh_owned_command(normalized):
+            return None
+
+        session = await self._sessions.get_active(dispatch.key)
+        if session is None or session.command_mode == "cm":
+            return None
+        if session.command_mode not in _NATIVE_COMMAND_MODE_PROVIDERS or not session.command_mode_model:
+            return None
+
+        if not self._is_blocked_static_native_command(session.command_mode, head):
+            return None
+        return OrchestratorResult(
+            text=(
+                f"Native command passthrough is unavailable for `{head}` on provider "
+                f"`{session.command_mode}`.\n"
+                "This `/cm` menu is currently static reference only, not an executable native CLI bridge."
+            )
+        )
+
+    @staticmethod
+    def _is_blocked_static_native_command(provider: str, head: str) -> bool:
+        """Return True for native-command entries known to be misleading prompt passthrough."""
+        normalized_provider = provider.strip().lower()
+        normalized_head = head.strip().lower()
+        return normalized_provider == "codex" and normalized_head == "/apps"
 
     async def _route_provider_native_message(
         self,

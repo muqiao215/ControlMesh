@@ -156,6 +156,23 @@ async def test_cm_switches_unclaimed_slash_commands_to_native_cli(orch: Orchestr
     assert request.model_override == "opus"
 
 
+async def test_codex_cm_does_not_fake_passthrough_for_static_fallback_commands(
+    orch: Orchestrator,
+) -> None:
+    key = SessionKey(chat_id=1)
+    await orch._sessions.resolve_session(key, provider="codex", model="gpt-5.2-codex")
+    await orch.handle_message(key, "/cm")
+
+    mock_execute = AsyncMock(return_value=_mock_response(result="should not run"))
+    object.__setattr__(orch._cli_service, "execute", mock_execute)
+
+    result = await orch.handle_message(key, "/apps")
+
+    assert "Native command passthrough is unavailable for `/apps` on provider `codex`." in result.text
+    assert "static reference only" in result.text
+    mock_execute.assert_not_awaited()
+
+
 async def test_controlmesh_commands_win_inside_native_menu(orch: Orchestrator) -> None:
     key = SessionKey(chat_id=1)
     session, _ = await orch._sessions.resolve_session(key, provider="claude", model="opus")
