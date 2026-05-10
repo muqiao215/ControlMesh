@@ -72,6 +72,9 @@ DEFAULT_RELEASE_PHASES = (
         "title": "Repository Audit",
         "workunit_kind": "repo_audit",
         "route": "auto",
+        "provider": "",
+        "model": "",
+        "metadata": {},
         "evaluator": "",
         "description": "Inspect repository state: branch coverage, uncommitted "
         "changes, open critical issues, dependency health.",
@@ -81,6 +84,9 @@ DEFAULT_RELEASE_PHASES = (
         "title": "Preflight Checks",
         "workunit_kind": "test_execution",
         "route": "auto",
+        "provider": "",
+        "model": "",
+        "metadata": {},
         "evaluator": "",
         "description": "Run build, unit tests, integration tests, lint, and type "
         "checks. Fail fast on any critical failure.",
@@ -90,6 +96,9 @@ DEFAULT_RELEASE_PHASES = (
         "title": "Release Preparation",
         "workunit_kind": "patch_candidate",
         "route": "auto",
+        "provider": "",
+        "model": "",
+        "metadata": {},
         "evaluator": "",
         "description": "Determine next version, update CHANGELOG, bump version "
         "files, create git tag (local only at this stage).",
@@ -101,6 +110,7 @@ DEFAULT_RELEASE_PHASES = (
         "route": "auto",
         "provider": "",
         "model": "",
+        "metadata": {},
         "evaluator": "foreground",
         "description": "Push git tag, create GitHub release, publish to package "
         "registries. REQUIRES FOREGROUND APPROVAL before external side effects.",
@@ -112,6 +122,7 @@ DEFAULT_RELEASE_PHASES = (
         "route": "auto",
         "provider": "",
         "model": "",
+        "metadata": {},
         "evaluator": "",
         "description": "Verify release artifacts, check CI pipelines, confirm "
         "package registry visibility.",
@@ -176,6 +187,15 @@ def _build_plan_markdown(
         "- `<phase_id>/` - per-phase TASKMEMORY.md, EVIDENCE.json, RESULT.md",
     ])
     return "\n".join(lines)
+
+
+def _publish_commands(version: str) -> list[str]:
+    tag = version if version.startswith("v") else f"v{version}"
+    return [
+        "git push origin main",
+        f"git push origin {tag}",
+        f"gh release create {tag} --notes-file docs/release-note-{tag}.md",
+    ]
 
 
 def _submit_phase(
@@ -287,16 +307,28 @@ def main() -> None:
     # Build plan_phases for the create_task API
     plan_phases = []
     for phase in DEFAULT_RELEASE_PHASES:
+        phase = dict(phase)
+        if phase["id"] == "publish" and version:
+            tag = version if version.startswith("v") else f"v{version}"
+            phase["metadata"] = {
+                "gate_kind": "release_publish",
+                "repo": repo_url,
+                "version": version,
+                "tag": tag,
+                "notes_file": f"docs/release-note-{tag}.md",
+                "commands": _publish_commands(version),
+            }
+        elif phase["id"] == "verify":
+            phase["metadata"] = {"wait_for_publish_execution": True}
+
         # Apply --claude preference as an explicit provider/model binding.
         if claude_preferred:
-            phase = dict(phase)
             phase["provider"] = "claude"
             if not phase.get("model"):
                 phase["model"] = "sonnet"
 
         # Disable foreground approval if requested
         if not foreground_eval and phase["id"] in FOREGROUND_APPROVAL_PHASES:
-            phase = dict(phase)
             phase["evaluator"] = ""
 
         plan_phases.append(phase)

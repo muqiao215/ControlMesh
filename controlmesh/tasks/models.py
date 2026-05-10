@@ -41,6 +41,7 @@ class TaskSubmit:
     plan_phases: list[dict[str, Any]] = field(default_factory=list)
     phase_id: str = ""
     phase_title: str = ""
+    phase_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -83,6 +84,7 @@ class TaskEntry:
     plan_id: str = ""
     phase_id: str = ""
     phase_title: str = ""
+    phase_metadata: dict[str, Any] = field(default_factory=dict)
     tasks_dir: str = ""  # Agent's tasks directory (for per-agent folder resolution)
     thread_id: TopicRef = None  # Forum topic ID (for routing results back to topic)
 
@@ -123,6 +125,7 @@ class TaskEntry:
             "plan_id": self.plan_id,
             "phase_id": self.phase_id,
             "phase_title": self.phase_title,
+            "phase_metadata": dict(self.phase_metadata),
             "tasks_dir": self.tasks_dir,
         }
         if self.thread_id is not None:
@@ -167,6 +170,7 @@ class TaskEntry:
             plan_id=d.get("plan_id", ""),
             phase_id=d.get("phase_id", ""),
             phase_title=d.get("phase_title", ""),
+            phase_metadata=dict(d.get("phase_metadata") or {}),
             tasks_dir=d.get("tasks_dir", ""),
             thread_id=d.get("thread_id"),
         )

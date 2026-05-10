@@ -234,6 +234,14 @@ def test_release_task_submits_only_first_phase_with_full_manifest(tmp_path: Path
     )
     assert publish_phase["evaluator"] == "foreground"
     assert publish_phase["workunit_kind"] == "github_release"
+    assert publish_phase["metadata"]["gate_kind"] == "release_publish"
+    assert publish_phase["metadata"]["version"] == "1.2.3"
+    assert publish_phase["metadata"]["tag"] == "v1.2.3"
+    assert publish_phase["metadata"]["commands"][0] == "git push origin main"
+    verify_phase = next(
+        phase for phase in first_body["plan_phases"] if phase["id"] == "verify"
+    )
+    assert verify_phase["metadata"]["wait_for_publish_execution"] is True
 
 
 def test_release_task_dry_run_shows_plan_only(tmp_path: Path) -> None:

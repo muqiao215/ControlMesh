@@ -17,6 +17,7 @@ from controlmesh.multiagent.plan_review_loop import (
 from controlmesh.planning_files import PlanPhase, create_plan_files, plan_dir_for
 from controlmesh.session.key import SessionKey
 from controlmesh.runtime.models import AgentInboxItem
+from controlmesh.multiagent.release_gate import ensure_publish_gate, load_gate_state, mark_executed
 from controlmesh.tasks.models import TaskEntry, TaskResult, TaskSubmit
 
 
@@ -35,10 +36,15 @@ class _FakeTaskHub:
         self.registry = _FakeRegistry(entry)
         self.submits: list[TaskSubmit] = []
         self.inbox: list[AgentInboxItem] = []
+        self.resumes: list[tuple[str, str, str]] = []
 
     def submit(self, submit: TaskSubmit) -> str:
         self.submits.append(submit)
         return f"task-{len(self.submits)}"
+
+    def resume(self, task_id: str, prompt: str, parent_agent: str = "") -> str:
+        self.resumes.append((task_id, prompt, parent_agent))
+        return task_id
 
     def read_agent_inbox(self, agent_name: str, *, limit: int = 20) -> list[AgentInboxItem]:
         assert agent_name == "main"
@@ -226,6 +232,114 @@ async def test_approve_phase_starts_next_pending_phase(tmp_path: Path) -> None:
     state = json.loads((plan_dir_for(tmp_path / "plans", plan_id) / "STATE.json").read_text())
     assert state["status"] == "executing"
     assert state["current_phase_id"] == "phase-2"
+
+
+@pytest.mark.asyncio
+async def test_approve_phase_resumes_plan_level_publish_gate(tmp_path: Path) -> None:
+    plan_id = "release-plan"
+    create_plan_files(
+        tmp_path / "plans",
+        plan_id=plan_id,
+        plan_markdown="# Release Plan",
+        phases=(
+            PlanPhase(
+                id="publish",
+                title="Publish Release",
+                workunit_kind="github_release",
+                metadata={"gate_kind": "release_publish"},
+            ),
+        ),
+        status="executing",
+        current_phase=1,
+    )
+    _write_state(
+        tmp_path,
+        plan_id,
+        {
+            "schema_version": 1,
+            "plan_id": plan_id,
+            "status": "awaiting_publish_approval",
+            "controller_mode": "agents_review_loop",
+            "current_phase_id": "publish",
+            "awaiting_review_phase_id": "publish",
+            "source_transport": "tg",
+            "source_chat_id": 9,
+            "repo": "/repo",
+        },
+    )
+    ensure_publish_gate(
+        tmp_path / "plans",
+        plan_id=plan_id,
+        repo="https://github.com/org/repo",
+        version="0.24.33",
+        commit="ddf996a",
+        tag="v0.24.33",
+        commands=["git push origin main"],
+        requested_by_task="publish-task-1",
+    )
+    hub = _FakeTaskHub()
+    orch = _make_orch(tmp_path, hub)
+
+    text = await approve_phase(orch, SessionKey(transport="tg", chat_id=9), plan_id)
+
+    assert "Approved publish gate" in text
+    assert hub.resumes == [
+        ("publish-task-1", "Approved to execute the recorded publish commands for this release plan.", "main")
+    ]
+    gate = load_gate_state(tmp_path / "plans", plan_id)
+    assert gate["status"] == "executing"
+    assert gate["executor_task_id"] == "publish-task-1"
+
+
+@pytest.mark.asyncio
+async def test_approve_phase_waits_for_publish_execution_before_verify(tmp_path: Path) -> None:
+    plan_id = "release-plan-verify"
+    create_plan_files(
+        tmp_path / "plans",
+        plan_id=plan_id,
+        plan_markdown="# Release Plan",
+        phases=(
+            PlanPhase(id="publish", title="Publish", workunit_kind="github_release", status="completed"),
+            PlanPhase(
+                id="verify",
+                title="Verify",
+                workunit_kind="test_execution",
+                metadata={"wait_for_publish_execution": True},
+            ),
+        ),
+        status="executing",
+        current_phase=1,
+    )
+    _write_state(
+        tmp_path,
+        plan_id,
+        {
+            "schema_version": 1,
+            "plan_id": plan_id,
+            "status": "review_required",
+            "controller_mode": "agents_review_loop",
+            "current_phase_id": "publish",
+            "awaiting_review_phase_id": "publish",
+            "source_transport": "tg",
+            "source_chat_id": 9,
+            "repo": "/repo",
+        },
+    )
+    hub = _FakeTaskHub()
+    orch = _make_orch(tmp_path, hub)
+
+    text = await approve_phase(orch, SessionKey(transport="tg", chat_id=9), plan_id)
+    assert "waiting for publish execution before verify can start" in text.lower()
+    assert not hub.submits
+
+    mark_executed(
+        tmp_path / "plans",
+        plan_id=plan_id,
+        payload={"main_pushed": True, "tag_pushed": True},
+    )
+    text2 = await approve_phase(orch, SessionKey(transport="tg", chat_id=9), plan_id)
+    assert "Started next phase `verify` automatically" in text2
+    assert hub.submits[0].phase_id == "verify"
 
 
 @pytest.mark.asyncio

@@ -13,6 +13,7 @@ from controlmesh.config import AgentConfig
 from controlmesh.routing.score_events import read_score_events
 from controlmesh.tasks.hub import TaskHub
 from controlmesh.tasks.models import TaskResult, TaskSubmit
+from controlmesh.multiagent.release_gate import load_gate_state
 from controlmesh.tasks.registry import TaskRegistry
 from controlmesh.workspace.paths import ControlMeshPaths
 
@@ -853,6 +854,50 @@ class TestForwardQuestion:
         entry = registry.create(_submit(), "claude", "opus")
         result = await hub.forward_question(entry.task_id, "question?")
         assert "no question handler" in result.lower()
+
+    async def test_release_publish_question_creates_single_plan_gate(
+        self, registry: TaskRegistry, tmp_path: Path
+    ) -> None:
+        paths = ControlMeshPaths(controlmesh_home=tmp_path / "home")
+        hub = TaskHub(
+            registry,
+            paths,
+            cli_service=_make_cli_service(),
+            config=_make_config(),
+        )
+        question_handler = AsyncMock()
+        hub.set_question_handler("main", question_handler)
+
+        submit = _submit("publish release", name="Publish")
+        submit.plan_id = "release-plan"
+        submit.phase_id = "publish"
+        submit.phase_title = "Publish Release"
+        submit.phase_metadata = {
+            "gate_kind": "release_publish",
+            "repo": "https://github.com/org/repo",
+            "version": "0.24.33",
+            "tag": "v0.24.33",
+            "commands": [
+                "git push origin main",
+                "git push origin v0.24.33",
+            ],
+        }
+        entry = registry.create(submit, "claude", "sonnet")
+
+        result = await hub.forward_question(entry.task_id, "May I push main and tag v0.24.33?")
+        assert "plan-level release publish approval requested" in result.lower()
+        await asyncio.sleep(0.05)
+        question_handler.assert_called_once()
+
+        gate = load_gate_state(paths.plans_dir, "release-plan")
+        assert gate["status"] == "pending_approval"
+        assert gate["requested_by_task"] == entry.task_id
+
+        question_handler.reset_mock()
+        result2 = await hub.forward_question(entry.task_id, "May I push main and tag v0.24.33?")
+        assert "already pending" in result2.lower()
+        await asyncio.sleep(0.05)
+        question_handler.assert_not_called()
 
 
 class TestWaitingStatus:

@@ -18,6 +18,7 @@ class PlanPhase:
     route: str = "auto"
     provider: str = ""
     model: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
     allowed_edit: bool = False
     status: str = "pending"
 
@@ -29,6 +30,7 @@ class PlanPhase:
             "route": self.route,
             "provider": self.provider,
             "model": self.model,
+            "metadata": self.metadata,
             "allowed_edit": self.allowed_edit,
             "status": self.status,
         }
@@ -128,6 +130,7 @@ def update_phase_state(
     route: str = "auto",
     provider: str = "",
     model: str = "",
+    metadata: dict[str, Any] | None = None,
     allowed_edit: bool = False,
     phase_status: str | None = None,
     plan_status: str | None = None,
@@ -163,6 +166,7 @@ def update_phase_state(
         "route": route,
         "provider": provider,
         "model": model,
+        "metadata": metadata or {},
         "allowed_edit": allowed_edit,
         "status": phase_status or "pending",
     }

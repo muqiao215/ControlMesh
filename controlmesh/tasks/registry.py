@@ -138,6 +138,7 @@ class TaskRegistry:
             plan_id=submit.plan_id,
             phase_id=submit.phase_id,
             phase_title=submit.phase_title,
+            phase_metadata=dict(submit.phase_metadata),
             tasks_dir=str(resolved_dir),
             thread_id=submit.thread_id,
         )

@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import re
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -20,6 +21,7 @@ from controlmesh.memory.runtime_capture import (
     capture_task_result,
     capture_task_resume,
 )
+from controlmesh.multiagent.release_gate import ensure_publish_gate, load_gate_state
 from controlmesh.messenger.address import ChatRef, TopicRef
 from controlmesh.runtime import AgentInboxItem, AgentInboxStore, RuntimeEvent, RuntimeEventStore
 from controlmesh.routing.activation import (
@@ -592,11 +594,18 @@ class TaskHub:
         if handler is None:
             return f"Error: No question handler for agent '{entry.parent_agent}'"
 
+        question_to_deliver = question
+        delivery_required = True
+        detail_override = ""
+        gate = self._maybe_handle_release_publish_question(entry, question)
+        if gate is not None:
+            question_to_deliver, delivery_required, detail_override = gate
+
         logger.info(
             "Task %s forwarding question to '%s': %s",
             task_id,
             entry.parent_agent,
-            question[:80],
+            question_to_deliver[:80] if question_to_deliver else question[:80],
         )
 
         self._registry.update_status(
@@ -624,13 +633,15 @@ class TaskHub:
         if inflight:
             inflight.has_pending_question = True
 
-        # Fire-and-forget: deliver to parent's Telegram chat
-        task = asyncio.create_task(
-            self._deliver_question(handler, entry, question),
-            name=f"task-question:{task_id}",
-        )
-        task.add_done_callback(lambda _: None)  # prevent GC of fire-and-forget task
+        if delivery_required:
+            task = asyncio.create_task(
+                self._deliver_question(handler, entry, question_to_deliver),
+                name=f"task-question:{task_id}",
+            )
+            task.add_done_callback(lambda _: None)  # prevent GC of fire-and-forget task
 
+        if detail_override:
+            return detail_override
         return (
             "Question forwarded to parent agent. "
             "Finish your current work — you will be resumed with the answer."
@@ -1184,6 +1195,77 @@ class TaskHub:
             return "waiting", ""
         return "done", ""
 
+    def _maybe_handle_release_publish_question(
+        self,
+        entry: TaskEntry,
+        question: str,
+    ) -> tuple[str, bool, str] | None:
+        metadata = entry.phase_metadata
+        if not entry.plan_id or metadata.get("gate_kind") != "release_publish":
+            return None
+
+        repo = str(metadata.get("repo") or "")
+        version = str(metadata.get("version") or "")
+        tag = str(metadata.get("tag") or "")
+        commands = [str(item) for item in metadata.get("commands") or [] if str(item)]
+        commit = str(metadata.get("commit") or "") or _extract_commit_from_question(question)
+        gate = load_gate_state(self._paths.plans_dir, entry.plan_id)
+        if not gate:
+            gate = ensure_publish_gate(
+                self._paths.plans_dir,
+                plan_id=entry.plan_id,
+                repo=repo,
+                version=version,
+                commit=commit,
+                tag=tag,
+                commands=commands,
+                requested_by_task=entry.task_id,
+            )
+            gate["question"] = question
+            from controlmesh.multiagent.release_gate import save_gate_state
+
+            save_gate_state(self._paths.plans_dir, entry.plan_id, gate)
+            return (
+                _format_release_publish_gate_question(gate),
+                True,
+                "Plan-level release publish approval requested. Wait for foreground approval and resume.",
+            )
+
+        status = str(gate.get("status") or "")
+        owner = str(gate.get("requested_by_task") or "")
+        executor = str(gate.get("executor_task_id") or "")
+        if status == "pending_approval":
+            if owner and owner != entry.task_id:
+                return (
+                    "",
+                    False,
+                    f"Release publish approval already pending at plan level for task {owner}. Do not ask again.",
+                )
+            return (
+                "",
+                False,
+                "Release publish approval already pending at plan level. Wait for foreground approval.",
+            )
+        if status in {"approved_once", "executing"}:
+            if executor and executor != entry.task_id:
+                return (
+                    "",
+                    False,
+                    f"Release publish already claimed by task {executor}. Do not execute side effects again.",
+                )
+            return (
+                "",
+                False,
+                "Release publish approval already granted at plan level. Wait for resume.",
+            )
+        if status == "executed":
+            return (
+                "",
+                False,
+                "Release publish side effects already executed. Do not execute again.",
+            )
+        return None
+
     @staticmethod
     def _runtime_provider_error(exc: ValueError) -> str:
         """Normalize runtime-provider resolution failures into user-facing diagnostics."""
@@ -1219,6 +1301,8 @@ class TaskHub:
             updates["phase_id"] = submit.phase_id
         if not entry.phase_title and submit.phase_title:
             updates["phase_title"] = submit.phase_title
+        if not entry.phase_metadata and submit.phase_metadata:
+            updates["phase_metadata"] = dict(submit.phase_metadata)
         if updates:
             self._registry.update_status(entry.task_id, entry.status, **updates)
             refreshed = self._registry.get(entry.task_id)
@@ -1243,6 +1327,9 @@ class TaskHub:
                 phase_title=entry.phase_title or entry.name or entry.phase_id,
                 workunit_kind=entry.workunit_kind,
                 route=entry.route or "auto",
+                provider=entry.provider,
+                model=entry.model,
+                metadata=dict(entry.phase_metadata),
                 allowed_edit=self._phase_allows_edit(entry),
                 phase_status="running",
                 plan_status="executing",
@@ -1317,6 +1404,9 @@ class TaskHub:
             phase_title=entry.phase_title or entry.name or entry.phase_id,
             workunit_kind=entry.workunit_kind,
             route=entry.route or "auto",
+            provider=entry.provider,
+            model=entry.model,
+            metadata=dict(entry.phase_metadata),
             allowed_edit=self._phase_allows_edit(entry),
             phase_status=phase_status,
             plan_status=plan_status,
@@ -1336,6 +1426,9 @@ class TaskHub:
             title = str(item.get("title") or phase_id)
             workunit_kind = str(item.get("workunit_kind") or "phase_execution")
             route = str(item.get("route") or "auto")
+            provider = str(item.get("provider") or "")
+            model = str(item.get("model") or "")
+            metadata = dict(item.get("metadata") or {})
             allowed_edit = bool(item.get("allowed_edit", workunit_kind == "phase_execution"))
             status = str(item.get("status") or "pending")
             phases.append(
@@ -1344,6 +1437,9 @@ class TaskHub:
                     title=title,
                     workunit_kind=workunit_kind,
                     route=route,
+                    provider=provider,
+                    model=model,
+                    metadata=metadata,
                     allowed_edit=allowed_edit,
                     status=status,
                 )
@@ -1516,6 +1612,35 @@ def _route_candidate_summary(
             "- next step: decide in foreground whether to delegate or keep it frontstage",
         ]
     )
+
+
+def _extract_commit_from_question(question: str) -> str:
+    match = re.search(r"\bcommit\s+([0-9a-f]{7,40})\b", question, flags=re.IGNORECASE)
+    return match.group(1) if match else ""
+
+
+def _format_release_publish_gate_question(gate: dict[str, Any]) -> str:
+    commands = gate.get("commands") or []
+    command_lines = "\n".join(f"{idx}. {cmd}" for idx, cmd in enumerate(commands, start=1))
+    commit = str(gate.get("commit") or "")
+    tag = str(gate.get("tag") or "")
+    version = str(gate.get("version") or "")
+    lines = [
+        f"Release {tag or version or '(version pending)'} is ready and waiting for one publish approval.",
+    ]
+    if commit:
+        lines.append(f"Commit: {commit}")
+    if command_lines:
+        lines.extend(
+            [
+                "",
+                "External side effects:",
+                command_lines,
+                "",
+                "Reply once with approval in the foreground controller.",
+            ]
+        )
+    return "\n".join(lines)
 
 
 def _read_task_updates(updates_path: Path) -> list[dict[str, Any]]:
