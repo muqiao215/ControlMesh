@@ -13,8 +13,8 @@ from controlmesh.infra.restart import (
 )
 
 __all__ = [
-    "EXIT_RESTART",
     "DockerManager",
+    "EXIT_RESTART",
     "acquire_lock",
     "consume_restart_marker",
     "consume_restart_sentinel",

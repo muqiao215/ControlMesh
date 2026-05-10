@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import plistlib
 import shutil
 import subprocess

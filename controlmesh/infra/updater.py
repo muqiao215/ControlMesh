@@ -862,9 +862,8 @@ async def perform_upgrade_pipeline(
         commit_id=install_info.commit_id if install_info.source == "github" else None,
     )
 
-    first_attempt_target = normalized_target if install_info.source != "github" else normalized_target
     _ok, output = await _perform_upgrade_impl(
-        target_version=first_attempt_target,
+        target_version=normalized_target,
         force_reinstall=False,
     )
     outputs.append(output)

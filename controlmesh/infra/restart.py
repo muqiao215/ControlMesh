@@ -82,14 +82,20 @@ def request_restart(*, marker_path: Path | None = None) -> bool:
             from controlmesh.infra.service import is_service_installed, restart_service
         except Exception:
             logger.debug("Service facade unavailable for restart request", exc_info=True)
+            if marker_path is not None:
+                write_restart_marker(marker_path=marker_path)
             return False
 
         try:
             if not is_service_installed():
+                if marker_path is not None:
+                    write_restart_marker(marker_path=marker_path)
                 return False
             restart_service()
         except Exception:
             logger.warning("Explicit service-manager restart request failed", exc_info=True)
+            if marker_path is not None:
+                write_restart_marker(marker_path=marker_path)
             return False
         else:
             logger.info("Requested explicit service-manager restart")
