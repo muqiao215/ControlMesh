@@ -473,9 +473,10 @@ def _infer_status(
     result_text: str,
     taskmemory_text: str,
 ) -> str:
-    if raw_evidence:
-        if raw_evidence.get("exact_failures") or raw_evidence.get("fixes_applied"):
-            return "done"
+    if raw_evidence and (
+        raw_evidence.get("exact_failures") or raw_evidence.get("fixes_applied")
+    ):
+        return "done"
     for text in (result_text, taskmemory_text):
         lowered = text.lower()
         if "complete" in lowered or "completed" in lowered or "done" in lowered:
