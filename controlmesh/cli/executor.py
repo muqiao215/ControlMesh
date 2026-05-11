@@ -75,6 +75,7 @@ def _build_subprocess_env(config: CLIConfig) -> dict[str, str] | None:
         # Sub-agent home is <main_home>/agents/<name>/
         main_home = controlmesh_home.parent.parent
         env["CONTROLMESH_SHARED_MEMORY_PATH"] = str(main_home / "SHAREDMEMORY.md")
+    env.update(config.provider_env_overrides())
     return env
 
 

@@ -30,11 +30,11 @@ class TestButtonTracker:
         bt = ButtonTracker()
         formatted = bt.extract_and_format(
             "!room:s",
-            "Choose [button:Approve|/agents approve plan-1] [button:Status|/agents status plan-1]",
+            "Choose [button:Approve|/mesh approve plan-1] [button:Status|/mesh status plan-1]",
         )
         assert "Approve" in formatted
-        assert "/agents approve" not in formatted
-        assert bt.match_input("!room:s", "1") == "/agents approve plan-1"
+        assert "/mesh approve" not in formatted
+        assert bt.match_input("!room:s", "1") == "/mesh approve plan-1"
         assert bt.match_input("!room:s", "2") is None
 
     def test_match_input_second_option(self) -> None:

@@ -52,10 +52,18 @@ from controlmesh.tasks.evaluator import (
     EvaluatorDecision,
     EvaluatorVerdict,
     deterministic_verdict,
+    verdict_path,
     write_verdict,
 )
 from controlmesh.tasks.evidence import evidence_path, load_evidence, result_path
-from controlmesh.tasks.models import TaskEntry, TaskInFlight, TaskResult, TaskSubmit
+from controlmesh.tasks.models import (
+    EvaluationFinding,
+    EvaluationResult,
+    TaskEntry,
+    TaskInFlight,
+    TaskResult,
+    TaskSubmit,
+)
 from controlmesh.team.contracts import ensure_team_topology
 from controlmesh.text.response_format import SEP, compact_transport_text, fmt
 from controlmesh.provider_binding import provider_model_label, validate_provider_model_binding
@@ -945,6 +953,7 @@ class TaskHub:
             result_text = response.result or ""
             session_id = response.session_id or ""
             verdict = None
+            evaluation = None
             artifacts = self._artifact_paths(entry)
 
             # Append TASKMEMORY.md content so the parent gets the full picture
@@ -958,12 +967,18 @@ class TaskHub:
                         workunit_kind=entry.workunit_kind,
                     )
                     write_verdict(artifacts.folder, verdict)
+                    evaluation = _evaluation_result_from_verdict(
+                        verdict,
+                        artifact_path=verdict_path(artifacts.folder),
+                    )
                     result_text = _append_evaluator_verdict(result_text, verdict)
                     if verdict.decision is not EvaluatorDecision.ACCEPT:
+                        status = "failed"
+                        error = verdict.summary
                         self._registry.update_status(
                             entry.task_id,
                             status,
-                            error=verdict.summary,
+                            error=error,
                         )
 
             if entry.route == "auto" and entry.workunit_kind:
@@ -1021,6 +1036,7 @@ class TaskHub:
                 thread_id=entry.thread_id,
                 repo_root=entry.repo_root,
                 tool_use_id=entry.tool_use_id,
+                evaluation=evaluation,
             )
             if status in _FINISHED:
                 capture_task_result(
@@ -1524,10 +1540,12 @@ class TaskHub:
                 "result": str(self._artifact_paths(entry).result),
                 "evidence": str(self._artifact_paths(entry).evidence),
                 "taskmemory": str(self._artifact_paths(entry).taskmemory),
+                "tool_result": str(self._artifact_paths(entry).tool_result),
             },
             finding_count=_finding_count(self._artifact_paths(entry).evidence),
             max_severity=_max_severity(self._artifact_paths(entry).evidence),
             needs_controller_action=result.status != "done" or bool(entry.phase_id) or bool(entry.plan_id),
+            evaluation=_evaluation_payload(result.evaluation),
         )
         tool_result = {
             "role": "user",
@@ -1700,9 +1718,68 @@ class TaskToolResultPayload:
     finding_count: int
     max_severity: str
     needs_controller_action: bool
+    evaluation: dict[str, object] | None = None
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
+
+
+def _evaluation_payload(evaluation: EvaluationResult | None) -> dict[str, object] | None:
+    """Serialize structured evaluation for TOOL_RESULT payloads."""
+    if evaluation is None:
+        return None
+    return {
+        "score": evaluation.score,
+        "decision": evaluation.decision,
+        "summary": evaluation.summary,
+        "max_severity": evaluation.max_severity,
+        "artifact_path": evaluation.artifact_path,
+        "findings": [
+            {
+                "severity": finding.severity,
+                "title": finding.title,
+                "recommendation": finding.recommendation,
+            }
+            for finding in evaluation.findings
+        ],
+    }
+
+
+def _evaluation_result_from_verdict(
+    verdict: EvaluatorVerdict | None,
+    *,
+    artifact_path: Path,
+) -> EvaluationResult | None:
+    """Project deterministic evaluator verdict into controller-facing structure."""
+    if verdict is None:
+        return None
+    findings = tuple(
+        EvaluationFinding(
+            severity="medium" if verdict.decision is not EvaluatorDecision.ACCEPT else "low",
+            title=item,
+            recommendation=item,
+        )
+        for item in verdict.required_followups
+    )
+    if verdict.decision is EvaluatorDecision.ACCEPT:
+        decision = "approve_recommended"
+    elif verdict.decision is EvaluatorDecision.REPAIR:
+        decision = "repair_recommended"
+    else:
+        decision = "reject_recommended"
+    max_severity = "low"
+    if verdict.decision is EvaluatorDecision.REPAIR:
+        max_severity = "medium"
+    if verdict.decision is EvaluatorDecision.REJECT:
+        max_severity = "high"
+    return EvaluationResult(
+        score=max(0, min(10, int(round(verdict.quality * 10)))),
+        decision=decision,
+        summary=verdict.summary,
+        max_severity=max_severity,
+        findings=findings,
+        artifact_path=str(artifact_path),
+    )
 
 
 def _append_taskmemory(result_text: str, taskmemory_path: Path) -> str:

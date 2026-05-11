@@ -35,6 +35,7 @@ class CommandSpec:
 _COMMAND_SPECS: tuple[CommandSpec, ...] = (
     CommandSpec("new", CommandTarget.DIRECT, visible=True, accepts_args=True),
     CommandSpec("model", CommandTarget.ORCHESTRATOR, visible=True, accepts_args=True),
+    CommandSpec("mesh", CommandTarget.MULTIAGENT, visible=True, main_agent_only=True, accepts_args=True),
     CommandSpec("cm", CommandTarget.ORCHESTRATOR, visible=True, accepts_args=True),
     CommandSpec("tasks", CommandTarget.ORCHESTRATOR, visible=True),
     CommandSpec("session", CommandTarget.DIRECT, visible=True),

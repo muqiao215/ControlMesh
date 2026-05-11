@@ -9,6 +9,7 @@ from controlmesh.multiagent.commands import (
     cmd_agent_start,
     cmd_agent_stop,
     cmd_agents,
+    cmd_mesh,
 )
 from controlmesh.multiagent.health import AgentHealth
 
@@ -111,6 +112,18 @@ class TestCmdAgents:
         alpha_pos = result.text.index("alpha")
         main_pos = result.text.index("main")
         assert alpha_pos < main_pos
+
+    async def test_agents_shows_mesh_tip(self) -> None:
+        orch = _make_orch()
+        result = await cmd_agents(orch, 1, "/agents")
+        assert "/mesh <request>" in result.text
+
+
+class TestCmdMesh:
+    async def test_mesh_usage_without_request(self) -> None:
+        orch = _make_orch()
+        result = await cmd_mesh(orch, 1, "/mesh")
+        assert "Usage: /mesh <request>" in result.text
 
 
 class TestCmdAgentStop:

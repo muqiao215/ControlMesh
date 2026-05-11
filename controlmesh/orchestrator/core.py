@@ -174,6 +174,7 @@ class Orchestrator:
                 max_budget_usd=config.max_budget_usd,
                 permission_mode=config.permission_mode,
                 claude_root_permission_mode=config.claude_root_permission_mode,
+                claude_root_force_bypass_via_is_sandbox=config.claude_root_force_bypass_via_is_sandbox,
                 reasoning_effort=config.reasoning_effort,
                 gemini_api_key=config.gemini_api_key,
                 docker_container=docker_container,
@@ -737,10 +738,14 @@ class Orchestrator:
             cmd_agent_start,
             cmd_agent_stop,
             cmd_agents,
+            cmd_mesh,
         )
 
         reg = self._command_registry
         reg.register_async("/agents", cmd_agents)
+        reg.register_async("/agents ", cmd_agents)
+        reg.register_async("/mesh", cmd_mesh)
+        reg.register_async("/mesh ", cmd_mesh)
         reg.register_async("/agent_start", cmd_agent_start)
         reg.register_async("/agent_start ", cmd_agent_start)
         reg.register_async("/agent_stop", cmd_agent_stop)
@@ -1147,6 +1152,7 @@ class Orchestrator:
                     max_budget_usd=config.max_budget_usd,
                     permission_mode=config.permission_mode,
                     claude_root_permission_mode=config.claude_root_permission_mode,
+                    claude_root_force_bypass_via_is_sandbox=config.claude_root_force_bypass_via_is_sandbox,
                     reasoning_effort=config.reasoning_effort,
                     gemini_api_key=config.gemini_api_key,
                     docker_container=self._cli_service._config.docker_container,

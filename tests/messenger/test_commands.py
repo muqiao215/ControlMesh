@@ -75,18 +75,19 @@ class TestCommandSetIntegrity:
         command_names = [cmd_name for cmd_name, _desc in get_bot_commands()]
 
         assert "cm" in command_names
+        assert "mesh" in command_names
         assert "agents" in command_names
         assert "mode" not in command_names
         assert "agent_commands" not in command_names
         assert command_names[:8] == [
             "new",
             "model",
+            "mesh",
             "cm",
             "tasks",
             "session",
             "agents",
             "cron",
-            "status",
         ]
 
     def test_telegram_menu_hides_rare_maintenance_commands(self) -> None:

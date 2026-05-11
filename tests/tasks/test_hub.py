@@ -510,6 +510,9 @@ activation_policies:
         assert evaluation["decision"] == "accept"
         assert delivered
         assert "Evaluator Verdict" in delivered[0].result_text
+        assert delivered[0].evaluation is not None
+        assert delivered[0].evaluation.score >= 6
+        assert delivered[0].evaluation.decision == "approve_recommended"
 
         events = read_score_events(paths.routing_score_events_path)
         assert len(events) == 1
@@ -642,6 +645,7 @@ activation_policies:
         submit.plan_id = "demo-plan"
         submit.phase_id = "phase-002"
         submit.phase_title = "Implement policy"
+        submit.tool_use_id = "toolu_phase_demo-plan_phase-002"
         task_id = hub.submit(submit)
         await asyncio.sleep(0.1)
 
@@ -650,6 +654,9 @@ activation_policies:
         assert entry is not None
         assert entry.status == "done"
         assert (phase_dir / "EVALUATION.json").exists()
+        tool_result = json.loads((phase_dir / "TOOL_RESULT.json").read_text(encoding="utf-8"))
+        payload = json.loads(tool_result["content"][0]["content"][0]["text"])
+        assert payload["evaluation"]["decision"] == "approve_recommended"
         assert not (registry.task_folder(task_id) / "EVALUATION.json").exists()
         manifest = json.loads((paths.plans_dir / "demo-plan" / "PHASES.json").read_text(encoding="utf-8"))
         assert manifest["phases"][0]["status"] == "completed"
@@ -778,6 +785,38 @@ class TestRunAndDeliver:
         assert len(delivered) == 1
         assert delivered[0].status == "failed"
         assert "rate limit" in delivered[0].error.lower()
+
+        await hub.shutdown()
+
+    async def test_workunit_missing_evidence_does_not_report_done(
+        self, registry: TaskRegistry, tmp_path: Path
+    ) -> None:
+        delivered: list[TaskResult] = []
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=_make_cli_service("worker said it finished"),
+            config=_make_config(),
+        )
+        hub.set_result_handler("main", AsyncMock(side_effect=delivered.append))
+
+        submit = _submit(prompt="Review the current diff", name="Review diff")
+        submit.route = "auto"
+        submit.workunit_kind = "code_review"
+        submit.target = "git diff main"
+        task_id = hub.submit(submit)
+        await asyncio.sleep(0.1)
+
+        assert len(delivered) == 1
+        assert delivered[0].status == "failed"
+        assert delivered[0].evaluation is not None
+        assert delivered[0].evaluation.decision == "repair_recommended"
+        assert "missing evidence" in delivered[0].evaluation.summary.lower()
+
+        entry = registry.get(task_id)
+        assert entry is not None
+        assert entry.status == "failed"
+        assert "missing evidence" in entry.error.lower()
 
         await hub.shutdown()
 

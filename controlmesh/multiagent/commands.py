@@ -1,7 +1,4 @@
-"""Telegram command handlers for multi-agent management.
-
-Registered only on the main agent's Orchestrator when a supervisor is present.
-"""
+"""Telegram command handlers for agent fleet management and /mesh workflows."""
 
 from __future__ import annotations
 
@@ -10,9 +7,12 @@ from typing import TYPE_CHECKING
 
 from controlmesh.i18n import t
 from controlmesh.multiagent.plan_review_loop import (
-    approve_phase,
-    create_agents_plan,
-    repair_phase,
+    approve_current_phase,
+    artifacts_text,
+    cancel_workflow,
+    create_mesh_workflow,
+    repair_current_phase,
+    score_current_phase,
     workflow_status_text,
 )
 from controlmesh.orchestrator.registry import OrchestratorResult
@@ -32,15 +32,30 @@ _STATUS_EMOJI = {
 }
 
 
-async def cmd_agents(orch: Orchestrator, _key: SessionKey, _text: str) -> OrchestratorResult:
-    """Handle /agents fleet status plus phased workflow controls."""
+def _workflow_usage(prefix: str = "/mesh") -> str:
+    return (
+        f"Usage: {prefix} <request> | run | status | approve | repair | score | cancel | artifacts"
+    )
+
+
+def _workflow_started_text(task_id: str, plan_id: str) -> str:
+    return (
+        "ControlMesh workflow created.\n"
+        f"- task: {task_id}\n"
+        f"- plan: {plan_id}\n"
+        "- next: planning runs in background, then phase 1 will start automatically"
+    )
+
+
+async def cmd_agents(orch: Orchestrator, key: SessionKey, text: str) -> OrchestratorResult:
+    """Handle /agents fleet status and legacy workflow compatibility."""
     supervisor = orch.supervisor
     if supervisor is None:
         return OrchestratorResult(text=t("agents.not_active"))
 
-    raw = _text.strip()
+    raw = text.strip()
     if raw != "/agents":
-        return await _cmd_agents_control(orch, _key, raw)
+        return await _cmd_agents_compat(orch, key, raw)
 
     lines: list[str] = []
     for name in sorted(supervisor.health.keys()):
@@ -65,47 +80,45 @@ async def cmd_agents(orch: Orchestrator, _key: SessionKey, _text: str) -> Orches
         lines.append(info)
 
     if not lines:
-        return OrchestratorResult(text=fmt(t("agents.header"), SEP, t("agents.empty")))
+        return OrchestratorResult(
+            text=fmt(
+                t("agents.header"),
+                SEP,
+                "\n".join([t("agents.empty"), "", "Workflow tip:", "- Use `/mesh <request>` for phased workflows."]),
+            )
+        )
 
     help_lines = [
         "",
-        "Workflow controls:",
-        "- `/agents <request>` or `/agents run <request>` -> create plan and auto-start phases",
-        "- `/agents approve <plan_id>` -> approve current phase and continue",
-        "- `/agents repair <plan_id>` -> use your next message as repair feedback",
-        "- `/agents repair <plan_id> <feedback>` -> rerun current phase with feedback",
-        "- `/agents status <plan_id>` -> show one workflow state",
+        "Workflow tip:",
+        "- Use `/mesh <request>` for phased workflows.",
+        "- Legacy compatibility remains: `/agents run <request>`.",
     ]
     return OrchestratorResult(text=fmt(t("agents.header"), SEP, "\n".join(lines + help_lines)))
 
 
-async def _cmd_agents_control(
+async def _cmd_agents_compat(
     orch: Orchestrator,
     key: SessionKey,
     text: str,
 ) -> OrchestratorResult:
     parts = text.split(None, 2)
     if len(parts) < 2:
-        return OrchestratorResult(text="Usage: /agents <request> | run | approve | repair | status")
+        return OrchestratorResult(text=_workflow_usage("/agents"))
 
     action = parts[1].strip().lower()
     if action == "run":
         if len(parts) < 3 or not parts[2].strip():
             return OrchestratorResult(text="Usage: /agents run <request>")
-        task_id, plan_id = await create_agents_plan(orch, key, parts[2])
+        task_id, plan_id = await create_mesh_workflow(orch, key, parts[2], source_command="/agents")
         return OrchestratorResult(
-            text=(
-                f"Started agent workflow.\n"
-                f"- task: {task_id}\n"
-                f"- plan: {plan_id}\n"
-                "- next: planning runs in background, then phase 1 will start automatically"
-            )
+            text=f"{_workflow_started_text(task_id, plan_id)}\n\nTip: `/agents` is now a compatibility path. Use `/mesh` for phased workflows."
         )
 
     if action == "approve":
         if len(parts) < 3 or not parts[2].strip():
             return OrchestratorResult(text="Usage: /agents approve <plan_id>")
-        return OrchestratorResult(text=await approve_phase(orch, key, parts[2].strip()))
+        return OrchestratorResult(text=await approve_current_phase(orch, key, parts[2].strip()))
 
     if action == "repair":
         if len(parts) < 3:
@@ -113,22 +126,87 @@ async def _cmd_agents_control(
         repair_parts = parts[2].split(None, 1)
         plan_id = repair_parts[0].strip()
         feedback = repair_parts[1].strip() if len(repair_parts) > 1 else ""
-        return OrchestratorResult(text=await repair_phase(orch, key, plan_id, feedback))
+        return OrchestratorResult(text=await repair_current_phase(orch, key, plan_id, feedback))
 
     if action == "status":
         if len(parts) < 3 or not parts[2].strip():
             return OrchestratorResult(text="Usage: /agents status <plan_id>")
-        return OrchestratorResult(text=workflow_status_text(orch, parts[2].strip()))
+        return OrchestratorResult(text=workflow_status_text(orch, parts[2].strip(), command_prefix="/mesh"))
 
-    task_id, plan_id = await create_agents_plan(orch, key, text.removeprefix("/agents").strip())
-    return OrchestratorResult(
-        text=(
-            f"Started agent workflow.\n"
-            f"- task: {task_id}\n"
-            f"- plan: {plan_id}\n"
-            "- next: planning runs in background, then phase 1 will start automatically"
-        )
+    task_id, plan_id = await create_mesh_workflow(
+        orch,
+        key,
+        text.removeprefix("/agents").strip(),
+        source_command="/agents",
     )
+    return OrchestratorResult(
+        text=f"{_workflow_started_text(task_id, plan_id)}\n\nTip: `/agents` is now a compatibility path. Use `/mesh` for phased workflows."
+    )
+
+
+async def cmd_mesh(orch: Orchestrator, key: SessionKey, text: str) -> OrchestratorResult:
+    """Handle /mesh phased workflow controls."""
+    raw = text.strip()
+    parts = raw.split(None, 3)
+    if raw == "/mesh":
+        return OrchestratorResult(text="Usage: /mesh <request>")
+    if len(parts) < 2:
+        return OrchestratorResult(text=_workflow_usage("/mesh"))
+
+    action = parts[1].strip().lower()
+    if action == "run":
+        if len(parts) < 3 or not parts[2].strip():
+            return OrchestratorResult(text="Usage: /mesh run <request>")
+        task_id, plan_id = await create_mesh_workflow(orch, key, parts[2], source_command="/mesh")
+        return OrchestratorResult(text=_workflow_started_text(task_id, plan_id))
+
+    if action == "status":
+        if len(parts) < 3 or not parts[2].strip():
+            return OrchestratorResult(text="Usage: /mesh status <plan_id>")
+        return OrchestratorResult(text=workflow_status_text(orch, parts[2].strip(), command_prefix="/mesh"))
+
+    if action == "approve":
+        if len(parts) < 3 or not parts[2].strip():
+            return OrchestratorResult(text="Usage: /mesh approve <plan_id>")
+        return OrchestratorResult(text=await approve_current_phase(orch, key, parts[2].strip()))
+
+    if action == "repair":
+        if len(parts) < 3:
+            return OrchestratorResult(text="Usage: /mesh repair <plan_id> [feedback]")
+        repair_parts = parts[2].split(None, 1)
+        plan_id = repair_parts[0].strip()
+        feedback = repair_parts[1].strip() if len(repair_parts) > 1 else ""
+        return OrchestratorResult(text=await repair_current_phase(orch, key, plan_id, feedback))
+
+    if action == "score":
+        if len(parts) < 4:
+            return OrchestratorResult(text="Usage: /mesh score <plan_id> <score> <comment>")
+        score_parts = parts[2].split(None, 1)
+        if len(score_parts) < 2:
+            return OrchestratorResult(text="Usage: /mesh score <plan_id> <score> <comment>")
+        plan_id = score_parts[0].strip()
+        score_token = score_parts[1].strip()
+        if len(parts) < 4 or not parts[3].strip():
+            return OrchestratorResult(text="Usage: /mesh score <plan_id> <score> <comment>")
+        return OrchestratorResult(text=await score_current_phase(orch, key, plan_id, score_token, parts[3].strip()))
+
+    if action == "cancel":
+        if len(parts) < 3 or not parts[2].strip():
+            return OrchestratorResult(text="Usage: /mesh cancel <plan_id>")
+        return OrchestratorResult(text=await cancel_workflow(orch, parts[2].strip()))
+
+    if action == "artifacts":
+        if len(parts) < 3 or not parts[2].strip():
+            return OrchestratorResult(text="Usage: /mesh artifacts <plan_id>")
+        return OrchestratorResult(text=artifacts_text(orch, parts[2].strip()))
+
+    task_id, plan_id = await create_mesh_workflow(
+        orch,
+        key,
+        raw.removeprefix("/mesh").strip(),
+        source_command="/mesh",
+    )
+    return OrchestratorResult(text=_workflow_started_text(task_id, plan_id))
 
 
 async def cmd_agent_stop(orch: Orchestrator, _key: SessionKey, text: str) -> OrchestratorResult:

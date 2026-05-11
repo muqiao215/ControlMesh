@@ -158,6 +158,20 @@ class TestBuildCommand:
         idx = cmd.index("--permission-mode")
         assert cmd[idx + 1] == "auto"
 
+    def test_root_opt_in_force_bypass_preserves_bypass_permissions(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("controlmesh.cli.claude_provider.os.geteuid", lambda: 0)
+        cli = _make_cli(
+            monkeypatch,
+            permission_mode="bypassPermissions",
+            claude_root_force_bypass_via_is_sandbox=True,
+        )
+        cmd = cli._build_command("go")
+        idx = cmd.index("--permission-mode")
+        assert cmd[idx + 1] == "bypassPermissions"
+        assert "--dangerously-skip-permissions" in cmd
+
     def test_max_budget_usd(self, monkeypatch: pytest.MonkeyPatch) -> None:
         cli = _make_cli(monkeypatch, max_budget_usd=2.5)
         cmd = cli._build_command("go")

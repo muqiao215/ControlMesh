@@ -10,7 +10,7 @@ class TestStripButtonMarkers:
         assert strip_button_markers("text [button:OK]") == "text"
 
     def test_removes_buttons_with_callback_override(self) -> None:
-        assert strip_button_markers("text [button:OK|/agents status plan-1]") == "text"
+        assert strip_button_markers("text [button:OK|/mesh status plan-1]") == "text"
 
     def test_multiple_buttons(self) -> None:
         result = strip_button_markers("[button:A] mid [button:B]")

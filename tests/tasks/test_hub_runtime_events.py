@@ -149,6 +149,9 @@ async def test_taskhub_writes_tool_use_and_tool_result_artifacts_and_consumes_on
     unread = hub.consume_tool_results("main", limit=5)
     assert len(unread) == 1
     assert unread[0]["content"][0]["tool_use_id"] == "toolu_bg_task_1"
+    payload = json.loads(unread[0]["content"][0]["content"][0]["text"])
+    assert payload["artifact_refs"]["tool_result"] == str(tool_result_path)
+    assert payload["evaluation"] is None
 
     persisted = json.loads(tool_result_path.read_text(encoding="utf-8"))
     assert persisted["consumed"] is True

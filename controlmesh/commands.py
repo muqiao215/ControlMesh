@@ -12,6 +12,7 @@ from controlmesh.i18n import t_cmd
 _COMMAND_DESC_KEYS: dict[str, str] = {
     "new": "bot.new",
     "model": "bot.model",
+    "mesh": "bot.mesh",
     "cm": "bot.cm",
     "tasks": "bot.tasks",
     "session": "bot.session",
@@ -43,6 +44,7 @@ def get_multiagent_sub_commands() -> list[tuple[str, str]]:
     """Return multi-agent sub-commands with translated descriptions."""
     return [
         ("agents", t_cmd(_COMMAND_DESC_KEYS["agents"])),
+        ("mesh", t_cmd(_COMMAND_DESC_KEYS["mesh"])),
         ("agent_start", t_cmd(_COMMAND_DESC_KEYS["agent_start"])),
         ("agent_stop", t_cmd(_COMMAND_DESC_KEYS["agent_stop"])),
         ("agent_restart", t_cmd(_COMMAND_DESC_KEYS["agent_restart"])),

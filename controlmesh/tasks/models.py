@@ -209,6 +209,27 @@ class TaskInFlight:
     has_pending_question: bool = False
 
 
+@dataclass(frozen=True, slots=True)
+class EvaluationFinding:
+    """Structured evaluator finding surfaced to the controller."""
+
+    severity: str
+    title: str
+    recommendation: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class EvaluationResult:
+    """Structured evaluator output for controller-facing workflow review."""
+
+    score: int
+    decision: str
+    summary: str
+    max_severity: str = "info"
+    findings: tuple[EvaluationFinding, ...] = ()
+    artifact_path: str = ""
+
+
 @dataclass(slots=True)
 class TaskResult:
     """Outcome delivered to parent agent after task completion."""
@@ -233,3 +254,4 @@ class TaskResult:
     thread_id: TopicRef = None
     repo_root: str = ""
     tool_use_id: str = ""
+    evaluation: EvaluationResult | None = None

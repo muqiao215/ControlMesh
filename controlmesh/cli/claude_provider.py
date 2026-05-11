@@ -65,6 +65,8 @@ class ClaudeCodeCLI(BaseCLI):
         cfg = self._config
         cmd = [self._cli, "-p", "--output-format", "json"]
 
+        if self._should_force_root_bypass():
+            cmd.append("--dangerously-skip-permissions")
         _add_opt(cmd, "--permission-mode", self._permission_mode())
         _add_opt(cmd, "--model", cfg.model)
         _add_opt(cmd, "--system-prompt", cfg.system_prompt)
@@ -97,9 +99,22 @@ class ClaudeCodeCLI(BaseCLI):
             cmd.append(prompt)
         return cmd
 
+    def _should_force_root_bypass(self) -> bool:
+        """Return whether the explicit root bypass escape hatch is enabled."""
+        mode = self._config.permission_mode
+        geteuid = getattr(os, "geteuid", None)
+        return bool(
+            mode == "bypassPermissions"
+            and self._config.claude_root_force_bypass_via_is_sandbox
+            and callable(geteuid)
+            and geteuid() == 0
+        )
+
     def _permission_mode(self) -> str:
         """Return a Claude-compatible permission mode for the current runtime."""
         mode = self._config.permission_mode
+        if self._should_force_root_bypass():
+            return mode
         geteuid = getattr(os, "geteuid", None)
         if mode == "bypassPermissions" and callable(geteuid) and geteuid() == 0:
             fallback = self._config.claude_root_permission_mode or "dontAsk"

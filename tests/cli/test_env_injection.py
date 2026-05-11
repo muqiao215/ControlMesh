@@ -112,3 +112,22 @@ def test_docker_wrap_provider_extra_env_wins(tmp_path: Path) -> None:
 
     assert "GEMINI_API_KEY=from-provider" in cmd
     assert "GEMINI_API_KEY=from-dotenv" not in cmd
+
+
+def test_subprocess_env_injects_is_sandbox_for_claude_root_opt_in(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    with patch("os.geteuid", return_value=0):
+        config = CLIConfig(
+            provider="claude",
+            working_dir=str(workspace),
+            permission_mode="bypassPermissions",
+            claude_root_force_bypass_via_is_sandbox=True,
+        )
+        env = _build_subprocess_env(config)
+
+    assert env is not None
+    assert env["IS_SANDBOX"] == "1"

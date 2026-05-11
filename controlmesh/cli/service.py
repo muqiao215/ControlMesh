@@ -119,6 +119,7 @@ class CLIServiceConfig:
     max_budget_usd: float | None
     permission_mode: str
     claude_root_permission_mode: str = "dontAsk"
+    claude_root_force_bypass_via_is_sandbox: bool = False
     reasoning_effort: str = "medium"
     gemini_api_key: str | None = None
     docker_container: str = ""
@@ -527,6 +528,7 @@ class CLIService:
                 max_budget_usd=self._config.max_budget_usd,
                 permission_mode=self._config.permission_mode,
                 claude_root_permission_mode=self._config.claude_root_permission_mode,
+                claude_root_force_bypass_via_is_sandbox=self._config.claude_root_force_bypass_via_is_sandbox,
                 reasoning_effort=self._config.reasoning_effort,
                 gemini_api_key=self._config.gemini_api_key,
                 docker_container=self._config.docker_container,

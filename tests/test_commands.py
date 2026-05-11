@@ -18,6 +18,7 @@ def test_expected_commands_present() -> None:
     expected = {
         "new",
         "model",
+        "mesh",
         "cm",
         "tasks",
         "session",

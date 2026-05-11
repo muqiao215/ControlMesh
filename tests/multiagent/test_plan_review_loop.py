@@ -37,6 +37,7 @@ class _FakeTaskHub:
         self.submits: list[TaskSubmit] = []
         self.inbox: list[AgentInboxItem] = []
         self.resumes: list[tuple[str, str, str]] = []
+        self.tool_results: list[dict[str, object]] = [{"content": [{"tool_use_id": "toolu"}]}]
 
     def submit(self, submit: TaskSubmit) -> str:
         self.submits.append(submit)
@@ -71,6 +72,20 @@ class _FakeTaskHub:
             items = [item for item in items if item.payload.get("topic_id") == topic_id]
         return items[-limit:]
 
+    def consume_tool_results(
+        self,
+        agent_name: str,
+        *,
+        limit: int = 20,
+        plan_id: str = "",
+        chat_id: object | None = None,
+        topic_id: object | None = None,
+    ) -> list[dict[str, object]]:
+        assert agent_name == "main"
+        items = list(self.tool_results[:limit])
+        self.tool_results = self.tool_results[limit:]
+        return items
+
 
 def _make_orch(tmp_path: Path, hub: _FakeTaskHub) -> SimpleNamespace:
     return SimpleNamespace(
@@ -100,7 +115,8 @@ async def test_cmd_agents_run_creates_plan_workflow(tmp_path: Path) -> None:
 
     result = await cmd_agents(orch, key, "/agents run Build the new phased controller")
 
-    assert "Started agent workflow." in result.text
+    assert "ControlMesh workflow created." in result.text
+    assert "Use `/mesh` for phased workflows." in result.text
     assert hub.submits
     submit = hub.submits[0]
     assert submit.workunit_kind == "plan_with_files"
@@ -172,7 +188,8 @@ async def test_handle_task_result_autostarts_first_phase(tmp_path: Path) -> None
         ),
     )
 
-    assert "Started phase `phase-1` automatically" in note
+    assert "ControlMesh workflow created" in note
+    assert "Phase 1 is now running in background." in note
     assert hub.submits
     submit = hub.submits[0]
     assert submit.workunit_kind == "phase_execution"
@@ -492,7 +509,7 @@ async def test_repair_phase_without_feedback_waits_for_next_chat_message(tmp_pat
 
     assert "waiting for repair feedback" in text
     assert not hub.submits
-    assert "- waiting_for: repair_feedback" in workflow_status_text(orch, plan_id)
+    assert "Waiting for: repair_feedback" in workflow_status_text(orch, plan_id)
 
     consumed = await consume_pending_repair_feedback(
         orch,
@@ -641,9 +658,9 @@ async def test_phase_completion_note_includes_review_buttons(tmp_path: Path) -> 
     )
 
     assert note is not None
-    assert "[button:Approve|/agents approve plan-4]" in note
-    assert "[button:Repair|/agents repair plan-4]" in note
-    assert "[button:Status|/agents status plan-4]" in note
+    assert "[button:Approve|/mesh approve plan-4]" in note
+    assert "[button:Repair|/mesh repair plan-4]" in note
+    assert "[button:Status|/mesh status plan-4]" in note
 
 
 def test_workflow_status_includes_recent_main_inbox_items(tmp_path: Path) -> None:
@@ -695,6 +712,6 @@ def test_workflow_status_includes_recent_main_inbox_items(tmp_path: Path) -> Non
 
     text = workflow_status_text(orch, plan_id)
 
-    assert "- main_inbox:" in text
+    assert "Main inbox:" in text
     assert "task.done: Phase 1 worker completed with summarized result" in text
     assert "Unrelated plan result" not in text

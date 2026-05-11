@@ -315,3 +315,18 @@ class TestTaskResult:
             model="m",
         )
         assert result.delivery_text == ""
+
+    def test_evaluation_defaults_none(self) -> None:
+        result = TaskResult(
+            task_id="x",
+            chat_id=1,
+            parent_agent="main",
+            name="t",
+            prompt_preview="p",
+            result_text="r",
+            status="done",
+            elapsed_seconds=0.0,
+            provider="c",
+            model="m",
+        )
+        assert result.evaluation is None

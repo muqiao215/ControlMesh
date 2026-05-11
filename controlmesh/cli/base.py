@@ -86,6 +86,7 @@ class CLIConfig:
     disallowed_tools: list[str] = field(default_factory=list)
     permission_mode: str = "bypassPermissions"
     claude_root_permission_mode: str = "dontAsk"
+    claude_root_force_bypass_via_is_sandbox: bool = False
     docker_container: str = ""
     # Codex-specific fields (ignored by Claude provider):
     sandbox_mode: str = "read-only"
@@ -108,6 +109,21 @@ class CLIConfig:
     interagent_port: int = 8799
     task_hub: TaskHub | None = None
     interagent_bus: InterAgentBus | None = None
+
+    def provider_env_overrides(self) -> dict[str, str]:
+        """Return provider-specific environment overrides for subprocess execution."""
+        import os
+
+        geteuid = getattr(os, "geteuid", None)
+        if (
+            self.provider == "claude"
+            and self.permission_mode == "bypassPermissions"
+            and self.claude_root_force_bypass_via_is_sandbox
+            and callable(geteuid)
+            and geteuid() == 0
+        ):
+            return {"IS_SANDBOX": "1"}
+        return {}
 
 
 _CONTAINER_CONTROLMESH_MOUNT = "/controlmesh"
@@ -165,8 +181,11 @@ def docker_wrap(
         for key in list(merged_extra):
             if key in os.environ:
                 del merged_extra[key]
+        provider_overrides = config.provider_env_overrides()
+        if provider_overrides:
+            merged_extra.update(provider_overrides)
         if extra_env:
-            merged_extra.update(extra_env)  # Provider-specific overrides win.
+            merged_extra.update(extra_env)  # Explicit per-call overrides win.
         extra_env = merged_extra or None
 
         env_flags: list[str] = [
