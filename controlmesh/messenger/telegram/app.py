@@ -1455,8 +1455,6 @@ class TelegramBot:
                             item.key.chat_id,
                             item.key.topic_id,
                         )
-        except asyncio.CancelledError:
-            raise
         finally:
             current = self._frontstage_run_loops.get(lock_key)
             if current is asyncio.current_task():

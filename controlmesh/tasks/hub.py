@@ -1409,7 +1409,11 @@ class TaskHub:
                 "task.lifecycle.reconciled",
                 status=result.status,
             )
-        asyncio.create_task(self._deliver(result), name=f"task-reconcile-deliver:{entry.task_id}")
+        task = asyncio.create_task(
+            self._deliver(result),
+            name=f"task-reconcile-deliver:{entry.task_id}",
+        )
+        task.add_done_callback(lambda _: None)
 
     def _append_runtime_lifecycle_event(
         self,
