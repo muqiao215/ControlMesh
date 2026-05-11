@@ -923,6 +923,72 @@ class TestRunAndDeliver:
 
         await hub.shutdown()
 
+    async def test_reconcile_reenqueues_missing_inbox_for_existing_tool_result(
+        self, registry: TaskRegistry, tmp_path: Path
+    ) -> None:
+        paths = ControlMeshPaths(controlmesh_home=tmp_path / "home")
+        hub = TaskHub(
+            registry,
+            paths,
+            cli_service=_make_cli_service(),
+            config=_make_config(),
+        )
+        hub.set_result_handler("main", AsyncMock())
+
+        submit = _submit(prompt="recover inbox", name="Recover inbox")
+        submit.tool_use_id = "toolu_bg_task_requeue"
+        entry = registry.create(submit, "claude", "opus")
+        registry.update_status(entry.task_id, "stale", session_id="sess-requeue")
+        task_dir = registry.task_folder(entry.task_id)
+        (task_dir / "RESULT.md").write_text("# Recovered result\n\nRecovered after restart.\n", encoding="utf-8")
+        (task_dir / "TOOL_USE.json").write_text(
+            json.dumps({"tool_use_id": "toolu_bg_task_requeue", "task_id": entry.task_id}),
+            encoding="utf-8",
+        )
+        (task_dir / "TOOL_RESULT.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "controlmesh.tool_result.v1",
+                    "task_id": entry.task_id,
+                    "tool_use_id": "toolu_bg_task_requeue",
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "toolu_bg_task_requeue",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": json.dumps(
+                                        {
+                                            "schema_version": "controlmesh.tool_result.v1",
+                                            "task_id": entry.task_id,
+                                            "tool_use_id": "toolu_bg_task_requeue",
+                                            "status": "done",
+                                            "summary": "Recovered after restart.",
+                                            "artifact_refs": [
+                                                f"artifact://tasks/{entry.task_id}/TOOL_RESULT.json",
+                                            ],
+                                        }
+                                    ),
+                                }
+                            ],
+                            "is_error": False,
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        changed = hub.reconcile_task_state(entry.task_id)
+        assert changed is True
+
+        inbox_items = hub.read_agent_inbox("main", limit=10)
+        assert any(item.tool_use_id == "toolu_bg_task_requeue" for item in inbox_items)
+
+        await hub.shutdown()
+
     async def test_delivers_error_on_cli_failure(
         self, registry: TaskRegistry, tmp_path: Path
     ) -> None:

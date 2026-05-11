@@ -100,6 +100,8 @@ class TaskEntry:
     tool_name: str = ""
     external_task: bool = False
     idempotency_key: str = ""
+    tool_result_created_at: float = 0.0
+    tool_result_enqueued_at: float = 0.0
     tool_result_delivered_at: float = 0.0
     tool_result_consumed_at: float = 0.0
     tasks_dir: str = ""  # Agent's tasks directory (for per-agent folder resolution)
@@ -151,6 +153,8 @@ class TaskEntry:
             "tool_name": self.tool_name,
             "external_task": self.external_task,
             "idempotency_key": self.idempotency_key,
+            "tool_result_created_at": self.tool_result_created_at,
+            "tool_result_enqueued_at": self.tool_result_enqueued_at,
             "tool_result_delivered_at": self.tool_result_delivered_at,
             "tool_result_consumed_at": self.tool_result_consumed_at,
             "tasks_dir": self.tasks_dir,
@@ -206,6 +210,8 @@ class TaskEntry:
             tool_name=d.get("tool_name", ""),
             external_task=bool(d.get("external_task", False)),
             idempotency_key=d.get("idempotency_key", ""),
+            tool_result_created_at=d.get("tool_result_created_at", 0.0),
+            tool_result_enqueued_at=d.get("tool_result_enqueued_at", 0.0),
             tool_result_delivered_at=d.get("tool_result_delivered_at", 0.0),
             tool_result_consumed_at=d.get("tool_result_consumed_at", 0.0),
             tasks_dir=d.get("tasks_dir", ""),

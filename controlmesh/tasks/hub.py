@@ -305,7 +305,7 @@ class TaskHub:
         chat_id: object | None = None,
         topic_id: object | None = None,
     ) -> list[dict[str, Any]]:
-        """Return unread task TOOL_RESULT payloads and mark them consumed once."""
+        """Return pending task TOOL_RESULT payloads and mark inbox+ledger consumed."""
         items = self.read_agent_inbox_filtered(
             agent_name,
             limit=limit,
@@ -320,6 +320,24 @@ class TaskHub:
                 continue
             payload = self._consume_tool_result_file(Path(path_text))
             if payload is not None:
+                self._agent_inbox.mark_consumed(
+                    agent_name,
+                    tool_use_id=str(item.tool_use_id or item.payload.get("tool_use_id") or ""),
+                    consumed_by=agent_name,
+                    next_action="controller_review",
+                )
+                entry = self._registry.get(item.task_id or item.from_task)
+                if entry is not None:
+                    self._registry.update_status(
+                        entry.task_id,
+                        entry.status,
+                        tool_result_consumed_at=time.time(),
+                    )
+                    self._append_runtime_lifecycle_event(
+                        entry,
+                        "task.lifecycle.consumed_by_parent",
+                        status="consumed_by_parent",
+                    )
                 results.append(payload)
         return results
 
@@ -1120,7 +1138,7 @@ class TaskHub:
                     thread_id=entry.thread_id,
                     repo_root=entry.repo_root,
                     tool_use_id=entry.tool_use_id,
-                    failure_kind="execution_failed",
+                    failure_kind="tool_execution_failed",
                 )
                 capture_task_result(
                     self._paths,
@@ -1164,7 +1182,7 @@ class TaskHub:
                     model=entry.model,
                     transport=entry.transport,
                     error=error_msg,
-                    failure_kind="execution_failed",
+                    failure_kind="tool_execution_failed",
                     task_folder=str(self._artifact_paths(entry).folder),
                     original_prompt=entry.original_prompt,
                     thread_id=entry.thread_id,
@@ -1206,7 +1224,7 @@ class TaskHub:
                     model=entry.model,
                     transport=entry.transport,
                     error=error_msg,
-                    failure_kind="execution_failed",
+                    failure_kind="tool_execution_failed",
                     original_prompt=entry.original_prompt,
                     thread_id=entry.thread_id,
                     repo_root=entry.repo_root,
@@ -1223,7 +1241,14 @@ class TaskHub:
 
     async def _deliver(self, result: TaskResult) -> None:
         """Deliver result to the parent agent's registered callback."""
-        self._append_agent_inbox_result(result)
+        existing = None
+        if result.tool_use_id:
+            existing = self._agent_inbox.get(
+                result.parent_agent,
+                tool_use_id=result.tool_use_id,
+            )
+        if existing is None:
+            self._append_agent_inbox_result(result)
         handler = self._result_handlers.get(result.parent_agent)
         if handler is None:
             logger.warning(
@@ -1236,10 +1261,19 @@ class TaskHub:
             await handler(result)
             entry = self._registry.get(result.task_id)
             if entry is not None:
+                self._agent_inbox.mark_delivered(
+                    result.parent_agent,
+                    tool_use_id=result.tool_use_id,
+                )
                 self._registry.update_status(
                     result.task_id,
                     entry.status,
                     tool_result_delivered_at=time.time(),
+                )
+                self._append_runtime_lifecycle_event(
+                    entry,
+                    "task.lifecycle.delivered_to_parent",
+                    status="delivered_to_parent",
                 )
         except Exception:
             entry = self._registry.get(result.task_id)
@@ -1276,6 +1310,11 @@ class TaskHub:
         parsed_tool_result = load_tool_result(artifacts.folder)
         curated_result = _read_curated_result(artifacts.result)
         tool_result = load_json(artifacts.tool_result)
+        inbox_missing = bool(
+            entry.tool_use_id
+            and isinstance(tool_result, dict)
+            and not self._agent_inbox.pending_exists(entry.parent_agent, tool_use_id=entry.tool_use_id)
+        )
         if isinstance(tool_result, dict):
             recovered = self._recover_terminal_result(
                 entry,
@@ -1286,6 +1325,41 @@ class TaskHub:
             )
             if recovered:
                 return True
+        if inbox_missing:
+            recovered_projection = curated_result or (
+                parsed_tool_result.summary if parsed_tool_result is not None else entry.result_preview
+            )
+            self._agent_inbox.append(
+                AgentInboxItem(
+                    session_id=entry.session_id,
+                    to_agent=entry.parent_agent,
+                    kind=f"task.{entry.status}",
+                    summary=(recovered_projection or entry.name or entry.task_id)[:1200],
+                    task_id=entry.task_id,
+                    tool_use_id=entry.tool_use_id,
+                    tool_result_ref=f"task://{entry.task_id}/TOOL_RESULT.json",
+                    projection=(recovered_projection or entry.name or entry.task_id)[:1200],
+                    status="pending",
+                    from_task=entry.task_id,
+                    source_agent="taskhub",
+                    result_ref=f"task:{entry.task_id}/result",
+                    requires_attention=entry.status != "done",
+                    payload={
+                        "status": entry.status,
+                        "provider": entry.provider,
+                        "model": entry.model,
+                        "plan_id": entry.plan_id,
+                        "chat_id": entry.chat_id,
+                        "topic_id": entry.thread_id,
+                        "tool_use_id": entry.tool_use_id,
+                        "tool_result_path": str(artifacts.tool_result),
+                        "repo_root": entry.repo_root,
+                        "failure_kind": entry.error.split(":", 1)[0] if ":" in entry.error else "",
+                    },
+                )
+            )
+            self._registry.update_status(task_id, entry.status)
+            return True
 
         if lease and isinstance(lease.get("pid"), int):
             pid = int(lease["pid"])
@@ -1417,7 +1491,7 @@ class TaskHub:
             transport=entry.transport,
             session_id=entry.session_id,
             error=error,
-            failure_kind=failure_kind or ("execution_failed" if status == "failed" else ""),
+            failure_kind=failure_kind or ("tool_execution_failed" if status == "failed" else ""),
             task_folder=str(artifacts.folder),
             original_prompt=entry.original_prompt,
             thread_id=entry.thread_id,
@@ -1449,6 +1523,11 @@ class TaskHub:
         )
         refreshed = self._registry.get(entry.task_id)
         if refreshed is not None:
+            if result.tool_use_id and not self._agent_inbox.pending_exists(
+                result.parent_agent,
+                tool_use_id=result.tool_use_id,
+            ):
+                self._append_agent_inbox_result(result)
             self._process_leases.mark_label_status(
                 chat_id=refreshed.chat_id,
                 label=f"task:{refreshed.task_id}",
@@ -1541,9 +1620,15 @@ class TaskHub:
         tool_result_path = self._artifact_paths(entry).tool_result if entry is not None else Path(result.task_folder) / "TOOL_RESULT.json"
         self._agent_inbox.append(
             AgentInboxItem(
+                session_id=result.session_id,
                 to_agent=result.parent_agent,
                 kind=f"task.{result.status}",
                 summary=summary[:1200],
+                task_id=result.task_id,
+                tool_use_id=result.tool_use_id,
+                tool_result_ref=f"task://{result.task_id}/TOOL_RESULT.json",
+                projection=summary[:1200],
+                status="pending",
                 from_task=result.task_id,
                 source_agent="taskhub",
                 result_ref=f"task:{result.task_id}/result",
@@ -1563,6 +1648,19 @@ class TaskHub:
                 },
             )
         )
+        if entry is not None:
+            self._registry.update_status(
+                result.task_id,
+                entry.status,
+                tool_result_enqueued_at=time.time(),
+            )
+            refreshed = self._registry.get(result.task_id)
+            if refreshed is not None:
+                self._append_runtime_lifecycle_event(
+                    refreshed,
+                    "task.lifecycle.inbox_enqueued",
+                    status="inbox_enqueued",
+                )
 
     def _response_status(self, entry: TaskEntry, response: object, *, timeout: float) -> tuple[str, str]:
         if response.timed_out:
@@ -1883,6 +1981,18 @@ class TaskHub:
         }
         path = self._artifact_paths(entry).tool_result
         atomic_json_save(path, tool_result)
+        self._registry.update_status(
+            entry.task_id,
+            entry.status,
+            tool_result_created_at=time.time(),
+        )
+        refreshed = self._registry.get(entry.task_id)
+        if refreshed is not None:
+            self._append_runtime_lifecycle_event(
+                refreshed,
+                "task.lifecycle.tool_result_created",
+                status="tool_result_created",
+            )
         return path
 
     def _consume_tool_result_file(self, path: Path) -> dict[str, Any] | None:

@@ -32,11 +32,22 @@ class RuntimeEvent(BaseModel):
 class AgentInboxItem(BaseModel):
     """One runtime-owned backstage item addressed to an agent inbox."""
 
+    schema_version: str = "controlmesh.agent_inbox.v1"
     inbox_id: str = Field(default_factory=lambda: uuid4().hex)
     to_agent: str
     kind: str
     summary: str
     created_at: str = Field(default_factory=utc_now_iso)
+    session_id: str = ""
+    task_id: str = ""
+    tool_use_id: str = ""
+    tool_result_ref: str = ""
+    projection: str = ""
+    status: str = "pending"
+    delivered_at: str | None = None
+    consumed_at: str | None = None
+    consumed_by: str = ""
+    next_action: str = ""
     from_task: str = ""
     source_agent: str = ""
     result_ref: str = ""

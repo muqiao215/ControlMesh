@@ -77,6 +77,8 @@ def test_agent_inbox_store_uses_dedicated_runtime_root(tmp_path: Path) -> None:
     paths = _paths(tmp_path)
     inbox = AgentInboxStore(paths)
     assert inbox.path_for("main") == tmp_path / ".controlmesh" / "agent-inbox" / "main.jsonl"
+    assert inbox.agent_dir("main") == tmp_path / ".controlmesh" / "agent-inbox" / "main"
+    assert inbox.status_dir("main", "pending") == tmp_path / ".controlmesh" / "agent-inbox" / "main" / "pending"
 
 
 def test_agent_inbox_store_append_and_read_recent(tmp_path: Path) -> None:
@@ -95,3 +97,35 @@ def test_agent_inbox_store_append_and_read_recent(tmp_path: Path) -> None:
     assert len(items) == 1
     assert items[0].to_agent == "main"
     assert items[0].summary == "Background review completed"
+    assert items[0].status == "pending"
+
+
+def test_agent_inbox_store_mark_delivered_and_consumed(tmp_path: Path) -> None:
+    paths = _paths(tmp_path)
+    inbox = AgentInboxStore(paths)
+    inbox.append(
+        AgentInboxItem(
+            to_agent="main",
+            kind="task.done",
+            summary="Completed",
+            task_id="t1",
+            tool_use_id="toolu_t1",
+            tool_result_ref="task://t1/TOOL_RESULT.json",
+        )
+    )
+
+    delivered = inbox.mark_delivered("main", tool_use_id="toolu_t1")
+    assert delivered is not None
+    assert delivered.status == "delivered_to_parent"
+    assert delivered.delivered_at is not None
+
+    consumed = inbox.mark_consumed(
+        "main",
+        tool_use_id="toolu_t1",
+        consumed_by="main",
+        next_action="responded_to_user",
+    )
+    assert consumed is not None
+    assert consumed.status == "consumed"
+    assert consumed.consumed_at is not None
+    assert consumed.next_action == "responded_to_user"

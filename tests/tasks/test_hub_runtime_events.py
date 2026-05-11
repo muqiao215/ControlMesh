@@ -64,13 +64,24 @@ def _lifecycle_shape(paths: ControlMeshPaths, key: SessionKey) -> list[tuple[str
     store = RuntimeEventStore(paths)
     return [
         (event.event_type, event.payload.get("status"), event.payload.get("task_id"))
-        for event in store.read_recent(key, limit=10)
+        for event in store.read_recent(key, limit=30)
     ]
 
 
 def _inbox_summaries(paths: ControlMeshPaths, agent_name: str = "main") -> list[str]:
     store = AgentInboxStore(paths)
     return [item.summary for item in store.read_recent(agent_name, limit=20)]
+
+
+def _assert_subsequence(
+    actual: list[tuple[str, str | None, str | None]],
+    expected: list[tuple[str, str | None, str | None]],
+) -> None:
+    cursor = 0
+    for item in actual:
+        if cursor < len(expected) and item == expected[cursor]:
+            cursor += 1
+    assert cursor == len(expected), f"expected ordered subsequence missing: {expected!r} from {actual!r}"
 
 
 async def test_taskhub_success_lifecycle_writes_land_in_runtime_events_not_transcripts(
@@ -93,11 +104,18 @@ async def test_taskhub_success_lifecycle_writes_land_in_runtime_events_not_trans
     task_id = hub.submit(submit)
     await asyncio.sleep(0.1)
 
-    assert _lifecycle_shape(paths, key) == [
-        ("task.lifecycle.created", None, task_id),
-        ("task.lifecycle.started", None, task_id),
-        ("task.lifecycle.terminal", "done", task_id),
-    ]
+    lifecycle = _lifecycle_shape(paths, key)
+    _assert_subsequence(
+        lifecycle,
+        [
+            ("task.lifecycle.created", None, task_id),
+            ("task.lifecycle.started", None, task_id),
+            ("task.lifecycle.terminal", "done", task_id),
+        ],
+    )
+    assert ("task.lifecycle.tool_result_created", "tool_result_created", task_id) in lifecycle
+    assert ("task.lifecycle.inbox_enqueued", "inbox_enqueued", task_id) in lifecycle
+    assert ("task.lifecycle.delivered_to_parent", "delivered_to_parent", task_id) in lifecycle
     inbox = _inbox_summaries(paths)
     assert any("Task id:" in item for item in inbox)
     assert transcript_store.read_recent(key, limit=10) == []
@@ -142,6 +160,7 @@ async def test_taskhub_writes_tool_use_and_tool_result_artifacts_and_consumes_on
 
     inbox = AgentInboxStore(paths).read_recent("main", limit=5)
     assert inbox
+    assert inbox[0].status in {"pending", "delivered_to_parent"}
     assert inbox[0].payload["tool_result_path"] == str(tool_result_path)
     assert inbox[0].payload["tool_use_id"] == "toolu_bg_task_1"
     assert inbox[0].payload["repo_root"] == "/root/.controlmesh/dev/ControlMesh"
@@ -155,6 +174,17 @@ async def test_taskhub_writes_tool_use_and_tool_result_artifacts_and_consumes_on
 
     persisted = json.loads(tool_result_path.read_text(encoding="utf-8"))
     assert persisted["consumed"] is True
+    entry = registry.get(task_id)
+    assert entry is not None
+    assert entry.tool_result_created_at > 0
+    assert entry.tool_result_enqueued_at > 0
+    assert entry.tool_result_delivered_at > 0
+    assert entry.tool_result_consumed_at > 0
+    lifecycle = _lifecycle_shape(paths, SessionKey.telegram(submit.chat_id, submit.thread_id))
+    assert ("task.lifecycle.consumed_by_parent", "consumed_by_parent", task_id) in lifecycle
+    consumed_inbox = AgentInboxStore(paths).read_recent("main", limit=5)
+    assert consumed_inbox[0].status == "consumed"
+    assert consumed_inbox[0].consumed_at is not None
     assert hub.consume_tool_results("main", limit=5) == []
 
     await hub.shutdown()
@@ -234,11 +264,18 @@ async def test_taskhub_cancelled_lifecycle_writes_land_in_runtime_events_not_tra
     assert await hub.cancel(task_id)
     await asyncio.sleep(0.05)
 
-    assert _lifecycle_shape(paths, key) == [
-        ("task.lifecycle.created", None, task_id),
-        ("task.lifecycle.started", None, task_id),
-        ("task.lifecycle.terminal", "cancelled", task_id),
-    ]
+    lifecycle = _lifecycle_shape(paths, key)
+    _assert_subsequence(
+        lifecycle,
+        [
+            ("task.lifecycle.created", None, task_id),
+            ("task.lifecycle.started", None, task_id),
+            ("task.lifecycle.terminal", "cancelled", task_id),
+        ],
+    )
+    assert ("task.lifecycle.tool_result_created", "tool_result_created", task_id) in lifecycle
+    assert ("task.lifecycle.inbox_enqueued", "inbox_enqueued", task_id) in lifecycle
+    assert ("task.lifecycle.delivered_to_parent", "delivered_to_parent", task_id) in lifecycle
     assert transcript_store.read_recent(key, limit=10) == []
     assert not transcript_store.path_for(key).exists()
 
@@ -306,13 +343,16 @@ async def test_taskhub_resume_writes_resumed_event_before_next_run(
     assert resumed_id == task_id
     await asyncio.sleep(0.1)
 
-    assert _lifecycle_shape(paths, key) == [
-        ("task.lifecycle.created", None, task_id),
-        ("task.lifecycle.started", None, task_id),
-        ("task.lifecycle.terminal", "done", task_id),
-        ("task.lifecycle.resumed", None, task_id),
-        ("task.lifecycle.started", None, task_id),
-        ("task.lifecycle.terminal", "done", task_id),
-    ]
+    _assert_subsequence(
+        _lifecycle_shape(paths, key),
+        [
+            ("task.lifecycle.created", None, task_id),
+            ("task.lifecycle.started", None, task_id),
+            ("task.lifecycle.terminal", "done", task_id),
+            ("task.lifecycle.resumed", None, task_id),
+            ("task.lifecycle.started", None, task_id),
+            ("task.lifecycle.terminal", "done", task_id),
+        ],
+    )
 
     await hub.shutdown()
