@@ -49,7 +49,7 @@ def _classify_symlink(path: Path) -> LinkIssue | None:
     if not path.is_symlink():
         return None
     try:
-        target = os.readlink(path)
+        target = path.readlink()
     except OSError:
         target = None
     try:
