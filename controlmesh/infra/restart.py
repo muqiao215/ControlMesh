@@ -94,7 +94,13 @@ def consume_restart_marker(*, marker_path: Path) -> dict[str, Any] | None:
 
 def should_delegate_restart_to_service_manager() -> bool:
     """Return True when the current process is running under a service manager."""
-    return bool(os.environ.get("CONTROLMESH_SUPERVISOR") or os.environ.get("INVOCATION_ID"))
+    if os.environ.get("CONTROLMESH_SUPERVISOR"):
+        return True
+    # Treat bare host/root test shells conservatively: some environments may
+    # leak INVOCATION_ID without providing a usable service-manager user bus.
+    if os.environ.get("INVOCATION_ID") and os.environ.get("XDG_RUNTIME_DIR"):
+        return True
+    return False
 
 
 def request_restart(

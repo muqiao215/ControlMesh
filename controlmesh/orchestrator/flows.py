@@ -38,6 +38,17 @@ FOREGROUND_MAX_RUNTIME_SECONDS = 1800.0
 FOREGROUND_HARD_KILL_TIMEOUT_SECONDS = (
     FOREGROUND_IDLE_TIMEOUT_SECONDS + FOREGROUND_HARD_KILL_GRACE_SECONDS
 )
+_INTENT_SKIP_PREFIXES = (
+    "/",
+    "谢谢",
+    "好的",
+    "好",
+    "收到",
+    "继续",
+    "开始全自动",
+    "需求已经说完",
+    "需求已经阐述完成",
+)
 
 
 @dataclass(slots=True)
@@ -161,6 +172,34 @@ def _foreground_hard_timeout(orch: Orchestrator | None = None) -> float:
     return FOREGROUND_HARD_KILL_TIMEOUT_SECONDS
 
 
+def _candidate_active_intent(text: str) -> str:
+    normalized = text.strip()
+    if len(normalized) < 12:
+        return ""
+    if any(normalized.startswith(prefix) for prefix in _INTENT_SKIP_PREFIXES):
+        return ""
+    return normalized
+
+
+async def _sync_foreground_handoff_from_user_message(
+    orch: Orchestrator,
+    key: SessionKey,
+    text: str,
+) -> None:
+    candidate = _candidate_active_intent(text)
+    if not candidate:
+        return
+    await orch.sync_foreground_state(
+        key,
+        active_intent=candidate,
+        active_repo=str(orch.paths.workspace),
+        active_constraints=(
+            "allow workspace read/write; allow local tests; "
+            "deny git push; deny release/publish; deny production ops; deny external high-side-effect APIs"
+        ),
+    )
+
+
 async def _prepare_normal(
     orch: Orchestrator,
     key: SessionKey,
@@ -174,6 +213,7 @@ async def _prepare_normal(
 
     Returns (request, session) so the caller can update the session after the CLI call.
     """
+    await _sync_foreground_handoff_from_user_message(orch, key, text)
     if provider_override is not None:
         req_provider, req_model = orch.cli_service.resolve_runtime_provider_target(
             provider_override,

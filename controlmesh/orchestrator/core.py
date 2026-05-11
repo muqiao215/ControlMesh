@@ -93,7 +93,7 @@ from controlmesh.routing.policy import detect_workunit_kind
 from controlmesh.routing.router import resolve_route
 from controlmesh.security import detect_suspicious_patterns
 from controlmesh.session import SessionKey, SessionManager
-from controlmesh.session.manager import SessionData
+from controlmesh.session.manager import ForegroundState, SessionData
 from controlmesh.session.named import NamedSessionRegistry
 from controlmesh.tasks.hub import _route_candidate_summary
 from controlmesh.tasks.models import TaskEntry
@@ -510,6 +510,44 @@ class Orchestrator:
     ) -> list[TranscriptTurn]:
         """Read recent visible transcript turns for a frontstage session."""
         return await asyncio.to_thread(self._transcripts.read_recent, key, limit=limit)
+
+    async def get_foreground_state(self, key: SessionKey) -> ForegroundState:
+        """Return the lightweight frontstage task handoff state for one session."""
+        session = await self._sessions.get_active(key)
+        if session is None:
+            return ForegroundState()
+        return ForegroundState(
+            active_intent=session.foreground_state.active_intent,
+            active_repo=session.foreground_state.active_repo,
+            active_constraints=session.foreground_state.active_constraints,
+        )
+
+    async def sync_foreground_state(
+        self,
+        key: SessionKey,
+        *,
+        active_intent: str | None = None,
+        active_repo: str | None = None,
+        active_constraints: str | None = None,
+    ) -> ForegroundState:
+        """Persist the lightweight frontstage task handoff state for one session."""
+        session, _is_new = await self._sessions.resolve_session(
+            key,
+            provider=self._config.provider,
+            model=self._config.model,
+            preserve_existing_target=True,
+        )
+        await self._sessions.sync_foreground_state(
+            session,
+            active_intent=active_intent,
+            active_repo=active_repo,
+            active_constraints=active_constraints,
+        )
+        return ForegroundState(
+            active_intent=session.foreground_state.active_intent,
+            active_repo=session.foreground_state.active_repo,
+            active_constraints=session.foreground_state.active_constraints,
+        )
 
     async def _route_message(self, dispatch: _MessageDispatch) -> OrchestratorResult:
         result = await self._command_registry.dispatch(

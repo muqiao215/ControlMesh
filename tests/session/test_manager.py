@@ -230,6 +230,29 @@ async def test_session_data_defaults() -> None:
     assert s.message_count == 0
     assert s.total_cost_usd == 0.0
     assert s.total_tokens == 0
+    assert s.foreground_state.active_intent == ""
+
+
+async def test_sync_foreground_state_persists_without_touching_counters(tmp_path: Path) -> None:
+    mgr = _make_manager(tmp_path)
+    session, _ = await mgr.resolve_session(key=SessionKey(chat_id=1))
+    await mgr.update_session(session, cost_usd=0.02, tokens=20)
+
+    await mgr.sync_foreground_state(
+        session,
+        active_intent="Refactor /mesh handoff semantics",
+        active_repo="/repo",
+        active_constraints="local only",
+    )
+
+    reloaded = await mgr.get_active(SessionKey(chat_id=1))
+    assert reloaded is not None
+    assert reloaded.message_count == 1
+    assert reloaded.total_cost_usd == pytest.approx(0.02)
+    assert reloaded.total_tokens == 20
+    assert reloaded.foreground_state.active_intent == "Refactor /mesh handoff semantics"
+    assert reloaded.foreground_state.active_repo == "/repo"
+    assert reloaded.foreground_state.active_constraints == "local only"
 
 
 async def test_model_update_without_provider_switch(tmp_path: Path) -> None:

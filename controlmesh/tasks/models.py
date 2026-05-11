@@ -276,3 +276,5 @@ class TaskResult:
     repo_root: str = ""
     tool_use_id: str = ""
     evaluation: EvaluationResult | None = None
+    artifact_protocol_status: str = ""
+    warnings: tuple[str, ...] = ()

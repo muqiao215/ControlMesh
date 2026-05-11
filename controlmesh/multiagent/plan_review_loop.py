@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from uuid import uuid4
 from typing import TYPE_CHECKING, Any
 
+from controlmesh.cli.types import AgentRequest
 from controlmesh.multiagent.release_gate import (
     claim_executor,
     executed_artifact_path,
@@ -14,18 +17,323 @@ from controlmesh.multiagent.release_gate import (
     mark_executed,
     mark_gate_approved,
 )
-from controlmesh.planning_files import plan_dir_for, update_phase_state
+from controlmesh.planning_files import PlanPhase, create_plan_files, plan_dir_for, update_phase_state
+from controlmesh.session.manager import ForegroundState
 from controlmesh.tasks.models import EvaluationFinding, EvaluationResult, TaskResult, TaskSubmit
 
 if TYPE_CHECKING:
     from controlmesh.orchestrator.core import Orchestrator
+    from controlmesh.history.models import TranscriptTurn
     from controlmesh.session.key import SessionKey
 
 
 _CONTROLLER_MODE = "agents_review_loop"
+_MESH_PHASE_LIMIT = 5
 _RECOGNIZED_PHASE_STATUSES = {"pending", "running", "completed", "ask", "repair"}
 _REPAIR_FEEDBACK_WAITING = "repair_feedback_waiting"
 _REVIEWS_FILENAME = "REVIEWS.jsonl"
+_MESH_CLARIFY_TEXT = "你要把哪件事切到自动执行？一句话即可；我会自己拆计划、找文件、跑验证。"
+_MESH_BOUNDARY = {
+    "workspace_read": True,
+    "workspace_write": True,
+    "local_tests": True,
+    "git_push": False,
+    "release_publish": False,
+    "production_ops": False,
+    "external_high_side_effect_api": False,
+}
+_MESH_BOUNDARY_LINES = (
+    "allow: read current workspace",
+    "allow: write current repository files",
+    "allow: run local tests",
+    "deny: git push",
+    "deny: release / publish",
+    "deny: production server operations",
+    "deny: external high-side-effect APIs",
+)
+_MESH_HANDOFF_HINTS = (
+    "开始全自动",
+    "开始自动运行",
+    "开始自动执行",
+    "切到自动执行",
+    "切换到自动执行",
+    "开始全自动运行",
+    "需求已经说完",
+    "需求已经阐述完成",
+)
+
+
+@dataclass(frozen=True, slots=True)
+class MeshWorkflowStart:
+    """Controller-facing summary for a newly started /mesh workflow."""
+
+    plan_id: str
+    objective: str
+    phase_count: int
+    active_repo: str = ""
+    active_constraints: str = ""
+    current_phase_id: str = ""
+    current_phase_task_id: str = ""
+
+
+def mesh_clarification_text() -> str:
+    """Return the one-line clarification text for bare /mesh handoff."""
+    return _MESH_CLARIFY_TEXT
+
+
+def _mesh_handoff_text(text: str) -> bool:
+    normalized = text.strip()
+    if not normalized:
+        return True
+    return any(hint in normalized for hint in _MESH_HANDOFF_HINTS)
+
+
+async def _resolve_mesh_objective(
+    orch: Orchestrator,
+    key: SessionKey,
+    request_text: str,
+) -> tuple[str, ForegroundState]:
+    prompt = request_text.strip()
+    if prompt and not _mesh_handoff_text(prompt):
+        state = await orch.sync_foreground_state(
+            key,
+            active_intent=prompt,
+            active_repo=str(orch.paths.workspace),
+            active_constraints=(
+                "allow workspace read/write; allow local tests; "
+                "deny git push; deny release/publish; deny production ops; deny external high-side-effect APIs"
+            ),
+        )
+        return prompt, state
+    state = await orch.get_foreground_state(key)
+    return state.active_intent.strip(), state
+
+
+def _new_mesh_plan_id() -> str:
+    return f"mesh-{uuid4().hex[:8]}"
+
+
+def _default_mesh_phases(objective: str) -> tuple[PlanPhase, ...]:
+    objective_summary = objective.strip() or "the requested work"
+    return (
+        PlanPhase(
+            id="phase-001",
+            title="Inspect relevant files and constraints",
+            workunit_kind="repo_audit",
+            allowed_edit=False,
+            metadata={"objective": objective_summary},
+        ),
+        PlanPhase(
+            id="phase-002",
+            title="Implement bounded changes",
+            workunit_kind="phase_execution",
+            allowed_edit=True,
+            metadata={"objective": objective_summary},
+        ),
+        PlanPhase(
+            id="phase-003",
+            title="Run verification and summarize remaining risk",
+            workunit_kind="test_execution",
+            allowed_edit=False,
+            metadata={"objective": objective_summary},
+        ),
+    )
+
+
+def _build_plan_markdown(objective: str, phases: tuple[PlanPhase, ...]) -> str:
+    lines = [
+        f"# Mesh Plan: {objective}",
+        "",
+        "## Goal",
+        objective,
+        "",
+        "## Mode",
+        "bounded_auto",
+        "",
+        "## Boundaries",
+    ]
+    lines.extend(f"- {line}" for line in _MESH_BOUNDARY_LINES)
+    lines.extend(["", "## Phases"])
+    for index, phase in enumerate(phases, start=1):
+        lines.extend(
+            [
+                f"### Phase {index}: {phase.title}",
+                f"- id: {phase.id}",
+                f"- workunit_kind: {phase.workunit_kind}",
+                f"- allowed_edit: {'true' if phase.allowed_edit else 'false'}",
+                "- status: pending",
+                "",
+            ]
+        )
+    return "\n".join(lines).rstrip()
+
+
+def _extract_json_object(raw: str) -> dict[str, Any]:
+    text = raw.strip()
+    if not text:
+        return {}
+    candidates = [text]
+    if "```" in text:
+        for chunk in text.split("```"):
+            candidate = chunk.strip()
+            if candidate.startswith("json"):
+                candidate = candidate[4:].strip()
+            if candidate.startswith("{") and candidate.endswith("}"):
+                candidates.append(candidate)
+    for candidate in candidates:
+        try:
+            payload = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            return payload
+    start = text.find("{")
+    end = text.rfind("}")
+    if start >= 0 and end > start:
+        try:
+            payload = json.loads(text[start : end + 1])
+        except json.JSONDecodeError:
+            return {}
+        return payload if isinstance(payload, dict) else {}
+    return {}
+
+
+def _coerce_mesh_phase(index: int, raw: dict[str, Any], objective: str) -> PlanPhase:
+    phase_id = str(raw.get("id") or f"phase-{index:03d}").strip() or f"phase-{index:03d}"
+    title = str(raw.get("title") or phase_id).strip() or phase_id
+    workunit_kind = str(raw.get("workunit_kind") or "phase_execution").strip() or "phase_execution"
+    route = str(raw.get("route") or "auto").strip() or "auto"
+    provider = str(raw.get("provider") or "").strip()
+    model = str(raw.get("model") or "").strip()
+    metadata = dict(raw.get("metadata") or {})
+    metadata.setdefault("objective", objective)
+    allowed_edit = bool(raw.get("allowed_edit", workunit_kind == "phase_execution"))
+    return PlanPhase(
+        id=phase_id,
+        title=title,
+        workunit_kind=workunit_kind,
+        route=route,
+        provider=provider,
+        model=model,
+        metadata=metadata,
+        allowed_edit=allowed_edit,
+        status="pending",
+    )
+
+
+def _parse_mesh_planner_output(
+    objective: str,
+    raw: str,
+) -> tuple[str, tuple[PlanPhase, ...]]:
+    payload = _extract_json_object(raw)
+    phase_items = payload.get("phases")
+    phases: tuple[PlanPhase, ...] = ()
+    if isinstance(phase_items, list):
+        normalized = [
+            _coerce_mesh_phase(index, item, objective)
+            for index, item in enumerate(phase_items[:_MESH_PHASE_LIMIT], start=1)
+            if isinstance(item, dict)
+        ]
+        phases = tuple(normalized)
+    if not phases:
+        phases = _default_mesh_phases(objective)
+    plan_markdown = str(payload.get("plan_markdown") or "").strip()
+    if not plan_markdown:
+        plan_markdown = _build_plan_markdown(objective, phases)
+    return plan_markdown, phases
+
+
+def _plan_with_files_foreground_prompt(plan_id: str, objective: str, repo_root: str) -> str:
+    boundary_lines = "\n".join(f"- {line}" for line in _MESH_BOUNDARY_LINES)
+    return (
+        "You are invoking ControlMesh plan_with_files in the foreground for /mesh.\n"
+        "Produce a bounded plan_with_files result for later phase execution. "
+        "Respond as JSON only.\n\n"
+        f"Plan id: {plan_id}\n"
+        f"Repository root: {repo_root}\n"
+        f"Objective: {objective}\n\n"
+        "Constraints:\n"
+        "- Produce explicit phases.\n"
+        f"- Phase count must be between 1 and {_MESH_PHASE_LIMIT}.\n"
+        "- Keep the plan bounded to local workspace edits and local verification.\n"
+        "- Do not include git push, publish, release, production operations, or external side effects.\n"
+        "- Prefer repo_audit for read-only discovery, phase_execution for edits, and test_execution for verification.\n"
+        "- The phases will later execute through TaskHub one by one.\n\n"
+        "Boundary:\n"
+        f"{boundary_lines}\n\n"
+        "Return JSON with this schema:\n"
+        "{\n"
+        '  "plan_markdown": "markdown string",\n'
+        '  "phases": [\n'
+        "    {\n"
+        '      "id": "phase-001",\n'
+        '      "title": "short title",\n'
+        '      "workunit_kind": "repo_audit | phase_execution | test_execution | code_review",\n'
+        '      "route": "auto",\n'
+        '      "provider": "",\n'
+        '      "model": "",\n'
+        '      "allowed_edit": true,\n'
+        '      "metadata": {"notes": "optional"}\n'
+        "    }\n"
+        "  ]\n"
+        "}\n"
+    )
+
+
+async def run_plan_with_files_foreground(
+    orch: Orchestrator,
+    key: SessionKey,
+    *,
+    plan_id: str,
+    objective: str,
+) -> tuple[str, tuple[PlanPhase, ...]]:
+    repo_root = str(getattr(orch.paths, "workspace", ""))
+    cli_service = getattr(orch, "cli_service", None)
+    resolve_runtime_target = getattr(orch, "resolve_runtime_target", None)
+    if cli_service is None or not callable(getattr(cli_service, "execute", None)) or not callable(resolve_runtime_target):
+        phases = _default_mesh_phases(objective)
+        return _build_plan_markdown(objective, phases), phases
+
+    model, provider = resolve_runtime_target(getattr(orch._config, "model", None))
+    request = AgentRequest(
+        prompt=_plan_with_files_foreground_prompt(plan_id, objective, repo_root),
+        model_override=model,
+        provider_override=provider,
+        chat_id=key.chat_id,
+        topic_id=key.topic_id,
+        process_label=f"plan_with_files:{plan_id}",
+        timeout_seconds=90.0,
+        hard_timeout_seconds=120.0,
+    )
+    response = await cli_service.execute(request)
+    if bool(getattr(response, "timed_out", False)) or bool(getattr(response, "is_error", False)):
+        phases = _default_mesh_phases(objective)
+        return _build_plan_markdown(objective, phases), phases
+    return _parse_mesh_planner_output(objective, str(getattr(response, "result", "") or ""))
+
+
+def _mesh_started_text(start: MeshWorkflowStart) -> str:
+    lines = [
+        "ControlMesh auto-run started.",
+        f"- plan: {start.plan_id}",
+        f"- objective: {start.objective}",
+    ]
+    if start.active_repo:
+        lines.append(f"- repo: {start.active_repo}")
+    lines.extend(
+        [
+        "- boundary: bounded_auto",
+        ]
+    )
+    lines.extend(f"  - {line}" for line in _MESH_BOUNDARY_LINES)
+    lines.append(f"- plan status: ready ({start.phase_count} phase{'s' if start.phase_count != 1 else ''})")
+    if start.current_phase_id and start.current_phase_task_id:
+        lines.append(f"- phase 1: `{start.current_phase_id}` running via TaskHub task `{start.current_phase_task_id}`")
+    elif start.current_phase_id:
+        lines.append(f"- phase 1: `{start.current_phase_id}` prepared")
+    else:
+        lines.append("- phase 1: no runnable phase created")
+    return "\n".join(lines)
 
 
 def _command_for(prefix: str, action: str, plan_id: str) -> str:
@@ -437,43 +745,58 @@ async def create_mesh_workflow(
     request_text: str,
     *,
     source_command: str = "/mesh",
-) -> tuple[str, str]:
-    """Create a plan_with_files task from /mesh workflow input."""
+) -> MeshWorkflowStart:
+    """Create a foreground-authored phased workflow from /mesh input."""
     if orch.task_hub is None:
         raise ValueError("TaskHub is not enabled.")
-    prompt = request_text.strip()
-    if not prompt:
-        raise ValueError(f"Provide a workflow request after {source_command}.")
-    submit = TaskSubmit(
-        chat_id=key.chat_id,
-        prompt=prompt,
-        message_id=0,
-        thread_id=key.topic_id,
-        parent_agent="main",
-        transport=key.transport,
-        name=f"mesh workflow: {prompt[:48]}",
-        route="auto",
-        workunit_kind="plan_with_files",
-        evaluator="foreground",
+    objective, foreground_state = await _resolve_mesh_objective(orch, key, request_text)
+    if not objective:
+        raise ValueError(mesh_clarification_text())
+    plan_id = _new_mesh_plan_id()
+    plan_markdown, phases = await run_plan_with_files_foreground(
+        orch,
+        key,
+        plan_id=plan_id,
+        objective=objective,
     )
-    task_id = orch.task_hub.submit(submit)
-    plan_id = task_id
+    phases = phases[:_MESH_PHASE_LIMIT]
+    create_plan_files(
+        orch.paths.plans_dir,
+        plan_id=plan_id,
+        plan_markdown=plan_markdown,
+        phases=phases,
+        status="ready_for_implementation" if phases else "ready_without_phases",
+    )
     _set_controller_state(
         orch,
         plan_id,
-        status="planning",
+        status="ready_for_implementation" if phases else "ready_without_phases",
         source_transport=key.transport,
         source_chat_id=key.chat_id,
         source_topic_id=key.topic_id,
     )
-    return task_id, plan_id
+    current_phase_id = ""
+    current_phase_task_id = ""
+    first_phase = _next_phase(orch, plan_id)
+    if first_phase is not None:
+        current_phase_id = str(first_phase.get("id") or "")
+        current_phase_task_id = await submit_phase_execution(orch, plan_id=plan_id, phase=first_phase, key=key)
+    return MeshWorkflowStart(
+        plan_id=plan_id,
+        objective=objective,
+        phase_count=len(phases),
+        active_repo=foreground_state.active_repo,
+        active_constraints=foreground_state.active_constraints,
+        current_phase_id=current_phase_id,
+        current_phase_task_id=current_phase_task_id,
+    )
 
 
 async def create_agents_plan(
     orch: Orchestrator,
     key: SessionKey,
     request_text: str,
-) -> tuple[str, str]:
+) -> MeshWorkflowStart:
     """Backward-compatible wrapper for older /agents workflow invocations."""
     return await create_mesh_workflow(orch, key, request_text, source_command="/agents")
 
@@ -577,12 +900,8 @@ async def handle_task_result(orch: Orchestrator, result: TaskResult) -> str | No
             _set_controller_state(orch, plan_id, status="ready_without_phases")
             return f"Plan `{plan_id}` was created but has no pending phases to execute."
         task_id = await submit_phase_execution(orch, plan_id=plan_id, phase=phase)
-        return (
-            f"ControlMesh workflow created\n\n"
-            f"Plan: {plan_id}\n"
-            f"Phase 1 is now running in background.\n"
-            f"- task: {task_id}"
-        )
+        phase_id = str(phase.get("id") or "")
+        return f"Plan `{plan_id}` phase `{phase_id}` started as task `{task_id}`."
 
     if entry.phase_id and entry.phase_metadata.get("gate_kind") == "release_publish":
         gate = _active_publish_gate(orch, plan_id)

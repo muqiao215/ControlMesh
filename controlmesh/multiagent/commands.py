@@ -11,6 +11,8 @@ from controlmesh.multiagent.plan_review_loop import (
     artifacts_text,
     cancel_workflow,
     create_mesh_workflow,
+    mesh_clarification_text,
+    _mesh_started_text,
     repair_current_phase,
     score_current_phase,
     workflow_status_text,
@@ -35,15 +37,6 @@ _STATUS_EMOJI = {
 def _workflow_usage(prefix: str = "/mesh") -> str:
     return (
         f"Usage: {prefix} <request> | run | status | approve | repair | score | cancel | artifacts"
-    )
-
-
-def _workflow_started_text(task_id: str, plan_id: str) -> str:
-    return (
-        "ControlMesh workflow created.\n"
-        f"- task: {task_id}\n"
-        f"- plan: {plan_id}\n"
-        "- next: planning runs in background, then phase 1 will start automatically"
     )
 
 
@@ -110,9 +103,9 @@ async def _cmd_agents_compat(
     if action == "run":
         if len(parts) < 3 or not parts[2].strip():
             return OrchestratorResult(text="Usage: /agents run <request>")
-        task_id, plan_id = await create_mesh_workflow(orch, key, parts[2], source_command="/agents")
+        start = await create_mesh_workflow(orch, key, parts[2], source_command="/agents")
         return OrchestratorResult(
-            text=f"{_workflow_started_text(task_id, plan_id)}\n\nTip: `/agents` is now a compatibility path. Use `/mesh` for phased workflows."
+            text=f"{_mesh_started_text(start)}\n\nTip: `/agents` is now a compatibility path. Use `/mesh` for phased workflows."
         )
 
     if action == "approve":
@@ -133,14 +126,14 @@ async def _cmd_agents_compat(
             return OrchestratorResult(text="Usage: /agents status <plan_id>")
         return OrchestratorResult(text=workflow_status_text(orch, parts[2].strip(), command_prefix="/mesh"))
 
-    task_id, plan_id = await create_mesh_workflow(
+    start = await create_mesh_workflow(
         orch,
         key,
         text.removeprefix("/agents").strip(),
         source_command="/agents",
     )
     return OrchestratorResult(
-        text=f"{_workflow_started_text(task_id, plan_id)}\n\nTip: `/agents` is now a compatibility path. Use `/mesh` for phased workflows."
+        text=f"{_mesh_started_text(start)}\n\nTip: `/agents` is now a compatibility path. Use `/mesh` for phased workflows."
     )
 
 
@@ -149,16 +142,22 @@ async def cmd_mesh(orch: Orchestrator, key: SessionKey, text: str) -> Orchestrat
     raw = text.strip()
     parts = raw.split(None, 3)
     if raw == "/mesh":
-        return OrchestratorResult(text="Usage: /mesh <request>")
+        return OrchestratorResult(text=mesh_clarification_text())
     if len(parts) < 2:
         return OrchestratorResult(text=_workflow_usage("/mesh"))
 
     action = parts[1].strip().lower()
+    async def _start_mesh(prompt: str) -> OrchestratorResult:
+        try:
+            start = await create_mesh_workflow(orch, key, prompt, source_command="/mesh")
+        except ValueError as exc:
+            return OrchestratorResult(text=str(exc))
+        return OrchestratorResult(text=_mesh_started_text(start))
+
     if action == "run":
         if len(parts) < 3 or not parts[2].strip():
-            return OrchestratorResult(text="Usage: /mesh run <request>")
-        task_id, plan_id = await create_mesh_workflow(orch, key, parts[2], source_command="/mesh")
-        return OrchestratorResult(text=_workflow_started_text(task_id, plan_id))
+            return OrchestratorResult(text=mesh_clarification_text())
+        return await _start_mesh(parts[2])
 
     if action == "status":
         if len(parts) < 3 or not parts[2].strip():
@@ -200,13 +199,7 @@ async def cmd_mesh(orch: Orchestrator, key: SessionKey, text: str) -> Orchestrat
             return OrchestratorResult(text="Usage: /mesh artifacts <plan_id>")
         return OrchestratorResult(text=artifacts_text(orch, parts[2].strip()))
 
-    task_id, plan_id = await create_mesh_workflow(
-        orch,
-        key,
-        raw.removeprefix("/mesh").strip(),
-        source_command="/mesh",
-    )
-    return OrchestratorResult(text=_workflow_started_text(task_id, plan_id))
+    return await _start_mesh(raw.removeprefix("/mesh").strip())
 
 
 async def cmd_agent_stop(orch: Orchestrator, _key: SessionKey, text: str) -> OrchestratorResult:

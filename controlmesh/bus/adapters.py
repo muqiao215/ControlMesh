@@ -241,7 +241,8 @@ def from_task_result(result: TaskResult) -> Envelope:
         delivery_text=delivery_text,
         output_policy=output_policy,
         status=result.status,
-        is_error=result.status == "failed",
+        is_error=result.status == "failed"
+        and getattr(result, "artifact_protocol_status", "") != "normalized",
         delivery=DeliveryMode.UNICAST,
         lock_mode=LockMode.NONE,
         needs_injection=False,
@@ -255,6 +256,8 @@ def from_task_result(result: TaskResult) -> Envelope:
             "parent_agent": result.parent_agent,
             "error": result.error,
             "failure_kind": getattr(result, "failure_kind", ""),
+            "artifact_protocol_status": getattr(result, "artifact_protocol_status", ""),
+            "warnings": list(getattr(result, "warnings", ()) or ()),
             "task_folder": result.task_folder,
         },
     )
@@ -263,6 +266,12 @@ def from_task_result(result: TaskResult) -> Envelope:
 def _summarized_only_fallback(result: TaskResult) -> str:
     """Return a non-raw fallback when a task omitted its delivery summary."""
     if result.status == "done":
+        if getattr(result, "artifact_protocol_status", "") == "normalized":
+            return (
+                f"Task `{result.task_id}` completed with warnings. "
+                "Worker artifacts required runtime normalization. "
+                "Use the generated TOOL_RESULT and task folder artifacts for the canonical result."
+            )
         return (
             f"Task `{result.task_id}` completed. "
             "Open the task artifacts for detailed logs and evidence."
@@ -292,6 +301,12 @@ def _summarized_only_fallback(result: TaskResult) -> str:
             )
         if failure_kind == "tool_execution_failed":
             return f"Task `{result.task_id}` failed during execution. Reason: {reason}"
+        if failure_kind == "artifact_protocol_failed" and getattr(result, "artifact_protocol_status", "") == "normalized":
+            return (
+                f"Task `{result.task_id}` completed with warnings. "
+                "Worker artifacts required runtime normalization. "
+                "Use the generated TOOL_RESULT and task folder artifacts for the canonical result."
+            )
         if failure_kind == "artifact_protocol_failed":
             return (
                 f"Task `{result.task_id}` completed, but its worker handoff did not match the required artifact format. "
