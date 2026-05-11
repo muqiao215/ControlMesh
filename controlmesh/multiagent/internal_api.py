@@ -75,6 +75,7 @@ class InternalAgentAPI:
 
         # Task routes (always registered)
         self._app.router.add_post("/tasks/create", self._handle_task_create)
+        self._app.router.add_post("/tasks/attach", self._handle_task_attach)
         self._app.router.add_post("/tasks/resume", self._handle_task_resume)
         self._app.router.add_post("/tasks/ask_parent", self._handle_task_ask_parent)
         self._app.router.add_get("/tasks/list", self._handle_task_list)
@@ -322,6 +323,7 @@ class InternalAgentAPI:
             expected_branch=data.get("expected_branch") or "",
             tool_use_id=data.get("tool_use_id") or "",
             external_task=bool(data.get("external_task", False)),
+            idempotency_key=data.get("idempotency_key") or "",
         )
 
         try:
@@ -330,6 +332,44 @@ class InternalAgentAPI:
             return web.json_response({"success": False, "error": str(exc)})
 
         return web.json_response({"success": True, "task_id": task_id})
+
+    async def _handle_task_attach(self, request: web.Request) -> web.Response:
+        """POST /tasks/attach — attach to an existing task without rerunning it."""
+        if self._task_hub is None:
+            return web.json_response(
+                {"success": False, "error": "Task system not available"},
+                status=503,
+            )
+
+        try:
+            data = await request.json()
+        except Exception:
+            return web.json_response(
+                {"success": False, "error": "Invalid JSON body"},
+                status=400,
+            )
+
+        task_id = data.get("task_id", "")
+        sender = data.get("from", "")
+        if not task_id:
+            return web.json_response(
+                {"success": False, "error": "Missing 'task_id' field"},
+                status=400,
+            )
+
+        try:
+            entry = self._task_hub.attach(task_id, parent_agent=sender)
+        except ValueError as exc:
+            return web.json_response({"success": False, "error": str(exc)})
+
+        return web.json_response(
+            {
+                "success": True,
+                "task_id": entry.task_id,
+                "status": entry.status,
+                "task": entry.to_dict(),
+            }
+        )
 
     async def _handle_task_resume(self, request: web.Request) -> web.Response:
         """POST /tasks/resume — resume a completed task with a follow-up.

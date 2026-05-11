@@ -23,13 +23,14 @@ logger = logging.getLogger(__name__)
 _PROMPT_PREVIEW_LEN = 80
 _RESULT_PREVIEW_LEN = 200
 _FINISHED_STATUSES = frozenset({"done", "failed", "cancelled"})
+_ACTIVE_STATUSES = frozenset({"running", "waiting", "detached", "recovering", "stale"})
 
 
 class TaskRegistry:
     """Persistent registry for background task metadata.
 
     Follows the same atomic-JSON pattern as ``NamedSessionRegistry``.
-    On load, stale ``"running"`` entries are downgraded to ``"failed"``.
+    On load, stale in-progress entries are downgraded to ``"stale"``.
     """
 
     def __init__(self, registry_path: Path, tasks_dir: Path) -> None:
@@ -49,10 +50,10 @@ class TaskRegistry:
             except (KeyError, TypeError):
                 logger.warning("Skipping corrupt task entry: %s", raw)
                 continue
-            if entry.status == "running":
-                entry.status = "failed"
-                entry.error = "Bot restarted while task was running"
-                logger.info("Downgraded stale running task %s to failed", entry.task_id)
+            if entry.status in {"running", "recovering"}:
+                entry.status = "stale"
+                entry.error = "Bot restarted while detached task state was unresolved"
+                logger.info("Downgraded stale in-progress task %s to stale", entry.task_id)
             self._entries[entry.task_id] = entry
 
     def cleanup_orphans(self) -> int:
@@ -146,6 +147,7 @@ class TaskRegistry:
             expected_branch=submit.expected_branch,
             tool_use_id=submit.tool_use_id,
             external_task=submit.external_task,
+            idempotency_key=submit.idempotency_key,
             tasks_dir=str(resolved_dir),
             thread_id=submit.thread_id,
         )
@@ -171,9 +173,19 @@ class TaskRegistry:
                 return entry
         return None
 
+    def find_by_idempotency_key(self, key: str) -> TaskEntry | None:
+        """Find an existing task by its stable idempotency key."""
+        normalized = str(key or "").strip()
+        if not normalized:
+            return None
+        for entry in self._entries.values():
+            if entry.idempotency_key == normalized:
+                return entry
+        return None
+
     def list_active(self, chat_id: ChatRef | None = None) -> list[TaskEntry]:
         """Return tasks with status 'running'."""
-        entries = [e for e in self._entries.values() if e.status == "running"]
+        entries = [e for e in self._entries.values() if e.status in _ACTIVE_STATUSES]
         if chat_id is not None:
             entries = [e for e in entries if e.chat_id == chat_id]
         return sorted(entries, key=lambda e: e.created_at)

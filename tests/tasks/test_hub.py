@@ -113,6 +113,35 @@ class TestSubmit:
 
         await hub.shutdown()
 
+    async def test_idempotency_attach_bypasses_max_parallel(self, registry: TaskRegistry, tmp_path: Path) -> None:
+        started = asyncio.Event()
+        gate: asyncio.Future[object] = asyncio.Future()
+        cli = _make_cli_service()
+
+        async def _execute_forever(_request: object) -> object:
+            started.set()
+            return await gate
+
+        cli.execute = AsyncMock(side_effect=_execute_forever)
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=cli,
+            config=_make_config(max_parallel=1),
+        )
+        submit = _submit(prompt="run once", name="Run once")
+        submit.idempotency_key = "taskhub:run-once"
+
+        task_id = hub.submit(submit)
+        await asyncio.wait_for(started.wait(), timeout=1)
+        attached_id = hub.submit(submit)
+
+        assert attached_id == task_id
+        assert cli.execute.await_count == 1
+
+        gate.cancel()
+        await hub.cancel(task_id)
+
     async def test_persists_explicit_topology_selection(self, registry: TaskRegistry, tmp_path: Path) -> None:
         hub = TaskHub(
             registry,
@@ -688,8 +717,10 @@ class TestRunAndDeliver:
         assert delivered[0].task_id == task_id
         assert delivered[0].status == "done"
         assert delivered[0].result_text.startswith("task output")
+        assert "attach_task.py" in delivered[0].result_text
         assert "resume_task.py" in delivered[0].result_text  # resume hint appended
         assert delivered[0].delivery_text.startswith("task output")
+        assert "attach_task.py" not in delivered[0].delivery_text
         assert "resume_task.py" not in delivered[0].delivery_text
         assert f"Task id: `{task_id}`" in delivered[0].delivery_text
         assert delivered[0].name == "Test Task"
@@ -713,7 +744,10 @@ class TestRunAndDeliver:
                 "## Evaluator Verdict",
                 "- decision: `accept`",
                 "---",
-                "To continue this task's conversation, use:",
+                "To inspect current state without rerunning, use:",
+                "python3 tools/task_tools/attach_task.py abc123",
+                "",
+                "To resume follow-up work in the same background session, use:",
                 'python3 tools/task_tools/resume_task.py abc123 "follow-up"',
             ]
             + [f"log line {idx}" for idx in range(200)]
@@ -755,11 +789,96 @@ class TestRunAndDeliver:
         assert "Implemented the scoped fix" in direct
         assert "CONTENT FROM TASKMEMORY.MD" not in direct
         assert "Evaluator Verdict" not in direct
+        assert "attach_task.py" not in direct
         assert "resume_task.py" not in direct
         assert "log line 199" not in direct
         assert delivered[0].result_text != direct
         assert "CONTENT FROM TASKMEMORY.MD" in delivered[0].result_text
+        assert "attach_task.py" in delivered[0].result_text
         assert "resume_task.py" in delivered[0].result_text
+
+        await hub.shutdown()
+
+    async def test_reconcile_recovers_done_detached_task_and_delivers_once(
+        self, registry: TaskRegistry, tmp_path: Path
+    ) -> None:
+        delivered: list[TaskResult] = []
+        paths = ControlMeshPaths(controlmesh_home=tmp_path / "home")
+        hub = TaskHub(
+            registry,
+            paths,
+            cli_service=_make_cli_service(),
+            config=_make_config(),
+        )
+        hub.set_result_handler("main", AsyncMock(side_effect=delivered.append))
+
+        submit = _submit(prompt="recover detached result", name="Recover task")
+        submit.tool_use_id = "toolu_bg_task_recover"
+        entry = registry.create(submit, "claude", "opus")
+        registry.update_status(entry.task_id, "stale", session_id="sess-recover")
+        task_dir = registry.task_folder(entry.task_id)
+        (task_dir / "RESULT.md").write_text("# Recovered result\n\nRecovered after restart.\n", encoding="utf-8")
+        (task_dir / "TASKMEMORY.md").write_text("checkpoint notes\n", encoding="utf-8")
+        (task_dir / "TOOL_USE.json").write_text(
+            json.dumps({"tool_use_id": "toolu_bg_task_recover", "task_id": entry.task_id}),
+            encoding="utf-8",
+        )
+        (task_dir / "TOOL_RESULT.json").write_text(
+            json.dumps(
+                {
+                    "role": "user",
+                    "consumed": False,
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "toolu_bg_task_recover",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": json.dumps(
+                                        {
+                                            "task_id": entry.task_id,
+                                            "status": "done",
+                                            "summary": "Recovered after restart.",
+                                            "artifact_refs": {
+                                                "result": str(task_dir / "RESULT.md"),
+                                                "evidence": str(task_dir / "EVIDENCE.json"),
+                                                "taskmemory": str(task_dir / "TASKMEMORY.md"),
+                                                "tool_result": str(task_dir / "TOOL_RESULT.json"),
+                                            },
+                                            "finding_count": 0,
+                                            "max_severity": "info",
+                                            "needs_controller_action": False,
+                                            "evaluation": None,
+                                        }
+                                    ),
+                                }
+                            ],
+                            "is_error": False,
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        changed = hub.reconcile_task_state(entry.task_id)
+        await asyncio.sleep(0.05)
+
+        assert changed is True
+        refreshed = registry.get(entry.task_id)
+        assert refreshed is not None
+        assert refreshed.status == "done"
+        assert len(delivered) == 1
+        assert "Recovered after restart." in delivered[0].delivery_text
+        assert "attach_task.py" in delivered[0].result_text
+        persisted = json.loads((task_dir / "TOOL_RESULT.json").read_text(encoding="utf-8"))
+        assert persisted["consumed"] is True
+
+        unchanged = hub.reconcile_task_state(entry.task_id)
+        await asyncio.sleep(0.05)
+        assert unchanged is False
+        assert len(delivered) == 1
 
         await hub.shutdown()
 

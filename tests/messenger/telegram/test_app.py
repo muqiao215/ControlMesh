@@ -156,6 +156,12 @@ def _make_callback_query(
     return cb
 
 
+async def _wait_frontstage_idle(tg_bot: MagicMock) -> None:
+    """Wait until detached Telegram frontstage queue tasks drain."""
+    while tg_bot._frontstage_run_loops:
+        await asyncio.gather(*list(tg_bot._frontstage_run_loops.values()), return_exceptions=True)
+
+
 # ---------------------------------------------------------------------------
 # Init & lifecycle (existing)
 # ---------------------------------------------------------------------------
@@ -517,12 +523,92 @@ class TestOnMessage:
         ) as mock_run:
             mock_run.return_value = "Non-streamed reply"
             await tg_bot._on_message(msg)
+            await _wait_frontstage_idle(tg_bot)
 
         mock_run.assert_awaited_once()
         dispatch = mock_run.call_args.args[0]
         assert dispatch.key.chat_id == 1
         assert dispatch.text == "Hello bot"
         assert dispatch.reply_to is msg
+
+    async def test_on_message_enqueues_and_returns_without_awaiting_frontstage_run(self) -> None:
+        config = _make_config(streaming_enabled=False)
+        tg_bot, _bot_instance = _make_tg_bot(config)
+        tg_bot._orchestrator = _make_orchestrator(handle_message_text="queued reply")
+        msg = _make_message(text="Hello bot")
+
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def _slow_run(_dispatch: object) -> str:
+            started.set()
+            await release.wait()
+            return "queued reply"
+
+        with patch(
+            "controlmesh.messenger.telegram.app.run_non_streaming_message",
+            new=AsyncMock(side_effect=_slow_run),
+        ) as mock_run:
+            await tg_bot._on_message(msg)
+            await asyncio.wait_for(started.wait(), timeout=1)
+            assert mock_run.await_count == 1
+            assert tg_bot._frontstage_run_loops
+            release.set()
+            await asyncio.gather(*tg_bot._frontstage_run_loops.values(), return_exceptions=True)
+
+    async def test_on_message_background_queue_preserves_session_order(self) -> None:
+        config = _make_config(streaming_enabled=False)
+        tg_bot, _bot_instance = _make_tg_bot(config)
+        tg_bot._orchestrator = _make_orchestrator(handle_message_text="queued reply")
+        msg1 = _make_message(message_id=10, text="first")
+        msg2 = _make_message(message_id=11, text="second")
+
+        order: list[str] = []
+        release_first = asyncio.Event()
+
+        async def _ordered_run(dispatch: object) -> str:
+            order.append(dispatch.text)
+            if dispatch.text == "first":
+                await release_first.wait()
+            return dispatch.text
+
+        with patch(
+            "controlmesh.messenger.telegram.app.run_non_streaming_message",
+            new=AsyncMock(side_effect=_ordered_run),
+        ):
+            await tg_bot._on_message(msg1)
+            await tg_bot._on_message(msg2)
+            await asyncio.sleep(0.05)
+            assert order == ["first"]
+            release_first.set()
+            await asyncio.gather(*tg_bot._frontstage_run_loops.values(), return_exceptions=True)
+
+        assert order == ["first", "second"]
+
+    async def test_on_message_background_queue_continues_after_failed_run(self) -> None:
+        config = _make_config(streaming_enabled=False)
+        tg_bot, _bot_instance = _make_tg_bot(config)
+        tg_bot._orchestrator = _make_orchestrator(handle_message_text="queued reply")
+        msg1 = _make_message(message_id=10, text="first")
+        msg2 = _make_message(message_id=11, text="second")
+
+        order: list[str] = []
+
+        async def _run_with_failure(dispatch: object) -> str:
+            order.append(dispatch.text)
+            if dispatch.text == "first":
+                raise RuntimeError("boom")
+            return dispatch.text
+
+        with patch(
+            "controlmesh.messenger.telegram.app.run_non_streaming_message",
+            new=AsyncMock(side_effect=_run_with_failure),
+        ):
+            await tg_bot._on_message(msg1)
+            await tg_bot._on_message(msg2)
+            await _wait_frontstage_idle(tg_bot)
+
+        assert order == ["first", "second"]
 
     async def test_routes_text_to_streaming(self) -> None:
         tg_bot, _ = _make_tg_bot()
@@ -533,6 +619,7 @@ class TestOnMessage:
 
         with patch.object(tg_bot, "_handle_streaming", new_callable=AsyncMock) as mock_stream:
             await tg_bot._on_message(msg)
+            await _wait_frontstage_idle(tg_bot)
 
         from controlmesh.session.key import SessionKey
 
@@ -562,6 +649,7 @@ class TestOnMessage:
 
         with patch.object(tg_bot, "_handle_streaming", new_callable=AsyncMock) as mock_stream:
             await tg_bot._on_message(msg)
+            await _wait_frontstage_idle(tg_bot)
 
         from controlmesh.session.key import SessionKey
 
@@ -704,6 +792,7 @@ class TestHandleStreaming:
         ):
             mock_non_stream.return_value = "Final reply"
             await tg_bot._on_message(msg)
+            await _wait_frontstage_idle(tg_bot)
 
         mock_stream.assert_not_awaited()
         mock_non_stream.assert_awaited_once()
@@ -1588,6 +1677,7 @@ class TestForumTopicPropagation:
         ) as mock_run:
             mock_run.return_value = "Reply"
             await tg_bot._on_message(msg)
+            await _wait_frontstage_idle(tg_bot)
 
         dispatch = mock_run.call_args.args[0]
         assert dispatch.thread_id == 55

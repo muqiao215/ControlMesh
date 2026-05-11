@@ -6,7 +6,9 @@ import asyncio
 import contextlib
 import logging
 import os
+from collections import deque
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit, urlunsplit
@@ -102,6 +104,16 @@ logger = logging.getLogger(__name__)
 
 _WELCOME_IMAGE = Path(__file__).resolve().parent / "controlmesh_images" / "welcome.png"
 _CAPTION_LIMIT = 1024
+
+
+@dataclass(slots=True)
+class _QueuedMessageRun:
+    """One frontstage Telegram message turn scheduled for detached execution."""
+
+    message: Message
+    key: SessionKey
+    text: str
+    thread_id: int | None
 
 # Backward-compatible patch points used by tests.
 TypingContext = _TypingContext
@@ -269,6 +281,8 @@ class TelegramBot:
         self._update_observer: UpdateObserver | None = None
         self._upgrade_lock = asyncio.Lock()
         self._group_audit_task: asyncio.Task[None] | None = None
+        self._frontstage_run_loops: dict[tuple[int, int | None], asyncio.Task[None]] = {}
+        self._frontstage_run_queues: dict[tuple[int, int | None], deque[_QueuedMessageRun]] = {}
 
         allowed = set(config.allowed_user_ids)
         allowed_groups = set(config.allowed_group_ids)
@@ -1380,11 +1394,73 @@ class TelegramBot:
 
         if self._config.scene.seen_reaction:
             await self._set_seen_reaction(message)
+        self._enqueue_frontstage_run(message, key, text, thread_id=thread_id)
 
-        if self._use_streaming_output():
-            await self._handle_streaming(message, key, text, thread_id=thread_id)
-        else:
-            await self._handle_non_streaming(message, key, text, thread_id=thread_id)
+    def _enqueue_frontstage_run(
+        self,
+        message: Message,
+        key: SessionKey,
+        text: str,
+        *,
+        thread_id: int | None = None,
+    ) -> None:
+        """Detach one incoming frontstage turn from the transport handler lifetime."""
+        lock_key = key.lock_key
+        queue = self._frontstage_run_queues.setdefault(lock_key, deque())
+        queue.append(
+            _QueuedMessageRun(
+                message=message,
+                key=key,
+                text=text,
+                thread_id=thread_id,
+            )
+        )
+        loop_task = self._frontstage_run_loops.get(lock_key)
+        if loop_task is None or loop_task.done():
+            self._frontstage_run_loops[lock_key] = asyncio.create_task(
+                self._run_frontstage_queue(lock_key),
+                name=f"tg-frontstage:{key.chat_id}:{key.topic_id or 0}",
+            )
+
+    async def _run_frontstage_queue(self, lock_key: tuple[int, int | None]) -> None:
+        """Drain one session-scoped Telegram run queue in the background."""
+        try:
+            while True:
+                queue = self._frontstage_run_queues.get(lock_key)
+                if not queue:
+                    return
+                item = queue.popleft()
+                if not queue:
+                    self._frontstage_run_queues.pop(lock_key, None)
+
+                async with self._sequential.get_lock(lock_key):
+                    try:
+                        if self._use_streaming_output():
+                            await self._handle_streaming(
+                                item.message,
+                                item.key,
+                                item.text,
+                                thread_id=item.thread_id,
+                            )
+                        else:
+                            await self._handle_non_streaming(
+                                item.message,
+                                item.key,
+                                item.text,
+                                thread_id=item.thread_id,
+                            )
+                    except Exception:
+                        logger.exception(
+                            "Detached Telegram frontstage run failed chat_id=%s topic_id=%s",
+                            item.key.chat_id,
+                            item.key.topic_id,
+                        )
+        except asyncio.CancelledError:
+            raise
+        finally:
+            current = self._frontstage_run_loops.get(lock_key)
+            if current is asyncio.current_task():
+                self._frontstage_run_loops.pop(lock_key, None)
 
     async def _set_seen_reaction(self, message: Message) -> None:
         """Set a seen reaction on the user message. Graceful degradation on failure."""
@@ -1639,6 +1715,10 @@ class TelegramBot:
     async def shutdown(self) -> None:
         await _cancel_task(self._restart_watcher)
         await _cancel_task(self._group_audit_task)
+        for task in list(self._frontstage_run_loops.values()):
+            await _cancel_task(task)
+        self._frontstage_run_loops.clear()
+        self._frontstage_run_queues.clear()
         if self._update_observer:
             await self._update_observer.stop()
         if self._orchestrator:

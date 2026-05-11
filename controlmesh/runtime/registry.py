@@ -175,6 +175,61 @@ class ProcessLeaseStore:
         processes.pop(lease_id, None)
         _write_mapping(self._path, "processes", processes)
 
+    def find_by_label(self, *, chat_id: object, label: str) -> dict[str, Any] | None:
+        processes = _read_mapping(self._path, "processes")
+        for lease in processes.values():
+            if not isinstance(lease, dict):
+                continue
+            if lease.get("chat_id") == chat_id and lease.get("label") == label:
+                return dict(lease)
+        return None
+
+    def set_status(
+        self,
+        *,
+        chat_id: object,
+        label: str,
+        pid: int | None,
+        status: str,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        processes = _read_mapping(self._path, "processes")
+        lease_id = self._lease_id(chat_id, label, pid)
+        lease = processes.get(lease_id)
+        if not isinstance(lease, dict):
+            return
+        lease["status"] = status
+        lease["heartbeat_at"] = _now()
+        if details:
+            for key, value in details.items():
+                lease[key] = value
+        _write_mapping(self._path, "processes", processes)
+
+    def mark_label_status(
+        self,
+        *,
+        chat_id: object,
+        label: str,
+        status: str,
+        details: dict[str, Any] | None = None,
+    ) -> bool:
+        processes = _read_mapping(self._path, "processes")
+        changed = False
+        for lease in processes.values():
+            if not isinstance(lease, dict):
+                continue
+            if lease.get("chat_id") != chat_id or lease.get("label") != label:
+                continue
+            lease["status"] = status
+            lease["heartbeat_at"] = _now()
+            if details:
+                for key, value in details.items():
+                    lease[key] = value
+            changed = True
+        if changed:
+            _write_mapping(self._path, "processes", processes)
+        return changed
+
     def reap_dead(self) -> int:
         processes = _read_mapping(self._path, "processes")
         removed = 0

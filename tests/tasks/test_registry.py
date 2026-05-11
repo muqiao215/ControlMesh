@@ -251,7 +251,7 @@ class TestLoadRecovery:
         )
         loaded = reg2.get(entry.task_id)
         assert loaded is not None
-        assert loaded.status == "failed"
+        assert loaded.status == "stale"
         assert "restarted" in loaded.error.lower()
 
 

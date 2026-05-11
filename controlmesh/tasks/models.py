@@ -48,6 +48,7 @@ class TaskSubmit:
     expected_branch: str = ""
     tool_use_id: str = ""
     external_task: bool = False
+    idempotency_key: str = ""
 
 
 @dataclass(slots=True)
@@ -61,7 +62,7 @@ class TaskEntry:
     prompt_preview: str
     provider: str
     model: str
-    status: str  # "running" | "done" | "failed" | "cancelled" | "waiting"
+    status: str  # running | done | failed | cancelled | waiting | detached | recovering | stale
     transport: str = "tg"
     topology: str = ""
     session_id: str = ""
@@ -97,6 +98,7 @@ class TaskEntry:
     expected_branch: str = ""
     tool_use_id: str = ""
     external_task: bool = False
+    idempotency_key: str = ""
     tasks_dir: str = ""  # Agent's tasks directory (for per-agent folder resolution)
     thread_id: TopicRef = None  # Forum topic ID (for routing results back to topic)
 
@@ -144,6 +146,7 @@ class TaskEntry:
             "expected_branch": self.expected_branch,
             "tool_use_id": self.tool_use_id,
             "external_task": self.external_task,
+            "idempotency_key": self.idempotency_key,
             "tasks_dir": self.tasks_dir,
         }
         if self.thread_id is not None:
@@ -195,6 +198,7 @@ class TaskEntry:
             expected_branch=d.get("expected_branch", ""),
             tool_use_id=d.get("tool_use_id", ""),
             external_task=bool(d.get("external_task", False)),
+            idempotency_key=d.get("idempotency_key", ""),
             tasks_dir=d.get("tasks_dir", ""),
             thread_id=d.get("thread_id"),
         )

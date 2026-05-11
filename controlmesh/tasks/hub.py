@@ -32,6 +32,7 @@ from controlmesh.runtime import (
     SlotManager,
     append_task_event,
 )
+from controlmesh.runtime.registry import ProcessLeaseStore, _pid_exists
 from controlmesh.routing.activation import (
     ActivationIntent,
     load_activation_policies,
@@ -225,16 +226,22 @@ class TaskHub:
         self._question_handlers: dict[str, QuestionHandler] = {}
         self._agent_chat_ids: dict[str, ChatRef] = {}
         self._maintenance_task: asyncio.Task[None] | None = None
+        self._reconcile_task: asyncio.Task[None] | None = None
         self._runtime_events = RuntimeEventStore(paths)
         self._agent_inbox = AgentInboxStore(paths)
         self._slots = SlotManager(paths)
         self._worktrees = RepoWorktreeManager(paths)
+        self._process_leases = ProcessLeaseStore(paths.runtime_processes_path)
 
     def start_maintenance(self) -> None:
         """Start periodic orphan cleanup (call once after bot startup)."""
         if self._maintenance_task is None:
             self._maintenance_task = asyncio.create_task(
                 self._maintenance_loop(), name="task-maintenance"
+            )
+        if self._reconcile_task is None:
+            self._reconcile_task = asyncio.create_task(
+                self._reconcile_loop(), name="task-reconcile"
             )
 
     @property
@@ -327,6 +334,17 @@ class TaskHub:
             resolved = self._agent_chat_ids.get(submit.parent_agent, 0)
             if resolved:
                 submit.chat_id = resolved
+
+        existing = self._registry.find_by_idempotency_key(submit.idempotency_key)
+        if existing is not None and existing.status not in _FINISHED:
+            self._append_runtime_lifecycle_event(existing, "task.lifecycle.attached")
+            logger.info(
+                "Task submit attached existing id=%s idempotency_key=%s status=%s",
+                existing.task_id,
+                submit.idempotency_key,
+                existing.status,
+            )
+            return existing.task_id
 
         active = sum(
             1
@@ -1004,10 +1022,7 @@ class TaskHub:
 
             # Append resume hint so the parent agent knows it can follow up
             if status == "done" and session_id:
-                result_text += (
-                    f"\n\n---\nTo continue this task's conversation, use:\n"
-                    f'python3 tools/task_tools/resume_task.py {entry.task_id} "your follow-up"'
-                )
+                result_text = _append_attach_resume_hint(result_text, entry.task_id, session_id)
 
             task_result = TaskResult(
                 task_id=entry.task_id,
@@ -1191,6 +1206,210 @@ class TaskHub:
                 result.task_id,
                 result.parent_agent,
             )
+
+    def reconcile_all_tasks(self) -> int:
+        reconciled = 0
+        for entry in self._registry.list_all():
+            if entry.status not in {"detached", "stale", "recovering"}:
+                continue
+            if self.reconcile_task_state(entry.task_id):
+                reconciled += 1
+        return reconciled
+
+    def reconcile_task_state(self, task_id: str) -> bool:
+        entry = self._registry.get(task_id)
+        if entry is None:
+            return False
+        if entry.status not in {"detached", "stale", "recovering"}:
+            return False
+
+        lease = self._process_leases.find_by_label(chat_id=entry.chat_id, label=f"task:{task_id}")
+        artifacts = self._artifact_paths(entry)
+        curated_result = _read_curated_result(artifacts.result)
+        tool_result = load_json(artifacts.tool_result)
+        if isinstance(tool_result, dict):
+            recovered = self._recover_terminal_result(entry, artifacts, tool_result, curated_result)
+            if recovered:
+                return True
+
+        if lease and isinstance(lease.get("pid"), int):
+            pid = int(lease["pid"])
+            if _pid_exists(pid):
+                if entry.status != "recovering":
+                    self._registry.update_status(task_id, "recovering", error="Detached worker still running")
+                    refreshed = self._registry.get(task_id)
+                    if refreshed is not None:
+                        self._append_runtime_lifecycle_event(
+                            refreshed,
+                            "task.lifecycle.recovering",
+                            status="recovering",
+                        )
+                    return True
+                return False
+
+        if curated_result:
+            elapsed = max(0.0, time.time() - entry.created_at)
+            recovered_result = TaskResult(
+                task_id=entry.task_id,
+                chat_id=entry.chat_id,
+                parent_agent=entry.parent_agent,
+                name=entry.name,
+                prompt_preview=entry.prompt_preview,
+                result_text=_append_attach_resume_hint(
+                    _append_taskmemory(curated_result, artifacts.taskmemory),
+                    entry.task_id,
+                    entry.session_id,
+                ),
+                delivery_text=_task_delivery_text(
+                    status="done",
+                    response_text=curated_result,
+                    result_path=artifacts.result,
+                    error="",
+                    task_id=entry.task_id,
+                    session_id=entry.session_id,
+                ),
+                status="done",
+                elapsed_seconds=elapsed,
+                provider=entry.provider,
+                model=entry.model,
+                transport=entry.transport,
+                session_id=entry.session_id,
+                task_folder=str(artifacts.folder),
+                original_prompt=entry.original_prompt,
+                thread_id=entry.thread_id,
+                repo_root=entry.repo_root,
+                tool_use_id=entry.tool_use_id,
+            )
+            self._finalize_reconciled_result(entry, recovered_result)
+            return True
+
+        if entry.status != "stale" or entry.error != "Detached worker no longer appears live; attach or resume to recover":
+            self._registry.update_status(
+                task_id,
+                "stale",
+                error="Detached worker no longer appears live; attach or resume to recover",
+            )
+            refreshed = self._registry.get(task_id)
+            if refreshed is not None:
+                self._append_runtime_lifecycle_event(
+                    refreshed,
+                    "task.lifecycle.stale",
+                    status="stale",
+                )
+            return True
+        return False
+
+    def _recover_terminal_result(
+        self,
+        entry: TaskEntry,
+        artifacts: _TaskArtifactPaths,
+        tool_result: dict[str, Any],
+        curated_result: str,
+    ) -> bool:
+        """Rebuild and deliver one terminal result from durable TOOL_RESULT.json."""
+        if bool(tool_result.get("consumed", False)):
+            return False
+        content = tool_result.get("content")
+        if not isinstance(content, list) or not content:
+            return False
+        block = content[0]
+        if not isinstance(block, dict):
+            return False
+        inner = block.get("content")
+        if not isinstance(inner, list) or not inner:
+            return False
+        first = inner[0]
+        if not isinstance(first, dict):
+            return False
+        payload_text = str(first.get("text") or "").strip()
+        if not payload_text:
+            return False
+        try:
+            payload = json.loads(payload_text)
+        except json.JSONDecodeError:
+            logger.warning("Recovered TOOL_RESULT.json for task %s had invalid payload", entry.task_id)
+            return False
+        if not isinstance(payload, dict):
+            return False
+
+        status = str(payload.get("status") or entry.status or "done")
+        if status not in _FINISHED:
+            return False
+        summary = str(payload.get("summary") or "").strip()
+        evaluation = _evaluation_result_from_payload(payload.get("evaluation"))
+        result_text = curated_result or summary or entry.result_preview or ""
+        result_text = _append_taskmemory(result_text, artifacts.taskmemory)
+        result_text = _append_attach_resume_hint(result_text, entry.task_id, entry.session_id)
+        elapsed = max(0.0, time.time() - entry.created_at)
+        error = entry.error
+        if status == "failed" and not error:
+            error = summary or "Recovered detached task failure"
+        recovered_result = TaskResult(
+            task_id=entry.task_id,
+            chat_id=entry.chat_id,
+            parent_agent=entry.parent_agent,
+            name=entry.name,
+            prompt_preview=entry.prompt_preview,
+            result_text=result_text,
+            delivery_text=_task_delivery_text(
+                status=status,
+                response_text=summary or curated_result,
+                result_path=artifacts.result,
+                error=error,
+                task_id=entry.task_id,
+                session_id=entry.session_id,
+            ),
+            status=status,
+            elapsed_seconds=elapsed,
+            provider=entry.provider,
+            model=entry.model,
+            transport=entry.transport,
+            session_id=entry.session_id,
+            error=error,
+            task_folder=str(artifacts.folder),
+            original_prompt=entry.original_prompt,
+            thread_id=entry.thread_id,
+            repo_root=entry.repo_root,
+            tool_use_id=entry.tool_use_id,
+            evaluation=evaluation,
+        )
+        tool_result["consumed"] = True
+        tool_result["consumed_at"] = datetime.now(UTC).isoformat()
+        atomic_json_save(artifacts.tool_result, tool_result)
+        self._finalize_reconciled_result(entry, recovered_result)
+        return True
+
+    def _finalize_reconciled_result(self, entry: TaskEntry, result: TaskResult) -> None:
+        """Commit and deliver one recovered detached-task terminal result."""
+        self._registry.update_status(
+            entry.task_id,
+            result.status,
+            session_id=result.session_id or entry.session_id,
+            completed_at=time.time(),
+            elapsed_seconds=result.elapsed_seconds,
+            error=result.error,
+            result_preview=(result.result_text or "")[:_RESULT_PREVIEW_LEN],
+        )
+        refreshed = self._registry.get(entry.task_id)
+        if refreshed is not None:
+            self._process_leases.mark_label_status(
+                chat_id=refreshed.chat_id,
+                label=f"task:{refreshed.task_id}",
+                status=result.status,
+                details={"task_id": refreshed.task_id, "session_id": result.session_id},
+            )
+            capture_task_result(
+                self._paths,
+                result,
+                completed_at=datetime.now(UTC),
+                taskmemory_path=self._artifact_paths(refreshed).taskmemory,
+            )
+            self._append_runtime_lifecycle_event(
+                refreshed,
+                "task.lifecycle.reconciled",
+                status=result.status,
+            )
+        asyncio.create_task(self._deliver(result), name=f"task-reconcile-deliver:{entry.task_id}")
 
     def _append_runtime_lifecycle_event(
         self,
@@ -1745,6 +1964,33 @@ def _evaluation_payload(evaluation: EvaluationResult | None) -> dict[str, object
     }
 
 
+def _evaluation_result_from_payload(payload: object) -> EvaluationResult | None:
+    """Deserialize controller-side evaluation from TOOL_RESULT payload."""
+    if not isinstance(payload, dict):
+        return None
+    findings_raw = payload.get("findings")
+    findings: list[EvaluationFinding] = []
+    if isinstance(findings_raw, list):
+        for item in findings_raw:
+            if not isinstance(item, dict):
+                continue
+            findings.append(
+                EvaluationFinding(
+                    severity=str(item.get("severity") or "info"),
+                    title=str(item.get("title") or ""),
+                    recommendation=str(item.get("recommendation") or ""),
+                )
+            )
+    return EvaluationResult(
+        score=int(payload.get("score") or 0),
+        decision=str(payload.get("decision") or ""),
+        summary=str(payload.get("summary") or ""),
+        max_severity=str(payload.get("max_severity") or "info"),
+        findings=tuple(findings),
+        artifact_path=str(payload.get("artifact_path") or ""),
+    )
+
+
 def _evaluation_result_from_verdict(
     verdict: EvaluatorVerdict | None,
     *,
@@ -1818,6 +2064,18 @@ def _append_evaluator_verdict(result_text: str, verdict: EvaluatorVerdict) -> st
         lines.append("- risks:")
         lines.extend(f"  - {item}" for item in verdict.risks)
     return "\n".join(lines)
+
+
+def _append_attach_resume_hint(result_text: str, task_id: str, session_id: str) -> str:
+    """Append controller guidance for attach vs resume semantics."""
+    if not session_id:
+        return result_text
+    return (
+        f"{result_text}\n\n---\nTo inspect current state without rerunning, use:\n"
+        f"python3 tools/task_tools/attach_task.py {task_id}\n\n"
+        f"To resume follow-up work in the same background session, use:\n"
+        f'python3 tools/task_tools/resume_task.py {task_id} "your follow-up"'
+    )
 
 
 _RESULT_TEMPLATE_TEXT = "Write the final worker-facing result here before finishing."
@@ -1905,6 +2163,7 @@ def _strip_internal_task_payload(text: str) -> str:
         "\n---\nCONTENT FROM TASKMEMORY.MD",
         "\n---\n## Evaluator Verdict",
         "\n---\nTo continue this task's conversation",
+        "\n---\nTo inspect current state without rerunning",
     )
     for marker in markers:
         idx = clean.find(marker)
