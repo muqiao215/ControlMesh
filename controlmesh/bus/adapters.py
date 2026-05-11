@@ -270,6 +270,28 @@ def _summarized_only_fallback(result: TaskResult) -> str:
     if result.status == "failed":
         reason = result.error or "unknown"
         failure_kind = getattr(result, "failure_kind", "") or ""
+        if failure_kind == "tool_result_missing":
+            return (
+                f"Task `{result.task_id}` finished execution, but no canonical TOOL_RESULT was available. "
+                f"Reason: {reason}"
+            )
+        if failure_kind == "tool_result_invalid":
+            return (
+                f"Task `{result.task_id}` completed, but its canonical TOOL_RESULT was invalid. "
+                f"Reason: {reason}"
+            )
+        if failure_kind == "tool_result_delivery_failed":
+            return (
+                f"Task `{result.task_id}` completed, but delivery of its canonical result degraded. "
+                f"Reason: {reason}"
+            )
+        if failure_kind == "tool_result_consumption_failed":
+            return (
+                f"Task `{result.task_id}` completed, but the canonical result could not be consumed cleanly. "
+                f"Reason: {reason}"
+            )
+        if failure_kind == "tool_execution_failed":
+            return f"Task `{result.task_id}` failed during execution. Reason: {reason}"
         if failure_kind == "artifact_protocol_failed":
             return (
                 f"Task `{result.task_id}` completed, but its worker handoff did not match the required artifact format. "
@@ -279,11 +301,6 @@ def _summarized_only_fallback(result: TaskResult) -> str:
         if failure_kind == "evaluation_failed":
             return (
                 f"Task `{result.task_id}` ran, but its review gate did not pass. "
-                f"Reason: {reason}"
-            )
-        if failure_kind == "delivery_failed":
-            return (
-                f"Task `{result.task_id}` finished, but result delivery degraded. "
                 f"Reason: {reason}"
             )
         return f"Task `{result.task_id}` failed. Reason: {reason}"

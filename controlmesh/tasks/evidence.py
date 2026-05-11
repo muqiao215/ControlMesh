@@ -12,7 +12,8 @@ from typing import Any
 _CANONICAL_KEYS = {"task_id", "workunit_kind", "status", "summary"}
 _SUMMARY_HEADINGS = ("## Summary", "# Summary")
 _VERIFICATION_HEADINGS = ("## Verification", "# Verification")
-_RESULT_FALLBACK_FILES = ("FINAL.md", "RESULT.md", "TASKMEMORY.md")
+_LEGACY_RESULT_FALLBACK_FILES = ("RESULT.md", "TASKMEMORY.md")
+_TOOL_RESULT_SCHEMA = "controlmesh.tool_result.v1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,39 +44,94 @@ class WorkUnitEvidence:
     risks: tuple[str, ...] = ()
     confidence: float = 0.0
     artifact_protocol_status: str = "canonical"
-    source_artifact: str = "EVIDENCE.json"
+    source_artifact: str = "generated/EVIDENCE.json"
+
+
+@dataclass(frozen=True, slots=True)
+class ParsedToolResult:
+    """Canonical TOOL_RESULT payload extracted from the ledger artifact."""
+
+    schema_version: str
+    task_id: str
+    tool_use_id: str
+    status: str
+    is_error: bool
+    summary: str
+    artifact_refs: tuple[str, ...]
+    evaluation: dict[str, Any] | None
+    failure_kind: str
+    raw_message: dict[str, Any]
+    payload: dict[str, Any]
+
+    @property
+    def valid(self) -> bool:
+        return bool(
+            self.schema_version == _TOOL_RESULT_SCHEMA
+            and self.task_id
+            and self.tool_use_id
+            and self.summary
+        )
+
+
+def generated_dir(task_folder: Path) -> Path:
+    """Return the runtime-generated artifact directory."""
+    return task_folder / "generated"
 
 
 def evidence_path(task_folder: Path) -> Path:
-    """Return the canonical evidence file path for a task folder."""
+    """Return the canonical generated evidence path."""
+    return generated_dir(task_folder) / "EVIDENCE.json"
+
+
+def legacy_evidence_path(task_folder: Path) -> Path:
+    """Return the legacy worker-facing evidence path."""
     return task_folder / "EVIDENCE.json"
 
 
 def result_path(task_folder: Path) -> Path:
-    """Return the worker result markdown path for a task folder."""
+    """Return the worker result markdown path."""
     return task_folder / "RESULT.md"
 
 
-def load_evidence(task_folder: Path) -> WorkUnitEvidence | None:
-    """Load WorkUnit evidence, normalizing noncanonical worker artifacts when possible."""
-    path = evidence_path(task_folder)
-    raw: dict[str, Any] | None = None
-    if path.is_file():
-        try:
-            loaded = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            loaded = None
-        if isinstance(loaded, dict):
-            raw = loaded
-            if _looks_canonical_mapping(raw):
-                evidence = _evidence_from_mapping(raw)
-                if evidence.summary.strip() or evidence.items:
-                    return evidence
+def tool_result_path(task_folder: Path) -> Path:
+    """Return the canonical TOOL_RESULT path."""
+    return task_folder / "TOOL_RESULT.json"
 
-    evidence = _normalize_evidence(task_folder, raw)
-    if evidence is not None:
-        _write_normalized_evidence(task_folder, evidence)
-    return evidence
+
+def load_tool_result(task_folder: Path) -> ParsedToolResult | None:
+    """Load and validate the canonical TOOL_RESULT ledger artifact."""
+    raw = _load_json_mapping(tool_result_path(task_folder))
+    if not raw:
+        return None
+    return _parse_tool_result_message(raw)
+
+
+def load_evidence(task_folder: Path) -> WorkUnitEvidence | None:
+    """Load generated evidence from TOOL_RESULT first, then legacy fallback."""
+    generated = _load_generated_evidence(task_folder)
+    if generated is not None:
+        return generated
+
+    parsed_tool_result = load_tool_result(task_folder)
+    if parsed_tool_result is not None:
+        if parsed_tool_result.valid:
+            evidence = _evidence_from_tool_result(task_folder, parsed_tool_result)
+            _write_generated_evidence(task_folder, evidence)
+            return evidence
+        return WorkUnitEvidence(
+            task_id=parsed_tool_result.task_id or task_folder.name,
+            workunit_kind=str(_load_json_mapping(task_folder / "WORKUNIT.json").get("workunit_kind") or ""),
+            status=_normalize_status(parsed_tool_result.status or "failed"),
+            summary="TOOL_RESULT.json exists but is invalid.",
+            confidence=0.0,
+            artifact_protocol_status="tool_result_invalid",
+            source_artifact="TOOL_RESULT.json",
+        )
+
+    legacy = _load_legacy_evidence(task_folder)
+    if legacy is not None:
+        _write_generated_evidence(task_folder, legacy)
+    return legacy
 
 
 def write_evidence_template(
@@ -84,14 +140,15 @@ def write_evidence_template(
     task_id: str,
     workunit_kind: str,
 ) -> Path:
-    """Create an empty evidence template when absent."""
-    path = evidence_path(task_folder)
+    """Create a legacy evidence template when absent for backward compatibility."""
+    path = legacy_evidence_path(task_folder)
     if not path.exists():
         payload = WorkUnitEvidence(
             task_id=task_id,
             workunit_kind=workunit_kind,
             status="unknown",
             summary="",
+            source_artifact="EVIDENCE.json",
         )
         path.write_text(json.dumps(asdict(payload), indent=2), encoding="utf-8")
     return path
@@ -105,7 +162,7 @@ def evidence_quality(evidence: WorkUnitEvidence | None) -> float:
     score = 0.0
     if evidence.summary.strip():
         score += 0.25
-    if evidence.status.strip() and evidence.status != "unknown":
+    if evidence.status.strip() and evidence.status not in {"unknown", "failed"}:
         score += 0.1
     if evidence.items:
         score += min(0.25, 0.05 * len(evidence.items))
@@ -116,6 +173,237 @@ def evidence_quality(evidence: WorkUnitEvidence | None) -> float:
     if evidence.confidence > 0:
         score += min(0.05, evidence.confidence * 0.05)
     return min(score, 1.0)
+
+
+def _load_generated_evidence(task_folder: Path) -> WorkUnitEvidence | None:
+    raw = _load_json_mapping(evidence_path(task_folder))
+    if not raw or not _looks_canonical_mapping(raw):
+        return None
+    evidence = _evidence_from_mapping(raw)
+    if not evidence.summary.strip() and not evidence.items:
+        return None
+    return evidence
+
+
+def _load_legacy_evidence(task_folder: Path) -> WorkUnitEvidence | None:
+    raw = _load_json_mapping(legacy_evidence_path(task_folder))
+    if raw and _looks_canonical_mapping(raw):
+        evidence = _evidence_from_mapping(raw)
+        if evidence.summary.strip() or evidence.items:
+            return evidence
+    return _normalize_legacy_evidence(task_folder, raw or None)
+
+
+def _write_generated_evidence(task_folder: Path, evidence: WorkUnitEvidence) -> None:
+    path = evidence_path(task_folder)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        path.write_text(json.dumps(asdict(evidence), ensure_ascii=False, indent=2), encoding="utf-8")
+    except OSError:
+        return
+
+
+def _evidence_from_tool_result(task_folder: Path, parsed: ParsedToolResult) -> WorkUnitEvidence:
+    workunit = _load_json_mapping(task_folder / "WORKUNIT.json")
+    item = EvidenceItem(
+        kind="tool_result",
+        title="Canonical TOOL_RESULT",
+        summary=parsed.summary,
+        path="TOOL_RESULT.json",
+        excerpt=parsed.summary,
+    )
+    verification_commands = tuple(
+        _artifact_ref_to_command(ref)
+        for ref in parsed.artifact_refs
+        if _artifact_ref_to_command(ref)
+    )
+    risks = ()
+    if parsed.is_error:
+        risks = (parsed.summary,)
+    changed_files = tuple(
+        ref for ref in parsed.artifact_refs if not ref.endswith(".json") and not ref.endswith(".md")
+    )
+    return WorkUnitEvidence(
+        task_id=parsed.task_id or task_folder.name,
+        workunit_kind=str(workunit.get("workunit_kind") or ""),
+        status=_normalize_status(parsed.status),
+        summary=parsed.summary,
+        items=(item,),
+        changed_files=changed_files,
+        verification_commands=verification_commands,
+        risks=risks,
+        confidence=0.9 if not parsed.is_error else 0.5,
+        artifact_protocol_status="canonical",
+        source_artifact="TOOL_RESULT.json",
+    )
+
+
+def _parse_tool_result_message(raw: dict[str, Any]) -> ParsedToolResult:
+    content = raw.get("content")
+    if not isinstance(content, list) or not content:
+        return _invalid_tool_result(raw)
+    first = content[0]
+    if not isinstance(first, dict):
+        return _invalid_tool_result(raw)
+    if str(first.get("type") or "") != "tool_result":
+        return _invalid_tool_result(raw)
+    tool_use_id = str(first.get("tool_use_id") or "").strip()
+    is_error = bool(first.get("is_error", False))
+    inner = first.get("content")
+    if not isinstance(inner, list) or not inner:
+        return _invalid_tool_result(raw, tool_use_id=tool_use_id, is_error=is_error)
+    text = ""
+    for block in inner:
+        if isinstance(block, dict) and str(block.get("type") or "") == "text":
+            text = str(block.get("text") or "").strip()
+            if text:
+                break
+    if not text:
+        return _invalid_tool_result(raw, tool_use_id=tool_use_id, is_error=is_error)
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return _invalid_tool_result(raw, tool_use_id=tool_use_id, is_error=is_error, summary=text)
+    if not isinstance(payload, dict):
+        return _invalid_tool_result(raw, tool_use_id=tool_use_id, is_error=is_error, summary=text)
+    artifact_refs_raw = payload.get("artifact_refs")
+    artifact_refs: tuple[str, ...]
+    if isinstance(artifact_refs_raw, dict):
+        artifact_refs = tuple(str(value) for value in artifact_refs_raw.values() if str(value).strip())
+    elif isinstance(artifact_refs_raw, list):
+        artifact_refs = tuple(str(value) for value in artifact_refs_raw if str(value).strip())
+    else:
+        artifact_refs = ()
+    summary = str(payload.get("summary") or "").strip()
+    if not summary:
+        summary = _first_text_block(inner)
+    return ParsedToolResult(
+        schema_version=str(payload.get("schema_version") or _TOOL_RESULT_SCHEMA),
+        task_id=str(payload.get("task_id") or "").strip(),
+        tool_use_id=tool_use_id,
+        status=_normalize_status(str(payload.get("status") or "").strip()),
+        is_error=is_error,
+        summary=summary,
+        artifact_refs=artifact_refs,
+        evaluation=payload.get("evaluation") if isinstance(payload.get("evaluation"), dict) else None,
+        failure_kind=str(payload.get("failure_kind") or ""),
+        raw_message=raw,
+        payload=payload,
+    )
+
+
+def _invalid_tool_result(
+    raw: dict[str, Any],
+    *,
+    tool_use_id: str = "",
+    is_error: bool = True,
+    summary: str = "",
+) -> ParsedToolResult:
+    return ParsedToolResult(
+        schema_version="",
+        task_id="",
+        tool_use_id=tool_use_id,
+        status="failed",
+        is_error=is_error,
+        summary=summary,
+        artifact_refs=(),
+        evaluation=None,
+        failure_kind="tool_result_invalid",
+        raw_message=raw,
+        payload={},
+    )
+
+
+def _first_text_block(content: list[Any]) -> str:
+    for block in content:
+        if isinstance(block, dict) and str(block.get("type") or "") == "text":
+            text = str(block.get("text") or "").strip()
+            if text:
+                return text
+    return ""
+
+
+def _normalize_status(status: str) -> str:
+    normalized = status.strip().lower()
+    if normalized in {"completed", "done", "success"}:
+        return "done"
+    if normalized in {"failed", "error", "timeout"}:
+        return "failed"
+    if normalized == "cancelled":
+        return "cancelled"
+    return normalized or "done"
+
+
+def _artifact_ref_to_command(ref: str) -> str:
+    text = ref.strip()
+    if not text:
+        return ""
+    if text.startswith("artifact://"):
+        return text
+    return ""
+
+
+def _normalize_legacy_evidence(
+    task_folder: Path,
+    raw_evidence: dict[str, Any] | None,
+) -> WorkUnitEvidence | None:
+    workunit = _load_json_mapping(task_folder / "WORKUNIT.json")
+    result_text, source_artifact = _best_legacy_result_text(task_folder)
+    taskmemory_text = _read_text(task_folder / "TASKMEMORY.md")
+
+    task_id = str(
+        (raw_evidence or {}).get("task_id")
+        or workunit.get("task_id")
+        or task_folder.name
+    ).strip()
+    workunit_kind = str(
+        (raw_evidence or {}).get("workunit_kind")
+        or workunit.get("workunit_kind")
+        or ""
+    ).strip()
+    status = str(
+        (raw_evidence or {}).get("status")
+        or workunit.get("status")
+        or _infer_legacy_status(raw_evidence, result_text, taskmemory_text)
+    ).strip()
+    summary = (
+        str((raw_evidence or {}).get("summary") or "").strip()
+        or _summary_from_noncanonical_evidence(raw_evidence)
+        or str(workunit.get("summary") or "").strip()
+        or _extract_markdown_section(result_text, _SUMMARY_HEADINGS)
+        or _first_meaningful_paragraph(result_text)
+        or _first_meaningful_paragraph(taskmemory_text)
+    )
+
+    items = _normalized_legacy_items(raw_evidence, workunit, result_text)
+    changed_files = _normalized_legacy_changed_files(raw_evidence, workunit)
+    verification_commands = _normalized_legacy_verification_commands(
+        raw_evidence, workunit, result_text, taskmemory_text
+    )
+    risks = _normalized_legacy_risks(raw_evidence)
+    confidence = _normalized_legacy_confidence(
+        raw_evidence=raw_evidence,
+        summary=summary,
+        items=items,
+        verification_commands=verification_commands,
+    )
+
+    if not summary and not items:
+        return None
+
+    return WorkUnitEvidence(
+        task_id=task_id,
+        workunit_kind=workunit_kind,
+        status=status or "done",
+        summary=summary,
+        items=items,
+        changed_files=changed_files,
+        verification_commands=verification_commands,
+        risks=risks,
+        confidence=confidence,
+        artifact_protocol_status="normalized",
+        source_artifact=source_artifact,
+    )
 
 
 def _evidence_from_mapping(raw: dict[str, Any]) -> WorkUnitEvidence:
@@ -138,7 +426,7 @@ def _evidence_from_mapping(raw: dict[str, Any]) -> WorkUnitEvidence:
         risks=tuple(str(item) for item in raw.get("risks") or ()),
         confidence=_float_or_zero(raw.get("confidence")),
         artifact_protocol_status=str(raw.get("artifact_protocol_status") or "canonical"),
-        source_artifact=str(raw.get("source_artifact") or "EVIDENCE.json"),
+        source_artifact=str(raw.get("source_artifact") or "generated/EVIDENCE.json"),
     )
 
 
@@ -176,77 +464,6 @@ def _looks_canonical_mapping(raw: dict[str, Any]) -> bool:
     return _CANONICAL_KEYS.issubset(raw)
 
 
-def _normalize_evidence(
-    task_folder: Path,
-    raw_evidence: dict[str, Any] | None,
-) -> WorkUnitEvidence | None:
-    workunit = _load_json_mapping(task_folder / "WORKUNIT.json")
-    result_text, source_artifact = _best_result_text(task_folder)
-    taskmemory_text = _read_text(task_folder / "TASKMEMORY.md")
-
-    task_id = str(
-        (raw_evidence or {}).get("task_id")
-        or workunit.get("task_id")
-        or task_folder.name
-    ).strip()
-    workunit_kind = str(
-        (raw_evidence or {}).get("workunit_kind")
-        or workunit.get("workunit_kind")
-        or ""
-    ).strip()
-    status = str(
-        (raw_evidence or {}).get("status")
-        or workunit.get("status")
-        or _infer_status(raw_evidence, result_text, taskmemory_text)
-    ).strip()
-    summary = (
-        str((raw_evidence or {}).get("summary") or "").strip()
-        or _summary_from_noncanonical_evidence(raw_evidence)
-        or str(workunit.get("summary") or "").strip()
-        or _extract_markdown_section(result_text, _SUMMARY_HEADINGS)
-        or _first_meaningful_paragraph(result_text)
-        or _first_meaningful_paragraph(taskmemory_text)
-    )
-
-    items = _normalized_items(raw_evidence, workunit, result_text)
-    changed_files = _normalized_changed_files(raw_evidence, workunit)
-    verification_commands = _normalized_verification_commands(
-        raw_evidence, workunit, result_text, taskmemory_text
-    )
-    risks = _normalized_risks(raw_evidence)
-    confidence = _normalized_confidence(
-        raw_evidence=raw_evidence,
-        summary=summary,
-        items=items,
-        verification_commands=verification_commands,
-    )
-
-    if not summary and not items:
-        return None
-
-    return WorkUnitEvidence(
-        task_id=task_id,
-        workunit_kind=workunit_kind,
-        status=status or "done",
-        summary=summary,
-        items=items,
-        changed_files=changed_files,
-        verification_commands=verification_commands,
-        risks=risks,
-        confidence=confidence,
-        artifact_protocol_status="normalized",
-        source_artifact=source_artifact,
-    )
-
-
-def _write_normalized_evidence(task_folder: Path, evidence: WorkUnitEvidence) -> None:
-    path = task_folder / "EVIDENCE.generated.json"
-    try:
-        path.write_text(json.dumps(asdict(evidence), ensure_ascii=False, indent=2), encoding="utf-8")
-    except OSError:
-        return
-
-
 def _load_json_mapping(path: Path) -> dict[str, Any]:
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
@@ -262,8 +479,8 @@ def _read_text(path: Path) -> str:
         return ""
 
 
-def _best_result_text(task_folder: Path) -> tuple[str, str]:
-    for name in _RESULT_FALLBACK_FILES:
+def _best_legacy_result_text(task_folder: Path) -> tuple[str, str]:
+    for name in _LEGACY_RESULT_FALLBACK_FILES:
         text = _read_text(task_folder / name).strip()
         if text:
             return text, name
@@ -287,7 +504,7 @@ def _summary_from_noncanonical_evidence(raw_evidence: dict[str, Any] | None) -> 
     return prefix.strip()
 
 
-def _normalized_items(
+def _normalized_legacy_items(
     raw_evidence: dict[str, Any] | None,
     workunit: dict[str, Any],
     result_text: str,
@@ -307,13 +524,9 @@ def _normalized_items(
     for failure in (raw_evidence or {}).get("exact_failures") or []:
         if not isinstance(failure, dict):
             continue
-        title_bits = [
-            str(failure.get("error_code") or "").strip(),
-            str(failure.get("file") or "").strip(),
-        ]
-        title = " ".join(bit for bit in title_bits if bit).strip() or "Exact failure"
-        if failure.get("line") not in (None, "") and failure.get("file"):
-            title = f"{failure['error_code']} {failure['file']}:{failure['line']}".strip()
+        title = str(failure.get("error_code") or "Exact failure").strip()
+        if failure.get("file"):
+            title = f"{title} {failure['file']}:{failure.get('line') or ''}".strip(": ")
         item = EvidenceItem(
             kind="finding",
             title=title,
@@ -323,26 +536,6 @@ def _normalized_items(
             excerpt=str(failure.get("problematic_code") or "").strip(),
         )
         _append_unique_item(items, seen, item)
-
-    for fix in (raw_evidence or {}).get("fixes_applied") or []:
-        if not isinstance(fix, dict):
-            continue
-        commit = str(fix.get("commit") or "").strip()
-        message = str(fix.get("message") or "").strip()
-        title = message or commit or "Applied fix"
-        changes = fix.get("changes") or []
-        if isinstance(changes, list):
-            for change in changes:
-                if not isinstance(change, dict):
-                    continue
-                item = EvidenceItem(
-                    kind="change",
-                    title=title,
-                    summary=str(change.get("fix") or "").strip(),
-                    path=str(change.get("file") or "").strip(),
-                    excerpt=str(change.get("fix") or "").strip(),
-                )
-                _append_unique_item(items, seen, item)
 
     for raw_item in workunit.get("items") or []:
         if not isinstance(raw_item, str):
@@ -375,7 +568,7 @@ def _append_unique_item(
     items.append(item)
 
 
-def _normalized_changed_files(
+def _normalized_legacy_changed_files(
     raw_evidence: dict[str, Any] | None,
     workunit: dict[str, Any],
 ) -> tuple[str, ...]:
@@ -404,7 +597,7 @@ def _normalized_changed_files(
     return tuple(files)
 
 
-def _normalized_verification_commands(
+def _normalized_legacy_verification_commands(
     raw_evidence: dict[str, Any] | None,
     workunit: dict[str, Any],
     result_text: str,
@@ -437,7 +630,7 @@ def _append_unique_text(items: list[str], seen: set[str], value: str) -> None:
     items.append(text)
 
 
-def _normalized_risks(raw_evidence: dict[str, Any] | None) -> tuple[str, ...]:
+def _normalized_legacy_risks(raw_evidence: dict[str, Any] | None) -> tuple[str, ...]:
     seen: set[str] = set()
     risks: list[str] = []
     for value in (raw_evidence or {}).get("risks") or ():
@@ -448,7 +641,7 @@ def _normalized_risks(raw_evidence: dict[str, Any] | None) -> tuple[str, ...]:
     return tuple(risks)
 
 
-def _normalized_confidence(
+def _normalized_legacy_confidence(
     *,
     raw_evidence: dict[str, Any] | None,
     summary: str,
@@ -468,7 +661,7 @@ def _normalized_confidence(
     return min(score, 0.9)
 
 
-def _infer_status(
+def _infer_legacy_status(
     raw_evidence: dict[str, Any] | None,
     result_text: str,
     taskmemory_text: str,

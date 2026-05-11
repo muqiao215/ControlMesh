@@ -56,7 +56,13 @@ from controlmesh.tasks.evaluator import (
     verdict_path,
     write_verdict,
 )
-from controlmesh.tasks.evidence import evidence_path, load_evidence, result_path
+from controlmesh.tasks.evidence import (
+    ParsedToolResult,
+    evidence_path,
+    load_evidence,
+    load_tool_result,
+    result_path,
+)
 from controlmesh.tasks.models import (
     EvaluationFinding,
     EvaluationResult,
@@ -139,7 +145,7 @@ Before finishing, update these task artifacts in your task folder:
 2. EVIDENCE.json: {evidence_path}
 3. RESULT.md: {result_path}
 
-EVIDENCE.json is mandatory for routed WorkUnits. It must include:
+Legacy fallback only: if you update EVIDENCE.json, include:
 - exact commands run and exit codes
 - files inspected or changed
 - important logs, excerpts, or findings
@@ -170,7 +176,7 @@ REMINDER: You are a background task agent with NO direct user access.
 - Need more info? Use: python3 tools/task_tools/ask_parent.py "question"
 - Need to see whether the parent changed requirements? Use: python3 tools/task_tools/check_task_updates.py
 - Do NOT put questions in your response — the user cannot see them.
-- When done, update TASKMEMORY.md, EVIDENCE.json, and RESULT.md in your task folder.
+- When done, RESULT.md/TASKMEMORY.md may still help humans, but runtime canonicalizes TOOL_RESULT itself.
 """
 
 
@@ -1228,7 +1234,21 @@ class TaskHub:
             return
         try:
             await handler(result)
+            entry = self._registry.get(result.task_id)
+            if entry is not None:
+                self._registry.update_status(
+                    result.task_id,
+                    entry.status,
+                    tool_result_delivered_at=time.time(),
+                )
         except Exception:
+            entry = self._registry.get(result.task_id)
+            if entry is not None:
+                self._registry.update_status(
+                    result.task_id,
+                    "failed",
+                    error="tool_result_delivery_failed: could not deliver canonical tool_result projection",
+                )
             logger.exception(
                 "Error delivering task result id=%s to '%s'",
                 result.task_id,
@@ -1253,10 +1273,17 @@ class TaskHub:
 
         lease = self._process_leases.find_by_label(chat_id=entry.chat_id, label=f"task:{task_id}")
         artifacts = self._artifact_paths(entry)
+        parsed_tool_result = load_tool_result(artifacts.folder)
         curated_result = _read_curated_result(artifacts.result)
         tool_result = load_json(artifacts.tool_result)
         if isinstance(tool_result, dict):
-            recovered = self._recover_terminal_result(entry, artifacts, tool_result, curated_result)
+            recovered = self._recover_terminal_result(
+                entry,
+                artifacts,
+                tool_result,
+                parsed_tool_result,
+                curated_result,
+            )
             if recovered:
                 return True
 
@@ -1311,11 +1338,11 @@ class TaskHub:
             self._finalize_reconciled_result(entry, recovered_result)
             return True
 
-        if entry.status != "stale" or entry.error != "Detached worker no longer appears live; attach or resume to recover":
+        if entry.status != "stale" or entry.error != "tool_result_missing: detached worker no longer appears live; attach or resume to recover":
             self._registry.update_status(
                 task_id,
                 "stale",
-                error="Detached worker no longer appears live; attach or resume to recover",
+                error="tool_result_missing: detached worker no longer appears live; attach or resume to recover",
             )
             refreshed = self._registry.get(task_id)
             if refreshed is not None:
@@ -1332,45 +1359,38 @@ class TaskHub:
         entry: TaskEntry,
         artifacts: _TaskArtifactPaths,
         tool_result: dict[str, Any],
+        parsed_tool_result: ParsedToolResult | None,
         curated_result: str,
     ) -> bool:
         """Rebuild and deliver one terminal result from durable TOOL_RESULT.json."""
         if bool(tool_result.get("consumed", False)):
             return False
-        content = tool_result.get("content")
-        if not isinstance(content, list) or not content:
+        if parsed_tool_result is None:
+            self._registry.update_status(
+                entry.task_id,
+                "failed",
+                error="tool_result_invalid: TOOL_RESULT.json could not be parsed",
+            )
+            return True
+        if not parsed_tool_result.valid:
+            self._registry.update_status(
+                entry.task_id,
+                "failed",
+                error="tool_result_invalid: TOOL_RESULT.json is missing canonical fields",
+            )
             return False
-        block = content[0]
-        if not isinstance(block, dict):
-            return False
-        inner = block.get("content")
-        if not isinstance(inner, list) or not inner:
-            return False
-        first = inner[0]
-        if not isinstance(first, dict):
-            return False
-        payload_text = str(first.get("text") or "").strip()
-        if not payload_text:
-            return False
-        try:
-            payload = json.loads(payload_text)
-        except json.JSONDecodeError:
-            logger.warning("Recovered TOOL_RESULT.json for task %s had invalid payload", entry.task_id)
-            return False
-        if not isinstance(payload, dict):
-            return False
-
+        payload = parsed_tool_result.payload
         status = str(payload.get("status") or entry.status or "done")
         if status not in _FINISHED:
             return False
-        summary = str(payload.get("summary") or "").strip()
+        summary = parsed_tool_result.summary
         evaluation = _evaluation_result_from_payload(payload.get("evaluation"))
         result_text = curated_result or summary or entry.result_preview or ""
         result_text = _append_taskmemory(result_text, artifacts.taskmemory)
         result_text = _append_attach_resume_hint(result_text, entry.task_id, entry.session_id)
         elapsed = max(0.0, time.time() - entry.created_at)
         error = entry.error
-        failure_kind = ""
+        failure_kind = parsed_tool_result.failure_kind
         if evaluation is not None:
             failure_kind = evaluation.failure_kind
         if status == "failed" and not error:
@@ -1408,6 +1428,11 @@ class TaskHub:
         tool_result["consumed"] = True
         tool_result["consumed_at"] = datetime.now(UTC).isoformat()
         atomic_json_save(artifacts.tool_result, tool_result)
+        self._registry.update_status(
+            entry.task_id,
+            entry.status,
+            tool_result_consumed_at=time.time(),
+        )
         self._finalize_reconciled_result(entry, recovered_result)
         return True
 
@@ -1750,7 +1775,7 @@ class TaskHub:
             return _TaskArtifactPaths(
                 folder=folder,
                 taskmemory=folder / "TASKMEMORY.md",
-                evidence=folder / "EVIDENCE.json",
+                evidence=evidence_path(folder),
                 result=folder / "RESULT.md",
                 tool_use=folder / "TOOL_USE.json",
                 tool_result=folder / "TOOL_RESULT.json",
@@ -1768,49 +1793,81 @@ class TaskHub:
 
     def _write_tool_use_ref(self, entry: TaskEntry) -> None:
         """Persist the controller-side tool_use mapping for a background task."""
-        if not entry.tool_use_id:
-            return
+        tool_use_id = entry.tool_use_id or f"toolu_{entry.task_id}"
+        if tool_use_id != entry.tool_use_id:
+            self._registry.update_status(entry.task_id, entry.status, tool_use_id=tool_use_id)
+            refreshed = self._registry.get(entry.task_id)
+            if refreshed is not None:
+                entry = refreshed
         payload = TaskToolUseRef(
             task_id=entry.task_id,
-            tool_use_id=entry.tool_use_id,
-            name="background_task.submit",
+            tool_use_id=tool_use_id,
+            name=entry.tool_name or "controlmesh_task",
             controller_session_id=entry.parent_agent,
             plan_id=entry.plan_id,
             chat_id=entry.chat_id,
             topic_id=entry.thread_id,
             created_at=datetime.now(UTC).isoformat(),
         )
-        atomic_json_save(self._artifact_paths(entry).tool_use, payload.to_dict())
+        atomic_json_save(
+            self._artifact_paths(entry).tool_use,
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": tool_use_id,
+                        "name": entry.tool_name or "controlmesh_task",
+                        "input": {
+                            "task_id": entry.task_id,
+                            "workunit": entry.workunit_kind or entry.name,
+                            "artifact_policy": "summary_plus_refs",
+                        },
+                    }
+                ],
+                "tool_use_id": payload.tool_use_id,
+                "task_id": payload.task_id,
+                "created_at": payload.created_at,
+            },
+        )
 
     def _write_tool_result_artifact(self, entry: TaskEntry, result: TaskResult) -> Path:
         """Persist Anthropic-style tool_result payload for controller ingestion."""
-        if not entry.tool_use_id:
-            if entry.external_task:
-                return self._artifact_paths(entry).tool_result
-            return self._artifact_paths(entry).tool_result
+        tool_use_id = entry.tool_use_id or f"toolu_{entry.task_id}"
+        if tool_use_id != entry.tool_use_id:
+            self._registry.update_status(entry.task_id, entry.status, tool_use_id=tool_use_id)
+            refreshed = self._registry.get(entry.task_id)
+            if refreshed is not None:
+                entry = refreshed
         payload = TaskToolResultPayload(
+            schema_version="controlmesh.tool_result.v1",
             task_id=result.task_id,
+            tool_use_id=tool_use_id,
             status=result.status,
             summary=_tool_result_summary(result),
-            artifact_refs={
-                "result": str(self._artifact_paths(entry).result),
-                "evidence": str(self._artifact_paths(entry).evidence),
-                "taskmemory": str(self._artifact_paths(entry).taskmemory),
-                "tool_result": str(self._artifact_paths(entry).tool_result),
-            },
+            artifact_refs=[
+                f"artifact://tasks/{entry.task_id}/TOOL_RESULT.json",
+                f"artifact://tasks/{entry.task_id}/RESULT.md",
+                f"artifact://tasks/{entry.task_id}/TASKMEMORY.md",
+            ],
             finding_count=_finding_count(self._artifact_paths(entry).evidence),
             max_severity=_max_severity(self._artifact_paths(entry).evidence),
             needs_controller_action=result.status != "done" or bool(entry.phase_id) or bool(entry.plan_id),
             evaluation=_evaluation_payload(result.evaluation),
             failure_kind=result.failure_kind,
+            generated_by="taskhub.runtime",
+            created_at=datetime.now(UTC).isoformat(),
         )
         tool_result = {
+            "schema_version": "controlmesh.tool_result.v1",
+            "task_id": result.task_id,
+            "tool_use_id": tool_use_id,
             "role": "user",
             "consumed": False,
             "content": [
                 {
                     "type": "tool_result",
-                    "tool_use_id": entry.tool_use_id,
+                    "tool_use_id": tool_use_id,
                     "content": [
                         {
                             "type": "text",
@@ -1820,6 +1877,9 @@ class TaskHub:
                     "is_error": result.status in {"failed", "cancelled", "timeout"},
                 }
             ],
+            "status": "failed" if result.status in {"failed", "cancelled", "timeout"} else "completed",
+            "generated_by": "taskhub.runtime",
+            "created_at": datetime.now(UTC).isoformat(),
         }
         path = self._artifact_paths(entry).tool_result
         atomic_json_save(path, tool_result)
@@ -1968,15 +2028,19 @@ class TaskToolUseRef:
 
 @dataclass(frozen=True, slots=True)
 class TaskToolResultPayload:
+    schema_version: str
     task_id: str
+    tool_use_id: str
     status: str
     summary: str
-    artifact_refs: dict[str, str]
+    artifact_refs: list[str]
     finding_count: int
     max_severity: str
     needs_controller_action: bool
     evaluation: dict[str, object] | None = None
     failure_kind: str = ""
+    generated_by: str = "taskhub.runtime"
+    created_at: str = ""
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)

@@ -46,7 +46,7 @@ def deterministic_verdict(
             required_followups=("Worker must produce concrete EVIDENCE.json.",),
         )
 
-    if evidence.artifact_protocol_status != "canonical":
+    if evidence.artifact_protocol_status in {"normalized", "artifact_protocol_failed"}:
         return EvaluatorVerdict(
             decision=EvaluatorDecision.REPAIR,
             quality=quality,

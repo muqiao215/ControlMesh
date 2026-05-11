@@ -1053,7 +1053,7 @@ class TestRunAndDeliver:
         assert entry is not None
         assert entry.status == "failed"
         assert "normalization" in entry.error.lower()
-        assert (registry.task_folder(task_id) / "EVIDENCE.generated.json").is_file()
+        assert (registry.task_folder(task_id) / "generated" / "EVIDENCE.json").is_file()
 
         await hub.shutdown()
 

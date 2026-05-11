@@ -97,8 +97,11 @@ class TaskEntry:
     expected_remote: str = ""
     expected_branch: str = ""
     tool_use_id: str = ""
+    tool_name: str = ""
     external_task: bool = False
     idempotency_key: str = ""
+    tool_result_delivered_at: float = 0.0
+    tool_result_consumed_at: float = 0.0
     tasks_dir: str = ""  # Agent's tasks directory (for per-agent folder resolution)
     thread_id: TopicRef = None  # Forum topic ID (for routing results back to topic)
 
@@ -145,8 +148,11 @@ class TaskEntry:
             "expected_remote": self.expected_remote,
             "expected_branch": self.expected_branch,
             "tool_use_id": self.tool_use_id,
+            "tool_name": self.tool_name,
             "external_task": self.external_task,
             "idempotency_key": self.idempotency_key,
+            "tool_result_delivered_at": self.tool_result_delivered_at,
+            "tool_result_consumed_at": self.tool_result_consumed_at,
             "tasks_dir": self.tasks_dir,
         }
         if self.thread_id is not None:
@@ -197,8 +203,11 @@ class TaskEntry:
             expected_remote=d.get("expected_remote", ""),
             expected_branch=d.get("expected_branch", ""),
             tool_use_id=d.get("tool_use_id", ""),
+            tool_name=d.get("tool_name", ""),
             external_task=bool(d.get("external_task", False)),
             idempotency_key=d.get("idempotency_key", ""),
+            tool_result_delivered_at=d.get("tool_result_delivered_at", 0.0),
+            tool_result_consumed_at=d.get("tool_result_consumed_at", 0.0),
             tasks_dir=d.get("tasks_dir", ""),
             thread_id=d.get("thread_id"),
         )

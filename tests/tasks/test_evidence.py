@@ -109,7 +109,7 @@ def test_load_evidence_normalizes_noncanonical_worker_artifacts(tmp_path: Path) 
     assert evidence.artifact_protocol_status == "normalized"
     assert evidence.source_artifact == "RESULT.md"
     assert "uv run ruff check ." in evidence.verification_commands
-    assert (tmp_path / "EVIDENCE.generated.json").is_file()
+    assert (tmp_path / "generated" / "EVIDENCE.json").is_file()
 
 
 def test_noncanonical_evidence_is_reported_as_artifact_protocol_failure() -> None:

@@ -146,6 +146,7 @@ class TaskRegistry:
             expected_remote=submit.expected_remote,
             expected_branch=submit.expected_branch,
             tool_use_id=submit.tool_use_id,
+            tool_name="controlmesh_task",
             external_task=submit.external_task,
             idempotency_key=submit.idempotency_key,
             tasks_dir=str(resolved_dir),
