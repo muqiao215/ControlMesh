@@ -73,6 +73,7 @@ Runtime behavior notes:
 - [Telegram Setup](telegram-setup.md)
 - [WeChat / Weixin Setup](weixin-setup.md)
 - [QQ Bot Official Pivot](qqbot-official-pivot.md)
+- [v0.26.1 Release Note](release-note-v0.26.1.md)
 - [v0.26.0 Release Note](release-note-v0.26.0.md)
 - [v0.25.8 Release Note](release-note-v0.25.8.md)
 - [v0.25.1 Release Note](release-note-v0.25.1.md)

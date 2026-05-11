@@ -919,6 +919,20 @@ class TaskHub:
         except asyncio.CancelledError:
             pass
 
+    async def _reconcile_loop(self) -> None:
+        """Periodically reconcile detached task state into terminal delivery."""
+        try:
+            while True:
+                await asyncio.sleep(30.0)
+                try:
+                    reconciled = self.reconcile_all_tasks()
+                    if reconciled:
+                        logger.info("Task reconcile: reconciled %d detached task(s)", reconciled)
+                except Exception:
+                    logger.exception("Task reconcile failed (continuing)")
+        except asyncio.CancelledError:
+            pass
+
     async def _run(
         self,
         entry: TaskEntry,

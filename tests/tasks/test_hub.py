@@ -82,6 +82,25 @@ class TestSubmit:
 
         await hub.shutdown()
 
+    async def test_start_maintenance_starts_and_shutdown_cancels_reconcile_loop(
+        self, registry: TaskRegistry, tmp_path: Path
+    ) -> None:
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=_make_cli_service(),
+            config=_make_config(),
+        )
+
+        hub.start_maintenance()
+
+        assert hub._maintenance_task is not None
+        assert hub._reconcile_task is not None
+
+        await hub.shutdown()
+
+        assert hub._maintenance_task is None
+
     async def test_raises_when_disabled(self, registry: TaskRegistry, tmp_path: Path) -> None:
         hub = TaskHub(
             registry,
