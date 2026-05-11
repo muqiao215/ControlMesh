@@ -6,10 +6,17 @@ import asyncio
 import logging
 import os
 import secrets
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from controlmesh.files.allowed_roots import resolve_allowed_roots
 from controlmesh.infra.docker import DockerManager
+from controlmesh.provider_health import (
+    BootstrapHealth,
+    ConfigMigrationEvent,
+    assess_bootstrap_health,
+    save_bootstrap_health,
+)
 from controlmesh.workspace.init import inject_runtime_environment
 from controlmesh.workspace.paths import ControlMeshPaths, resolve_paths
 from controlmesh.workspace.skill_sync import (
@@ -31,10 +38,41 @@ def _docker_skill_resync(paths: ControlMeshPaths) -> None:
     sync_skills(paths, docker_active=True)
 
 
+def _log_bootstrap_health(health: BootstrapHealth, *, migration_events: Sequence[ConfigMigrationEvent]) -> None:
+    """Log structured startup readiness state."""
+    if migration_events:
+        for event in migration_events:
+            logger.info(
+                "Config migration applied field=%s before=%s after=%s reason=%s",
+                event.field,
+                event.before,
+                event.after,
+                event.reason,
+            )
+    if health.is_ready:
+        logger.info(
+            "Bootstrap provider health ready provider=%s model=%s summary=%s",
+            health.default_provider,
+            health.default_model,
+            health.summary,
+        )
+        return
+    logger.error(
+        "Bootstrap provider health not_ready provider=%s model=%s summary=%s",
+        health.default_provider,
+        health.default_model,
+        health.summary,
+    )
+    for check in health.checks:
+        if check.status != "ok":
+            logger.error("Bootstrap check failed name=%s message=%s", check.name, check.message)
+
+
 async def create_orchestrator(
     config: AgentConfig,
     *,
     agent_name: str = "main",
+    migration_events: Sequence[ConfigMigrationEvent] = (),
 ) -> Orchestrator:
     """Async factory: build an Orchestrator.
 
@@ -87,6 +125,27 @@ async def create_orchestrator(
         auth_status_enum=AuthStatus,
         cli_service=orch._cli_service,
     )
+    try:
+        default_model, default_provider = orch.resolve_runtime_target(config.model)
+    except ValueError:
+        default_model, default_provider = config.model, config.provider
+    bootstrap_health = assess_bootstrap_health(
+        configured_provider=config.provider,
+        configured_model=config.model,
+        default_provider=default_provider,
+        default_model=default_model,
+        auth_results=auth_results,
+        model_provider_resolver=orch.models.provider_for,
+        migration_events=tuple(migration_events),
+    )
+    orch.set_bootstrap_health(bootstrap_health)
+    await asyncio.to_thread(
+        save_bootstrap_health,
+        paths.runtime_health_path,
+        bootstrap_health,
+        fallback_policy_summary=config.provider_fallback.summary(),
+    )
+    _log_bootstrap_health(bootstrap_health, migration_events=migration_events)
 
     if not orch._providers.available_providers:
         logger.error("No authenticated providers found! CLI calls will fail.")

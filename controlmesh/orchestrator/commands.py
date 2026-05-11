@@ -45,6 +45,7 @@ from controlmesh.native_commands import (
 )
 from controlmesh.orchestrator.registry import OrchestratorResult
 from controlmesh.provider_binding import provider_model_label
+from controlmesh.provider_health import render_bootstrap_health_lines
 from controlmesh.orchestrator.selectors.cron_selector import cron_selector_start
 from controlmesh.orchestrator.selectors.model_selector import model_selector_start, switch_model
 from controlmesh.orchestrator.selectors.models import Button, ButtonGrid, SelectorResponse
@@ -1050,7 +1051,11 @@ async def cmd_diagnose(orch: Orchestrator, _key: SessionKey, _text: str) -> Orch
     """Handle /diagnose."""
     logger.info("Diagnose requested")
     version = get_current_version()
-    effective_model, effective_provider = orch.resolve_runtime_target(orch._config.model)
+    if orch.bootstrap_health is not None:
+        effective_model = orch.bootstrap_health.default_model
+        effective_provider = orch.bootstrap_health.default_provider
+    else:
+        effective_model, effective_provider = orch.resolve_runtime_target(orch._config.model)
     info_block = (
         f"{t('diagnose.version_line', version=version)}\n"
         f"{t('diagnose.configured_line', provider=orch._config.provider, model=orch._config.model)}\n"
@@ -1059,14 +1064,21 @@ async def cmd_diagnose(orch: Orchestrator, _key: SessionKey, _text: str) -> Orch
 
     cache_block = _build_codex_cache_block(orch)
     agent_block = _build_diagnose_health_block(orch)
+    bootstrap_block = ""
+    if orch.bootstrap_health is not None:
+        bootstrap_block = "\n".join(render_bootstrap_health_lines(orch.bootstrap_health))
 
     log_tail = await _read_log_tail(_resolve_log_path(orch))
     log_block = (
         f"{t('diagnose.log_header')}\n```\n{log_tail}\n```" if log_tail else t("diagnose.no_log")
     )
 
+    blocks = [t("diagnose.header"), SEP, info_block, cache_block, agent_block]
+    if bootstrap_block:
+        blocks.extend([SEP, bootstrap_block])
+    blocks.extend([SEP, log_block])
     return OrchestratorResult(
-        text=fmt(t("diagnose.header"), SEP, info_block, cache_block, agent_block, SEP, log_block),
+        text=fmt(*blocks),
     )
 
 
@@ -1205,7 +1217,11 @@ def _build_agent_health_block(orch: Orchestrator) -> str:
 
 async def _build_status(orch: Orchestrator, key: SessionKey) -> str:
     """Build the /status response text."""
-    runtime_model, _runtime_provider = orch.resolve_runtime_target(orch._config.model)
+    if orch.bootstrap_health is not None:
+        runtime_model = orch.bootstrap_health.default_model
+        _runtime_provider = orch.bootstrap_health.default_provider
+    else:
+        runtime_model, _runtime_provider = orch.resolve_runtime_target(orch._config.model)
     configured_model = orch._config.model
 
     def _model_line(model_name: str) -> str:
@@ -1255,6 +1271,9 @@ async def _build_status(orch: Orchestrator, key: SessionKey) -> str:
     auth_block = t("status.auth_header") + "\n" + "\n".join(auth_lines)
 
     agent_block = _build_agent_health_block(orch)
+    bootstrap_block = ""
+    if orch.bootstrap_health is not None:
+        bootstrap_block = "\n".join(render_bootstrap_health_lines(orch.bootstrap_health))
     native_block = ""
     if native_provider in _NATIVE_COMMAND_PROVIDERS:
         snapshot = await _safe_provider_snapshot(orch, provider=native_provider, model=native_model)
@@ -1264,6 +1283,8 @@ async def _build_status(orch: Orchestrator, key: SessionKey) -> str:
     if bg_block:
         blocks += [SEP, bg_block]
     blocks += [SEP, auth_block]
+    if bootstrap_block:
+        blocks += [SEP, bootstrap_block]
     if native_block:
         blocks += [SEP, native_block]
     if agent_block:

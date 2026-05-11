@@ -11,6 +11,7 @@ _SYSTEM_LABELS: dict[str, str] = {
     "thinking": "处理中...",
     "compacting": "整理上下文后继续...",
     "recovering": "恢复会话后继续...",
+    "degraded_fallback": "默认运行时不可用, 已切换到降级后备运行时。",
     "timeout_warning": "处理时间较长, 继续执行中...",
     "timeout_extended": "已延长处理时间, 继续执行中...",
     "background_task_created": "已创建后台任务, 稍后继续返回结果。",

@@ -6,6 +6,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from controlmesh.background import (
@@ -54,6 +55,14 @@ from controlmesh.orchestrator.commands import (
     cmd_tasks,
     cmd_upgrade,
 )
+from controlmesh.provider_health import (
+    BootstrapHealth,
+    FallbackSurface,
+    ReadinessStatus,
+    render_fallback_notice,
+)
+from controlmesh.runtime.models import RuntimeEvent
+from controlmesh.runtime.store import RuntimeEventStore
 from controlmesh.orchestrator.directives import ParsedDirectives, parse_directives
 from controlmesh.orchestrator.flows import (
     StreamingCallbacks,
@@ -144,6 +153,17 @@ class _MessageDispatch:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class _FallbackDecision:
+    """Resolved degraded fallback behavior for one surface."""
+
+    allowed: bool
+    provider: str = ""
+    model: str = ""
+    notice_text: str = ""
+    surface: FallbackSurface = "normal_message"
+
+
 class Orchestrator:
     """Routes messages through command dispatch and conversation flows."""
 
@@ -191,6 +211,7 @@ class Orchestrator:
         self._cron_manager = CronManager(jobs_path=paths.cron_jobs_path)
         self._webhook_manager = WebhookManager(hooks_path=paths.webhooks_path)
         self._observers = ObserverManager(config, paths)
+        self._runtime_events = RuntimeEventStore(paths)
 
         async def _heartbeat_handler(
             chat_id: int,
@@ -218,7 +239,9 @@ class Orchestrator:
         self._hook_registry.register(DELEGATION_REMINDER)
         self._supervisor: AgentSupervisor | None = None  # Set by AgentSupervisor after creation
         self._task_hub: TaskHub | None = None  # Set by supervisor or __main__.py
+        self._bootstrap_health: BootstrapHealth | None = None
         self._command_registry = CommandRegistry()
+        self._fallback_notice_seen: set[tuple[str, str, str, str, str]] = set()
         self._register_commands()
 
     @property
@@ -323,6 +346,15 @@ class Orchestrator:
     def active_provider_name(self) -> str:
         """Human-readable name for the active CLI provider."""
         return self._providers.active_provider_name
+
+    @property
+    def bootstrap_health(self) -> BootstrapHealth | None:
+        """Structured startup/provider readiness health."""
+        return self._bootstrap_health
+
+    def set_bootstrap_health(self, health: BootstrapHealth) -> None:
+        """Inject structured startup/provider readiness health."""
+        self._bootstrap_health = health
 
     async def handle_message(
         self,
@@ -510,6 +542,13 @@ class Orchestrator:
         dispatch: _MessageDispatch,
     ) -> OrchestratorResult:
         """Route a message that was not claimed by ControlMesh commands."""
+        fallback = await self._resolve_degraded_fallback(
+            dispatch,
+            surface="streaming_message" if dispatch.streaming else "normal_message",
+        )
+        if fallback is None:
+            return OrchestratorResult(text=self._bootstrap_health.user_message)  # type: ignore[union-attr]
+
         if self._supervisor is not None:
             from controlmesh.multiagent.plan_review_loop import consume_pending_repair_feedback
 
@@ -556,19 +595,115 @@ class Orchestrator:
             return delegated
 
         if dispatch.streaming:
-            return await normal_streaming(
+            if fallback.notice_text and dispatch.on_system_status is not None:
+                await dispatch.on_system_status("degraded_fallback")
+            result = await normal_streaming(
                 self,
                 dispatch.key,
                 prompt_text,
-                model_override=directives.model,
+                model_override=directives.model or fallback.model or None,
+                provider_override=fallback.provider or None,
                 cbs=dispatch.streaming_callbacks(),
             )
+            if fallback.notice_text:
+                result.text = f"{fallback.notice_text}\n\n{result.text}" if result.text else fallback.notice_text
+            return result
 
-        return await normal(
+        result = await normal(
             self,
             dispatch.key,
             prompt_text,
-            model_override=directives.model,
+            model_override=directives.model or fallback.model or None,
+            provider_override=fallback.provider or None,
+        )
+        if fallback.notice_text:
+            result.text = f"{fallback.notice_text}\n\n{result.text}" if result.text else fallback.notice_text
+        return result
+
+    async def _resolve_degraded_fallback(
+        self,
+        dispatch: _MessageDispatch,
+        *,
+        surface: FallbackSurface,
+    ) -> _FallbackDecision | None:
+        """Return per-surface fallback behavior for the current bootstrap state."""
+        health = self._bootstrap_health
+        if health is None or health.is_ready:
+            return _FallbackDecision(allowed=True, surface=surface)
+        if health.status != ReadinessStatus.DEGRADED or not health.fallback_provider or not health.fallback_model:
+            return None
+        action = self._config.provider_fallback.action_for_surface(surface)
+        if not self._config.provider_fallback.enabled or action == "deny":
+            return None
+        notice = ""
+        if self._config.provider_fallback.require_notice_on_first_use:
+            notice = self._consume_fallback_notice(dispatch, surface=surface)
+        self._append_fallback_audit_event(dispatch, surface=surface, action=action)
+        return _FallbackDecision(
+            allowed=True,
+            provider=health.fallback_provider,
+            model=health.fallback_model,
+            notice_text=notice,
+            surface=surface,
+        )
+
+    def _consume_fallback_notice(
+        self,
+        dispatch: _MessageDispatch,
+        *,
+        surface: FallbackSurface,
+    ) -> str:
+        """Return a first-use fallback notice for one visible session."""
+        health = self._bootstrap_health
+        if health is None:
+            return ""
+        marker = (
+            dispatch.key.storage_key,
+            surface,
+            health.default_provider,
+            health.default_model,
+            health.fallback_provider,
+        )
+        if marker in self._fallback_notice_seen:
+            return ""
+        self._fallback_notice_seen.add(marker)
+        return render_fallback_notice(health, surface=surface)
+
+    def _append_fallback_audit_event(
+        self,
+        dispatch: _MessageDispatch,
+        *,
+        surface: FallbackSurface,
+        action: str,
+    ) -> None:
+        """Write an auditable runtime event whenever degraded fallback is used."""
+        health = self._bootstrap_health
+        if health is None:
+            return
+        self._runtime_events.append_event(
+            RuntimeEvent(
+                session_key=dispatch.key.storage_key,
+                event_type="provider_fallback_used",
+                payload={
+                    "surface": surface,
+                    "action": action,
+                    "from": {
+                        "provider": health.default_provider,
+                        "model": health.default_model,
+                    },
+                    "to": {
+                        "provider": health.fallback_provider,
+                        "model": health.fallback_model,
+                    },
+                    "reason": "default_runtime_not_ready",
+                    "message_id": dispatch.message_id,
+                    "streaming": dispatch.streaming,
+                    "recorded_at": datetime.now(UTC).isoformat(),
+                },
+                transport=dispatch.key.transport,
+                chat_id=dispatch.key.chat_id,
+                topic_id=dispatch.key.topic_id,
+            )
         )
 
     async def _route_with_backend_decision(

@@ -40,6 +40,7 @@ from controlmesh.cli_commands.lifecycle import (
 )
 from controlmesh.cli_commands.service import cmd_service as _cmd_service
 from controlmesh.cli_commands.status import (
+    cmd_doctor as _cmd_doctor,
     print_status as _print_status,
 )
 from controlmesh.cli_commands.status import (
@@ -55,6 +56,11 @@ from controlmesh.i18n import t_rich
 from controlmesh.infra.install import detect_runtime_provenance
 from controlmesh.infra.json_store import atomic_json_save
 from controlmesh.infra.version import get_current_version
+from controlmesh.provider_health import (
+    append_migration_journal,
+    apply_config_migrations,
+    backup_config_file,
+)
 from controlmesh.workspace.init import init_workspace
 from controlmesh.workspace.paths import resolve_paths
 
@@ -66,7 +72,6 @@ _console = Console()
 # ---------------------------------------------------------------------------
 # Config helpers
 # ---------------------------------------------------------------------------
-
 
 def _cmd_runtime(args: Sequence[str]) -> None:
     """Load the runtime ingress CLI only when the subcommand is invoked."""
@@ -209,16 +214,17 @@ def load_config() -> AgentConfig:
         logger.exception("Failed to parse config at %s", config_path)
         sys.exit(1)
 
+    user_data, migration_events, migration_changed = apply_config_migrations(user_data)
+
     normalized_existing = False
     if user_data.get("gemini_api_key") is None:
         user_data["gemini_api_key"] = DEFAULT_EMPTY_GEMINI_API_KEY
         normalized_existing = True
-
     defaults = AgentConfig().model_dump(mode="json")
     defaults["gemini_api_key"] = DEFAULT_EMPTY_GEMINI_API_KEY
     defaults.pop("api", None)  # Beta: only written by `controlmesh api enable`
     merged, changed = deep_merge_config(user_data, defaults)
-    changed = changed or normalized_existing
+    changed = changed or normalized_existing or migration_changed
     configured_home = user_data.get("controlmesh_home")
     default_home = defaults.get("controlmesh_home")
     env_selected_home = os.environ.get("CONTROLMESH_HOME")
@@ -229,8 +235,27 @@ def load_config() -> AgentConfig:
             changed = True
 
     if changed:
+        backup_path = None
+        if migration_events and config_path.exists():
+            backup_path = backup_config_file(config_path, paths.config_backups_dir)
         atomic_json_save(config_path, merged)
         logger.info("Extended config with new default fields")
+        if migration_events:
+            append_migration_journal(
+                paths.config_migration_journal_path,
+                config_path=config_path,
+                backup_path=backup_path,
+                events=migration_events,
+            )
+    if migration_events:
+        for event in migration_events:
+            logger.info(
+                "Config migration applied field=%s before=%s after=%s reason=%s",
+                event.field,
+                event.before,
+                event.after,
+                event.reason,
+            )
 
     init_workspace(paths)
     return AgentConfig.model_validate(merged)
@@ -510,6 +535,7 @@ _COMMANDS: dict[str, str] = {
     "--help": "help",
     "-h": "help",
     "status": "status",
+    "doctor": "doctor",
     "version": "version",
     "--version": "version",
     "stop": "stop",
@@ -555,6 +581,7 @@ def main() -> None:
     dispatch: dict[str, _Action] = {
         "help": _print_usage,
         "status": _cmd_status,
+        "doctor": lambda: _cmd_doctor(args),
         "version": _print_version,
         "stop": _stop_bot,
         "restart": _cmd_restart,

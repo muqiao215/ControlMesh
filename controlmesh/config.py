@@ -358,6 +358,47 @@ class AgentRoutingConfig(BaseModel):
     workunit_overrides: dict[str, dict[str, object]] = Field(default_factory=dict)
 
 
+class ProviderFallbackSurfacesConfig(BaseModel):
+    """Per-surface fallback policy for degraded runtime mode."""
+
+    normal_message: Literal["allow", "warn", "deny"] = "allow"
+    streaming_message: Literal["allow", "warn", "deny"] = "allow"
+    background_task: Literal["allow", "warn", "deny"] = "deny"
+    native_provider_command: Literal["allow", "warn", "deny"] = "deny"
+    release_workunit: Literal["allow", "warn", "deny"] = "deny"
+    git_write: Literal["allow", "warn", "deny"] = "deny"
+    publish: Literal["allow", "warn", "deny"] = "deny"
+
+
+class ProviderFallbackConfig(BaseModel):
+    """Govern degraded-mode fallback behavior across execution surfaces."""
+
+    enabled: bool = True
+    surfaces: ProviderFallbackSurfacesConfig = Field(default_factory=ProviderFallbackSurfacesConfig)
+    require_notice_on_first_use: bool = True
+    require_approval_for_risk: list[str] = Field(
+        default_factory=lambda: ["repo_write", "git_write", "publish"]
+    )
+
+    def action_for_surface(self, surface: str) -> Literal["allow", "warn", "deny"]:
+        """Return configured action for one surface."""
+        value = getattr(self.surfaces, surface, "deny")
+        if value in {"allow", "warn", "deny"}:
+            return value
+        return "deny"
+
+    def summary(self) -> str:
+        """Return a compact human-readable policy summary."""
+        return (
+            f"normal={self.surfaces.normal_message}, "
+            f"streaming={self.surfaces.streaming_message}, "
+            f"native={self.surfaces.native_provider_command}, "
+            f"background={self.surfaces.background_task}, "
+            f"git_write={self.surfaces.git_write}, "
+            f"publish={self.surfaces.publish}"
+        )
+
+
 class TimeoutConfig(BaseModel):
     """Per-execution-path timeout settings."""
 
@@ -501,6 +542,7 @@ class AgentConfig(BaseModel):
     timeouts: TimeoutConfig = Field(default_factory=TimeoutConfig)
     tasks: TasksConfig = Field(default_factory=TasksConfig)
     agent_routing: AgentRoutingConfig = Field(default_factory=AgentRoutingConfig)
+    provider_fallback: ProviderFallbackConfig = Field(default_factory=ProviderFallbackConfig)
     scene: SceneConfig = Field(default_factory=SceneConfig)
     codex_hooks: CodexHooksConfig = Field(default_factory=CodexHooksConfig)
     agent_graph: AgentGraphConfig = Field(default_factory=AgentGraphConfig)

@@ -13,6 +13,7 @@ from controlmesh.config import (
     CodexHooksConfig,
     DockerConfig,
     ModelRegistry,
+    ProviderFallbackConfig,
     QQBotAccountConfig,
     QQBotConfig,
     StreamingConfig,
@@ -50,6 +51,16 @@ def test_agent_config_defaults() -> None:
     assert cfg.allowed_user_ids == []
     assert cfg.codex_hooks == CodexHooksConfig()
     assert cfg.gateways == GatewayDispatchConfig()
+    assert cfg.provider_fallback == ProviderFallbackConfig()
+
+
+def test_provider_fallback_policy_defaults_are_conservative() -> None:
+    cfg = AgentConfig()
+    assert cfg.provider_fallback.surfaces.normal_message == "allow"
+    assert cfg.provider_fallback.surfaces.streaming_message == "allow"
+    assert cfg.provider_fallback.surfaces.background_task == "deny"
+    assert cfg.provider_fallback.surfaces.native_provider_command == "deny"
+    assert cfg.provider_fallback.surfaces.publish == "deny"
 
 
 def test_config_example_validates_against_agent_config() -> None:

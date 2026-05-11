@@ -1,9 +1,11 @@
-"""Status display CLI commands (``controlmesh status``, ``controlmesh help``)."""
+"""Status display CLI commands (``controlmesh status``, ``controlmesh help``, `doctor`)."""
 
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -13,8 +15,16 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from controlmesh.cli.auth import check_all_auth
 from controlmesh.i18n import t_rich
 from controlmesh.infra.platform import is_windows
+from controlmesh.provider_health import (
+    FleetDoctorHostResult,
+    apply_config_migrations,
+    assess_bootstrap_health,
+    load_bootstrap_health_snapshot,
+    render_doctor_providers_text,
+)
 from controlmesh.workspace.paths import ControlMeshPaths, resolve_paths
 
 _console = Console()
@@ -32,6 +42,18 @@ class StatusSummary:
     docker_enabled: bool
     docker_name: str | None
     error_count: int
+
+
+@dataclass(slots=True)
+class FleetInventoryHost:
+    """One host entry from fleet inventory."""
+
+    id: str
+    ssh_host: str
+    enabled: bool = True
+    role: tuple[str, ...] = ()
+    environment: str = ""
+    default_provider_profile: str = ""
 
 
 def build_status_lines(status: StatusSummary, *, paths: ControlMeshPaths) -> list[str]:
@@ -57,6 +79,23 @@ def build_status_lines(status: StatusSummary, *, paths: ControlMeshPaths) -> lis
     lines.append(f"  Workspace:  [cyan]{paths.workspace}[/cyan]")
     lines.append(f"  Logs:       [cyan]{paths.logs_dir}[/cyan]")
     lines.append(f"  Sessions:   [cyan]{paths.sessions_path}[/cyan]")
+    snapshot = load_bootstrap_health_snapshot(paths.runtime_health_path)
+    if snapshot:
+        lines.append("")
+        lines.append("Bootstrap health:")
+        lines.append(f"  Status:     [cyan]{snapshot.get('status', 'unknown')}[/cyan]")
+        lines.append(
+            "  Runtime:    [cyan]"
+            f"{snapshot.get('default_provider', '')} / {snapshot.get('default_model', '')}"
+            "[/cyan]"
+        )
+        fallback_provider = snapshot.get("fallback_provider", "")
+        fallback_model = snapshot.get("fallback_model", "")
+        if fallback_provider and fallback_model:
+            lines.append(f"  Fallback:   [cyan]{fallback_provider} / {fallback_model}[/cyan]")
+        policy = snapshot.get("fallback_policy_summary", "")
+        if isinstance(policy, str) and policy:
+            lines.append(f"  Policy:     [cyan]{policy}[/cyan]")
     return lines
 
 
@@ -149,6 +188,73 @@ def print_status() -> None:
         print_agents_status(agents, bot_running=bot_running)
 
 
+def cmd_doctor(args: Sequence[str]) -> None:
+    """Handle `controlmesh doctor ...` surfaces."""
+    command = next((arg for arg in args[1:] if not arg.startswith("-")), "")
+    if command == "providers":
+        tail = _command_tail(args, "providers")
+        if tail and tail[0] == "fleet":
+            print_fleet_provider_doctor(tail[1:])
+            return
+        print_provider_doctor()
+        return
+    _console.print("Usage:\n  controlmesh doctor providers\n  controlmesh doctor providers fleet\n  controlmesh doctor providers fleet --host HOST [--host HOST...]\n  controlmesh doctor providers fleet --hosts-file PATH")
+
+
+def print_provider_doctor() -> None:
+    """Print single-host provider/model/auth/bootstrap health."""
+    from controlmesh.config import AgentConfig, ModelRegistry
+
+    paths = resolve_paths()
+    try:
+        raw: dict[str, object] = json.loads(paths.config_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        _console.print("[red]Failed to read config for provider doctor.[/red]")
+        return
+
+    migrated, migration_events, _changed = apply_config_migrations(raw)
+    config = AgentConfig.model_validate(migrated)
+    registry = ModelRegistry()
+    auth_results = check_all_auth()
+    default_model = config.model
+    default_provider = config.provider
+    try:
+        from controlmesh.orchestrator.providers import ProviderManager
+
+        default_model, default_provider = ProviderManager(config).resolve_runtime_target(config.model)
+    except ValueError:
+        pass
+    health = assess_bootstrap_health(
+        configured_provider=config.provider,
+        configured_model=config.model,
+        default_provider=default_provider,
+        default_model=default_model,
+        auth_results=auth_results,
+        model_provider_resolver=registry.provider_for,
+        migration_events=migration_events,
+    )
+    _console.print(render_doctor_providers_text(health, auth_results))
+
+
+def print_fleet_provider_doctor(args: Sequence[str]) -> None:
+    """Run provider doctor across explicit hosts via SSH."""
+    hosts = _parse_fleet_hosts(args)
+    if not hosts:
+        hosts = [item.ssh_host for item in _load_inventory_hosts(resolve_paths().fleet_hosts_path)]
+    if not hosts:
+        raise SystemExit("Provide at least one host via --host or --hosts-file.")
+
+    results = [_run_fleet_provider_probe(host) for host in hosts]
+    _console.print("Fleet provider doctor")
+    for result in results:
+        status = "ok" if result.ok else "failed"
+        _console.print(f"\n[{result.host}] {status}")
+        if result.output:
+            _console.print(result.output.strip())
+        if result.error:
+            _console.print(result.error.strip())
+
+
 def print_usage() -> None:
     """Print commands and smart status information."""
     from controlmesh.__main__ import _is_configured
@@ -174,6 +280,11 @@ def print_usage() -> None:
     table.add_row("controlmesh", t_rich("help.controlmesh"))
     table.add_row("controlmesh help", t_rich("help.help"))
     table.add_row("controlmesh status", t_rich("help.status"))
+    table.add_row("controlmesh doctor providers", "Check provider/model compatibility, auth, and startup readiness.")
+    table.add_row(
+        "controlmesh doctor providers fleet",
+        "Run the same provider doctor over explicit SSH hosts.",
+    )
     table.add_row("controlmesh version", t_rich("help.version"))
     table.add_row("controlmesh onboarding", t_rich("help.onboarding"))
     table.add_row("controlmesh upgrade [version]", t_rich("help.upgrade"))
@@ -214,3 +325,103 @@ def print_usage() -> None:
             ),
         )
     _console.print()
+
+
+def _command_tail(args: Sequence[str], token: str) -> list[str]:
+    for idx, arg in enumerate(args):
+        if arg == token:
+            return list(args[idx + 1 :])
+    return []
+
+
+def _parse_fleet_hosts(args: Sequence[str]) -> list[str]:
+    hosts: list[str] = []
+    hosts_file = ""
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg == "--host" and index + 1 < len(args):
+            hosts.append(args[index + 1].strip())
+            index += 2
+            continue
+        if arg == "--hosts-file" and index + 1 < len(args):
+            hosts_file = args[index + 1].strip()
+            index += 2
+            continue
+        index += 1
+    if hosts_file:
+        file_hosts = [
+            line.strip()
+            for line in Path(hosts_file).read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        ]
+        hosts.extend(file_hosts)
+    deduped: list[str] = []
+    for host in hosts:
+        if host and host not in deduped:
+            deduped.append(host)
+    return deduped
+
+
+def _load_inventory_hosts(path: Path) -> list[FleetInventoryHost]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return []
+    if isinstance(data, list):
+        return [
+            FleetInventoryHost(id=str(item).strip(), ssh_host=str(item).strip())
+            for item in data
+            if str(item).strip()
+        ]
+    if isinstance(data, dict):
+        raw_hosts = data.get("hosts", [])
+        if isinstance(raw_hosts, list):
+            parsed: list[FleetInventoryHost] = []
+            for item in raw_hosts:
+                if isinstance(item, str):
+                    host = item.strip()
+                    if host:
+                        parsed.append(FleetInventoryHost(id=host, ssh_host=host))
+                    continue
+                if not isinstance(item, dict):
+                    continue
+                host_id = str(item.get("id", "")).strip()
+                ssh_host = str(item.get("ssh_host") or item.get("host") or host_id).strip()
+                if not ssh_host:
+                    continue
+                enabled = bool(item.get("enabled", True))
+                if not enabled:
+                    continue
+                role = item.get("role", ())
+                parsed.append(
+                    FleetInventoryHost(
+                        id=host_id or ssh_host,
+                        ssh_host=ssh_host,
+                        enabled=enabled,
+                        role=tuple(str(value).strip() for value in role) if isinstance(role, list) else (),
+                        environment=str(item.get("environment", "")).strip(),
+                        default_provider_profile=str(item.get("default_provider_profile", "")).strip(),
+                    )
+                )
+            return parsed
+    return []
+
+
+def _run_fleet_provider_probe(host: str) -> FleetDoctorHostResult:
+    try:
+        proc = subprocess.run(
+            ["ssh", host, "controlmesh", "doctor", "providers"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return FleetDoctorHostResult(host=host, ok=False, output="", error=str(exc))
+    return FleetDoctorHostResult(
+        host=host,
+        ok=proc.returncode == 0,
+        output=proc.stdout,
+        error=proc.stderr,
+    )

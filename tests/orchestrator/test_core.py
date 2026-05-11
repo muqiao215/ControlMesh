@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -12,6 +13,7 @@ from controlmesh.cli.types import AgentResponse
 from controlmesh.config import AgentConfig
 from controlmesh.errors import CLIError, CronError, SessionError, StreamError, WorkspaceError
 from controlmesh.orchestrator.core import Orchestrator
+from controlmesh.provider_health import assess_bootstrap_health
 from controlmesh.session.key import SessionKey
 from controlmesh.workspace.paths import ControlMeshPaths
 
@@ -73,6 +75,138 @@ async def test_stop_aborts_nothing_running(orch: Orchestrator) -> None:
 async def test_status_command(orch: Orchestrator) -> None:
     result = await orch.handle_message(SessionKey(chat_id=1), "/status")
     assert "Model:" in result.text
+
+
+async def test_non_command_message_is_gated_when_bootstrap_not_ready(orch: Orchestrator) -> None:
+    health = assess_bootstrap_health(
+        configured_provider="codex",
+        configured_model="zhipuai/glm-5.1",
+        default_provider="codex",
+        default_model="zhipuai/glm-5.1",
+        auth_results={
+            "codex": AuthResult(provider="codex", status=AuthStatus.AUTHENTICATED)
+        },
+        model_provider_resolver=orch.models.provider_for,
+    )
+    orch.set_bootstrap_health(health)
+
+    result = await orch.handle_message(SessionKey(chat_id=1), "hello")
+
+    assert "Agent default runtime is not fully ready." in result.text
+    assert "controlmesh doctor providers" in result.text
+
+
+async def test_status_command_still_works_when_bootstrap_not_ready(orch: Orchestrator) -> None:
+    health = assess_bootstrap_health(
+        configured_provider="codex",
+        configured_model="zhipuai/glm-5.1",
+        default_provider="codex",
+        default_model="zhipuai/glm-5.1",
+        auth_results={
+            "codex": AuthResult(provider="codex", status=AuthStatus.AUTHENTICATED)
+        },
+        model_provider_resolver=orch.models.provider_for,
+    )
+    orch.set_bootstrap_health(health)
+
+    result = await orch.handle_message(SessionKey(chat_id=1), "/status")
+
+    assert "Bootstrap health: not_ready" in result.text
+
+
+async def test_non_command_message_uses_fallback_when_bootstrap_degraded(orch: Orchestrator) -> None:
+    health = assess_bootstrap_health(
+        configured_provider="codex",
+        configured_model="zhipuai/glm-5.1",
+        default_provider="codex",
+        default_model="zhipuai/glm-5.1",
+        auth_results={
+            "codex": AuthResult(provider="codex", status=AuthStatus.AUTHENTICATED),
+            "claude": AuthResult(provider="claude", status=AuthStatus.AUTHENTICATED),
+        },
+        model_provider_resolver=orch.models.provider_for,
+    )
+    orch.set_bootstrap_health(health)
+    assert health.status.value == "degraded"
+
+    mock_execute = AsyncMock(return_value=_mock_response(result="Fallback Claude response"))
+    object.__setattr__(orch._cli_service, "execute", mock_execute)
+
+    result = await orch.handle_message(SessionKey(chat_id=1), "hello")
+
+    assert result.text.endswith("Fallback Claude response")
+    assert "Default runtime unavailable." in result.text
+    request = mock_execute.call_args[0][0]
+    assert request.provider_override == "claude"
+    assert request.model_override == "sonnet"
+    assert "Default runtime unavailable." in result.text
+
+
+async def test_degraded_fallback_writes_runtime_audit_event(orch: Orchestrator) -> None:
+    health = assess_bootstrap_health(
+        configured_provider="codex",
+        configured_model="zhipuai/glm-5.1",
+        default_provider="codex",
+        default_model="zhipuai/glm-5.1",
+        auth_results={
+            "codex": AuthResult(provider="codex", status=AuthStatus.AUTHENTICATED),
+            "claude": AuthResult(provider="claude", status=AuthStatus.AUTHENTICATED),
+        },
+        model_provider_resolver=orch.models.provider_for,
+    )
+    orch.set_bootstrap_health(health)
+    object.__setattr__(orch._cli_service, "execute", AsyncMock(return_value=_mock_response(result="ok")))
+
+    await orch.handle_message(SessionKey(chat_id=1), "hello")
+
+    path = orch.paths.runtime_events_dir / "tg" / "1" / "root.jsonl"
+    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    fallback_rows = [row for row in rows if row.get("event_type") == "provider_fallback_used"]
+    assert len(fallback_rows) == 1
+    assert fallback_rows[0]["payload"]["surface"] == "normal_message"
+    assert fallback_rows[0]["payload"]["to"]["provider"] == "claude"
+
+
+async def test_degraded_fallback_notice_only_emits_once_per_session(orch: Orchestrator) -> None:
+    health = assess_bootstrap_health(
+        configured_provider="codex",
+        configured_model="zhipuai/glm-5.1",
+        default_provider="codex",
+        default_model="zhipuai/glm-5.1",
+        auth_results={
+            "codex": AuthResult(provider="codex", status=AuthStatus.AUTHENTICATED),
+            "claude": AuthResult(provider="claude", status=AuthStatus.AUTHENTICATED),
+        },
+        model_provider_resolver=orch.models.provider_for,
+    )
+    orch.set_bootstrap_health(health)
+    object.__setattr__(orch._cli_service, "execute", AsyncMock(return_value=_mock_response(result="ok")))
+
+    first = await orch.handle_message(SessionKey(chat_id=1), "hello")
+    second = await orch.handle_message(SessionKey(chat_id=1), "hello again")
+
+    assert "Default runtime unavailable." in first.text
+    assert "Default runtime unavailable." not in second.text
+
+
+async def test_degraded_fallback_respects_surface_policy_deny(orch: Orchestrator) -> None:
+    orch._config.provider_fallback.surfaces.normal_message = "deny"
+    health = assess_bootstrap_health(
+        configured_provider="codex",
+        configured_model="zhipuai/glm-5.1",
+        default_provider="codex",
+        default_model="zhipuai/glm-5.1",
+        auth_results={
+            "codex": AuthResult(provider="codex", status=AuthStatus.AUTHENTICATED),
+            "claude": AuthResult(provider="claude", status=AuthStatus.AUTHENTICATED),
+        },
+        model_provider_resolver=orch.models.provider_for,
+    )
+    orch.set_bootstrap_health(health)
+
+    result = await orch.handle_message(SessionKey(chat_id=1), "hello")
+
+    assert "Agent default runtime is not fully ready." in result.text
 
 
 async def test_unknown_slash_command_routes_to_active_provider_by_default(

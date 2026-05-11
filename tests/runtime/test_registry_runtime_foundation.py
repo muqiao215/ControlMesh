@@ -9,6 +9,8 @@ from pathlib import Path
 from unittest.mock import AsyncMock
 
 from controlmesh.cli.process_registry import ProcessRegistry
+from controlmesh.cli.auth import AuthResult, AuthStatus
+from controlmesh.provider_health import assess_bootstrap_health, save_bootstrap_health
 from controlmesh.runtime.registry import (
     ProcessLeaseStore,
     RepoWorktreeManager,
@@ -70,6 +72,27 @@ def test_runtime_registry_records_provider_binding(tmp_path: Path) -> None:
     data = json.loads(paths.runtime_registry_path.read_text(encoding="utf-8"))
     assert data["providers"]["claude"]["effective_model"] == "sonnet"
     assert data["providers"]["claude"]["process_label"] == "task:abc"
+
+
+def test_save_bootstrap_health_persists_runtime_snapshot(tmp_path: Path) -> None:
+    paths = _paths(tmp_path)
+    health = assess_bootstrap_health(
+        configured_provider="claude",
+        configured_model="sonnet",
+        default_provider="claude",
+        default_model="sonnet",
+        auth_results={
+            "claude": AuthResult(provider="claude", status=AuthStatus.AUTHENTICATED)
+        },
+        model_provider_resolver=lambda _model: "claude",
+    )
+
+    save_bootstrap_health(paths.runtime_health_path, health, fallback_policy_summary="normal=allow")
+
+    data = json.loads(paths.runtime_health_path.read_text(encoding="utf-8"))
+    assert data["bootstrap"]["status"] == "ready"
+    assert data["bootstrap"]["default_provider"] == "claude"
+    assert data["bootstrap"]["fallback_policy_summary"] == "normal=allow"
 
 
 def test_process_registry_persists_and_removes_process_leases(tmp_path: Path) -> None:

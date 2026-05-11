@@ -130,6 +130,21 @@ class ControlMeshPaths:
         return self.runtime_dir / "runtime_health.json"
 
     @property
+    def config_backups_dir(self) -> Path:
+        """Versioned config backup root."""
+        return self.controlmesh_home / "config-backups"
+
+    @property
+    def config_migration_journal_path(self) -> Path:
+        """Append-only config migration journal."""
+        return self.controlmesh_home / "config-migrations.jsonl"
+
+    @property
+    def fleet_hosts_path(self) -> Path:
+        """Formal host inventory for fleet doctor surfaces."""
+        return self.controlmesh_home / "fleet_hosts.json"
+
+    @property
     def runtime_slots_path(self) -> Path:
         """Runtime slot state and leases."""
         return self.runtime_dir / "slots.json"

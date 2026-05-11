@@ -167,6 +167,7 @@ async def run_streaming_message(
             "thinking": "THINKING",
             "compacting": "COMPACTING",
             "recovering": "Please wait, recovering...",
+            "degraded_fallback": "DEGRADED FALLBACK",
             "timeout_warning": "TIMEOUT APPROACHING",
             "timeout_extended": "TIMEOUT EXTENDED",
             "background_task_created": "BACKGROUND TASK CREATED",

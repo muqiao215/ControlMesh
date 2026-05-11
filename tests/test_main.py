@@ -62,6 +62,52 @@ class TestLoadConfig:
         assert config.telegram_token == "MY_TOKEN"
         assert config.provider == "codex"
 
+    def test_load_config_normalizes_provider_alias(self, tmp_path: Path) -> None:
+        from controlmesh.__main__ import load_config
+
+        home = tmp_path / ".controlmesh"
+        config_dir = home / "config"
+        config_dir.mkdir(parents=True)
+        fw = tmp_path / "framework"
+        fw.mkdir()
+        user_cfg = {"telegram_token": "MY_TOKEN", "provider": "claw-code", "model": "sonnet"}
+        (config_dir / "config.json").write_text(json.dumps(user_cfg))
+
+        with patch("controlmesh.__main__.resolve_paths") as mock_paths:
+            paths = ControlMeshPaths(controlmesh_home=home, home_defaults=fw / "workspace", framework_root=fw)
+            mock_paths.return_value = paths
+            with patch("controlmesh.__main__.init_workspace"):
+                config = load_config()
+
+        assert config.provider == "claw"
+        merged = json.loads((config_dir / "config.json").read_text(encoding="utf-8"))
+        assert merged["provider"] == "claw"
+
+    def test_load_config_writes_backup_and_migration_journal(self, tmp_path: Path) -> None:
+        from controlmesh.__main__ import load_config
+
+        home = tmp_path / ".controlmesh"
+        config_dir = home / "config"
+        config_dir.mkdir(parents=True)
+        fw = tmp_path / "framework"
+        fw.mkdir()
+        user_cfg = {"telegram_token": "MY_TOKEN", "provider": "claw-code", "model": " sonnet "}
+        (config_dir / "config.json").write_text(json.dumps(user_cfg), encoding="utf-8")
+
+        with patch("controlmesh.__main__.resolve_paths") as mock_paths:
+            paths = ControlMeshPaths(controlmesh_home=home, home_defaults=fw / "workspace", framework_root=fw)
+            mock_paths.return_value = paths
+            with patch("controlmesh.__main__.init_workspace"):
+                load_config()
+
+        backups = list(paths.config_backups_dir.glob("config.*.json"))
+        assert backups
+        journal = paths.config_migration_journal_path.read_text(encoding="utf-8").strip().splitlines()
+        assert journal
+        payload = json.loads(journal[-1])
+        assert payload["backup_path"]
+        assert len(payload["events"]) >= 1
+
     def test_merges_new_defaults_into_existing(self, tmp_path: Path) -> None:
         from controlmesh.__main__ import load_config
 
@@ -1120,6 +1166,16 @@ class TestMainDispatch:
             main()
         mock_status.assert_called_once()
 
+    def test_doctor_command(self) -> None:
+        from controlmesh.__main__ import main
+
+        with (
+            patch("sys.argv", ["controlmesh", "doctor", "providers"]),
+            patch("controlmesh.__main__._cmd_doctor") as mock_doctor,
+        ):
+            main()
+        mock_doctor.assert_called_once()
+
     def test_stop_command(self) -> None:
         from controlmesh.__main__ import main
 
@@ -1299,6 +1355,170 @@ class TestMainHelpers:
 
         with patch("controlmesh.__main__._is_configured", return_value=False):
             _cmd_status()
+
+    def test_cmd_doctor_providers_renders_report(self, tmp_path: Path) -> None:
+        from controlmesh.cli_commands.status import print_provider_doctor
+
+        home = tmp_path / "home"
+        config_dir = home / "config"
+        config_dir.mkdir(parents=True)
+        fw = tmp_path / "fw"
+        fw.mkdir()
+        cfg = {"provider": "codex", "model": "zhipuai/glm-5.1"}
+        (config_dir / "config.json").write_text(json.dumps(cfg), encoding="utf-8")
+
+        with (
+            patch("controlmesh.cli_commands.status.resolve_paths") as mock_paths,
+            patch("controlmesh.cli_commands.status.check_all_auth", return_value={
+                "codex": SimpleNamespace(
+                    status=SimpleNamespace(value="authenticated"),
+                    diagnostic="",
+                ),
+                "opencode": SimpleNamespace(
+                    status=SimpleNamespace(value="installed"),
+                    diagnostic="missing auth",
+                ),
+            }),
+            patch("controlmesh.cli_commands.status._console.print") as mock_print,
+        ):
+            paths = ControlMeshPaths(
+                controlmesh_home=home,
+                home_defaults=fw / "workspace",
+                framework_root=fw,
+            )
+            mock_paths.return_value = paths
+            print_provider_doctor()
+
+        rendered = "\n".join(str(call.args[0]) for call in mock_print.call_args_list if call.args)
+        assert "Provider doctor" in rendered
+        assert "suggested_fix" in rendered
+
+    def test_cmd_doctor_fleet_uses_explicit_hosts(self) -> None:
+        from controlmesh.cli_commands.status import print_fleet_provider_doctor
+
+        with (
+            patch("controlmesh.cli_commands.status.subprocess.run") as mock_run,
+            patch("controlmesh.cli_commands.status._console.print") as mock_print,
+        ):
+            mock_run.return_value = SimpleNamespace(returncode=0, stdout="ok", stderr="")
+            print_fleet_provider_doctor(["--host", "meiren", "--host", "greenrise"])
+
+        assert mock_run.call_count == 2
+        rendered = "\n".join(str(call.args[0]) for call in mock_print.call_args_list if call.args)
+        assert "Fleet provider doctor" in rendered
+
+    def test_cmd_doctor_fleet_uses_inventory_when_no_hosts_passed(self, tmp_path: Path) -> None:
+        from controlmesh.cli_commands.status import print_fleet_provider_doctor
+
+        home = tmp_path / "home"
+        fw = tmp_path / "fw"
+        fw.mkdir()
+        paths = ControlMeshPaths(
+            controlmesh_home=home,
+            home_defaults=fw / "workspace",
+            framework_root=fw,
+        )
+        paths.fleet_hosts_path.parent.mkdir(parents=True, exist_ok=True)
+        paths.fleet_hosts_path.write_text(json.dumps({"hosts": ["meiren", "greenrise"]}), encoding="utf-8")
+
+        with (
+            patch("controlmesh.cli_commands.status.resolve_paths", return_value=paths),
+            patch("controlmesh.cli_commands.status.subprocess.run") as mock_run,
+            patch("controlmesh.cli_commands.status._console.print"),
+        ):
+            mock_run.return_value = SimpleNamespace(returncode=0, stdout="ok", stderr="")
+            print_fleet_provider_doctor([])
+
+        assert mock_run.call_count == 2
+
+    def test_cmd_doctor_fleet_inventory_metadata_uses_ssh_host_and_skips_disabled(self, tmp_path: Path) -> None:
+        from controlmesh.cli_commands.status import print_fleet_provider_doctor
+
+        home = tmp_path / "home"
+        fw = tmp_path / "fw"
+        fw.mkdir()
+        paths = ControlMeshPaths(
+            controlmesh_home=home,
+            home_defaults=fw / "workspace",
+            framework_root=fw,
+        )
+        paths.fleet_hosts_path.parent.mkdir(parents=True, exist_ok=True)
+        paths.fleet_hosts_path.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "hosts": [
+                        {
+                            "id": "greenrise",
+                            "ssh_host": "greenrise.example",
+                            "enabled": True,
+                            "role": ["control", "fleet"],
+                            "environment": "prod",
+                        },
+                        {
+                            "id": "disabled-node",
+                            "ssh_host": "disabled.example",
+                            "enabled": False,
+                        },
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with (
+            patch("controlmesh.cli_commands.status.resolve_paths", return_value=paths),
+            patch("controlmesh.cli_commands.status.subprocess.run") as mock_run,
+            patch("controlmesh.cli_commands.status._console.print"),
+        ):
+            mock_run.return_value = SimpleNamespace(returncode=0, stdout="ok", stderr="")
+            print_fleet_provider_doctor([])
+
+        assert mock_run.call_count == 1
+        assert mock_run.call_args.args[0][1] == "greenrise.example"
+
+    def test_status_panel_reads_persisted_bootstrap_snapshot(self, tmp_path: Path) -> None:
+        from controlmesh.cli_commands.status import build_status_lines, StatusSummary
+
+        paths = ControlMeshPaths(
+            controlmesh_home=tmp_path / "home",
+            home_defaults=tmp_path / "fw" / "workspace",
+            framework_root=tmp_path / "fw",
+        )
+        paths.runtime_health_path.parent.mkdir(parents=True, exist_ok=True)
+        paths.runtime_health_path.write_text(
+            json.dumps(
+                {
+                    "bootstrap": {
+                        "status": "not_ready",
+                        "default_provider": "codex",
+                        "default_model": "zhipuai/glm-5.1",
+                        "fallback_provider": "claude",
+                        "fallback_model": "sonnet",
+                        "fallback_policy_summary": "normal=allow, streaming=allow",
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        lines = build_status_lines(
+            StatusSummary(
+                bot_running=True,
+                bot_pid=1,
+                bot_uptime="1h",
+                provider="codex",
+                model="zhipuai/glm-5.1",
+                docker_enabled=False,
+                docker_name=None,
+                error_count=0,
+            ),
+            paths=paths,
+        )
+        rendered = "\n".join(lines)
+        assert "Bootstrap health:" in rendered
+        assert "not_ready" in rendered
+        assert "Fallback:" in rendered
+        assert "Policy:" in rendered
 
     def test_cmd_restart_stops_and_reexecs(self) -> None:
         from controlmesh.cli_commands.lifecycle import cmd_restart

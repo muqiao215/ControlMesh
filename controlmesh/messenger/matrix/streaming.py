@@ -25,6 +25,7 @@ _SYSTEM_MAP: dict[str, str] = {
     "thinking": "THINKING",
     "compacting": "COMPACTING",
     "recovering": "Please wait, recovering...",
+    "degraded_fallback": "DEGRADED FALLBACK",
     "timeout_warning": "TIMEOUT APPROACHING",
     "timeout_extended": "TIMEOUT EXTENDED",
 }

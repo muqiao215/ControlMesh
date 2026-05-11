@@ -8,8 +8,15 @@ from unittest.mock import patch
 import pytest
 
 from controlmesh.config import AgentConfig, reset_gemini_models, set_gemini_models
+from controlmesh.cli.auth import AuthResult, AuthStatus
 from controlmesh.orchestrator.providers import ProviderManager
 from controlmesh.provider_binding import provider_model_label, validate_provider_model_binding
+from controlmesh.provider_health import (
+    CompatibilityStatus,
+    ReadinessStatus,
+    assess_bootstrap_health,
+    assess_provider_model_binding,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -414,3 +421,49 @@ class TestProviderBindingHelpers:
                 "zhipuai/glm-5.1",
                 model_provider_resolver=ProviderManager(AgentConfig()).models.provider_for,
             )
+
+    def test_assess_binding_returns_structured_invalid_result(self) -> None:
+        assessment = assess_provider_model_binding(
+            "codex",
+            "zhipuai/glm-5.1",
+            model_provider_resolver=ProviderManager(AgentConfig()).models.provider_for,
+        )
+        assert assessment.status == CompatibilityStatus.INVALID
+        assert assessment.suggested_provider == "opencode"
+        assert "provider=opencode" in assessment.suggested_fix
+
+    def test_bootstrap_health_not_ready_for_installed_unauthed_provider(self) -> None:
+        health = assess_bootstrap_health(
+            configured_provider="opencode",
+            configured_model="zhipuai/glm-5.1",
+            default_provider="opencode",
+            default_model="zhipuai/glm-5.1",
+            auth_results={
+                "opencode": AuthResult(
+                    provider="opencode",
+                    status=AuthStatus.INSTALLED,
+                    diagnostic="missing OpenCode authentication",
+                )
+            },
+            model_provider_resolver=ProviderManager(AgentConfig()).models.provider_for,
+        )
+        assert health.status == ReadinessStatus.NOT_READY
+        assert "missing OpenCode authentication" in health.summary or any(
+            "missing OpenCode authentication" in check.message for check in health.checks
+        )
+
+    def test_bootstrap_health_degraded_when_ready_fallback_exists(self) -> None:
+        health = assess_bootstrap_health(
+            configured_provider="codex",
+            configured_model="zhipuai/glm-5.1",
+            default_provider="codex",
+            default_model="zhipuai/glm-5.1",
+            auth_results={
+                "codex": AuthResult(provider="codex", status=AuthStatus.AUTHENTICATED),
+                "claude": AuthResult(provider="claude", status=AuthStatus.AUTHENTICATED),
+            },
+            model_provider_resolver=ProviderManager(AgentConfig()).models.provider_for,
+        )
+        assert health.status == ReadinessStatus.DEGRADED
+        assert health.fallback_provider == "claude"
+        assert health.fallback_model == "sonnet"
