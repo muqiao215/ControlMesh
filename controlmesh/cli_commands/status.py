@@ -172,29 +172,31 @@ def print_usage() -> None:
     table.add_column(style="bold green", min_width=24)
     table.add_column()
     table.add_row("controlmesh", t_rich("help.controlmesh"))
+    table.add_row("controlmesh help", t_rich("help.help"))
+    table.add_row("controlmesh status", t_rich("help.status"))
+    table.add_row("controlmesh version", t_rich("help.version"))
     table.add_row("controlmesh onboarding", t_rich("help.onboarding"))
-    table.add_row("controlmesh stop", t_rich("help.stop"))
+    table.add_row("controlmesh upgrade [version]", t_rich("help.upgrade"))
     table.add_row("controlmesh restart", t_rich("help.restart"))
-    table.add_row("controlmesh reset", t_rich("help.reset"))
-    table.add_row("controlmesh upgrade", t_rich("help.upgrade"))
+    table.add_row("controlmesh stop", t_rich("help.stop"))
     table.add_row("controlmesh uninstall", t_rich("help.uninstall"))
     is_macos = sys.platform == "darwin"
     svc_hint = "Task Scheduler" if is_windows() else ("launchd" if is_macos else "systemd")
     table.add_row("controlmesh service install", t_rich("help.service_install", hint=svc_hint))
     table.add_row("controlmesh service", t_rich("help.service"))
+    table.add_row("controlmesh tasks list", "List background tasks from the local task runtime.")
+    table.add_row("controlmesh tasks doctor", "Show task runtime health, policy, and primitive endpoints.")
     table.add_row("controlmesh agents", t_rich("help.agents"))
     table.add_row("controlmesh docker", t_rich("help.docker"))
     table.add_row("controlmesh api", t_rich("help.api"))
-    table.add_row("controlmesh tasks list", "List background tasks from the local task runtime.")
-    table.add_row("controlmesh tasks doctor", "Show task runtime health, policy, and primitive endpoints.")
     table.add_row(
         "controlmesh feishu native bootstrap",
         "Feishu-native product entrypoint for setup/bootstrap guidance.",
     )
     table.add_row("controlmesh install <extra>", t_rich("help.install"))
-    table.add_row("controlmesh status", t_rich("help.status"))
-    table.add_row("controlmesh help", t_rich("help.help"))
-    table.add_row("-v, --verbose", t_rich("help.verbose"))
+    table.add_row("--help / -h", t_rich("help.help_flag"))
+    table.add_row("--version", t_rich("help.version_flag"))
+    table.add_row("--verbose / -v", t_rich("help.verbose"))
 
     _console.print(
         Panel(table, title="[bold]Commands[/bold]", border_style="blue", padding=(1, 0)),

@@ -506,7 +506,11 @@ def _enforce_runtime_provenance() -> None:
 
 _COMMANDS: dict[str, str] = {
     "help": "help",
+    "--help": "help",
+    "-h": "help",
     "status": "status",
+    "version": "version",
+    "--version": "version",
     "stop": "stop",
     "restart": "restart",
     "upgrade": "upgrade",
@@ -549,6 +553,7 @@ def main() -> None:
     dispatch: dict[str, _Action] = {
         "help": _print_usage,
         "status": _cmd_status,
+        "version": _print_version,
         "stop": _stop_bot,
         "restart": _cmd_restart,
         "upgrade": _upgrade,

@@ -149,12 +149,13 @@ def _build_help_text(agent_name: str = "main") -> str:
         f"- {t('help.cap_cron')}",
         f"- {t('help.cap_memory')}",
     ]
-    start_here_commands = ["cm", "model", "tasks", "cron"]
-    advanced_commands = ["settings", "showfiles", "info", "diagnose", "upgrade", "restart"]
+    start_here_commands = ["help", "model", "mesh", "tasks", "cron"]
+    daily_commands = ["new", "session", "status", "memory", "stop", "interrupt"]
+    advanced_commands = ["cm", "settings", "showfiles", "info", "diagnose", "upgrade", "restart"]
     if agent_name == "main":
         capability_lines.insert(3, f"- {t('help.cap_agents')}")
-        start_here_commands.insert(4, "agents")
-        advanced_commands[2:2] = ["agent_start", "agent_stop", "agent_restart", "stop_all"]
+        start_here_commands.append("agents")
+        advanced_commands[3:3] = ["agent_start", "agent_stop", "agent_restart", "stop_all"]
     return fmt(
         t("help.overview_header"),
         t("help.overview_intro"),
@@ -163,13 +164,7 @@ def _build_help_text(agent_name: str = "main") -> str:
         f"{t('help.start_here_header')}\n"
         + "\n".join(_help_line(command) for command in start_here_commands),
         f"{t('help.daily_controls_header')}\n"
-        f"{_help_line('new')}\n"
-        f"{_help_line('session')}\n"
-        f"{_help_line('status')}\n"
-        f"{_help_line('memory')}\n"
-        f"{_help_line('stop')}\n"
-        f"{_help_line('interrupt')}\n"
-        f"{_help_line('help')}",
+        + "\n".join(_help_line(command) for command in daily_commands),
         f"{t('help.advanced_header')}\n"
         + "\n".join(_help_line(command) for command in advanced_commands),
         SEP,

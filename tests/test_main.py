@@ -1076,6 +1076,18 @@ class TestMainDispatch:
         mock_version.assert_called_once()
         mock_default.assert_not_called()
 
+    def test_version_subcommand(self) -> None:
+        from controlmesh.__main__ import main
+
+        with (
+            patch("sys.argv", ["controlmesh", "version"]),
+            patch("controlmesh.__main__._print_version") as mock_version,
+            patch("controlmesh.__main__._default_action") as mock_default,
+        ):
+            main()
+        mock_version.assert_called_once()
+        mock_default.assert_not_called()
+
     def test_help_command(self) -> None:
         from controlmesh.__main__ import main
 
@@ -1085,6 +1097,18 @@ class TestMainDispatch:
         ):
             main()
         mock_usage.assert_called_once()
+
+    def test_help_long_flag(self) -> None:
+        from controlmesh.__main__ import main
+
+        with (
+            patch("sys.argv", ["controlmesh", "--help"]),
+            patch("controlmesh.__main__._print_usage") as mock_usage,
+            patch("controlmesh.__main__._default_action") as mock_default,
+        ):
+            main()
+        mock_usage.assert_called_once()
+        mock_default.assert_not_called()
 
     def test_status_command(self) -> None:
         from controlmesh.__main__ import main
