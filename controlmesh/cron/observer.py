@@ -302,18 +302,62 @@ class CronObserver(BaseTaskObserver):
         finally:
             self._executing.discard(job_id)
 
+    async def run_job_now(self, job_id: str, *, dry_run: bool = False) -> tuple[str, str]:
+        """Run one cron job immediately using the normal execution path."""
+        job = self._manager.get_job(job_id)
+        if job is None:
+            return ("error:not_found", f"Cron job `{job_id}` not found.")
+        if dry_run:
+            lines = [
+                "**Cron Dry Run**",
+                "",
+                f"Job: `{job.id}`",
+                f"Title: {job.title}",
+                f"Schedule: `{job.schedule}`",
+                f"Task folder: `{job.task_folder}`",
+                f"Enabled: `{job.enabled}`",
+                f"Execution mode: `{job.execution_mode or 'oneshot'}`",
+            ]
+            if job.provider:
+                lines.append(f"Provider override: `{job.provider}`")
+            if job.model:
+                lines.append(f"Model override: `{job.model}`")
+            if job.reasoning_effort:
+                lines.append(f"Reasoning effort: `{job.reasoning_effort}`")
+            if job.cli_parameters:
+                lines.append(f"CLI parameters: `{' '.join(job.cli_parameters)}`")
+            lines.extend(["", "Instruction preview:", job.agent_instruction])
+            return ("dry_run", "\n".join(lines))
+
+        self._executing.add(job_id)
+        try:
+            await self._execute_job_inner(
+                job_id,
+                job.agent_instruction,
+                job.task_folder,
+                manual=True,
+            )
+        finally:
+            self._executing.discard(job_id)
+
+        refreshed = self._manager.get_job(job_id)
+        status = refreshed.manual_run_status or refreshed.last_run_status or "unknown"
+        return (status, f"Cron job `{job_id}` finished with status `{status}`.")
+
     async def _execute_job_inner(
         self,
         job_id: str,
         instruction: str,
         task_folder: str,
+        *,
+        manual: bool = False,
     ) -> None:
         set_log_context(operation="cron")
         job = self._manager.get_job(job_id)
         job_title = job.title if job else job_id
         routing = (job.chat_id, job.topic_id, job.transport) if job else (0, None, "tg")
 
-        if job and not job.enabled:
+        if job and not job.enabled and not manual:
             logger.info("Cron job %s is disabled, skipping execution", job_title)
             return
 
@@ -324,7 +368,13 @@ class CronObserver(BaseTaskObserver):
         t0 = time.monotonic()
 
         if job and (job.execution_mode or "oneshot") == "taskhub":
-            await self._submit_taskhub_job(job, job_title=job_title, routing=routing, started_at=t0)
+            await self._submit_taskhub_job(
+                job,
+                job_title=job_title,
+                routing=routing,
+                started_at=t0,
+                manual=manual,
+            )
             return
 
         overrides = TaskOverrides(
@@ -348,7 +398,10 @@ class CronObserver(BaseTaskObserver):
 
         if result.status == "error:folder_missing":
             logger.error("Cron task folder missing: %s", task_folder)
-            self._manager.update_run_status(job_id, status="error:folder_missing")
+            if manual:
+                self._manager.update_manual_run_status(job_id, status="error:folder_missing")
+            else:
+                self._manager.update_run_status(job_id, status="error:folder_missing")
             return
 
         if result.execution is None:
@@ -360,7 +413,10 @@ class CronObserver(BaseTaskObserver):
                 result.status,
                 routing,
             )
-            self._manager.update_run_status(job_id, status=result.status)
+            if manual:
+                self._manager.update_manual_run_status(job_id, status=result.status)
+            else:
+                self._manager.update_run_status(job_id, status=result.status)
             return
 
         elapsed_ms = (time.monotonic() - t0) * 1000
@@ -386,7 +442,10 @@ class CronObserver(BaseTaskObserver):
             routing,
         )
 
-        self._manager.update_run_status(job_id, status=result.status)
+        if manual:
+            self._manager.update_manual_run_status(job_id, status=result.status)
+        else:
+            self._manager.update_run_status(job_id, status=result.status)
         # Refresh our mtime baseline so the file-watcher doesn't treat the
         # run-status write as a user-initiated change and trigger a full
         # reschedule of all other jobs.
@@ -399,12 +458,16 @@ class CronObserver(BaseTaskObserver):
         job_title: str,
         routing: tuple[int, int | None, str],
         started_at: float,
+        manual: bool = False,
     ) -> None:
         """Submit an opt-in cron job to TaskHub with a minimal safety gate."""
         if self._task_hub is None:
             status = "error:no_task_hub"
             await self._deliver_result(job.id, job_title, "", status, routing)
-            self._manager.update_run_status(job.id, status=status)
+            if manual:
+                self._manager.update_manual_run_status(job.id, status=status)
+            else:
+                self._manager.update_run_status(job.id, status=status)
             await self._watcher.update_mtime()
             return
 
@@ -412,7 +475,10 @@ class CronObserver(BaseTaskObserver):
         if output_policy != "summarized_only":
             status = "error:cron_taskhub_requires_summarized_only"
             await self._deliver_result(job.id, job_title, "", status, routing)
-            self._manager.update_run_status(job.id, status=status)
+            if manual:
+                self._manager.update_manual_run_status(job.id, status=status)
+            else:
+                self._manager.update_run_status(job.id, status=status)
             await self._watcher.update_mtime()
             return
 
@@ -420,7 +486,10 @@ class CronObserver(BaseTaskObserver):
         if risk == RoutingRisk.HIGH.value:
             status = "error:cron_taskhub_requires_foreground"
             await self._deliver_result(job.id, job_title, "", status, routing)
-            self._manager.update_run_status(job.id, status=status)
+            if manual:
+                self._manager.update_manual_run_status(job.id, status=status)
+            else:
+                self._manager.update_run_status(job.id, status=status)
             await self._watcher.update_mtime()
             return
 
@@ -436,7 +505,10 @@ class CronObserver(BaseTaskObserver):
         if workunit_kind and workunit_kind in FORCE_FOREGROUND_CAPS:
             status = "error:cron_taskhub_requires_foreground"
             await self._deliver_result(job.id, job_title, "", status, routing)
-            self._manager.update_run_status(job.id, status=status)
+            if manual:
+                self._manager.update_manual_run_status(job.id, status=status)
+            else:
+                self._manager.update_run_status(job.id, status=status)
             await self._watcher.update_mtime()
             return
 
@@ -447,7 +519,10 @@ class CronObserver(BaseTaskObserver):
         if not chat_id:
             status = "error:no_chat_id"
             await self._deliver_result(job.id, job_title, "", status, routing)
-            self._manager.update_run_status(job.id, status=status)
+            if manual:
+                self._manager.update_manual_run_status(job.id, status=status)
+            else:
+                self._manager.update_run_status(job.id, status=status)
             await self._watcher.update_mtime()
             return
 
@@ -471,7 +546,10 @@ class CronObserver(BaseTaskObserver):
         except ValueError as exc:
             status = f"error:{exc}"
             await self._deliver_result(job.id, job_title, "", status, routing)
-            self._manager.update_run_status(job.id, status=status)
+            if manual:
+                self._manager.update_manual_run_status(job.id, status=status)
+            else:
+                self._manager.update_run_status(job.id, status=status)
             await self._watcher.update_mtime()
             return
 
@@ -482,7 +560,10 @@ class CronObserver(BaseTaskObserver):
             task_id,
             elapsed_ms,
         )
-        self._manager.update_run_status(job.id, status="success:taskhub_submitted")
+        if manual:
+            self._manager.update_manual_run_status(job.id, status="success:taskhub_submitted")
+        else:
+            self._manager.update_run_status(job.id, status="success:taskhub_submitted")
         await self._watcher.update_mtime()
 
     def _is_quiet_hours(self, job: CronJob | None, job_title: str) -> bool:

@@ -28,6 +28,8 @@ def test_cronjob_new_fields_defaults() -> None:
     assert job.workunit_kind is None
     assert job.risk is None
     assert job.output_policy is None
+    assert job.manual_run_at is None
+    assert job.manual_run_status is None
 
 
 def test_cronjob_new_fields_with_values() -> None:
@@ -76,6 +78,8 @@ def test_cronjob_to_dict_includes_new_fields() -> None:
     assert data["workunit_kind"] is None
     assert data["risk"] is None
     assert data["output_policy"] is None
+    assert data["manual_run_at"] is None
+    assert data["manual_run_status"] is None
 
 
 def test_cronjob_to_dict_with_none_values() -> None:
@@ -152,6 +156,8 @@ def test_cronjob_from_dict_backward_compatibility() -> None:
     assert job.workunit_kind is None
     assert job.risk is None
     assert job.output_policy is None
+    assert job.manual_run_at is None
+    assert job.manual_run_status is None
 
 
 def test_cronjob_round_trip_serialization() -> None:

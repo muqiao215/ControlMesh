@@ -32,6 +32,8 @@ class CronJob:
     created_at: str = ""
     last_run_at: str | None = None
     last_run_status: str | None = None
+    manual_run_at: str | None = None
+    manual_run_status: str | None = None
 
     # Per-task execution overrides
     provider: str | None = None
@@ -73,6 +75,8 @@ class CronJob:
             "created_at": self.created_at,
             "last_run_at": self.last_run_at,
             "last_run_status": self.last_run_status,
+            "manual_run_at": self.manual_run_at,
+            "manual_run_status": self.manual_run_status,
             "provider": self.provider,
             "model": self.model,
             "reasoning_effort": self.reasoning_effort,
@@ -106,6 +110,8 @@ class CronJob:
             created_at=data.get("created_at", ""),
             last_run_at=data.get("last_run_at"),
             last_run_status=data.get("last_run_status"),
+            manual_run_at=data.get("manual_run_at"),
+            manual_run_status=data.get("manual_run_status"),
             provider=data.get("provider"),
             model=data.get("model"),
             reasoning_effort=data.get("reasoning_effort"),
@@ -194,6 +200,15 @@ class CronManager:
             return
         job.last_run_at = datetime.now(UTC).isoformat()
         job.last_run_status = status
+        self._save()
+
+    def update_manual_run_status(self, job_id: str, *, status: str) -> None:
+        """Update manual_run_at and manual_run_status for a job."""
+        job = self.get_job(job_id)
+        if job is None:
+            return
+        job.manual_run_at = datetime.now(UTC).isoformat()
+        job.manual_run_status = status
         self._save()
 
     def reload(self) -> None:

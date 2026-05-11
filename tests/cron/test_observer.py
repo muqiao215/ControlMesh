@@ -260,6 +260,63 @@ class TestCronObserverScheduling:
 class TestCronObserverExecution:
     """Job execution tests."""
 
+    async def test_run_job_now_dry_run_returns_preview(self, tmp_path: Path) -> None:
+        paths = _make_paths(tmp_path)
+        mgr = _make_manager(paths)
+        mgr.add_job(_make_job("ops-maint", provider="claude", model="sonnet", reasoning_effort="high"))
+        observer = _make_observer(paths, mgr)
+
+        status, text = await observer.run_job_now("ops-maint", dry_run=True)
+
+        assert status == "dry_run"
+        assert "Cron Dry Run" in text
+        assert "ops-maint" in text
+        assert "Task folder" in text
+
+    async def test_run_job_now_executes_and_updates_manual_status(self, tmp_path: Path) -> None:
+        paths = _make_paths(tmp_path)
+        mgr = _make_manager(paths)
+        mgr.add_job(_make_job("ops-maint"))
+        observer = _make_observer(paths, mgr)
+
+        fake_result = MagicMock()
+        fake_result.status = "success"
+        fake_result.result_text = "done"
+        fake_result.execution = MagicMock(stdout=b"ok")
+
+        with (
+            time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)),
+            patch("controlmesh.cron.observer.execute_in_task_folder", new=AsyncMock(return_value=fake_result)),
+        ):
+            status, text = await observer.run_job_now("ops-maint")
+
+        job = mgr.get_job("ops-maint")
+        assert status == "success"
+        assert "finished with status" in text
+        assert job is not None
+        assert job.manual_run_status == "success"
+        assert job.manual_run_at is not None
+
+    async def test_run_job_now_allows_disabled_job(self, tmp_path: Path) -> None:
+        paths = _make_paths(tmp_path)
+        mgr = _make_manager(paths)
+        mgr.add_job(_make_job("paused-job", enabled=False))
+        observer = _make_observer(paths, mgr)
+
+        fake_result = MagicMock()
+        fake_result.status = "success"
+        fake_result.result_text = "done"
+        fake_result.execution = MagicMock(stdout=b"ok")
+
+        with (
+            time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)),
+            patch("controlmesh.cron.observer.execute_in_task_folder", new=AsyncMock(return_value=fake_result)) as execute_mock,
+        ):
+            status, _text = await observer.run_job_now("paused-job")
+
+        execute_mock.assert_awaited_once()
+        assert status == "success"
+
     async def test_oneshot_mode_uses_legacy_execute_path(self, tmp_path: Path) -> None:
         paths = _make_paths(tmp_path)
         mgr = _make_manager(paths)

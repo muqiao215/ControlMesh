@@ -137,6 +137,16 @@ class TestCronManagerCRUD:
         assert updated.last_run_status == "success"
         assert updated.last_run_at is not None
 
+    def test_update_manual_run_status(self, tmp_path: Path) -> None:
+        mgr = _make_manager(tmp_path)
+        mgr.add_job(_make_job())
+
+        mgr.update_manual_run_status("daily", status="success")
+        updated = mgr.get_job("daily")
+        assert updated is not None
+        assert updated.manual_run_status == "success"
+        assert updated.manual_run_at is not None
+
     def test_set_enabled_updates_single_job(self, tmp_path: Path) -> None:
         mgr = _make_manager(tmp_path)
         mgr.add_job(_make_job())

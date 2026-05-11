@@ -2359,6 +2359,45 @@ async def test_cron_lists_jobs(orch: Orchestrator) -> None:
     assert "active" in result.text
 
 
+async def test_cron_run_executes_job(orch: Orchestrator) -> None:
+    from unittest.mock import AsyncMock
+
+    cron_observer = AsyncMock()
+    cron_observer.run_job_now = AsyncMock(return_value=("success", "Cron job `test-job` finished with status `success`."))
+    orch._observers.cron = cron_observer
+
+    result = await cmd_cron(orch, SessionKey(chat_id=0), "/cron run test-job")
+
+    cron_observer.run_job_now.assert_awaited_once_with("test-job", dry_run=False)
+    assert "finished with status" in result.text
+
+
+async def test_cron_trigger_alias_executes_job(orch: Orchestrator) -> None:
+    from unittest.mock import AsyncMock
+
+    cron_observer = AsyncMock()
+    cron_observer.run_job_now = AsyncMock(return_value=("success", "Cron job `test-job` finished with status `success`."))
+    orch._observers.cron = cron_observer
+
+    result = await cmd_cron(orch, SessionKey(chat_id=0), "/cron trigger test-job")
+
+    cron_observer.run_job_now.assert_awaited_once_with("test-job", dry_run=False)
+    assert "finished with status" in result.text
+
+
+async def test_cron_run_dry_run_executes_preview_only(orch: Orchestrator) -> None:
+    from unittest.mock import AsyncMock
+
+    cron_observer = AsyncMock()
+    cron_observer.run_job_now = AsyncMock(return_value=("dry_run", "**Cron Dry Run**"))
+    orch._observers.cron = cron_observer
+
+    result = await cmd_cron(orch, SessionKey(chat_id=0), "/cron run test-job --dry-run")
+
+    cron_observer.run_job_now.assert_awaited_once_with("test-job", dry_run=True)
+    assert "Cron Dry Run" in result.text
+
+
 # -- cmd_diagnose --
 
 

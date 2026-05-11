@@ -80,12 +80,13 @@ _NATIVE_COMMAND_PROVIDERS = frozenset({"claude", "codex", "gemini", "claw", "ope
 _CONTROL_MESH_REGISTRY = (
     "**ControlMesh 命令**\n\n"
     "- `/new` 新会话\n"
+    "- `/mesh` 分阶段工作流\n"
     "- `/cm` 打开当前 CLI 的 Native Commands\n"
     "- `/back` 返回 ControlMesh 命令\n"
     "- `/model` 模型/通道\n"
     "- `/tasks` 后台任务\n"
     "- `/session` 会话入口\n"
-    "- `/agents` Agent 队列\n"
+    "- `/agents` Agent 队列与子 Agent\n"
     "- `/cron` 定时任务\n"
     "- `/status` 当前状态\n"
     "- `/memory` 主记忆\n"
@@ -832,6 +833,15 @@ def _tasks_topology_status_text(topology: str | None, *, updated: bool = False) 
 async def cmd_cron(orch: Orchestrator, _key: SessionKey, _text: str) -> OrchestratorResult:
     """Handle /cron."""
     logger.info("Cron requested")
+    parts = _text.strip().split()
+    if len(parts) >= 3 and parts[1] in {"run", "trigger"}:
+        observer = orch._observers.cron
+        if observer is None:
+            return OrchestratorResult(text="Cron observer is not active.")
+        job_id = parts[2].strip()
+        dry_run = any(part == "--dry-run" for part in parts[3:])
+        status, text = await observer.run_job_now(job_id, dry_run=dry_run)
+        return OrchestratorResult(text=text)
     resp = await cron_selector_start(orch)
     return OrchestratorResult(text=resp.text, buttons=resp.buttons)
 
