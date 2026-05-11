@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import json
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -258,7 +259,10 @@ def test_cmd_auth_weixin_login_complete_retries_after_poll_timeout(
     assert "poll timeout" in rendered
     assert "logged_in" in rendered
     assert len(poll_attempts) == 2
-    assert (tmp_path / "restart-requested").read_text(encoding="utf-8") == "1"
+    restart_payload = json.loads((tmp_path / "restart-requested").read_text(encoding="utf-8"))
+    assert restart_payload["details"] == {}
+    assert restart_payload["source"] == "unknown"
+    assert restart_payload["requested_at"]
     assert (
         WeixinCredentialStore(
             config.controlmesh_home,

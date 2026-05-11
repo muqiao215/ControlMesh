@@ -840,7 +840,7 @@ async def cmd_cron(orch: Orchestrator, _key: SessionKey, _text: str) -> Orchestr
             return OrchestratorResult(text="Cron observer is not active.")
         job_id = parts[2].strip()
         dry_run = any(part == "--dry-run" for part in parts[3:])
-        status, text = await observer.run_job_now(job_id, dry_run=dry_run)
+        _status, text = await observer.run_job_now(job_id, dry_run=dry_run)
         return OrchestratorResult(text=text)
     resp = await cron_selector_start(orch)
     return OrchestratorResult(text=resp.text, buttons=resp.buttons)

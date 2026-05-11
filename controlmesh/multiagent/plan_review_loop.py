@@ -282,7 +282,7 @@ def _evaluation_from_artifacts(orch: Orchestrator, plan_id: str, phase_id: str) 
     decision = str(raw.get("decision") or "")
     quality = float(raw.get("quality") or 0.0)
     return EvaluationResult(
-        score=max(0, min(10, int(round(quality * 10)))),
+        score=max(0, min(10, round(quality * 10))),
         decision=(
             "approve_recommended"
             if decision == "accept"
@@ -577,7 +577,6 @@ async def handle_task_result(orch: Orchestrator, result: TaskResult) -> str | No
             _set_controller_state(orch, plan_id, status="ready_without_phases")
             return f"Plan `{plan_id}` was created but has no pending phases to execute."
         task_id = await submit_phase_execution(orch, plan_id=plan_id, phase=phase)
-        phase_id = str(phase.get("id") or "")
         return (
             f"ControlMesh workflow created\n\n"
             f"Plan: {plan_id}\n"
@@ -880,7 +879,7 @@ def workflow_status_text(orch: Orchestrator, plan_id: str, *, command_prefix: st
         evaluation = _evaluation_from_artifacts(orch, plan_id, awaiting)
         evaluation_lines = _evaluation_lines(evaluation, review)
         if evaluation_lines:
-            lines.extend(["", "Last phase result:"] + evaluation_lines)
+            lines.extend(["", "Last phase result:", *evaluation_lines])
         lines.extend(
             [
                 "",

@@ -1773,7 +1773,7 @@ def _evaluation_result_from_verdict(
     if verdict.decision is EvaluatorDecision.REJECT:
         max_severity = "high"
     return EvaluationResult(
-        score=max(0, min(10, int(round(verdict.quality * 10)))),
+        score=max(0, min(10, round(verdict.quality * 10))),
         decision=decision,
         summary=verdict.summary,
         max_severity=max_severity,
