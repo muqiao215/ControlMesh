@@ -37,10 +37,27 @@ _SKILL_SYNC_INTERVAL = 30.0
 _MANAGED_MARKER = ".controlmesh_managed"
 
 
+def _safe_resolve(path: Path) -> Path | None:
+    """Resolve *path* without raising on broken links or symlink loops."""
+    try:
+        return path.resolve()
+    except (OSError, RuntimeError):
+        return None
+
+
+def _is_bad_symlink(path: Path) -> bool:
+    """Return ``True`` when *path* is a broken or looping symlink."""
+    return path.is_symlink() and (not path.exists() or _safe_resolve(path) is None)
+
+
 def _is_under(child: Path, parent: Path) -> bool:
     """Return ``True`` if *child* is located under *parent* directory."""
     try:
-        child.resolve().relative_to(parent.resolve())
+        child_resolved = _safe_resolve(child)
+        parent_resolved = _safe_resolve(parent)
+        if child_resolved is None or parent_resolved is None:
+            return False
+        child_resolved.relative_to(parent_resolved)
     except ValueError:
         return False
     else:
@@ -113,7 +130,9 @@ def _resolve_canonical(
     for registry in registries:
         entry = registry.get(name)
         if entry is not None and entry.is_symlink() and entry.exists():
-            return entry.resolve()
+            resolved = _safe_resolve(entry)
+            if resolved is not None:
+                return resolved
     return None
 
 
@@ -155,7 +174,9 @@ def _ensure_link(link_path: Path, target: Path) -> bool:
     if link_path.exists() and not link_path.is_symlink():
         return False
     if link_path.is_symlink():
-        if link_path.resolve() == target.resolve():
+        resolved_link = _safe_resolve(link_path)
+        resolved_target = _safe_resolve(target)
+        if resolved_link is not None and resolved_target is not None and resolved_link == resolved_target:
             return False
         link_path.unlink()
     _create_dir_link(link_path, target)
@@ -228,7 +249,7 @@ def _clean_broken_links(directory: Path) -> int:
         return 0
     removed = 0
     for entry in directory.iterdir():
-        if entry.is_symlink() and not entry.exists():
+        if _is_bad_symlink(entry):
             entry.unlink()
             removed += 1
     return removed
@@ -244,7 +265,9 @@ def _should_skip_link(dest: Path, sync_roots: frozenset[Path]) -> bool:
     if dest.exists() and not dest.is_symlink():
         return True
     if dest.is_symlink() and dest.exists():
-        resolved = dest.resolve()
+        resolved = _safe_resolve(dest)
+        if resolved is None:
+            return False
         return not any(_is_under(resolved, root) for root in sync_roots)
     return False
 
@@ -302,9 +325,15 @@ def sync_skills(paths: ControlMeshPaths, *, docker_active: bool = False) -> None
     - Real directories are never overwritten or removed.
     - Existing valid symlinks pointing elsewhere are left alone.
     - Internal directories (.system, .claude, .git, .venv) are skipped.
+    - Broken or looping symlinks are treated as replaceable garbage state.
     """
     cli_dirs = _cli_skill_dirs()
     all_dirs: dict[str, Path] = {"controlmesh": paths.skills_dir, **cli_dirs}
+
+    for base_dir in all_dirs.values():
+        removed = _clean_broken_links(base_dir)
+        if removed:
+            logger.info("Cleaned %d broken skill link(s) in %s", removed, base_dir)
 
     registries = {name: _discover_skills(d) for name, d in all_dirs.items()}
 
@@ -322,10 +351,6 @@ def sync_skills(paths: ControlMeshPaths, *, docker_active: bool = False) -> None
         if canonical is not None:
             _link_skill_everywhere(skill_name, canonical, all_dirs, use_copies=docker_active)
 
-    for base_dir in all_dirs.values():
-        removed = _clean_broken_links(base_dir)
-        if removed:
-            logger.info("Cleaned %d broken skill link(s) in %s", removed, base_dir)
 
 
 def _iter_bundled_entries(paths: ControlMeshPaths) -> list[tuple[Path, Path]]:

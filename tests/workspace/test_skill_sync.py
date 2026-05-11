@@ -13,11 +13,13 @@ import pytest
 from controlmesh.workspace.paths import ControlMeshPaths
 from controlmesh.workspace.skill_sync import (
     _MANAGED_MARKER,
+    _is_bad_symlink,
     _clean_broken_links,
     _discover_skills,
     _ensure_copy,
     _ensure_link,
     _is_managed_copy,
+    _safe_resolve,
     _is_under,
     _resolve_canonical,
     cleanup_controlmesh_links,
@@ -197,6 +199,16 @@ def test_ensure_link_preserves_real_dir(tmp_path: Path) -> None:
     assert not real_dir.is_symlink()
 
 
+def test_ensure_link_replaces_symlink_loop(tmp_path: Path) -> None:
+    target = tmp_path / "target"
+    target.mkdir()
+    link = tmp_path / "loop"
+    link.symlink_to(link)
+    assert _ensure_link(link, target) is True
+    assert link.is_symlink()
+    assert link.resolve() == target.resolve()
+
+
 # ---------------------------------------------------------------------------
 # Group 4: _clean_broken_links
 # ---------------------------------------------------------------------------
@@ -222,6 +234,15 @@ def test_clean_preserves_valid(tmp_path: Path) -> None:
 
 def test_clean_nonexistent_dir(tmp_path: Path) -> None:
     assert _clean_broken_links(tmp_path / "nope") == 0
+
+
+def test_clean_removes_symlink_loop(tmp_path: Path) -> None:
+    d = tmp_path / "skills"
+    d.mkdir()
+    loop = d / "loop"
+    loop.symlink_to(loop)
+    assert _clean_broken_links(d) == 1
+    assert not loop.exists()
 
 
 # ---------------------------------------------------------------------------
@@ -381,6 +402,23 @@ def test_sync_cleans_broken_after_delete(tmp_path: Path) -> None:
     assert not (claude_skills / "temp-skill").exists()
 
 
+def test_sync_replaces_looping_cli_symlink_with_canonical(tmp_path: Path) -> None:
+    paths, claude_skills, codex_skills = _setup_three_dirs(tmp_path)
+    claude_skills.mkdir(parents=True, exist_ok=True)
+    codex_skills.mkdir(parents=True, exist_ok=True)
+    canonical = _make_skill(paths.skills_dir, "skill-creator")
+    loop = claude_skills / "skill-creator"
+    loop.symlink_to(loop)
+    (codex_skills / "skill-creator").symlink_to(loop)
+    with patch("controlmesh.workspace.skill_sync._cli_skill_dirs") as mock:
+        mock.return_value = {"claude": claude_skills, "codex": codex_skills}
+        sync_skills(paths)
+    assert (claude_skills / "skill-creator").is_symlink()
+    assert (claude_skills / "skill-creator").resolve() == canonical.resolve()
+    assert (codex_skills / "skill-creator").is_symlink()
+    assert (codex_skills / "skill-creator").resolve() == canonical.resolve()
+
+
 # ---------------------------------------------------------------------------
 # Group 6: watch_skill_sync (async watcher)
 # ---------------------------------------------------------------------------
@@ -486,6 +524,13 @@ def test_is_under_unrelated(tmp_path: Path) -> None:
     a.mkdir()
     b.mkdir()
     assert _is_under(a, b) is False
+
+
+def test_safe_resolve_returns_none_for_loop(tmp_path: Path) -> None:
+    loop = tmp_path / "loop"
+    loop.symlink_to(loop)
+    assert _safe_resolve(loop) is None
+    assert _is_bad_symlink(loop) is True
 
 
 # ---------------------------------------------------------------------------
