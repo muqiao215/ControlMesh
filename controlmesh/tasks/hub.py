@@ -358,6 +358,14 @@ class TaskHub:
         provider = submit.provider_override or ""
         model = submit.model_override or ""
         thinking = submit.thinking_override or ""
+        if provider:
+            provider, model = validate_provider_model_binding(
+                provider,
+                model,
+                model_provider_resolver=ModelRegistry.provider_for,
+            )
+            submit.provider_override = provider
+            submit.model_override = model
         default_topology = getattr(self._config, "default_topology", None)
         if not isinstance(default_topology, str):
             default_topology = None

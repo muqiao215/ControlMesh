@@ -400,3 +400,17 @@ class TestProviderBindingHelpers:
                 "gpt-5.5",
                 model_provider_resolver=ProviderManager(AgentConfig()).models.provider_for,
             )
+
+    def test_validate_binding_rejects_opencode_style_model_on_codex_provider(self) -> None:
+        with pytest.raises(
+            ValueError,
+            match=(
+                r"^error:model_provider_mismatch "
+                r"provider=codex model=zhipuai/glm-5\.1 inferred_provider=opencode$"
+            ),
+        ):
+            validate_provider_model_binding(
+                "codex",
+                "zhipuai/glm-5.1",
+                model_provider_resolver=ProviderManager(AgentConfig()).models.provider_for,
+            )

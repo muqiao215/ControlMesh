@@ -142,6 +142,28 @@ class TestSubmit:
         gate.cancel()
         await hub.cancel(task_id)
 
+    async def test_submit_rejects_provider_model_mismatch(
+        self, registry: TaskRegistry, tmp_path: Path
+    ) -> None:
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=_make_cli_service(),
+            config=_make_config(),
+        )
+        submit = _submit(prompt="bad model binding", name="Bad binding")
+        submit.provider_override = "codex"
+        submit.model_override = "zhipuai/glm-5.1"
+
+        with pytest.raises(
+            ValueError,
+            match=(
+                r"^error:model_provider_mismatch "
+                r"provider=codex model=zhipuai/glm-5\.1 inferred_provider=opencode$"
+            ),
+        ):
+            hub.submit(submit)
+
     async def test_persists_explicit_topology_selection(self, registry: TaskRegistry, tmp_path: Path) -> None:
         hub = TaskHub(
             registry,

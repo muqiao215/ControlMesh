@@ -9,6 +9,23 @@ _PROVIDER_DEFAULT_MODELS = {
     "claude": "sonnet",
     "claw": "sonnet",
 }
+_EXPLICIT_PROVIDER_INFERRED_ALLOWLIST: dict[str, frozenset[str]] = {
+    "claude": frozenset({"", "claude"}),
+    "claw": frozenset({"", "claude"}),
+    "codex": frozenset({"", "codex"}),
+    "gemini": frozenset({"", "gemini"}),
+}
+
+
+def _infer_explicit_model_family(
+    provider: str,
+    model: str,
+    inferred_provider: str,
+) -> str:
+    """Apply lightweight explicit-runtime heuristics missing from ModelRegistry."""
+    if "/" in model and provider in {"claude", "claw", "codex", "gemini"}:
+        return "opencode"
+    return inferred_provider
 
 
 def normalize_provider_name(provider: str | None) -> str:
@@ -48,14 +65,14 @@ def validate_provider_model_binding(
 
     resolver = model_provider_resolver
     inferred_provider = resolver(normalized_model) if resolver and normalized_model else ""
+    inferred_provider = _infer_explicit_model_family(
+        normalized_provider,
+        normalized_model,
+        inferred_provider,
+    )
     if normalized_model:
-        if normalized_provider in {"claude", "claw"} and inferred_provider == "codex":
-            msg = (
-                "error:model_provider_mismatch "
-                f"provider={normalized_provider} model={normalized_model} inferred_provider={inferred_provider}"
-            )
-            raise ValueError(msg)
-        if normalized_provider == "gemini" and inferred_provider not in {"", "gemini"}:
+        allowed_inferred = _EXPLICIT_PROVIDER_INFERRED_ALLOWLIST.get(normalized_provider)
+        if allowed_inferred is not None and inferred_provider not in allowed_inferred:
             msg = (
                 "error:model_provider_mismatch "
                 f"provider={normalized_provider} model={normalized_model} inferred_provider={inferred_provider}"
