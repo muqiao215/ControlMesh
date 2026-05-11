@@ -948,7 +948,7 @@ class TestRunAndDeliver:
 
         await hub.shutdown()
 
-    async def test_workunit_missing_evidence_does_not_report_done(
+    async def test_workunit_missing_evidence_degrades_to_artifact_protocol_failure(
         self, registry: TaskRegistry, tmp_path: Path
     ) -> None:
         delivered: list[TaskResult] = []
@@ -969,14 +969,91 @@ class TestRunAndDeliver:
 
         assert len(delivered) == 1
         assert delivered[0].status == "failed"
+        assert delivered[0].failure_kind == "artifact_protocol_failed"
         assert delivered[0].evaluation is not None
         assert delivered[0].evaluation.decision == "repair_recommended"
-        assert "missing evidence" in delivered[0].evaluation.summary.lower()
+        assert delivered[0].evaluation.failure_kind == "artifact_protocol_failed"
+        assert "normalization" in delivered[0].evaluation.summary.lower()
 
         entry = registry.get(task_id)
         assert entry is not None
         assert entry.status == "failed"
-        assert "missing evidence" in entry.error.lower()
+        assert "normalization" in entry.error.lower()
+
+        await hub.shutdown()
+
+    async def test_workunit_noncanonical_evidence_reports_artifact_protocol_failure(
+        self, registry: TaskRegistry, tmp_path: Path
+    ) -> None:
+        async def _execute_with_noncanonical_evidence(request: object) -> MagicMock:
+            task_id = request.process_label.removeprefix("task:")
+            folder = registry.task_folder(task_id)
+            (folder / "EVIDENCE.json").write_text(
+                json.dumps(
+                    {
+                        "task_id": task_id,
+                        "investigation_summary": {
+                            "workflow": "CI",
+                            "ci_run": "25659866914",
+                        },
+                        "exact_failures": [
+                            {
+                                "error_code": "TRY203",
+                                "file": "controlmesh/messenger/telegram/app.py",
+                                "line": 1458,
+                                "description": "Remove redundant re-raise",
+                            }
+                        ],
+                        "verification": {
+                            "ruff_local": "PASSED - uv run ruff check .",
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (folder / "RESULT.md").write_text(
+                "# Result\n\n## Summary\n\nCI lint failure already fixed locally.\n\n## Verification\n\n- `uv run ruff check .`\n",
+                encoding="utf-8",
+            )
+            response = MagicMock()
+            response.result = "worker said it finished"
+            response.session_id = "sess-1"
+            response.is_error = False
+            response.timed_out = False
+            response.num_turns = 1
+            return response
+
+        cli = _make_cli_service("worker said it finished")
+        cli.execute = AsyncMock(side_effect=_execute_with_noncanonical_evidence)
+        delivered: list[TaskResult] = []
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=cli,
+            config=_make_config(),
+        )
+        hub.set_result_handler("main", AsyncMock(side_effect=delivered.append))
+
+        submit = _submit(prompt="Review the current diff", name="Review diff")
+        submit.route = "auto"
+        submit.workunit_kind = "code_review"
+        submit.target = "git diff main"
+        task_id = hub.submit(submit)
+        await asyncio.sleep(0.1)
+
+        assert len(delivered) == 1
+        assert delivered[0].status == "failed"
+        assert delivered[0].failure_kind == "artifact_protocol_failed"
+        assert delivered[0].evaluation is not None
+        assert delivered[0].evaluation.failure_kind == "artifact_protocol_failed"
+        assert "normalization" in delivered[0].evaluation.summary.lower()
+        assert "completed" in delivered[0].delivery_text.lower()
+
+        entry = registry.get(task_id)
+        assert entry is not None
+        assert entry.status == "failed"
+        assert "normalization" in entry.error.lower()
+        assert (registry.task_folder(task_id) / "EVIDENCE.generated.json").is_file()
 
         await hub.shutdown()
 

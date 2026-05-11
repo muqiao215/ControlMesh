@@ -254,6 +254,7 @@ def from_task_result(result: TaskResult) -> Envelope:
             "name": result.name,
             "parent_agent": result.parent_agent,
             "error": result.error,
+            "failure_kind": getattr(result, "failure_kind", ""),
             "task_folder": result.task_folder,
         },
     )
@@ -268,6 +269,23 @@ def _summarized_only_fallback(result: TaskResult) -> str:
         )
     if result.status == "failed":
         reason = result.error or "unknown"
+        failure_kind = getattr(result, "failure_kind", "") or ""
+        if failure_kind == "artifact_protocol_failed":
+            return (
+                f"Task `{result.task_id}` completed, but its worker handoff did not match the required artifact format. "
+                f"Reason: {reason}. "
+                "Runtime attempted normalization; inspect the task folder artifacts for the normalized evidence."
+            )
+        if failure_kind == "evaluation_failed":
+            return (
+                f"Task `{result.task_id}` ran, but its review gate did not pass. "
+                f"Reason: {reason}"
+            )
+        if failure_kind == "delivery_failed":
+            return (
+                f"Task `{result.task_id}` finished, but result delivery degraded. "
+                f"Reason: {reason}"
+            )
         return f"Task `{result.task_id}` failed. Reason: {reason}"
     if result.status == "cancelled":
         return f"Task `{result.task_id}` was cancelled."

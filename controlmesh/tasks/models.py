@@ -229,6 +229,7 @@ class EvaluationResult:
     score: int
     decision: str
     summary: str
+    failure_kind: str = ""
     max_severity: str = "info"
     findings: tuple[EvaluationFinding, ...] = ()
     artifact_path: str = ""
@@ -253,6 +254,7 @@ class TaskResult:
     transport: str = "tg"
     session_id: str = ""
     error: str = ""
+    failure_kind: str = ""
     task_folder: str = ""
     original_prompt: str = ""
     thread_id: TopicRef = None

@@ -994,6 +994,7 @@ class TaskHub:
             session_id = response.session_id or ""
             verdict = None
             evaluation = None
+            failure_kind = ""
             artifacts = self._artifact_paths(entry)
 
             # Append TASKMEMORY.md content so the parent gets the full picture
@@ -1011,6 +1012,7 @@ class TaskHub:
                         verdict,
                         artifact_path=verdict_path(artifacts.folder),
                     )
+                    failure_kind = verdict.failure_kind
                     result_text = _append_evaluator_verdict(result_text, verdict)
                     if verdict.decision is not EvaluatorDecision.ACCEPT:
                         status = "failed"
@@ -1068,6 +1070,7 @@ class TaskHub:
                 transport=entry.transport,
                 session_id=session_id,
                 error=error,
+                failure_kind=failure_kind,
                 task_folder=str(self._artifact_paths(entry).folder),
                 original_prompt=entry.original_prompt,
                 thread_id=entry.thread_id,
@@ -1111,6 +1114,7 @@ class TaskHub:
                     thread_id=entry.thread_id,
                     repo_root=entry.repo_root,
                     tool_use_id=entry.tool_use_id,
+                    failure_kind="execution_failed",
                 )
                 capture_task_result(
                     self._paths,
@@ -1154,6 +1158,7 @@ class TaskHub:
                     model=entry.model,
                     transport=entry.transport,
                     error=error_msg,
+                    failure_kind="execution_failed",
                     task_folder=str(self._artifact_paths(entry).folder),
                     original_prompt=entry.original_prompt,
                     thread_id=entry.thread_id,
@@ -1195,6 +1200,7 @@ class TaskHub:
                     model=entry.model,
                     transport=entry.transport,
                     error=error_msg,
+                    failure_kind="execution_failed",
                     original_prompt=entry.original_prompt,
                     thread_id=entry.thread_id,
                     repo_root=entry.repo_root,
@@ -1364,6 +1370,9 @@ class TaskHub:
         result_text = _append_attach_resume_hint(result_text, entry.task_id, entry.session_id)
         elapsed = max(0.0, time.time() - entry.created_at)
         error = entry.error
+        failure_kind = ""
+        if evaluation is not None:
+            failure_kind = evaluation.failure_kind
         if status == "failed" and not error:
             error = summary or "Recovered detached task failure"
         recovered_result = TaskResult(
@@ -1388,6 +1397,7 @@ class TaskHub:
             transport=entry.transport,
             session_id=entry.session_id,
             error=error,
+            failure_kind=failure_kind or ("execution_failed" if status == "failed" else ""),
             task_folder=str(artifacts.folder),
             original_prompt=entry.original_prompt,
             thread_id=entry.thread_id,
@@ -1524,6 +1534,7 @@ class TaskHub:
                     "tool_use_id": result.tool_use_id,
                     "tool_result_path": str(tool_result_path),
                     "repo_root": result.repo_root,
+                    "failure_kind": result.failure_kind,
                 },
             )
         )
@@ -1791,6 +1802,7 @@ class TaskHub:
             max_severity=_max_severity(self._artifact_paths(entry).evidence),
             needs_controller_action=result.status != "done" or bool(entry.phase_id) or bool(entry.plan_id),
             evaluation=_evaluation_payload(result.evaluation),
+            failure_kind=result.failure_kind,
         )
         tool_result = {
             "role": "user",
@@ -1964,6 +1976,7 @@ class TaskToolResultPayload:
     max_severity: str
     needs_controller_action: bool
     evaluation: dict[str, object] | None = None
+    failure_kind: str = ""
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -1977,6 +1990,7 @@ def _evaluation_payload(evaluation: EvaluationResult | None) -> dict[str, object
         "score": evaluation.score,
         "decision": evaluation.decision,
         "summary": evaluation.summary,
+        "failure_kind": evaluation.failure_kind,
         "max_severity": evaluation.max_severity,
         "artifact_path": evaluation.artifact_path,
         "findings": [
@@ -2011,6 +2025,7 @@ def _evaluation_result_from_payload(payload: object) -> EvaluationResult | None:
         score=int(payload.get("score") or 0),
         decision=str(payload.get("decision") or ""),
         summary=str(payload.get("summary") or ""),
+        failure_kind=str(payload.get("failure_kind") or ""),
         max_severity=str(payload.get("max_severity") or "info"),
         findings=tuple(findings),
         artifact_path=str(payload.get("artifact_path") or ""),
@@ -2048,6 +2063,7 @@ def _evaluation_result_from_verdict(
         score=max(0, min(10, round(verdict.quality * 10))),
         decision=decision,
         summary=verdict.summary,
+        failure_kind=verdict.failure_kind,
         max_severity=max_severity,
         findings=findings,
         artifact_path=str(artifact_path),

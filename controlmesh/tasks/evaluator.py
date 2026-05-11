@@ -25,6 +25,7 @@ class EvaluatorVerdict:
     decision: EvaluatorDecision
     quality: float
     summary: str
+    failure_kind: str = ""
     required_followups: tuple[str, ...] = ()
     risks: tuple[str, ...] = ()
 
@@ -41,7 +42,20 @@ def deterministic_verdict(
             decision=EvaluatorDecision.REPAIR,
             quality=0.0,
             summary="Missing EVIDENCE.json or evidence template was not filled.",
+            failure_kind="artifact_protocol_failed",
             required_followups=("Worker must produce concrete EVIDENCE.json.",),
+        )
+
+    if evidence.artifact_protocol_status != "canonical":
+        return EvaluatorVerdict(
+            decision=EvaluatorDecision.REPAIR,
+            quality=quality,
+            summary="Task completed, but worker artifacts required runtime normalization.",
+            failure_kind="artifact_protocol_failed",
+            required_followups=(
+                "Runtime normalized noncanonical worker artifacts; tighten the worker handoff format.",
+            ),
+            risks=evidence.risks,
         )
 
     risks = evidence.risks
@@ -50,6 +64,7 @@ def deterministic_verdict(
             decision=EvaluatorDecision.REPAIR,
             quality=quality,
             summary="Patch candidate lacks verification commands.",
+            failure_kind="evaluation_failed",
             required_followups=("Run targeted verification or explain why it cannot run.",),
             risks=risks,
         )
@@ -59,6 +74,7 @@ def deterministic_verdict(
             decision=EvaluatorDecision.REPAIR,
             quality=quality,
             summary="Evidence quality is below the promotion threshold.",
+            failure_kind="evaluation_failed",
             required_followups=("Add commands, files, logs, or concrete findings.",),
             risks=risks,
         )
@@ -67,6 +83,7 @@ def deterministic_verdict(
         decision=EvaluatorDecision.ACCEPT,
         quality=quality,
         summary="Evidence passes deterministic evaluator.",
+        failure_kind="",
         risks=risks,
     )
 

@@ -76,6 +76,7 @@ class _FakeTaskResult:
     model: str = "sonnet"
     session_id: str = "tsid1"
     error: str = ""
+    failure_kind: str = ""
     task_folder: str = "/tmp/tasks/t1"
     original_prompt: str = "find info about X"
     thread_id: int | None = None
@@ -248,6 +249,21 @@ def test_from_task_result_failed() -> None:
     assert env.is_error
     assert env.metadata["error"] == "crash"
     assert env.prompt == ""
+
+
+def test_from_task_result_artifact_protocol_failure_uses_degraded_message() -> None:
+    env = from_task_result(
+        _FakeTaskResult(
+            status="failed",
+            error="Task completed, but worker artifacts required runtime normalization.",
+            failure_kind="artifact_protocol_failed",
+            delivery_text="",
+        )
+    )
+
+    assert env.is_error
+    assert "completed" in env.delivery_text.lower()
+    assert "normalization" in env.delivery_text.lower()
 
 
 def test_from_task_result_summarized_only_never_uses_raw_payload_as_delivery() -> None:
