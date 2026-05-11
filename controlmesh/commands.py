@@ -17,6 +17,7 @@ _COMMAND_DESC_KEYS: dict[str, str] = {
     "tasks": "bot.tasks",
     "session": "bot.session",
     "agents": "multiagent.agents",
+    "upgrade": "bot.upgrade",
     "cron": "bot.cron",
     "status": "bot.status",
     "memory": "bot.memory",

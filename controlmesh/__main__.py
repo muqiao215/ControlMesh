@@ -19,6 +19,7 @@ from rich.console import Console
 from controlmesh.cli_commands.agents import cmd_agents as _cmd_agents
 from controlmesh.cli_commands.api_cmd import cmd_api as _cmd_api
 from controlmesh.cli_commands.auth import cmd_auth as _cmd_auth
+from controlmesh.cli_commands.cron import cmd_cron as _cmd_cron
 from controlmesh.cli_commands.docker import cmd_docker as _cmd_docker
 from controlmesh.cli_commands.feishu import cmd_feishu as _cmd_feishu
 from controlmesh.cli_commands.install import cmd_install as _cmd_install
@@ -519,6 +520,7 @@ _COMMANDS: dict[str, str] = {
     "reset": "setup",
     "service": "service",
     "docker": "docker",
+    "cron": "cron",
     "api": "api",
     "agents": "agents",
     "install": "install",
@@ -561,6 +563,7 @@ def main() -> None:
         "setup": lambda: _cmd_setup(verbose),
         "service": lambda: _cmd_service(args),
         "docker": lambda: _cmd_docker(args),
+        "cron": lambda: _cmd_cron(args),
         "api": lambda: _cmd_api(args),
         "agents": lambda: _cmd_agents(args),
         "install": lambda: _cmd_install(args),

@@ -149,9 +149,9 @@ def _build_help_text(agent_name: str = "main") -> str:
         f"- {t('help.cap_cron')}",
         f"- {t('help.cap_memory')}",
     ]
-    start_here_commands = ["help", "model", "mesh", "tasks", "cron"]
+    start_here_commands = ["help", "model", "mesh", "tasks", "upgrade", "cron"]
     daily_commands = ["new", "session", "status", "memory", "stop", "interrupt"]
-    advanced_commands = ["cm", "settings", "showfiles", "info", "diagnose", "upgrade", "restart"]
+    advanced_commands = ["cm", "settings", "showfiles", "info", "diagnose", "restart"]
     if agent_name == "main":
         capability_lines.insert(3, f"- {t('help.cap_agents')}")
         start_here_commands.append("agents")

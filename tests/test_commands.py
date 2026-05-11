@@ -23,6 +23,7 @@ def test_expected_commands_present() -> None:
         "tasks",
         "session",
         "agents",
+        "upgrade",
         "cron",
         "status",
         "memory",
@@ -36,7 +37,7 @@ def test_expected_commands_present() -> None:
 
 def test_rare_commands_not_in_popup_menu() -> None:
     names = {cmd for cmd, _ in BOT_COMMANDS}
-    assert not {"showfiles", "info", "diagnose", "upgrade", "restart", "agent_commands"} & names
+    assert not {"showfiles", "info", "diagnose", "restart", "agent_commands"} & names
 
 
 def test_no_duplicate_commands() -> None:

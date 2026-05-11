@@ -87,6 +87,17 @@ class TestCommandSetIntegrity:
             "tasks",
             "session",
             "agents",
+            "upgrade",
+        ]
+        assert command_names[:9] == [
+            "new",
+            "model",
+            "mesh",
+            "cm",
+            "tasks",
+            "session",
+            "agents",
+            "upgrade",
             "cron",
         ]
 
@@ -99,7 +110,6 @@ class TestCommandSetIntegrity:
             "showfiles",
             "info",
             "diagnose",
-            "upgrade",
             "restart",
         } & command_names
 

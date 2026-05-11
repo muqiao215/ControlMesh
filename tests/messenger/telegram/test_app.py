@@ -1367,10 +1367,10 @@ class TestSyncCommands:
         assert "cm" in command_names
         assert "agents" in command_names
         assert "settings" in command_names
+        assert "upgrade" in command_names
         assert "agent_commands" not in command_names
         assert "showfiles" not in command_names
         assert "diagnose" not in command_names
-        assert "upgrade" not in command_names
         assert "restart" not in command_names
 
     async def test_sets_commands_when_different(self) -> None:
