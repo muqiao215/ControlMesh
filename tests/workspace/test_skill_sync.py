@@ -640,6 +640,22 @@ def test_bundled_updates_stale_symlink(tmp_path: Path) -> None:
     assert target.resolve() == (paths.bundled_skills_dir / "default-skill").resolve()
 
 
+def test_bundled_replaces_looping_symlink(tmp_path: Path) -> None:
+    """Looping workspace symlink is treated as replaceable garbage state."""
+    paths = _make_paths(tmp_path)
+    _make_skill(paths.bundled_skills_dir, "default-skill")
+    paths.skills_dir.mkdir(parents=True)
+
+    loop = paths.skills_dir / "default-skill"
+    loop.symlink_to(loop)
+
+    sync_bundled_skills(paths)
+
+    target = paths.skills_dir / "default-skill"
+    assert target.is_symlink()
+    assert target.resolve() == (paths.bundled_skills_dir / "default-skill").resolve()
+
+
 def test_bundled_idempotent(tmp_path: Path) -> None:
     paths = _make_paths(tmp_path)
     _make_skill(paths.bundled_skills_dir, "default-skill")
@@ -739,6 +755,21 @@ def test_cleanup_removes_bundled_links(tmp_path: Path) -> None:
 
     assert removed == 1
     assert not (claude_skills / "bundled-one").exists()
+
+
+def test_cleanup_skips_looping_symlink_without_crashing(tmp_path: Path) -> None:
+    paths, claude_skills, _ = _setup_three_dirs(tmp_path)
+    claude_skills.mkdir(parents=True, exist_ok=True)
+
+    loop = claude_skills / "loop-skill"
+    loop.symlink_to(loop)
+
+    with patch("controlmesh.workspace.skill_sync._cli_skill_dirs") as mock:
+        mock.return_value = {"claude": claude_skills}
+        removed = cleanup_controlmesh_links(paths)
+
+    assert removed == 0
+    assert loop.is_symlink()
 
 
 def test_cleanup_no_providers(tmp_path: Path) -> None:

@@ -53,7 +53,7 @@ def _classify_symlink(path: Path) -> LinkIssue | None:
     except OSError:
         target = None
     try:
-        path.resolve()
+        path.resolve(strict=True)
     except RuntimeError:
         issue = "symlink_loop"
     except OSError:
@@ -64,7 +64,7 @@ def _classify_symlink(path: Path) -> LinkIssue | None:
         base=str(path.parent),
         name=path.name,
         path=str(path),
-        link_target=target,
+        link_target=None if target is None else str(target),
         issue=issue,
     )
 

@@ -40,7 +40,7 @@ _MANAGED_MARKER = ".controlmesh_managed"
 def _safe_resolve(path: Path) -> Path | None:
     """Resolve *path* without raising on broken links or symlink loops."""
     try:
-        return path.resolve()
+        return path.resolve(strict=True)
     except (OSError, RuntimeError):
         return None
 
@@ -292,7 +292,9 @@ def _link_skill_everywhere(
     When *use_copies* is ``True`` (Docker mode), directories are copied
     instead of symlinked so they resolve inside the container.
     """
-    sync_roots = frozenset(d.resolve() for d in all_dirs.values() if d.is_dir())
+    sync_roots = frozenset(
+        resolved for d in all_dirs.values() if d.is_dir() if (resolved := _safe_resolve(d)) is not None
+    )
     for loc_name, base_dir in all_dirs.items():
         if not base_dir.is_dir():
             base_dir.mkdir(parents=True, exist_ok=True)
@@ -391,7 +393,13 @@ def sync_bundled_skills(paths: ControlMeshPaths, *, docker_active: bool = False)
         if target.exists() and not target.is_symlink():
             continue
         if target.is_symlink():
-            if target.resolve() == source.resolve():
+            resolved_target = _safe_resolve(target)
+            resolved_source = _safe_resolve(source)
+            if (
+                resolved_target is not None
+                and resolved_source is not None
+                and resolved_target == resolved_source
+            ):
                 continue
             target.unlink()
         try:
@@ -422,9 +430,8 @@ def cleanup_controlmesh_links(paths: ControlMeshPaths) -> int:
         for entry in cli_dir.iterdir():
             if not entry.is_symlink():
                 continue
-            try:
-                resolved = entry.resolve()
-            except OSError:
+            resolved = _safe_resolve(entry)
+            if resolved is None:
                 continue
             if any(_is_under(resolved, root) for root in managed_roots):
                 entry.unlink()
