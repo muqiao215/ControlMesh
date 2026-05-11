@@ -271,14 +271,18 @@ async def run_bot(config: AgentConfig) -> int:
     current_task = asyncio.current_task()
     installed_signals: list[signal.Signals] = []
 
-    def _request_shutdown() -> None:
+    shutdown_signal: signal.Signals | None = None
+
+    def _request_shutdown(sig: signal.Signals) -> None:
+        nonlocal shutdown_signal
+        shutdown_signal = sig
         if current_task is not None and not current_task.done():
             current_task.cancel()
 
     if current_task is not None and sys.platform != "win32":
         for sig in (signal.SIGTERM, signal.SIGINT):
             try:
-                loop.add_signal_handler(sig, _request_shutdown)
+                loop.add_signal_handler(sig, _request_shutdown, sig)
             except (NotImplementedError, RuntimeError, ValueError):
                 continue
             installed_signals.append(sig)
@@ -286,7 +290,8 @@ async def run_bot(config: AgentConfig) -> int:
     try:
         exit_code = await supervisor.start()
     except asyncio.CancelledError:
-        logger.info("Termination signal received, shutting down gracefully...")
+        sig_name = shutdown_signal.name if shutdown_signal is not None else "unknown"
+        logger.info("Termination signal received sig=%s, shutting down gracefully...", sig_name)
     except KeyboardInterrupt:
         logger.info("Shutting down...")
     finally:

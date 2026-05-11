@@ -160,7 +160,12 @@ async def handle_upgrade_callback(
             message_thread_id=thread_id,
         )
         marker = bot._orch.paths.controlmesh_home / "restart-requested"
-        delegated = await asyncio.to_thread(request_restart, marker_path=marker)
+        delegated = await asyncio.to_thread(
+            request_restart,
+            marker_path=marker,
+            source="telegram-upgrade",
+            details={"chat_id": chat_id, "thread_id": thread_id, "target_version": installed_version},
+        )
         bot._exit_code = EXIT_RESTART
         if not delegated:
             await bot.dispatcher.stop_polling()

@@ -1322,12 +1322,21 @@ class TestWatchRestartMarker:
         with (
             patch.object(asyncio, "sleep", new_callable=AsyncMock),
             patch.object(asyncio, "to_thread", new_callable=AsyncMock) as mock_to_thread,
+            patch("controlmesh.messenger.telegram.app.logger") as mock_logger,
         ):
-            mock_to_thread.return_value = True  # consume_restart_marker returns True
+            mock_to_thread.return_value = {
+                "source": "unit-test",
+                "requested_at": "2026-05-11T01:00:00+00:00",
+            }
             await tg_bot._watch_restart_marker()
 
         assert tg_bot._exit_code == EXIT_RESTART
         tg_bot._dp.stop_polling.assert_called_once()
+        mock_logger.info.assert_any_call(
+            "Restart marker detected source=%s requested_at=%s, stopping polling",
+            "unit-test",
+            "2026-05-11T01:00:00+00:00",
+        )
 
     async def test_handles_cancellation(self) -> None:
         tg_bot, _ = _make_tg_bot()

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import socket
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -49,19 +50,46 @@ def consume_restart_sentinel(*, sentinel_path: Path) -> dict[str, Any] | None:
         return data
 
 
-def write_restart_marker(*, marker_path: Path) -> None:
+def write_restart_marker(
+    *,
+    marker_path: Path,
+    source: str = "unknown",
+    details: dict[str, Any] | None = None,
+) -> None:
     """Write a marker file that tells the running bot to shut down with EXIT_RESTART."""
     marker_path.parent.mkdir(parents=True, exist_ok=True)
-    marker_path.write_text("1", encoding="utf-8")
-    logger.info("Restart marker written")
+    payload = {
+        "requested_at": datetime.now(UTC).isoformat(),
+        "source": source,
+        "pid": os.getpid(),
+        "hostname": socket.gethostname(),
+        "details": details or {},
+    }
+    marker_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    logger.info("Restart marker written source=%s pid=%d", source, os.getpid())
 
 
-def consume_restart_marker(*, marker_path: Path) -> bool:
-    """Check and delete the restart marker. Returns True if it existed."""
+def consume_restart_marker(*, marker_path: Path) -> dict[str, Any] | None:
+    """Check and delete the restart marker. Returns metadata if it existed."""
     if not marker_path.exists():
-        return False
+        return None
+    try:
+        raw = marker_path.read_text(encoding="utf-8")
+    except OSError:
+        logger.exception("Failed to read restart marker")
+        marker_path.unlink(missing_ok=True)
+        return {"source": "unreadable", "details": {}}
     marker_path.unlink(missing_ok=True)
-    return True
+    if raw.strip() == "1":
+        return {"source": "legacy-marker", "details": {}}
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        logger.warning("Restart marker was not valid JSON; treating as legacy payload")
+        return {"source": "legacy-nonjson", "details": {"raw": raw[:200]}}
+    if not isinstance(data, dict):
+        return {"source": "legacy-invalid-shape", "details": {"raw_type": type(data).__name__}}
+    return data
 
 
 def should_delegate_restart_to_service_manager() -> bool:
@@ -69,7 +97,12 @@ def should_delegate_restart_to_service_manager() -> bool:
     return bool(os.environ.get("CONTROLMESH_SUPERVISOR") or os.environ.get("INVOCATION_ID"))
 
 
-def request_restart(*, marker_path: Path | None = None) -> bool:
+def request_restart(
+    *,
+    marker_path: Path | None = None,
+    source: str = "unknown",
+    details: dict[str, Any] | None = None,
+) -> bool:
     """Request a full restart via service manager when possible.
 
     When not running under a service manager, optionally write the legacy
@@ -83,24 +116,24 @@ def request_restart(*, marker_path: Path | None = None) -> bool:
         except Exception:
             logger.debug("Service facade unavailable for restart request", exc_info=True)
             if marker_path is not None:
-                write_restart_marker(marker_path=marker_path)
+                write_restart_marker(marker_path=marker_path, source=source, details=details)
             return False
 
         try:
             if not is_service_installed():
                 if marker_path is not None:
-                    write_restart_marker(marker_path=marker_path)
+                    write_restart_marker(marker_path=marker_path, source=source, details=details)
                 return False
             restart_service()
         except Exception:
             logger.warning("Explicit service-manager restart request failed", exc_info=True)
             if marker_path is not None:
-                write_restart_marker(marker_path=marker_path)
+                write_restart_marker(marker_path=marker_path, source=source, details=details)
             return False
         else:
-            logger.info("Requested explicit service-manager restart")
+            logger.info("Requested explicit service-manager restart source=%s", source)
             return True
 
     if marker_path is not None:
-        write_restart_marker(marker_path=marker_path)
+        write_restart_marker(marker_path=marker_path, source=source, details=details)
     return False

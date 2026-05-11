@@ -1607,8 +1607,13 @@ class TelegramBot:
         try:
             while True:
                 await asyncio.sleep(2.0)
-                if await asyncio.to_thread(consume_restart_marker, marker_path=marker):
-                    logger.info("Restart marker detected, stopping polling")
+                restart_meta = await asyncio.to_thread(consume_restart_marker, marker_path=marker)
+                if restart_meta:
+                    logger.info(
+                        "Restart marker detected source=%s requested_at=%s, stopping polling",
+                        restart_meta.get("source", "unknown"),
+                        restart_meta.get("requested_at", ""),
+                    )
                     self._exit_code = EXIT_RESTART
                     await self._dp.stop_polling()
         except asyncio.CancelledError:

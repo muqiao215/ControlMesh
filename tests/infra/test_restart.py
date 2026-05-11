@@ -62,25 +62,46 @@ class TestRestartMarker:
         from controlmesh.infra.restart import write_restart_marker
 
         marker = tmp_path / "restart-requested"
-        write_restart_marker(marker_path=marker)
+        write_restart_marker(marker_path=marker, source="unit-test")
         assert marker.exists()
+        data = json.loads(marker.read_text(encoding="utf-8"))
+        assert data["source"] == "unit-test"
+        assert "requested_at" in data
+        assert data["details"] == {}
 
-    def test_consume_returns_true_and_deletes(self, tmp_path: Path) -> None:
+    def test_consume_returns_metadata_and_deletes(self, tmp_path: Path) -> None:
         from controlmesh.infra.restart import (
             consume_restart_marker,
             write_restart_marker,
         )
 
         marker = tmp_path / "restart-requested"
-        write_restart_marker(marker_path=marker)
-        assert consume_restart_marker(marker_path=marker) is True
+        write_restart_marker(
+            marker_path=marker,
+            source="unit-test",
+            details={"reason": "coverage"},
+        )
+        data = consume_restart_marker(marker_path=marker)
+        assert data is not None
+        assert data["source"] == "unit-test"
+        assert data["details"]["reason"] == "coverage"
         assert not marker.exists()
 
-    def test_consume_missing_returns_false(self, tmp_path: Path) -> None:
+    def test_consume_missing_returns_none(self, tmp_path: Path) -> None:
         from controlmesh.infra.restart import consume_restart_marker
 
         marker = tmp_path / "restart-requested"
-        assert consume_restart_marker(marker_path=marker) is False
+        assert consume_restart_marker(marker_path=marker) is None
+
+    def test_consume_legacy_marker_returns_legacy_metadata(self, tmp_path: Path) -> None:
+        from controlmesh.infra.restart import consume_restart_marker
+
+        marker = tmp_path / "restart-requested"
+        marker.write_text("1", encoding="utf-8")
+        data = consume_restart_marker(marker_path=marker)
+        assert data is not None
+        assert data["source"] == "legacy-marker"
+        assert not marker.exists()
 
 
 class TestExitRestart:
@@ -97,8 +118,10 @@ class TestRequestRestart:
         from controlmesh.infra.restart import request_restart
 
         marker = tmp_path / "restart-requested"
-        assert request_restart(marker_path=marker) is False
+        assert request_restart(marker_path=marker, source="unit-test") is False
         assert marker.exists()
+        data = json.loads(marker.read_text(encoding="utf-8"))
+        assert data["source"] == "unit-test"
 
     def test_service_managed_restart_does_not_write_marker(
         self,
