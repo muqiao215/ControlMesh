@@ -114,12 +114,7 @@ def _taskhub_policy_lines(orch: Orchestrator) -> list[str]:
     if tasks_cfg is None:
         return ["TaskHub policy:", "- unavailable: no task configuration"]
 
-    default_provider = str(getattr(tasks_cfg, "default_provider", "") or "")
-    default_model = str(getattr(tasks_cfg, "default_model", "") or "")
-    if not default_provider:
-        default_provider = str(getattr(config, "provider", "") or "")
-    if not default_model:
-        default_model = str(getattr(config, "model", "") or "")
+    default_slot = str(getattr(tasks_cfg, "default_slot", "") or "")
 
     registry = _load_taskhub_capability_registry(config)
     background_slots = [slot for slot in registry.slots if slot.mode == "background"]
@@ -143,7 +138,7 @@ def _taskhub_policy_lines(orch: Orchestrator) -> list[str]:
     routing_state = "enabled" if bool(getattr(routing_cfg, "enabled", False)) else "disabled"
     return [
         "TaskHub policy:",
-        f"- default: {default_provider or '-'} / {default_model or '-'}",
+        f"- default slot: {default_slot or '-'}",
         f"- max_parallel: {max_parallel}",
         f"- cadence: {cadence}",
         f"- routing: {routing_state}",

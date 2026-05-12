@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import json
 import logging
 import re
+import shutil
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass
@@ -14,7 +16,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from controlmesh.config import ModelRegistry
 from controlmesh.infra.json_store import atomic_json_save, load_json
 from controlmesh.memory.runtime_capture import (
     capture_task_question,
@@ -43,6 +44,7 @@ from controlmesh.routing.activation import (
     resolve_activation_policy_path,
 )
 from controlmesh.routing.capabilities import AgentSlot
+from controlmesh.routing.capabilities import default_capability_registry, load_capability_registry
 from controlmesh.routing.router import resolve_route
 from controlmesh.routing.score_events import (
     RouteScoreEvent,
@@ -70,6 +72,7 @@ from controlmesh.tasks.host_execution import classify_host_execution
 from controlmesh.tasks.models import (
     EvaluationFinding,
     EvaluationResult,
+    TaskBindingSnapshot,
     TaskEntry,
     TaskInFlight,
     TaskResult,
@@ -77,7 +80,7 @@ from controlmesh.tasks.models import (
 )
 from controlmesh.team.contracts import ensure_team_topology
 from controlmesh.text.response_format import SEP, compact_transport_text, fmt
-from controlmesh.provider_binding import provider_model_label, validate_provider_model_binding
+from controlmesh.provider_binding import provider_model_label
 from controlmesh.planning_files import (
     PlanPhase,
     create_plan_files,
@@ -107,9 +110,85 @@ _RUNTIME_PROVIDER_ERRORS = frozenset(
         "error:missing_provider",
     }
 )
-_RUNTIME_BACKED_PROVIDERS = frozenset({"opencode"})
-_TASKHUB_EXPLICIT_SUPPORTED_PROVIDERS = frozenset({"claude", "codex", "gemini", "opencode"})
-_TASKHUB_UNSUPPORTED_PROVIDERS = frozenset({"openai", "openai_agents", "claw", "claw-code"})
+_DEFAULT_ASSISTANT_SLOTS: dict[str, dict[str, object]] = {
+    "codex_default": {
+        "assistant": "codex",
+        "command": "codex",
+        "config_authority": "native",
+        "config_paths": ("~/.codex/config.toml",),
+        "background": True,
+        "workunits": (
+            "code_review",
+            "code_patch",
+            "repo_audit",
+            "patch_candidate",
+            "test_execution",
+            "plan_with_files",
+            "phase_execution",
+            "phase_review",
+        ),
+        "mode": "repo_write",
+    },
+    "opencode_default": {
+        "assistant": "opencode",
+        "command": "opencode",
+        "config_authority": "native",
+        "config_paths": ("~/.config/opencode/opencode.json",),
+        "background": True,
+        "workunits": (
+            "code_review",
+            "code_patch",
+            "patch_candidate",
+            "test_execution",
+            "plan_with_files",
+            "phase_execution",
+            "phase_review",
+        ),
+        "mode": "repo_write",
+    },
+    "claude_default": {
+        "assistant": "claude",
+        "command": "claude",
+        "config_authority": "native",
+        "config_paths": ("~/.claude/settings.json",),
+        "background": True,
+        "workunits": (
+            "code_review",
+            "architecture_review",
+            "repo_audit",
+            "patch_candidate",
+            "plan_with_files",
+            "phase_execution",
+            "phase_review",
+        ),
+        "mode": "read_only",
+    },
+    "gemini_default": {
+        "assistant": "gemini",
+        "command": "gemini",
+        "config_authority": "native",
+        "config_paths": ("~/.gemini/settings.json",),
+        "background": True,
+        "workunits": (
+            "code_review",
+            "repo_audit",
+            "test_execution",
+            "plan_with_files",
+            "phase_execution",
+            "phase_review",
+        ),
+        "mode": "read_only",
+    },
+}
+_LEGACY_PROVIDER_SLOT_ALIASES = {
+    "codex": "codex_default",
+    "opencode": "opencode_default",
+    "claude": "claude_default",
+    "gemini": "gemini_default",
+}
+_INVALID_RAW_RUNNER_TOKENS = frozenset(
+    {"openai", "openai_agents", "anthropic", "zhipuai", "openrouter", "litellm", "ollama", "claw", "claw-code"}
+)
 
 TaskResultCallback = Callable[[TaskResult], Awaitable[None]]
 QuestionHandler = Callable[[str, str, str, ChatRef, TopicRef], Awaitable[None]]
@@ -213,6 +292,70 @@ def _string_config_value(source: object, name: str) -> str:
     """Return one config attribute only when it is a real string."""
     value = getattr(source, name, "")
     return value.strip() if isinstance(value, str) else ""
+
+
+def _taskhub_slots_config(config: object) -> dict[str, dict[str, object]]:
+    """Return merged TaskHub slot config with built-in conservative defaults."""
+    merged = {name: dict(values) for name, values in _DEFAULT_ASSISTANT_SLOTS.items()}
+    routing_cfg = getattr(config, "agent_routing", None)
+    registry_path = str(getattr(routing_cfg, "capability_registry", "") or "")
+    registry = default_capability_registry(config)
+    if registry_path:
+        home = Path(str(getattr(config, "controlmesh_home", "~/.controlmesh"))).expanduser()
+        path = Path(registry_path)
+        if not path.is_absolute():
+            path = home / path
+        registry = load_capability_registry(path, config)
+    for slot in registry.slots:
+        if slot.mode != "background":
+            continue
+        command = slot.runtime.split("_", 1)[0] if slot.runtime else slot.provider or slot.name
+        merged.setdefault(
+            slot.name,
+            {
+                "assistant": command,
+                "command": command,
+                "config_authority": "native",
+                "config_paths": (),
+                "background": True,
+                "workunits": (),
+                "mode": slot.mode,
+            },
+        )
+    raw = getattr(config, "slots", {}) or {}
+    if isinstance(raw, dict):
+        for name, values in raw.items():
+            slot_name = str(name or "").strip()
+            if not slot_name or not isinstance(values, dict):
+                continue
+            merged[slot_name] = {**merged.get(slot_name, {}), **values}
+    return merged
+
+
+def _config_digest(path_text: str) -> str:
+    path = Path(path_text).expanduser()
+    try:
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return "missing"
+    return f"sha256:{digest}"
+
+
+def _available_slot_names(config: object) -> list[str]:
+    return sorted(_taskhub_slots_config(config))
+
+
+def _invalid_slot_message(token: str, *, config: object) -> str:
+    available = "\n".join(f"  - {name}" for name in _available_slot_names(config))
+    return (
+        f'Invalid TaskHub background binding: "{token}" is not an assistant slot.\n'
+        "ControlMesh runs assistant slots such as "
+        + ", ".join(_available_slot_names(config))
+        + ".\n"
+        "Model/provider settings are owned by each assistant's native config.\n"
+        "Available slots:\n"
+        f"{available}"
+    )
 
 
 class TaskHub:
@@ -366,6 +509,82 @@ class TaskHub:
             msg = "CLIService not available"
             raise ValueError(msg)
 
+    def _resolve_taskhub_slot(
+        self,
+        *,
+        requested_slot: str,
+        legacy_provider: str,
+        workunit: str,
+    ) -> TaskBindingSnapshot:
+        slots = _taskhub_slots_config(self._config)
+        workunit_name = workunit.strip()
+
+        def build(slot_name: str) -> TaskBindingSnapshot:
+            raw = slots.get(slot_name)
+            if not isinstance(raw, dict):
+                raise ValueError(_invalid_slot_message(slot_name, config=self._config))
+            background = bool(raw.get("background", True))
+            if not background:
+                raise ValueError(f"TaskHub assistant slot '{slot_name}' is not enabled for background execution.")
+            allowed = tuple(str(item) for item in (raw.get("workunits") or ()))
+            if workunit_name and allowed and workunit_name not in allowed:
+                msg = (
+                    f"TaskHub assistant slot '{slot_name}' does not allow workunit '{workunit_name}'. "
+                    f"Allowed: {', '.join(allowed)}."
+                )
+                raise ValueError(msg)
+            assistant = str(raw.get("assistant") or "").strip()
+            command = str(raw.get("command") or assistant).strip()
+            if not assistant or not command:
+                raise ValueError(f"TaskHub assistant slot '{slot_name}' is incomplete.")
+            resolved_command = shutil.which(command) or command
+            if shutil.which(command) is None and not Path(command).expanduser().exists():
+                raise ValueError(
+                    f"TaskHub assistant slot '{slot_name}' points to command '{command}', which is not executable."
+                )
+            config_paths = tuple(str(item) for item in (raw.get("config_paths") or ()))
+            return TaskBindingSnapshot(
+                slot=slot_name,
+                assistant=assistant,
+                command=resolved_command,
+                config_authority=str(raw.get("config_authority") or "native"),
+                config_paths=config_paths,
+                config_digests={path: _config_digest(path) for path in config_paths},
+                workunit=workunit_name,
+                mode=str(raw.get("mode") or ""),
+                background=background,
+            )
+
+        requested = requested_slot.strip()
+        if requested:
+            if requested not in slots:
+                raise ValueError(_invalid_slot_message(requested, config=self._config))
+            return build(requested)
+
+        legacy = legacy_provider.strip().lower()
+        if legacy:
+            if legacy in _INVALID_RAW_RUNNER_TOKENS:
+                raise ValueError(_invalid_slot_message(legacy, config=self._config))
+            mapped = _LEGACY_PROVIDER_SLOT_ALIASES.get(legacy)
+            if mapped:
+                return build(mapped)
+            if legacy in slots:
+                return build(legacy)
+            raise ValueError(_invalid_slot_message(legacy, config=self._config))
+
+        default_slot = _string_config_value(self._config, "default_slot")
+        if default_slot:
+            with contextlib.suppress(ValueError):
+                return build(default_slot)
+        for slot_name in _available_slot_names(self._config):
+            with contextlib.suppress(ValueError):
+                return build(slot_name)
+        available = ", ".join(_available_slot_names(self._config)) or "(none)"
+        raise ValueError(
+            f"No TaskHub assistant slot is available for workunit '{workunit_name or 'generic'}'. "
+            f"Available slots: {available}"
+        )
+
     def submit(self, submit: TaskSubmit) -> str:
         """Create a task, spawn CLI subprocess. Returns task_id."""
         self._check_enabled()
@@ -399,15 +618,6 @@ class TaskHub:
         provider = submit.provider_override or ""
         model = submit.model_override or ""
         thinking = submit.thinking_override or ""
-        if provider:
-            provider = self._validate_taskhub_provider_name(provider)
-            provider, model = validate_provider_model_binding(
-                provider,
-                model,
-                model_provider_resolver=ModelRegistry.provider_for,
-            )
-            submit.provider_override = provider
-            submit.model_override = model
         default_topology = getattr(self._config, "default_topology", None)
         if not isinstance(default_topology, str):
             default_topology = None
@@ -476,12 +686,6 @@ class TaskHub:
                     provider = decision.provider
                 if not model:
                     model = decision.model
-                provider, model = self._resolve_routed_provider_model(
-                    provider,
-                    model,
-                    decision.model,
-                    parent_agent=submit.parent_agent,
-                )
                 if not topology:
                     topology = decision.topology
                 workunit_contract = _format_workunit_contract(
@@ -499,27 +703,66 @@ class TaskHub:
         if topology:
             topology = ensure_team_topology(topology, "topology")
         submit.topology = topology
-
-        if provider:
-            provider, model = self._validate_provider_binding(
-                provider,
-                model,
-                parent_agent=submit.parent_agent,
-            )
-        else:
-            provider, model = self._resolve_default_taskhub_provider_model(
-                submit.parent_agent,
-                submit_model=model,
-            )
-            if provider:
-                submit.provider_override = provider
-            if model:
-                submit.model_override = model
+        binding: TaskBindingSnapshot | None = None
+        preview_entry = TaskEntry(
+            task_id="preview",
+            chat_id=submit.chat_id,
+            parent_agent=submit.parent_agent,
+            name=submit.name or "preview",
+            prompt_preview=submit.prompt[:80],
+            binding=None,
+            provider=provider,
+            model=model,
+            status="running",
+            transport=submit.transport,
+            topology=submit.topology,
+            workunit_kind=submit.workunit_kind,
+            command=submit.command,
+        )
+        if not self._should_route_to_host_job(preview_entry):
+            requested_slot = submit.slot_override or ""
+            if requested_slot:
+                binding = self._resolve_taskhub_slot(
+                    requested_slot=requested_slot,
+                    legacy_provider="",
+                    workunit=submit.workunit_kind,
+                )
+            else:
+                binding = None
+                if submit.provider_override:
+                    provider_hint = submit.provider_override.strip()
+                    provider_key = provider_hint.lower()
+                    if provider_key in _INVALID_RAW_RUNNER_TOKENS or "/" in provider_key:
+                        binding = self._resolve_taskhub_slot(
+                            requested_slot="",
+                            legacy_provider=provider_hint,
+                            workunit=submit.workunit_kind,
+                        )
+                    else:
+                        with contextlib.suppress(ValueError):
+                            binding = self._resolve_taskhub_slot(
+                                requested_slot="",
+                                legacy_provider=provider_hint,
+                                workunit=submit.workunit_kind,
+                            )
+                if binding is None:
+                    requested_slot = submit.route_slot or ""
+                    binding = self._resolve_taskhub_slot(
+                        requested_slot=requested_slot,
+                        legacy_provider="",
+                        workunit=submit.workunit_kind,
+                    )
+            submit.route_slot = binding.slot
 
         # Resolve per-agent tasks_dir for folder isolation
         agent_tasks_dir = self._agent_tasks_dirs.get(submit.parent_agent)
         entry = self._registry.create(
-            submit, provider, model, thinking=thinking, tasks_dir=agent_tasks_dir
+            submit,
+            provider,
+            model,
+            binding=binding,
+            thinking=thinking,
+            tasks_dir=agent_tasks_dir,
         )
         if submit.route == "auto":
             self._registry.update_status(
@@ -610,119 +853,6 @@ class TaskHub:
             )
 
         return resolve
-
-    def _resolve_routed_provider_model(
-        self,
-        provider: str,
-        submit_model: str,
-        route_model: str,
-        *,
-        parent_agent: str = "",
-    ) -> tuple[str, str]:
-        """Resolve runtime-backed routed models before task execution.
-
-        Precedence: submit explicit model, route capability model, live runtime
-        discovery via CLIService, then static CLIService fallback.
-        """
-        if not provider:
-            return provider, submit_model or route_model
-        provider, resolved_model = self._validate_provider_binding(
-            provider,
-            submit_model or route_model,
-            parent_agent=parent_agent,
-        )
-        if not provider or provider not in _RUNTIME_BACKED_PROVIDERS:
-            return provider, resolved_model
-        model = resolved_model
-        if model:
-            return provider, model
-        cli = self._cli_services.get(parent_agent) or self._cli_service
-        resolver = getattr(cli, "resolve_runtime_provider_target", None)
-        if callable(resolver):
-            return resolver(provider, "")
-        return provider, model
-
-    def _validate_provider_binding(
-        self,
-        provider: str,
-        model: str,
-        *,
-        parent_agent: str = "",
-    ) -> tuple[str, str]:
-        """Validate a provider/model pair with the same model resolver as CLIService."""
-        cli = self._cli_services.get(parent_agent) or self._cli_service
-        models = getattr(cli, "_models", None) if cli is not None else None
-        resolver = models.provider_for if isinstance(models, ModelRegistry) else ModelRegistry.provider_for
-        return validate_provider_model_binding(
-            provider,
-            model,
-            model_provider_resolver=resolver,
-        )
-
-    def _validate_taskhub_provider_name(self, provider: str) -> str:
-        """Reject providers that are unsupported on the TaskHub background surface."""
-        normalized = provider.strip().lower()
-        if not normalized:
-            return ""
-        if "/" in normalized:
-            msg = f"error:invalid_provider_token provider={normalized}"
-            raise ValueError(msg)
-        if normalized in _TASKHUB_UNSUPPORTED_PROVIDERS:
-            supported = ", ".join(sorted(_TASKHUB_EXPLICIT_SUPPORTED_PROVIDERS))
-            msg = (
-                f"TaskHub background provider '{normalized}' is not supported. "
-                f"Supported: {supported}."
-            )
-            raise ValueError(msg)
-        if normalized not in _TASKHUB_EXPLICIT_SUPPORTED_PROVIDERS:
-            supported = ", ".join(sorted(_TASKHUB_EXPLICIT_SUPPORTED_PROVIDERS))
-            msg = f"Unknown TaskHub provider '{normalized}'. Supported: {supported}."
-            raise ValueError(msg)
-        return normalized
-
-    def _resolve_default_taskhub_provider_model(
-        self,
-        parent_agent: str,
-        *,
-        submit_model: str = "",
-    ) -> tuple[str, str]:
-        """Resolve the default provider/model for TaskHub background execution."""
-        configured_provider = _string_config_value(self._config, "default_provider").lower()
-        configured_model = _string_config_value(self._config, "default_model")
-        provider = configured_provider
-        model = configured_model or submit_model
-
-        if provider:
-            provider = self._validate_taskhub_provider_name(provider)
-            return self._validate_provider_binding(provider, model, parent_agent=parent_agent)
-
-        if model:
-            inferred = self._validate_taskhub_provider_name(ModelRegistry.provider_for(model))
-            return self._validate_provider_binding(inferred, model, parent_agent=parent_agent)
-
-        cli = self._cli_services.get(parent_agent) or self._cli_service
-        cli_config = getattr(cli, "_config", None)
-        default_provider = _string_config_value(cli_config, "provider").lower() if cli_config is not None else ""
-        default_model = _string_config_value(cli_config, "default_model") if cli_config is not None else ""
-        if default_provider and default_provider not in _TASKHUB_UNSUPPORTED_PROVIDERS:
-            return self._validate_provider_binding(default_provider, default_model, parent_agent=parent_agent)
-
-        for fallback_provider, fallback_model in (
-            ("claude", "sonnet"),
-            ("codex", default_model if default_provider == "codex" else ""),
-            ("gemini", ""),
-            ("opencode", ""),
-        ):
-            try:
-                return self._validate_provider_binding(
-                    fallback_provider,
-                    fallback_model,
-                    parent_agent=parent_agent,
-                )
-            except ValueError:
-                continue
-        msg = "TaskHub background execution has no supported default provider configured."
-        raise ValueError(msg)
 
     def resume(self, task_id: str, follow_up: str, *, parent_agent: str = "") -> str:
         """Resume a completed task's CLI session with a follow-up. Returns task_id."""
@@ -1131,25 +1261,42 @@ class TaskHub:
         try:
             timeout = self._config.timeout_seconds
             self._append_runtime_lifecycle_event(entry, "task.lifecycle.started")
+            binding = entry.binding
+            if binding is None or not binding.assistant:
+                raise ValueError(f"Task '{entry.task_id}' has no assistant slot binding recorded")
 
             request = AgentRequest(
                 prompt=prompt,
+                assistant_override=binding.assistant,
                 model_override=entry.model or None,
-                provider_override=entry.provider or None,
+                provider_override=None,
                 chat_id=entry.chat_id,
                 process_label=f"task:{entry.task_id}",
                 timeout_seconds=timeout,
                 resume_session=resume_session,
             )
 
-            # Pre-resolve effective provider/model so the entry is never empty
-            eff_provider, eff_model = cli.resolve_provider(request)
-            if eff_provider and (not entry.provider or not entry.model):
+            eff_provider = ""
+            eff_model = ""
+            if binding.assistant == "opencode":
+                resolver = getattr(cli, "resolve_runtime_provider_target", None)
+                if callable(resolver):
+                    eff_provider, eff_model = resolver("opencode", "")
+            if not eff_provider:
+                eff_provider, eff_model = cli.resolve_provider(request)
+            if (eff_provider and eff_provider != entry.provider) or (
+                eff_model and eff_model != entry.model
+            ):
                 self._registry.update_status(
-                    entry.task_id, "running", provider=eff_provider, model=eff_model
+                    entry.task_id,
+                    "running",
+                    provider=eff_provider or entry.provider,
+                    model=eff_model or entry.model,
                 )
-                entry.provider = eff_provider
-                entry.model = eff_model
+                if eff_provider:
+                    entry.provider = eff_provider
+                if eff_model:
+                    entry.model = eff_model
 
             response = await cli.execute(request)
 
@@ -2095,6 +2242,7 @@ class TaskHub:
                 "task_id": entry.task_id,
                 "workunit_kind": entry.workunit_kind,
                 "route_slot": entry.route_slot,
+                "binding": entry.binding.to_dict() if entry.binding is not None else None,
                 "provider": entry.provider,
                 "model": entry.model,
                 "repo_root": entry.repo_root,

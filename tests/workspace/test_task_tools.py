@@ -83,7 +83,8 @@ def test_route_task_rejects_unsupported_claw_provider(tmp_path: Path) -> None:
     )
 
     assert result.returncode == 1
-    assert "TaskHub background provider 'claw-code' is not supported" in result.stderr
+    assert "not an assistant slot" in result.stderr
+    assert "native config" in result.stderr
 
 
 def test_create_task_rejects_unsupported_claw_provider(tmp_path: Path) -> None:
@@ -101,7 +102,8 @@ def test_create_task_rejects_unsupported_claw_provider(tmp_path: Path) -> None:
     )
 
     assert result.returncode == 1
-    assert "TaskHub background provider 'claw-code' is not supported" in result.stderr
+    assert "not an assistant slot" in result.stderr
+    assert "Available slots" in result.stderr
 
 
 def test_create_task_surfaces_provider_model_mismatch_from_api(tmp_path: Path) -> None:
@@ -184,7 +186,32 @@ def test_route_task_rejects_unsupported_openai_provider(tmp_path: Path) -> None:
     )
 
     assert result.returncode == 1
-    assert "TaskHub background provider 'openai' is not supported" in result.stderr
+    assert "not an assistant slot" in result.stderr
+    assert "native config" in result.stderr
+
+
+def test_create_task_supports_explicit_slot_flag(tmp_path: Path) -> None:
+    deployed_dir = _install_deployed_task_tools(tmp_path)
+    server, thread = _start_task_api()
+    try:
+        result = _run_tool(
+            deployed_dir / "create_task.py",
+            server.server_address[1],
+            [
+                "--slot",
+                "codex_default",
+                "--kind",
+                "code_review",
+                "Review the current diff",
+            ],
+        )
+    finally:
+        server.shutdown()
+        thread.join()
+
+    assert result.returncode == 0, result.stderr
+    requests: list[tuple[str, dict[str, Any]]] = server.requests  # type: ignore[attr-defined]
+    assert requests[0][1]["slot"] == "codex_default"
 
 
 def test_create_task_supports_plan_phase_flags(tmp_path: Path) -> None:

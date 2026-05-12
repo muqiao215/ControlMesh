@@ -298,6 +298,7 @@ class InternalAgentAPI:
             transport=data.get("transport") or "tg",
             parent_agent=sender,
             name=data.get("name", ""),
+            slot_override=data.get("slot") or "",
             provider_override=data.get("provider") or "",
             model_override=data.get("model") or "",
             thinking_override=data.get("thinking") or "",

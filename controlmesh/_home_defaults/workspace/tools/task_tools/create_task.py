@@ -10,8 +10,9 @@ Usage:
 
 Options:
     --name NAME        Human-readable task name (e.g. "Flugsuche Paris")
-    --provider PROV    Override provider (claude, codex, gemini, opencode)
-    --model MODEL      Override model (opus, sonnet, flash, etc.)
+    --slot SLOT        Explicit assistant slot
+    --provider PROV    Legacy assistant hint (codex, opencode, claude, gemini)
+    --model MODEL      Legacy model hint only
     --thinking LEVEL   Reasoning effort for codex (low, medium, high)
     --topology NAME    Explicit topology (pipeline, fanout_merge, director_worker, debate_judge)
     --route auto       Let ControlMesh route by WorkUnit capability
@@ -48,10 +49,16 @@ def _load_shared() -> tuple[object, object, object, object, object]:
         get_api_url,
         normalize_provider_name,
         post_json,
-        validate_taskhub_provider_name,
+        validate_taskhub_slot_or_legacy_hint,
     )
 
-    return get_api_url, post_json, detect_agent_name, normalize_provider_name, validate_taskhub_provider_name
+    return (
+        get_api_url,
+        post_json,
+        detect_agent_name,
+        normalize_provider_name,
+        validate_taskhub_slot_or_legacy_hint,
+    )
 
 
 def main() -> None:
@@ -65,9 +72,10 @@ def main() -> None:
         post_json,
         detect_agent_name,
         normalize_provider_name,
-        validate_taskhub_provider_name,
+        validate_taskhub_slot_or_legacy_hint,
     ) = _load_shared()
     name = ""
+    slot = ""
     provider = ""
     model = ""
     thinking = ""
@@ -88,6 +96,9 @@ def main() -> None:
     while args:
         if args[0] == "--name" and len(args) >= 2:
             name = args[1]
+            args = args[2:]
+        elif args[0] == "--slot" and len(args) >= 2:
+            slot = args[1]
             args = args[2:]
         elif args[0] == "--provider" and len(args) >= 2:
             provider = args[1]
@@ -139,7 +150,7 @@ def main() -> None:
 
     if not args:
         print(
-            'Usage: python3 create_task.py [--name NAME] [--provider P] '
+            'Usage: python3 create_task.py [--name NAME] [--slot SLOT] [--provider P] '
             '[--model M] [--thinking L] [--route auto] [--kind KIND] "prompt"',
             file=sys.stderr,
         )
@@ -152,9 +163,11 @@ def main() -> None:
     body: dict[str, object] = {"from": sender, "prompt": prompt}
     if name:
         body["name"] = name
+    if slot:
+        body["slot"] = slot
     if provider:
         try:
-            body["provider"] = validate_taskhub_provider_name(normalize_provider_name(provider))
+            body["provider"] = validate_taskhub_slot_or_legacy_hint(normalize_provider_name(provider))
         except ValueError as exc:
             print(f"Error: {exc}", file=sys.stderr)
             sys.exit(1)

@@ -203,8 +203,12 @@ class CLIService:
     def _resolve_model(self, request: AgentRequest) -> str:
         """Resolve the effective model for logging and metadata."""
         try:
+            if request.assistant_override:
+                return request.model_override or f"<{request.assistant_override} native>"
             provider, model = self.resolve_provider(request)
         except ValueError:
+            if request.assistant_override:
+                return f"<{request.assistant_override} unresolved>"
             if request.provider_override:
                 return f"<{request.provider_override} unresolved>"
             return request.model_override or self._config.default_model
@@ -366,6 +370,8 @@ class CLIService:
 
     def resolve_provider(self, request: AgentRequest) -> tuple[str, str]:
         """Return ``(provider, model)`` that would be used for *request*."""
+        if request.assistant_override:
+            return request.assistant_override, request.model_override or ""
         if request.provider_override:
             return self.resolve_runtime_provider_target(
                 request.provider_override,
@@ -500,7 +506,7 @@ class CLIService:
 
     def _make_cli(self, request: AgentRequest) -> BaseCLI:
         """Create a BaseCLI instance for the given request."""
-        requested_provider = request.provider_override or self._config.provider
+        requested_provider = request.assistant_override or request.provider_override or self._config.provider
         requested_model = request.model_override or self._config.default_model
         provider, model = self.resolve_provider(request)
         if self._runtime_registry is not None:

@@ -21,8 +21,7 @@ def _make_orch(*, with_supervisor: bool = True) -> MagicMock:
     tasks_cfg = MagicMock()
     tasks_cfg.max_parallel = 5
     tasks_cfg.cadence = "on_demand"
-    tasks_cfg.default_provider = "claude"
-    tasks_cfg.default_model = "opus"
+    tasks_cfg.default_slot = "claude_default"
     tasks_cfg.risk_guards = ["release", "git_write", "repo_write", "publish"]
     routing_cfg = MagicMock()
     routing_cfg.enabled = True
@@ -138,7 +137,7 @@ class TestCmdAgents:
         orch = _make_orch()
         result = await cmd_agents(orch, 1, "/agents")
         assert "TaskHub policy:" in result.text
-        assert "default: claude / opus" in result.text
+        assert "default slot: claude_default" in result.text
         assert "max_parallel: 5" in result.text
         assert "cadence: on_demand" in result.text
         assert "risk_guards: release, git_write, repo_write, publish" in result.text

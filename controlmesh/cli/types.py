@@ -50,6 +50,7 @@ class AgentRequest:
     prompt: str
     system_prompt: str | None = None
     append_system_prompt: str | None = None
+    assistant_override: str | None = None
     model_override: str | None = None
     provider_override: str | None = None
     chat_id: int = 0

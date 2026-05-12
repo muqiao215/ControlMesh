@@ -105,6 +105,7 @@ class TaskRegistry:
         submit: TaskSubmit,
         provider: str,
         model: str,
+        binding: object | None = None,
         thinking: str = "",
         tasks_dir: Path | None = None,
     ) -> TaskEntry:
@@ -120,6 +121,7 @@ class TaskRegistry:
             parent_agent=submit.parent_agent,
             name=submit.name or task_id,
             prompt_preview=submit.prompt[:_PROMPT_PREVIEW_LEN],
+            binding=binding,
             provider=provider,
             model=model,
             transport=submit.transport,
@@ -301,6 +303,8 @@ def _seed_task_folder(
         taskmemory.write_text(
             f"# Task: {entry.name}\n\n"
             f"Created: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"Assistant slot: {(entry.binding.slot if entry.binding else '-')}\n"
+            f"Assistant command: {(entry.binding.command if entry.binding else '-')}\n"
             f"Target: {provider_model_label(provider, model, default_provider='-', default_model='-')}\n\n"
             f"## Task Description\n\n"
             f"{prompt[:500]}\n\n"
@@ -323,6 +327,7 @@ def _seed_task_folder(
             "workunit_kind": entry.workunit_kind,
             "route": entry.route,
             "route_reason": entry.route_reason,
+            "binding": entry.binding.to_dict() if entry.binding is not None else None,
             "provider": provider,
             "model": model,
             "topology": entry.topology,
@@ -356,6 +361,7 @@ def _seed_task_folder(
         "task.folder.seeded",
         {
             "task_id": entry.task_id,
+            "binding": entry.binding.to_dict() if entry.binding is not None else None,
             "provider": provider,
             "model": model,
             "workunit_kind": entry.workunit_kind,

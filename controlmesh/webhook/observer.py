@@ -359,6 +359,7 @@ class WebhookObserver(BaseTaskObserver):
             parent_agent=parent_agent,
             transport=transport,
             name=hook.task_name or hook.title,
+            slot_override=hook.slot or "",
             provider_override=hook.provider or "",
             model_override=hook.model or "",
             thinking_override=hook.reasoning_effort or "",

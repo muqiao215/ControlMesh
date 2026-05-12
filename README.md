@@ -395,7 +395,7 @@ Topology control from chat:
 - WeChat/Weixin setup: [`docs/weixin-setup.md`](docs/weixin-setup.md)
 - Case-pack contract: [`docs/case-pack/README.md`](docs/case-pack/README.md)
 - Documentation index: [`docs/README.md`](docs/README.md)
-- Latest release note: [`docs/release-note-v0.29.2.md`](docs/release-note-v0.29.2.md)
+- Latest release note: [`docs/release-note-v0.30.0.md`](docs/release-note-v0.30.0.md)
 - Memory v2: [`docs/modules/memory_v2.md`](docs/modules/memory_v2.md)
 - Multi-agent runtime: [`docs/modules/multiagent.md`](docs/modules/multiagent.md)
 - Example config: [`config.example.json`](config.example.json)

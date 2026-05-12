@@ -10,6 +10,53 @@ from typing import Any
 from controlmesh.messenger.address import ChatRef, TopicRef
 
 
+@dataclass(frozen=True, slots=True)
+class TaskBindingSnapshot:
+    """Assistant-slot binding captured at task creation time."""
+
+    slot: str
+    assistant: str
+    command: str
+    config_authority: str = "native"
+    config_paths: tuple[str, ...] = ()
+    config_digests: dict[str, str] = field(default_factory=dict)
+    workunit: str = ""
+    mode: str = ""
+    background: bool = True
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "slot": self.slot,
+            "assistant": self.assistant,
+            "command": self.command,
+            "config_authority": self.config_authority,
+            "config_paths": list(self.config_paths),
+            "config_digests": dict(self.config_digests),
+            "workunit": self.workunit,
+            "mode": self.mode,
+            "background": self.background,
+        }
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any] | None) -> TaskBindingSnapshot | None:
+        if not isinstance(raw, dict):
+            return None
+        return cls(
+            slot=str(raw.get("slot") or ""),
+            assistant=str(raw.get("assistant") or ""),
+            command=str(raw.get("command") or ""),
+            config_authority=str(raw.get("config_authority") or "native"),
+            config_paths=tuple(str(item) for item in (raw.get("config_paths") or [])),
+            config_digests={
+                str(key): str(value)
+                for key, value in dict(raw.get("config_digests") or {}).items()
+            },
+            workunit=str(raw.get("workunit") or ""),
+            mode=str(raw.get("mode") or ""),
+            background=bool(raw.get("background", True)),
+        )
+
+
 @dataclass(slots=True)
 class TaskSubmit:
     """Input for creating a background task."""
@@ -21,6 +68,7 @@ class TaskSubmit:
     parent_agent: str
     transport: str = "tg"
     name: str = ""
+    slot_override: str = ""
     provider_override: str = ""
     model_override: str = ""
     thinking_override: str = ""
@@ -60,6 +108,7 @@ class TaskEntry:
     parent_agent: str
     name: str
     prompt_preview: str
+    binding: TaskBindingSnapshot | None
     provider: str
     model: str
     status: str  # running | done | failed | cancelled | waiting | detached | recovering | stale
@@ -114,6 +163,7 @@ class TaskEntry:
             "parent_agent": self.parent_agent,
             "name": self.name,
             "prompt_preview": self.prompt_preview,
+            "binding": self.binding.to_dict() if self.binding is not None else None,
             "provider": self.provider,
             "model": self.model,
             "transport": self.transport,
@@ -171,6 +221,7 @@ class TaskEntry:
             parent_agent=d.get("parent_agent", "main"),
             name=d.get("name", ""),
             prompt_preview=d.get("prompt_preview", ""),
+            binding=TaskBindingSnapshot.from_dict(d.get("binding")),
             provider=d.get("provider", ""),
             model=d.get("model", ""),
             transport=d.get("transport", "tg"),

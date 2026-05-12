@@ -10,8 +10,9 @@ import urllib.request
 from pathlib import Path
 
 
-_TASKHUB_SUPPORTED_PROVIDERS = frozenset({"claude", "codex", "gemini", "opencode"})
-_TASKHUB_UNSUPPORTED_PROVIDERS = frozenset({"openai", "openai_agents", "claw", "claw-code"})
+_INVALID_RAW_RUNNER_TOKENS = frozenset(
+    {"openai", "openai_agents", "anthropic", "zhipuai", "openrouter", "litellm", "ollama", "claw", "claw-code"}
+)
 
 
 def detect_agent_name() -> str:
@@ -39,20 +40,17 @@ def normalize_provider_name(provider: str | None) -> str:
     return (provider or "").strip().lower()
 
 
-def validate_taskhub_provider_name(provider: str | None) -> str:
-    """Validate one explicit TaskHub provider override."""
+def validate_taskhub_slot_or_legacy_hint(provider: str | None) -> str:
+    """Validate one explicit TaskHub slot token or legacy assistant hint."""
     normalized = normalize_provider_name(provider)
     if not normalized:
         return ""
-    supported = ", ".join(sorted(_TASKHUB_SUPPORTED_PROVIDERS))
-    if normalized in _TASKHUB_UNSUPPORTED_PROVIDERS:
+    if normalized in _INVALID_RAW_RUNNER_TOKENS:
         msg = (
-            f"TaskHub background provider '{normalized}' is not supported. "
-            f"Supported: {supported}."
+            f'Invalid TaskHub background binding: "{normalized}" is not an assistant slot. '
+            "Model/provider settings belong to the assistant's native config. "
+            "Available slots: claude_default, codex_default, gemini_default, opencode_default."
         )
-        raise ValueError(msg)
-    if normalized not in _TASKHUB_SUPPORTED_PROVIDERS:
-        msg = f"Unknown TaskHub provider '{normalized}'. Supported: {supported}."
         raise ValueError(msg)
     return normalized
 

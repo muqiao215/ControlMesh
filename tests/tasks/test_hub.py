@@ -162,7 +162,25 @@ class TestSubmit:
         gate.cancel()
         await hub.cancel(task_id)
 
-    async def test_submit_rejects_provider_model_mismatch(
+    async def test_explicit_slot_succeeds(self, registry: TaskRegistry, tmp_path: Path) -> None:
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=_make_cli_service(),
+            config=_make_config(),
+        )
+        submit = _submit(prompt="review current diff", name="Slot binding")
+        submit.slot_override = "codex_default"
+        submit.workunit_kind = "code_review"
+
+        task_id = hub.submit(submit)
+        entry = registry.get(task_id)
+        assert entry is not None
+        assert entry.binding is not None
+        assert entry.binding.slot == "codex_default"
+        assert entry.binding.assistant == "codex"
+
+    async def test_legacy_provider_alias_maps_to_slot(
         self, registry: TaskRegistry, tmp_path: Path
     ) -> None:
         hub = TaskHub(
@@ -171,20 +189,17 @@ class TestSubmit:
             cli_service=_make_cli_service(),
             config=_make_config(),
         )
-        submit = _submit(prompt="bad model binding", name="Bad binding")
+        submit = _submit(prompt="review current diff", name="Legacy alias")
         submit.provider_override = "codex"
-        submit.model_override = "zhipuai/glm-5.1"
+        submit.workunit_kind = "code_review"
 
-        with pytest.raises(
-            ValueError,
-            match=(
-                r"^error:model_provider_mismatch "
-                r"provider=codex model=zhipuai/glm-5\.1 inferred_provider=opencode$"
-            ),
-        ):
-            hub.submit(submit)
+        task_id = hub.submit(submit)
+        entry = registry.get(task_id)
+        assert entry is not None
+        assert entry.binding is not None
+        assert entry.binding.slot == "codex_default"
 
-    async def test_submit_rejects_unsupported_taskhub_provider(
+    async def test_submit_rejects_raw_provider_token(
         self, registry: TaskRegistry, tmp_path: Path
     ) -> None:
         hub = TaskHub(
@@ -194,36 +209,43 @@ class TestSubmit:
             config=_make_config(),
         )
         submit = _submit(prompt="review current diff", name="Unsupported provider")
-        submit.provider_override = "openai_agents"
+        submit.provider_override = "openai"
 
-        with pytest.raises(
-            ValueError,
-            match=(
-                r"^TaskHub background provider 'openai_agents' is not supported\. "
-                r"Supported: claude, codex, gemini, opencode\.$"
-            ),
-        ):
+        with pytest.raises(ValueError, match=r'not an assistant slot'):
             hub.submit(submit)
 
-    async def test_submit_rejects_unsupported_default_background_provider(
+    async def test_default_slot_selected_when_no_slot_or_provider(
         self, registry: TaskRegistry, tmp_path: Path
     ) -> None:
         cli = _make_cli_service()
-        cli._config = MagicMock(provider="openai_agents", default_model="gpt-5.4")
         hub = TaskHub(
             registry,
             MagicMock(workspace=tmp_path),
             cli_service=cli,
-            config=_make_config(default_provider="", default_model=""),
+            config=_make_config(default_slot="claude_default"),
         )
 
-        task_id = hub.submit(_submit(prompt="run tests", name="Fallback provider"))
+        task_id = hub.submit(_submit(prompt="run tests", name="Fallback slot"))
         entry = registry.get(task_id)
         assert entry is not None
-        assert entry.provider == "claude"
-        assert entry.model == "sonnet"
+        assert entry.binding is not None
+        assert entry.binding.slot == "claude_default"
 
         await hub.shutdown()
+
+    async def test_slot_rejects_workunit_mismatch(self, registry: TaskRegistry, tmp_path: Path) -> None:
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=_make_cli_service(),
+            config=_make_config(),
+        )
+        submit = _submit(prompt="review current diff", name="Mismatch")
+        submit.slot_override = "claude_default"
+        submit.workunit_kind = "test_execution"
+
+        with pytest.raises(ValueError, match=r"does not allow workunit 'test_execution'"):
+            hub.submit(submit)
 
     async def test_persists_explicit_topology_selection(self, registry: TaskRegistry, tmp_path: Path) -> None:
         hub = TaskHub(
@@ -523,34 +545,6 @@ agent_slots:
 
         await hub.shutdown()
 
-    async def test_runtime_provider_missing_model_fails_fast_with_diagnostic(
-        self,
-        registry: TaskRegistry,
-        tmp_path: Path,
-    ) -> None:
-        cli = _make_cli_service()
-        cli.resolve_provider = MagicMock(side_effect=ValueError("error:opencode_default_model_unresolved"))
-        hub = TaskHub(
-            registry,
-            MagicMock(workspace=tmp_path),
-            cli_service=cli,
-            config=_make_config(timeout_seconds=3600.0),
-        )
-
-        submit = _submit(prompt="Run test command", name="OpenCode route")
-        submit.provider_override = "opencode"
-        submit.model_override = ""
-        task_id = hub.submit(submit)
-        await asyncio.sleep(0.1)
-
-        entry = registry.get(task_id)
-        assert entry is not None
-        assert entry.status == "failed"
-        assert entry.error == "error:opencode_default_model_unresolved"
-        cli.execute.assert_not_awaited()
-
-        await hub.shutdown()
-
     async def test_explicit_provider_binding_rejects_invalid_provider_token(
         self,
         registry: TaskRegistry,
@@ -566,12 +560,12 @@ agent_slots:
         submit = _submit(prompt="Run test command", name="Bad provider token")
         submit.provider_override = "claude/gpt-5.5"
 
-        with pytest.raises(ValueError, match=r"^error:invalid_provider_token provider=claude/gpt-5.5$"):
+        with pytest.raises(ValueError, match=r'not an assistant slot'):
             hub.submit(submit)
 
         await hub.shutdown()
 
-    async def test_explicit_provider_binding_rejects_cross_provider_model_mismatch(
+    async def test_model_hint_does_not_drive_slot_resolution(
         self,
         registry: TaskRegistry,
         tmp_path: Path,
@@ -583,18 +577,15 @@ agent_slots:
             config=_make_config(),
         )
 
-        submit = _submit(prompt="Run test command", name="Bad model binding")
+        submit = _submit(prompt="Run test command", name="Model hint only")
         submit.provider_override = "claude"
         submit.model_override = "gpt-5.5"
-
-        with pytest.raises(
-            ValueError,
-            match=(
-                r"^error:model_provider_mismatch "
-                r"provider=claude model=gpt-5\.5 inferred_provider=codex$"
-            ),
-        ):
-            hub.submit(submit)
+        submit.workunit_kind = "code_review"
+        task_id = hub.submit(submit)
+        entry = registry.get(task_id)
+        assert entry is not None
+        assert entry.binding is not None
+        assert entry.binding.slot == "claude_default"
 
         await hub.shutdown()
 

@@ -333,6 +333,8 @@ class TasksConfig(BaseModel):
     cadence: str = "on_demand"
     default_provider: str = ""
     default_model: str = ""
+    default_slot: str = ""
+    slots: dict[str, dict[str, object]] = Field(default_factory=dict)
     risk_guards: list[str] = Field(
         default_factory=lambda: ["release", "git_write", "repo_write", "publish"]
     )

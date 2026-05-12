@@ -11,8 +11,8 @@ Usage:
 
 Options:
     --name NAME          Override the plan name (default: "release-<timestamp>")
-    --provider PROVIDER  Explicit provider hint (claude, codex, gemini, opencode)
-    --model MODEL        Model hint (opus, sonnet, etc.)
+    --provider PROVIDER  Legacy assistant hint (claude, codex, gemini, opencode)
+    --model MODEL        Legacy model hint only
     --claude             Prefer Claude for all phases (sets explicit provider/model)
     --repo-url URL       Repository URL for the release
     --version VERSION    Target version (auto-detected if not provided)
@@ -60,10 +60,16 @@ def _load_shared() -> tuple[object, object, object, object]:
         get_api_url,
         normalize_provider_name,
         post_json,
-        validate_taskhub_provider_name,
+        validate_taskhub_slot_or_legacy_hint,
     )
 
-    return get_api_url, post_json, detect_agent_name, normalize_provider_name, validate_taskhub_provider_name
+    return (
+        get_api_url,
+        post_json,
+        detect_agent_name,
+        normalize_provider_name,
+        validate_taskhub_slot_or_legacy_hint,
+    )
 
 
 # Default phases for a release workflow.
@@ -276,7 +282,7 @@ def main() -> None:
         post_json,
         detect_agent_name,
         normalize_provider_name,
-        validate_taskhub_provider_name,
+        validate_taskhub_slot_or_legacy_hint,
     ) = _load_shared()
 
     # Parse arguments
@@ -296,7 +302,7 @@ def main() -> None:
             args = args[2:]
         elif args[0] == "--provider" and len(args) >= 2:
             try:
-                provider = validate_taskhub_provider_name(normalize_provider_name(args[1]))
+                provider = validate_taskhub_slot_or_legacy_hint(normalize_provider_name(args[1]))
             except ValueError as exc:
                 print(f"Error: {exc}", file=sys.stderr)
                 sys.exit(1)

@@ -15,8 +15,9 @@ Options:
     --target TARGET    Review target or scope
     --evidence PATH    Evidence/log path for patch_candidate
     --topology NAME    Optional topology or alias
-    --provider PROV    Explicit provider override
-    --model MODEL      Explicit model override
+    --slot SLOT        Explicit assistant slot
+    --provider PROV    Legacy assistant hint
+    --model MODEL      Legacy model hint only
     --capability CAP   Required capability hint (repeatable)
     --evaluator NAME   Evaluator hint, e.g. foreground
 """
@@ -39,10 +40,16 @@ def _load_shared() -> tuple[object, object, object, object, object]:
         get_api_url,
         normalize_provider_name,
         post_json,
-        validate_taskhub_provider_name,
+        validate_taskhub_slot_or_legacy_hint,
     )
 
-    return get_api_url, post_json, detect_agent_name, normalize_provider_name, validate_taskhub_provider_name
+    return (
+        get_api_url,
+        post_json,
+        detect_agent_name,
+        normalize_provider_name,
+        validate_taskhub_slot_or_legacy_hint,
+    )
 
 
 def main() -> None:
@@ -56,7 +63,7 @@ def main() -> None:
         post_json,
         detect_agent_name,
         normalize_provider_name,
-        validate_taskhub_provider_name,
+        validate_taskhub_slot_or_legacy_hint,
     ) = _load_shared()
     name = ""
     kind = ""
@@ -64,6 +71,7 @@ def main() -> None:
     target = ""
     evidence = ""
     topology = ""
+    slot = ""
     provider = ""
     model = ""
     evaluator = ""
@@ -72,6 +80,9 @@ def main() -> None:
     while args:
         if args[0] == "--name" and len(args) >= 2:
             name = args[1]
+            args = args[2:]
+        elif args[0] == "--slot" and len(args) >= 2:
+            slot = args[1]
             args = args[2:]
         elif args[0] in {"--kind", "--workunit-kind"} and len(args) >= 2:
             kind = args[1]
@@ -119,6 +130,8 @@ def main() -> None:
     }
     if name:
         body["name"] = name
+    if slot:
+        body["slot"] = slot
     if kind:
         body["workunit_kind"] = kind
     if command:
@@ -131,7 +144,7 @@ def main() -> None:
         body["topology"] = topology
     if provider:
         try:
-            body["provider"] = validate_taskhub_provider_name(normalize_provider_name(provider))
+            body["provider"] = validate_taskhub_slot_or_legacy_hint(normalize_provider_name(provider))
         except ValueError as exc:
             print(f"Error: {exc}", file=sys.stderr)
             sys.exit(1)

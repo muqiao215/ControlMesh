@@ -754,8 +754,9 @@ def _cmd_tasks_new(orch: Orchestrator, key: SessionKey, prompt: str) -> Orchestr
                     worker_business_permissions=sorted(intent.side_effects),
                     evaluator="foreground",
                 ),
-                provider="",
-                model="",
+                "",
+                "",
+                binding=None,
             ).task_id
             hub.registry.update_status(
                 task_id,
