@@ -141,6 +141,95 @@ def test_create_task_bootstraps_controlmesh_without_pythonpath(tmp_path: Path) -
     ]
 
 
+def test_create_task_surfaces_provider_model_mismatch_from_api(tmp_path: Path) -> None:
+    deployed_dir = _install_deployed_task_tools(tmp_path)
+
+    class _RejectingTaskAPIHandler(_TaskAPIHandler):
+        def do_POST(self) -> None:
+            length = int(self.headers.get("Content-Length", "0"))
+            body = self.rfile.read(length)
+            payload = json.loads(body.decode("utf-8"))
+            self.server.requests.append((self.path, payload))  # type: ignore[attr-defined]
+            response = json.dumps(
+                {
+                    "success": False,
+                    "error": "error:model_provider_mismatch "
+                    "provider=codex model=zhipuai/glm-5.1 inferred_provider=opencode",
+                }
+            ).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(response)))
+            self.end_headers()
+            self.wfile.write(response)
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _RejectingTaskAPIHandler)
+    server.requests = []  # type: ignore[attr-defined]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        result = _run_tool(
+            deployed_dir / "create_task.py",
+            server.server_address[1],
+            [
+                "--provider",
+                "codex",
+                "--model",
+                "zhipuai/glm-5.1",
+                "--name",
+                "Bad codex task",
+                "Investigate this invalid provider/model binding",
+            ],
+        )
+    finally:
+        server.shutdown()
+        thread.join()
+
+    assert result.returncode == 1
+    assert (
+        "error:model_provider_mismatch provider=codex model=zhipuai/glm-5.1 "
+        "inferred_provider=opencode" in result.stderr
+    )
+    requests: list[tuple[str, dict[str, Any]]] = server.requests  # type: ignore[attr-defined]
+    assert requests == [
+        (
+            "/tasks/create",
+            {
+                "from": "main",
+                "prompt": "Investigate this invalid provider/model binding",
+                "name": "Bad codex task",
+                "provider": "codex",
+                "model": "zhipuai/glm-5.1",
+            },
+        )
+    ]
+
+
+def test_route_task_normalizes_openai_provider_to_codex(tmp_path: Path) -> None:
+    deployed_dir = _install_deployed_task_tools(tmp_path)
+    server, thread = _start_task_api()
+    try:
+        result = _run_tool(
+            deployed_dir / "route_task.py",
+            server.server_address[1],
+            [
+                "--provider",
+                "openai",
+                "--kind",
+                "test_execution",
+                "--command",
+                "uv run pytest tests/test_x.py -q",
+            ],
+        )
+    finally:
+        server.shutdown()
+        thread.join()
+
+    assert result.returncode == 0, result.stderr
+    requests: list[tuple[str, dict[str, Any]]] = server.requests  # type: ignore[attr-defined]
+    assert requests[0][1]["provider"] == "codex"
+
+
 def test_create_task_supports_plan_phase_flags(tmp_path: Path) -> None:
     deployed_dir = _install_deployed_task_tools(tmp_path)
     plan_file = tmp_path / "PLAN.md"

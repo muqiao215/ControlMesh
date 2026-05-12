@@ -10,7 +10,10 @@ import urllib.request
 from pathlib import Path
 
 
-_PROVIDER_NAME_ALIASES = {"claw-code": "claw"}
+_PROVIDER_NAME_ALIASES = {
+    "claw-code": "claw",
+    "openai": "codex",
+}
 
 
 def detect_agent_name() -> str:

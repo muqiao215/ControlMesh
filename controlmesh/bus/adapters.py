@@ -230,12 +230,14 @@ def from_task_result(result: TaskResult) -> Envelope:
     delivery_text = getattr(result, "delivery_text", "") or ""
     if output_policy == "summarized_only":
         delivery_text = delivery_text or _summarized_only_fallback(result)
+    inject_to_parent_session = bool(getattr(result, "inject_to_parent_session", True))
+    terminal_status = getattr(result, "status", "") in {"done", "failed", "cancelled", "timeout"}
     return Envelope(
         origin=Origin.TASK_RESULT,
         chat_id=result.chat_id,
         topic_id=result.thread_id,
         transport=getattr(result, "transport", "tg"),
-        prompt="",
+        prompt=_build_task_injection_prompt(result) if inject_to_parent_session and terminal_status else "",
         prompt_preview=result.prompt_preview,
         result_text=result.result_text,
         delivery_text=delivery_text,
@@ -245,7 +247,7 @@ def from_task_result(result: TaskResult) -> Envelope:
         and getattr(result, "artifact_protocol_status", "") != "normalized",
         delivery=DeliveryMode.UNICAST,
         lock_mode=LockMode.NONE,
-        needs_injection=False,
+        needs_injection=inject_to_parent_session and terminal_status,
         elapsed_seconds=result.elapsed_seconds,
         provider=result.provider,
         model=result.model,
@@ -327,12 +329,14 @@ def _summarized_only_fallback(result: TaskResult) -> str:
 def _build_task_injection_prompt(result: TaskResult) -> str:
     """Build the prompt injected into the parent agent's session."""
     task_id = result.task_id
+    summary = getattr(result, "delivery_text", "") or _summarized_only_fallback(result)
     if result.status in ("failed", "timeout"):
         return (
             f"[BACKGROUND TASK FAILED: task_id='{task_id}' name='{result.name}']\n"
             f"Error: {result.error}\n"
             f"Target: {provider_model_label(result.provider, result.model)} | "
             f"Duration: {result.elapsed_seconds:.0f}s\n\n"
+            f"Summary:\n{summary}\n\n"
             f"Original task: {result.original_prompt}\n\n"
             f"Inform the user that the background task '{result.name}' failed "
             f"and suggest next steps."
@@ -341,7 +345,7 @@ def _build_task_injection_prompt(result: TaskResult) -> str:
         f"[BACKGROUND TASK COMPLETED: task_id='{task_id}' name='{result.name}']\n"
         f"Target: {provider_model_label(result.provider, result.model)} | "
         f"Duration: {result.elapsed_seconds:.0f}s\n\n"
-        f"{result.result_text}\n\n"
+        f"Summary:\n{summary}\n\n"
         f"[END TASK RESULT]\n\n"
         f"Original task: {result.original_prompt}\n\n"
         f"Review this result critically:\n"

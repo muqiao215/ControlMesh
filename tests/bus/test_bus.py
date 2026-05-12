@@ -258,6 +258,33 @@ async def test_task_result_without_injection_does_not_resume_session() -> None:
     t.deliver.assert_awaited_once_with(env)
 
 
+async def test_task_result_injection_can_drive_parent_session_with_summary_prompt() -> None:
+    bus = MessageBus()
+    t = _mock_transport()
+    bus.register_transport(t)
+
+    injector = AsyncMock()
+    injector.inject_prompt = AsyncMock(return_value="Controller saw the task result.")
+    bus.set_injector(injector)
+
+    env = _env(
+        origin=Origin.TASK_RESULT,
+        needs_injection=True,
+        prompt="[BACKGROUND TASK COMPLETED: task_id='t1' name='research']\nSummary:\nshort found it",
+        result_text="Raw task payload with taskmemory and resume hint",
+        delivery_text="short found it",
+        lock_mode=LockMode.NONE,
+        chat_id=10,
+    )
+    await bus.submit(env)
+
+    injector.inject_prompt.assert_awaited_once()
+    injected_prompt = injector.inject_prompt.await_args.args[0]
+    assert "short found it" in injected_prompt
+    assert "Raw task payload with taskmemory and resume hint" not in injected_prompt
+    assert env.delivery_text == "Controller saw the task result."
+
+
 async def test_summarized_only_task_result_without_summary_gets_safe_fallback() -> None:
     bus = MessageBus()
     t = _mock_transport()

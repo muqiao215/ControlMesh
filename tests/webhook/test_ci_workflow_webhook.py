@@ -27,4 +27,6 @@ def test_ci_workflow_sends_telegram_notification_on_failure() -> None:
     assert '"https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage"' in run_script
     assert '--data-urlencode "chat_id=${TELEGRAM_CHAT_ID}"' in run_script
     assert '--data-urlencode "message_thread_id=${TELEGRAM_MESSAGE_THREAD_ID}"' in run_script
+    assert 'f"ruff: {os.environ[\'RUFF_RESULT\']}"' in run_script
+    assert 'f"mypy: {os.environ[\'MYPY_RESULT\']}"' in run_script
     assert 'f"synthetic_failure: {os.environ[\'SMOKE_RESULT\']}"' in run_script

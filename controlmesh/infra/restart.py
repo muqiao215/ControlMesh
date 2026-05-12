@@ -98,9 +98,7 @@ def should_delegate_restart_to_service_manager() -> bool:
         return True
     # Treat bare host/root test shells conservatively: some environments may
     # leak INVOCATION_ID without providing a usable service-manager user bus.
-    if os.environ.get("INVOCATION_ID") and os.environ.get("XDG_RUNTIME_DIR"):
-        return True
-    return False
+    return bool(os.environ.get("INVOCATION_ID") and os.environ.get("XDG_RUNTIME_DIR"))
 
 
 def request_restart(

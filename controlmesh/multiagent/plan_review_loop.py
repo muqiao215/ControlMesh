@@ -23,7 +23,6 @@ from controlmesh.tasks.models import EvaluationFinding, EvaluationResult, TaskRe
 
 if TYPE_CHECKING:
     from controlmesh.orchestrator.core import Orchestrator
-    from controlmesh.history.models import TranscriptTurn
     from controlmesh.session.key import SessionKey
 
 
@@ -747,6 +746,7 @@ async def create_mesh_workflow(
     source_command: str = "/mesh",
 ) -> MeshWorkflowStart:
     """Create a foreground-authored phased workflow from /mesh input."""
+    _ = source_command
     if orch.task_hub is None:
         raise ValueError("TaskHub is not enabled.")
     objective, foreground_state = await _resolve_mesh_objective(orch, key, request_text)
