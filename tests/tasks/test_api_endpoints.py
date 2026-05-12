@@ -138,6 +138,38 @@ class TestTaskCreate:
         assert submit.phase_title == "Audit repository"
         assert submit.phase_metadata == {"gate_kind": "release_publish"}
 
+    async def test_rejects_provider_model_mismatch_before_cli_execution(
+        self,
+        aiohttp_client: object,
+    ) -> None:
+        api = InternalAgentAPI(bus=None, port=0)
+        hub = _make_task_hub()
+        hub.submit.side_effect = ValueError(
+            "error:model_provider_mismatch "
+            "provider=codex model=zhipuai/glm-5.1 inferred_provider=opencode"
+        )
+        api.set_task_hub(hub)
+        client = await aiohttp_client(api._app)  # type: ignore[assignment]
+
+        resp = await client.post(
+            "/tasks/create",
+            json={
+                "from": "main",
+                "prompt": "Review the failing task path",
+                "provider": "codex",
+                "model": "zhipuai/glm-5.1",
+            },
+        )
+
+        assert resp.status == 200
+        data = await resp.json()
+        assert data == {
+            "success": False,
+            "error": "error:model_provider_mismatch "
+            "provider=codex model=zhipuai/glm-5.1 inferred_provider=opencode",
+        }
+        hub.submit.assert_called_once()
+
     async def test_missing_prompt(self, api_client: TestClient) -> None:
         resp = await api_client.post("/tasks/create", json={"from": "main"})
         assert resp.status == 400
