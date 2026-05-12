@@ -77,8 +77,7 @@ def is_long_running_host_execution(kind: str) -> bool:
 
 
 def _default_step_id(workunit_kind: str) -> str:
-    normalized = str(workunit_kind or "host_execution").strip() or "host_execution"
-    return normalized
+    return str(workunit_kind or "host_execution").strip() or "host_execution"
 
 
 def _default_step_title(workunit_kind: str) -> str:

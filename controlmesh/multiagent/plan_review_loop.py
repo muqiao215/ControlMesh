@@ -561,8 +561,9 @@ def reconcile_release_host_job(orch: Orchestrator, plan_id: str) -> str | None:
             )
         return None
 
-    if job_state == "failed":
-        if str(state.get("last_phase_task_id") or "") != job_id or str(state.get("status") or "") != "review_required":
+    if job_state == "failed" and (
+        str(state.get("last_phase_task_id") or "") != job_id or str(state.get("status") or "") != "review_required"
+    ):
             _set_controller_state(
                 orch,
                 plan_id,
@@ -858,7 +859,7 @@ async def create_mesh_workflow(
     key: SessionKey,
     request_text: str,
     *,
-    _source_command: str = "/mesh",
+    source_command: str = "/mesh",
 ) -> MeshWorkflowStart:
     """Create a foreground-authored phased workflow from /mesh input."""
     _ = source_command

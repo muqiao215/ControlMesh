@@ -7,7 +7,7 @@ import pytest
 from controlmesh.multiagent.release_gate import build_release_host_job_spec
 from controlmesh.multiagent.plan_review_loop import approve_current_phase, approve_phase
 from controlmesh.multiagent.release_gate import ensure_publish_gate
-from controlmesh.planning_files import PlanPhase, create_plan_files, plan_dir_for
+from controlmesh.planning_files import PlanPhase, create_plan_files
 from controlmesh.runtime import HostJob, HostJobStep
 from controlmesh.session.key import SessionKey
 from tests.multiagent.test_plan_review_loop import _FakeHostJobRunner, _FakeTaskHub, _make_orch, _write_state

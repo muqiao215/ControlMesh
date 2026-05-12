@@ -867,14 +867,14 @@ class AgentSupervisor:
         return str(state.get("source_transport") or "tg")
 
     @staticmethod
-    def _topic_id_for_plan(orch, plan_id: str):
+    def _topic_id_for_plan(orch, plan_id: str) -> str | None:
         from controlmesh.multiagent.plan_review_loop import _load_state
 
         state = _load_state(orch, plan_id)
         return state.get("source_topic_id")
 
     @staticmethod
-    def _chat_id_for_plan(main_stack: AgentStack, orch, plan_id: str):
+    def _chat_id_for_plan(main_stack: AgentStack, orch, plan_id: str) -> int | str:
         from controlmesh.multiagent.plan_review_loop import _load_state
 
         state = _load_state(orch, plan_id)

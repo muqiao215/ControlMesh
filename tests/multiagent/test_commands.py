@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from controlmesh.multiagent.commands import (
     cmd_agent_restart,
     cmd_agent_start,

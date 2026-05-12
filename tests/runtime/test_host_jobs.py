@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -121,7 +122,8 @@ def test_reconcile_is_idempotent(tmp_path: Path) -> None:
 
     first = runner.get(job.job_id)
     second = runner.get(job.job_id)
-    assert first is not None and second is not None
+    assert first is not None
+    assert second is not None
     assert first.state == second.state == "awaiting_approval"
     assert first.current_step_id == second.current_step_id == "push_main"
 
@@ -207,9 +209,7 @@ async def test_cancel_kills_process_group(tmp_path: Path) -> None:
     assert cancelled.state == "cancelled"
     child_pid = int(marker.read_text(encoding="utf-8").strip())
     await asyncio.sleep(0.1)
-    with pytest.raises(OSError):
-        import os
-
+    with pytest.raises(OSError, match=r"\[Errno \d+\]"):  # ESRCH: no such process
         os.kill(child_pid, 0)
 
 

@@ -109,7 +109,7 @@ class _FakeHostJobRunner:
             command = str(getattr(steps[6], "command", ""))
             marker = "--notes-file "
             if marker in command:
-                notes_file = command.split(marker, 1)[1].split()[0]
+                notes_file = command.split(marker, 1)[1].split(maxsplit=1)[0]
         self.ensure_calls.append(
             {
                 "job_id": job_id,

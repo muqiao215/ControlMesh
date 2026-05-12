@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hashlib
-import json
 import os
 import shlex
 import time
@@ -88,7 +87,7 @@ def _merge_job(existing: HostJob, incoming: HostJob) -> HostJob:
         current = existing_by_id.get(step.id)
         merged_steps.append(_merge_step_state(current, step) if current is not None else step)
 
-    merged = HostJob(
+    return HostJob(
         job_id=existing.job_id,
         job_kind=incoming.job_kind or existing.job_kind,
         source_task_id=incoming.source_task_id or existing.source_task_id,
@@ -105,7 +104,6 @@ def _merge_job(existing: HostJob, incoming: HostJob) -> HostJob:
         completed_at=existing.completed_at or incoming.completed_at,
         last_error=existing.last_error or incoming.last_error,
     )
-    return merged
 
 
 @dataclass(slots=True)
@@ -665,7 +663,7 @@ class HostJobRunner:
             + step.command
             + "; }; rc=$?; printf '%s\\n' \"$rc\" > "
             + shlex.quote(str(exit_code_path))
-            + "; exit \"$rc\""
+            + '; exit "$rc"'
         )
         try:
             proc = await asyncio.create_subprocess_exec(

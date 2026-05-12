@@ -106,7 +106,7 @@ async def _cmd_agents_compat(
     if action == "run":
         if len(parts) < 3 or not parts[2].strip():
             return OrchestratorResult(text="Usage: /agents run <request>")
-        start = await create_mesh_workflow(orch, key, parts[2], _source_command="/agents")
+        start = await create_mesh_workflow(orch, key, parts[2], source_command="/agents")
         return OrchestratorResult(
             text=f"{_mesh_started_text(start)}\n\nTip: `/agents` is now a compatibility path. Use `/mesh` for phased workflows."
         )
@@ -136,7 +136,7 @@ async def _cmd_agents_compat(
         orch,
         key,
         text.removeprefix("/agents").strip(),
-        _source_command="/agents",
+        source_command="/agents",
     )
     return OrchestratorResult(
         text=f"{_mesh_started_text(start)}\n\nTip: `/agents` is now a compatibility path. Use `/mesh` for phased workflows."
@@ -155,7 +155,7 @@ async def cmd_mesh(orch: Orchestrator, key: SessionKey, text: str) -> Orchestrat
     action = parts[1].strip().lower()
     async def _start_mesh(prompt: str) -> OrchestratorResult:
         try:
-            start = await create_mesh_workflow(orch, key, prompt, _source_command="/mesh")
+            start = await create_mesh_workflow(orch, key, prompt, source_command="/mesh")
         except ValueError as exc:
             return OrchestratorResult(text=str(exc))
         return OrchestratorResult(text=_mesh_started_text(start))
