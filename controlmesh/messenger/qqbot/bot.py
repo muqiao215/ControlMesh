@@ -193,7 +193,9 @@ class QQBotBot(BotProtocol):
         if not isinstance(result.chat_id, str) or not result.chat_id:
             logger.warning("No QQ target for task result delivery (task=%s)", result.task_id)
             return
-        await self._submit_qq_envelope(from_task_result(result))
+        await self._submit_qq_envelope(
+            from_task_result(replace(result, inject_to_parent_session=False))
+        )
 
     async def on_task_question(
         self,
