@@ -7,14 +7,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from controlmesh.history.models import TranscriptTurn
 from controlmesh.multiagent.commands import cmd_agents
 from controlmesh.multiagent.plan_review_loop import (
     approve_phase,
     consume_pending_repair_feedback,
     create_mesh_workflow,
     handle_task_result,
-    mesh_clarification_text,
     repair_phase,
     workflow_status_text,
 )
