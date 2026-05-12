@@ -23,7 +23,10 @@ class TestBuildCmdWithTaskExecutionConfig:
             file_access="all",
         )
 
-        with patch("controlmesh.cron.execution.which", return_value="/usr/bin/claude"):
+        with (
+            patch("controlmesh.cron.execution.which", return_value="/usr/bin/claude"),
+            patch("controlmesh.cron.execution.os.geteuid", return_value=1000),
+        ):
             result = build_cmd(exec_config, "hello world")
 
         assert result is not None
@@ -36,6 +39,7 @@ class TestBuildCmdWithTaskExecutionConfig:
         assert result.cmd[-1] == "hello world"
         assert result.cmd[-2] == "--"
         assert result.stdin_input is None
+        assert result.env_overrides == {}
 
     def test_build_cmd_claude_with_parameters(self) -> None:
         """Claude command includes extra CLI parameters."""
@@ -49,7 +53,10 @@ class TestBuildCmdWithTaskExecutionConfig:
             file_access="all",
         )
 
-        with patch("controlmesh.cron.execution.which", return_value="/usr/bin/claude"):
+        with (
+            patch("controlmesh.cron.execution.which", return_value="/usr/bin/claude"),
+            patch("controlmesh.cron.execution.os.geteuid", return_value=1000),
+        ):
             result = build_cmd(exec_config, "test prompt")
 
         assert result is not None
@@ -165,7 +172,10 @@ class TestBuildCmdWithTaskExecutionConfig:
             file_access="all",
         )
 
-        with patch("controlmesh.cron.execution.which", return_value="/usr/bin/claude"):
+        with (
+            patch("controlmesh.cron.execution.which", return_value="/usr/bin/claude"),
+            patch("controlmesh.cron.execution.os.geteuid", return_value=1000),
+        ):
             result = build_cmd(exec_config, "my prompt")
 
         # Find the -- separator
@@ -192,7 +202,10 @@ class TestBuildCmdWithTaskExecutionConfig:
             file_access="all",
         )
 
-        with patch("controlmesh.cron.execution.which", return_value="/usr/bin/claude"):
+        with (
+            patch("controlmesh.cron.execution.which", return_value="/usr/bin/claude"),
+            patch("controlmesh.cron.execution.os.geteuid", return_value=1000),
+        ):
             result = build_cmd(exec_config, "test")
 
         assert result is not None

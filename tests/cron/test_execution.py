@@ -21,7 +21,7 @@ from controlmesh.cron.execution import (
 
 
 class TestBuildCmd:
-    def test_claude_provider(self) -> None:
+    def test_claude_provider_non_root(self) -> None:
         exec_config = TaskExecutionConfig(
             provider="claude",
             model="opus",
@@ -31,7 +31,10 @@ class TestBuildCmd:
             working_dir="/tmp",
             file_access="all",
         )
-        with patch("controlmesh.cron.execution.which", return_value="/usr/bin/claude"):
+        with (
+            patch("controlmesh.cron.execution.which", return_value="/usr/bin/claude"),
+            patch("controlmesh.cron.execution.os.geteuid", return_value=1000),
+        ):
             result = build_cmd(exec_config, "hello")
         assert result is not None
         assert result.cmd[0] == "/usr/bin/claude"
@@ -40,6 +43,52 @@ class TestBuildCmd:
         assert result.stdin_input is None
         assert result.cmd[-1] == "hello"
         assert result.cmd[-2] == "--"
+        assert "--dangerously-skip-permissions" not in result.cmd
+        assert result.env_overrides == {}
+
+    def test_claude_provider_root_force_bypass(self) -> None:
+        exec_config = TaskExecutionConfig(
+            provider="claude",
+            model="opus",
+            reasoning_effort="",
+            cli_parameters=[],
+            permission_mode="bypassPermissions",
+            working_dir="/tmp",
+            file_access="all",
+            claude_root_force_bypass_via_is_sandbox=True,
+        )
+        with (
+            patch("controlmesh.cron.execution.which", return_value="/usr/bin/claude"),
+            patch("controlmesh.cron.execution.os.geteuid", return_value=0),
+        ):
+            result = build_cmd(exec_config, "hello")
+        assert result is not None
+        assert "--dangerously-skip-permissions" in result.cmd
+        assert result.env_overrides == {"IS_SANDBOX": "1"}
+        idx = result.cmd.index("--permission-mode")
+        assert result.cmd[idx + 1] == "bypassPermissions"
+
+    def test_claude_provider_root_falls_back_without_force_bypass(self) -> None:
+        exec_config = TaskExecutionConfig(
+            provider="claude",
+            model="opus",
+            reasoning_effort="",
+            cli_parameters=[],
+            permission_mode="bypassPermissions",
+            working_dir="/tmp",
+            file_access="all",
+            claude_root_permission_mode="dontAsk",
+        )
+        with (
+            patch("controlmesh.cron.execution.which", return_value="/usr/bin/claude"),
+            patch("controlmesh.cron.execution.os.geteuid", return_value=0),
+        ):
+            result = build_cmd(exec_config, "hello")
+        assert result is not None
+        assert "--dangerously-skip-permissions" not in result.cmd
+        assert result.env_overrides == {}
+        idx = result.cmd.index("--permission-mode")
+        assert result.cmd[idx + 1] == "dontAsk"
 
     def test_codex_provider(self) -> None:
         exec_config = TaskExecutionConfig(
@@ -178,7 +227,10 @@ class TestExecuteOneShotStdin:
             mock_exec.return_value = proc
 
             await execute_one_shot(
-                OneShotCommand(cmd=["/usr/bin/claude", "-p", "--", "hello"]),
+                OneShotCommand(
+                    cmd=["/usr/bin/claude", "-p", "--", "hello"],
+                    env_overrides={"IS_SANDBOX": "1"},
+                ),
                 cwd=Path("/tmp"),
                 provider="claude",
                 timeout_seconds=60,
@@ -187,6 +239,8 @@ class TestExecuteOneShotStdin:
 
         call_kwargs = mock_exec.call_args[1]
         assert call_kwargs["stdin"] == asyncio.subprocess.DEVNULL
+        assert call_kwargs["env"] is not None
+        assert call_kwargs["env"]["IS_SANDBOX"] == "1"
         proc.communicate.assert_called_once_with(input=None)
 
 

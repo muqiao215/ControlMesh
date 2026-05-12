@@ -67,6 +67,8 @@ def test_resolve_global_only(base_config: AgentConfig, codex_cache: CodexModelCa
     assert result.permission_mode == "normal"
     assert result.working_dir == "~/controlmesh"
     assert result.file_access == "all"
+    assert result.claude_root_permission_mode == "dontAsk"
+    assert result.claude_root_force_bypass_via_is_sandbox is False
 
 
 def test_resolve_with_task_overrides(
@@ -201,3 +203,16 @@ def test_resolve_gemini_fallback_prefix_when_no_discovery(
 
     assert result.provider == "gemini"
     assert result.model == "gemini-foo"
+
+
+def test_resolve_carries_claude_root_bypass_flags(
+    base_config: AgentConfig,
+    codex_cache: CodexModelCache,
+) -> None:
+    base_config.claude_root_permission_mode = "plan"
+    base_config.claude_root_force_bypass_via_is_sandbox = True
+
+    result = resolve_cli_config(base_config, codex_cache)
+
+    assert result.claude_root_permission_mode == "plan"
+    assert result.claude_root_force_bypass_via_is_sandbox is True
