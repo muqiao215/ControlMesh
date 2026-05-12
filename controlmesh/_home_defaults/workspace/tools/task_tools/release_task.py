@@ -174,8 +174,7 @@ def _build_plan_markdown(
         "- The `publish` phase (and any `github_release` phases) require explicit "
         "foreground approval before external side effects.",
         "- Use `python3 tools/task_tools/list_tasks.py` to monitor phase progress.",
-        "- Use `python3 tools/task_tools/resume_task.py TASK_ID \"approval message\"` "
-        "to approve or provide input to a waiting phase.",
+        "- Approve publish-side host steps from the foreground controller with `/mesh approve <plan-id>`.",
         "- Use `python3 tools/task_tools/cancel_task.py TASK_ID` to abort a phase.",
         "",
         "## PlanFiles Artifacts",
@@ -194,8 +193,32 @@ def _publish_commands(version: str) -> list[str]:
     return [
         "git push origin main",
         f"git push origin {tag}",
-        f"gh release create {tag} --notes-file docs/release-note-{tag}.md",
+        f"gh release create {tag} --notes-file docs/release-note-{tag}.md --verify-tag",
     ]
+
+
+def _host_job_metadata(repo_url: str, version: str) -> dict[str, object]:
+    repo_name = Path(repo_url.rstrip("/")).name or "repo"
+    tag = version if version.startswith("v") else f"v{version}"
+    notes_file = f"docs/release-note-{tag}.md"
+    return {
+        "kind": "release",
+        "job_id": f"release-{tag}",
+        "repo": repo_url,
+        "repo_name": repo_name,
+        "version": version,
+        "tag": tag,
+        "notes_file": notes_file,
+        "steps": [
+            {"id": "pytest_full", "kind": "host_job", "approval_required": False},
+            {"id": "uv_build", "kind": "host_job", "approval_required": False},
+            {"id": "verify_tag_local", "kind": "short_shell", "approval_required": False},
+            {"id": "push_main", "kind": "short_shell", "approval_required": True},
+            {"id": "push_tag", "kind": "short_shell", "approval_required": True},
+            {"id": "verify_remote_tag", "kind": "host_job", "approval_required": False},
+            {"id": "gh_release_create", "kind": "short_shell", "approval_required": True},
+        ],
+    }
 
 
 def _submit_phase(
@@ -318,6 +341,7 @@ def main() -> None:
                 "tag": tag,
                 "notes_file": f"docs/release-note-{tag}.md",
                 "commands": _publish_commands(version),
+                "host_job": _host_job_metadata(repo_url, version),
             }
         elif phase["id"] == "verify":
             phase["metadata"] = {"wait_for_publish_execution": True}

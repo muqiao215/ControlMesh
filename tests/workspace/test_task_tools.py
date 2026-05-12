@@ -328,6 +328,9 @@ def test_release_task_submits_only_first_phase_with_full_manifest(tmp_path: Path
     assert publish_phase["metadata"]["version"] == "1.2.3"
     assert publish_phase["metadata"]["tag"] == "v1.2.3"
     assert publish_phase["metadata"]["commands"][0] == "git push origin main"
+    assert publish_phase["metadata"]["host_job"]["job_id"] == "release-v1.2.3"
+    assert publish_phase["metadata"]["host_job"]["steps"][3]["id"] == "push_main"
+    assert publish_phase["metadata"]["host_job"]["steps"][6]["id"] == "gh_release_create"
     verify_phase = next(
         phase for phase in first_body["plan_phases"] if phase["id"] == "verify"
     )

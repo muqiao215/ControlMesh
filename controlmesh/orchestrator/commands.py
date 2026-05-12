@@ -690,6 +690,19 @@ async def cmd_tasks(orch: Orchestrator, key: SessionKey, _text: str) -> Orchestr
     parts = _text.strip().split()
     if len(parts) >= 2 and parts[1].lower() == "topology":
         return await _cmd_tasks_topology(orch, parts[2:])
+    if len(parts) >= 2 and parts[1].lower() == "tail":
+        from controlmesh.multiagent.plan_review_loop import host_job_tail_text
+
+        if len(parts) < 3 or not parts[2].strip():
+            return OrchestratorResult(text="Usage: /tasks tail <task_id> [lines]")
+        task_id = parts[2].strip()
+        line_count = 80
+        if len(parts) >= 4 and parts[3].strip():
+            try:
+                line_count = int(parts[3].strip())
+            except ValueError:
+                return OrchestratorResult(text="Usage: /tasks tail <task_id> [lines]")
+        return OrchestratorResult(text=host_job_tail_text(orch, f"task-{task_id}", lines=line_count))
 
     hub = orch.task_hub
     if hub is None:

@@ -106,6 +106,7 @@ if TYPE_CHECKING:
     from controlmesh.config import ModelRegistry
     from controlmesh.multiagent.bus import AsyncInterAgentResult
     from controlmesh.multiagent.supervisor import AgentSupervisor
+    from controlmesh.runtime import HostJobRunner
     from controlmesh.session.named import NamedSession
     from controlmesh.tasks.hub import TaskHub
 
@@ -239,6 +240,7 @@ class Orchestrator:
         self._hook_registry.register(DELEGATION_REMINDER)
         self._supervisor: AgentSupervisor | None = None  # Set by AgentSupervisor after creation
         self._task_hub: TaskHub | None = None  # Set by supervisor or __main__.py
+        self._host_job_runner: HostJobRunner | None = None  # Set by supervisor runtime wiring
         self._bootstrap_health: BootstrapHealth | None = None
         self._command_registry = CommandRegistry()
         self._fallback_notice_seen: set[tuple[str, str, str, str, str]] = set()
@@ -253,6 +255,11 @@ class Orchestrator:
     def task_hub(self) -> TaskHub | None:
         """Public access to the task hub (None when tasks are disabled)."""
         return self._task_hub
+
+    @property
+    def host_job_runner(self) -> HostJobRunner | None:
+        """Public access to the durable host job runner."""
+        return self._host_job_runner
 
     @property
     def config(self) -> AgentConfig:
@@ -316,6 +323,10 @@ class Orchestrator:
         )
         self._observers.set_task_hub(hub)
         hub.start_maintenance()
+
+    def set_host_job_runner(self, runner: HostJobRunner) -> None:
+        """Inject the durable host-job runner for plan-level host execution."""
+        self._host_job_runner = runner
 
     @classmethod
     async def create(
@@ -588,7 +599,26 @@ class Orchestrator:
             return OrchestratorResult(text=self._bootstrap_health.user_message)  # type: ignore[union-attr]
 
         if self._supervisor is not None:
-            from controlmesh.multiagent.plan_review_loop import consume_pending_repair_feedback
+            from controlmesh.multiagent.approval_intent import (
+                is_rejected_broad_approval,
+                parse_short_approval_intent,
+            )
+            from controlmesh.multiagent.plan_review_loop import approve_current_phase, consume_pending_repair_feedback
+
+            approval_intent = parse_short_approval_intent(dispatch.text)
+            if approval_intent is not None:
+                return OrchestratorResult(
+                    text=await approve_current_phase(
+                        self,
+                        dispatch.key,
+                        approval_intent.target,
+                        approval_intent.step_id,
+                    )
+                )
+            if is_rejected_broad_approval(dispatch.text):
+                return OrchestratorResult(
+                    text="Release approval requires an explicit step.\n\nUse:\napprove <step_id> <target>"
+                )
 
             repair_result = await consume_pending_repair_feedback(
                 self,

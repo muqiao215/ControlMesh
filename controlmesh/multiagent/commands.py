@@ -6,11 +6,14 @@ import logging
 from typing import TYPE_CHECKING
 
 from controlmesh.i18n import t
+from controlmesh.multiagent.approval_intent import parse_mesh_approval_intent
 from controlmesh.multiagent.plan_review_loop import (
     approve_current_phase,
     artifacts_text,
     cancel_workflow,
     create_mesh_workflow,
+    host_job_status_text,
+    host_job_tail_text,
     mesh_clarification_text,
     _mesh_started_text,
     repair_current_phase,
@@ -103,15 +106,18 @@ async def _cmd_agents_compat(
     if action == "run":
         if len(parts) < 3 or not parts[2].strip():
             return OrchestratorResult(text="Usage: /agents run <request>")
-        start = await create_mesh_workflow(orch, key, parts[2], source_command="/agents")
+        start = await create_mesh_workflow(orch, key, parts[2], _source_command="/agents")
         return OrchestratorResult(
             text=f"{_mesh_started_text(start)}\n\nTip: `/agents` is now a compatibility path. Use `/mesh` for phased workflows."
         )
 
     if action == "approve":
         if len(parts) < 3 or not parts[2].strip():
-            return OrchestratorResult(text="Usage: /agents approve <plan_id>")
-        return OrchestratorResult(text=await approve_current_phase(orch, key, parts[2].strip()))
+            return OrchestratorResult(text="Usage: /agents approve <plan_id> <step_id>")
+        intent = parse_mesh_approval_intent(f"/mesh approve {parts[2].strip()}")
+        if intent is None:
+            return OrchestratorResult(text="Usage: /agents approve <plan_id> <step_id>")
+        return OrchestratorResult(text=await approve_current_phase(orch, key, intent.target, intent.step_id))
 
     if action == "repair":
         if len(parts) < 3:
@@ -130,7 +136,7 @@ async def _cmd_agents_compat(
         orch,
         key,
         text.removeprefix("/agents").strip(),
-        source_command="/agents",
+        _source_command="/agents",
     )
     return OrchestratorResult(
         text=f"{_mesh_started_text(start)}\n\nTip: `/agents` is now a compatibility path. Use `/mesh` for phased workflows."
@@ -149,7 +155,7 @@ async def cmd_mesh(orch: Orchestrator, key: SessionKey, text: str) -> Orchestrat
     action = parts[1].strip().lower()
     async def _start_mesh(prompt: str) -> OrchestratorResult:
         try:
-            start = await create_mesh_workflow(orch, key, prompt, source_command="/mesh")
+            start = await create_mesh_workflow(orch, key, prompt, _source_command="/mesh")
         except ValueError as exc:
             return OrchestratorResult(text=str(exc))
         return OrchestratorResult(text=_mesh_started_text(start))
@@ -161,13 +167,32 @@ async def cmd_mesh(orch: Orchestrator, key: SessionKey, text: str) -> Orchestrat
 
     if action == "status":
         if len(parts) < 3 or not parts[2].strip():
-            return OrchestratorResult(text="Usage: /mesh status <plan_id>")
-        return OrchestratorResult(text=workflow_status_text(orch, parts[2].strip(), command_prefix="/mesh"))
+            return OrchestratorResult(text="Usage: /mesh status <target>")
+        target = parts[2].strip()
+        host_status = host_job_status_text(orch, target, command_prefix="/mesh")
+        if not host_status.startswith("No host job found"):
+            return OrchestratorResult(text=host_status)
+        return OrchestratorResult(text=workflow_status_text(orch, target, command_prefix="/mesh"))
+
+    if action == "tail":
+        if len(parts) < 3 or not parts[2].strip():
+            return OrchestratorResult(text="Usage: /mesh tail <target> [lines]")
+        target = parts[2].strip()
+        line_count = 80
+        if len(parts) >= 4 and parts[3].strip():
+            try:
+                line_count = int(parts[3].strip())
+            except ValueError:
+                return OrchestratorResult(text="Usage: /mesh tail <target> [lines]")
+        return OrchestratorResult(text=host_job_tail_text(orch, target, lines=line_count))
 
     if action == "approve":
         if len(parts) < 3 or not parts[2].strip():
-            return OrchestratorResult(text="Usage: /mesh approve <plan_id>")
-        return OrchestratorResult(text=await approve_current_phase(orch, key, parts[2].strip()))
+            return OrchestratorResult(text="Usage: /mesh approve <plan_id> <step_id>")
+        intent = parse_mesh_approval_intent(raw)
+        if intent is None:
+            return OrchestratorResult(text="Usage: /mesh approve <plan_id> <step_id>")
+        return OrchestratorResult(text=await approve_current_phase(orch, key, intent.target, intent.step_id))
 
     if action == "repair":
         if len(parts) < 3:

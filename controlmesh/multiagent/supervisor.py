@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from controlmesh.config import AgentConfig, update_config_file_async
@@ -23,6 +24,7 @@ from controlmesh.workspace.paths import resolve_paths
 if TYPE_CHECKING:
     from controlmesh.multiagent.bus import InterAgentBus
     from controlmesh.multiagent.internal_api import InternalAgentAPI
+    from controlmesh.runtime import HostJobRunner
     from controlmesh.multiagent.shared_knowledge import SharedKnowledgeSync
     from controlmesh.tasks.hub import TaskHub
 
@@ -30,6 +32,12 @@ logger = logging.getLogger(__name__)
 
 _MAX_RESTART_RETRIES = 5
 _RESTART_BACKOFF_BASE = 5  # seconds, doubles each retry
+
+
+@dataclass(slots=True)
+class _HostJobProjectionState:
+    last_job_state: str = ""
+    last_step_id: str = ""
 
 
 def _config_changed(new: AgentConfig, old: AgentConfig) -> bool:
@@ -143,6 +151,9 @@ class AgentSupervisor:
         self._internal_api: InternalAgentAPI | None = None
         self._shared_knowledge: SharedKnowledgeSync | None = None
         self._task_hub: TaskHub | None = None
+        self._host_job_runner: HostJobRunner | None = None
+        self._host_job_reconcile_task: asyncio.Task[None] | None = None
+        self._host_job_projection: dict[str, _HostJobProjectionState] = {}
 
     @property
     def stacks(self) -> dict[str, AgentStack]:
@@ -197,6 +208,14 @@ class AgentSupervisor:
             logger.info(
                 "TaskHub initialized (max_parallel=%d)", self._main_config.tasks.max_parallel
             )
+
+        from controlmesh.runtime import HostJobRunner
+
+        self._host_job_runner = HostJobRunner(self._main_paths)
+        self._host_job_reconcile_task = asyncio.create_task(
+            self._host_job_reconcile_loop(),
+            name="host-job-reconcile",
+        )
 
         # 1. Start main agent
         main_stack = await AgentStack.create(
@@ -439,6 +458,8 @@ class AgentSupervisor:
             # Wire task hub: set CLI service and register handlers
             if supervisor._task_hub is not None:
                 supervisor._wire_task_hub(stack)
+            if supervisor._host_job_runner is not None:
+                stack.bot.orchestrator.set_host_job_runner(supervisor._host_job_runner)
 
             logger.debug("Supervisor reference injected into agent '%s'", stack.name)
 
@@ -466,6 +487,8 @@ class AgentSupervisor:
         # Register this agent's CLI service and workspace paths for task execution
         hub.set_cli_service(name, orch.cli_service)
         hub.set_agent_paths(name, stack.paths)
+        if self._host_job_runner is not None:
+            hub.set_host_job_runner(self._host_job_runner)
 
         async def _deliver_task_result(result):
             from controlmesh.multiagent.plan_review_loop import handle_task_result
@@ -770,9 +793,94 @@ class AgentSupervisor:
         # Stop task hub
         if self._task_hub:
             await self._task_hub.shutdown()
+        if self._host_job_runner is not None:
+            await self._host_job_runner.shutdown()
+        if self._host_job_reconcile_task is not None:
+            self._host_job_reconcile_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._host_job_reconcile_task
 
         # Stop internal API
         if self._internal_api:
             await self._internal_api.stop()
 
         logger.info("AgentSupervisor stopped (all agents shut down)")
+
+    async def _host_job_reconcile_loop(self) -> None:
+        """Project durable host-job release state back to frontstage workflow messages."""
+        try:
+            while True:
+                await asyncio.sleep(5.0)
+                await self._reconcile_host_jobs_once()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Host job reconcile loop crashed")
+
+    async def _reconcile_host_jobs_once(self) -> None:
+        runner = self._host_job_runner
+        main_stack = self._stacks.get("main")
+        if runner is None or main_stack is None:
+            return
+        orch = getattr(main_stack.bot, "orchestrator", None)
+        if orch is None:
+            return
+        from controlmesh.multiagent.plan_review_loop import reconcile_release_host_job
+        from controlmesh.tasks.models import TaskResult
+
+        for job in runner.store.list_jobs():
+            if not job.plan_id:
+                continue
+            current_state = _HostJobProjectionState(
+                last_job_state=str(job.state or ""),
+                last_step_id=str(job.current_step_id or ""),
+            )
+            previous = self._host_job_projection.get(job.job_id)
+            if previous == current_state:
+                continue
+            note = reconcile_release_host_job(orch, job.plan_id)
+            self._host_job_projection[job.job_id] = current_state
+            if not note:
+                continue
+            result = TaskResult(
+                task_id=job.job_id,
+                chat_id=self._chat_id_for_plan(main_stack, orch, job.plan_id),
+                parent_agent="main",
+                name=f"release:{job.tag}",
+                prompt_preview="release host job reconcile",
+                result_text=note,
+                delivery_text=note,
+                status="done" if job.state == "completed" else "failed" if job.state == "failed" else "done",
+                elapsed_seconds=0.0,
+                provider="hostjob",
+                model="hostjob",
+                transport=self._transport_for_plan(orch, job.plan_id),
+                thread_id=self._topic_id_for_plan(orch, job.plan_id),
+            )
+            await main_stack.bot.on_task_result(result)
+
+    @staticmethod
+    def _transport_for_plan(orch, plan_id: str) -> str:
+        from controlmesh.multiagent.plan_review_loop import _load_state
+
+        state = _load_state(orch, plan_id)
+        return str(state.get("source_transport") or "tg")
+
+    @staticmethod
+    def _topic_id_for_plan(orch, plan_id: str):
+        from controlmesh.multiagent.plan_review_loop import _load_state
+
+        state = _load_state(orch, plan_id)
+        return state.get("source_topic_id")
+
+    @staticmethod
+    def _chat_id_for_plan(main_stack: AgentStack, orch, plan_id: str):
+        from controlmesh.multiagent.plan_review_loop import _load_state
+
+        state = _load_state(orch, plan_id)
+        chat_id = state.get("source_chat_id")
+        if chat_id:
+            return chat_id
+        if main_stack.config.allowed_user_ids:
+            return main_stack.config.allowed_user_ids[0]
+        return 0

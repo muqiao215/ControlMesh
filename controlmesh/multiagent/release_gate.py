@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from controlmesh.planning_files import plan_dir_for
+from controlmesh.runtime import HostJobSpec, HostJobStep
 
 
 def utc_now_iso() -> str:
@@ -17,6 +18,76 @@ def utc_now_iso() -> str:
 def approval_key(*, repo: str, version: str) -> str:
     repo_name = Path(repo.rstrip("/")).name or "repo"
     return f"release_publish:{repo_name}:{version}"
+
+
+def release_host_job_id(tag: str) -> str:
+    normalized = tag.strip() or "release"
+    return f"release-{normalized}"
+
+
+def build_release_host_job_spec(
+    *,
+    plan_id: str,
+    repo: str,
+    version: str,
+    tag: str,
+    notes_file: str,
+    job_id: str = "",
+) -> HostJobSpec:
+    return HostJobSpec(
+        job_id=job_id or release_host_job_id(tag),
+        job_kind="release",
+        plan_id=plan_id,
+        repo=repo,
+        version=version,
+        tag=tag,
+        summary=f"Release {tag}",
+        steps=[
+            HostJobStep(id="pytest_full", title="Run full pytest", command="uv run pytest -q", kind="host_job", cwd=repo),
+            HostJobStep(id="uv_build", title="Build package", command="uv build", kind="host_job", cwd=repo),
+            HostJobStep(
+                id="verify_tag_local",
+                title="Verify local annotated tag",
+                command=f"git rev-parse {tag} && git tag -v {tag}",
+                kind="short_shell",
+                cwd=repo,
+            ),
+            HostJobStep(
+                id="push_main",
+                title="Push main branch",
+                command="git push origin main",
+                kind="short_shell",
+                approval_required=True,
+                side_effect=True,
+                cwd=repo,
+            ),
+            HostJobStep(
+                id="push_tag",
+                title="Push release tag",
+                command=f"git push origin {tag}",
+                kind="short_shell",
+                approval_required=True,
+                side_effect=True,
+                cwd=repo,
+            ),
+            HostJobStep(
+                id="verify_remote_tag",
+                title="Verify remote tag",
+                command=f"git ls-remote --tags origin {tag}",
+                kind="host_job",
+                cwd=repo,
+            ),
+            HostJobStep(
+                id="gh_release_create",
+                title="Create GitHub release",
+                command=f"gh release create {tag} --notes-file {notes_file} --verify-tag",
+                kind="short_shell",
+                approval_required=True,
+                side_effect=True,
+                cwd=repo,
+            ),
+        ],
+    )
 
 
 def side_effect_key(*, repo: str, version: str) -> str:
@@ -57,6 +128,7 @@ def ensure_publish_gate(
     tag: str,
     commands: list[str],
     requested_by_task: str,
+    host_job: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     state = load_gate_state(root, plan_id)
     if state:
@@ -70,6 +142,7 @@ def ensure_publish_gate(
         "commit": commit,
         "tag": tag,
         "commands": commands,
+        "host_job": host_job or {},
         "status": "pending_approval",
         "requested_by_task": requested_by_task,
         "requested_at": utc_now_iso(),
@@ -77,6 +150,7 @@ def ensure_publish_gate(
         "approved_by": "",
         "approved_answer": "",
         "executor_task_id": "",
+        "approved_step_id": "",
         "executed_at": "",
     }
     save_gate_state(root, plan_id, payload)

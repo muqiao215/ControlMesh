@@ -160,6 +160,21 @@ class ControlMeshPaths:
         return self.runtime_dir / "locks"
 
     @property
+    def runtime_host_jobs_path(self) -> Path:
+        """Durable host job ledger for bounded host-side execution."""
+        return self.runtime_dir / "host_jobs.json"
+
+    @property
+    def runtime_host_job_artifacts_dir(self) -> Path:
+        """Per-job stdout/stderr/result artifacts for host jobs."""
+        return self.runtime_dir / "host-jobs"
+
+    @property
+    def runtime_host_jobs_dir(self) -> Path:
+        """Per-job authority folders for durable host execution."""
+        return self.runtime_dir / "host-jobs-state"
+
+    @property
     def plans_dir(self) -> Path:
         """File-backed plan artifact root."""
         return self.controlmesh_home / "plans"

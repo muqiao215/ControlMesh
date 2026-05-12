@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 from controlmesh.multiagent.commands import (
     cmd_agent_restart,
     cmd_agent_start,
@@ -12,6 +14,7 @@ from controlmesh.multiagent.commands import (
     cmd_mesh,
 )
 from controlmesh.multiagent.health import AgentHealth
+from controlmesh.runtime import HostJob, HostJobStep
 
 
 def _make_orch(*, with_supervisor: bool = True) -> MagicMock:
@@ -132,6 +135,35 @@ class TestCmdMesh:
         )
         result = await cmd_mesh(orch, 1, "/mesh 开始全自动")
         assert "一句话即可" in result.text
+
+    async def test_mesh_approve_requires_explicit_step(self) -> None:
+        orch = _make_orch()
+        result = await cmd_mesh(orch, 1, "/mesh approve release-plan")
+        assert "Usage: /mesh approve <plan_id> <step_id>" in result.text
+
+    async def test_mesh_status_shows_host_job_status(self) -> None:
+        orch = _make_orch()
+        orch.host_job_runner = MagicMock()
+        orch.host_job_runner.get.return_value = HostJob(
+            job_id="release-v0.29.0",
+            job_kind="release",
+            state="awaiting_approval",
+            current_step_id="push_main",
+            steps=[
+                HostJobStep(id="pytest_full", title="pytest", command="uv run pytest -q", state="completed"),
+                HostJobStep(id="push_main", title="push", command="git push origin main", state="awaiting_approval", approval_required=True),
+                HostJobStep(id="push_tag", title="push tag", command="git push origin v0.29.0", state="pending", approval_required=True),
+            ],
+        )
+
+        result = await cmd_mesh(orch, 1, "/mesh status release-v0.29.0")
+        assert "Release release-v0.29.0" in result.text
+        assert "approve push_main release-v0.29.0" in result.text
+
+    async def test_mesh_tail_requires_target(self) -> None:
+        orch = _make_orch()
+        result = await cmd_mesh(orch, 1, "/mesh tail")
+        assert "Usage: /mesh tail <target> [lines]" in result.text
 
 
 class TestCmdAgentStop:

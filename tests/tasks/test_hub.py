@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from controlmesh.config import AgentConfig
+from controlmesh.runtime import HostJobRunner
 from controlmesh.routing.score_events import read_score_events
 from controlmesh.tasks.hub import TaskHub
 from controlmesh.tasks.models import TaskResult, TaskSubmit
@@ -291,6 +292,99 @@ class TestSubmit:
         assert entry.provider == "claude"
         assert entry.model == "opus"
         assert entry.workunit_kind == "test_execution"
+
+        await hub.shutdown()
+
+    async def test_test_execution_routes_to_host_job(
+        self,
+        registry: TaskRegistry,
+        tmp_path: Path,
+    ) -> None:
+        paths = ControlMeshPaths(controlmesh_home=tmp_path / "home")
+        cli = _make_cli_service("should not run")
+        hub = TaskHub(
+            registry,
+            paths,
+            cli_service=cli,
+            config=_make_config(),
+        )
+        hub.set_host_job_runner(HostJobRunner(paths))
+
+        submit = _submit(prompt="Run pytest", name="Run pytest")
+        submit.workunit_kind = "test_execution"
+        submit.command = "exit 0"
+        task_id = hub.submit(submit)
+
+        cli.execute.assert_not_awaited()
+        entry = registry.get(task_id)
+        assert entry is not None
+        assert entry.status == "detached"
+
+        await hub.shutdown()
+
+    async def test_long_shell_routes_to_host_job(
+        self,
+        registry: TaskRegistry,
+        tmp_path: Path,
+    ) -> None:
+        paths = ControlMeshPaths(controlmesh_home=tmp_path / "home")
+        cli = _make_cli_service("should not run")
+        hub = TaskHub(registry, paths, cli_service=cli, config=_make_config())
+        hub.set_host_job_runner(HostJobRunner(paths))
+
+        submit = _submit(prompt="Run shell", name="Run shell")
+        submit.workunit_kind = "long_shell"
+        submit.command = "sleep 0"
+        task_id = hub.submit(submit)
+
+        cli.execute.assert_not_awaited()
+        entry = registry.get(task_id)
+        assert entry is not None
+        assert entry.status == "detached"
+
+        await hub.shutdown()
+
+    async def test_uv_build_routes_to_host_job(
+        self,
+        registry: TaskRegistry,
+        tmp_path: Path,
+    ) -> None:
+        paths = ControlMeshPaths(controlmesh_home=tmp_path / "home")
+        cli = _make_cli_service("should not run")
+        hub = TaskHub(registry, paths, cli_service=cli, config=_make_config())
+        hub.set_host_job_runner(HostJobRunner(paths))
+
+        submit = _submit(prompt="Build package", name="Build package")
+        submit.workunit_kind = "uv_build"
+        submit.command = "exit 0"
+        task_id = hub.submit(submit)
+
+        cli.execute.assert_not_awaited()
+        entry = registry.get(task_id)
+        assert entry is not None
+        assert entry.status == "detached"
+
+        await hub.shutdown()
+
+    async def test_repo_write_routes_to_host_job(
+        self,
+        registry: TaskRegistry,
+        tmp_path: Path,
+    ) -> None:
+        paths = ControlMeshPaths(controlmesh_home=tmp_path / "home")
+        cli = _make_cli_service("should not run")
+        hub = TaskHub(registry, paths, cli_service=cli, config=_make_config())
+        hub.set_host_job_runner(HostJobRunner(paths))
+
+        submit = _submit(prompt="Write repo", name="Write repo")
+        submit.workunit_kind = "repo_write"
+        submit.command = "git status"
+        task_id = hub.submit(submit)
+
+        cli.execute.assert_not_awaited()
+        entry = registry.get(task_id)
+        assert entry is not None
+        assert entry.status == "detached"
 
         await hub.shutdown()
 
@@ -739,6 +833,50 @@ activation_policies:
 
 
 class TestRunAndDeliver:
+    async def test_host_job_test_execution_reconciles_to_task_result(
+        self,
+        registry: TaskRegistry,
+        tmp_path: Path,
+    ) -> None:
+        delivered: list[TaskResult] = []
+        paths = ControlMeshPaths(controlmesh_home=tmp_path / "home")
+        cli = _make_cli_service("should not run")
+        hub = TaskHub(
+            registry,
+            paths,
+            cli_service=cli,
+            config=_make_config(),
+        )
+        hub.set_host_job_runner(HostJobRunner(paths))
+        hub.set_result_handler("main", AsyncMock(side_effect=delivered.append))
+
+        submit = _submit(prompt="Run focused pytest", name="Focused pytest")
+        submit.workunit_kind = "test_execution"
+        submit.command = "printf '77 passed\\n'"
+        task_id = hub.submit(submit)
+
+        for _ in range(40):
+            hub.reconcile_task_state(task_id)
+            current = registry.get(task_id)
+            if current is not None and current.status == "done":
+                break
+            await asyncio.sleep(0.05)
+        await asyncio.sleep(0.05)
+
+        cli.execute.assert_not_awaited()
+        entry = registry.get(task_id)
+        assert entry is not None
+        assert entry.status == "done"
+        assert delivered
+        assert delivered[0].status == "done"
+        assert "77 passed" in delivered[0].delivery_text
+
+        tool_result = json.loads((registry.task_folder(task_id) / "TOOL_RESULT.json").read_text(encoding="utf-8"))
+        payload = json.loads(tool_result["content"][0]["content"][0]["text"])
+        assert payload["status"] == "done"
+
+        await hub.shutdown()
+
     async def test_delivers_success_result(self, registry: TaskRegistry, tmp_path: Path) -> None:
         delivered: list[TaskResult] = []
         handler = AsyncMock(side_effect=delivered.append)
@@ -1293,6 +1431,14 @@ class TestForwardQuestion:
                 "git push origin main",
                 "git push origin v0.24.33",
             ],
+            "host_job": {
+                "kind": "release",
+                "job_id": "release-v0.24.33",
+                "repo": "https://github.com/org/repo",
+                "version": "0.24.33",
+                "tag": "v0.24.33",
+                "notes_file": "docs/release-note-v0.24.33.md",
+            },
         }
         entry = registry.create(submit, "claude", "sonnet")
 
@@ -1305,6 +1451,7 @@ class TestForwardQuestion:
         assert gate["status"] == "pending_approval"
         assert gate["requested_by_task"] == entry.task_id
         assert gate["side_effect_key"] == "release_publish:repo:0.24.33"
+        assert gate["host_job"]["job_id"] == "release-v0.24.33"
 
         question_handler.reset_mock()
         result2 = await hub.forward_question(entry.task_id, "May I push main and tag v0.24.33?")
@@ -1336,6 +1483,7 @@ class TestForwardQuestion:
             "version": "0.24.33",
             "tag": "v0.24.33",
             "commands": ["git push origin main"],
+            "host_job": {"job_id": "release-v0.24.33"},
         }
         entry = registry.create(submit, "claude", "sonnet")
 

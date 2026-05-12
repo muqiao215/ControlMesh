@@ -26,11 +26,14 @@ from controlmesh.messenger.address import ChatRef, TopicRef
 from controlmesh.runtime import (
     AgentInboxItem,
     AgentInboxStore,
+    HostJobRunner,
     RepoWorktreeManager,
     RuntimeEvent,
     RuntimeEventStore,
     SlotManager,
     append_task_event,
+    single_step_host_job_spec,
+    task_host_job_id,
 )
 from controlmesh.runtime.registry import ProcessLeaseStore, _pid_exists
 from controlmesh.routing.activation import (
@@ -63,6 +66,7 @@ from controlmesh.tasks.evidence import (
     load_tool_result,
     result_path,
 )
+from controlmesh.tasks.host_execution import classify_host_execution
 from controlmesh.tasks.models import (
     EvaluationFinding,
     EvaluationResult,
@@ -238,6 +242,7 @@ class TaskHub:
         self._slots = SlotManager(paths)
         self._worktrees = RepoWorktreeManager(paths)
         self._process_leases = ProcessLeaseStore(paths.runtime_processes_path)
+        self._host_job_runner: HostJobRunner | None = None
 
     def start_maintenance(self) -> None:
         """Start periodic orphan cleanup (call once after bot startup)."""
@@ -265,6 +270,10 @@ class TaskHub:
     def set_cli_service(self, agent_name: str, cli: CLIService) -> None:
         """Register a per-agent CLI service for task execution."""
         self._cli_services[agent_name] = cli
+
+    def set_host_job_runner(self, runner: HostJobRunner) -> None:
+        """Register the shared durable host-job runner for host execution."""
+        self._host_job_runner = runner
 
     def set_agent_paths(self, agent_name: str, paths: ControlMeshPaths) -> None:
         """Register per-agent paths for task folder isolation."""
@@ -508,6 +517,16 @@ class TaskHub:
         self._write_tool_use_ref(entry)
         self._append_runtime_lifecycle_event(entry, "task.lifecycle.created")
 
+        if self._should_route_to_host_job(entry):
+            self._start_host_job_task(entry)
+            logger.info(
+                "Task submitted id=%s name='%s' parent=%s routed_to=host_job",
+                entry.task_id,
+                entry.name,
+                submit.parent_agent,
+            )
+            return entry.task_id
+
         # Build prompt with mandatory suffix
         artifacts = self._artifact_paths(entry)
         full_prompt = (
@@ -679,6 +698,48 @@ class TaskHub:
         )
         return task_id
 
+    def _should_route_to_host_job(self, entry: TaskEntry) -> bool:
+        if self._host_job_runner is None:
+            return False
+        return classify_host_execution(entry).route_to_host and bool(entry.command.strip())
+
+    def _start_host_job_task(self, entry: TaskEntry) -> None:
+        runner = self._host_job_runner
+        if runner is None:
+            msg = "HostJobRunner not available for test_execution routing"
+            raise ValueError(msg)
+
+        decision = classify_host_execution(entry)
+        repo_root = entry.repo_root or str(self._paths.framework_root)
+        spec = single_step_host_job_spec(
+            job_id=task_host_job_id(entry.task_id),
+            job_kind=decision.job_kind or "long_shell",
+            source_task_id=entry.task_id,
+            plan_id=entry.plan_id,
+            repo=repo_root,
+            summary=entry.name or entry.command,
+            step_id=decision.step_id or "long_shell",
+            step_title=decision.step_title or "Run host execution",
+            command=entry.command,
+            side_effect=decision.side_effect,
+            cwd=repo_root,
+        )
+        job = runner.ensure_job(spec)
+        runner.start(job.job_id)
+        self._registry.update_status(
+            entry.task_id,
+            "detached",
+            error="",
+            result_preview="",
+        )
+        refreshed = self._registry.get(entry.task_id)
+        if refreshed is not None:
+            self._append_runtime_lifecycle_event(
+                refreshed,
+                "task.lifecycle.host_job_started",
+                status="detached",
+            )
+
     def _spawn(
         self,
         entry: TaskEntry,
@@ -792,6 +853,16 @@ class TaskHub:
 
     async def cancel(self, task_id: str) -> bool:
         """Cancel a running task. Returns True if cancelled."""
+        entry = self._registry.get(task_id)
+        if entry is None:
+            return False
+        if self._should_route_to_host_job(entry):
+            runner = self._host_job_runner
+            if runner is None:
+                return False
+            await runner.cancel(task_host_job_id(task_id))
+            self.reconcile_task_state(task_id)
+            return True
         inflight = self._in_flight.get(task_id)
         if inflight is None or inflight.asyncio_task is None or inflight.asyncio_task.done():
             return False
@@ -928,6 +999,8 @@ class TaskHub:
         if cancelled:
             await asyncio.gather(*cancelled, return_exceptions=True)
         self._in_flight.clear()
+        if self._host_job_runner is not None:
+            await self._host_job_runner.shutdown(cancel_running=True)
 
     async def _maintenance_loop(self) -> None:
         """Periodically clean orphaned task entries/folders (every 5 hours)."""
@@ -1312,6 +1385,8 @@ class TaskHub:
             return False
         if entry.status not in {"detached", "stale", "recovering"}:
             return False
+        if self._should_route_to_host_job(entry):
+            return self._reconcile_host_job_task(entry)
 
         lease = self._process_leases.find_by_label(chat_id=entry.chat_id, label=f"task:{task_id}")
         artifacts = self._artifact_paths(entry)
@@ -1436,6 +1511,77 @@ class TaskHub:
                 )
             return True
         return False
+
+    def _reconcile_host_job_task(self, entry: TaskEntry) -> bool:
+        runner = self._host_job_runner
+        if runner is None:
+            return False
+        job = runner.get(task_host_job_id(entry.task_id))
+        if job is None:
+            return False
+        current_step = next((step for step in job.steps if step.id == job.current_step_id), None)
+        if job.state in {"pending", "running", "awaiting_approval"}:
+            if entry.status != "recovering":
+                self._registry.update_status(entry.task_id, "recovering", error="")
+                refreshed = self._registry.get(entry.task_id)
+                if refreshed is not None:
+                    self._append_runtime_lifecycle_event(
+                        refreshed,
+                        "task.lifecycle.recovering",
+                        status="recovering",
+                    )
+                return True
+            return False
+
+        elapsed = max(0.0, time.time() - entry.created_at)
+        stdout_path = Path(current_step.stdout_path) if current_step and current_step.stdout_path else None
+        response_text = ""
+        if stdout_path is not None and stdout_path.is_file():
+            with contextlib.suppress(OSError):
+                response_text = stdout_path.read_text(encoding="utf-8", errors="replace").strip()
+        error = job.last_error
+        status = "done"
+        failure_kind = ""
+        if job.state == "failed":
+            status = "failed"
+            failure_kind = "tool_execution_failed"
+        elif job.state == "cancelled":
+            status = "cancelled"
+            failure_kind = "tool_execution_failed"
+        if status == "done":
+            _persist_worker_result_artifact(self._artifact_paths(entry).result, response_text)
+        task_result = TaskResult(
+            task_id=entry.task_id,
+            chat_id=entry.chat_id,
+            parent_agent=entry.parent_agent,
+            name=entry.name,
+            prompt_preview=entry.prompt_preview,
+            result_text=_append_attach_resume_hint(response_text, entry.task_id, entry.session_id),
+            delivery_text=_task_delivery_text(
+                status=status,
+                response_text=response_text,
+                result_path=self._artifact_paths(entry).result,
+                error=error,
+                task_id=entry.task_id,
+                session_id=entry.session_id,
+            ),
+            status=status,
+            elapsed_seconds=elapsed,
+            provider=entry.provider,
+            model=entry.model,
+            transport=entry.transport,
+            session_id=entry.session_id,
+            error=error,
+            failure_kind=failure_kind,
+            task_folder=str(self._artifact_paths(entry).folder),
+            original_prompt=entry.original_prompt,
+            thread_id=entry.thread_id,
+            repo_root=entry.repo_root,
+            tool_use_id=entry.tool_use_id,
+        )
+        self._ensure_tool_result_artifact(entry, task_result)
+        self._finalize_reconciled_result(entry, task_result)
+        return True
 
     def _recover_terminal_result(
         self,
@@ -1724,6 +1870,9 @@ class TaskHub:
         version = str(metadata.get("version") or "")
         tag = str(metadata.get("tag") or "")
         commands = [str(item) for item in metadata.get("commands") or [] if str(item)]
+        host_job = metadata.get("host_job")
+        if not isinstance(host_job, dict):
+            host_job = {}
         commit = str(metadata.get("commit") or "") or _extract_commit_from_question(question)
         gate = load_gate_state(self._paths.plans_dir, entry.plan_id)
         if not gate:
@@ -1736,6 +1885,7 @@ class TaskHub:
                 tag=tag,
                 commands=commands,
                 requested_by_task=entry.task_id,
+                host_job=host_job,
             )
             gate["question"] = question
             from controlmesh.multiagent.release_gate import save_gate_state

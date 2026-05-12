@@ -17,6 +17,7 @@ from controlmesh.multiagent.plan_review_loop import (
     workflow_status_text,
 )
 from controlmesh.planning_files import PlanPhase, create_plan_files, plan_dir_for
+from controlmesh.runtime import HostJob, HostJobStep
 from controlmesh.session.key import SessionKey
 from controlmesh.runtime.models import AgentInboxItem
 from controlmesh.multiagent.release_gate import ensure_publish_gate, load_gate_state, mark_executed
@@ -89,9 +90,70 @@ class _FakeTaskHub:
         return items
 
 
+class _FakeHostJobRunner:
+    def __init__(self, job: HostJob | None = None) -> None:
+        self.job = job
+        self.ensure_calls: list[dict[str, object]] = []
+        self.approvals: list[tuple[str, str, str]] = []
+        self.started: list[str] = []
+
+    def ensure_job(self, spec: object) -> HostJob:
+        job_id = getattr(spec, "job_id", "")
+        plan_id = getattr(spec, "plan_id", "")
+        repo = getattr(spec, "repo", "")
+        version = getattr(spec, "version", "")
+        tag = getattr(spec, "tag", "")
+        steps = getattr(spec, "steps", []) or []
+        notes_file = ""
+        if len(steps) >= 7:
+            command = str(getattr(steps[6], "command", ""))
+            marker = "--notes-file "
+            if marker in command:
+                notes_file = command.split(marker, 1)[1].split()[0]
+        self.ensure_calls.append(
+            {
+                "job_id": job_id,
+                "plan_id": plan_id,
+                "repo": repo,
+                "version": version,
+                "tag": tag,
+                "notes_file": notes_file,
+            }
+        )
+        if self.job is None:
+            self.job = HostJob(
+                job_id=job_id or f"release-{tag}",
+                plan_id=plan_id,
+                repo=repo,
+                version=version,
+                tag=tag,
+                state="pending",
+                steps=[HostJobStep(id="pytest_full", title="pytest", command="uv run pytest -q")],
+            )
+        return self.job
+
+    def approve_step(self, job_id: str, step_id: str, *, approved_by: str) -> HostJob:
+        self.approvals.append((job_id, step_id, approved_by))
+        assert self.job is not None
+        self.job.current_step_id = step_id
+        self.job.state = "running"
+        return self.job
+
+    def start(self, job_id: str) -> HostJob:
+        self.started.append(job_id)
+        assert self.job is not None
+        return self.job
+
+    def get(self, job_id: str) -> HostJob | None:
+        if self.job is not None and self.job.job_id == job_id:
+            return self.job
+        return None
+
+
 def _make_orch(tmp_path: Path, hub: _FakeTaskHub) -> SimpleNamespace:
     orch = SimpleNamespace(
         task_hub=hub,
+        host_job_runner=None,
         paths=SimpleNamespace(plans_dir=tmp_path / "plans", workspace=tmp_path / "workspace"),
         supervisor=SimpleNamespace(
             health={"main": SimpleNamespace(status="running", uptime_human="1m", restart_count=0)},
@@ -351,18 +413,37 @@ async def test_approve_phase_resumes_plan_level_publish_gate(tmp_path: Path) -> 
         tag="v0.24.33",
         commands=["git push origin main"],
         requested_by_task="publish-task-1",
+        host_job={
+            "kind": "release",
+            "job_id": "release-v0.24.33",
+            "repo": "https://github.com/org/repo",
+            "version": "0.24.33",
+            "tag": "v0.24.33",
+            "notes_file": "docs/release-note-v0.24.33.md",
+        },
     )
     hub = _FakeTaskHub()
     orch = _make_orch(tmp_path, hub)
+    orch.host_job_runner = _FakeHostJobRunner(
+        HostJob(
+            job_id="release-v0.24.33",
+            plan_id=plan_id,
+            repo="https://github.com/org/repo",
+            version="0.24.33",
+            tag="v0.24.33",
+            state="pending",
+            steps=[HostJobStep(id="pytest_full", title="pytest", command="uv run pytest -q")],
+        )
+    )
 
     text = await approve_phase(orch, SessionKey(transport="tg", chat_id=9), plan_id)
 
     assert "Approved publish gate" in text
-    assert hub.resumes == [
-        ("publish-task-1", "Approved to execute the recorded publish commands for this release plan.", "main")
-    ]
+    assert hub.resumes == []
+    assert orch.host_job_runner.started == ["release-v0.24.33"]
     gate = load_gate_state(tmp_path / "plans", plan_id)
     assert gate["status"] == "executing"
+    assert gate["executor_task_id"] == "release-v0.24.33"
 
 
 @pytest.mark.asyncio
@@ -398,6 +479,14 @@ async def test_release_publish_phase_marks_executed_before_generic_review(tmp_pa
         tag="v0.24.33",
         commands=["git push origin v0.24.33"],
         requested_by_task="publish-task-1",
+        host_job={
+            "kind": "release",
+            "job_id": "release-v0.24.33",
+            "repo": "/repo",
+            "version": "0.24.33",
+            "tag": "v0.24.33",
+            "notes_file": "docs/release-note-v0.24.33.md",
+        },
     )
     entry = TaskEntry(
         task_id="publish-task-1",
@@ -415,6 +504,18 @@ async def test_release_publish_phase_marks_executed_before_generic_review(tmp_pa
     )
     hub = _FakeTaskHub(entry)
     orch = _make_orch(tmp_path, hub)
+    orch.host_job_runner = _FakeHostJobRunner(
+        HostJob(
+            job_id="release-v0.24.33",
+            plan_id=plan_id,
+            repo="/repo",
+            version="0.24.33",
+            tag="v0.24.33",
+            state="completed",
+            current_step_id="gh_release_create",
+            steps=[HostJobStep(id="gh_release_create", title="release", command="gh release create")],
+        )
+    )
 
     note = await handle_task_result(
         orch,
@@ -433,7 +534,7 @@ async def test_release_publish_phase_marks_executed_before_generic_review(tmp_pa
     )
 
     assert note is not None
-    assert "publish phase completed" in note
+    assert "publish host job completed" in note
     assert (tmp_path / "plans" / plan_id / "publish" / "EXECUTED.json").is_file()
     gate = load_gate_state(tmp_path / "plans", plan_id)
     assert gate["status"] == "executed"
@@ -767,9 +868,51 @@ def test_workflow_status_includes_recent_main_inbox_items(tmp_path: Path) -> Non
         )
     )
     orch = _make_orch(tmp_path, hub)
+    orch.host_job_runner = _FakeHostJobRunner(
+        HostJob(
+            job_id="release-v0.24.33",
+            plan_id=plan_id,
+            repo="/repo",
+            version="0.24.33",
+            tag="v0.24.33",
+            state="awaiting_approval",
+            current_step_id="push_tag",
+            steps=[
+                HostJobStep(
+                    id="push_tag",
+                    title="push tag",
+                    command="git push origin v0.24.33",
+                    state="awaiting_approval",
+                    approval_required=True,
+                )
+            ],
+        )
+    )
+    ensure_publish_gate(
+        tmp_path / "plans",
+        plan_id=plan_id,
+        repo="/repo",
+        version="0.24.33",
+        commit="abc1234",
+        tag="v0.24.33",
+        commands=["git push origin main"],
+        requested_by_task="publish-task-1",
+        host_job={
+            "kind": "release",
+            "job_id": "release-v0.24.33",
+            "repo": "/repo",
+            "version": "0.24.33",
+            "tag": "v0.24.33",
+            "notes_file": "docs/release-note-v0.24.33.md",
+        },
+    )
 
     text = workflow_status_text(orch, plan_id)
 
     assert "Main inbox:" in text
+    assert "job id: release-v0.24.33" in text
+    assert "status: awaiting_approval" in text
+    assert "awaiting approval:" in text
+    assert "- push_tag" in text
     assert "task.done: Phase 1 worker completed with summarized result" in text
     assert "Unrelated plan result" not in text

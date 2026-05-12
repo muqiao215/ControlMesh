@@ -10,12 +10,16 @@ from uuid import uuid4
 from typing import TYPE_CHECKING, Any
 
 from controlmesh.cli.types import AgentRequest
+from controlmesh.multiagent.approval_intent import render_explicit_step_required
 from controlmesh.multiagent.release_gate import (
+    build_release_host_job_spec,
     claim_executor,
     executed_artifact_path,
     load_gate_state,
     mark_executed,
     mark_gate_approved,
+    release_host_job_id,
+    save_gate_state,
 )
 from controlmesh.planning_files import PlanPhase, create_plan_files, plan_dir_for, update_phase_state
 from controlmesh.session.manager import ForegroundState
@@ -466,6 +470,117 @@ def _active_publish_gate(orch: Orchestrator, plan_id: str) -> dict[str, Any]:
     return gate if isinstance(gate, dict) else {}
 
 
+def _publish_host_job_metadata(gate: dict[str, Any]) -> dict[str, Any]:
+    raw = gate.get("host_job")
+    return dict(raw) if isinstance(raw, dict) else {}
+
+
+def _active_release_host_job(orch: Orchestrator, plan_id: str) -> Any | None:
+    runner = getattr(orch, "host_job_runner", None)
+    if runner is None:
+        return None
+    gate = _active_publish_gate(orch, plan_id)
+    host_job = _publish_host_job_metadata(gate)
+    job_id = str(host_job.get("job_id") or "")
+    if not job_id:
+        tag = str(gate.get("tag") or "")
+        if tag:
+            job_id = release_host_job_id(tag)
+    if not job_id:
+        return None
+    return runner.get(job_id)
+
+
+def reconcile_release_host_job(orch: Orchestrator, plan_id: str) -> str | None:
+    """Project release host-job state back into plan state and user-visible workflow text."""
+    gate = _active_publish_gate(orch, plan_id)
+    if not gate:
+        return None
+    job = _active_release_host_job(orch, plan_id)
+    if job is None:
+        return None
+
+    state = _load_state(orch, plan_id)
+    current_phase_id = str(state.get("current_phase_id") or "publish")
+    job_id = str(getattr(job, "job_id", "") or "")
+    job_state = str(getattr(job, "state", "") or "")
+    current_step_id = str(getattr(job, "current_step_id", "") or "")
+
+    if job_state == "awaiting_approval":
+        if gate.get("approved_step_id") != current_step_id:
+            gate["approved_step_id"] = current_step_id
+            save_gate_state(orch.paths.plans_dir, plan_id, gate)
+        if (
+            str(state.get("status") or "") != "awaiting_publish_approval"
+            or str(state.get("last_phase_task_id") or "") != job_id
+        ):
+            _set_controller_state(
+                orch,
+                plan_id,
+                status="awaiting_publish_approval",
+                current_phase_id=current_phase_id,
+                awaiting_review_phase_id=current_phase_id,
+                last_phase_task_id=job_id,
+            )
+            return (
+                f"Plan `{plan_id}` release host job is waiting for approval at step `{current_step_id}`.\n"
+                f"- approve: `/mesh approve {plan_id}`\n"
+                f"- status: `/mesh status {plan_id}`"
+            )
+        return None
+
+    if job_state == "completed":
+        if not executed_artifact_path(orch.paths.plans_dir, plan_id).exists():
+            mark_executed(
+                orch.paths.plans_dir,
+                plan_id=plan_id,
+                payload={
+                    "host_job_id": job_id,
+                    "host_job_state": job_state,
+                    "current_step_id": current_step_id,
+                    "status": "completed",
+                    "approved_at": gate.get("approved_at", ""),
+                    "tag": gate.get("tag", ""),
+                    "version": gate.get("version", ""),
+                    "repo": gate.get("repo", ""),
+                    "result_preview": "",
+                },
+            )
+            _set_controller_state(
+                orch,
+                plan_id,
+                status="review_required",
+                current_phase_id=current_phase_id,
+                awaiting_review_phase_id=current_phase_id,
+                last_phase_task_id=job_id,
+            )
+            return (
+                f"Plan `{plan_id}` publish host job completed and is ready for review.\n"
+                f"- approve: `/mesh approve {plan_id}`\n"
+                f"- status: `/mesh status {plan_id}`"
+            )
+        return None
+
+    if job_state == "failed":
+        if str(state.get("last_phase_task_id") or "") != job_id or str(state.get("status") or "") != "review_required":
+            _set_controller_state(
+                orch,
+                plan_id,
+                status="review_required",
+                current_phase_id=current_phase_id,
+                awaiting_review_phase_id=current_phase_id,
+                last_phase_task_id=job_id,
+            )
+            last_error = str(getattr(job, "last_error", "") or "host job failed")
+            suffix = f" at step `{current_step_id}`" if current_step_id else ""
+            return (
+                f"Plan `{plan_id}` publish host job failed{suffix}.\n"
+                f"- error: {last_error}\n"
+                f"- status: `/mesh status {plan_id}`"
+            )
+    return None
+
+
 def _phase_allowed_edit(phase: dict[str, Any]) -> bool:
     return bool(phase.get("allowed_edit", _phase_workunit_kind(phase) == "phase_execution"))
 
@@ -743,7 +858,7 @@ async def create_mesh_workflow(
     key: SessionKey,
     request_text: str,
     *,
-    source_command: str = "/mesh",
+    _source_command: str = "/mesh",
 ) -> MeshWorkflowStart:
     """Create a foreground-authored phased workflow from /mesh input."""
     _ = source_command
@@ -905,13 +1020,23 @@ async def handle_task_result(orch: Orchestrator, result: TaskResult) -> str | No
 
     if entry.phase_id and entry.phase_metadata.get("gate_kind") == "release_publish":
         gate = _active_publish_gate(orch, plan_id)
+        host_job = _active_release_host_job(orch, plan_id)
+        host_job_id = str(gate.get("executor_task_id") or "")
+        host_job_state = str(gate.get("status") or result.status)
+        current_step_id = ""
+        if host_job is not None:
+            host_job_id = str(getattr(host_job, "job_id", "") or host_job_id)
+            host_job_state = str(getattr(host_job, "state", "") or host_job_state)
+            current_step_id = str(getattr(host_job, "current_step_id", "") or "")
         mark_executed(
             orch.paths.plans_dir,
             plan_id=plan_id,
             payload={
                 "task_id": result.task_id,
-                "executor_task_id": result.task_id,
-                "status": result.status,
+                "host_job_id": host_job_id,
+                "host_job_state": host_job_state,
+                "current_step_id": current_step_id,
+                "status": host_job_state,
                 "approved_at": gate.get("approved_at", ""),
                 "tag": gate.get("tag", ""),
                 "version": gate.get("version", ""),
@@ -925,10 +1050,10 @@ async def handle_task_result(orch: Orchestrator, result: TaskResult) -> str | No
             status="review_required",
             current_phase_id=entry.phase_id,
             awaiting_review_phase_id=entry.phase_id,
-            last_phase_task_id=result.task_id,
+            last_phase_task_id=host_job_id or result.task_id,
         )
         return (
-            f"Plan `{plan_id}` publish phase completed and is ready for review.\n"
+            f"Plan `{plan_id}` publish host job completed and is ready for review.\n"
             f"- approve: `/mesh approve {plan_id}`\n"
             f"- status: `/mesh status {plan_id}`"
         )
@@ -979,40 +1104,104 @@ async def handle_task_result(orch: Orchestrator, result: TaskResult) -> str | No
     return None
 
 
-async def approve_current_phase(orch: Orchestrator, key: SessionKey, plan_id: str) -> str:
+async def approve_current_phase(
+    orch: Orchestrator,
+    key: SessionKey,
+    plan_id: str,
+    step_id: str = "",
+) -> str:
     """Approve the current review phase and continue to the next phase."""
     gate = _active_publish_gate(orch, plan_id)
-    if str(gate.get("status") or "") == "pending_approval":
-        task_id = str(gate.get("requested_by_task") or "")
-        if not task_id or orch.task_hub is None:
-            return f"Plan `{plan_id}` publish gate cannot be resumed."
-        mark_gate_approved(
-            orch.paths.plans_dir,
-            plan_id=plan_id,
-            approved_by="foreground_user",
-            approved_answer="Approved to execute the recorded publish commands.",
-        )
-        claimed, gate = claim_executor(orch.paths.plans_dir, plan_id=plan_id, task_id=task_id)
-        if not claimed:
-            owner = str(gate.get("executor_task_id") or "")
-            return f"Plan `{plan_id}` publish gate already claimed by task `{owner}`."
-        resumed_id = orch.task_hub.resume(
-            task_id,
-            "Approved to execute the recorded publish commands for this release plan.",
-            parent_agent="main",
-        )
-        _set_controller_state(
-            orch,
-            plan_id,
-            status="executing",
-            current_phase_id=str(_load_state(orch, plan_id).get("current_phase_id") or ""),
-            awaiting_review_phase_id="",
-            last_phase_task_id=resumed_id,
-        )
-        return (
-            f"Approved publish gate for plan `{plan_id}`.\n"
-            f"Resumed publish task `{resumed_id}` to execute the recorded side effects."
-        )
+    if gate:
+        runner = getattr(orch, "host_job_runner", None)
+        gate_status = str(gate.get("status") or "")
+        host_job = _publish_host_job_metadata(gate)
+        job_id = str(host_job.get("job_id") or "")
+        if gate_status == "pending_approval" or job_id:
+            if runner is None:
+                return f"Plan `{plan_id}` publish gate cannot start host execution."
+            repo = str(host_job.get("repo") or gate.get("repo") or "")
+            version = str(host_job.get("version") or gate.get("version") or "")
+            tag = str(host_job.get("tag") or gate.get("tag") or "")
+            notes_file = str(host_job.get("notes_file") or "docs/release-note-{tag}.md").format(tag=tag)
+            if not repo or not version or not tag:
+                return f"Plan `{plan_id}` publish gate is missing host job metadata."
+            if gate_status == "pending_approval":
+                mark_gate_approved(
+                    orch.paths.plans_dir,
+                    plan_id=plan_id,
+                    approved_by="foreground_user",
+                    approved_answer="Approved to continue the recorded release host job.",
+                )
+                gate = _active_publish_gate(orch, plan_id)
+            job = runner.ensure_job(
+                build_release_host_job_spec(
+                    plan_id=plan_id,
+                    repo=repo,
+                    version=version,
+                    tag=tag,
+                    notes_file=notes_file,
+                    job_id=job_id,
+                )
+            )
+            if not step_id.strip() and job.state == "awaiting_approval" and job.current_step_id:
+                return render_explicit_step_required(target=job.job_id, step_id=str(job.current_step_id))
+            approved_step_id = ""
+            if job.state == "awaiting_approval" and job.current_step_id:
+                approved_step_id = str(job.current_step_id)
+                requested_step_id = step_id.strip()
+                if requested_step_id and requested_step_id != approved_step_id:
+                    return (
+                        f"Plan `{plan_id}` is waiting on release step `{approved_step_id}`, "
+                        f"not `{requested_step_id}`."
+                    )
+                job = runner.approve_step(
+                    job.job_id,
+                    approved_step_id,
+                    approved_by=f"{key.transport}:{key.chat_id}",
+                )
+            elif step_id.strip():
+                return f"Plan `{plan_id}` is not currently waiting on release step `{step_id.strip()}`."
+            claimed, gate = claim_executor(orch.paths.plans_dir, plan_id=plan_id, task_id=job.job_id)
+            if not claimed:
+                owner = str(gate.get("executor_task_id") or "")
+                return f"Plan `{plan_id}` publish gate already claimed by host job `{owner}`."
+            gate["host_job"] = {
+                "kind": "release",
+                "job_id": job.job_id,
+                "repo": repo,
+                "version": version,
+                "tag": tag,
+                "notes_file": notes_file,
+            }
+            gate["approved_step_id"] = approved_step_id
+            save_gate_state(orch.paths.plans_dir, plan_id, gate)
+            runner.start(job.job_id)
+            current_phase_id = str(_load_state(orch, plan_id).get("current_phase_id") or "")
+            _set_controller_state(
+                orch,
+                plan_id,
+                status="executing",
+                current_phase_id=current_phase_id,
+                awaiting_review_phase_id="",
+                last_phase_task_id=job.job_id,
+            )
+            refreshed = runner.get(job.job_id)
+            current_step = str(
+                getattr(refreshed, "current_step_id", "") or getattr(job, "current_step_id", "") or ""
+            )
+            state = str(getattr(refreshed, "state", "") or getattr(job, "state", "") or "running")
+            if approved_step_id:
+                return (
+                    f"Approved release step `{approved_step_id}` for plan `{plan_id}`.\n"
+                    f"Host job `{job.job_id}` is now `{state}`"
+                    + (f" at step `{current_step}`." if current_step else ".")
+                )
+            return (
+                f"Approved publish gate for plan `{plan_id}`.\n"
+                f"Host job `{job.job_id}` is now `{state}`"
+                + (f" at step `{current_step}`." if current_step else ".")
+            )
 
     phase = _current_review_phase(orch, plan_id)
     if phase is None:
@@ -1189,6 +1378,9 @@ def workflow_status_text(orch: Orchestrator, plan_id: str, *, command_prefix: st
         lines.append(f"Publish gate: {gate.get('status', 'unknown')}")
         if gate.get("tag"):
             lines.append(f"Publish tag: {gate.get('tag')}")
+    host_job = _active_release_host_job(orch, plan_id)
+    if host_job is not None:
+        lines.extend(_host_job_status_lines(host_job, command_prefix=command_prefix))
     if isinstance(state.get(_REPAIR_FEEDBACK_WAITING), dict):
         lines.append("Waiting for: repair_feedback")
     last_task_id = str(state.get("last_phase_task_id") or "")
@@ -1222,3 +1414,76 @@ def workflow_status_text(orch: Orchestrator, plan_id: str, *, command_prefix: st
                 f"- {item.kind}: {item.summary.splitlines()[0][:120]}" for item in inbox
             )
     return "\n".join(lines)
+
+
+def host_job_status_text(orch: Orchestrator, target: str, *, command_prefix: str = "/mesh") -> str:
+    runner = getattr(orch, "host_job_runner", None)
+    if runner is None:
+        return "HostJobRunner is not available."
+    job = runner.get(target)
+    if job is None:
+        job = _active_release_host_job(orch, target)
+    if job is None:
+        return f"No host job found for `{target}`."
+    header = f"Release {job.job_id}" if str(job.job_kind) == "release" else f"Host job {job.job_id}"
+    return "\n".join([header, "", *_host_job_status_lines(job, command_prefix=command_prefix)])
+
+
+def host_job_tail_text(orch: Orchestrator, target: str, *, lines: int = 80) -> str:
+    runner = getattr(orch, "host_job_runner", None)
+    if runner is None:
+        return "HostJobRunner is not available."
+    job = runner.get(target)
+    if job is None:
+        job = _active_release_host_job(orch, target)
+    if job is None:
+        return f"No host job found for `{target}`."
+    bounded = max(1, min(lines, 300))
+    step = next((item for item in job.steps if item.id == job.current_step_id), None)
+    if step is None:
+        return f"Host job `{job.job_id}` has no current step yet."
+    stdout_path = Path(str(getattr(step, "stdout_path", "") or ""))
+    if not stdout_path.is_file():
+        return f"Host job `{job.job_id}` step `{step.id}` has not produced stdout yet."
+    try:
+        content = stdout_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError as exc:
+        return f"Could not read stdout for `{job.job_id}` step `{step.id}`: {exc}"
+    tail = content[-bounded:]
+    body = "\n".join(tail).strip()
+    if not body:
+        body = "(stdout is empty)"
+    return (
+        f"Host job `{job.job_id}` step `{step.id}` stdout tail ({bounded} lines max)\n\n"
+        f"```text\n{body}\n```"
+    )
+
+
+def _host_job_status_lines(job: Any, *, command_prefix: str) -> list[str]:
+    lines = [
+        f"job id: {getattr(job, 'job_id', '')}",
+        f"status: {getattr(job, 'state', 'unknown')}",
+    ]
+    current_step = str(getattr(job, "current_step_id", "") or "")
+    if current_step:
+        lines.append(f"current step: {current_step}")
+    completed = [step.id for step in getattr(job, "steps", []) if step.state == "completed"]
+    running = next((step.id for step in getattr(job, "steps", []) if step.state == "running"), "")
+    awaiting = next((step.id for step in getattr(job, "steps", []) if step.state == "awaiting_approval"), "")
+    pending = [step.id for step in getattr(job, "steps", []) if step.state == "pending"]
+    failed = next((step for step in getattr(job, "steps", []) if step.state == "failed"), None)
+    if completed:
+        lines.extend(["completed:", *[f"- {step_id}" for step_id in completed]])
+    if running:
+        lines.extend(["running:", f"- {running}"])
+    if awaiting:
+        lines.extend(["awaiting approval:", f"- {awaiting}"])
+    if pending:
+        lines.extend(["pending:", *[f"- {step_id}" for step_id in pending]])
+    if failed is not None:
+        lines.extend(["failed:", f"- {failed.id} (exit={failed.exit_code})"])
+    if current_step:
+        lines.append(f"log tail: `{command_prefix} tail {getattr(job, 'job_id', '')}`")
+    if awaiting:
+        lines.extend(["Approve with:", f"approve {awaiting} {getattr(job, 'job_id', '')}"])
+    return lines
