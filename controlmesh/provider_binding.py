@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-_PROVIDER_NAME_ALIASES = {"claw-code": "claw"}
+_PROVIDER_NAME_ALIASES = {
+    "claw-code": "claw",
+    "openai": "codex",
+}
 _PROVIDER_DEFAULT_MODELS = {
     "claude": "sonnet",
     "claw": "sonnet",

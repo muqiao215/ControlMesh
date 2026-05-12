@@ -20,7 +20,7 @@ class AgentsRuntimeContext:
     topic_id: TopicRef
     process_label: str
     transport: str = "tg"
-    provider: str = "openai_agents"
+    provider: str = "codex"
     model: str | None = None
     task_hub: TaskHub | None = None
     interagent_bus: InterAgentBus | None = None

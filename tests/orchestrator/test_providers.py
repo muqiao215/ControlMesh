@@ -390,6 +390,11 @@ class TestProviderBindingHelpers:
         assert provider == "claw"
         assert model == "sonnet"
 
+    def test_validate_binding_normalizes_openai_alias_to_codex(self) -> None:
+        provider, model = validate_provider_model_binding("openai", "gpt-5.5")
+        assert provider == "codex"
+        assert model == "gpt-5.5"
+
     def test_validate_binding_rejects_provider_token_with_slash(self) -> None:
         with pytest.raises(ValueError, match=r"^error:invalid_provider_token provider=claude/opus$"):
             validate_provider_model_binding("claude/opus", "")

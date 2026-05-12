@@ -229,8 +229,9 @@ def test_from_task_result_done() -> None:
     assert env.transport == "tg"
     assert env.status == "done"
     assert env.lock_mode == LockMode.NONE
-    assert not env.needs_injection
-    assert env.prompt == ""
+    assert env.needs_injection
+    assert "BACKGROUND TASK COMPLETED" in env.prompt
+    assert "short found it" in env.prompt
     assert not env.is_error
     assert env.metadata["name"] == "research"
     assert env.delivery_text == "short found it"
@@ -245,10 +246,10 @@ def test_from_task_result_with_topic() -> None:
 def test_from_task_result_failed() -> None:
     env = from_task_result(_FakeTaskResult(status="failed", error="crash"))
     assert env.lock_mode == LockMode.NONE
-    assert not env.needs_injection
+    assert env.needs_injection
     assert env.is_error
     assert env.metadata["error"] == "crash"
-    assert env.prompt == ""
+    assert "BACKGROUND TASK FAILED" in env.prompt
 
 
 def test_from_task_result_artifact_protocol_failure_uses_degraded_message() -> None:
@@ -283,7 +284,17 @@ def test_from_task_result_summarized_only_never_uses_raw_payload_as_delivery() -
 def test_from_task_result_cancelled() -> None:
     env = from_task_result(_FakeTaskResult(status="cancelled"))
     assert env.lock_mode == LockMode.NONE
-    assert not env.needs_injection
+    assert env.needs_injection
+
+
+def test_from_task_result_can_disable_parent_session_injection() -> None:
+    result = _FakeTaskResult()
+    result.inject_to_parent_session = False  # type: ignore[attr-defined]
+
+    env = from_task_result(result)
+
+    assert env.needs_injection is False
+    assert env.prompt == ""
 
 
 def test_from_task_question() -> None:
