@@ -107,7 +107,9 @@ _RUNTIME_PROVIDER_ERRORS = frozenset(
         "error:missing_provider",
     }
 )
-_RUNTIME_BACKED_PROVIDERS = frozenset({"openai_agents", "claw", "opencode"})
+_RUNTIME_BACKED_PROVIDERS = frozenset({"opencode"})
+_TASKHUB_EXPLICIT_SUPPORTED_PROVIDERS = frozenset({"claude", "codex", "gemini", "opencode"})
+_TASKHUB_UNSUPPORTED_PROVIDERS = frozenset({"openai", "openai_agents", "claw", "claw-code"})
 
 TaskResultCallback = Callable[[TaskResult], Awaitable[None]]
 QuestionHandler = Callable[[str, str, str, ChatRef, TopicRef], Awaitable[None]]
@@ -205,6 +207,12 @@ def _routing_score_events_path(paths: object) -> str | Path | None:
     if isinstance(raw, (str, Path)):
         return raw
     return None
+
+
+def _string_config_value(source: object, name: str) -> str:
+    """Return one config attribute only when it is a real string."""
+    value = getattr(source, name, "")
+    return value.strip() if isinstance(value, str) else ""
 
 
 class TaskHub:
@@ -392,6 +400,7 @@ class TaskHub:
         model = submit.model_override or ""
         thinking = submit.thinking_override or ""
         if provider:
+            provider = self._validate_taskhub_provider_name(provider)
             provider, model = validate_provider_model_binding(
                 provider,
                 model,
@@ -497,6 +506,15 @@ class TaskHub:
                 model,
                 parent_agent=submit.parent_agent,
             )
+        else:
+            provider, model = self._resolve_default_taskhub_provider_model(
+                submit.parent_agent,
+                submit_model=model,
+            )
+            if provider:
+                submit.provider_override = provider
+            if model:
+                submit.model_override = model
 
         # Resolve per-agent tasks_dir for folder isolation
         agent_tasks_dir = self._agent_tasks_dirs.get(submit.parent_agent)
@@ -640,6 +658,71 @@ class TaskHub:
             model,
             model_provider_resolver=resolver,
         )
+
+    def _validate_taskhub_provider_name(self, provider: str) -> str:
+        """Reject providers that are unsupported on the TaskHub background surface."""
+        normalized = provider.strip().lower()
+        if not normalized:
+            return ""
+        if "/" in normalized:
+            msg = f"error:invalid_provider_token provider={normalized}"
+            raise ValueError(msg)
+        if normalized in _TASKHUB_UNSUPPORTED_PROVIDERS:
+            supported = ", ".join(sorted(_TASKHUB_EXPLICIT_SUPPORTED_PROVIDERS))
+            msg = (
+                f"TaskHub background provider '{normalized}' is not supported. "
+                f"Supported: {supported}."
+            )
+            raise ValueError(msg)
+        if normalized not in _TASKHUB_EXPLICIT_SUPPORTED_PROVIDERS:
+            supported = ", ".join(sorted(_TASKHUB_EXPLICIT_SUPPORTED_PROVIDERS))
+            msg = f"Unknown TaskHub provider '{normalized}'. Supported: {supported}."
+            raise ValueError(msg)
+        return normalized
+
+    def _resolve_default_taskhub_provider_model(
+        self,
+        parent_agent: str,
+        *,
+        submit_model: str = "",
+    ) -> tuple[str, str]:
+        """Resolve the default provider/model for TaskHub background execution."""
+        configured_provider = _string_config_value(self._config, "default_provider").lower()
+        configured_model = _string_config_value(self._config, "default_model")
+        provider = configured_provider
+        model = configured_model or submit_model
+
+        if provider:
+            provider = self._validate_taskhub_provider_name(provider)
+            return self._validate_provider_binding(provider, model, parent_agent=parent_agent)
+
+        if model:
+            inferred = self._validate_taskhub_provider_name(ModelRegistry.provider_for(model))
+            return self._validate_provider_binding(inferred, model, parent_agent=parent_agent)
+
+        cli = self._cli_services.get(parent_agent) or self._cli_service
+        cli_config = getattr(cli, "_config", None)
+        default_provider = _string_config_value(cli_config, "provider").lower() if cli_config is not None else ""
+        default_model = _string_config_value(cli_config, "default_model") if cli_config is not None else ""
+        if default_provider and default_provider not in _TASKHUB_UNSUPPORTED_PROVIDERS:
+            return self._validate_provider_binding(default_provider, default_model, parent_agent=parent_agent)
+
+        for fallback_provider, fallback_model in (
+            ("claude", "sonnet"),
+            ("codex", default_model if default_provider == "codex" else ""),
+            ("gemini", ""),
+            ("opencode", ""),
+        ):
+            try:
+                return self._validate_provider_binding(
+                    fallback_provider,
+                    fallback_model,
+                    parent_agent=parent_agent,
+                )
+            except ValueError:
+                continue
+        msg = "TaskHub background execution has no supported default provider configured."
+        raise ValueError(msg)
 
     def resume(self, task_id: str, follow_up: str, *, parent_agent: str = "") -> str:
         """Resume a completed task's CLI session with a follow-up. Returns task_id."""

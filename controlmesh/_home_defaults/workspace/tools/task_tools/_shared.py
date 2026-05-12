@@ -10,10 +10,8 @@ import urllib.request
 from pathlib import Path
 
 
-_PROVIDER_NAME_ALIASES = {
-    "claw-code": "claw",
-    "openai": "codex",
-}
+_TASKHUB_SUPPORTED_PROVIDERS = frozenset({"claude", "codex", "gemini", "opencode"})
+_TASKHUB_UNSUPPORTED_PROVIDERS = frozenset({"openai", "openai_agents", "claw", "claw-code"})
 
 
 def detect_agent_name() -> str:
@@ -38,8 +36,25 @@ def detect_agent_name() -> str:
 
 def normalize_provider_name(provider: str | None) -> str:
     """Normalize external provider aliases to internal provider IDs."""
-    normalized = (provider or "").strip().lower()
-    return _PROVIDER_NAME_ALIASES.get(normalized, normalized)
+    return (provider or "").strip().lower()
+
+
+def validate_taskhub_provider_name(provider: str | None) -> str:
+    """Validate one explicit TaskHub provider override."""
+    normalized = normalize_provider_name(provider)
+    if not normalized:
+        return ""
+    supported = ", ".join(sorted(_TASKHUB_SUPPORTED_PROVIDERS))
+    if normalized in _TASKHUB_UNSUPPORTED_PROVIDERS:
+        msg = (
+            f"TaskHub background provider '{normalized}' is not supported. "
+            f"Supported: {supported}."
+        )
+        raise ValueError(msg)
+    if normalized not in _TASKHUB_SUPPORTED_PROVIDERS:
+        msg = f"Unknown TaskHub provider '{normalized}'. Supported: {supported}."
+        raise ValueError(msg)
+    return normalized
 
 
 def get_api_url(path: str) -> str:

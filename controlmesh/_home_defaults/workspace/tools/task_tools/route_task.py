@@ -30,7 +30,7 @@ import sys
 _HELP_FLAGS = {"--help", "-h"}
 
 
-def _load_shared() -> tuple[object, object, object, object]:
+def _load_shared() -> tuple[object, object, object, object, object]:
     tools_dir = os.path.dirname(__file__)
     if tools_dir not in sys.path:
         sys.path.insert(0, tools_dir)
@@ -39,9 +39,10 @@ def _load_shared() -> tuple[object, object, object, object]:
         get_api_url,
         normalize_provider_name,
         post_json,
+        validate_taskhub_provider_name,
     )
 
-    return get_api_url, post_json, detect_agent_name, normalize_provider_name
+    return get_api_url, post_json, detect_agent_name, normalize_provider_name, validate_taskhub_provider_name
 
 
 def main() -> None:
@@ -50,7 +51,13 @@ def main() -> None:
         print((__doc__ or "").strip())
         return
 
-    get_api_url, post_json, detect_agent_name, normalize_provider_name = _load_shared()
+    (
+        get_api_url,
+        post_json,
+        detect_agent_name,
+        normalize_provider_name,
+        validate_taskhub_provider_name,
+    ) = _load_shared()
     name = ""
     kind = ""
     command = ""
@@ -123,7 +130,11 @@ def main() -> None:
     if topology:
         body["topology"] = topology
     if provider:
-        body["provider"] = normalize_provider_name(provider)
+        try:
+            body["provider"] = validate_taskhub_provider_name(normalize_provider_name(provider))
+        except ValueError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(1)
     if model:
         body["model"] = model
     if required_capabilities:

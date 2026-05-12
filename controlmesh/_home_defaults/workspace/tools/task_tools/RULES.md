@@ -39,7 +39,7 @@ Use the task creation tool with a short name and a complete prompt.
 
 Options:
 - `--name NAME` — human-readable task name (recommended)
-- `--provider PROV` — override provider (claude, codex, gemini)
+- `--provider PROV` — override provider (claude, codex, gemini, opencode)
 - `--model MODEL` — override model (opus, sonnet, flash, etc.)
 - `--thinking LEVEL` — codex reasoning effort (low, medium, high)
 - `--route auto` — use capability-based routing

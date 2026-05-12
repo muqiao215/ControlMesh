@@ -67,78 +67,41 @@ def _run_tool(tool: Path, port: int, args: list[str]) -> subprocess.CompletedPro
     )
 
 
-def test_route_task_bootstraps_controlmesh_without_pythonpath(tmp_path: Path) -> None:
+def test_route_task_rejects_unsupported_claw_provider(tmp_path: Path) -> None:
     deployed_dir = _install_deployed_task_tools(tmp_path)
-    server, thread = _start_task_api()
-    try:
-        result = _run_tool(
-            deployed_dir / "route_task.py",
-            server.server_address[1],
-            [
-                "--provider",
-                "claw-code",
-                "--kind",
-                "test_execution",
-                "--command",
-                "uv run pytest tests/test_x.py -q",
-            ],
-        )
-    finally:
-        server.shutdown()
-        thread.join()
+    result = _run_tool(
+        deployed_dir / "route_task.py",
+        8799,
+        [
+            "--provider",
+            "claw-code",
+            "--kind",
+            "test_execution",
+            "--command",
+            "uv run pytest tests/test_x.py -q",
+        ],
+    )
 
-    assert result.returncode == 0, result.stderr
-    assert "Routed background task" in result.stdout
-    requests: list[tuple[str, dict[str, Any]]] = server.requests  # type: ignore[attr-defined]
-    assert requests == [
-        (
-            "/tasks/create",
-            {
-                "from": "main",
-                "prompt": "Run this command and summarize the result: "
-                "uv run pytest tests/test_x.py -q",
-                "route": "auto",
-                "workunit_kind": "test_execution",
-                "command": "uv run pytest tests/test_x.py -q",
-                "provider": "claw",
-            },
-        )
-    ]
+    assert result.returncode == 1
+    assert "TaskHub background provider 'claw-code' is not supported" in result.stderr
 
 
-def test_create_task_bootstraps_controlmesh_without_pythonpath(tmp_path: Path) -> None:
+def test_create_task_rejects_unsupported_claw_provider(tmp_path: Path) -> None:
     deployed_dir = _install_deployed_task_tools(tmp_path)
-    server, thread = _start_task_api()
-    try:
-        result = _run_tool(
-            deployed_dir / "create_task.py",
-            server.server_address[1],
-            [
-                "--provider",
-                "claw-code",
-                "--name",
-                "Demo task",
-                "Investigate the failing smoke test",
-            ],
-        )
-    finally:
-        server.shutdown()
-        thread.join()
+    result = _run_tool(
+        deployed_dir / "create_task.py",
+        8799,
+        [
+            "--provider",
+            "claw-code",
+            "--name",
+            "Demo task",
+            "Investigate the failing smoke test",
+        ],
+    )
 
-    assert result.returncode == 0, result.stderr
-    assert "Background task 'Demo task' created" in result.stdout
-    requests: list[tuple[str, dict[str, Any]]] = server.requests  # type: ignore[attr-defined]
-    assert requests == [
-        (
-            "/tasks/create",
-            {
-                "from": "main",
-                "prompt": "Investigate the failing smoke test",
-                "name": "Demo task",
-                "provider": "claw",
-            },
-        )
-    ]
+    assert result.returncode == 1
+    assert "TaskHub background provider 'claw-code' is not supported" in result.stderr
 
 
 def test_create_task_surfaces_provider_model_mismatch_from_api(tmp_path: Path) -> None:
@@ -205,29 +168,23 @@ def test_create_task_surfaces_provider_model_mismatch_from_api(tmp_path: Path) -
     ]
 
 
-def test_route_task_normalizes_openai_provider_to_codex(tmp_path: Path) -> None:
+def test_route_task_rejects_unsupported_openai_provider(tmp_path: Path) -> None:
     deployed_dir = _install_deployed_task_tools(tmp_path)
-    server, thread = _start_task_api()
-    try:
-        result = _run_tool(
-            deployed_dir / "route_task.py",
-            server.server_address[1],
-            [
-                "--provider",
-                "openai",
-                "--kind",
-                "test_execution",
-                "--command",
-                "uv run pytest tests/test_x.py -q",
-            ],
-        )
-    finally:
-        server.shutdown()
-        thread.join()
+    result = _run_tool(
+        deployed_dir / "route_task.py",
+        8799,
+        [
+            "--provider",
+            "openai",
+            "--kind",
+            "test_execution",
+            "--command",
+            "uv run pytest tests/test_x.py -q",
+        ],
+    )
 
-    assert result.returncode == 0, result.stderr
-    requests: list[tuple[str, dict[str, Any]]] = server.requests  # type: ignore[attr-defined]
-    assert requests[0][1]["provider"] == "codex"
+    assert result.returncode == 1
+    assert "TaskHub background provider 'openai' is not supported" in result.stderr
 
 
 def test_create_task_supports_plan_phase_flags(tmp_path: Path) -> None:

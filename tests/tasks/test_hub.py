@@ -184,6 +184,47 @@ class TestSubmit:
         ):
             hub.submit(submit)
 
+    async def test_submit_rejects_unsupported_taskhub_provider(
+        self, registry: TaskRegistry, tmp_path: Path
+    ) -> None:
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=_make_cli_service(),
+            config=_make_config(),
+        )
+        submit = _submit(prompt="review current diff", name="Unsupported provider")
+        submit.provider_override = "openai_agents"
+
+        with pytest.raises(
+            ValueError,
+            match=(
+                r"^TaskHub background provider 'openai_agents' is not supported\. "
+                r"Supported: claude, codex, gemini, opencode\.$"
+            ),
+        ):
+            hub.submit(submit)
+
+    async def test_submit_rejects_unsupported_default_background_provider(
+        self, registry: TaskRegistry, tmp_path: Path
+    ) -> None:
+        cli = _make_cli_service()
+        cli._config = MagicMock(provider="openai_agents", default_model="gpt-5.4")
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=cli,
+            config=_make_config(default_provider="", default_model=""),
+        )
+
+        task_id = hub.submit(_submit(prompt="run tests", name="Fallback provider"))
+        entry = registry.get(task_id)
+        assert entry is not None
+        assert entry.provider == "claude"
+        assert entry.model == "sonnet"
+
+        await hub.shutdown()
+
     async def test_persists_explicit_topology_selection(self, registry: TaskRegistry, tmp_path: Path) -> None:
         hub = TaskHub(
             registry,
