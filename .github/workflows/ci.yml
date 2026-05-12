@@ -18,8 +18,8 @@ env:
   BUN_VERSION: "1.3.11"
 
 jobs:
-  lint:
-    name: Lint and type-check
+  ruff:
+    name: Ruff
     if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.notify_test) }}
     runs-on: ubuntu-latest
     steps:
@@ -41,6 +41,28 @@ jobs:
           uv sync --all-extras --dev
       - name: Ruff
         run: uv run ruff check .
+
+  mypy:
+    name: Mypy smoke
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.notify_test) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Toolchain doctor
+        run: python scripts/doctor_toolchain.py --strict --require-bun
+      - name: Install dependencies
+        run: |
+          uv sync --all-extras --dev
       - name: Mypy smoke
         run: >
           uv run mypy --no-warn-unused-configs
@@ -114,7 +136,8 @@ jobs:
   notify-failure:
     name: Notify CI failure
     needs:
-      - lint
+      - ruff
+      - mypy
       - test
       - build
       - failure-smoke
@@ -133,7 +156,8 @@ jobs:
           SERVER_URL: ${{ github.server_url }}
           RUN_ID: ${{ github.run_id }}
           WORKFLOW: ${{ github.workflow }}
-          LINT_RESULT: ${{ needs.lint.result }}
+          RUFF_RESULT: ${{ needs.ruff.result }}
+          MYPY_RESULT: ${{ needs.mypy.result }}
           TEST_RESULT: ${{ needs.test.result }}
           BUILD_RESULT: ${{ needs.build.result }}
           SMOKE_RESULT: ${{ needs.failure-smoke.result }}
@@ -154,7 +178,8 @@ jobs:
               f"sha: {os.environ['SHA']}",
               f"actor: {os.environ['ACTOR']}",
               f"workflow: {os.environ['WORKFLOW']}",
-              f"lint: {os.environ['LINT_RESULT']}",
+              f"ruff: {os.environ['RUFF_RESULT']}",
+              f"mypy: {os.environ['MYPY_RESULT']}",
               f"test: {os.environ['TEST_RESULT']}",
               f"build: {os.environ['BUILD_RESULT']}",
               f"synthetic_failure: {os.environ['SMOKE_RESULT']}",
