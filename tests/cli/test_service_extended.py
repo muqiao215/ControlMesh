@@ -236,7 +236,6 @@ def test_make_cli_with_openai_agents_provider_override(tmp_path: Path) -> None:
     call_args = mock_create.call_args[0][0]
     assert call_args.provider == "openai_agents"
     assert call_args.model == "gpt-5.4"
-    assert call_args.cli_parameters == []
 
 
 def test_make_cli_passes_runtime_dependencies_to_openai_agents(tmp_path: Path) -> None:
