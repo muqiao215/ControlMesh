@@ -112,7 +112,7 @@ def test_load_evidence_normalizes_noncanonical_worker_artifacts(tmp_path: Path) 
     assert (tmp_path / "generated" / "EVIDENCE.json").is_file()
 
 
-def test_noncanonical_evidence_is_reported_as_artifact_protocol_failure() -> None:
+def test_normalized_artifacts_are_success_with_warning() -> None:
     evidence = WorkUnitEvidence(
         task_id="abc",
         workunit_kind="code_review",
@@ -127,6 +127,23 @@ def test_noncanonical_evidence_is_reported_as_artifact_protocol_failure() -> Non
 
     verdict = deterministic_verdict(evidence, workunit_kind="code_review")
 
+    assert verdict.decision is EvaluatorDecision.ACCEPT
+    assert verdict.failure_kind == ""
+    assert "normalization" in verdict.summary.lower()
+
+
+def test_failed_normalization_requires_repair() -> None:
+    evidence = WorkUnitEvidence(
+        task_id="abc",
+        workunit_kind="code_review",
+        status="done",
+        summary="Worker completed but no consumable result was produced.",
+        confidence=0.2,
+        artifact_protocol_status="artifact_protocol_failed",
+        source_artifact="EVIDENCE.json",
+    )
+
+    verdict = deterministic_verdict(evidence, workunit_kind="code_review")
+
     assert verdict.decision is EvaluatorDecision.REPAIR
     assert verdict.failure_kind == "artifact_protocol_failed"
-    assert "normalization" in verdict.summary.lower()

@@ -277,3 +277,5 @@ class TaskResult:
     tool_use_id: str = ""
     inject_to_parent_session: bool = True
     evaluation: EvaluationResult | None = None
+    artifact_protocol_status: str = ""
+    warnings: tuple[str, ...] = ()

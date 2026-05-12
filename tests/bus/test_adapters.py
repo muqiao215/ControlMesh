@@ -80,6 +80,8 @@ class _FakeTaskResult:
     task_folder: str = "/tmp/tasks/t1"
     original_prompt: str = "find info about X"
     thread_id: int | None = None
+    artifact_protocol_status: str = ""
+    warnings: tuple[str, ...] = ()
 
 
 # -- Tests ---------------------------------------------------------------------
@@ -265,6 +267,23 @@ def test_from_task_result_artifact_protocol_failure_uses_degraded_message() -> N
     assert env.is_error
     assert "completed" in env.delivery_text.lower()
     assert "normalization" in env.delivery_text.lower()
+
+
+def test_adapter_renders_normalized_artifacts_as_warning_not_failed() -> None:
+    env = from_task_result(
+        _FakeTaskResult(
+            status="done",
+            error="Worker artifacts required runtime normalization.",
+            failure_kind="artifact_protocol_failed",
+            artifact_protocol_status="normalized",
+            warnings=("Runtime normalized noncanonical worker artifacts.",),
+            delivery_text="",
+        )
+    )
+
+    assert not env.is_error
+    assert "failed" not in env.delivery_text.lower()
+    assert "warnings" in env.delivery_text.lower()
 
 
 def test_from_task_result_summarized_only_never_uses_raw_payload_as_delivery() -> None:

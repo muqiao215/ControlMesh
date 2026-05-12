@@ -1019,6 +1019,8 @@ class TaskHub:
             verdict = None
             evaluation = None
             failure_kind = ""
+            artifact_protocol_status = ""
+            warnings: tuple[str, ...] = ()
             artifacts = self._artifact_paths(entry)
 
             # Append TASKMEMORY.md content so the parent gets the full picture
@@ -1027,6 +1029,7 @@ class TaskHub:
                 result_text = _append_taskmemory(result_text, artifacts.taskmemory)
                 if entry.workunit_kind or entry.evaluator:
                     evidence = load_evidence(artifacts.folder)
+                    artifact_protocol_status = evidence.artifact_protocol_status if evidence is not None else ""
                     verdict = deterministic_verdict(
                         evidence,
                         workunit_kind=entry.workunit_kind,
@@ -1038,6 +1041,7 @@ class TaskHub:
                     )
                     failure_kind = verdict.failure_kind
                     result_text = _append_evaluator_verdict(result_text, verdict)
+                    warnings = tuple(verdict.required_followups)
                     if verdict.decision is not EvaluatorDecision.ACCEPT:
                         status = "failed"
                         error = verdict.summary
@@ -1086,6 +1090,8 @@ class TaskHub:
                     error=error,
                     task_id=entry.task_id,
                     session_id=session_id,
+                    artifact_protocol_status=artifact_protocol_status,
+                    warnings=warnings,
                 ),
                 status=status,
                 elapsed_seconds=elapsed,
@@ -1101,6 +1107,8 @@ class TaskHub:
                 repo_root=entry.repo_root,
                 tool_use_id=entry.tool_use_id,
                 evaluation=evaluation,
+                artifact_protocol_status=artifact_protocol_status,
+                warnings=warnings,
             )
             if status in _FINISHED:
                 capture_task_result(
@@ -1409,6 +1417,7 @@ class TaskHub:
                 repo_root=entry.repo_root,
                 tool_use_id=entry.tool_use_id,
             )
+            self._ensure_tool_result_artifact(entry, recovered_result)
             self._finalize_reconciled_result(entry, recovered_result)
             return True
 
@@ -1459,6 +1468,8 @@ class TaskHub:
             return False
         summary = parsed_tool_result.summary
         evaluation = _evaluation_result_from_payload(payload.get("evaluation"))
+        artifact_protocol_status = str(payload.get("artifact_protocol_status") or "")
+        warnings = tuple(str(item) for item in (payload.get("warnings") or []) if str(item).strip())
         result_text = curated_result or summary or entry.result_preview or ""
         result_text = _append_taskmemory(result_text, artifacts.taskmemory)
         result_text = _append_attach_resume_hint(result_text, entry.task_id, entry.session_id)
@@ -1483,6 +1494,8 @@ class TaskHub:
                 error=error,
                 task_id=entry.task_id,
                 session_id=entry.session_id,
+                artifact_protocol_status=artifact_protocol_status,
+                warnings=warnings,
             ),
             status=status,
             elapsed_seconds=elapsed,
@@ -1498,7 +1511,10 @@ class TaskHub:
             repo_root=entry.repo_root,
             tool_use_id=entry.tool_use_id,
             evaluation=evaluation,
+            artifact_protocol_status=artifact_protocol_status,
+            warnings=warnings,
         )
+        self._ensure_tool_result_artifact(entry, recovered_result)
         tool_result["consumed"] = True
         tool_result["consumed_at"] = datetime.now(UTC).isoformat()
         atomic_json_save(artifacts.tool_result, tool_result)
@@ -1953,6 +1969,8 @@ class TaskHub:
             needs_controller_action=result.status != "done" or bool(entry.phase_id) or bool(entry.plan_id),
             evaluation=_evaluation_payload(result.evaluation),
             failure_kind=result.failure_kind,
+            artifact_protocol_status=result.artifact_protocol_status,
+            warnings=list(result.warnings) or None,
             generated_by="taskhub.runtime",
             created_at=datetime.now(UTC).isoformat(),
         )
@@ -1994,6 +2012,14 @@ class TaskHub:
                 status="tool_result_created",
             )
         return path
+
+    def _ensure_tool_result_artifact(self, entry: TaskEntry, result: TaskResult) -> Path:
+        """Ensure a canonical TOOL_RESULT exists for any consumable runtime result."""
+        path = self._artifact_paths(entry).tool_result
+        parsed = load_tool_result(self._artifact_paths(entry).folder)
+        if parsed is not None and parsed.valid:
+            return path
+        return self._write_tool_result_artifact(entry, result)
 
     def _consume_tool_result_file(self, path: Path) -> dict[str, Any] | None:
         """Read one TOOL_RESULT.json once and mark it consumed."""
@@ -2149,6 +2175,8 @@ class TaskToolResultPayload:
     needs_controller_action: bool
     evaluation: dict[str, object] | None = None
     failure_kind: str = ""
+    artifact_protocol_status: str = ""
+    warnings: list[str] | None = None
     generated_by: str = "taskhub.runtime"
     created_at: str = ""
 
@@ -2307,6 +2335,8 @@ def _task_delivery_text(
     error: str,
     task_id: str,
     session_id: str,
+    artifact_protocol_status: str = "",
+    warnings: tuple[str, ...] = (),
 ) -> str:
     """Build the direct user-facing task delivery text.
 
@@ -2323,6 +2353,8 @@ def _task_delivery_text(
             max_lines=_TASK_DELIVERY_MAX_LINES,
         )
         hints = [f"Task id: `{task_id}`"]
+        if artifact_protocol_status == "normalized" and warnings:
+            hints.append("Completed with warnings: runtime normalized noncanonical worker artifacts.")
         if session_id:
             hints.append("Follow-up work can resume this background task by id.")
         return fmt(body, SEP, "\n".join(hints))
@@ -2390,6 +2422,8 @@ def _strip_internal_task_payload(text: str) -> str:
 
 def _tool_result_summary(result: TaskResult) -> str:
     """Compact controller-facing summary for TOOL_RESULT.json."""
+    if result.status == "done" and result.artifact_protocol_status == "normalized":
+        return result.error or "Task completed with normalized worker artifacts."
     text = result.delivery_text or result.result_text or result.error or result.status
     text = _strip_internal_task_payload(text)
     return compact_transport_text(text, max_chars=800, max_lines=12).strip()

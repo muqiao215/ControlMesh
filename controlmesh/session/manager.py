@@ -87,6 +87,15 @@ class ProviderSessionData:
     native_commands_enabled: bool = False
 
 
+@dataclass
+class ForegroundState:
+    """Lightweight frontstage task handoff state."""
+
+    active_intent: str = ""
+    active_repo: str = ""
+    active_constraints: str = ""
+
+
 @dataclass(init=False)
 class SessionData:
     """Active session state with provider-isolated IDs and metrics."""
@@ -102,6 +111,7 @@ class SessionData:
     created_at: str
     last_active: str
     provider_sessions: dict[str, ProviderSessionData] = field(default_factory=dict)
+    foreground_state: ForegroundState = field(default_factory=ForegroundState)
 
     def __init__(self, chat_id: int, **raw: object) -> None:
         """Create session data from current or legacy serialized fields."""
@@ -115,6 +125,7 @@ class SessionData:
         created_at = _as_str(raw.pop("created_at", ""), default="")
         last_active = _as_str(raw.pop("last_active", ""), default="")
         provider_sessions = _as_mapping(raw.pop("provider_sessions", None))
+        foreground_state = _as_mapping(raw.pop("foreground_state", None))
 
         # Backward compatibility for old JSON/tests.
         session_id = _as_optional_str(raw.pop("session_id", None))
@@ -147,6 +158,7 @@ class SessionData:
                 total_tokens=total_tokens or 0,
             )
         self.provider_sessions = migrated
+        self.foreground_state = self._coerce_foreground_state(foreground_state)
         self._normalize_command_mode()
 
         if raw:
@@ -281,6 +293,17 @@ class SessionData:
                 ),
             )
         return out
+
+    @staticmethod
+    def _coerce_foreground_state(raw: Mapping[str, object] | None) -> ForegroundState:
+        """Normalize serialized foreground handoff state."""
+        if not raw:
+            return ForegroundState()
+        return ForegroundState(
+            active_intent=_as_str(raw.get("active_intent", ""), default="").strip(),
+            active_repo=_as_str(raw.get("active_repo", ""), default="").strip(),
+            active_constraints=_as_str(raw.get("active_constraints", ""), default="").strip(),
+        )
 
     @staticmethod
     def _safe_int(value: object) -> int:
@@ -633,6 +656,63 @@ class SessionManager:
             # Keep caller reference aligned with persisted target.
             session.provider = current.provider
             session.model = current.model
+
+    async def sync_foreground_state(
+        self,
+        session: SessionData,
+        *,
+        active_intent: str | None = None,
+        active_repo: str | None = None,
+        active_constraints: str | None = None,
+    ) -> None:
+        """Persist lightweight frontstage task handoff state without touching counters."""
+        async with self._lock:
+            sessions = await self._load()
+            skey = session.session_key.storage_key
+            current = sessions.get(skey)
+            if current is None:
+                current = session
+            else:
+                self._merge_provider_sessions(current, session)
+                current.provider = session.provider
+                current.model = session.model
+                if session.topic_name and not current.topic_name:
+                    current.topic_name = session.topic_name
+
+            changed = False
+            if active_intent is not None:
+                normalized = active_intent.strip()
+                if current.foreground_state.active_intent != normalized:
+                    current.foreground_state.active_intent = normalized
+                    changed = True
+            if active_repo is not None:
+                normalized = active_repo.strip()
+                if current.foreground_state.active_repo != normalized:
+                    current.foreground_state.active_repo = normalized
+                    changed = True
+            if active_constraints is not None:
+                normalized = active_constraints.strip()
+                if current.foreground_state.active_constraints != normalized:
+                    current.foreground_state.active_constraints = normalized
+                    changed = True
+
+            if not changed:
+                session.foreground_state = ForegroundState(
+                    active_intent=current.foreground_state.active_intent,
+                    active_repo=current.foreground_state.active_repo,
+                    active_constraints=current.foreground_state.active_constraints,
+                )
+                return
+
+            current.last_active = datetime.now(UTC).isoformat()
+            sessions[skey] = current
+            await self._save(sessions)
+            session.last_active = current.last_active
+            session.foreground_state = ForegroundState(
+                active_intent=current.foreground_state.active_intent,
+                active_repo=current.foreground_state.active_repo,
+                active_constraints=current.foreground_state.active_constraints,
+            )
 
     def _raw_entry_missing_model(self, storage_key: str) -> bool:
         """Return True when raw session JSON exists but has no ``model`` key.

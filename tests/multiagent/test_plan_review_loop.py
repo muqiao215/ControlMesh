@@ -3,14 +3,18 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
+from controlmesh.history.models import TranscriptTurn
 from controlmesh.multiagent.commands import cmd_agents
 from controlmesh.multiagent.plan_review_loop import (
     approve_phase,
     consume_pending_repair_feedback,
+    create_mesh_workflow,
     handle_task_result,
+    mesh_clarification_text,
     repair_phase,
     workflow_status_text,
 )
@@ -88,14 +92,20 @@ class _FakeTaskHub:
 
 
 def _make_orch(tmp_path: Path, hub: _FakeTaskHub) -> SimpleNamespace:
-    return SimpleNamespace(
+    orch = SimpleNamespace(
         task_hub=hub,
         paths=SimpleNamespace(plans_dir=tmp_path / "plans", workspace=tmp_path / "workspace"),
         supervisor=SimpleNamespace(
             health={"main": SimpleNamespace(status="running", uptime_human="1m", restart_count=0)},
             stacks={"main": SimpleNamespace(is_main=True, config=SimpleNamespace(model="test-model", reasoning_effort=""))},
         ),
+        _config=SimpleNamespace(model="gpt-5.5"),
+        resolve_runtime_target=lambda _requested=None: ("gpt-5.5", "codex"),
     )
+    orch._foreground_state = SimpleNamespace(active_intent="", active_repo="", active_constraints="")
+    orch.get_foreground_state = AsyncMock(return_value=orch._foreground_state)
+    orch.sync_foreground_state = AsyncMock(return_value=orch._foreground_state)
+    return orch
 
 
 def _write_state(tmp_path: Path, plan_id: str, payload: dict[str, object]) -> None:
@@ -111,95 +121,145 @@ def _write_state(tmp_path: Path, plan_id: str, payload: dict[str, object]) -> No
 async def test_cmd_agents_run_creates_plan_workflow(tmp_path: Path) -> None:
     hub = _FakeTaskHub()
     orch = _make_orch(tmp_path, hub)
+    orch.cli_service = SimpleNamespace(
+        execute=AsyncMock(
+            return_value=SimpleNamespace(
+                result=json.dumps(
+                    {
+                        "plan_markdown": "# Plan\n",
+                        "phases": [
+                            {
+                                "id": "phase-001",
+                                "title": "Inspect",
+                                "workunit_kind": "repo_audit",
+                                "allowed_edit": False,
+                            },
+                            {
+                                "id": "phase-002",
+                                "title": "Implement",
+                                "workunit_kind": "phase_execution",
+                                "allowed_edit": True,
+                            },
+                        ],
+                    }
+                ),
+                timed_out=False,
+                is_error=False,
+            )
+        )
+    )
     key = SessionKey(transport="tg", chat_id=42)
 
     result = await cmd_agents(orch, key, "/agents run Build the new phased controller")
 
-    assert "ControlMesh workflow created." in result.text
+    assert "ControlMesh auto-run started." in result.text
     assert "Use `/mesh` for phased workflows." in result.text
     assert hub.submits
     submit = hub.submits[0]
-    assert submit.workunit_kind == "plan_with_files"
-    state = json.loads((plan_dir_for(tmp_path / "plans", "task-1") / "STATE.json").read_text())
+    assert submit.workunit_kind == "repo_audit"
+    assert submit.plan_id
+    state = json.loads((plan_dir_for(tmp_path / "plans", submit.plan_id) / "STATE.json").read_text())
     assert state["controller_mode"] == "agents_review_loop"
-    assert state["status"] == "planning"
+    assert state["status"] == "executing"
     assert state["source_chat_id"] == 42
+    manifest = json.loads((plan_dir_for(tmp_path / "plans", submit.plan_id) / "PHASES.json").read_text())
+    assert len(manifest["phases"]) == 2
 
 
 @pytest.mark.asyncio
-async def test_handle_task_result_autostarts_first_phase(tmp_path: Path) -> None:
-    plan_id = "plan-1"
-    create_plan_files(
-        tmp_path / "plans",
-        plan_id=plan_id,
-        plan_markdown="# Plan",
-        phases=(
-            PlanPhase(
-                id="phase-1",
-                title="Contracts",
-                workunit_kind="phase_execution",
-                provider="claude",
-                model="sonnet",
-            ),
-        ),
-        status="ready_for_implementation",
-    )
-    _write_state(
-        tmp_path,
-        plan_id,
-        {
-            "schema_version": 1,
-            "plan_id": plan_id,
-            "status": "planning",
-            "controller_mode": "agents_review_loop",
-            "source_transport": "tg",
-            "source_chat_id": 7,
-            "repo": "/repo",
-        },
-    )
-    entry = TaskEntry(
-        task_id=plan_id,
-        chat_id=7,
-        parent_agent="main",
-        name="plan",
-        prompt_preview="",
-        provider="codex",
-        model="gpt-5.5",
-        status="done",
-        workunit_kind="plan_with_files",
-        plan_id=plan_id,
-    )
-    hub = _FakeTaskHub(entry)
+async def test_create_mesh_workflow_autostarts_first_phase_without_background_planning(tmp_path: Path) -> None:
+    hub = _FakeTaskHub()
     orch = _make_orch(tmp_path, hub)
-
-    note = await handle_task_result(
-        orch,
-        TaskResult(
-            task_id=plan_id,
-            chat_id=7,
-            parent_agent="main",
-            name="plan",
-            prompt_preview="",
-            result_text="ok",
-            status="done",
-            elapsed_seconds=1,
-            provider="codex",
-            model="gpt-5.5",
-        ),
+    orch.cli_service = SimpleNamespace(
+        execute=AsyncMock(
+            return_value=SimpleNamespace(
+                result=json.dumps(
+                    {
+                        "plan_markdown": "# Plan\n",
+                        "phases": [
+                            {
+                                "id": "phase-001",
+                                "title": "Inspect repository",
+                                "workunit_kind": "repo_audit",
+                                "allowed_edit": False,
+                            }
+                        ],
+                    }
+                ),
+                timed_out=False,
+                is_error=False,
+            )
+        )
     )
+    key = SessionKey(transport="tg", chat_id=7)
 
-    assert "ControlMesh workflow created" in note
-    assert "Phase 1 is now running in background." in note
+    start = await create_mesh_workflow(orch, key, "Fix /mesh planning semantics")
+
+    assert start.plan_id
+    assert start.phase_count == 1
+    assert start.current_phase_id == "phase-001"
     assert hub.submits
     submit = hub.submits[0]
-    assert submit.workunit_kind == "phase_execution"
-    assert submit.plan_id == plan_id
-    assert submit.phase_id == "phase-1"
-    assert submit.provider_override == "claude"
-    assert submit.model_override == "sonnet"
-    state = json.loads((plan_dir_for(tmp_path / "plans", plan_id) / "STATE.json").read_text())
+    assert submit.workunit_kind == "repo_audit"
+    assert submit.plan_id == start.plan_id
+    assert submit.phase_id == "phase-001"
+    state = json.loads((plan_dir_for(tmp_path / "plans", start.plan_id) / "STATE.json").read_text())
     assert state["status"] == "executing"
-    assert state["current_phase_id"] == "phase-1"
+    assert state["current_phase_id"] == "phase-001"
+
+
+@pytest.mark.asyncio
+async def test_create_mesh_workflow_uses_foreground_active_intent_for_handoff_text(tmp_path: Path) -> None:
+    hub = _FakeTaskHub()
+    orch = _make_orch(tmp_path, hub)
+    orch._foreground_state = SimpleNamespace(
+        active_intent="请按最小可合并方式修正 /mesh planning 被错误下放后台的问题",
+        active_repo=str(tmp_path / "workspace"),
+        active_constraints="local only",
+    )
+    orch.get_foreground_state = AsyncMock(return_value=orch._foreground_state)
+    orch.cli_service = SimpleNamespace(
+        execute=AsyncMock(
+            return_value=SimpleNamespace(
+                result=json.dumps({"plan_markdown": "# Plan\n", "phases": []}),
+                timed_out=False,
+                is_error=False,
+            )
+        )
+    )
+
+    start = await create_mesh_workflow(orch, SessionKey(transport="tg", chat_id=9), "开始全自动")
+
+    assert "修正 /mesh planning 被错误下放后台的问题" in start.objective
+
+
+@pytest.mark.asyncio
+async def test_create_mesh_workflow_caps_phase_count_at_five(tmp_path: Path) -> None:
+    hub = _FakeTaskHub()
+    orch = _make_orch(tmp_path, hub)
+    orch.cli_service = SimpleNamespace(
+        execute=AsyncMock(
+            return_value=SimpleNamespace(
+                result=json.dumps(
+                    {
+                        "plan_markdown": "# Plan\n",
+                        "phases": [
+                            {"id": f"phase-00{i}", "title": f"Phase {i}", "workunit_kind": "repo_audit", "allowed_edit": False}
+                            for i in range(1, 7)
+                        ],
+                    }
+                ),
+                timed_out=False,
+                is_error=False,
+            )
+        )
+    )
+
+    start = await create_mesh_workflow(orch, SessionKey(transport="tg", chat_id=10), "Refactor /mesh")
+
+    manifest = json.loads((plan_dir_for(tmp_path / "plans", start.plan_id) / "PHASES.json").read_text())
+    assert len(manifest["phases"]) == 5
+    assert start.phase_count == 5
 
 
 @pytest.mark.asyncio

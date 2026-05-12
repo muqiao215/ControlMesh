@@ -46,14 +46,26 @@ def deterministic_verdict(
             required_followups=("Worker must produce concrete EVIDENCE.json.",),
         )
 
-    if evidence.artifact_protocol_status in {"normalized", "artifact_protocol_failed"}:
+    if evidence.artifact_protocol_status == "normalized":
+        return EvaluatorVerdict(
+            decision=EvaluatorDecision.ACCEPT,
+            quality=max(quality, 0.55),
+            summary="Task completed with runtime normalization of worker artifacts.",
+            failure_kind="",
+            required_followups=(
+                "Runtime normalized noncanonical worker artifacts; tighten the worker handoff format.",
+            ),
+            risks=evidence.risks,
+        )
+
+    if evidence.artifact_protocol_status in {"artifact_protocol_failed", "missing"}:
         return EvaluatorVerdict(
             decision=EvaluatorDecision.REPAIR,
             quality=quality,
-            summary="Task completed, but worker artifacts required runtime normalization.",
+            summary="Task completed, but worker artifacts could not be normalized into a consumable result.",
             failure_kind="artifact_protocol_failed",
             required_followups=(
-                "Runtime normalized noncanonical worker artifacts; tighten the worker handoff format.",
+                "Worker must produce canonical TOOL_RESULT or consumable evidence artifacts.",
             ),
             risks=evidence.risks,
         )

@@ -989,6 +989,44 @@ class TestRunAndDeliver:
 
         await hub.shutdown()
 
+    async def test_reconcile_result_only_artifacts_generates_canonical_tool_result(
+        self, registry: TaskRegistry, tmp_path: Path
+    ) -> None:
+        delivered: list[TaskResult] = []
+        paths = ControlMeshPaths(controlmesh_home=tmp_path / "home")
+        hub = TaskHub(
+            registry,
+            paths,
+            cli_service=_make_cli_service(),
+            config=_make_config(),
+        )
+        hub.set_result_handler("main", AsyncMock(side_effect=delivered.append))
+
+        submit = _submit(prompt="recover result only", name="Recover result-only task")
+        submit.tool_use_id = "toolu_bg_task_result_only"
+        entry = registry.create(submit, "claude", "opus")
+        registry.update_status(entry.task_id, "stale", session_id="sess-result-only")
+        task_dir = registry.task_folder(entry.task_id)
+        (task_dir / "RESULT.md").write_text("# Recovered result\n\nRecovered from RESULT only.\n", encoding="utf-8")
+        (task_dir / "TOOL_USE.json").write_text(
+            json.dumps({"tool_use_id": "toolu_bg_task_result_only", "task_id": entry.task_id}),
+            encoding="utf-8",
+        )
+
+        changed = hub.reconcile_task_state(entry.task_id)
+        await asyncio.sleep(0.05)
+
+        assert changed is True
+        assert len(delivered) == 1
+        assert delivered[0].status == "done"
+        tool_result = json.loads((task_dir / "TOOL_RESULT.json").read_text(encoding="utf-8"))
+        payload = json.loads(tool_result["content"][0]["content"][0]["text"])
+        assert payload["schema_version"] == "controlmesh.tool_result.v1"
+        assert payload["task_id"] == entry.task_id
+        assert payload["status"] == "done"
+
+        await hub.shutdown()
+
     async def test_delivers_error_on_cli_failure(
         self, registry: TaskRegistry, tmp_path: Path
     ) -> None:
@@ -1014,7 +1052,7 @@ class TestRunAndDeliver:
 
         await hub.shutdown()
 
-    async def test_workunit_missing_evidence_degrades_to_artifact_protocol_failure(
+    async def test_workunit_result_only_artifacts_normalize_as_success_with_warning(
         self, registry: TaskRegistry, tmp_path: Path
     ) -> None:
         delivered: list[TaskResult] = []
@@ -1034,21 +1072,22 @@ class TestRunAndDeliver:
         await asyncio.sleep(0.1)
 
         assert len(delivered) == 1
-        assert delivered[0].status == "failed"
-        assert delivered[0].failure_kind == "artifact_protocol_failed"
+        assert delivered[0].status == "done"
+        assert delivered[0].failure_kind == ""
+        assert delivered[0].artifact_protocol_status == "normalized"
         assert delivered[0].evaluation is not None
-        assert delivered[0].evaluation.decision == "repair_recommended"
-        assert delivered[0].evaluation.failure_kind == "artifact_protocol_failed"
+        assert delivered[0].evaluation.decision == "approve_recommended"
+        assert delivered[0].evaluation.failure_kind == ""
         assert "normalization" in delivered[0].evaluation.summary.lower()
+        assert "warnings" in delivered[0].delivery_text.lower()
 
         entry = registry.get(task_id)
         assert entry is not None
-        assert entry.status == "failed"
-        assert "normalization" in entry.error.lower()
+        assert entry.status == "done"
 
         await hub.shutdown()
 
-    async def test_workunit_noncanonical_evidence_reports_artifact_protocol_failure(
+    async def test_workunit_noncanonical_evidence_normalized_as_success_with_warning(
         self, registry: TaskRegistry, tmp_path: Path
     ) -> None:
         async def _execute_with_noncanonical_evidence(request: object) -> MagicMock:
@@ -1108,17 +1147,18 @@ class TestRunAndDeliver:
         await asyncio.sleep(0.1)
 
         assert len(delivered) == 1
-        assert delivered[0].status == "failed"
-        assert delivered[0].failure_kind == "artifact_protocol_failed"
+        assert delivered[0].status == "done"
+        assert delivered[0].failure_kind == ""
+        assert delivered[0].artifact_protocol_status == "normalized"
         assert delivered[0].evaluation is not None
-        assert delivered[0].evaluation.failure_kind == "artifact_protocol_failed"
+        assert delivered[0].evaluation.failure_kind == ""
         assert "normalization" in delivered[0].evaluation.summary.lower()
         assert "completed" in delivered[0].delivery_text.lower()
+        assert "warnings" in delivered[0].delivery_text.lower()
 
         entry = registry.get(task_id)
         assert entry is not None
-        assert entry.status == "failed"
-        assert "normalization" in entry.error.lower()
+        assert entry.status == "done"
         assert (registry.task_folder(task_id) / "generated" / "EVIDENCE.json").is_file()
 
         await hub.shutdown()

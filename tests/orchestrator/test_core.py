@@ -77,6 +77,23 @@ async def test_status_command(orch: Orchestrator) -> None:
     assert "Model:" in result.text
 
 
+async def test_sync_foreground_state_round_trip(orch: Orchestrator) -> None:
+    key = SessionKey(chat_id=1)
+
+    state = await orch.sync_foreground_state(
+        key,
+        active_intent="Fix /mesh active_intent handoff",
+        active_repo="/root/.controlmesh/dev/ControlMesh",
+        active_constraints="local only",
+    )
+
+    assert state.active_intent == "Fix /mesh active_intent handoff"
+    loaded = await orch.get_foreground_state(key)
+    assert loaded.active_intent == "Fix /mesh active_intent handoff"
+    assert loaded.active_repo == "/root/.controlmesh/dev/ControlMesh"
+    assert loaded.active_constraints == "local only"
+
+
 async def test_non_command_message_is_gated_when_bootstrap_not_ready(orch: Orchestrator) -> None:
     health = assess_bootstrap_health(
         configured_provider="codex",
@@ -428,6 +445,17 @@ async def test_routes_to_normal_flow(orch: Orchestrator) -> None:
     object.__setattr__(orch._cli_service, "execute", AsyncMock(return_value=_mock_response()))
     result = await orch.handle_message(SessionKey(chat_id=1), "Hello agent")
     assert result.text == "Response text"
+
+
+async def test_normal_flow_updates_foreground_active_intent(orch: Orchestrator) -> None:
+    key = SessionKey(chat_id=1)
+    object.__setattr__(orch._cli_service, "execute", AsyncMock(return_value=_mock_response()))
+
+    await orch.handle_message(key, "Fix /mesh so planning stays in the foreground and only phases go to TaskHub")
+
+    state = await orch.get_foreground_state(key)
+    assert "planning stays in the foreground" in state.active_intent
+    assert state.active_repo == str(orch.paths.workspace)
 
 
 async def test_directive_only_returns_hint(orch: Orchestrator) -> None:

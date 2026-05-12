@@ -123,7 +123,15 @@ class TestCmdMesh:
     async def test_mesh_usage_without_request(self) -> None:
         orch = _make_orch()
         result = await cmd_mesh(orch, 1, "/mesh")
-        assert "Usage: /mesh <request>" in result.text
+        assert "一句话即可" in result.text
+
+    async def test_mesh_handoff_without_active_intent_clarifies(self) -> None:
+        orch = _make_orch()
+        orch.get_foreground_state = AsyncMock(
+            return_value=MagicMock(active_intent="", active_repo="", active_constraints="")
+        )
+        result = await cmd_mesh(orch, 1, "/mesh 开始全自动")
+        assert "一句话即可" in result.text
 
 
 class TestCmdAgentStop:
