@@ -20,7 +20,7 @@ from controlmesh.history.catalog import (
     render_task_result,
 )
 from controlmesh.i18n import t
-from controlmesh.infra.install import detect_install_mode
+from controlmesh.infra.install import detect_install_mode, detect_runtime_provenance
 from controlmesh.infra.updater import check_source_upgrade_status
 from controlmesh.infra.version import check_latest_version, get_current_version
 from controlmesh.memory.commands import (
@@ -63,8 +63,12 @@ from controlmesh.orchestrator.selectors.settings_selector import (
     show_messaging_help,
 )
 from controlmesh.orchestrator.selectors.task_selector import task_selector_start
+from controlmesh.orchestrator.flows import normal
+from controlmesh.routing.policy import detect_workunit_kind
+from controlmesh.routing.workunit import force_foreground, intent_for_kind, requirements_for_kind
 from controlmesh.team.contracts import TEAM_TOPOLOGIES, ensure_team_topology
 from controlmesh.text.response_format import SEP, fmt, new_session_text
+from controlmesh.tasks.models import TaskSubmit
 from controlmesh.workspace.loader import read_file
 
 if TYPE_CHECKING:
@@ -140,7 +144,15 @@ async def cmd_reset(orch: Orchestrator, key: SessionKey, _text: str) -> Orchestr
 async def cmd_status(orch: Orchestrator, key: SessionKey, _text: str) -> OrchestratorResult:
     """Handle /status."""
     logger.info("Status requested")
-    return OrchestratorResult(text=await _build_status(orch, key))
+    return OrchestratorResult(text=await _build_status(orch, key, include_all_providers="--all-providers" in _text.split()))
+
+
+async def cmd_session(orch: Orchestrator, key: SessionKey, text: str) -> OrchestratorResult:
+    """Handle /session <prompt> as an explicit foreground session turn."""
+    parts = text.split(None, 1)
+    if len(parts) < 2 or not parts[1].strip():
+        return OrchestratorResult(text="Usage: /session <prompt>")
+    return await normal(orch, key, parts[1].strip())
 
 
 async def cmd_model(orch: Orchestrator, key: SessionKey, text: str) -> OrchestratorResult:
@@ -688,6 +700,9 @@ async def cmd_tasks(orch: Orchestrator, key: SessionKey, _text: str) -> Orchestr
     """Handle /tasks."""
     logger.info("Tasks requested")
     parts = _text.strip().split()
+    if len(parts) >= 2 and parts[1].lower() in {"new", "create"}:
+        prompt = _text.strip().split(None, 2)[2].strip() if len(parts) >= 3 else ""
+        return _cmd_tasks_new(orch, key, prompt)
     if len(parts) >= 2 and parts[1].lower() == "topology":
         return await _cmd_tasks_topology(orch, parts[2:])
     if len(parts) >= 2 and parts[1].lower() == "tail":
@@ -711,6 +726,69 @@ async def cmd_tasks(orch: Orchestrator, key: SessionKey, _text: str) -> Orchestr
         )
     resp = task_selector_start(hub, key.chat_id)
     return OrchestratorResult(text=resp.text, buttons=resp.buttons)
+
+
+def _cmd_tasks_new(orch: Orchestrator, key: SessionKey, prompt: str) -> OrchestratorResult:
+    """Create a TaskHub task from the explicit /tasks new surface."""
+    if not prompt:
+        return OrchestratorResult(text="Usage: /tasks new <prompt>")
+    hub = orch.task_hub
+    if hub is None:
+        return OrchestratorResult(text=fmt(t("tasks.header"), SEP, t("tasks.disabled")))
+
+    workunit_kind = detect_workunit_kind(prompt=prompt)
+    if workunit_kind is not None:
+        intent = intent_for_kind(workunit_kind, requirements_for_kind(workunit_kind))
+        if force_foreground(intent):
+            task_id = hub.registry.create(
+                TaskSubmit(
+                    chat_id=key.chat_id,
+                    prompt=prompt,
+                    message_id=0,
+                    thread_id=key.topic_id,
+                    parent_agent="main",
+                    transport=key.transport,
+                    name=f"{workunit_kind.value}: {prompt[:48]}",
+                    route="auto",
+                    workunit_kind=workunit_kind.value,
+                    worker_business_permissions=sorted(intent.side_effects),
+                    evaluator="foreground",
+                ),
+                provider="",
+                model="",
+            ).task_id
+            hub.registry.update_status(
+                task_id,
+                "waiting",
+                error="waiting approval: high-risk workunit is force foreground",
+                last_question=(
+                    "High-risk background execution is blocked. "
+                    "Handle release/git_write/repo_write/publish effects in the foreground."
+                ),
+            )
+            return OrchestratorResult(
+                text=(
+                    f"TaskHub task `{task_id}` is waiting approval.\n\n"
+                    "High-risk workunits stay foreground-only: release, git_write, repo_write, publish."
+                )
+            )
+
+    submit = TaskSubmit(
+        chat_id=key.chat_id,
+        prompt=prompt,
+        message_id=0,
+        thread_id=key.topic_id,
+        parent_agent="main",
+        transport=key.transport,
+        name=prompt[:48] or "Task",
+        route="auto",
+        workunit_kind=workunit_kind.value if workunit_kind is not None else "",
+    )
+    try:
+        task_id = hub.submit(submit)
+    except ValueError as exc:
+        return OrchestratorResult(text=f"TaskHub task was not created: {exc}")
+    return OrchestratorResult(text=f"TaskHub task `{task_id}` created.")
 
 
 async def cmd_route(orch: Orchestrator, key: SessionKey, text: str) -> OrchestratorResult:
@@ -1228,7 +1306,7 @@ def _build_agent_health_block(orch: Orchestrator) -> str:
     return "\n".join(agent_lines)
 
 
-async def _build_status(orch: Orchestrator, key: SessionKey) -> str:
+async def _build_status(orch: Orchestrator, key: SessionKey, *, include_all_providers: bool = False) -> str:
     """Build the /status response text."""
     if orch.bootstrap_health is not None:
         runtime_model = orch.bootstrap_health.default_model
@@ -1279,10 +1357,15 @@ async def _build_status(orch: Orchestrator, key: SessionKey) -> str:
     auth = await asyncio.to_thread(check_all_auth)
     auth_lines: list[str] = []
     for provider, result in auth.items():
+        if provider == "claw" and not include_all_providers:
+            continue
         age_label = f" ({result.age_human})" if result.age_human else ""
         auth_lines.append(f"  [{provider}] {result.status.value}{age_label}")
     auth_block = t("status.auth_header") + "\n" + "\n".join(auth_lines)
 
+    version_block = _status_version_block()
+    taskhub_block = _status_taskhub_block(orch, key)
+    provenance_block = _status_provenance_block()
     agent_block = _build_agent_health_block(orch)
     bootstrap_block = ""
     if orch.bootstrap_health is not None:
@@ -1291,10 +1374,13 @@ async def _build_status(orch: Orchestrator, key: SessionKey) -> str:
     if native_provider in _NATIVE_COMMAND_PROVIDERS:
         snapshot = await _safe_provider_snapshot(orch, provider=native_provider, model=native_model)
         native_block = render_native_runtime_summary(snapshot)
+        if snapshot.version:
+            native_block = f"{native_block}\nCLI version: {snapshot.version}"
 
-    blocks = [t("status.header"), SEP, session_block]
+    blocks = [t("status.header"), SEP, version_block, SEP, session_block]
     if bg_block:
         blocks += [SEP, bg_block]
+    blocks += [SEP, taskhub_block, SEP, provenance_block]
     blocks += [SEP, auth_block]
     if bootstrap_block:
         blocks += [SEP, bootstrap_block]
@@ -1303,6 +1389,43 @@ async def _build_status(orch: Orchestrator, key: SessionKey) -> str:
     if agent_block:
         blocks += [SEP, agent_block]
     return fmt(*blocks)
+
+
+def _status_version_block() -> str:
+    return f"ControlMesh version: {get_current_version()}"
+
+
+def _status_taskhub_block(orch: Orchestrator, key: SessionKey) -> str:
+    hub = orch.task_hub
+    tasks_cfg = orch._config.tasks
+    if hub is None:
+        return "TaskHub summary:\n  disabled"
+    entries = hub.registry.list_all(chat_id=key.chat_id)
+    counts: dict[str, int] = {}
+    for entry in entries:
+        counts[entry.status] = counts.get(entry.status, 0) + 1
+    count_text = ", ".join(f"{status}={count}" for status, count in sorted(counts.items())) or "none"
+    default_provider = tasks_cfg.default_provider or orch._config.provider
+    default_model = tasks_cfg.default_model or orch._config.model
+    return (
+        "TaskHub summary:\n"
+        f"  enabled: {tasks_cfg.enabled}\n"
+        f"  default: {default_provider or '-'} / {default_model or '-'}\n"
+        f"  max_parallel: {tasks_cfg.max_parallel}\n"
+        f"  cadence: {tasks_cfg.cadence}\n"
+        f"  tasks: {count_text}"
+    )
+
+
+def _status_provenance_block() -> str:
+    provenance = detect_runtime_provenance()
+    return (
+        "Runtime provenance:\n"
+        f"  install: {provenance.install_info.mode}/{provenance.install_info.source}\n"
+        f"  imported: {provenance.imported_version} from {provenance.imported_file}\n"
+        f"  executable: {provenance.executable}\n"
+        f"  matches expected: {provenance.matches_expected}"
+    )
 
 
 async def _read_log_tail(log_path: Path, lines: int = 50) -> str:

@@ -18,6 +18,21 @@ from controlmesh.runtime import HostJob, HostJobStep
 def _make_orch(*, with_supervisor: bool = True) -> MagicMock:
     """Create a mock Orchestrator with optional supervisor."""
     orch = MagicMock()
+    tasks_cfg = MagicMock()
+    tasks_cfg.max_parallel = 5
+    tasks_cfg.cadence = "on_demand"
+    tasks_cfg.default_provider = "claude"
+    tasks_cfg.default_model = "opus"
+    tasks_cfg.risk_guards = ["release", "git_write", "repo_write", "publish"]
+    routing_cfg = MagicMock()
+    routing_cfg.enabled = True
+    routing_cfg.capability_registry = ""
+    orch._config = MagicMock(
+        provider="claude",
+        model="opus",
+        tasks=tasks_cfg,
+        agent_routing=routing_cfg,
+    )
     if not with_supervisor:
         orch.supervisor = None
     else:
@@ -118,6 +133,16 @@ class TestCmdAgents:
         orch = _make_orch()
         result = await cmd_agents(orch, 1, "/agents")
         assert "/mesh <request>" in result.text
+
+    async def test_agents_shows_taskhub_policy_summary(self) -> None:
+        orch = _make_orch()
+        result = await cmd_agents(orch, 1, "/agents")
+        assert "TaskHub policy:" in result.text
+        assert "default: claude / opus" in result.text
+        assert "max_parallel: 5" in result.text
+        assert "cadence: on_demand" in result.text
+        assert "risk_guards: release, git_write, repo_write, publish" in result.text
+        assert "force foreground: release, git_write, repo_write, publish" in result.text
 
 
 class TestCmdMesh:

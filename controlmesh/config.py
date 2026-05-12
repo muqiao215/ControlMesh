@@ -330,6 +330,13 @@ class TasksConfig(BaseModel):
     max_parallel: int = 5
     timeout_seconds: float = 3600.0
     default_topology: str | None = None
+    cadence: str = "on_demand"
+    default_provider: str = ""
+    default_model: str = ""
+    risk_guards: list[str] = Field(
+        default_factory=lambda: ["release", "git_write", "repo_write", "publish"]
+    )
+    worker_profiles: dict[str, dict[str, object]] = Field(default_factory=dict)
 
     @field_validator("default_topology")
     @classmethod

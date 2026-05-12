@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
+from controlmesh.cli.types import AgentResponse
 from controlmesh.cli.auth import AuthResult, AuthStatus
 from controlmesh.history import TranscriptAttachment, TranscriptTurn
 from controlmesh.infra.version import VersionInfo
@@ -17,6 +18,7 @@ from controlmesh.orchestrator.commands import (
     cmd_history,
     cmd_memory,
     cmd_model,
+    cmd_session,
     cmd_settings,
     cmd_status,
     cmd_tasks,
@@ -25,6 +27,7 @@ from controlmesh.orchestrator.commands import (
 from controlmesh.orchestrator.core import Orchestrator
 from controlmesh.runtime import RuntimeEvent
 from controlmesh.session.key import SessionKey
+from controlmesh.tasks.hub import TaskHub
 from controlmesh.tasks.models import TaskSubmit
 from controlmesh.tasks.registry import TaskRegistry
 from controlmesh.team.models import TeamLeader, TeamManifest, TeamSessionRef, TeamTask
@@ -101,6 +104,9 @@ async def test_status_no_session(orch: Orchestrator) -> None:
         result = await cmd_status(orch, SessionKey(chat_id=1), "/status")
     assert "No active session" in result.text
     assert "opus" in result.text
+    assert "ControlMesh version:" in result.text
+    assert "TaskHub summary:" in result.text
+    assert "Runtime provenance:" in result.text
 
 
 async def test_status_with_session(orch: Orchestrator) -> None:
@@ -118,6 +124,109 @@ async def test_status_prefers_session_model_over_config(orch: Orchestrator) -> N
     with patch("controlmesh.orchestrator.commands.check_all_auth", return_value={}):
         result = await cmd_status(orch, SessionKey(chat_id=1), "/status")
     assert "Model: gpt-5.2-codex (configured: opus)" in result.text
+
+
+async def test_status_default_hides_claw_provider(orch: Orchestrator) -> None:
+    auth = {
+        "claude": AuthResult("claude", AuthStatus.AUTHENTICATED),
+        "claw": AuthResult("claw", AuthStatus.AUTHENTICATED),
+    }
+    with patch("controlmesh.orchestrator.commands.check_all_auth", return_value=auth):
+        result = await cmd_status(orch, SessionKey(chat_id=1), "/status")
+    assert "[claude]" in result.text
+    assert "[claw]" not in result.text
+
+
+async def test_status_all_providers_shows_legacy_claw(orch: Orchestrator) -> None:
+    auth = {
+        "claude": AuthResult("claude", AuthStatus.AUTHENTICATED),
+        "claw": AuthResult("claw", AuthStatus.AUTHENTICATED),
+    }
+    with patch("controlmesh.orchestrator.commands.check_all_auth", return_value=auth):
+        result = await cmd_status(orch, SessionKey(chat_id=1), "/status --all-providers")
+    assert "[claw]" in result.text
+
+
+async def test_session_prompt_runs_foreground_without_taskhub(orch: Orchestrator) -> None:
+    key = SessionKey(chat_id=1)
+    hub = MagicMock()
+    hub.submit = AsyncMock()
+    hub.start_maintenance = MagicMock()
+    orch.set_task_hub(hub)
+    object.__setattr__(
+        orch._cli_service,
+        "execute",
+        AsyncMock(return_value=AgentResponse(result="foreground", session_id="sess-1")),
+    )
+
+    result = await cmd_session(orch, key, "/session keep this in foreground")
+
+    assert result.text == "foreground"
+    hub.submit.assert_not_called()
+    session = await orch._sessions.get_active(key)
+    assert session is not None
+    assert session.message_count == 1
+
+
+async def test_tasks_new_creates_taskhub_task(orch: Orchestrator) -> None:
+    registry = TaskRegistry(orch.paths.tasks_registry_path, orch.paths.tasks_dir)
+    hub = TaskHub(
+        registry,
+        orch.paths,
+        cli_service=orch._cli_service,
+        config=orch._config.tasks,
+    )
+    orch.set_task_hub(hub)
+
+    result = await cmd_tasks(orch, SessionKey(chat_id=1), "/tasks new run tests in background")
+
+    assert "TaskHub task `" in result.text
+    entries = registry.list_all(chat_id=1)
+    assert len(entries) == 1
+    assert entries[0].original_prompt == "run tests in background"
+    await hub.shutdown()
+
+
+async def test_tasks_new_does_not_enter_foreground_session_history(orch: Orchestrator) -> None:
+    key = SessionKey(chat_id=1)
+    registry = TaskRegistry(orch.paths.tasks_registry_path, orch.paths.tasks_dir)
+    hub = TaskHub(
+        registry,
+        orch.paths,
+        cli_service=orch._cli_service,
+        config=orch._config.tasks,
+    )
+    orch.set_task_hub(hub)
+
+    await cmd_tasks(orch, key, "/tasks new run tests in background")
+
+    turns = await orch.read_frontstage_history(key, limit=10)
+    assert turns == []
+    await hub.shutdown()
+
+
+async def test_tasks_new_high_risk_workunit_stays_waiting_approval(orch: Orchestrator) -> None:
+    registry = TaskRegistry(orch.paths.tasks_registry_path, orch.paths.tasks_dir)
+    hub = TaskHub(
+        registry,
+        orch.paths,
+        cli_service=orch._cli_service,
+        config=orch._config.tasks,
+    )
+    orch.set_task_hub(hub)
+    submit_spy = MagicMock(wraps=hub.submit)
+    hub.submit = submit_spy
+
+    result = await cmd_tasks(orch, SessionKey(chat_id=1), "/tasks new 请帮我发布新版本")
+
+    assert "waiting approval" in result.text
+    submit_spy.assert_not_called()
+    entries = registry.list_all(chat_id=1)
+    assert len(entries) == 1
+    assert entries[0].status == "waiting"
+    assert "high-risk" in entries[0].error
+    assert "publish" in entries[0].last_question
+    await hub.shutdown()
 
 
 async def test_cm_without_nested_command_switches_to_native_registry(

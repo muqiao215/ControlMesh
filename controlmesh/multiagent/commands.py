@@ -6,6 +6,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from controlmesh.i18n import t
+from controlmesh.routing.capabilities import CapabilityRegistry, default_capability_registry, load_capability_registry
 from controlmesh.multiagent.approval_intent import parse_mesh_approval_intent
 from controlmesh.multiagent.plan_review_loop import (
     approve_current_phase,
@@ -80,17 +81,91 @@ async def cmd_agents(orch: Orchestrator, key: SessionKey, text: str) -> Orchestr
             text=fmt(
                 t("agents.header"),
                 SEP,
-                "\n".join([t("agents.empty"), "", "Workflow tip:", "- Use `/mesh <request>` for phased workflows."]),
+                "\n".join(
+                    [
+                        t("agents.empty"),
+                        "",
+                        *_taskhub_policy_lines(orch),
+                        "",
+                        "Workflow tip:",
+                        "- Use `/mesh <request>` for phased workflows.",
+                    ]
+                ),
             )
         )
 
+    policy_lines = ["", *_taskhub_policy_lines(orch)]
     help_lines = [
         "",
         "Workflow tip:",
         "- Use `/mesh <request>` for phased workflows.",
         "- Legacy compatibility remains: `/agents run <request>`.",
     ]
-    return OrchestratorResult(text=fmt(t("agents.header"), SEP, "\n".join(lines + help_lines)))
+    return OrchestratorResult(
+        text=fmt(t("agents.header"), SEP, "\n".join(lines + policy_lines + help_lines))
+    )
+
+
+def _taskhub_policy_lines(orch: Orchestrator) -> list[str]:
+    """Render the TaskHub execution policy block shown by /agents."""
+    config = getattr(orch, "_config", None)
+    tasks_cfg = getattr(config, "tasks", None)
+    routing_cfg = getattr(config, "agent_routing", None)
+    if tasks_cfg is None:
+        return ["TaskHub policy:", "- unavailable: no task configuration"]
+
+    default_provider = str(getattr(tasks_cfg, "default_provider", "") or "")
+    default_model = str(getattr(tasks_cfg, "default_model", "") or "")
+    if not default_provider:
+        default_provider = str(getattr(config, "provider", "") or "")
+    if not default_model:
+        default_model = str(getattr(config, "model", "") or "")
+
+    registry = _load_taskhub_capability_registry(config)
+    background_slots = [slot for slot in registry.slots if slot.mode == "background"]
+    profile_lines = [
+        (
+            f"  - {slot.name}: {slot.provider or 'runtime-default'}"
+            f"{('/' + slot.model) if slot.model else ''}; {slot.role}; {slot.cost_class}; "
+            f"tools={','.join(slot.tools) or '-'}; perms={','.join(slot.business_permissions) or 'none'}"
+        )
+        for slot in background_slots[:5]
+    ]
+    if len(background_slots) > 5:
+        profile_lines.append(f"  - ... {len(background_slots) - 5} more")
+    if not profile_lines:
+        profile_lines.append("  - none")
+
+    max_parallel = getattr(tasks_cfg, "max_parallel", 0)
+    cadence = getattr(tasks_cfg, "cadence", "on_demand")
+    guards = list(getattr(tasks_cfg, "risk_guards", []) or [])
+    guard_text = ", ".join(str(item) for item in guards) or "none"
+    routing_state = "enabled" if bool(getattr(routing_cfg, "enabled", False)) else "disabled"
+    return [
+        "TaskHub policy:",
+        f"- default: {default_provider or '-'} / {default_model or '-'}",
+        f"- max_parallel: {max_parallel}",
+        f"- cadence: {cadence}",
+        f"- routing: {routing_state}",
+        f"- risk_guards: {guard_text}",
+        "- force foreground: release, git_write, repo_write, publish",
+        "- worker profiles:",
+        *profile_lines,
+    ]
+
+
+def _load_taskhub_capability_registry(config: object) -> CapabilityRegistry:
+    routing_cfg = getattr(config, "agent_routing", None)
+    path = str(getattr(routing_cfg, "capability_registry", "") or "")
+    if path:
+        home = getattr(config, "controlmesh_home", "")
+        from pathlib import Path
+
+        registry_path = Path(path)
+        if not registry_path.is_absolute() and home:
+            registry_path = Path(str(home)).expanduser() / registry_path
+        return load_capability_registry(registry_path, config)
+    return default_capability_registry(config)
 
 
 async def _cmd_agents_compat(

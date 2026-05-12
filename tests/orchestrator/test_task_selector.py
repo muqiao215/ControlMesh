@@ -137,3 +137,26 @@ def test_task_selector_renders_selected_topology_without_runtime_checkpoint(tmp_
 
     assert "Selected Topology Task" in resp.text
     assert "topology selection: fanout_merge" in resp.text
+
+
+def test_task_selector_groups_plan_phases_for_same_plan(tmp_path: Path) -> None:
+    hub = _make_hub(tmp_path)
+    submit_a = _submit(name="Phase One")
+    submit_a.plan_id = "demo-plan"
+    submit_a.phase_id = "phase-001"
+    submit_a.phase_title = "Audit"
+    entry_a = hub.registry.create(submit_a, "claude", "opus")
+    hub.registry.update_status(entry_a.task_id, "waiting")
+
+    submit_b = _submit(name="Phase Two")
+    submit_b.plan_id = "demo-plan"
+    submit_b.phase_id = "phase-002"
+    submit_b.phase_title = "Implement"
+    entry_b = hub.registry.create(submit_b, "claude", "opus")
+    hub.registry.update_status(entry_b.task_id, "waiting")
+
+    resp = task_selector_start(hub, 42)
+
+    assert "Phases for `demo-plan`:" in resp.text
+    assert "phase: phase-001: Audit" in resp.text
+    assert "phase: phase-002: Implement" in resp.text

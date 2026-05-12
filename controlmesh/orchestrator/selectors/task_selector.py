@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 import logging
 import time
 from typing import TYPE_CHECKING
@@ -124,17 +125,9 @@ def _append_running(
     if not running:
         return
     lines.append(t("tasks.running_header"))
-    for entry in running:
-        lines.append(_format_entry(entry, now))
-        _append_topology_progress(hub, entry, lines)
-        rows.append(
-            [
-                Button(
-                    text=t("tasks.btn_cancel", name=entry.name[:20]),
-                    callback_data=f"tsc:cancel:{entry.task_id}",
-                ),
-            ]
-        )
+    for entry in _phase_grouped_entries(running, lines):
+        _append_task_entry(hub, entry, lines, now)
+        rows.append([Button(text=t("tasks.btn_cancel", name=entry.name[:20]), callback_data=f"tsc:cancel:{entry.task_id}")])
     if len(running) > 1:
         rows.append([Button(text=t("tasks.btn_cancel_all"), callback_data="tsc:cancelall")])
 
@@ -152,9 +145,8 @@ def _append_waiting(
     if has_prev:
         lines.append("")
     lines.append(t("tasks.waiting_header"))
-    for entry in waiting:
-        lines.append(_format_entry(entry, now))
-        _append_topology_progress(hub, entry, lines)
+    for entry in _phase_grouped_entries(waiting, lines):
+        _append_task_entry(hub, entry, lines, now)
         if entry.last_question:
             lines.append(f"  ↳ {entry.last_question[:80]}")
 
@@ -172,9 +164,8 @@ def _append_finished(
     if has_running:
         lines.append("")
     lines.append(t("tasks.finished_header"))
-    for entry in finished:
-        lines.append(_format_entry(entry, now))
-        _append_topology_progress(hub, entry, lines)
+    for entry in _phase_grouped_entries(finished, lines):
+        _append_task_entry(hub, entry, lines, now)
 
 
 def _append_nav(
@@ -221,6 +212,31 @@ def _format_entry(entry: TaskEntry, now: float) -> str:
     if entry.error:
         parts.append(entry.error[:80])
     return " · ".join(parts)
+
+
+def _append_task_entry(hub: TaskHub, entry: TaskEntry, lines: list[str], now: float) -> None:
+    lines.append(_format_entry(entry, now))
+    if entry.phase_id:
+        phase_label = f"{entry.phase_id}: {entry.phase_title}" if entry.phase_title else entry.phase_id
+        lines.append(f"  ↳ phase: {phase_label}")
+    _append_topology_progress(hub, entry, lines)
+
+
+def _phase_grouped_entries(entries: list[TaskEntry], lines: list[str]) -> list[TaskEntry]:
+    """Append plan phase group headers and return entries in display order."""
+    grouped: dict[str, list[TaskEntry]] = defaultdict(list)
+    ungrouped: list[TaskEntry] = []
+    for entry in entries:
+        if entry.plan_id and entry.phase_id:
+            grouped[entry.plan_id].append(entry)
+        else:
+            ungrouped.append(entry)
+    ordered: list[TaskEntry] = []
+    for plan_id, group in sorted(grouped.items()):
+        lines.append(f"  Phases for `{plan_id}`:")
+        ordered.extend(sorted(group, key=lambda item: item.phase_id))
+    ordered.extend(ungrouped)
+    return ordered
 
 
 def _append_topology_progress(hub: TaskHub, entry: TaskEntry, lines: list[str]) -> None:

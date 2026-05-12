@@ -48,6 +48,7 @@ from controlmesh.orchestrator.commands import (
     cmd_memory,
     cmd_model,
     cmd_route,
+    cmd_session,
     cmd_reset,
     cmd_sessions,
     cmd_settings,
@@ -923,6 +924,8 @@ class Orchestrator:
         reg.register_async("/cm", cmd_controlmesh)
         reg.register_async("/cm ", cmd_controlmesh)
         reg.register_async("/back", cmd_back)
+        reg.register_async("/session", cmd_session)
+        reg.register_async("/session ", cmd_session)
         reg.register_async("/cron", cmd_cron)
         reg.register_async("/diagnose", cmd_diagnose)
         reg.register_async("/upgrade", cmd_upgrade)
