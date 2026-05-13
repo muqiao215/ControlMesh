@@ -50,6 +50,38 @@ Please specify your choices, or I'll use global config defaults."
 Each cron run starts a fresh agent session in `cron_tasks/<task-folder>/`.
 That sub-agent has no Telegram chat history and no main-session context.
 
+## Template Families
+
+Do not treat every task folder under `cron_tasks/` as the same kind of automation.
+There are four different shapes:
+
+1. `scheduled`
+   - normal recurring cron work
+   - use `scheduled-recurring-template/` as the mental default
+
+2. `monitor`
+   - bounded high-frequency monitoring for release or CI waiting windows
+   - use `release-ci-monitor-template/` as the starting point
+
+3. `flow-triggered`
+   - a bounded execution slice owned by a larger local workflow
+   - use `flow-triggered-template/` when the task is phase-driven rather than permanently scheduled
+
+4. `webhook-triggered`
+   - an inbound event-driven task
+   - use `webhook-triggered-template/` for shape, but prefer `tools/webhook_tools/` when the trigger is truly external
+
+## Special Pattern: Release-Phase Monitor Jobs
+
+Use `release-ci-monitor-template/` for temporary high-frequency release waits.
+
+Monitor rules:
+
+- stop after a useful terminal state
+- prefer direct narrow repair first when failure is obvious and local
+- hand back the exact next action
+- remove or disable the monitor after the handoff window ends
+
 ## Task Folder Structure
 
 ```text
