@@ -211,7 +211,7 @@ class TestSubmit:
         submit = _submit(prompt="review current diff", name="Unsupported provider")
         submit.provider_override = "openai"
 
-        with pytest.raises(ValueError, match=r'not an assistant slot'):
+        with pytest.raises(ValueError, match=r"not an assistant slot"):
             hub.submit(submit)
 
     async def test_default_slot_selected_when_no_slot_or_provider(
@@ -560,7 +560,7 @@ agent_slots:
         submit = _submit(prompt="Run test command", name="Bad provider token")
         submit.provider_override = "claude/gpt-5.5"
 
-        with pytest.raises(ValueError, match=r'not an assistant slot'):
+        with pytest.raises(ValueError, match=r"not an assistant slot"):
             hub.submit(submit)
 
         await hub.shutdown()

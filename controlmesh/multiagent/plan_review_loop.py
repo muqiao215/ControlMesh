@@ -1488,3 +1488,17 @@ def _host_job_status_lines(job: Any, *, command_prefix: str) -> list[str]:
     if awaiting:
         lines.extend(["Approve with:", f"approve {awaiting} {getattr(job, 'job_id', '')}"])
     return lines
+
+
+def pending_release_approval_text(orch: Orchestrator) -> str | None:
+    """Return the most actionable pending release approval prompt, if any."""
+    runner = getattr(orch, "host_job_runner", None)
+    if runner is None:
+        return None
+    for job in runner.list_jobs():
+        state = str(getattr(job, "state", "") or "")
+        step_id = str(getattr(job, "current_step_id", "") or "")
+        job_id = str(getattr(job, "job_id", "") or "")
+        if state == "awaiting_approval" and step_id and job_id:
+            return render_explicit_step_required(target=job_id, step_id=step_id)
+    return None

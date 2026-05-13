@@ -294,6 +294,12 @@ def _string_config_value(source: object, name: str) -> str:
     return value.strip() if isinstance(value, str) else ""
 
 
+def _mapping_config_value(source: object, name: str) -> dict[str, object]:
+    """Return one config mapping only when it is a real dict."""
+    value = getattr(source, name, None)
+    return value if isinstance(value, dict) else {}
+
+
 def _taskhub_slots_config(config: object) -> dict[str, dict[str, object]]:
     """Return merged TaskHub slot config with built-in conservative defaults."""
     merged = {name: dict(values) for name, values in _DEFAULT_ASSISTANT_SLOTS.items()}
@@ -322,13 +328,12 @@ def _taskhub_slots_config(config: object) -> dict[str, dict[str, object]]:
                 "mode": slot.mode,
             },
         )
-    raw = getattr(config, "slots", {}) or {}
-    if isinstance(raw, dict):
-        for name, values in raw.items():
-            slot_name = str(name or "").strip()
-            if not slot_name or not isinstance(values, dict):
-                continue
-            merged[slot_name] = {**merged.get(slot_name, {}), **values}
+    raw = _mapping_config_value(config, "slots")
+    for name, values in raw.items():
+        slot_name = str(name or "").strip()
+        if not slot_name or not isinstance(values, dict):
+            continue
+        merged[slot_name] = {**merged.get(slot_name, {}), **values}
     return merged
 
 
@@ -343,6 +348,15 @@ def _config_digest(path_text: str) -> str:
 
 def _available_slot_names(config: object) -> list[str]:
     return sorted(_taskhub_slots_config(config))
+
+
+def _command_is_available(command: str) -> bool:
+    normalized = command.strip()
+    if not normalized:
+        return False
+    if "/" not in normalized:
+        return True
+    return shutil.which(normalized) is not None or Path(normalized).expanduser().exists()
 
 
 def _invalid_slot_message(token: str, *, config: object) -> str:
@@ -538,7 +552,7 @@ class TaskHub:
             if not assistant or not command:
                 raise ValueError(f"TaskHub assistant slot '{slot_name}' is incomplete.")
             resolved_command = shutil.which(command) or command
-            if shutil.which(command) is None and not Path(command).expanduser().exists():
+            if not _command_is_available(command):
                 raise ValueError(
                     f"TaskHub assistant slot '{slot_name}' points to command '{command}', which is not executable."
                 )
@@ -567,7 +581,8 @@ class TaskHub:
                 raise ValueError(_invalid_slot_message(legacy, config=self._config))
             mapped = _LEGACY_PROVIDER_SLOT_ALIASES.get(legacy)
             if mapped:
-                return build(mapped)
+                with contextlib.suppress(ValueError):
+                    return build(mapped)
             if legacy in slots:
                 return build(legacy)
             raise ValueError(_invalid_slot_message(legacy, config=self._config))
@@ -576,6 +591,9 @@ class TaskHub:
         if default_slot:
             with contextlib.suppress(ValueError):
                 return build(default_slot)
+        for preferred in _DEFAULT_ASSISTANT_SLOTS:
+            with contextlib.suppress(ValueError):
+                return build(preferred)
         for slot_name in _available_slot_names(self._config):
             with contextlib.suppress(ValueError):
                 return build(slot_name)
@@ -1425,6 +1443,10 @@ class TaskHub:
 
         except asyncio.CancelledError:
             elapsed = time.monotonic() - t0
+            current = self._registry.get(entry.task_id)
+            current_status = str(current.status if current is not None else entry.status)
+            if current_status == "failed":
+                raise
             self._update_task_status(
                 entry.task_id,
                 status="cancelled",

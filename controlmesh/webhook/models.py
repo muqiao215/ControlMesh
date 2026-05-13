@@ -55,6 +55,7 @@ class WebhookEntry:
     workunit_kind: str | None = None
     topology: str | None = None
     route: str | None = None
+    slot: str | None = None
 
     def __post_init__(self) -> None:
         if not self.created_at:
@@ -95,6 +96,7 @@ class WebhookEntry:
             "workunit_kind": self.workunit_kind,
             "topology": self.topology,
             "route": self.route,
+            "slot": self.slot,
         }
 
     @classmethod
@@ -133,6 +135,7 @@ class WebhookEntry:
             workunit_kind=data.get("workunit_kind"),
             topology=data.get("topology"),
             route=data.get("route"),
+            slot=data.get("slot"),
         )
 
 

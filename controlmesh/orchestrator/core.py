@@ -604,7 +604,11 @@ class Orchestrator:
                 is_rejected_broad_approval,
                 parse_short_approval_intent,
             )
-            from controlmesh.multiagent.plan_review_loop import approve_current_phase, consume_pending_repair_feedback
+            from controlmesh.multiagent.plan_review_loop import (
+                approve_current_phase,
+                consume_pending_repair_feedback,
+                pending_release_approval_text,
+            )
 
             approval_intent = parse_short_approval_intent(dispatch.text)
             if approval_intent is not None:
@@ -617,8 +621,12 @@ class Orchestrator:
                     )
                 )
             if is_rejected_broad_approval(dispatch.text):
+                pending = pending_release_approval_text(self)
                 return OrchestratorResult(
-                    text="Release approval requires an explicit step.\n\nUse:\napprove <step_id> <target>"
+                    text=pending
+                    or "Release approval is waiting on one specific host-job step.\n\n"
+                    "Use the exact command shown in `/mesh status <target>`.\n"
+                    "Format:\napprove <step_id> <target>"
                 )
 
             repair_result = await consume_pending_repair_feedback(

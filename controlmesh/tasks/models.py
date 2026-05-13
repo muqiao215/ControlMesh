@@ -108,10 +108,10 @@ class TaskEntry:
     parent_agent: str
     name: str
     prompt_preview: str
-    binding: TaskBindingSnapshot | None
-    provider: str
-    model: str
-    status: str  # running | done | failed | cancelled | waiting | detached | recovering | stale
+    binding: TaskBindingSnapshot | None = None
+    provider: str = ""
+    model: str = ""
+    status: str = "running"  # running | done | failed | cancelled | waiting | detached | recovering | stale
     transport: str = "tg"
     topology: str = ""
     session_id: str = ""
