@@ -165,7 +165,7 @@ def build_command_guide_text(
     )
     visible = dict(get_bot_commands(agent_name=agent_name))
     controlmesh_lines = [
-        f"/interrupt — {visible.get('interrupt', '中断当前任务')}",
+        f"/interrupt — {visible.get('interrupt', '中断当前执行，立即接受新消息')}",
         f"/cm — {visible.get('cm', '打开 Native Commands')}",
         "/back — 返回 ControlMesh 命令",
         *[
@@ -222,6 +222,7 @@ def _native_command_markdown(
     )
     return (
         "**Native Commands**\n"
+        "- `/interrupt` stop the current running task and accept new input immediately\n"
         "- Send slash commands supported by the current CLI\n"
         "- ControlMesh owned commands still stay in ControlMesh\n"
         "- Unknown `/xxx` commands pass through to the current CLI\n"

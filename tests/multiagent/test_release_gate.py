@@ -85,8 +85,9 @@ async def test_approve_only_current_host_step(tmp_path: Path) -> None:
     )
     hub = _FakeTaskHub()
     orch = _make_orch(tmp_path, hub)
-    orch.host_job_runner = _FakeHostJobRunner(
-        HostJob(
+    orch.host_job_runner = (
+        _FakeHostJobRunner(
+            HostJob(
             job_id="release-v0.29.0",
             plan_id=plan_id,
             repo="https://github.com/org/repo",
@@ -95,6 +96,7 @@ async def test_approve_only_current_host_step(tmp_path: Path) -> None:
             state="awaiting_approval",
             current_step_id="push_main",
             steps=[HostJobStep(id="push_main", title="push", command="git push origin main", state="awaiting_approval", approval_required=True)],
+            )
         )
     )
 
@@ -150,8 +152,9 @@ async def test_approve_without_step_is_rejected_with_explicit_instruction(tmp_pa
     )
     hub = _FakeTaskHub()
     orch = _make_orch(tmp_path, hub)
-    orch.host_job_runner = _FakeHostJobRunner(
-        HostJob(
+    orch.host_job_runner = (
+        _FakeHostJobRunner(
+            HostJob(
             job_id="release-v0.29.0",
             plan_id=plan_id,
             repo="https://github.com/org/repo",
@@ -160,6 +163,7 @@ async def test_approve_without_step_is_rejected_with_explicit_instruction(tmp_pa
             state="awaiting_approval",
             current_step_id="push_main",
             steps=[HostJobStep(id="push_main", title="push", command="git push origin main", state="awaiting_approval", approval_required=True)],
+            )
         )
     )
 
@@ -216,8 +220,9 @@ async def test_push_tag_requires_separate_approval(tmp_path: Path) -> None:
     )
     hub = _FakeTaskHub()
     orch = _make_orch(tmp_path, hub)
-    orch.host_job_runner = _FakeHostJobRunner(
-        HostJob(
+    orch.host_job_runner = (
+        _FakeHostJobRunner(
+            HostJob(
             job_id="release-v0.29.0",
             plan_id=plan_id,
             repo="https://github.com/org/repo",
@@ -226,6 +231,7 @@ async def test_push_tag_requires_separate_approval(tmp_path: Path) -> None:
             state="awaiting_approval",
             current_step_id="push_main",
             steps=[HostJobStep(id="push_main", title="push", command="git push origin main", state="awaiting_approval", approval_required=True)],
+            )
         )
     )
 
@@ -281,8 +287,9 @@ async def test_gh_release_requires_separate_approval(tmp_path: Path) -> None:
     )
     hub = _FakeTaskHub()
     orch = _make_orch(tmp_path, hub)
-    orch.host_job_runner = _FakeHostJobRunner(
-        HostJob(
+    orch.host_job_runner = (
+        _FakeHostJobRunner(
+            HostJob(
             job_id="release-v0.29.0",
             plan_id=plan_id,
             repo="https://github.com/org/repo",
@@ -291,6 +298,7 @@ async def test_gh_release_requires_separate_approval(tmp_path: Path) -> None:
             state="running",
             current_step_id="verify_remote_tag",
             steps=[HostJobStep(id="verify_remote_tag", title="verify", command="git ls-remote --tags origin v0.29.0", state="completed")],
+            )
         )
     )
 

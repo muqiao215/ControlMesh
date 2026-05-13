@@ -380,7 +380,7 @@ class SequentialMiddleware(BaseMiddleware):
         try:
             sent = await self._bot.send_message(
                 chat_id,
-                "<i>[Message in queue... Use /interrupt to interrupt current work.]</i>",
+                "<i>[Message in queue. Tap Cancel message to drop only this queued message. Use /interrupt to stop the current running task and accept new input.]</i>",
                 parse_mode=ParseMode.HTML,
                 reply_parameters=ReplyParameters(
                     message_id=event.message_id,

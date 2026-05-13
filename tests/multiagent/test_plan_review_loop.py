@@ -150,6 +150,9 @@ class _FakeHostJobRunner:
             return self.job
         return None
 
+    def list_jobs(self) -> list[HostJob]:
+        return [self.job] if self.job is not None else []
+
 
 def _make_orch(tmp_path: Path, hub: _FakeTaskHub) -> SimpleNamespace:
     orch = SimpleNamespace(
@@ -183,6 +186,39 @@ def test_pending_release_approval_text_ignores_runner_without_list_jobs(tmp_path
     orch.host_job_runner = SimpleNamespace()
 
     assert pending_release_approval_text(orch) is None
+
+
+def test_pending_release_approval_text_returns_explicit_step(tmp_path: Path) -> None:
+    orch = _make_orch(tmp_path, _FakeTaskHub())
+    orch.host_job_runner = (
+        _FakeHostJobRunner(
+            HostJob(
+                job_id="release-v0.31.0",
+                plan_id="plan-x",
+                repo="https://github.com/org/repo",
+                version="0.31.0",
+                tag="v0.31.0",
+                state="awaiting_approval",
+                current_step_id="push_tag",
+                steps=[
+                    HostJobStep(
+                        id="push_tag",
+                        title="push tag",
+                        command="git push origin v0.31.0",
+                        state="awaiting_approval",
+                        approval_required=True,
+                    )
+                ],
+            )
+        )
+    )
+
+    text = pending_release_approval_text(orch)
+
+    assert text is not None
+    assert "Release approval requires an explicit step." in text
+    assert "push_tag" in text
+    assert "approve push_tag release-v0.31.0" in text
 
 
 @pytest.mark.asyncio
@@ -432,15 +468,17 @@ async def test_approve_phase_resumes_plan_level_publish_gate(tmp_path: Path) -> 
     )
     hub = _FakeTaskHub()
     orch = _make_orch(tmp_path, hub)
-    orch.host_job_runner = _FakeHostJobRunner(
-        HostJob(
-            job_id="release-v0.24.33",
-            plan_id=plan_id,
-            repo="https://github.com/org/repo",
-            version="0.24.33",
-            tag="v0.24.33",
-            state="pending",
-            steps=[HostJobStep(id="pytest_full", title="pytest", command="uv run pytest -q")],
+    orch.host_job_runner = (
+        _FakeHostJobRunner(
+            HostJob(
+                job_id="release-v0.24.33",
+                plan_id=plan_id,
+                repo="https://github.com/org/repo",
+                version="0.24.33",
+                tag="v0.24.33",
+                state="pending",
+                steps=[HostJobStep(id="pytest_full", title="pytest", command="uv run pytest -q")],
+            )
         )
     )
 
@@ -512,16 +550,18 @@ async def test_release_publish_phase_marks_executed_before_generic_review(tmp_pa
     )
     hub = _FakeTaskHub(entry)
     orch = _make_orch(tmp_path, hub)
-    orch.host_job_runner = _FakeHostJobRunner(
-        HostJob(
-            job_id="release-v0.24.33",
-            plan_id=plan_id,
-            repo="/repo",
-            version="0.24.33",
-            tag="v0.24.33",
-            state="completed",
-            current_step_id="gh_release_create",
-            steps=[HostJobStep(id="gh_release_create", title="release", command="gh release create")],
+    orch.host_job_runner = (
+        _FakeHostJobRunner(
+            HostJob(
+                job_id="release-v0.24.33",
+                plan_id=plan_id,
+                repo="/repo",
+                version="0.24.33",
+                tag="v0.24.33",
+                state="completed",
+                current_step_id="gh_release_create",
+                steps=[HostJobStep(id="gh_release_create", title="release", command="gh release create")],
+            )
         )
     )
 
@@ -876,24 +916,26 @@ def test_workflow_status_includes_recent_main_inbox_items(tmp_path: Path) -> Non
         )
     )
     orch = _make_orch(tmp_path, hub)
-    orch.host_job_runner = _FakeHostJobRunner(
-        HostJob(
-            job_id="release-v0.24.33",
-            plan_id=plan_id,
-            repo="/repo",
-            version="0.24.33",
-            tag="v0.24.33",
-            state="awaiting_approval",
-            current_step_id="push_tag",
-            steps=[
-                HostJobStep(
-                    id="push_tag",
-                    title="push tag",
-                    command="git push origin v0.24.33",
-                    state="awaiting_approval",
-                    approval_required=True,
-                )
-            ],
+    orch.host_job_runner = (
+        _FakeHostJobRunner(
+            HostJob(
+                job_id="release-v0.24.33",
+                plan_id=plan_id,
+                repo="/repo",
+                version="0.24.33",
+                tag="v0.24.33",
+                state="awaiting_approval",
+                current_step_id="push_tag",
+                steps=[
+                    HostJobStep(
+                        id="push_tag",
+                        title="push tag",
+                        command="git push origin v0.24.33",
+                        state="awaiting_approval",
+                        approval_required=True,
+                    )
+                ],
+            )
         )
     )
     ensure_publish_gate(

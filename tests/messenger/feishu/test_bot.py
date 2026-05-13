@@ -252,6 +252,7 @@ class TestFeishuBotRouting:
         text = build_command_guide_text(bot._config)
 
         assert "/interrupt" in text
+        assert text.index("/interrupt") < text.index("/cm")
 
     async def test_handle_incoming_slash_command_passes_raw_text_to_orchestrator(
         self,

@@ -43,6 +43,7 @@ def render_native_command_registry(snapshot: ProviderIntrospection) -> str:
     lines.extend(
         [
             "",
+            "- `/interrupt` 中断当前执行，立即接受新消息",
             "- `/back` 返回 ControlMesh 命令",
             "",
             "规则：ControlMesh owned / reserved 命令优先；只有未注册的 `/xxx` 才透传给当前 CLI。",

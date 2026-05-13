@@ -756,7 +756,10 @@ class TestForumTopicIndicator:
         # Verify send_message was called with message_thread_id=42
         bot.send_message.assert_called_once()
         call_kwargs = bot.send_message.call_args.kwargs
-        assert "/interrupt" in bot.send_message.call_args.args[1]
+        indicator_text = bot.send_message.call_args.args[1]
+        assert "Tap Cancel message" in indicator_text
+        assert "/interrupt" in indicator_text
+        assert "drop only this queued message" in indicator_text
         assert call_kwargs.get("message_thread_id") == 42
 
         release.set()

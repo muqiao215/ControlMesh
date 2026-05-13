@@ -191,6 +191,7 @@ async def test_controlmesh_registry_mentions_interrupt(orch: Orchestrator) -> No
     result = await cmd_back(orch, SessionKey(chat_id=1), "/back")
 
     assert "/interrupt" in result.text
+    assert result.text.index("/interrupt") < result.text.index("/new")
 
 
 async def test_tasks_new_does_not_enter_foreground_session_history(orch: Orchestrator) -> None:

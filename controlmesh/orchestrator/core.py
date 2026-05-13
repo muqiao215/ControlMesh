@@ -624,8 +624,9 @@ class Orchestrator:
                 pending = pending_release_approval_text(self)
                 return OrchestratorResult(
                     text=pending
-                    or "Release approval is waiting on one specific host-job step.\n\n"
-                    "Use the exact command shown in `/mesh status <target>`.\n"
+                    or "Release approval requires an explicit step.\n\n"
+                    "Use `/mesh status <target>` to inspect the current host-job step, then approve exactly that step.\n"
+                    "This is a narrow host-job approval, not a generic continue/ok acknowledgement.\n\n"
                     "Format:\napprove <step_id> <target>"
                 )
 
