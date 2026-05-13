@@ -41,6 +41,50 @@ class TestBuildCmd:
         assert result.cmd[-1] == "hello"
         assert result.cmd[-2] == "--"
 
+    def test_claude_root_bypass_falls_back_to_dont_ask(self) -> None:
+        exec_config = TaskExecutionConfig(
+            provider="claude",
+            model="sonnet",
+            reasoning_effort="",
+            cli_parameters=[],
+            permission_mode="bypassPermissions",
+            working_dir="/tmp",
+            file_access="all",
+            claude_root_permission_mode="dontAsk",
+        )
+        with (
+            patch("controlmesh.cron.execution.which", return_value="/usr/bin/claude"),
+            patch("controlmesh.cron.execution.os.geteuid", return_value=0),
+        ):
+            result = build_cmd(exec_config, "hello")
+        assert result is not None
+        mode_idx = result.cmd.index("--permission-mode")
+        assert result.cmd[mode_idx + 1] == "dontAsk"
+        assert "--dangerously-skip-permissions" not in result.cmd
+        assert result.env_overrides == {}
+
+    def test_claude_root_bypass_escape_hatch_uses_is_sandbox(self) -> None:
+        exec_config = TaskExecutionConfig(
+            provider="claude",
+            model="sonnet",
+            reasoning_effort="",
+            cli_parameters=[],
+            permission_mode="bypassPermissions",
+            working_dir="/tmp",
+            file_access="all",
+            claude_root_force_bypass_via_is_sandbox=True,
+        )
+        with (
+            patch("controlmesh.cron.execution.which", return_value="/usr/bin/claude"),
+            patch("controlmesh.cron.execution.os.geteuid", return_value=0),
+        ):
+            result = build_cmd(exec_config, "hello")
+        assert result is not None
+        assert "--dangerously-skip-permissions" in result.cmd
+        mode_idx = result.cmd.index("--permission-mode")
+        assert result.cmd[mode_idx + 1] == "bypassPermissions"
+        assert result.env_overrides == {"IS_SANDBOX": "1"}
+
     def test_codex_provider(self) -> None:
         exec_config = TaskExecutionConfig(
             provider="codex",
@@ -188,6 +232,27 @@ class TestExecuteOneShotStdin:
         call_kwargs = mock_exec.call_args[1]
         assert call_kwargs["stdin"] == asyncio.subprocess.DEVNULL
         proc.communicate.assert_called_once_with(input=None)
+
+    async def test_env_overrides_are_forwarded(self) -> None:
+        with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec:
+            proc = AsyncMock()
+            proc.communicate.return_value = (b'{"result":"ok"}', b"")
+            proc.returncode = 0
+            mock_exec.return_value = proc
+
+            await execute_one_shot(
+                OneShotCommand(
+                    cmd=["/usr/bin/claude", "-p", "--", "hello"],
+                    env_overrides={"IS_SANDBOX": "1"},
+                ),
+                cwd=Path("/tmp"),
+                provider="claude",
+                timeout_seconds=60,
+                timeout_label="Test",
+            )
+
+        call_kwargs = mock_exec.call_args[1]
+        assert call_kwargs["env"]["IS_SANDBOX"] == "1"
 
 
 class TestEnrichInstruction:

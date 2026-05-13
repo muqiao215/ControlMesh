@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -27,6 +28,7 @@ class OneShotCommand:
 
     cmd: list[str] = field(default_factory=list)
     stdin_input: bytes | None = None
+    env_overrides: dict[str, str] = field(default_factory=dict)
 
 
 def build_cmd(exec_config: TaskExecutionConfig, prompt: str) -> OneShotCommand | None:
@@ -154,14 +156,40 @@ def _build_claude_cmd(exec_config: TaskExecutionConfig, prompt: str) -> OneShotC
         "json",
         "--model",
         exec_config.model,
-        "--permission-mode",
-        exec_config.permission_mode,
         "--no-session-persistence",
     ]
+    permission_mode = _claude_permission_mode(exec_config)
+    env_overrides: dict[str, str] = {}
+    if _should_force_claude_root_bypass(exec_config):
+        cmd.append("--dangerously-skip-permissions")
+        env_overrides["IS_SANDBOX"] = "1"
+    cmd += ["--permission-mode", permission_mode]
     # Add extra CLI parameters
     cmd.extend(exec_config.cli_parameters)
     cmd += ["--", prompt]
-    return OneShotCommand(cmd=cmd)
+    return OneShotCommand(cmd=cmd, env_overrides=env_overrides)
+
+
+def _should_force_claude_root_bypass(exec_config: TaskExecutionConfig) -> bool:
+    """Return whether Claude root bypass escape hatch should be enabled."""
+    geteuid = getattr(os, "geteuid", None)
+    return bool(
+        exec_config.permission_mode == "bypassPermissions"
+        and exec_config.claude_root_force_bypass_via_is_sandbox
+        and callable(geteuid)
+        and geteuid() == 0
+    )
+
+
+def _claude_permission_mode(exec_config: TaskExecutionConfig) -> str:
+    """Return the effective Claude permission mode for one-shot cron runs."""
+    mode = exec_config.permission_mode
+    if _should_force_claude_root_bypass(exec_config):
+        return mode
+    geteuid = getattr(os, "geteuid", None)
+    if mode == "bypassPermissions" and callable(geteuid) and geteuid() == 0:
+        return exec_config.claude_root_permission_mode or "dontAsk"
+    return mode
 
 
 def _build_gemini_cmd(exec_config: TaskExecutionConfig, prompt: str) -> OneShotCommand | None:
@@ -254,12 +282,16 @@ async def execute_one_shot(
 ) -> OneShotExecutionResult:
     """Run one provider CLI command with timeout and normalized status/result."""
     stdin_input = one_shot.stdin_input
+    env = os.environ.copy()
+    if one_shot.env_overrides:
+        env.update(one_shot.env_overrides)
     proc = await asyncio.create_subprocess_exec(
         *one_shot.cmd,
         cwd=str(cwd),
         stdin=asyncio.subprocess.PIPE if stdin_input is not None else asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        env=env,
         creationflags=_CREATION_FLAGS,
     )
 

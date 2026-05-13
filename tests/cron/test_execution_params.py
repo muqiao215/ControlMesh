@@ -23,7 +23,10 @@ class TestBuildCmdWithTaskExecutionConfig:
             file_access="all",
         )
 
-        with patch("controlmesh.cron.execution.which", return_value="/usr/bin/claude"):
+        with (
+            patch("controlmesh.cron.execution.which", return_value="/usr/bin/claude"),
+            patch("controlmesh.cron.execution.os.geteuid", return_value=1000),
+        ):
             result = build_cmd(exec_config, "hello world")
 
         assert result is not None
