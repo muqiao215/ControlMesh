@@ -105,6 +105,27 @@ def test_cron_add_accepts_opencode_provider(tmp_path: Path) -> None:
     assert job["model"] == "openai/gpt-4.1"
 
 
+def test_cron_add_monitor_job_kind_marks_job_and_output(tmp_path: Path) -> None:
+    result = _run_tool(
+        tmp_path,
+        [
+            *_full_args("release-ci-monitor"),
+            "--job-kind",
+            "monitor",
+        ],
+    )
+    assert result.returncode == 0
+
+    output = json.loads(result.stdout)
+    assert output["job_kind"] == "monitor"
+    assert "monitor_notes" in output
+
+    data = json.loads((tmp_path / "cron_jobs.json").read_text(encoding="utf-8"))
+    job = next(j for j in data["jobs"] if j["id"] == "release-ci-monitor")
+    assert job["job_kind"] == "monitor"
+    assert "short-lived monitor" in job["agent_instruction"]
+
+
 def test_cron_add_duplicate_exits_1(tmp_path: Path) -> None:
     _run_tool(tmp_path, _full_args("dup"))
     result = _run_tool(tmp_path, _full_args("dup"))

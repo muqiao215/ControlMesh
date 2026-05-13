@@ -2513,6 +2513,13 @@ async def test_cron_run_dry_run_executes_preview_only(orch: Orchestrator) -> Non
     assert "Cron Dry Run" in result.text
 
 
+async def test_cron_help_mentions_monitor_entry(orch: Orchestrator) -> None:
+    result = await cmd_cron(orch, SessionKey(chat_id=0), "/cron help")
+
+    assert "--job-kind monitor" in result.text
+    assert "不是普通周期任务" in result.text
+
+
 # -- cmd_diagnose --
 
 

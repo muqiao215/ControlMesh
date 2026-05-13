@@ -24,6 +24,7 @@ def test_cronjob_new_fields_defaults() -> None:
     assert job.model is None
     assert job.reasoning_effort is None
     assert job.cli_parameters == []
+    assert job.job_kind == "recurring"
     assert job.execution_mode == "oneshot"
     assert job.workunit_kind is None
     assert job.risk is None
@@ -74,6 +75,7 @@ def test_cronjob_to_dict_includes_new_fields() -> None:
     assert data["model"] == "gpt-5.2-codex"
     assert data["reasoning_effort"] == "high"
     assert data["cli_parameters"] == ["--fast"]
+    assert data["job_kind"] == "recurring"
     assert data["execution_mode"] == "oneshot"
     assert data["workunit_kind"] is None
     assert data["risk"] is None
@@ -152,6 +154,7 @@ def test_cronjob_from_dict_backward_compatibility() -> None:
     assert job.model is None
     assert job.reasoning_effort is None
     assert job.cli_parameters == []
+    assert job.job_kind == "recurring"
     assert job.execution_mode == "oneshot"
     assert job.workunit_kind is None
     assert job.risk is None
@@ -342,3 +345,25 @@ def test_cronjob_taskhub_fields_round_trip() -> None:
     assert restored.workunit_kind == "test_execution"
     assert restored.risk == "low"
     assert restored.output_policy == "summarized_only"
+
+
+def test_cronjob_monitor_kind_round_trip() -> None:
+    """Monitor job profile should survive serialization."""
+    original = CronJob(
+        id="monitor-1",
+        title="Release CI Monitor",
+        description="Watch one release CI run",
+        schedule="*/2 * * * *",
+        task_folder="release-ci-monitor/",
+        agent_instruction="Monitor the release CI run and stop after handoff.",
+        job_kind="monitor",
+        execution_mode="taskhub",
+        workunit_kind="test_execution",
+        risk="low",
+        output_policy="summarized_only",
+    )
+
+    restored = CronJob.from_dict(original.to_dict())
+
+    assert restored.job_kind == "monitor"
+    assert restored.execution_mode == "taskhub"

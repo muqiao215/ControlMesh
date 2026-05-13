@@ -128,6 +128,7 @@ async def _build_page(
         last_run = ""
         if job.last_run_status:
             last_run = f" | last: {job.last_run_status}"
+        kind_tag = " [monitor]" if getattr(job, "job_kind", "recurring") == "monitor" else ""
         routing = ""
         if job.chat_id:
             routing = f"\n   → Chat {job.chat_id}"
@@ -137,7 +138,7 @@ async def _build_page(
             t(
                 "cron.job_line",
                 number=number,
-                title=job.title,
+                title=f"{job.title}{kind_tag}",
                 status=status_tag,
                 last_run=last_run,
                 schedule=job.schedule,

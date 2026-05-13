@@ -48,6 +48,9 @@ class CronJob:
     # Optional dependency for sequential execution
     dependency: str | None = None
 
+    # Job profile: stable recurring automation vs bounded monitor-style scheduler
+    job_kind: str = "recurring"
+
     # Execution split: legacy one-shot vs TaskHub-backed background task
     execution_mode: str = "oneshot"
     workunit_kind: str | None = None
@@ -84,6 +87,7 @@ class CronJob:
             "quiet_start": self.quiet_start,
             "quiet_end": self.quiet_end,
             "dependency": self.dependency,
+            "job_kind": self.job_kind,
             "execution_mode": self.execution_mode,
             "workunit_kind": self.workunit_kind,
             "risk": self.risk,
@@ -119,6 +123,7 @@ class CronJob:
             quiet_start=data.get("quiet_start"),
             quiet_end=data.get("quiet_end"),
             dependency=data.get("dependency"),
+            job_kind=data.get("job_kind", "recurring"),
             execution_mode=data.get("execution_mode", "oneshot"),
             workunit_kind=data.get("workunit_kind"),
             risk=data.get("risk"),

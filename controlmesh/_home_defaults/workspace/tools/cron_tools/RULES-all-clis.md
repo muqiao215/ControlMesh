@@ -104,6 +104,16 @@ python3 tools/cron_tools/cron_add.py \
   --schedule "0 9 * * *" \
   --provider gemini \
   --model gemini-2.5-pro
+
+# Monitor example:
+python3 tools/cron_tools/cron_add.py \
+  --name "release-ci-monitor" \
+  --title "Release CI Monitor" \
+  --description "Watch one release-phase CI or publish run" \
+  --schedule "*/2 * * * *" \
+  --job-kind monitor \
+  --provider claude \
+  --model sonnet
 ```
 
 **Available parameters:**
@@ -111,6 +121,7 @@ python3 tools/cron_tools/cron_add.py \
 - `--model` - Model choice (optional, uses global config if omitted)
 - `--reasoning-effort` - Codex only: thinking level (optional, defaults to `medium`)
 - `--cli-parameters` - Advanced: JSON array of CLI flags (only if user explicitly requests)
+- `--job-kind monitor` - bounded high-frequency release/CI monitor; not normal recurring automation
 
 ### List Jobs
 

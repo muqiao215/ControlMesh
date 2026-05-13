@@ -39,6 +39,11 @@ _DEFAULT_INSTRUCTION = (
     "Read through TASK_DESCRIPTION.md and carry it out. Stay focused and complete the task neatly."
 )
 
+_DEFAULT_MONITOR_INSTRUCTION = (
+    "Read through TASK_DESCRIPTION.md and carry it out as a short-lived monitor. "
+    "If the watched target reaches a useful terminal state, stop after producing the handoff."
+)
+
 _TUTORIAL = """\
 CRON ADD -- Create a scheduled cron job with its own workspace.
 
@@ -58,6 +63,8 @@ OPTIONAL:
   --timezone      IANA timezone override for this job (e.g. 'Europe/Berlin')
                   If omitted, uses user_timezone from config.json.
                   If config has no user_timezone either, falls back to UTC.
+  --job-kind      'recurring' (default) or 'monitor'
+                  Use 'monitor' only for bounded high-frequency release/CI wait states.
 
 EXECUTION OVERRIDES (optional, override global config for this specific job):
   --provider          CLI provider: 'claude', 'codex', 'gemini', 'claw-code', or 'opencode'
@@ -165,6 +172,17 @@ Job with dependency (prevent Chrome conflicts):
       --cli-parameters '["--chrome"]'
   # If multiple jobs have --dependency chrome_browser, they run one at a time
 
+Release monitor job (bounded high-frequency checker):
+  python tools/cron_tools/cron_add.py \\
+      --name "release-ci-watch" \\
+      --title "Release CI Monitor" \\
+      --description "Watch one release CI run and hand control back quickly" \\
+      --schedule "*/2 * * * *" \\
+      --job-kind monitor \\
+      --provider claude \\
+      --model sonnet
+  # Use monitor only for short-lived release/publish waiting phases, not normal recurring automation
+
 WHAT HAPPENS AFTER CREATION:
   1. Open cron_tasks/<name>/TASK_DESCRIPTION.md
   2. Fill in the Assignment and Output sections with specific instructions
@@ -224,6 +242,12 @@ def main() -> None:
         "--timezone",
         help="IANA timezone for this job (e.g. 'Europe/Berlin'). "
         "Overrides config user_timezone for this job only.",
+    )
+    parser.add_argument(
+        "--job-kind",
+        choices=["recurring", "monitor"],
+        default="recurring",
+        help="Cron job profile: stable recurring automation or a bounded monitor job.",
     )
     parser.add_argument(
         "--provider",
@@ -373,11 +397,14 @@ def main() -> None:
         "description": args.description,
         "schedule": args.schedule,
         "task_folder": name,
-        "agent_instruction": _DEFAULT_INSTRUCTION,
+        "agent_instruction": (
+            _DEFAULT_MONITOR_INSTRUCTION if args.job_kind == "monitor" else _DEFAULT_INSTRUCTION
+        ),
         "enabled": True,
         "created_at": datetime.now(UTC).isoformat(),
         "last_run_at": None,
         "last_run_status": None,
+        "job_kind": args.job_kind,
     }
     if args.timezone:
         job["timezone"] = args.timezone.strip()
@@ -412,6 +439,7 @@ def main() -> None:
     effective_tz = args.timezone.strip() if args.timezone else read_user_timezone()
     result: dict = {
         "job_id": name,
+        "job_kind": args.job_kind,
         "schedule": args.schedule,
         "timezone": effective_tz or "UTC (no user_timezone configured)",
         "task_folder": task_path,
@@ -446,6 +474,12 @@ def main() -> None:
             "Ask the user for their timezone (country/city) and set user_timezone "
             'in config.json (e.g. "Europe/Berlin", "America/New_York").'
         )
+    if args.job_kind == "monitor":
+        result["monitor_notes"] = [
+            "This job is marked as a bounded monitor, not normal recurring automation.",
+            "Use it for short-lived release/CI/publish waiting phases and stop or remove it after handoff.",
+            "Prefer the release-ci-monitor-template task folder shape when filling TASK_DESCRIPTION.md.",
+        ]
     if name != args.name.strip():
         result["name_sanitized"] = True
         result["original_name"] = args.name.strip()
