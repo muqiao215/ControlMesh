@@ -13,6 +13,7 @@ from controlmesh.multiagent.plan_review_loop import (
     consume_pending_repair_feedback,
     create_mesh_workflow,
     handle_task_result,
+    pending_release_approval_text,
     repair_phase,
     workflow_status_text,
 )
@@ -149,6 +150,9 @@ class _FakeHostJobRunner:
             return self.job
         return None
 
+    def list_jobs(self) -> list[HostJob]:
+        return [self.job] if self.job is not None else []
+
 
 def _make_orch(tmp_path: Path, hub: _FakeTaskHub) -> SimpleNamespace:
     orch = SimpleNamespace(
@@ -266,6 +270,14 @@ async def test_create_mesh_workflow_autostarts_first_phase_without_background_pl
     state = json.loads((plan_dir_for(tmp_path / "plans", start.plan_id) / "STATE.json").read_text())
     assert state["status"] == "executing"
     assert state["current_phase_id"] == "phase-001"
+
+
+def test_pending_release_approval_text_returns_none_without_list_jobs(tmp_path: Path) -> None:
+    hub = _FakeTaskHub()
+    orch = _make_orch(tmp_path, hub)
+    orch.host_job_runner = SimpleNamespace()
+
+    assert pending_release_approval_text(orch) is None
 
 
 @pytest.mark.asyncio

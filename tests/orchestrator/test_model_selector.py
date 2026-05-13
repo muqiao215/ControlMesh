@@ -485,6 +485,26 @@ async def test_switch_model_already_set(orch: Orchestrator) -> None:
     assert "Already running" in result
 
 
+async def test_switch_model_repairs_provider_binding_when_model_matches(orch: Orchestrator) -> None:
+    orch._config.provider = "codex"
+    orch._config.model = "zhipuai/glm-5.1"
+    orch._cli_service.update_default_model("zhipuai/glm-5.1")
+    object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
+
+    result = await switch_model(
+        orch,
+        SessionKey(chat_id=1),
+        "zhipuai/glm-5.1",
+        provider_override="opencode",
+    )
+
+    assert "Provider:" in result
+    assert orch._config.provider == "opencode"
+    saved = json.loads(orch.paths.config_path.read_text(encoding="utf-8"))
+    assert saved["provider"] == "opencode"
+    assert saved["model"] == "zhipuai/glm-5.1"
+
+
 async def test_switch_model_with_reasoning_effort(orch: Orchestrator) -> None:
     object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
     result = await switch_model(orch, SessionKey(chat_id=1), "sonnet", reasoning_effort="high")
