@@ -55,6 +55,51 @@ Please specify your choices, or I'll use global config defaults."
 Each cron run starts a fresh agent session in `cron_tasks/<task-folder>/`.
 That sub-agent has no Telegram chat history and no main-session context.
 
+## Template Families
+
+Do not treat every task folder under `cron_tasks/` as the same kind of automation.
+There are four different shapes:
+
+1. `scheduled`
+   - normal recurring cron work
+   - examples: daily summaries, periodic sync, report generation
+   - use the default `cron_add.py` scaffolding and fill `TASK_DESCRIPTION.md`
+
+2. `monitor`
+   - bounded high-frequency monitoring that exists only for a short release/CI window
+   - examples: wait for `main` CI, wait for `Publish to PyPI`, wait for release-final verification
+   - use `release-ci-monitor-template/` as the starting point
+   - this is not a permanent recurring job
+
+3. `flow-triggered`
+   - created by a specific local workflow phase rather than by user recurring automation
+   - examples: release phase follow-up, temporary verify/finalize step, short-lived dependency watcher
+   - the workflow owns when it starts and when it is removed
+
+4. `webhook-triggered`
+   - caused by an external event rather than a wall-clock schedule
+   - examples: CI failure intake, PR review trigger, external notification processing
+   - prefer `tools/webhook_tools/` when the trigger is actually an inbound event
+
+## Special Pattern: Release-Phase Monitor Jobs
+
+The first formal monitor template is `release-ci-monitor-template/`.
+
+Use it when all of these are true:
+
+- the work is condition-bound rather than permanently scheduled
+- the poll interval must be high frequency for a short bounded window
+- foreground polling would be wasteful or fragile
+- the next useful action should happen immediately after terminal state
+
+Monitor rules:
+
+- stop after a useful terminal state
+- do not drift into unrelated repo work
+- prefer direct narrow repair first when failure is obvious and local
+- hand back the exact next action
+- remove or disable the monitor after the handoff window ends
+
 ## Task Folder Structure
 
 ```text
