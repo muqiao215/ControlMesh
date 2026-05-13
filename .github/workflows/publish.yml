@@ -151,7 +151,7 @@ jobs:
       - name: Build package
         run: uv build
       - name: Twine check
-        run: uv run twine check dist/*
+        run: uvx twine check dist/*
       - name: Verify dist contents
         run: |
           python - <<'PY'
