@@ -1495,7 +1495,10 @@ def pending_release_approval_text(orch: Orchestrator) -> str | None:
     runner = getattr(orch, "host_job_runner", None)
     if runner is None:
         return None
-    for job in runner.list_jobs():
+    list_jobs = getattr(runner, "list_jobs", None)
+    if not callable(list_jobs):
+        return None
+    for job in list_jobs():
         state = str(getattr(job, "state", "") or "")
         step_id = str(getattr(job, "current_step_id", "") or "")
         job_id = str(getattr(job, "job_id", "") or "")

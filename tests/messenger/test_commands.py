@@ -74,6 +74,8 @@ class TestCommandSetIntegrity:
         """The popup menu should lead with ControlMesh orchestration primitives."""
         command_names = [cmd_name for cmd_name, _desc in get_bot_commands()]
 
+        assert command_names[0] == "new"
+        assert command_names[1] == "interrupt"
         assert "cm" in command_names
         assert "mesh" in command_names
         assert "agents" in command_names
@@ -81,16 +83,17 @@ class TestCommandSetIntegrity:
         assert "agent_commands" not in command_names
         assert command_names[:8] == [
             "new",
+            "interrupt",
             "model",
             "mesh",
             "cm",
             "tasks",
             "session",
             "agents",
-            "upgrade",
         ]
         assert command_names[:9] == [
             "new",
+            "interrupt",
             "model",
             "mesh",
             "cm",
@@ -98,7 +101,6 @@ class TestCommandSetIntegrity:
             "session",
             "agents",
             "upgrade",
-            "cron",
         ]
 
     def test_telegram_menu_hides_rare_maintenance_commands(self) -> None:

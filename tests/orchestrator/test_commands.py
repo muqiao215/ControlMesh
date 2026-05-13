@@ -187,6 +187,12 @@ async def test_tasks_new_creates_taskhub_task(orch: Orchestrator) -> None:
     await hub.shutdown()
 
 
+async def test_controlmesh_registry_mentions_interrupt(orch: Orchestrator) -> None:
+    result = await cmd_back(orch, SessionKey(chat_id=1), "/back")
+
+    assert "/interrupt" in result.text
+
+
 async def test_tasks_new_does_not_enter_foreground_session_history(orch: Orchestrator) -> None:
     key = SessionKey(chat_id=1)
     registry = TaskRegistry(orch.paths.tasks_registry_path, orch.paths.tasks_dir)

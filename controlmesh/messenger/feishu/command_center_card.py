@@ -165,6 +165,7 @@ def build_command_guide_text(
     )
     visible = dict(get_bot_commands(agent_name=agent_name))
     controlmesh_lines = [
+        f"/interrupt — {visible.get('interrupt', '中断当前任务')}",
         f"/cm — {visible.get('cm', '打开 Native Commands')}",
         "/back — 返回 ControlMesh 命令",
         *[

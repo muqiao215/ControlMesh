@@ -756,6 +756,7 @@ class TestForumTopicIndicator:
         # Verify send_message was called with message_thread_id=42
         bot.send_message.assert_called_once()
         call_kwargs = bot.send_message.call_args.kwargs
+        assert "/interrupt" in bot.send_message.call_args.args[1]
         assert call_kwargs.get("message_thread_id") == 42
 
         release.set()

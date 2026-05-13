@@ -34,6 +34,7 @@ class CommandSpec:
 
 _COMMAND_SPECS: tuple[CommandSpec, ...] = (
     CommandSpec("new", CommandTarget.DIRECT, visible=True, accepts_args=True),
+    CommandSpec("interrupt", CommandTarget.DIRECT, visible=True),
     CommandSpec("model", CommandTarget.ORCHESTRATOR, visible=True, accepts_args=True),
     CommandSpec("mesh", CommandTarget.MULTIAGENT, visible=True, main_agent_only=True, accepts_args=True),
     CommandSpec("cm", CommandTarget.ORCHESTRATOR, visible=True, accepts_args=True),
@@ -46,7 +47,6 @@ _COMMAND_SPECS: tuple[CommandSpec, ...] = (
     CommandSpec("memory", CommandTarget.ORCHESTRATOR, visible=True),
     CommandSpec("settings", CommandTarget.ORCHESTRATOR, visible=True, accepts_args=True),
     CommandSpec("stop", CommandTarget.DIRECT, visible=True),
-    CommandSpec("interrupt", CommandTarget.DIRECT, visible=True),
     CommandSpec("help", CommandTarget.DIRECT, visible=True),
     CommandSpec("start", CommandTarget.DIRECT),
     CommandSpec("info", CommandTarget.DIRECT),

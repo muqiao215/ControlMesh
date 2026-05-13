@@ -245,6 +245,14 @@ class TestFeishuBotRouting:
         assert "quote_summary=上一条结论" in prompt
         assert prompt.endswith("继续处理")
 
+    def test_command_guide_mentions_interrupt(self, tmp_path: Path) -> None:
+        from controlmesh.messenger.feishu.command_center_card import build_command_guide_text
+
+        bot = _make_bot(tmp_path)
+        text = build_command_guide_text(bot._config)
+
+        assert "/interrupt" in text
+
     async def test_handle_incoming_slash_command_passes_raw_text_to_orchestrator(
         self,
         tmp_path: Path,

@@ -13,6 +13,7 @@ from controlmesh.multiagent.plan_review_loop import (
     consume_pending_repair_feedback,
     create_mesh_workflow,
     handle_task_result,
+    pending_release_approval_text,
     repair_phase,
     workflow_status_text,
 )
@@ -175,6 +176,13 @@ def _write_state(tmp_path: Path, plan_id: str, payload: dict[str, object]) -> No
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+
+
+def test_pending_release_approval_text_ignores_runner_without_list_jobs(tmp_path: Path) -> None:
+    orch = _make_orch(tmp_path, _FakeTaskHub())
+    orch.host_job_runner = SimpleNamespace()
+
+    assert pending_release_approval_text(orch) is None
 
 
 @pytest.mark.asyncio
