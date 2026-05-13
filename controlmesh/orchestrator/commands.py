@@ -84,7 +84,7 @@ _CONTROL_MODE = "cm"
 _NATIVE_COMMAND_PROVIDERS = frozenset({"claude", "codex", "gemini", "claw", "opencode"})
 _CONTROL_MESH_REGISTRY = (
     "**ControlMesh 命令**\n\n"
-    "- `/interrupt` 中断当前执行，保留后续消息\n"
+    "- `/interrupt` 中断当前执行，立即接受后续消息\n"
     "- `/new` 新会话\n"
     "- `/mesh` 分阶段工作流\n"
     "- `/cm` 打开当前 CLI 的 Native Commands\n"
