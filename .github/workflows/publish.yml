@@ -209,8 +209,12 @@ jobs:
     name: Verify PyPI visibility
     needs: publish-pypi
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - name: Wait for PyPI JSON to show the tagged version
         run: |
           python - <<'PY'
@@ -270,3 +274,11 @@ jobs:
           print(f"PyPI never reported {project_name}=={expected} after publish.")
           raise SystemExit(1)
           PY
+      - name: Create or update GitHub Release after PyPI publish succeeds
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          gh release view "$TAG_NAME" >/dev/null 2>&1 \
+            && gh release edit "$TAG_NAME" --latest \
+            || gh release create "$TAG_NAME" --generate-notes

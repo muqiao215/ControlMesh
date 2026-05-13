@@ -9,8 +9,8 @@ Usage:
 Options:
   --branch <name>       Branch to push before pushing the tag (default: current branch)
   --commit <rev>        Commit to tag (default: HEAD)
-  --title <title>       GitHub Release title (default: tag)
-  --notes-file <path>   Release notes file passed to gh release create
+  --title <title>       Reserved for compatibility; GitHub Release is now created by publish workflow
+  --notes-file <path>   Reserved for compatibility; release note source remains local
   --skip-gate           Skip the public release gate
   --skip-tests          Skip pytest
   --skip-build          Skip uv build
@@ -20,9 +20,8 @@ Options:
 Rules:
   - This script creates or verifies the local annotated tag first.
   - It pushes the branch and tag separately.
-  - It verifies the remote tag commit before creating the GitHub Release.
-  - It uses gh release create --verify-tag when the installed gh supports it.
-  - Otherwise it falls back to manual remote-tag verification before release creation.
+  - It verifies the remote tag commit after push.
+  - GitHub Release creation is deferred to the publish workflow after PyPI visibility succeeds.
   - It refuses to move an existing remote tag to a different commit.
 EOF
 }
@@ -40,10 +39,6 @@ require_clean_worktree() {
   if [[ -n "$(git status --short)" ]]; then
     die "working tree is not clean; commit or stash changes before releasing"
   fi
-}
-
-gh_supports_release_verify_tag() {
-  gh release create --help 2>/dev/null | grep -q -- '--verify-tag'
 }
 
 verify_version_matches_tag() {
@@ -234,31 +229,5 @@ if [[ "$dry_run" -eq 1 ]]; then
   exit 0
 fi
 
-release_exists=0
-if gh release view "$tag" >/dev/null 2>&1; then
-  release_exists=1
-fi
-
-if [[ "$release_exists" -eq 1 ]]; then
-  die "GitHub Release $tag already exists; use gh release edit after verifying the existing release intentionally"
-fi
-
-release_args=(
-  "$tag"
-  --title "$title"
-)
-
-if gh_supports_release_verify_tag; then
-  release_args+=(--verify-tag)
-else
-  echo "info: installed gh does not support --verify-tag; using preverified remote tag fallback"
-fi
-
-if [[ -n "$notes_file" ]]; then
-  release_args+=(--notes-file "$notes_file")
-else
-  release_args+=(--generate-notes)
-fi
-
-gh release create "${release_args[@]}"
-gh release view "$tag" --json url,name,tagName,isDraft,isPrerelease
+echo "release pushed: branch=$branch tag=$tag"
+echo "GitHub Release is created or updated by .github/workflows/publish.yml after PyPI publish succeeds."
