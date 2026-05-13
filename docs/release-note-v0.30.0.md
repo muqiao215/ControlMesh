@@ -54,6 +54,12 @@ ControlMesh is not the authority for model routing, gateway choice, provider com
 - Release this version with tag `v0.30.0`; `pyproject.toml` and `controlmesh/__init__.py` are aligned to `0.30.0`.
 - Public publishing should continue through the existing GitHub Actions `Publish to PyPI` workflow triggered by pushing `v0.30.0`.
 
+## Release Audit
+
+- `v0.30.0` was initially tagged at `8af08c4`, where the tag-side PyPI publish gate failed before any PyPI artifacts were uploaded.
+- The release tag was later corrected to `34d38a9` in the same release window after the CI repair landed on `main`.
+- PyPI `0.30.0` is expected to publish from the repaired tag, so GitHub Release `v0.30.0` and PyPI `0.30.0` stay aligned to the same fixed source commit.
+
 ## Release Audit Note
 
 - `v0.30.0` was initially tagged on commit `8af08c4`, where the pre-publish main CI gate later failed before any PyPI artifacts were uploaded.

@@ -197,15 +197,19 @@ scripts/release_github.sh v0.21.0 --notes-file /tmp/release-notes.md
 
 它会固定执行这条顺序：
 
+- 先确认 `main` CI 已经是绿色
 - 校验工作树干净、版本号和 tag 一致
+- 本地构建分发包并做 `twine check`
 - 先创建或验证本地 annotated tag
 - 先推分支，再单独推 tag
 - 先核对远端 tag 指向
-- 最后才创建 GitHub Release
-  - 如果本机 `gh` 支持，会用 `--verify-tag`
-  - 老版本 `gh` 则退回到“先人工校验远端 tag，再创建 release”
+- 由 tag workflow 继续完成：
+  - 再次校验 tag commit 的 `main` CI 结果
+  - 构建并发布 PyPI
+  - 等待 PyPI 可见
+  - 最后创建或更新 GitHub Release
 
-这条脚本的原则是：GitHub Release 只消费已有 tag，不负责创建 tag。
+这条脚本的原则是：GitHub Release 必须晚于 PyPI publish 成功，不能先挂牌再补包。
 
 ### 文档
 

@@ -150,6 +150,8 @@ jobs:
           PY
       - name: Build package
         run: uv build
+      - name: Twine check
+        run: uv run twine check dist/*
       - name: Verify dist contents
         run: |
           python - <<'PY'
@@ -279,6 +281,13 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ github.ref_name }}
         run: |
-          gh release view "$TAG_NAME" >/dev/null 2>&1 \
-            && gh release edit "$TAG_NAME" --latest \
-            || gh release create "$TAG_NAME" --generate-notes
+          notes_file="docs/release-note-${TAG_NAME}.md"
+          if [[ ! -f "$notes_file" ]]; then
+            echo "Missing release note: $notes_file"
+            exit 1
+          fi
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release edit "$TAG_NAME" --title "$TAG_NAME" --notes-file "$notes_file" --latest
+          else
+            gh release create "$TAG_NAME" --title "$TAG_NAME" --notes-file "$notes_file"
+          fi
