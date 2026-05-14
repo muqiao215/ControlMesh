@@ -620,8 +620,10 @@ class Orchestrator:
                         approval_intent.step_id,
                     )
                 )
-            if is_rejected_broad_approval(dispatch.text):
-                pending = pending_release_approval_text(self)
+            pending = pending_release_approval_text(self)
+            normalized_text = " ".join(dispatch.text.strip().lower().split())
+            broad_short_approval = normalized_text in {"继续", "可以", "ok", "同意"}
+            if (pending and broad_short_approval) or is_rejected_broad_approval(dispatch.text):
                 return OrchestratorResult(
                     text=pending
                     or "Release approval is waiting on one specific host-job step.\n\n"
