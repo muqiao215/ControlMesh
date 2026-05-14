@@ -19,7 +19,6 @@ def test_release_host_job_spec_contains_fixed_step_graph_and_verify_tag() -> Non
         repo="/repo",
         version="0.29.0",
         tag="v0.29.0",
-        notes_file="docs/release-note-v0.29.0.md",
     )
 
     assert [step.id for step in spec.steps] == [

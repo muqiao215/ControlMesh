@@ -31,7 +31,6 @@ def build_release_host_job_spec(
     repo: str,
     version: str,
     tag: str,
-    notes_file: str,
     job_id: str = "",
 ) -> HostJobSpec:
     return HostJobSpec(

@@ -1547,7 +1547,6 @@ async def approve_current_phase(
                     repo=repo,
                     version=version,
                     tag=tag,
-                    notes_file=notes_file,
                     job_id=job_id,
                 )
             )
