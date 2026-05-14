@@ -200,7 +200,6 @@ def _publish_commands(version: str) -> list[str]:
     return [
         "git push origin main",
         f"git push origin {tag}",
-        f"gh release create {tag} --notes-file docs/release-note-{tag}.md --verify-tag",
     ]
 
 
@@ -223,7 +222,6 @@ def _host_job_metadata(repo_url: str, version: str) -> dict[str, object]:
             {"id": "push_main", "kind": "short_shell", "approval_required": True},
             {"id": "push_tag", "kind": "short_shell", "approval_required": True},
             {"id": "verify_remote_tag", "kind": "host_job", "approval_required": False},
-            {"id": "gh_release_create", "kind": "short_shell", "approval_required": True},
         ],
     }
 

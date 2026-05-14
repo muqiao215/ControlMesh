@@ -513,7 +513,7 @@ def _release_monitor_identity(name: str) -> tuple[str, str]:
 def _release_monitor_target(step_id: str) -> tuple[str, str]:
     if step_id == "push_tag":
         return "main_ci", "CI"
-    if step_id == "gh_release_create":
+    if step_id == "verify_remote_tag":
         return "publish_pypi", "Publish to PyPI"
     return "", ""
 
@@ -714,6 +714,21 @@ def _release_monitor_terminal_text(
     step_id = str(monitor.get("awaiting_step_id") or "")
     workflow_name = str(monitor.get("workflow_name") or monitor.get("target_phase") or "release wait")
     target = release_host_job_id(str(gate.get("tag") or "release"))
+    if success and step_id == "verify_remote_tag":
+        lines = [
+            f"Release monitor `{workflow_name}` succeeded for plan `{plan_id}`.",
+        ]
+        if summary:
+            lines.extend(["", summary.strip()])
+        lines.extend(
+            [
+                "",
+                "Next action:",
+                f"- /mesh approve {plan_id}",
+                f"- /mesh status {plan_id}",
+            ]
+        )
+        return "\n".join(lines)
     lines = [
         f"Release monitor `{workflow_name}` {'succeeded' if success else 'failed'} for plan `{plan_id}`.",
     ]
@@ -785,6 +800,38 @@ def _handle_release_monitor_result(
     save_gate_state(orch.paths.plans_dir, plan_id, gate)
 
     current_phase_id = str(_load_state(orch, plan_id).get("current_phase_id") or "publish")
+    if result.status == "done" and step_id == "verify_remote_tag":
+        mark_executed(
+            orch.paths.plans_dir,
+            plan_id=plan_id,
+            payload={
+                "task_id": result.task_id,
+                "host_job_id": str(gate.get("executor_task_id") or ""),
+                "host_job_state": "completed",
+                "current_step_id": step_id,
+                "status": "completed",
+                "approved_at": gate.get("approved_at", ""),
+                "tag": gate.get("tag", ""),
+                "version": gate.get("version", ""),
+                "repo": gate.get("repo", ""),
+                "result_preview": summary[:800],
+            },
+        )
+        _set_controller_state(
+            orch,
+            plan_id,
+            status="review_required",
+            current_phase_id=current_phase_id,
+            awaiting_review_phase_id=current_phase_id,
+            last_phase_task_id=result.task_id,
+        )
+        return _release_monitor_terminal_text(
+            plan_id,
+            gate,
+            monitor,
+            success=True,
+            summary=summary,
+        )
     _set_controller_state(
         orch,
         plan_id,
@@ -818,7 +865,7 @@ def reconcile_release_host_job(orch: Orchestrator, plan_id: str) -> str | None:
     current_step_id = str(getattr(job, "current_step_id", "") or "")
 
     if job_state == "awaiting_approval":
-        if current_step_id in {"push_tag", "gh_release_create"}:
+        if current_step_id == "push_tag":
             monitor = _release_monitor_status(gate, awaiting_step_id=current_step_id)
             if str(monitor.get("status") or "") != "succeeded":
                 monitor = _arm_release_monitor(
@@ -865,35 +912,29 @@ def reconcile_release_host_job(orch: Orchestrator, plan_id: str) -> str | None:
         return None
 
     if job_state == "completed":
-        if not executed_artifact_path(orch.paths.plans_dir, plan_id).exists():
-            mark_executed(
-                orch.paths.plans_dir,
-                plan_id=plan_id,
-                payload={
-                    "host_job_id": job_id,
-                    "host_job_state": job_state,
-                    "current_step_id": current_step_id,
-                    "status": "completed",
-                    "approved_at": gate.get("approved_at", ""),
-                    "tag": gate.get("tag", ""),
-                    "version": gate.get("version", ""),
-                    "repo": gate.get("repo", ""),
-                    "result_preview": "",
-                },
-            )
-            _set_controller_state(
+        monitor = _release_monitor_status(gate, awaiting_step_id="verify_remote_tag")
+        if str(monitor.get("status") or "") != "succeeded":
+            monitor = _arm_release_monitor(
                 orch,
                 plan_id,
-                status="review_required",
-                current_phase_id=current_phase_id,
-                awaiting_review_phase_id=current_phase_id,
-                last_phase_task_id=job_id,
+                gate,
+                "verify_remote_tag",
+                force_rearm=False,
             )
-            return (
-                f"Plan `{plan_id}` publish host job completed and is ready for review.\n"
-                f"- approve: `/mesh approve {plan_id}`\n"
-                f"- status: `/mesh status {plan_id}`"
-            )
+            if monitor:
+                if str(state.get("status") or "") != "waiting_for_release_monitor" or str(
+                    state.get("last_phase_task_id") or ""
+                ) != str(monitor.get("last_task_id") or job_id):
+                    _set_controller_state(
+                        orch,
+                        plan_id,
+                        status="waiting_for_release_monitor",
+                        current_phase_id=current_phase_id,
+                        awaiting_review_phase_id="",
+                        last_phase_task_id=str(monitor.get("last_task_id") or job_id),
+                    )
+                    return _release_monitor_wait_text(plan_id, gate, monitor)
+                return None
         return None
 
     if job_state == "failed" and (
@@ -1374,6 +1415,26 @@ async def handle_task_result(orch: Orchestrator, result: TaskResult) -> str | No
             host_job_id = str(getattr(host_job, "job_id", "") or host_job_id)
             host_job_state = str(getattr(host_job, "state", "") or host_job_state)
             current_step_id = str(getattr(host_job, "current_step_id", "") or "")
+        if host_job_state == "completed":
+            monitor = _release_monitor_status(gate, awaiting_step_id="verify_remote_tag")
+            if str(monitor.get("status") or "") != "succeeded":
+                monitor = _arm_release_monitor(
+                    orch,
+                    plan_id,
+                    gate,
+                    "verify_remote_tag",
+                    force_rearm=str(monitor.get("status") or "") in _RELEASE_MONITOR_TERMINAL_STATUSES,
+                )
+                if monitor:
+                    _set_controller_state(
+                        orch,
+                        plan_id,
+                        status="waiting_for_release_monitor",
+                        current_phase_id=entry.phase_id,
+                        awaiting_review_phase_id="",
+                        last_phase_task_id=str(monitor.get("last_task_id") or host_job_id or result.task_id),
+                    )
+                    return _release_monitor_wait_text(plan_id, gate, monitor)
         mark_executed(
             orch.paths.plans_dir,
             plan_id=plan_id,
@@ -1492,7 +1553,7 @@ async def approve_current_phase(
             )
             if not step_id.strip() and job.state == "awaiting_approval" and job.current_step_id:
                 current_step_id = str(job.current_step_id)
-                if current_step_id in {"push_tag", "gh_release_create"}:
+                if current_step_id == "push_tag":
                     monitor = _release_monitor_status(gate, awaiting_step_id=current_step_id)
                     if str(monitor.get("status") or "") != "succeeded":
                         monitor = _arm_release_monitor(orch, plan_id, gate, current_step_id)
@@ -1517,7 +1578,7 @@ async def approve_current_phase(
                         f"Plan `{plan_id}` is waiting on release step `{approved_step_id}`, "
                         f"not `{requested_step_id}`."
                     )
-                if approved_step_id in {"push_tag", "gh_release_create"}:
+                if approved_step_id == "push_tag":
                     monitor = _release_monitor_status(gate, awaiting_step_id=approved_step_id)
                     monitor_status = str(monitor.get("status") or "")
                     if monitor_status != "succeeded":
@@ -1898,7 +1959,7 @@ def pending_release_approval_text(orch: Orchestrator) -> str | None:
         job_id = str(getattr(job, "job_id", "") or "")
         if state == "awaiting_approval" and step_id and job_id:
             plan_id = str(getattr(job, "plan_id", "") or "")
-            if plan_id and step_id in {"push_tag", "gh_release_create"}:
+            if plan_id and step_id == "push_tag":
                 gate = _active_publish_gate(orch, plan_id)
                 monitor = _release_monitor_status(gate, awaiting_step_id=step_id)
                 if str(monitor.get("status") or "") != "succeeded":

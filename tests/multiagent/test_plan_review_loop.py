@@ -192,6 +192,14 @@ def test_pending_release_approval_text_ignores_runner_without_list_jobs(tmp_path
 
 def test_pending_release_approval_text_returns_explicit_step(tmp_path: Path) -> None:
     orch = _make_orch(tmp_path, _FakeTaskHub())
+    create_plan_files(
+        tmp_path / "plans",
+        plan_id="plan-x",
+        plan_markdown="# Release Plan",
+        phases=(PlanPhase(id="publish", title="Publish Release", workunit_kind="github_release"),),
+        status="executing",
+        current_phase=1,
+    )
     orch.host_job_runner = (
         _FakeHostJobRunner(
             HostJob(
@@ -391,11 +399,11 @@ async def test_release_monitor_result_unblocks_explicit_next_step(tmp_path: Path
     )
     gate = load_gate_state(tmp_path / "plans", plan_id)
     gate["monitor"] = {
-        "job_id": "release-monitor-release-monitor-plan-push-tag",
-        "task_name": "[release-monitor:release-monitor-plan:push_tag] CI (main_ci)",
-        "awaiting_step_id": "push_tag",
-        "target_phase": "main_ci",
-        "workflow_name": "CI",
+        "job_id": "release-monitor-release-monitor-plan-verify-remote-tag",
+        "task_name": "[release-monitor:release-monitor-plan:verify_remote_tag] Publish to PyPI (publish_pypi)",
+        "awaiting_step_id": "verify_remote_tag",
+        "target_phase": "publish_pypi",
+        "workflow_name": "Publish to PyPI",
         "schedule": "*/30 * * * * *",
         "status": "submitted",
         "provider": "claude",
@@ -408,7 +416,7 @@ async def test_release_monitor_result_unblocks_explicit_next_step(tmp_path: Path
         task_id="task-monitor-1",
         chat_id=42,
         parent_agent="main",
-        name="[release-monitor:release-monitor-plan:push_tag] CI (main_ci)",
+        name="[release-monitor:release-monitor-plan:verify_remote_tag] Publish to PyPI (publish_pypi)",
         prompt_preview="monitor",
         plan_id="",
     )
@@ -433,12 +441,13 @@ async def test_release_monitor_result_unblocks_explicit_next_step(tmp_path: Path
     )
 
     assert text is not None
-    assert "Release monitor `CI` succeeded" in text
-    assert "approve push_tag release-v0.31.1" in text
+    assert "Release monitor `Publish to PyPI` succeeded" in text
+    assert "/mesh approve release-monitor-plan" in text
     gate = load_gate_state(tmp_path / "plans", plan_id)
     assert gate["monitor"]["status"] == "succeeded"
+    assert (tmp_path / "plans" / plan_id / "publish" / "EXECUTED.json").is_file()
     state = json.loads((plan_dir_for(tmp_path / "plans", plan_id) / "STATE.json").read_text(encoding="utf-8"))
-    assert state["status"] == "awaiting_publish_approval"
+    assert state["status"] == "review_required"
 
 
 def test_workflow_status_shows_release_monitor(tmp_path: Path) -> None:
@@ -479,9 +488,9 @@ def test_workflow_status_shows_release_monitor(tmp_path: Path) -> None:
 
     gate = load_gate_state(tmp_path / "plans", plan_id)
     gate["monitor"] = {
-        "job_id": "release-monitor-release-monitor-plan-push-tag",
-        "awaiting_step_id": "push_tag",
-        "workflow_name": "CI",
+        "job_id": "release-monitor-release-monitor-plan-verify-remote-tag",
+        "awaiting_step_id": "verify_remote_tag",
+        "workflow_name": "Publish to PyPI",
         "schedule": "*/30 * * * * *",
         "status": "armed",
     }
@@ -491,7 +500,7 @@ def test_workflow_status_shows_release_monitor(tmp_path: Path) -> None:
     text = workflow_status_text(orch, plan_id)
 
     assert "Release monitor: armed" in text
-    assert "Release monitor target: CI" in text
+    assert "Release monitor target: Publish to PyPI" in text
     assert "Release monitor cadence: */30 * * * * *" in text
 
 
@@ -783,6 +792,8 @@ async def test_release_publish_phase_marks_executed_before_generic_review(tmp_pa
     )
     hub = _FakeTaskHub(entry)
     orch = _make_orch(tmp_path, hub)
+    orch._cron_manager = CronManager(jobs_path=tmp_path / "cron_jobs.json")
+    orch.paths.cron_tasks_dir = tmp_path / "workspace" / "cron_tasks"
     orch.host_job_runner = (
         _FakeHostJobRunner(
             HostJob(
@@ -792,8 +803,8 @@ async def test_release_publish_phase_marks_executed_before_generic_review(tmp_pa
                 version="0.24.33",
                 tag="v0.24.33",
                 state="completed",
-                current_step_id="gh_release_create",
-                steps=[HostJobStep(id="gh_release_create", title="release", command="gh release create")],
+                current_step_id="verify_remote_tag",
+                steps=[HostJobStep(id="verify_remote_tag", title="verify", command="git ls-remote --tags origin v0.24.33", state="completed")],
             )
         )
     )
@@ -815,10 +826,11 @@ async def test_release_publish_phase_marks_executed_before_generic_review(tmp_pa
     )
 
     assert note is not None
-    assert "publish host job completed" in note
-    assert (tmp_path / "plans" / plan_id / "publish" / "EXECUTED.json").is_file()
+    assert "waiting on release monitor `Publish to PyPI` before step `verify_remote_tag`" in note
+    assert not (tmp_path / "plans" / plan_id / "publish" / "EXECUTED.json").exists()
     gate = load_gate_state(tmp_path / "plans", plan_id)
-    assert gate["status"] == "executed"
+    assert gate["monitor"]["status"] == "armed"
+    assert gate["monitor"]["workflow_name"] == "Publish to PyPI"
 
 
 @pytest.mark.asyncio

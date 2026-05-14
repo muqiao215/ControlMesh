@@ -11,9 +11,8 @@ RELEASE_STEP_IDS = (
     "push_main",
     "push_tag",
     "verify_remote_tag",
-    "gh_release_create",
 )
-APPROVAL_REQUIRED_STEP_IDS = frozenset({"push_main", "push_tag", "gh_release_create"})
+APPROVAL_REQUIRED_STEP_IDS = frozenset({"push_main", "push_tag"})
 
 
 @dataclass(frozen=True, slots=True)

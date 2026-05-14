@@ -77,15 +77,6 @@ def build_release_host_job_spec(
                 kind="host_job",
                 cwd=repo,
             ),
-            HostJobStep(
-                id="gh_release_create",
-                title="Create GitHub release",
-                command=f"gh release create {tag} --notes-file {notes_file} --verify-tag",
-                kind="short_shell",
-                approval_required=True,
-                side_effect=True,
-                cwd=repo,
-            ),
         ],
     )
 

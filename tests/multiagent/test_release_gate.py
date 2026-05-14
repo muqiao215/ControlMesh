@@ -29,14 +29,12 @@ def test_release_host_job_spec_contains_fixed_step_graph_and_verify_tag() -> Non
         "push_main",
         "push_tag",
         "verify_remote_tag",
-        "gh_release_create",
     ]
     assert [step.id for step in spec.steps if step.approval_required] == [
         "push_main",
         "push_tag",
-        "gh_release_create",
     ]
-    assert "--verify-tag" in spec.steps[6].command
+    assert spec.steps[5].command == "git ls-remote --tags origin v0.29.0"
 
 
 @pytest.mark.asyncio
@@ -242,7 +240,7 @@ async def test_push_tag_requires_separate_approval(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_gh_release_requires_separate_approval(tmp_path: Path) -> None:
+async def test_completed_release_job_does_not_reapprove_push_tag(tmp_path: Path) -> None:
     plan_id = "release-step-plan"
     create_plan_files(
         tmp_path / "plans",
@@ -274,7 +272,7 @@ async def test_gh_release_requires_separate_approval(tmp_path: Path) -> None:
         version="0.29.0",
         commit="abc1234",
         tag="v0.29.0",
-        commands=["gh release create v0.29.0 --verify-tag"],
+        commands=["git push origin main"],
         requested_by_task="publish-task-1",
         host_job={
             "kind": "release",
@@ -306,8 +304,8 @@ async def test_gh_release_requires_separate_approval(tmp_path: Path) -> None:
         orch,
         SessionKey(transport="tg", chat_id=9),
         plan_id,
-        "gh_release_create",
+        "push_tag",
     )
 
-    assert "not currently waiting on release step `gh_release_create`" in text
+    assert "not currently waiting on release step `push_tag`" in text
     assert orch.host_job_runner.approvals == []
