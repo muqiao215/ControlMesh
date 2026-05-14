@@ -106,12 +106,11 @@ python3 tools/cron_tools/cron_add.py \
   --model gemini-2.5-pro
 
 # Monitor example:
-python3 tools/cron_tools/cron_add.py \
+python3 tools/cron_tools/cron_monitor.py \
   --name "release-ci-monitor" \
   --title "Release CI Monitor" \
   --description "Watch one release-phase CI or publish run" \
   --schedule "*/2 * * * *" \
-  --job-kind monitor \
   --provider claude \
   --model sonnet
 ```
@@ -121,7 +120,11 @@ python3 tools/cron_tools/cron_add.py \
 - `--model` - Model choice (optional, uses global config if omitted)
 - `--reasoning-effort` - Codex only: thinking level (optional, defaults to `medium`)
 - `--cli-parameters` - Advanced: JSON array of CLI flags (only if user explicitly requests)
-- `--job-kind monitor` - bounded high-frequency release/CI monitor; not normal recurring automation
+
+Use `cron_add.py` for normal recurring jobs.
+Use `cron_monitor.py` for bounded release/CI wait windows. Monitor jobs default to
+TaskHub-backed background execution so terminal state can hand back to the main
+conversation without a foreground watch loop.
 
 ### List Jobs
 

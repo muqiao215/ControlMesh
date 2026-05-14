@@ -43,6 +43,9 @@ _DEFAULT_MONITOR_INSTRUCTION = (
     "Read through TASK_DESCRIPTION.md and carry it out as a short-lived monitor. "
     "If the watched target reaches a useful terminal state, stop after producing the handoff."
 )
+_DEFAULT_MONITOR_WORKUNIT = "test_execution"
+_DEFAULT_MONITOR_RISK = "low"
+_DEFAULT_MONITOR_OUTPUT_POLICY = "summarized_only"
 
 _TUTORIAL = """\
 CRON ADD -- Create a scheduled cron job with its own workspace.
@@ -173,15 +176,15 @@ Job with dependency (prevent Chrome conflicts):
   # If multiple jobs have --dependency chrome_browser, they run one at a time
 
 Release monitor job (bounded high-frequency checker):
-  python tools/cron_tools/cron_add.py \\
+  python tools/cron_tools/cron_monitor.py \\
       --name "release-ci-watch" \\
       --title "Release CI Monitor" \\
       --description "Watch one release CI run and hand control back quickly" \\
       --schedule "*/2 * * * *" \\
-      --job-kind monitor \\
       --provider claude \\
       --model sonnet
-  # Use monitor only for short-lived release/publish waiting phases, not normal recurring automation
+  # Preferred entry for short-lived release/publish waiting phases.
+  # `cron_add.py --job-kind monitor` remains a compatibility path, not the primary interface.
 
 WHAT HAPPENS AFTER CREATION:
   1. Open cron_tasks/<name>/TASK_DESCRIPTION.md
@@ -422,6 +425,11 @@ def main() -> None:
         job["quiet_end"] = args.quiet_end
     if args.dependency:
         job["dependency"] = args.dependency.strip()
+    if args.job_kind == "monitor":
+        job["execution_mode"] = "taskhub"
+        job["workunit_kind"] = _DEFAULT_MONITOR_WORKUNIT
+        job["risk"] = _DEFAULT_MONITOR_RISK
+        job["output_policy"] = _DEFAULT_MONITOR_OUTPUT_POLICY
     chat_id = os.environ.get("CONTROLMESH_CHAT_ID", "")
     topic_id = os.environ.get("CONTROLMESH_TOPIC_ID", "")
     transport = os.environ.get("CONTROLMESH_TRANSPORT", "tg")
@@ -478,6 +486,7 @@ def main() -> None:
         result["monitor_notes"] = [
             "This job is marked as a bounded monitor, not normal recurring automation.",
             "Use it for short-lived release/CI/publish waiting phases and stop or remove it after handoff.",
+            "Monitor jobs default to TaskHub-backed background execution so terminal state can hand back to the parent conversation.",
             "Prefer the release-ci-monitor-template task folder shape when filling TASK_DESCRIPTION.md.",
         ]
     if name != args.name.strip():

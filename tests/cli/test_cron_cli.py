@@ -194,3 +194,25 @@ def test_cmd_cron_validate_reports_missing_script(
 
     assert exc.value.code == 1
     assert "Missing referenced script" in output[0]
+
+
+def test_cmd_cron_help_mentions_monitor_entry(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from controlmesh.cli_commands import cron as cron_cli
+
+    output: list[str] = []
+    paths = _make_paths(tmp_path)
+    monkeypatch.setattr(cron_cli, "load_config", lambda: _config(paths), raising=False)
+    monkeypatch.setattr(
+        cron_cli,
+        "_console",
+        _ConsoleStub(output),
+        raising=False,
+    )
+
+    cron_cli.cmd_cron(["cron", "--help"])
+
+    assert "cron_monitor.py" in output[0]
+    assert "recurring cron" in output[0]

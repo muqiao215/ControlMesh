@@ -34,6 +34,10 @@ Commands:
   get       Show one cron job.
   run       Trigger one cron job immediately from the host shell.
   validate  Validate one cron job's task folder and referenced scripts.
+
+Creation:
+  recurring cron -> python3 tools/cron_tools/cron_add.py ...
+  monitor cron   -> python3 tools/cron_tools/cron_monitor.py ...
 """
 
 

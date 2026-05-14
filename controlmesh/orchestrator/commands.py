@@ -936,8 +936,8 @@ async def cmd_cron(orch: Orchestrator, _key: SessionKey, _text: str) -> Orchestr
                 "- `/cron run <job-id>` 立即执行一次\n"
                 "- `/cron run <job-id> --dry-run` 只看预览\n\n"
                 "普通 recurring cron 用 `tools/cron_tools/cron_add.py` 创建。\n"
-                "短期 release/CI monitor 也走同一个工具，但要显式传 `--job-kind monitor`，"
-                "这样它会被标记为条件型高频监控，而不是普通周期任务。"
+                "短期 release/CI monitor 用 `tools/cron_tools/cron_monitor.py` 创建。\n"
+                "它会默认走 TaskHub-backed monitor 语义，把终态交回主对话，而不是普通周期任务。"
             )
         )
     if len(parts) >= 3 and parts[1] in {"run", "trigger"}:

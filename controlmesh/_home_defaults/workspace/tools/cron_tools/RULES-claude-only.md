@@ -58,11 +58,22 @@ python3 tools/cron_tools/cron_add.py \
   --description "What this job does" \
   --schedule "0 9 * * *" \
   --model sonnet
+
+# For a short-lived release/CI monitor, use the dedicated entry:
+python3 tools/cron_tools/cron_monitor.py \
+  --name "release-ci-monitor" \
+  --title "Release CI Monitor" \
+  --description "Watch one release-phase CI or publish run" \
+  --schedule "*/2 * * * *" \
+  --model sonnet
 ```
 
 **Available parameters:**
 - `--model` - Model choice: `haiku`, `sonnet`, `opus` (optional, uses global config if omitted)
 - `--cli-parameters` - Advanced: JSON array of CLI flags (only if user explicitly requests)
+
+Use `cron_add.py` for stable recurring jobs. Use `cron_monitor.py` for bounded
+release/CI wait windows that should hand terminal state back to the main conversation.
 
 ### List Jobs
 

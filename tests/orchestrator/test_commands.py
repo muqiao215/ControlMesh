@@ -2517,8 +2517,8 @@ async def test_cron_run_dry_run_executes_preview_only(orch: Orchestrator) -> Non
 async def test_cron_help_mentions_monitor_entry(orch: Orchestrator) -> None:
     result = await cmd_cron(orch, SessionKey(chat_id=0), "/cron help")
 
-    assert "--job-kind monitor" in result.text
-    assert "不是普通周期任务" in result.text
+    assert "cron_monitor.py" in result.text
+    assert "TaskHub-backed monitor" in result.text
 
 
 # -- cmd_diagnose --

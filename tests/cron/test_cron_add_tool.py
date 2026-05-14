@@ -123,6 +123,10 @@ def test_cron_add_monitor_job_kind_marks_job_and_output(tmp_path: Path) -> None:
     data = json.loads((tmp_path / "cron_jobs.json").read_text(encoding="utf-8"))
     job = next(j for j in data["jobs"] if j["id"] == "release-ci-monitor")
     assert job["job_kind"] == "monitor"
+    assert job["execution_mode"] == "taskhub"
+    assert job["workunit_kind"] == "test_execution"
+    assert job["risk"] == "low"
+    assert job["output_policy"] == "summarized_only"
     assert "short-lived monitor" in job["agent_instruction"]
 
 
