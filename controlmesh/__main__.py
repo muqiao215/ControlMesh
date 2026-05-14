@@ -57,16 +57,27 @@ from controlmesh.infra.install import detect_runtime_provenance
 from controlmesh.infra.json_store import atomic_json_save
 from controlmesh.infra.version import get_current_version
 from controlmesh.provider_health import (
+    ConfigMigrationEvent,
     append_migration_journal,
     apply_config_migrations,
+    assess_provider_model_binding,
     backup_config_file,
 )
+from controlmesh.orchestrator.providers import ProviderManager
 from controlmesh.workspace.init import init_workspace
 from controlmesh.workspace.paths import resolve_paths
 
 logger = logging.getLogger(__name__)
 
 _console = Console()
+_STARTUP_PROVIDER_DEFAULT_MODELS: dict[str, str] = {
+    "claude": "sonnet",
+    "codex": "gpt-5.5",
+    "gemini": "auto",
+    "opencode": "openai/gpt-4.1",
+    "claw": "sonnet",
+    "openai_agents": AgentConfig().agent_graph.openai_agents_model,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -169,6 +180,53 @@ def _is_configured_qqbot(data: dict[str, object]) -> bool:
     return any(_qqbot_account_is_configured(account) for account in accounts.values())
 
 
+def _normalize_provider_model_binding(
+    config_data: dict[str, object],
+) -> tuple[dict[str, object], tuple[ConfigMigrationEvent, ...], bool]:
+    """Repair invalid default provider/model bindings during startup load."""
+    merged = dict(config_data)
+    provider = merged.get("provider")
+    model = merged.get("model")
+    if not isinstance(provider, str):
+        return merged, (), False
+
+    config = AgentConfig.model_validate(merged)
+    manager = ProviderManager(config)
+    assessment = assess_provider_model_binding(
+        provider,
+        model if isinstance(model, str) else "",
+        model_provider_resolver=manager.models.provider_for,
+    )
+    if assessment.is_valid:
+        return merged, (), False
+
+    normalized_provider = assessment.normalized_provider or config.provider
+    fallback_model = manager.default_model_for_provider(normalized_provider).strip()
+    if not fallback_model:
+        fallback_model = _STARTUP_PROVIDER_DEFAULT_MODELS.get(normalized_provider, "").strip()
+    if not fallback_model:
+        return merged, (), False
+
+    before_model = model if isinstance(model, str) else ""
+    if before_model == fallback_model and provider == normalized_provider:
+        return merged, (), False
+
+    merged["provider"] = normalized_provider
+    merged["model"] = fallback_model
+    return (
+        merged,
+        (
+            ConfigMigrationEvent(
+                field="provider/model",
+                before=f"{provider or '<empty>'} / {before_model or '<empty>'}",
+                after=f"{normalized_provider} / {fallback_model}",
+                reason="repaired invalid provider/model binding on startup",
+            ),
+        ),
+        True,
+    )
+
+
 _IS_CONFIGURED_CHECKS: dict[str, Callable[[dict[str, object]], bool]] = {
     "telegram": _is_configured_telegram,
     "matrix": _is_configured_matrix,
@@ -215,6 +273,10 @@ def load_config() -> AgentConfig:
         sys.exit(1)
 
     user_data, migration_events, migration_changed = apply_config_migrations(user_data)
+    user_data, binding_events, binding_changed = _normalize_provider_model_binding(user_data)
+    if binding_events:
+        migration_events = (*migration_events, *binding_events)
+    migration_changed = migration_changed or binding_changed
 
     normalized_existing = False
     if user_data.get("gemini_api_key") is None:

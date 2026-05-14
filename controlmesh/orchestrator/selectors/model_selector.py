@@ -331,22 +331,27 @@ async def switch_model(
     is_topic = key.topic_id is not None
     active_session = await orch._sessions.get_active(key)
 
-    old = active_session.model if is_topic and active_session else orch._config.model
-    same_model = old == model_id
-    effort_only = same_model and reasoning_effort is not None
-
-    if same_model and reasoning_effort is None:
-        return t("model.already_running", model=model_id)
-
     if is_topic and active_session:
         old_provider = active_session.provider
+        old = active_session.model
     else:
-        _resolved_old_model, old_provider = orch.resolve_runtime_target(old)
+        old = orch._config.model
+        try:
+            _resolved_old_model, old_provider = orch.resolve_runtime_target(old)
+        except ValueError:
+            old_provider = normalize_provider_name(orch._config.provider)
     new_provider = (
         normalize_provider_name(provider_override)
         if provider_override is not None
         else orch.models.provider_for(model_id)
     )
+    same_model = old == model_id
+    same_target = same_model and old_provider == new_provider
+    effort_only = same_target and reasoning_effort is not None
+
+    if same_target and reasoning_effort is None:
+        return t("model.already_running", model=model_id)
+
     provider_changed = old_provider != new_provider
     reset_target_session = provider_changed and new_provider in _RESET_ON_PROVIDER_SWITCH
     resume_session_id, resume_message_count = ("", 0)

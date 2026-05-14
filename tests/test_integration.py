@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Generator
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -15,10 +16,12 @@ from controlmesh.config import AgentConfig
 from controlmesh.orchestrator.core import Orchestrator
 from controlmesh.orchestrator.hooks import MessageHook
 from controlmesh.orchestrator.registry import OrchestratorResult
+from controlmesh.runtime import HostJob, HostJobStep
 from controlmesh.session import SessionManager
 from controlmesh.session.key import SessionKey
 from controlmesh.workspace.init import init_workspace
 from controlmesh.workspace.paths import ControlMeshPaths
+from tests.multiagent.test_plan_review_loop import _FakeHostJobRunner
 
 CHAT_ID = 12345
 KEY = SessionKey(chat_id=CHAT_ID)
@@ -195,6 +198,51 @@ class TestNormalMessageFlow:
         assert session is not None
         assert session.total_cost_usd == pytest.approx(0.05)
         assert session.total_tokens == 1000
+
+    async def test_continue_routes_normally_without_pending_release_approval(
+        self, orch_with_mock_cli: tuple[Orchestrator, AsyncMock]
+    ) -> None:
+        orch, mock_execute = orch_with_mock_cli
+        orch.supervisor = SimpleNamespace(bus=None)  # enable multiagent non-command branch
+
+        result = await orch.handle_message(KEY, "继续")
+
+        assert result.text == "Hello from the agent!"
+        mock_execute.assert_awaited_once()
+
+    async def test_continue_returns_release_instruction_when_approval_is_pending(
+        self, orch_with_mock_cli: tuple[Orchestrator, AsyncMock]
+    ) -> None:
+        orch, mock_execute = orch_with_mock_cli
+        orch.supervisor = SimpleNamespace(bus=None)  # enable multiagent non-command branch
+        orch.set_host_job_runner(
+            _FakeHostJobRunner(
+                HostJob(
+                    job_id="release-v0.29.0",
+                    plan_id="release-plan",
+                    repo="/repo",
+                    version="0.29.0",
+                    tag="v0.29.0",
+                    state="awaiting_approval",
+                    current_step_id="push_main",
+                    steps=[
+                        HostJobStep(
+                            id="push_main",
+                            title="push main",
+                            command="git push origin main",
+                            state="awaiting_approval",
+                            approval_required=True,
+                        )
+                    ],
+                )
+            )
+        )
+
+        result = await orch.handle_message(KEY, "继续")
+
+        assert "Release approval requires an explicit step." in result.text
+        assert "approve push_main release-v0.29.0" in result.text
+        mock_execute.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------

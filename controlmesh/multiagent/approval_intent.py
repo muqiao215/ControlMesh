@@ -59,6 +59,6 @@ def is_rejected_broad_approval(text: str) -> bool:
     normalized = " ".join(text.strip().lower().split())
     if not normalized:
         return False
-    return normalized in {"继续", "可以", "ok", "同意"} or normalized.startswith("approve all ") or (
+    return normalized.startswith("approve all ") or (
         normalized.startswith("approve ") and len(normalized.split()) in {1, 2, 3} and parse_short_approval_intent(text) is None
     )

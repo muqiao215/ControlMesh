@@ -312,6 +312,14 @@ async def test_create_mesh_workflow_autostarts_first_phase_without_background_pl
     assert state["current_phase_id"] == "phase-001"
 
 
+def test_pending_release_approval_text_returns_none_without_list_jobs(tmp_path: Path) -> None:
+    hub = _FakeTaskHub()
+    orch = _make_orch(tmp_path, hub)
+    orch.host_job_runner = SimpleNamespace()
+
+    assert pending_release_approval_text(orch) is None
+
+
 @pytest.mark.asyncio
 async def test_create_mesh_workflow_uses_foreground_active_intent_for_handoff_text(tmp_path: Path) -> None:
     hub = _FakeTaskHub()
