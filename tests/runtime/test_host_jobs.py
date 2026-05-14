@@ -34,6 +34,25 @@ def _job(*, state: str = "pending") -> HostJob:
     )
 
 
+async def _wait_for_job_state(
+    runner: HostJobRunner,
+    job_id: str,
+    expected: str,
+    *,
+    max_wait: float = 2.0,
+    interval: float = 0.02,
+) -> HostJob:
+    deadline = asyncio.get_running_loop().time() + max_wait
+    while True:
+        job = runner.get(job_id)
+        assert job is not None
+        if job.state == expected:
+            return job
+        if asyncio.get_running_loop().time() >= deadline:
+            pytest.fail(f"job {job_id} did not reach state {expected!r}; last state was {job.state!r}")
+        await asyncio.sleep(interval)
+
+
 def test_host_job_store_writes_per_job_authority_files(tmp_path: Path) -> None:
     paths = _paths(tmp_path)
     runner = HostJobRunner(paths)
@@ -145,10 +164,7 @@ async def test_host_job_writes_exit_code_and_tool_result(tmp_path: Path) -> None
     runner.store.put(job)
 
     runner.start(job.job_id)
-    await asyncio.sleep(0.2)
-
-    persisted = runner.get(job.job_id)
-    assert persisted is not None
+    persisted = await _wait_for_job_state(runner, job.job_id, "completed")
     assert persisted.state == "completed"
     assert persisted.steps[0].exit_code == 0
 
@@ -173,10 +189,7 @@ async def test_completed_job_cannot_become_cancelled(tmp_path: Path) -> None:
     )
     runner.store.put(job)
     runner.start(job.job_id)
-    await asyncio.sleep(0.2)
-
-    persisted = runner.get(job.job_id)
-    assert persisted is not None
+    persisted = await _wait_for_job_state(runner, job.job_id, "completed")
     assert persisted.state == "completed"
 
     cancelled = await runner.cancel(job.job_id)
