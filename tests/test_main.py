@@ -108,6 +108,36 @@ class TestLoadConfig:
         assert payload["backup_path"]
         assert len(payload["events"]) >= 1
 
+    def test_load_config_repairs_invalid_provider_model_binding(self, tmp_path: Path) -> None:
+        from controlmesh.__main__ import load_config
+
+        home = tmp_path / ".controlmesh"
+        config_dir = home / "config"
+        config_dir.mkdir(parents=True)
+        fw = tmp_path / "framework"
+        fw.mkdir()
+        user_cfg = {"telegram_token": "MY_TOKEN", "provider": "codex", "model": "zhipuai/glm-5.1"}
+        (config_dir / "config.json").write_text(json.dumps(user_cfg), encoding="utf-8")
+
+        with patch("controlmesh.__main__.resolve_paths") as mock_paths:
+            paths = ControlMeshPaths(controlmesh_home=home, home_defaults=fw / "workspace", framework_root=fw)
+            mock_paths.return_value = paths
+            with patch("controlmesh.__main__.init_workspace"):
+                config = load_config()
+
+        assert config.provider == "codex"
+        assert config.model == "gpt-5.5"
+        merged = json.loads((config_dir / "config.json").read_text(encoding="utf-8"))
+        assert merged["provider"] == "codex"
+        assert merged["model"] == "gpt-5.5"
+
+        journal = paths.config_migration_journal_path.read_text(encoding="utf-8").strip().splitlines()
+        assert journal
+        payload = json.loads(journal[-1])
+        event = payload["events"][-1]
+        assert event["field"] == "provider/model"
+        assert event["reason"] == "repaired invalid provider/model binding on startup"
+
     def test_merges_new_defaults_into_existing(self, tmp_path: Path) -> None:
         from controlmesh.__main__ import load_config
 
