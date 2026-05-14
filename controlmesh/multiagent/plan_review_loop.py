@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -10,6 +11,7 @@ from uuid import uuid4
 from typing import TYPE_CHECKING, Any
 
 from controlmesh.cli.types import AgentRequest
+from controlmesh.cron.manager import CronJob
 from controlmesh.multiagent.approval_intent import render_explicit_step_required
 from controlmesh.multiagent.release_gate import (
     build_release_host_job_spec,
@@ -36,6 +38,16 @@ _RECOGNIZED_PHASE_STATUSES = {"pending", "running", "completed", "ask", "repair"
 _REPAIR_FEEDBACK_WAITING = "repair_feedback_waiting"
 _REVIEWS_FILENAME = "REVIEWS.jsonl"
 _MESH_CLARIFY_TEXT = "你要把哪件事切到自动执行？一句话即可；我会自己拆计划、找文件、跑验证。"
+_RELEASE_MONITOR_NAME_RE = re.compile(r"^\[release-monitor:(?P<plan_id>[^:\]]+):(?P<step_id>[^:\]]+)\]")
+_RELEASE_MONITOR_SCHEDULE = "*/30 * * * * *"
+_RELEASE_MONITOR_PROVIDER = "claude"
+_RELEASE_MONITOR_MODEL = "sonnet"
+_RELEASE_MONITOR_WAIT_STATUSES = {"armed", "submitted", "running"}
+_RELEASE_MONITOR_TERMINAL_STATUSES = {"succeeded", "failed", "cancelled"}
+_RELEASE_MONITOR_INSTRUCTION = (
+    "Read through TASK_DESCRIPTION.md and carry it out as a short-lived monitor. "
+    "If the watched target reaches a useful terminal state, stop after producing the handoff."
+)
 _MESH_BOUNDARY = {
     "workspace_read": True,
     "workspace_write": True,
@@ -491,6 +503,305 @@ def _active_release_host_job(orch: Orchestrator, plan_id: str) -> Any | None:
     return runner.get(job_id)
 
 
+def _release_monitor_identity(name: str) -> tuple[str, str]:
+    match = _RELEASE_MONITOR_NAME_RE.match(name.strip())
+    if not match:
+        return "", ""
+    return str(match.group("plan_id") or ""), str(match.group("step_id") or "")
+
+
+def _release_monitor_target(step_id: str) -> tuple[str, str]:
+    if step_id == "push_tag":
+        return "main_ci", "CI"
+    if step_id == "gh_release_create":
+        return "publish_pypi", "Publish to PyPI"
+    return "", ""
+
+
+def _release_monitor_status(gate: dict[str, Any], *, awaiting_step_id: str) -> dict[str, Any]:
+    monitor = gate.get("monitor")
+    if not isinstance(monitor, dict):
+        return {}
+    if str(monitor.get("awaiting_step_id") or "") != awaiting_step_id:
+        return {}
+    return monitor
+
+
+def _release_monitor_blocks_approval(gate: dict[str, Any], *, awaiting_step_id: str) -> bool:
+    monitor = _release_monitor_status(gate, awaiting_step_id=awaiting_step_id)
+    return str(monitor.get("status") or "") in _RELEASE_MONITOR_WAIT_STATUSES | {"failed", "cancelled"}
+
+
+def _release_monitor_job_id(plan_id: str, step_id: str) -> str:
+    safe_plan = re.sub(r"[^a-z0-9-]", "-", plan_id.lower()).strip("-") or "plan"
+    safe_step = re.sub(r"[^a-z0-9-]", "-", step_id.lower()).strip("-") or "step"
+    return f"release-monitor-{safe_plan}-{safe_step}"
+
+
+def _release_monitor_task_name(plan_id: str, step_id: str) -> str:
+    target_phase, workflow_name = _release_monitor_target(step_id)
+    label = workflow_name or "release monitor"
+    return f"[release-monitor:{plan_id}:{step_id}] {label} ({target_phase or 'release_wait'})"
+
+
+def _release_monitor_template_dir() -> Path:
+    return Path(__file__).resolve().parents[1] / "_home_defaults" / "workspace" / "cron_tasks" / "release-ci-monitor-template"
+
+
+def _release_monitor_task_dir(orch: Orchestrator, job_id: str) -> Path:
+    cron_tasks_dir = getattr(orch.paths, "cron_tasks_dir", Path(str(orch.paths.workspace)) / "cron_tasks")
+    return Path(cron_tasks_dir) / job_id
+
+
+def _write_release_monitor_task_files(
+    orch: Orchestrator,
+    *,
+    plan_id: str,
+    gate: dict[str, Any],
+    step_id: str,
+    job_id: str,
+) -> None:
+    task_dir = _release_monitor_task_dir(orch, job_id)
+    task_dir.mkdir(parents=True, exist_ok=True)
+    template_dir = _release_monitor_template_dir()
+    rules_source = (template_dir / "AGENTS.md").read_text(encoding="utf-8")
+    for filename in ("CLAUDE.md", "AGENTS.md", "GEMINI.md"):
+        (task_dir / filename).write_text(rules_source, encoding="utf-8")
+
+    target_phase, workflow_name = _release_monitor_target(step_id)
+    next_step = f"approve {step_id} {release_host_job_id(str(gate.get('tag') or 'release'))}"
+    lines = [
+        "# Release CI Monitor",
+        "",
+        "## Goal",
+        "",
+        "Monitor one release-phase CI or publish run at high frequency for a short bounded window, then push control back to the main conversation.",
+        "",
+        "## Release Context",
+        "",
+        f"- Plan: `{plan_id}`",
+        f"- Monitor job: `{job_id}`",
+        f"- Watched workflow: `{workflow_name or 'release wait'}`",
+        f"- Target phase: `{target_phase or 'release_wait'}`",
+        f"- Current awaiting host-job step: `{step_id}`",
+        f"- Repository: `{gate.get('repo') or ''}`",
+        f"- Version: `{gate.get('version') or ''}`",
+        f"- Tag: `{gate.get('tag') or ''}`",
+        f"- Commit hint: `{gate.get('commit') or ''}`",
+        f"- Poll cadence: `{_RELEASE_MONITOR_SCHEDULE}`",
+        "",
+        "## Assignment",
+        "",
+        "1. Inspect only the specific release workflow state implied by the context above.",
+        "2. Poll at the configured cadence until the watched run reaches a useful terminal state.",
+        "3. If the run fails and there is an obvious narrow repo-local repair, apply it and say exactly what changed.",
+        "4. Stop after one terminal handoff. Do not continue polling.",
+        "",
+        "## Success Handoff",
+        "",
+        "When the watched run succeeds, hand back:",
+        f"- final state for `{workflow_name or target_phase or 'release wait'}`",
+        f"- exact next foreground command: `{next_step}`",
+        "- whether the monitor has stopped itself",
+        "",
+        "## Failure Handoff",
+        "",
+        "When the watched run fails, hand back:",
+        "- exact failing job or step",
+        "- concise evidence from logs",
+        "- whether a narrow repair was applied",
+        "- exact next action for the foreground release controller",
+        "",
+        "## Output Contract",
+        "",
+        f"- Prefix the summary with `{_release_monitor_task_name(plan_id, step_id)}`",
+        "- Keep the handoff compact and operational.",
+    ]
+    (task_dir / "TASK_DESCRIPTION.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    (task_dir / f"{job_id}_MEMORY.md").write_text(f"# {job_id} Memory\n", encoding="utf-8")
+    (task_dir / "scripts").mkdir(exist_ok=True)
+
+
+def _arm_release_monitor(
+    orch: Orchestrator,
+    plan_id: str,
+    gate: dict[str, Any],
+    step_id: str,
+    *,
+    force_rearm: bool = False,
+) -> dict[str, Any]:
+    target_phase, workflow_name = _release_monitor_target(step_id)
+    if not target_phase:
+        return {}
+    existing = _release_monitor_status(gate, awaiting_step_id=step_id)
+    if existing and not force_rearm:
+        return existing
+    manager = getattr(orch, "_cron_manager", None)
+    if manager is None:
+        return {}
+    job_id = _release_monitor_job_id(plan_id, step_id)
+    if manager.get_job(job_id) is None:
+        _write_release_monitor_task_files(orch, plan_id=plan_id, gate=gate, step_id=step_id, job_id=job_id)
+        state = _load_state(orch, plan_id)
+        manager.add_job(
+            CronJob(
+                id=job_id,
+                title=_release_monitor_task_name(plan_id, step_id),
+                description=f"Short-lived release monitor for {plan_id} before {step_id}",
+                schedule=_RELEASE_MONITOR_SCHEDULE,
+                task_folder=job_id,
+                agent_instruction=_RELEASE_MONITOR_INSTRUCTION,
+                provider=_RELEASE_MONITOR_PROVIDER,
+                model=_RELEASE_MONITOR_MODEL,
+                job_kind="monitor",
+                execution_mode="taskhub",
+                workunit_kind="test_execution",
+                risk="low",
+                output_policy="summarized_only",
+                chat_id=int(state.get("source_chat_id") or 0),
+                topic_id=state.get("source_topic_id"),
+                transport=str(state.get("source_transport") or "tg"),
+            )
+        )
+    elif force_rearm:
+        _write_release_monitor_task_files(orch, plan_id=plan_id, gate=gate, step_id=step_id, job_id=job_id)
+        manager.set_enabled(job_id, enabled=True)
+    monitor = {
+        "job_id": job_id,
+        "task_name": _release_monitor_task_name(plan_id, step_id),
+        "awaiting_step_id": step_id,
+        "target_phase": target_phase,
+        "workflow_name": workflow_name,
+        "schedule": _RELEASE_MONITOR_SCHEDULE,
+        "status": "armed",
+        "provider": _RELEASE_MONITOR_PROVIDER,
+        "model": _RELEASE_MONITOR_MODEL,
+        "created_at": datetime.now(UTC).isoformat(),
+        "last_task_id": "",
+    }
+    gate["monitor"] = monitor
+    save_gate_state(orch.paths.plans_dir, plan_id, gate)
+    observers = getattr(orch, "_observers", None)
+    cron_observer = getattr(observers, "cron", None) if observers is not None else None
+    request_reschedule = getattr(cron_observer, "request_reschedule", None)
+    if callable(request_reschedule):
+        request_reschedule()
+    return monitor
+
+
+def _release_monitor_wait_text(plan_id: str, gate: dict[str, Any], monitor: dict[str, Any]) -> str:
+    step_id = str(monitor.get("awaiting_step_id") or "")
+    target_phase = str(monitor.get("target_phase") or "")
+    workflow_name = str(monitor.get("workflow_name") or target_phase or "release wait")
+    target = release_host_job_id(str(gate.get("tag") or "release"))
+    return (
+        f"Plan `{plan_id}` is waiting on release monitor `{workflow_name}` before step `{step_id}`.\n"
+        f"- cadence: `{monitor.get('schedule') or _RELEASE_MONITOR_SCHEDULE}`\n"
+        f"- monitor job: `{monitor.get('job_id') or ''}`\n"
+        f"- next after success: `approve {step_id} {target}`\n"
+        f"- status: `/mesh status {plan_id}`"
+    )
+
+
+def _release_monitor_terminal_text(
+    plan_id: str,
+    gate: dict[str, Any],
+    monitor: dict[str, Any],
+    *,
+    success: bool,
+    summary: str,
+) -> str:
+    step_id = str(monitor.get("awaiting_step_id") or "")
+    workflow_name = str(monitor.get("workflow_name") or monitor.get("target_phase") or "release wait")
+    target = release_host_job_id(str(gate.get("tag") or "release"))
+    lines = [
+        f"Release monitor `{workflow_name}` {'succeeded' if success else 'failed'} for plan `{plan_id}`.",
+    ]
+    if summary:
+        lines.extend(["", summary.strip()])
+    if success:
+        lines.extend(
+            [
+                "",
+                "Next action:",
+                f"- approve {step_id} {target}",
+                f"- /mesh status {plan_id}",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "",
+                "Next action:",
+                "- inspect the failure summary above",
+                f"- after any repair, rerun `approve {step_id} {target}` to arm a fresh 30s monitor",
+                f"- /mesh status {plan_id}",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def _extract_release_monitor_summary(result: TaskResult) -> str:
+    text = (result.delivery_text or result.result_text or "").strip()
+    if not text:
+        return ""
+    return text[:1200]
+
+
+def _handle_release_monitor_result(
+    orch: Orchestrator,
+    result: TaskResult,
+    *,
+    plan_id: str,
+    step_id: str,
+) -> str | None:
+    gate = _active_publish_gate(orch, plan_id)
+    if not gate:
+        return None
+    monitor = _release_monitor_status(gate, awaiting_step_id=step_id)
+    if not monitor:
+        monitor = {
+            "job_id": _release_monitor_job_id(plan_id, step_id),
+            "task_name": _release_monitor_task_name(plan_id, step_id),
+            "awaiting_step_id": step_id,
+            "target_phase": _release_monitor_target(step_id)[0],
+            "workflow_name": _release_monitor_target(step_id)[1],
+            "schedule": _RELEASE_MONITOR_SCHEDULE,
+            "provider": _RELEASE_MONITOR_PROVIDER,
+            "model": _RELEASE_MONITOR_MODEL,
+        }
+    summary = _extract_release_monitor_summary(result)
+    if result.status == "done":
+        monitor["status"] = "succeeded"
+    elif result.status == "cancelled":
+        monitor["status"] = "cancelled"
+    else:
+        monitor["status"] = "failed"
+    monitor["last_task_id"] = result.task_id
+    monitor["completed_at"] = datetime.now(UTC).isoformat()
+    if summary:
+        monitor["summary"] = summary
+    gate["monitor"] = monitor
+    save_gate_state(orch.paths.plans_dir, plan_id, gate)
+
+    current_phase_id = str(_load_state(orch, plan_id).get("current_phase_id") or "publish")
+    _set_controller_state(
+        orch,
+        plan_id,
+        status="awaiting_publish_approval" if result.status == "done" else "waiting_for_release_monitor",
+        current_phase_id=current_phase_id,
+        awaiting_review_phase_id=current_phase_id if result.status == "done" else "",
+        last_phase_task_id=result.task_id,
+    )
+    return _release_monitor_terminal_text(
+        plan_id,
+        gate,
+        monitor,
+        success=result.status == "done",
+        summary=summary,
+    )
+
+
 def reconcile_release_host_job(orch: Orchestrator, plan_id: str) -> str | None:
     """Project release host-job state back into plan state and user-visible workflow text."""
     gate = _active_publish_gate(orch, plan_id)
@@ -507,6 +818,30 @@ def reconcile_release_host_job(orch: Orchestrator, plan_id: str) -> str | None:
     current_step_id = str(getattr(job, "current_step_id", "") or "")
 
     if job_state == "awaiting_approval":
+        if current_step_id in {"push_tag", "gh_release_create"}:
+            monitor = _release_monitor_status(gate, awaiting_step_id=current_step_id)
+            if str(monitor.get("status") or "") != "succeeded":
+                monitor = _arm_release_monitor(
+                    orch,
+                    plan_id,
+                    gate,
+                    current_step_id,
+                    force_rearm=False,
+                )
+                if monitor:
+                    if str(state.get("status") or "") != "waiting_for_release_monitor" or str(
+                        state.get("last_phase_task_id") or ""
+                    ) != str(monitor.get("last_task_id") or job_id):
+                        _set_controller_state(
+                            orch,
+                            plan_id,
+                            status="waiting_for_release_monitor",
+                            current_phase_id=current_phase_id,
+                            awaiting_review_phase_id="",
+                            last_phase_task_id=str(monitor.get("last_task_id") or job_id),
+                        )
+                        return _release_monitor_wait_text(plan_id, gate, monitor)
+                    return None
         if gate.get("approved_step_id") != current_step_id:
             gate["approved_step_id"] = current_step_id
             save_gate_state(orch.paths.plans_dir, plan_id, gate)
@@ -970,9 +1305,19 @@ async def handle_task_result(orch: Orchestrator, result: TaskResult) -> str | No
     if orch.task_hub is None:
         return None
     entry = orch.task_hub.registry.get(result.task_id)
-    if entry is None or not entry.plan_id:
+    if entry is None:
         return None
     plan_id = entry.plan_id
+    monitor_plan_id, monitor_step_id = _release_monitor_identity(entry.name)
+    if monitor_plan_id and monitor_step_id:
+        return _handle_release_monitor_result(
+            orch,
+            result,
+            plan_id=monitor_plan_id,
+            step_id=monitor_step_id,
+        )
+    if not plan_id:
+        return None
     if not _is_agents_review_loop(orch, plan_id):
         return None
     if result.status != "done":
@@ -1146,7 +1491,23 @@ async def approve_current_phase(
                 )
             )
             if not step_id.strip() and job.state == "awaiting_approval" and job.current_step_id:
-                return render_explicit_step_required(target=job.job_id, step_id=str(job.current_step_id))
+                current_step_id = str(job.current_step_id)
+                if current_step_id in {"push_tag", "gh_release_create"}:
+                    monitor = _release_monitor_status(gate, awaiting_step_id=current_step_id)
+                    if str(monitor.get("status") or "") != "succeeded":
+                        monitor = _arm_release_monitor(orch, plan_id, gate, current_step_id)
+                        if monitor:
+                            current_phase_id = str(_load_state(orch, plan_id).get("current_phase_id") or "")
+                            _set_controller_state(
+                                orch,
+                                plan_id,
+                                status="waiting_for_release_monitor",
+                                current_phase_id=current_phase_id,
+                                awaiting_review_phase_id="",
+                                last_phase_task_id=str(monitor.get("last_task_id") or job.job_id),
+                            )
+                            return _release_monitor_wait_text(plan_id, gate, monitor)
+                return render_explicit_step_required(target=job.job_id, step_id=current_step_id)
             approved_step_id = ""
             if job.state == "awaiting_approval" and job.current_step_id:
                 approved_step_id = str(job.current_step_id)
@@ -1156,6 +1517,28 @@ async def approve_current_phase(
                         f"Plan `{plan_id}` is waiting on release step `{approved_step_id}`, "
                         f"not `{requested_step_id}`."
                     )
+                if approved_step_id in {"push_tag", "gh_release_create"}:
+                    monitor = _release_monitor_status(gate, awaiting_step_id=approved_step_id)
+                    monitor_status = str(monitor.get("status") or "")
+                    if monitor_status != "succeeded":
+                        monitor = _arm_release_monitor(
+                            orch,
+                            plan_id,
+                            gate,
+                            approved_step_id,
+                            force_rearm=monitor_status in _RELEASE_MONITOR_TERMINAL_STATUSES,
+                        )
+                        if monitor:
+                            current_phase_id = str(_load_state(orch, plan_id).get("current_phase_id") or "")
+                            _set_controller_state(
+                                orch,
+                                plan_id,
+                                status="waiting_for_release_monitor",
+                                current_phase_id=current_phase_id,
+                                awaiting_review_phase_id="",
+                                last_phase_task_id=str(monitor.get("last_task_id") or job.job_id),
+                            )
+                            return _release_monitor_wait_text(plan_id, gate, monitor)
                 job = runner.approve_step(
                     job.job_id,
                     approved_step_id,
@@ -1379,6 +1762,17 @@ def workflow_status_text(orch: Orchestrator, plan_id: str, *, command_prefix: st
         lines.append(f"Publish gate: {gate.get('status', 'unknown')}")
         if gate.get("tag"):
             lines.append(f"Publish tag: {gate.get('tag')}")
+        monitor = gate.get("monitor")
+        if isinstance(monitor, dict):
+            lines.append(f"Release monitor: {monitor.get('status', 'unknown')}")
+            if monitor.get("workflow_name"):
+                lines.append(f"Release monitor target: {monitor.get('workflow_name')}")
+            if monitor.get("job_id"):
+                lines.append(f"Release monitor job: {monitor.get('job_id')}")
+            if monitor.get("schedule"):
+                lines.append(f"Release monitor cadence: {monitor.get('schedule')}")
+            if monitor.get("awaiting_step_id"):
+                lines.append(f"Release monitor step: {monitor.get('awaiting_step_id')}")
     host_job = _active_release_host_job(orch, plan_id)
     if host_job is not None:
         lines.extend(_host_job_status_lines(host_job, command_prefix=command_prefix))
@@ -1503,5 +1897,11 @@ def pending_release_approval_text(orch: Orchestrator) -> str | None:
         step_id = str(getattr(job, "current_step_id", "") or "")
         job_id = str(getattr(job, "job_id", "") or "")
         if state == "awaiting_approval" and step_id and job_id:
+            plan_id = str(getattr(job, "plan_id", "") or "")
+            if plan_id and step_id in {"push_tag", "gh_release_create"}:
+                gate = _active_publish_gate(orch, plan_id)
+                monitor = _release_monitor_status(gate, awaiting_step_id=step_id)
+                if str(monitor.get("status") or "") != "succeeded":
+                    continue
             return render_explicit_step_required(target=job_id, step_id=step_id)
     return None

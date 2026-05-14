@@ -376,6 +376,44 @@ class TestCronObserverExecution:
         assert job is not None
         assert job.last_run_status == "success:taskhub_submitted"
 
+    async def test_taskhub_monitor_auto_disables_after_submit(self, tmp_path: Path) -> None:
+        paths = _make_paths(tmp_path)
+        mgr = _make_manager(paths)
+        mgr.add_job(
+            _make_job(
+                "release-monitor",
+                title="Release monitor",
+                description="Watch one release gate",
+                chat_id=123456,
+                schedule="*/30 * * * * *",
+                job_kind="monitor",
+                execution_mode="taskhub",
+                workunit_kind="test_execution",
+                risk="low",
+                output_policy="summarized_only",
+                provider="claude",
+                model="sonnet",
+                agent_instruction="Monitor the release gate.",
+            )
+        )
+        observer = _make_observer(paths, mgr)
+        hub = MagicMock()
+        hub.submit = MagicMock(return_value="task-monitor-1")
+        observer.set_task_hub(hub)
+
+        with (
+            time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)),
+            patch("controlmesh.cron.observer.execute_in_task_folder", new=AsyncMock()) as execute_mock,
+        ):
+            await observer._execute_job("release-monitor", "Monitor the release gate.", "release-monitor")
+
+        execute_mock.assert_not_awaited()
+        hub.submit.assert_called_once()
+        job = mgr.get_job("release-monitor")
+        assert job is not None
+        assert job.enabled is False
+        assert job.last_run_status == "success:taskhub_submitted"
+
     async def test_taskhub_mode_requires_task_hub_without_fallback(self, tmp_path: Path) -> None:
         paths = _make_paths(tmp_path)
         mgr = _make_manager(paths)

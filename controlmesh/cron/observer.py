@@ -560,6 +560,8 @@ class CronObserver(BaseTaskObserver):
             task_id,
             elapsed_ms,
         )
+        if getattr(job, "job_kind", "") == "monitor":
+            self._manager.set_enabled(job.id, enabled=False)
         if manual:
             self._manager.update_manual_run_status(job.id, status="success:taskhub_submitted")
         else:
