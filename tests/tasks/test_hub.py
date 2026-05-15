@@ -515,6 +515,40 @@ agent_slots:
 
         await hub.shutdown()
 
+    async def test_opencode_task_keeps_explicit_model_when_global_provider_differs(
+        self,
+        registry: TaskRegistry,
+        tmp_path: Path,
+    ) -> None:
+        cli = _make_cli_service("review output")
+        cli.resolve_runtime_provider_target = MagicMock(
+            side_effect=lambda provider, model: (provider, model)
+        )
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=cli,
+            config=_make_config(),
+        )
+        hub.set_result_handler("main", AsyncMock())
+
+        submit = _submit(prompt="Review the current diff", name="Explicit opencode model")
+        submit.provider_override = "opencode"
+        submit.model_override = "zhipuai/glm-5.1"
+        task_id = hub.submit(submit)
+        await asyncio.sleep(0.1)
+
+        entry = registry.get(task_id)
+        assert entry is not None
+        assert entry.provider == "opencode"
+        assert entry.model == "zhipuai/glm-5.1"
+        cli.resolve_runtime_provider_target.assert_called_once_with(
+            "opencode", "zhipuai/glm-5.1"
+        )
+        cli.resolve_provider.assert_not_called()
+
+        await hub.shutdown()
+
     async def test_repo_root_contract_is_embedded_in_worker_prompt(
         self,
         registry: TaskRegistry,

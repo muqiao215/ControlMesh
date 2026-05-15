@@ -1299,7 +1299,7 @@ class TaskHub:
             if binding.assistant == "opencode":
                 resolver = getattr(cli, "resolve_runtime_provider_target", None)
                 if callable(resolver):
-                    eff_provider, eff_model = resolver("opencode", "")
+                    eff_provider, eff_model = resolver("opencode", entry.model or "")
             if not eff_provider:
                 eff_provider, eff_model = cli.resolve_provider(request)
             if (eff_provider and eff_provider != entry.provider) or (
