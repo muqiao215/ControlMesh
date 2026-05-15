@@ -98,8 +98,8 @@ def _build_page(
         )
 
     running = [tsk for tsk in all_tasks if tsk.status == "running"]
-    waiting = [tsk for tsk in all_tasks if tsk.status == "waiting"]
-    finished = [tsk for tsk in all_tasks if tsk.status in _FINISHED]
+    waiting = [tsk for tsk in all_tasks if _is_active_waiting(tsk)]
+    finished = [tsk for tsk in all_tasks if tsk.status in _FINISHED or _is_stale_waiting(tsk)]
 
     lines: list[str] = []
     rows: list[list[Button]] = []
@@ -195,6 +195,20 @@ def _summary_line(
     if finished:
         parts.append(t("tasks.summary_finished", count=len(finished)))
     return " · ".join(parts)
+
+
+def _is_active_waiting(entry: TaskEntry) -> bool:
+    if entry.status != "waiting":
+        return False
+    if entry.completed_at <= 0:
+        return True
+    if entry.last_question:
+        return True
+    return entry.tool_result_delivered_at > 0 and entry.tool_result_consumed_at <= 0
+
+
+def _is_stale_waiting(entry: TaskEntry) -> bool:
+    return entry.status == "waiting" and not _is_active_waiting(entry)
 
 
 def _format_entry(entry: TaskEntry, now: float) -> str:

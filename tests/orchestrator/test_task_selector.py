@@ -160,3 +160,45 @@ def test_task_selector_groups_plan_phases_for_same_plan(tmp_path: Path) -> None:
     assert "Phases for `demo-plan`:" in resp.text
     assert "phase: phase-001: Audit" in resp.text
     assert "phase: phase-002: Implement" in resp.text
+
+
+def test_task_selector_hides_completed_waiting_residue_from_active_waiting(tmp_path: Path) -> None:
+    hub = _make_hub(tmp_path)
+    submit = _submit(name="Old Release Residue")
+    submit.plan_id = "old-release-plan"
+    submit.phase_id = "publish"
+    submit.phase_title = "Publish"
+    entry = hub.registry.create(submit, "codex", "gpt-5.5")
+    hub.registry.update_status(
+        entry.task_id,
+        "waiting",
+        completed_at=123.0,
+        result_preview="Released ControlMesh v0.24.33.",
+        last_question="",
+        tool_result_delivered_at=0.0,
+        tool_result_consumed_at=0.0,
+    )
+
+    resp = task_selector_start(hub, 42)
+
+    assert "**Waiting for answer**" not in resp.text
+    assert "Old Release Residue" in resp.text
+
+
+def test_task_selector_keeps_parent_input_waiting_visible(tmp_path: Path) -> None:
+    hub = _make_hub(tmp_path)
+    entry = hub.registry.create(_submit(name="Needs Parent Reply"), "claude", "opus")
+    hub.registry.update_status(
+        entry.task_id,
+        "waiting",
+        completed_at=123.0,
+        last_question="Which framework?",
+        tool_result_delivered_at=124.0,
+        tool_result_consumed_at=0.0,
+    )
+
+    resp = task_selector_start(hub, 42)
+
+    assert "**Waiting for answer**" in resp.text
+    assert "Needs Parent Reply" in resp.text
+    assert "Which framework?" in resp.text
