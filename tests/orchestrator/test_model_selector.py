@@ -331,8 +331,11 @@ async def test_callback_provider_opencode_shows_current_runtime_model(orch: Orch
     assert "Select OpenCode model" in resp.text
     assert resp.buttons is not None
     labels = [btn.text for row in resp.buttons.rows for btn in row]
+    callbacks = [btn.callback_data for row in resp.buttons.rows for btn in row]
     assert "openai/gpt-4.1" in labels
     assert "zhipuai/glm-5.1" in labels
+    assert "ms:x:opencode:openai/gpt-4.1" in callbacks
+    assert "ms:x:opencode:zhipuai/glm-5.1" in callbacks
 
 
 async def test_callback_provider_opencode_without_discovery_shows_runtime_warning(
@@ -397,6 +400,23 @@ async def test_callback_runtime_provider_switches_to_opencode(orch: Orchestrator
     assert "opencode" in resp.text
     assert orch._config.provider == "opencode"
     assert orch._config.model == "openai/gpt-4.1"
+
+
+async def test_callback_model_opencode_switches_without_codex_reasoning_step(orch: Orchestrator) -> None:
+    object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
+
+    resp = await handle_model_callback(
+        orch,
+        SessionKey(chat_id=1),
+        "ms:x:opencode:zhipuai/glm-5.1",
+    )
+
+    assert "Provider:" in resp.text
+    assert "opencode" in resp.text
+    assert "Thinking level" not in resp.text
+    assert resp.buttons is None
+    assert orch._config.provider == "opencode"
+    assert orch._config.model == "zhipuai/glm-5.1"
 
 
 async def test_switch_model_provider_change_to_opencode_resets_target_session(orch: Orchestrator) -> None:

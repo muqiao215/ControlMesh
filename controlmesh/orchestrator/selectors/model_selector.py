@@ -506,7 +506,13 @@ async def _build_model_step(
                 ),
                 buttons=ButtonGrid(rows=[back]),
             )
-        rows = _chunk_buttons(opencode_models, columns=2)
+        rows = [
+            [
+                Button(text=model_id, callback_data=f"ms:x:opencode:{model_id}")
+                for model_id in opencode_models[index : index + 2]
+            ]
+            for index in range(0, len(opencode_models), 2)
+        ]
         rows.append(back)
         return SelectorResponse(
             text=f"{header}\n\nSelect OpenCode model",
