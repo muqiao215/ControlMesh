@@ -17,6 +17,100 @@ This is a real runnable alias for `controlmesh auth feishu setup`. Start here
 if you want the Feishu-native product path first and the lower-level auth
 commands second.
 
+## Feishu-only path
+
+If your deployment does not use Telegram or Matrix, that is a normal supported
+setup. Feishu can be the only chat surface.
+
+You still need at least one model/runtime CLI behind it. Typical choices are:
+
+- Claude Code
+- Codex
+- Gemini
+- OpenCode
+
+Example Feishu-only bootstrap with Claude Code:
+
+```bash
+npm install -g @anthropic-ai/claude-code
+claude auth
+
+controlmesh feishu native bootstrap
+controlmesh auth feishu register-begin
+controlmesh auth feishu register-poll --device-code "<device_code>" --interval 5 --expires-in 600
+controlmesh auth feishu doctor
+controlmesh auth feishu probe
+controlmesh service install
+```
+
+Equivalent default example for Codex:
+
+```bash
+npm install -g @openai/codex
+codex auth
+```
+
+Additional runtime options:
+
+```bash
+# Gemini
+npm install -g @google/gemini-cli
+gemini
+
+# OpenCode
+npm install -g opencode-ai
+```
+
+You do not need to configure any of the following for a Feishu-only runtime:
+
+- `telegram_token`
+- `allowed_user_ids` for Telegram-only access
+- Matrix homeserver / user / password
+- `controlmesh install matrix`
+
+Minimal Feishu-only config shape after successful registration:
+
+```json
+{
+  "transport": "feishu",
+  "transports": ["feishu"],
+  "provider": "claude",
+  "model": "sonnet",
+  "feishu": {
+    "mode": "bot_only",
+    "runtime_mode": "native",
+    "brand": "feishu",
+    "app_id": "cli_xxx",
+    "app_secret": "xxx",
+    "domain": "https://open.feishu.cn",
+    "reply_to_trigger": true,
+    "progress_mode": "card_stream"
+  }
+}
+```
+
+If you authenticated Codex instead, switch the runtime default to:
+
+```json
+{
+  "provider": "codex",
+  "model": "gpt-5.4"
+}
+```
+
+If you prefer to drive the runtime with OpenCode-backed GLM instead of Claude
+Code, set:
+
+```json
+{
+  "provider": "opencode",
+  "model": "zhipuai/glm-5.1"
+}
+```
+
+That provider/model pair must stay aligned. Do not mix an OpenCode model with
+`provider="codex"` or another provider id.
+
 Important boundary:
 
 - ControlMesh includes `feishu-auth-kit` as a bundled snapshot of its

@@ -85,6 +85,72 @@ Telegram + WeChat). After initial setup, configure the `transports` array in
 
 If service install succeeds, onboarding returns without starting foreground bot.
 
+## Feishu-only quick path
+
+If you do not use Telegram or Matrix, skip them entirely. A minimal
+Feishu-native install only needs:
+
+1. ControlMesh installed
+2. at least one authenticated provider CLI, for example:
+   - Claude Code: `npm install -g @anthropic-ai/claude-code && claude auth`
+   - Codex: `npm install -g @openai/codex && codex auth`
+   - OpenCode: `npm install -g opencode-ai`
+3. Feishu native bootstrap
+
+Recommended sequence:
+
+```bash
+pipx install controlmesh
+
+# choose one or more provider CLIs
+npm install -g @anthropic-ai/claude-code
+claude auth
+
+controlmesh feishu native bootstrap
+controlmesh auth feishu register-begin
+controlmesh auth feishu register-poll --device-code "<device_code>" --interval 5 --expires-in 600
+controlmesh auth feishu doctor
+controlmesh auth feishu probe
+controlmesh service install
+```
+
+What this means operationally:
+
+- you do **not** need a `telegram_token`
+- you do **not** need Matrix config or `matrix-nio`
+- the active chat surface can be Feishu only
+- provider CLIs such as Claude Code, Codex, Gemini, or OpenCode remain the
+  model/runtime layer behind that Feishu chat surface
+
+After successful Feishu registration, a Feishu-only config typically looks like:
+
+```json
+{
+  "transport": "feishu",
+  "transports": ["feishu"],
+  "provider": "claude",
+  "model": "sonnet",
+  "feishu": {
+    "mode": "bot_only",
+    "runtime_mode": "native",
+    "brand": "feishu",
+    "app_id": "cli_xxx",
+    "app_secret": "xxx",
+    "domain": "https://open.feishu.cn",
+    "reply_to_trigger": true,
+    "progress_mode": "card_stream"
+  }
+}
+```
+
+Use `provider` / `model` values that match the CLI you actually authenticated.
+For example:
+
+- Claude Code: `provider="claude"`
+- Codex: `provider="codex"`
+- OpenCode-backed GLM: `provider="opencode"` with an OpenCode model such as
+  `zhipuai/glm-5.1`
+
 ## Upgrade behavior
 
 `/upgrade`, `/settings version`, and `controlmesh upgrade` follow the active install source:

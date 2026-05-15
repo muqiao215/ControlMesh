@@ -5,6 +5,18 @@ WeChat/Weixin. Matrix is an optional secondary compatibility transport you can
 add at any time — either as the only transport or running alongside the other
 entrypoints.
 
+Prepare at least one runtime CLI first. Recommended defaults:
+
+```bash
+# Claude Code
+npm install -g @anthropic-ai/claude-code
+claude auth
+
+# or Codex
+npm install -g @openai/codex
+codex auth
+```
+
 ## 1. Install Matrix support
 
 Matrix requires the `matrix-nio` library, which is not included in the base install.
@@ -69,6 +81,8 @@ Edit `~/.controlmesh/config/config.json`:
 ```json
 {
   "transport": "matrix",
+  "provider": "claude",
+  "model": "sonnet",
 
   "matrix": {
     "homeserver": "https://matrix-client.matrix.org",
@@ -77,6 +91,15 @@ Edit `~/.controlmesh/config/config.json`:
     "allowed_rooms": [],
     "allowed_users": ["@you:matrix.org"]
   }
+}
+```
+
+If you authenticated Codex instead, use:
+
+```json
+{
+  "provider": "codex",
+  "model": "gpt-5.4"
 }
 ```
 
@@ -122,6 +145,9 @@ When invited to an unauthorized room, the bot auto-rejects and leaves.
 | Topics | Forum topics (one group) | Separate rooms |
 | Media files | Stored in `telegram_files/` | Stored in `matrix_files/` |
 | Sub-agent setup | `controlmesh agents add` (interactive) | Manual via `agents.json` |
+
+Matrix is the chat surface here; Claude Code / Codex remain the default runtime
+examples behind it.
 
 ## Running both transports
 

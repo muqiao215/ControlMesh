@@ -12,14 +12,37 @@ chat surface in addition to Feishu native and Telegram.
 
 ## Setup
 
+Prepare at least one runtime CLI first. Recommended defaults:
+
+```bash
+# Claude Code
+npm install -g @anthropic-ai/claude-code
+claude auth
+
+# or Codex
+npm install -g @openai/codex
+codex auth
+```
+
 Enable the transport in `~/.controlmesh/config/config.json`:
 
 ```json
 {
   "transports": ["weixin"],
+  "provider": "claude",
+  "model": "sonnet",
   "weixin": {
     "enabled": true
   }
+}
+```
+
+If you authenticated Codex instead, use:
+
+```json
+{
+  "provider": "codex",
+  "model": "gpt-5.4"
 }
 ```
 
@@ -51,6 +74,8 @@ controlmesh auth weixin logout
 ## Boundaries
 
 - Weixin is disabled by default because it requires QR-derived credentials.
+- Weixin is only the chat surface; Claude Code / Codex remain the default
+  runtime examples behind it.
 - If login is complete but `transports` does not include `weixin`, ControlMesh
   will not receive or reply through WeChat.
 - If status says `waiting_first_message`, send one message to the WeChat bot to

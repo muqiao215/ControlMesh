@@ -12,6 +12,18 @@ token-based bot surface alongside Feishu native and WeChat/Weixin.
 
 ## Setup
 
+Prepare at least one runtime CLI first. Recommended defaults:
+
+```bash
+# Claude Code
+npm install -g @anthropic-ai/claude-code
+claude auth
+
+# or Codex
+npm install -g @openai/codex
+codex auth
+```
+
 Create a bot with [@BotFather](https://t.me/BotFather), then collect:
 
 - the bot token
@@ -23,8 +35,19 @@ Enable the transport in `~/.controlmesh/config/config.json`:
 ```json
 {
   "transports": ["telegram"],
+  "provider": "claude",
+  "model": "sonnet",
   "telegram_token": "<bot_token>",
   "allowed_user_ids": [123456789]
+}
+```
+
+If you authenticated Codex instead, use:
+
+```json
+{
+  "provider": "codex",
+  "model": "gpt-5.4"
 }
 ```
 
@@ -52,6 +75,8 @@ controlmesh tasks list
 
 - Telegram is the most straightforward token-based entrypoint, but it is not
   the Feishu native/CardKit path.
+- Telegram is the chat surface; Claude Code / Codex remain the default runtime
+  examples behind it.
 - Group usage is fail-closed: the group and the sending user both need to be
   allowed.
 - For a QR-login entrypoint instead of a bot token, use

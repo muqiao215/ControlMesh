@@ -152,6 +152,26 @@ controlmesh auth feishu doctor
 controlmesh auth feishu probe
 ```
 
+Feishu-only 安装是支持的，不需要 Telegram 或 Matrix。最短路径是：
+
+```bash
+pipx install controlmesh
+npm install -g @anthropic-ai/claude-code
+claude auth
+
+controlmesh feishu native bootstrap
+controlmesh auth feishu register-begin
+controlmesh auth feishu register-poll --device-code "<device_code>" --interval 5 --expires-in 600
+controlmesh service install
+```
+
+这条路径里：
+
+- 聊天入口只有 Feishu
+- 不需要 `telegram_token`
+- 不需要 Matrix 配置
+- Claude Code / Codex / Gemini / OpenCode 负责模型 runtime，Feishu 负责聊天入口
+
 任务 runtime：
 
 ```bash
@@ -378,6 +398,28 @@ controlmesh auth feishu register-poll --device-code "<device_code>" --interval 5
 controlmesh auth feishu doctor
 controlmesh auth feishu probe
 ```
+
+Feishu-only is a first-class path. You do not need Telegram or Matrix if your
+deployment only uses Feishu. The shortest setup is:
+
+```bash
+pipx install controlmesh
+npm install -g @anthropic-ai/claude-code
+claude auth
+
+controlmesh feishu native bootstrap
+controlmesh auth feishu register-begin
+controlmesh auth feishu register-poll --device-code "<device_code>" --interval 5 --expires-in 600
+controlmesh service install
+```
+
+In that setup:
+
+- Feishu is the only chat surface
+- Telegram is not required
+- Matrix is not required
+- Claude Code / Codex / Gemini / OpenCode provide the model runtime behind the
+  Feishu transport
 
 Task runtime:
 
