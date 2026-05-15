@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Protocol
+from collections.abc import Mapping
+from typing import Any, Protocol
 
 _SYSTEM_LABELS: dict[str, str] = {
     "thinking": "处理中...",
@@ -29,6 +30,9 @@ _STATUS_TEMPLATES: dict[str, str] = {
     "complete": "green",
     "failed": "red",
 }
+
+_KIT_SUCCESS_STATES = {"completed", "success", "succeeded", "done"}
+_KIT_FAILED_STATES = {"failed", "failure", "error", "cancelled"}
 
 
 class _FeishuCardPreviewTransport(Protocol):
@@ -75,6 +79,7 @@ class FeishuCardPreviewReporter:
         self._progress_count = 0
         self._start_task: asyncio.Task[None] | None = None
         self._preview_unavailable = False
+        self._terminal = False
 
     @property
     def handles_final_response(self) -> bool:
@@ -104,16 +109,54 @@ class FeishuCardPreviewReporter:
     async def on_text_delta(self, _text: str) -> None:
         return None
 
+    async def on_agent_event(self, event: Mapping[str, Any]) -> None:
+        kind = str(event.get("kind") or "")
+        if kind == "tool_call":
+            await self.on_tool(str(event.get("tool_name") or "unknown"))
+            return
+        if kind == "assistant_message":
+            text = event.get("text")
+            if isinstance(text, str) and text:
+                await self._set_body(text, status="running")
+            return
+        if kind in {"running", "start", "status"}:
+            text = event.get("text")
+            if isinstance(text, str) and text:
+                await self._set_body(text, status="running")
+
+    async def finish_with_single_card_run(self, run: Mapping[str, Any]) -> None:
+        status = str(run.get("status") or "")
+        body = str(
+            run.get("final_text")
+            or run.get("output_text")
+            or run.get("answer")
+            or run.get("summary")
+            or ""
+        ).strip()
+        if status in _KIT_SUCCESS_STATES:
+            await self.finish_success(body or "_No output._")
+            return
+        if status in _KIT_FAILED_STATES:
+            await self.finish_failure(body or "处理失败")
+            return
+        await self._set_body(body or "处理中...", status="running")
+
     async def finish_success(self, text: str) -> None:
+        self._terminal = True
         await self._set_body(text or "_No output._", status="complete")
 
     async def finish_failure(self, error_text: str) -> None:
+        self._terminal = True
         await self._set_body(error_text or "处理失败", status="failed")
 
     async def _emit_initial_preview(self) -> None:
+        if self._message_id is not None or self._preview_unavailable or self._terminal:
+            return
         await self._emit("处理中...")
 
     async def _emit(self, label: str) -> None:
+        if self._terminal:
+            return
         if not label or label in self._sent_labels:
             return
         if self._progress_count >= self._max_messages:
