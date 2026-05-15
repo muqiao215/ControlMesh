@@ -1,4 +1,4 @@
-"""Adapter for ControlMesh's bundled Feishu native plugin."""
+"""Adapter for ControlMesh's bundled first-party Feishu module snapshot."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ def _sibling_repo_root() -> Path:
 
 
 def resolve_feishu_auth_kit_command() -> tuple[list[str], Path | None]:
-    """Resolve the command used to invoke ControlMesh's Feishu native plugin."""
+    """Resolve the command used to invoke ControlMesh's Feishu module snapshot."""
     configured = os.getenv("CONTROLMESH_FEISHU_AUTH_KIT_BIN", "").strip()
     if configured:
         configured_command = shlex.split(configured)
@@ -48,8 +48,8 @@ def resolve_feishu_auth_kit_command() -> tuple[list[str], Path | None]:
         return [uv_bin, "run", "feishu-auth-kit"], sibling_repo
 
     msg = (
-        "feishu-auth-kit plugin not found. ControlMesh should include its bundled "
-        "Feishu native plugin; otherwise set CONTROLMESH_FEISHU_AUTH_KIT_BIN, "
+        "feishu-auth-kit module not found. ControlMesh should include its bundled "
+        "first-party Feishu module snapshot; otherwise set CONTROLMESH_FEISHU_AUTH_KIT_BIN, "
         "install feishu-auth-kit in PATH, or keep the sibling repo with uv available."
     )
     raise FileNotFoundError(msg)

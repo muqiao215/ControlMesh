@@ -19,9 +19,10 @@ commands second.
 
 Important boundary:
 
-- ControlMesh includes `feishu-auth-kit` as its bundled Feishu native plugin.
-  The standalone repository remains the upstream source of this reusable
-  capability, but a ControlMesh release must contain the plugin.
+- ControlMesh includes `feishu-auth-kit` as a bundled snapshot of its
+  first-party Feishu module. The standalone repository remains the reusable
+  extracted form of the same capability, but a ControlMesh release must contain
+  this module snapshot.
 - `controlmesh auth feishu register-begin` / `register-poll` run the official
   Feishu/Lark scan-to-create app registration flow through that plugin.
 - This is an official `accounts` registration flow. It does not bypass tenant
@@ -110,9 +111,9 @@ Plugin resolution order:
 4. Sibling development repo `.venv/bin/feishu-auth-kit`.
 5. Sibling development repo through `uv run feishu-auth-kit`.
 
-This makes Feishu native auth/runtime a contained ControlMesh capability while
-still allowing upstream `feishu-auth-kit` development to override the bundled
-snapshot deliberately.
+This keeps Feishu native auth/runtime as a contained ControlMesh capability
+while still allowing standalone `feishu-auth-kit` development to override the
+bundled snapshot deliberately.
 
 - `setup`: prints the zero-app prerequisite and the next steps through the
   bundled plugin guidance.
@@ -123,7 +124,7 @@ snapshot deliberately.
   runtime path, auto-runs probe, and tells you whether Feishu transport is
   ready to start.
 - `doctor`: delegates app credential and scope diagnostics to the bundled
-  plugin contract while preserving the upstream kit as the reusable source.
+  module contract while preserving the standalone kit as the reusable form.
 - `probe`: runs `feishu-auth-kit register probe --json`, validating
   configured credentials and registering/checking the app as an AI agent through
   the official OpenClaw bot ping endpoint.
@@ -147,8 +148,8 @@ This is the ControlMesh side of the OpenClaw-style auth split:
   binding, and reinjecting a synthetic retry into the ControlMesh runtime.
 
 The current integration is intentionally narrow: ControlMesh contains the
-`feishu-auth-kit` plugin snapshot and talks to it through the same CLI contract
-used by the standalone upstream repo. It still does not copy the OpenClaw
+`feishu-auth-kit` module snapshot and talks to it through the same CLI contract
+used by the standalone repo. It still does not copy the OpenClaw
 implementation wholesale into ControlMesh.
 
 Runtime bridge:
