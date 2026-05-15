@@ -21,6 +21,7 @@ from _shared import CRON_TASKS_DIR, JOBS_PATH, load_jobs_or_default, save_jobs
 _TEMPLATE_DIR = (
     Path(__file__).resolve().parents[2] / "cron_tasks" / "release-ci-monitor-template"
 )
+_RULES_TEMPLATE = "RULES-template.md"
 _TUTORIAL = """\
 CRON MONITOR -- Create a short-lived release/CI monitor.
 
@@ -81,7 +82,7 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _apply_monitor_template(task_dir: Path, *, description: str, schedule: str) -> None:
-    rules_source = (_TEMPLATE_DIR / "AGENTS.md").read_text(encoding="utf-8")
+    rules_source = (_TEMPLATE_DIR / _RULES_TEMPLATE).read_text(encoding="utf-8")
     for name in ("CLAUDE.md", "AGENTS.md", "GEMINI.md"):
         path = task_dir / name
         if path.exists():

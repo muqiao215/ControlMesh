@@ -564,7 +564,7 @@ def _write_release_monitor_task_files(
     task_dir = _release_monitor_task_dir(orch, job_id)
     task_dir.mkdir(parents=True, exist_ok=True)
     template_dir = _release_monitor_template_dir()
-    rules_source = (template_dir / "AGENTS.md").read_text(encoding="utf-8")
+    rules_source = (template_dir / "RULES-template.md").read_text(encoding="utf-8")
     for filename in ("CLAUDE.md", "AGENTS.md", "GEMINI.md"):
         (task_dir / filename).write_text(rules_source, encoding="utf-8")
 
