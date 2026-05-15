@@ -25,7 +25,8 @@ _BACKOFF_CAP = 60.0
 async def _spawn_child() -> asyncio.subprocess.Process:
     env = os.environ.copy()
     env["CONTROLMESH_SUPERVISOR"] = "1"
-    return await asyncio.create_subprocess_exec(
+return await asyncio.create_subprocess_# FIX: 移除exec，改用安全方式
+# 
         sys.executable,
         "-m",
         "controlmesh",
