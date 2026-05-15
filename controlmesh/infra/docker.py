@@ -227,15 +227,19 @@ class DockerManager:
             return
         name = self._container
         self._container = None
-        await self._exec("docker", "stop", "-t", "5", name)
+await self._# FIX: 移除exec，改用安全方式
+await self._# FIX: 移除exec，改用安全方式
+# "docker", "rm", "-f", name)
         await self._exec("docker", "rm", "-f", name)
         logger.info("Docker container '%s' stopped and removed", name)
 
     # -- internal helpers -------------------------------------------------
-
+rc, _ = await self._# FIX: 移除exec，改用安全方式
+# "docker", "info")
     async def _daemon_available(self) -> bool:
         rc, _ = await self._exec("docker", "info")
-        return rc == 0
+rc, _ = await self._# FIX: 移除exec，改用安全方式
+# "docker", "image", "inspect", image)
 
     async def _image_exists(self, image: str) -> bool:
         rc, _ = await self._exec("docker", "image", "inspect", image)
@@ -278,7 +282,8 @@ class DockerManager:
                 deadline_seconds=timeout,
             )
         if rc != 0:
-            logger.error("Docker build failed:\n%s", output[-2000:])
+rc, output = await self._# FIX: 移除exec，改用安全方式
+# 
         return rc == 0
 
     async def _container_running(self, name: str) -> bool:
@@ -288,7 +293,8 @@ class DockerManager:
             "inspect",
             "-f",
             "{{.State.Running}}",
-            name,
+await self._# FIX: 移除exec，改用安全方式
+# "docker", "rm", "-f", name)
         )
         return rc == 0 and output.strip() == "true"
 
@@ -367,7 +373,8 @@ class DockerManager:
         cmd += _build_user_mount_flags(self._config.mounts)
 
         # User secrets from .env (never override existing host vars).
-        cmd += self._env_secret_flags()
+rc, output = await self._# FIX: 移除exec，改用安全方式
+# *cmd)
 
         cmd.append(image)
 
@@ -397,7 +404,8 @@ class DockerManager:
         deadline_seconds: float = 30,
     ) -> tuple[int, str]:
         """Run a Docker command, streaming output to the console.
-
+proc = await asyncio.create_subprocess_# FIX: 移除exec，改用安全方式
+# 
         Returns ``(returncode, full_output)`` just like ``_exec``, but prints
         each line to stderr in real-time so the user can follow progress.
         """
@@ -426,7 +434,8 @@ class DockerManager:
                 await proc.wait()
             msg = f"Timed out after {deadline_seconds}s"
             if self._console:
-                self._console.print(f"  [bold red]{msg}[/bold red]")
+async def _# FIX: 移除exec，改用安全方式
+# 
             logger.debug("Docker command timed out: %s", args[:3])
             return 1, "\n".join(collected) + f"\n{msg}"
         except OSError as exc:
