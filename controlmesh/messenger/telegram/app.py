@@ -207,9 +207,9 @@ class _PollingHeartbeatMiddleware:
 
     async def __call__(
         self,
-        make_request: Callable[[Bot, TelegramMethod[object]], Awaitable[object]],
+        make_request: Callable[[Bot, object], Awaitable[object]],
         bot: Bot,
-        method: TelegramMethod[object],
+        method: object,
     ) -> object:
         result = await make_request(bot, method)
         if isinstance(method, GetUpdates):
