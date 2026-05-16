@@ -726,3 +726,11 @@ class TestFalsePositiveResistance:
     def test_markdown_code_blocks_with_angle_brackets(self) -> None:
         text = "Use `<div>` tags and `<span>` for HTML styling."
         assert "file_tag_injection" not in detect_suspicious_patterns(text)
+
+    def test_raw_agent_event_stream_detected(self) -> None:
+        text = '{"type":"item.completed","item":{"type":"agent_message","text":"hi"}}'
+        assert "raw_agent_event_stream" in detect_suspicious_patterns(text)
+
+    def test_raw_agent_event_stream_detected_with_name_prefix(self) -> None:
+        text = '清梦:\n{"type":"thread.started","thread_id":"abc"}'
+        assert "raw_agent_event_stream" in detect_suspicious_patterns(text)

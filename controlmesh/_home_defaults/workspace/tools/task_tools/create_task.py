@@ -24,6 +24,7 @@ Options:
     --evaluator NAME   Evaluator hint, e.g. foreground
     --plan-id ID       PlanFiles plan id
     --plan-file PATH   Read PLAN.md content from file
+    --prompt-file PATH Read the task prompt from file
     --phase-id ID      PlanFiles phase id
     --phase-title TXT  PlanFiles phase title
 
@@ -89,6 +90,7 @@ def main() -> None:
     evaluator = ""
     plan_id = ""
     plan_file = ""
+    prompt_file = ""
     phase_id = ""
     phase_title = ""
 
@@ -139,6 +141,9 @@ def main() -> None:
         elif args[0] == "--plan-file" and len(args) >= 2:
             plan_file = args[1]
             args = args[2:]
+        elif args[0] == "--prompt-file" and len(args) >= 2:
+            prompt_file = args[1]
+            args = args[2:]
         elif args[0] == "--phase-id" and len(args) >= 2:
             phase_id = args[1]
             args = args[2:]
@@ -148,7 +153,7 @@ def main() -> None:
         else:
             break
 
-    if not args:
+    if not prompt_file and not args:
         print(
             'Usage: python3 create_task.py [--name NAME] [--slot SLOT] [--provider P] '
             '[--model M] [--thinking L] [--route auto] [--kind KIND] "prompt"',
@@ -156,7 +161,11 @@ def main() -> None:
         )
         sys.exit(1)
 
-    prompt = args[0]
+    if prompt_file:
+        with open(prompt_file, encoding="utf-8") as handle:
+            prompt = handle.read()
+    else:
+        prompt = args[0]
     sender = detect_agent_name()
 
     url = get_api_url("/tasks/create")

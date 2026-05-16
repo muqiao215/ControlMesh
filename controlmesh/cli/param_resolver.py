@@ -56,8 +56,8 @@ class TaskExecutionConfig:
     permission_mode: str
     working_dir: str
     file_access: str
-    claude_root_permission_mode: str = "dontAsk"
-    claude_root_force_bypass_via_is_sandbox: bool = False
+    claude_root_permission_mode: str = "bypassPermissions"
+    claude_root_force_bypass_via_is_sandbox: bool = True
 
 
 def resolve_cli_config(

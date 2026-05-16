@@ -6,6 +6,10 @@ default phases, then submits each phase as a background task using plan_id/
 phase_id metadata. Publish phases are tagged with ``evaluator=foreground`` so
 the foreground controller can review and approve before external side effects.
 
+This is the preferred ControlMesh release path. Local preflight work such as
+pytest/build runs inside the background release workflow; short-lived release
+monitor cron jobs are only armed after publish-side remote waits exist.
+
 Usage:
     python3 release_task.py [options] "Release description"
 
@@ -46,6 +50,7 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 _HELP_FLAGS = {"--help", "-h"}
@@ -180,6 +185,8 @@ def _build_plan_markdown(
         "",
         "- The `publish` phase (and any `github_release` phases) require explicit "
         "foreground approval before external side effects.",
+        "- Local preflight stays inside background release phases; the release "
+        "monitor cron is only used for remote CI/PyPI waits after push/tag.",
         "- Use `python3 tools/task_tools/list_tasks.py` to monitor phase progress.",
         "- Approve publish-side host steps from the foreground controller with `/mesh approve <plan-id>`.",
         "- Use `python3 tools/task_tools/cancel_task.py TASK_ID` to abort a phase.",
@@ -224,6 +231,27 @@ def _host_job_metadata(repo_url: str, version: str) -> dict[str, object]:
             {"id": "verify_remote_tag", "kind": "host_job", "approval_required": False},
         ],
     }
+
+
+def _resolve_repo_root(repo_url: str) -> str:
+    """Best-effort local checkout path for a repository URL."""
+    normalized = str(repo_url or "").strip()
+    if not normalized:
+        return ""
+    parsed = urlparse(normalized)
+    repo_name = Path(parsed.path.rstrip("/")).name
+    if repo_name.endswith(".git"):
+        repo_name = repo_name[:-4]
+    if not repo_name:
+        return ""
+    candidates = (
+        Path("/root/.controlmesh/dev") / repo_name,
+        Path.home() / repo_name,
+    )
+    for candidate in candidates:
+        if (candidate / ".git").exists():
+            return str(candidate)
+    return ""
 
 
 def _submit_phase(
@@ -409,6 +437,7 @@ def main() -> None:
     # Submit only the first phase. The foreground-controlled plan loop is
     # responsible for advancing later phases one at a time.
     sender = detect_agent_name()
+    repo_root = _resolve_repo_root(repo_url)
 
     # Propagate sender context
     chat_id_str = os.environ.get("CONTROLMESH_CHAT_ID", "")
@@ -430,12 +459,20 @@ def main() -> None:
         "phase_id": first_phase["id"],
         "phase_title": first_phase["title"],
     }
-    if provider:
+    first_phase_provider = str(first_phase.get("provider") or "").strip()
+    first_phase_model = str(first_phase.get("model") or "").strip()
+    if first_phase_provider:
+        first_body["provider"] = first_phase_provider
+    elif provider:
         first_body["provider"] = provider
-    if model:
+    if first_phase_model:
+        first_body["model"] = first_phase_model
+    elif model:
         first_body["model"] = model
     if first_phase["evaluator"]:
         first_body["evaluator"] = first_phase["evaluator"]
+    if repo_root:
+        first_body["repo_root"] = repo_root
     if chat_id:
         first_body["chat_id"] = chat_id
     if topic_id:
@@ -454,6 +491,7 @@ def main() -> None:
     print()
     print(f"Release workflow '{plan_id}' submitted.")
     print("Later phases will be started by the foreground-controlled review loop, one at a time.")
+    print("Local preflight runs in background release phases; monitor cron is reserved for remote CI/PyPI waits.")
     print("Use `python3 tools/task_tools/list_tasks.py` to monitor progress.")
     print()
     print("PlanFiles artifacts:")

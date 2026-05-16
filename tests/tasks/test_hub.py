@@ -233,6 +233,29 @@ class TestSubmit:
 
         await hub.shutdown()
 
+    async def test_claude_repo_audit_task_gets_background_tool_allowlist(
+        self,
+        registry: TaskRegistry,
+        tmp_path: Path,
+    ) -> None:
+        cli = _make_cli_service("audit output")
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=cli,
+            config=_make_config(default_slot="claude_default"),
+        )
+
+        submit = _submit(prompt="audit repo", name="Repo audit")
+        submit.workunit_kind = "repo_audit"
+        hub.submit(submit)
+        await asyncio.sleep(0.1)
+
+        request = cli.execute.await_args.args[0]
+        assert request.allowed_tools == ("Glob", "Read", "Grep", "Bash")
+
+        await hub.shutdown()
+
     async def test_slot_rejects_workunit_mismatch(self, registry: TaskRegistry, tmp_path: Path) -> None:
         hub = TaskHub(
             registry,
@@ -512,40 +535,6 @@ agent_slots:
         assert entry.provider == "opencode"
         assert entry.model == "zhipuai/glm-5.1"
         cli.resolve_runtime_provider_target.assert_called_once_with("opencode", "")
-
-        await hub.shutdown()
-
-    async def test_opencode_task_keeps_explicit_model_when_global_provider_differs(
-        self,
-        registry: TaskRegistry,
-        tmp_path: Path,
-    ) -> None:
-        cli = _make_cli_service("review output")
-        cli.resolve_runtime_provider_target = MagicMock(
-            side_effect=lambda provider, model: (provider, model)
-        )
-        hub = TaskHub(
-            registry,
-            MagicMock(workspace=tmp_path),
-            cli_service=cli,
-            config=_make_config(),
-        )
-        hub.set_result_handler("main", AsyncMock())
-
-        submit = _submit(prompt="Review the current diff", name="Explicit opencode model")
-        submit.provider_override = "opencode"
-        submit.model_override = "zhipuai/glm-5.1"
-        task_id = hub.submit(submit)
-        await asyncio.sleep(0.1)
-
-        entry = registry.get(task_id)
-        assert entry is not None
-        assert entry.provider == "opencode"
-        assert entry.model == "zhipuai/glm-5.1"
-        cli.resolve_runtime_provider_target.assert_called_once_with(
-            "opencode", "zhipuai/glm-5.1"
-        )
-        cli.resolve_provider.assert_not_called()
 
         await hub.shutdown()
 
@@ -1593,6 +1582,64 @@ class TestWaitingStatus:
         assert entry is not None
         assert entry.status == "waiting"
         assert entry.last_question == "Which framework?"
+
+
+class TestPlanArtifactsForInitialPhase:
+    async def test_repo_audit_phase_with_plan_manifest_creates_plan_files(
+        self, registry: TaskRegistry, tmp_path: Path
+    ) -> None:
+        paths = ControlMeshPaths(controlmesh_home=tmp_path / "home")
+        hub = TaskHub(
+            registry,
+            paths,
+            cli_service=_make_cli_service(),
+            config=_make_config(),
+        )
+        hub.set_result_handler("main", AsyncMock())
+
+        submit = _submit("Execute phase 1 of the release plan.", name="Repo Audit")
+        submit.plan_id = "release-plan"
+        submit.plan_markdown = "# Release Plan\n"
+        submit.plan_phases = [
+            {
+                "id": "repo_audit",
+                "title": "Repository Audit",
+                "workunit_kind": "repo_audit",
+                "route": "auto",
+                "provider": "claude",
+                "model": "sonnet",
+                "metadata": {},
+            },
+            {
+                "id": "preflight_checks",
+                "title": "Preflight Checks",
+                "workunit_kind": "test_execution",
+                "route": "auto",
+                "provider": "claude",
+                "model": "sonnet",
+                "metadata": {},
+            },
+        ]
+        submit.phase_id = "repo_audit"
+        submit.phase_title = "Repository Audit"
+        submit.workunit_kind = "repo_audit"
+        submit.provider_override = "claude"
+        submit.model_override = "sonnet"
+
+        task_id = hub.submit(submit)
+        assert task_id
+
+        plan_dir = paths.plans_dir / "release-plan"
+        assert (plan_dir / "PLAN.md").is_file()
+        assert (plan_dir / "PHASES.json").is_file()
+        assert (plan_dir / "STATE.json").is_file()
+
+        manifest = json.loads((plan_dir / "PHASES.json").read_text(encoding="utf-8"))
+        assert manifest["status"] == "executing"
+        assert manifest["current_phase"] == 1
+        assert manifest["phases"][0]["id"] == "repo_audit"
+        assert manifest["phases"][0]["provider"] == "claude"
+        assert manifest["phases"][0]["model"] == "sonnet"
 
     async def test_resume_from_waiting(self, registry: TaskRegistry, tmp_path: Path) -> None:
         """Resuming a 'waiting' task should work and clear the question."""

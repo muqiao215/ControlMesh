@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from collections.abc import AsyncGenerator
@@ -276,9 +277,17 @@ class CodexCLI(BaseCLI):
 
         is_error = returncode != 0
         result_text, thread_id, usage = parse_codex_jsonl(raw)
+        structured_event_only = _looks_like_codex_event_stream(raw) and not result_text
         response = CLIResponse(
             session_id=thread_id,
-            result=result_text or raw,
+            result=(
+                result_text
+                or (
+                    "Codex returned structured event output without a final assistant message."
+                    if structured_event_only
+                    else raw
+                )
+            ),
             is_error=is_error or not result_text,
             returncode=returncode,
             stderr=stderr_text,
@@ -333,3 +342,27 @@ def _log_cmd(cmd: list[str], *, streaming: bool = False) -> None:
     safe_cmd = [(c[:80] + "...") if len(c) > 80 else c for c in cmd]
     prefix = "Codex stream cmd" if streaming else "Codex cmd"
     logger.info("%s: %s", prefix, " ".join(safe_cmd))
+
+
+def _looks_like_codex_event_stream(raw: str) -> bool:
+    """Return True when *raw* looks like Codex JSONL event output."""
+    saw_event = False
+    for line in raw.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            data = json.loads(stripped)
+        except json.JSONDecodeError:
+            return False
+        if not isinstance(data, dict):
+            return False
+        event_type = str(data.get("type") or "")
+        if event_type.startswith(("thread.", "turn.", "item.", "message")):
+            saw_event = True
+            continue
+        if isinstance(data.get("item"), dict):
+            saw_event = True
+            continue
+        return False
+    return saw_event

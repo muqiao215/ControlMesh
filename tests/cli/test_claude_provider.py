@@ -138,27 +138,30 @@ class TestBuildCommand:
         idx = cmd.index("--permission-mode")
         assert cmd[idx + 1] == "bypassPermissions"
 
-    def test_bypass_permissions_downgraded_under_root(
+    def test_bypass_permissions_preserved_under_root_by_default(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr("controlmesh.cli.claude_provider.os.geteuid", lambda: 0)
         cli = _make_cli(monkeypatch, permission_mode="bypassPermissions")
         cmd = cli._build_command("go")
         idx = cmd.index("--permission-mode")
-        assert cmd[idx + 1] == "dontAsk"
+        assert cmd[idx + 1] == "bypassPermissions"
+        assert "--dangerously-skip-permissions" in cmd
 
     def test_root_fallback_honors_config_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("controlmesh.cli.claude_provider.os.geteuid", lambda: 0)
         cli = _make_cli(
             monkeypatch,
             permission_mode="bypassPermissions",
-            claude_root_permission_mode="auto",
+            claude_root_permission_mode="dontAsk",
+            claude_root_force_bypass_via_is_sandbox=False,
         )
         cmd = cli._build_command("go")
         idx = cmd.index("--permission-mode")
-        assert cmd[idx + 1] == "auto"
+        assert cmd[idx + 1] == "dontAsk"
+        assert "--dangerously-skip-permissions" not in cmd
 
-    def test_root_opt_in_force_bypass_preserves_bypass_permissions(
+    def test_root_force_bypass_explicit_true_preserves_bypass_permissions(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr("controlmesh.cli.claude_provider.os.geteuid", lambda: 0)

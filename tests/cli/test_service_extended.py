@@ -284,6 +284,24 @@ def test_make_cli_passes_system_prompts(tmp_path: Path) -> None:
     assert call_args.append_system_prompt == "Follow rules"
 
 
+def test_make_cli_passes_tool_overrides(tmp_path: Path) -> None:
+    svc = _make_service(tmp_path)
+    with patch("controlmesh.cli.service.create_cli") as mock_create:
+        mock_create.return_value = MagicMock()
+        svc._make_cli(
+            AgentRequest(
+                prompt="test",
+                chat_id=1,
+                allowed_tools=("Read", "Bash"),
+                disallowed_tools=("Write",),
+            )
+        )
+
+    call_args = mock_create.call_args[0][0]
+    assert call_args.allowed_tools == ["Read", "Bash"]
+    assert call_args.disallowed_tools == ["Write"]
+
+
 def test_make_cli_passes_process_label(tmp_path: Path) -> None:
     svc = _make_service(tmp_path)
     with patch("controlmesh.cli.service.create_cli") as mock_create:

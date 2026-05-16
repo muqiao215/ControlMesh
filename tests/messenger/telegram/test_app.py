@@ -683,6 +683,26 @@ class TestResolveText:
         result = await tg_bot._resolve_text(msg)
         assert result == "Hello"
 
+    @patch("controlmesh.messenger.telegram.app.logger")
+    async def test_logs_raw_agent_event_stream_metadata(self, mock_logger: MagicMock) -> None:
+        tg_bot, _ = _make_tg_bot()
+        tg_bot.bot_instance_username = "mybot"
+        tg_bot._orchestrator = _make_orchestrator()
+        msg = _make_message(text='清梦:\n{"type":"item.completed","item":{"type":"agent_message"}}')
+        msg.via_bot = MagicMock()
+        msg.via_bot.username = "bridgebot"
+        msg.forward_origin = MagicMock()
+        msg.sender_chat = MagicMock()
+        msg.sender_chat.id = 777
+        msg.reply_to_message = MagicMock()
+        msg.reply_to_message.message_id = 42
+
+        result = await tg_bot._resolve_text(msg)
+
+        assert result == '清梦:\n{"type":"item.completed","item":{"type":"agent_message"}}'
+        mock_logger.warning.assert_called_once()
+        assert "raw agent event stream received" in mock_logger.warning.call_args.args[0]
+
     async def test_none_when_no_text_and_no_media(self) -> None:
         tg_bot, _ = _make_tg_bot()
         tg_bot._orchestrator = _make_orchestrator()

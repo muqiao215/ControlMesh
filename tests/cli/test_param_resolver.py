@@ -67,8 +67,8 @@ def test_resolve_global_only(base_config: AgentConfig, codex_cache: CodexModelCa
     assert result.permission_mode == "normal"
     assert result.working_dir == "~/controlmesh"
     assert result.file_access == "all"
-    assert result.claude_root_permission_mode == "dontAsk"
-    assert result.claude_root_force_bypass_via_is_sandbox is False
+    assert result.claude_root_permission_mode == "bypassPermissions"
+    assert result.claude_root_force_bypass_via_is_sandbox is True
 
 
 def test_resolve_with_task_overrides(

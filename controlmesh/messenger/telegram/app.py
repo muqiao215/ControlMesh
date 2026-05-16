@@ -93,6 +93,7 @@ from controlmesh.messenger.telegram.welcome import (
     resolve_welcome_callback,
 )
 from controlmesh.multiagent.bus import AsyncInterAgentResult
+from controlmesh.security import detect_suspicious_patterns
 from controlmesh.session.key import SessionKey
 from controlmesh.tasks.models import TaskResult
 from controlmesh.text.response_format import SEP, fmt
@@ -1526,7 +1527,24 @@ class TelegramBot:
                 return None
             if self._config.group_mention_only and not self._is_addressed(message):
                 return None
-        return strip_mention(message.text, self._bot_username)
+        text = strip_mention(message.text, self._bot_username)
+        patterns = detect_suspicious_patterns(text)
+        if "raw_agent_event_stream" in patterns:
+            via_bot = getattr(message, "via_bot", None)
+            forward_origin = getattr(message, "forward_origin", None)
+            sender_chat = getattr(message, "sender_chat", None)
+            reply_to = getattr(message, "reply_to_message", None)
+            logger.warning(
+                "Telegram raw agent event stream received chat=%s message_id=%s from_user=%s via_bot=%s sender_chat=%s forward_origin=%s reply_to=%s",
+                message.chat.id,
+                message.message_id,
+                getattr(getattr(message, "from_user", None), "id", None),
+                getattr(via_bot, "username", None) or getattr(via_bot, "id", None),
+                getattr(sender_chat, "id", None),
+                type(forward_origin).__name__ if forward_origin is not None else None,
+                getattr(reply_to, "message_id", None),
+            )
+        return text
 
     def _use_streaming_output(self) -> bool:
         """Return True when Telegram should emit incremental streaming output."""

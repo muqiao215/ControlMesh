@@ -118,8 +118,8 @@ class CLIServiceConfig:
     max_turns: int | None
     max_budget_usd: float | None
     permission_mode: str
-    claude_root_permission_mode: str = "dontAsk"
-    claude_root_force_bypass_via_is_sandbox: bool = False
+    claude_root_permission_mode: str = "bypassPermissions"
+    claude_root_force_bypass_via_is_sandbox: bool = True
     reasoning_effort: str = "medium"
     gemini_api_key: str | None = None
     docker_container: str = ""
@@ -532,6 +532,8 @@ class CLIService:
                 append_system_prompt=request.append_system_prompt,
                 max_turns=self._config.max_turns,
                 max_budget_usd=self._config.max_budget_usd,
+                allowed_tools=list(request.allowed_tools),
+                disallowed_tools=list(request.disallowed_tools),
                 permission_mode=self._config.permission_mode,
                 claude_root_permission_mode=self._config.claude_root_permission_mode,
                 claude_root_force_bypass_via_is_sandbox=self._config.claude_root_force_bypass_via_is_sandbox,

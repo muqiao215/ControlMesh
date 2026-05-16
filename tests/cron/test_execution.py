@@ -68,6 +68,27 @@ class TestBuildCmd:
         idx = result.cmd.index("--permission-mode")
         assert result.cmd[idx + 1] == "bypassPermissions"
 
+    def test_claude_provider_root_defaults_to_force_bypass(self) -> None:
+        exec_config = TaskExecutionConfig(
+            provider="claude",
+            model="opus",
+            reasoning_effort="",
+            cli_parameters=[],
+            permission_mode="bypassPermissions",
+            working_dir="/tmp",
+            file_access="all",
+        )
+        with (
+            patch("controlmesh.cron.execution.which", return_value="/usr/bin/claude"),
+            patch("controlmesh.cron.execution.os.geteuid", return_value=0),
+        ):
+            result = build_cmd(exec_config, "hello")
+        assert result is not None
+        assert "--dangerously-skip-permissions" in result.cmd
+        assert result.env_overrides == {"IS_SANDBOX": "1"}
+        idx = result.cmd.index("--permission-mode")
+        assert result.cmd[idx + 1] == "bypassPermissions"
+
     def test_claude_provider_root_falls_back_without_force_bypass(self) -> None:
         exec_config = TaskExecutionConfig(
             provider="claude",
@@ -78,6 +99,7 @@ class TestBuildCmd:
             working_dir="/tmp",
             file_access="all",
             claude_root_permission_mode="dontAsk",
+            claude_root_force_bypass_via_is_sandbox=False,
         )
         with (
             patch("controlmesh.cron.execution.which", return_value="/usr/bin/claude"),

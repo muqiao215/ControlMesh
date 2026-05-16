@@ -262,9 +262,53 @@ def test_create_task_supports_plan_phase_flags(tmp_path: Path) -> None:
     ]
 
 
-def test_release_task_submits_only_first_phase_with_full_manifest(tmp_path: Path) -> None:
+def test_create_task_supports_prompt_file_for_shell_unsafe_text(tmp_path: Path) -> None:
+    deployed_dir = _install_deployed_task_tools(tmp_path)
+    prompt_file = tmp_path / "prompt.txt"
+    prompt_text = (
+        "Please process `Chinese (Mandarin)_Sweet_Lady` and "
+        "'Chinese (Mandarin)_Sweet_Lady' literally."
+    )
+    prompt_file.write_text(prompt_text, encoding="utf-8")
+    server, thread = _start_task_api()
+    try:
+        result = _run_tool(
+            deployed_dir / "create_task.py",
+            server.server_address[1],
+            [
+                "--name",
+                "Quoted prompt task",
+                "--prompt-file",
+                str(prompt_file),
+            ],
+        )
+    finally:
+        server.shutdown()
+        thread.join()
+
+    assert result.returncode == 0, result.stderr
+    requests: list[tuple[str, dict[str, Any]]] = server.requests  # type: ignore[attr-defined]
+    assert requests == [
+        (
+            "/tasks/create",
+            {
+                "from": "main",
+                "prompt": prompt_text,
+                "name": "Quoted prompt task",
+            },
+        )
+    ]
+
+
+def test_release_task_submits_only_first_phase_with_full_manifest(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
     """release_task.py should submit only the first phase; later phases stay in the manifest."""
     deployed_dir = _install_deployed_task_tools(tmp_path)
+    fake_home = tmp_path / "home"
+    fake_repo = fake_home / "repo"
+    (fake_repo / ".git").mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(fake_home))
     server, thread = _start_task_api()
     try:
         result = _run_tool(
@@ -289,6 +333,7 @@ def test_release_task_submits_only_first_phase_with_full_manifest(tmp_path: Path
     assert "publish" in result.stdout
     assert "submitted" in result.stdout
     assert "Later phases will be started by the foreground-controlled review loop" in result.stdout
+    assert "Local preflight runs in background release phases" in result.stdout
 
     requests: list[tuple[str, dict[str, Any]]] = server.requests  # type: ignore[attr-defined]
     assert len(requests) == 1
@@ -301,6 +346,7 @@ def test_release_task_submits_only_first_phase_with_full_manifest(tmp_path: Path
     assert "plan_phases" in first_body
     assert len(first_body["plan_phases"]) == 5
     assert first_body["phase_id"] == "repo_audit"
+    assert first_body["repo_root"] == str(fake_repo)
     assert first_body["plan_markdown"]  # Has PLAN.md content
     publish_phase = next(
         phase for phase in first_body["plan_phases"] if phase["id"] == "publish"
@@ -321,7 +367,6 @@ def test_release_task_submits_only_first_phase_with_full_manifest(tmp_path: Path
         phase for phase in first_body["plan_phases"] if phase["id"] == "verify"
     )
     assert verify_phase["metadata"]["wait_for_publish_execution"] is True
-
 
 def test_release_task_dry_run_shows_plan_only(tmp_path: Path) -> None:
     """--dry-run prints plan without submitting tasks."""
@@ -373,6 +418,8 @@ def test_release_task_claude_preference_sets_explicit_provider_in_manifest(tmp_p
     assert len(requests) == 1
     first_body = requests[0][1]
     assert first_body["route"] == "auto"
+    assert first_body["provider"] == "claude"
+    assert first_body["model"] == "sonnet"
     for phase in first_body["plan_phases"]:
         assert phase["provider"] == "claude"
         assert phase["model"] == "sonnet"
@@ -458,3 +505,27 @@ def test_release_task_invalid_phase_shows_error(tmp_path: Path) -> None:
     assert result.returncode == 1
     assert "Unknown phase" in result.stderr
     assert "repo_audit" in result.stderr
+
+
+def test_release_task_omits_repo_root_when_checkout_missing(tmp_path: Path) -> None:
+    deployed_dir = _install_deployed_task_tools(tmp_path)
+    server, thread = _start_task_api()
+    try:
+        result = _run_tool(
+            deployed_dir / "release_task.py",
+            server.server_address[1],
+            [
+                "--repo-url",
+                "https://github.com/org/missing-repo",
+                "Missing repo release",
+            ],
+        )
+    finally:
+        server.shutdown()
+        thread.join()
+
+    assert result.returncode == 0, result.stderr
+    requests: list[tuple[str, dict[str, Any]]] = server.requests  # type: ignore[attr-defined]
+    assert len(requests) == 1
+    first_body = requests[0][1]
+    assert "repo_root" not in first_body

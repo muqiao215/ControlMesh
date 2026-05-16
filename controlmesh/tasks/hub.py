@@ -189,6 +189,8 @@ _LEGACY_PROVIDER_SLOT_ALIASES = {
 _INVALID_RAW_RUNNER_TOKENS = frozenset(
     {"openai", "openai_agents", "anthropic", "zhipuai", "openrouter", "litellm", "ollama", "claw", "claw-code"}
 )
+_CLAUDE_BACKGROUND_BASE_TOOLS = ("Glob", "Read", "Grep", "Bash")
+_CLAUDE_BACKGROUND_WRITE_TOOLS = ("Edit", "Write", "MultiEdit")
 
 TaskResultCallback = Callable[[TaskResult], Awaitable[None]]
 QuestionHandler = Callable[[str, str, str, ChatRef, TopicRef], Awaitable[None]]
@@ -1290,6 +1292,7 @@ class TaskHub:
                 provider_override=None,
                 chat_id=entry.chat_id,
                 process_label=f"task:{entry.task_id}",
+                allowed_tools=_task_allowed_tools(entry),
                 timeout_seconds=timeout,
                 resume_session=resume_session,
             )
@@ -1299,7 +1302,7 @@ class TaskHub:
             if binding.assistant == "opencode":
                 resolver = getattr(cli, "resolve_runtime_provider_target", None)
                 if callable(resolver):
-                    eff_provider, eff_model = resolver("opencode", entry.model or "")
+                    eff_provider, eff_model = resolver("opencode", "")
             if not eff_provider:
                 eff_provider, eff_model = cli.resolve_provider(request)
             if (eff_provider and eff_provider != entry.provider) or (
@@ -2209,7 +2212,10 @@ class TaskHub:
 
     def _prepare_plan_artifacts(self, entry: TaskEntry, submit: TaskSubmit) -> TaskEntry:
         """Create or update real PlanFiles artifacts for plan/phase work units."""
-        if entry.workunit_kind not in _PLAN_PHASE_WORKUNITS | _PLAN_MANIFEST_WORKUNITS:
+        has_plan_context = bool(entry.plan_id or submit.plan_id) and bool(
+            submit.plan_markdown or submit.plan_phases
+        )
+        if entry.workunit_kind not in _PLAN_PHASE_WORKUNITS | _PLAN_MANIFEST_WORKUNITS and not has_plan_context:
             return entry
 
         updates: dict[str, object] = {}
@@ -2227,15 +2233,18 @@ class TaskHub:
             if refreshed is not None:
                 entry = refreshed
 
-        if entry.workunit_kind in _PLAN_MANIFEST_WORKUNITS:
+        plan_id = entry.plan_id or entry.task_id
+        if has_plan_context and submit.plan_phases:
             create_plan_files(
                 self._paths.plans_dir,
-                plan_id=entry.plan_id or entry.task_id,
+                plan_id=plan_id,
                 plan_markdown=submit.plan_markdown or submit.prompt,
                 phases=self._coerce_plan_phases(submit.plan_phases),
-                status="planning",
+                status="executing" if entry.phase_id else "planning",
+                current_phase=1 if entry.phase_id else 0,
             )
-            return entry
+            if entry.workunit_kind in _PLAN_MANIFEST_WORKUNITS:
+                return entry
 
         if entry.plan_id and entry.phase_id:
             update_phase_state(
@@ -2917,6 +2926,19 @@ def _format_release_publish_gate_question(gate: dict[str, Any]) -> str:
             ]
         )
     return "\n".join(lines)
+
+
+def _task_allowed_tools(entry: TaskEntry) -> tuple[str, ...]:
+    """Return per-task tool allowlist overrides for providers that need them."""
+    binding = entry.binding
+    if binding is None or binding.assistant != "claude":
+        return ()
+
+    tools = list(_CLAUDE_BACKGROUND_BASE_TOOLS)
+    business_permissions = {str(item).strip() for item in entry.worker_business_permissions if str(item).strip()}
+    if binding.mode == "repo_write" or business_permissions.intersection({"repo_write", "git_write", "publish"}):
+        tools.extend(_CLAUDE_BACKGROUND_WRITE_TOOLS)
+    return tuple(dict.fromkeys(tools))
 
 
 def _is_release_publish_phase(entry: TaskEntry) -> bool:

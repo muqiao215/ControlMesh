@@ -341,6 +341,27 @@ class TestParseOutput:
         assert resp.result == "plain text output"
         assert resp.is_error is True  # no result_text means is_error
 
+    def test_structured_event_stream_without_final_text_does_not_leak_raw_json(self) -> None:
+        lines = "\n".join(
+            [
+                json.dumps({"type": "thread.started", "thread_id": "th-42"}),
+                json.dumps(
+                    {
+                        "type": "item.started",
+                        "item": {
+                            "type": "command_execution",
+                            "command": "pwd",
+                        },
+                    }
+                ),
+                json.dumps({"type": "turn.completed", "usage": {"input_tokens": 3, "output_tokens": 0}}),
+            ]
+        )
+        resp = CodexCLI._parse_output(lines.encode(), b"", 0)
+        assert resp.is_error is True
+        assert "structured event output" in resp.result
+        assert '{"type": "thread.started"' not in resp.result
+
     def test_stderr_truncated_at_2000(self) -> None:
         long_stderr = b"x" * 3000
         resp = CodexCLI._parse_output(b"", long_stderr, 1)

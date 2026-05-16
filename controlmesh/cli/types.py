@@ -56,6 +56,8 @@ class AgentRequest:
     chat_id: int = 0
     topic_id: int | None = None
     process_label: str = "main"
+    allowed_tools: tuple[str, ...] = ()
+    disallowed_tools: tuple[str, ...] = ()
     resume_session: str | None = None
     continue_session: bool = False
     timeout_seconds: float | None = None

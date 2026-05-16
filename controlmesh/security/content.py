@@ -66,6 +66,13 @@ _SUSPICIOUS_PATTERNS: list[tuple[re.Pattern[str], str]] = [
         re.compile(r"<file:[^>]+>", re.IGNORECASE),
         "file_tag_injection",
     ),
+    (
+        re.compile(
+            r'(?:^|\n)\s*(?:\{)?\"type\"\s*:\s*\"(?:thread\.started|turn\.started|item\.(?:started|updated|completed))\"',
+            re.IGNORECASE,
+        ),
+        "raw_agent_event_stream",
+    ),
 ]
 
 _FULLWIDTH_RE = re.compile(r"[\uFF21-\uFF3A\uFF41-\uFF5A\uFF1C\uFF1E]")
