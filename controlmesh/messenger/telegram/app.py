@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import logging
 import os
+import time
 from collections import deque
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -19,6 +20,8 @@ from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 from aiogram.filters import Command, CommandStart
+from aiogram.methods import GetUpdates
+from aiogram.methods.base import TelegramMethod
 from aiogram.types import BotCommand, ChatMemberUpdated, FSInputFile, ReplyParameters
 
 from controlmesh.command_registry import CommandTarget, get_command_names, is_command_available_for_agent
@@ -104,6 +107,10 @@ logger = logging.getLogger(__name__)
 
 _WELCOME_IMAGE = Path(__file__).resolve().parent / "controlmesh_images" / "welcome.png"
 _CAPTION_LIMIT = 1024
+_TELEGRAM_POLLING_TIMEOUT_SECONDS = 10
+_TELEGRAM_REQUEST_TIMEOUT_SECONDS = 70.0
+_TELEGRAM_POLLING_WATCHDOG_INTERVAL_SECONDS = 30.0
+_TELEGRAM_POLLING_WATCHDOG_STALE_SECONDS = 180.0
 
 
 @dataclass(slots=True)
@@ -192,6 +199,24 @@ async def _cancel_task(task: asyncio.Task[None] | None) -> None:
             await task
 
 
+class _PollingHeartbeatMiddleware:
+    """Track successful ``getUpdates`` calls for polling liveness checks."""
+
+    def __init__(self, on_success: Callable[[], None]) -> None:
+        self._on_success = on_success
+
+    async def __call__(
+        self,
+        make_request: Callable[[Bot, TelegramMethod[object]], Awaitable[object]],
+        bot: Bot,
+        method: TelegramMethod[object],
+    ) -> object:
+        result = await make_request(bot, method)
+        if isinstance(method, GetUpdates):
+            self._on_success()
+        return result
+
+
 def _telegram_proxy_url() -> str | None:
     """Return the first configured Telegram proxy URL from environment."""
     for key in (
@@ -251,17 +276,20 @@ class TelegramBot:
         self._agent_name = agent_name
         self._orchestrator: Orchestrator | None = None
         self._abort_all_callback: Callable[[], Awaitable[int]] | None = None
+        self._polling_started_monotonic: float = 0.0
+        self._last_polling_success_monotonic: float = 0.0
 
         proxy = _telegram_proxy_url()
-        session = None
+        session = AiohttpSession(timeout=_TELEGRAM_REQUEST_TIMEOUT_SECONDS)
         if proxy:
             logger.info("Telegram bot using proxy %s", _redact_proxy_url(proxy))
             try:
-                session = AiohttpSession(proxy=proxy)
+                session.proxy = proxy
             except RuntimeError as exc:
                 raise RuntimeError(
                     "Telegram proxy support requires aiohttp-socks to be installed"
                 ) from exc
+        session.middleware.register(_PollingHeartbeatMiddleware(self._mark_polling_success))
 
         self._bot = Bot(
             token=config.telegram_token,
@@ -278,6 +306,7 @@ class TelegramBot:
         self._router = Router(name="main")
         self._exit_code: int = 0
         self._restart_watcher: asyncio.Task[None] | None = None
+        self._polling_watchdog: asyncio.Task[None] | None = None
         self._update_observer: UpdateObserver | None = None
         self._upgrade_lock = asyncio.Lock()
         self._group_audit_task: asyncio.Task[None] | None = None
@@ -1688,23 +1717,51 @@ class TelegramBot:
         except asyncio.CancelledError:
             logger.debug("Restart watcher cancelled")
 
+    def _mark_polling_success(self) -> None:
+        """Record that Telegram long-polling completed a successful cycle."""
+        self._last_polling_success_monotonic = time.monotonic()
+
+    def _telegram_polling_is_stale(self, now: float) -> bool:
+        """Return True when Telegram polling appears alive but no longer progresses."""
+        started = self._polling_started_monotonic
+        last_success = self._last_polling_success_monotonic
+        if started <= 0.0 or last_success <= 0.0:
+            return False
+        if now - started < _TELEGRAM_POLLING_WATCHDOG_STALE_SECONDS:
+            return False
+        return now - last_success >= _TELEGRAM_POLLING_WATCHDOG_STALE_SECONDS
+
+    async def _watch_polling_liveness(self) -> None:
+        """Restart the service when Telegram polling stops making progress."""
+        try:
+            while True:
+                await asyncio.sleep(_TELEGRAM_POLLING_WATCHDOG_INTERVAL_SECONDS)
+                now = time.monotonic()
+                if not self._telegram_polling_is_stale(now):
+                    continue
+                stale_for = now - self._last_polling_success_monotonic
+                logger.warning(
+                    "Telegram polling appears stale; last successful getUpdates %.1fs ago. Restarting service.",
+                    stale_for,
+                )
+                self._exit_code = EXIT_RESTART
+                await self._dp.stop_polling()
+        except asyncio.CancelledError:
+            logger.debug("Polling watchdog cancelled")
+
     async def run(self) -> int:
         """Start polling. Returns exit code (0 = normal, 42 = restart)."""
         logger.info("Starting Telegram bot (aiogram, long-polling)...")
-        await self._bot.delete_webhook(drop_pending_updates=True)
-        # Flush any lingering polling session from a previous instance (e.g.
-        # after /agent_restart).  offset=-1 confirms all pending updates and
-        # immediately takes over the polling slot on Telegram's servers,
-        # preventing TelegramConflictError on the first real getUpdates call.
-        with contextlib.suppress(Exception):
-            from aiogram.methods import GetUpdates
-
-            await self._bot(GetUpdates(offset=-1, timeout=0))
+        await self._bot.delete_webhook(drop_pending_updates=False)
+        now = time.monotonic()
+        self._polling_started_monotonic = now
+        self._last_polling_success_monotonic = now
         allowed_updates = self._dp.resolve_used_update_types()
         logger.info("Polling allowed_updates=%s", ",".join(allowed_updates))
         await self._dp.start_polling(
             self._bot,
             allowed_updates=allowed_updates,
+            polling_timeout=_TELEGRAM_POLLING_TIMEOUT_SECONDS,
             close_bot_session=True,
             handle_signals=False,
         )
@@ -1712,6 +1769,7 @@ class TelegramBot:
 
     async def shutdown(self) -> None:
         await _cancel_task(self._restart_watcher)
+        await _cancel_task(self._polling_watchdog)
         await _cancel_task(self._group_audit_task)
         for task in list(self._frontstage_run_loops.values()):
             await _cancel_task(task)

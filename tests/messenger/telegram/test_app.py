@@ -193,10 +193,11 @@ class TestTelegramBotRun:
         tg_bot._dp.resolve_used_update_types = MagicMock(return_value=["message", "callback_query"])
         tg_bot._dp.start_polling = AsyncMock()
         code = await tg_bot.run()
-        bot_instance.delete_webhook.assert_called_once_with(drop_pending_updates=True)
+        bot_instance.delete_webhook.assert_called_once_with(drop_pending_updates=False)
         tg_bot._dp.start_polling.assert_called_once_with(
             bot_instance,
             allowed_updates=["message", "callback_query"],
+            polling_timeout=10,
             close_bot_session=True,
             handle_signals=False,
         )
@@ -211,6 +212,14 @@ class TestTelegramBotRun:
         await tg_bot.run()
         kwargs = tg_bot._dp.start_polling.call_args.kwargs
         assert kwargs.get("handle_signals") is False
+
+    async def test_run_tracks_polling_monotonic_state(self) -> None:
+        tg_bot, _bot_instance = _make_tg_bot()
+        tg_bot._dp.resolve_used_update_types = MagicMock(return_value=["message"])
+        tg_bot._dp.start_polling = AsyncMock()
+        await tg_bot.run()
+        assert tg_bot._polling_started_monotonic > 0.0
+        assert tg_bot._last_polling_success_monotonic == tg_bot._polling_started_monotonic
 
     async def test_shutdown_cleans_up(self) -> None:
         tg_bot, _ = _make_tg_bot()
@@ -239,12 +248,14 @@ class TestTelegramBotRun:
         tg_bot._dp.stop_polling = AsyncMock()
         bot_instance.session = MagicMock()
         bot_instance.session.close = AsyncMock()
+        tg_bot._polling_watchdog = asyncio.create_task(asyncio.sleep(100))
 
         await tg_bot.shutdown()
 
         tg_bot._dp.stop_polling.assert_called_once()
         bot_instance.delete_webhook.assert_called_once_with(drop_pending_updates=False)
         bot_instance.session.close.assert_called_once()
+        assert tg_bot._polling_watchdog.cancelled()
 
 
 # ---------------------------------------------------------------------------
@@ -1441,6 +1452,54 @@ class TestWatchRestartMarker:
 
         # CancelledError is caught internally, exit code stays 0
         assert tg_bot._exit_code == 0
+
+
+# ---------------------------------------------------------------------------
+# _watch_polling_liveness
+# ---------------------------------------------------------------------------
+
+
+class TestWatchPollingLiveness:
+    async def test_stale_polling_requests_restart(self) -> None:
+        from controlmesh.infra.restart import EXIT_RESTART
+
+        tg_bot, _ = _make_tg_bot()
+        tg_bot._dp.stop_polling = AsyncMock(side_effect=asyncio.CancelledError)
+        tg_bot._polling_started_monotonic = 10.0
+        tg_bot._last_polling_success_monotonic = 15.0
+
+        monotonic_values = iter([205.0])
+
+        def _monotonic() -> float:
+            return next(monotonic_values)
+
+        with (
+            patch.object(asyncio, "sleep", new_callable=AsyncMock),
+            patch("controlmesh.messenger.telegram.app.time.monotonic", side_effect=_monotonic),
+            patch("controlmesh.messenger.telegram.app.logger") as mock_logger,
+        ):
+            await tg_bot._watch_polling_liveness()
+
+        assert tg_bot._exit_code == EXIT_RESTART
+        tg_bot._dp.stop_polling.assert_called_once()
+        mock_logger.warning.assert_called_once()
+
+    async def test_fresh_polling_does_not_restart(self) -> None:
+        tg_bot, _ = _make_tg_bot()
+        tg_bot._dp.stop_polling = AsyncMock()
+        tg_bot._polling_started_monotonic = 100.0
+        tg_bot._last_polling_success_monotonic = 150.0
+
+        with (
+            patch.object(
+                asyncio, "sleep", new_callable=AsyncMock, side_effect=asyncio.CancelledError
+            ),
+            patch("controlmesh.messenger.telegram.app.time.monotonic", return_value=200.0),
+        ):
+            await tg_bot._watch_polling_liveness()
+
+        assert tg_bot._exit_code == 0
+        tg_bot._dp.stop_polling.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
