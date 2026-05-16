@@ -21,7 +21,6 @@ from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 from aiogram.filters import Command, CommandStart
 from aiogram.methods import GetUpdates
-from aiogram.methods.base import TelegramMethod
 from aiogram.types import BotCommand, ChatMemberUpdated, FSInputFile, ReplyParameters
 
 from controlmesh.command_registry import CommandTarget, get_command_names, is_command_available_for_agent
