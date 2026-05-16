@@ -249,8 +249,11 @@ def _resolve_repo_root(repo_url: str) -> str:
         Path.home() / repo_name,
     )
     for candidate in candidates:
-        if (candidate / ".git").exists():
-            return str(candidate)
+        try:
+            if (candidate / ".git").exists():
+                return str(candidate)
+        except PermissionError:
+            continue
     return ""
 
 
