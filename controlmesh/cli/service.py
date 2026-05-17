@@ -408,19 +408,19 @@ class CLIService:
                 and preflight_requested_model
                 and not probe_opencode_model_sync(requested_model)
             ):
-                msg = f"error:opencode_model_unrunnable model={requested_model}"
-                raise ValueError(msg)
+                logger.warning(
+                    "OpenCode preflight probe failed; continuing with configured model "
+                    "provider=%s model=%s",
+                    provider,
+                    requested_model,
+                )
             return provider, requested_model
 
         if provider == "opencode":
             model = resolve_opencode_runnable_model_sync()
             if model:
                 return provider, model
-            if (
-                self._config.provider == "opencode"
-                and self._config.default_model
-                and probe_opencode_model_sync(self._config.default_model)
-            ):
+            if self._config.provider == "opencode" and self._config.default_model:
                 return provider, self._config.default_model
             msg = "error:opencode_default_model_unresolved"
             raise ValueError(msg)
