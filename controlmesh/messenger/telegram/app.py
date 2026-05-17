@@ -232,12 +232,21 @@ class _TelegramPollingSession(BaseSession):
         self,
         bot: Bot,
         method: TelegramMethod[object],
-        timeout: int | None = None,
+        request_timeout: int | None = None,
+        **kwargs: object,
     ) -> object:
+        timeout_value = kwargs.pop("timeout", request_timeout)
+        if kwargs:
+            unknown = ", ".join(sorted(kwargs))
+            raise TypeError(f"Unexpected keyword argument(s): {unknown}")
         if isinstance(method, GetUpdates):
             self._on_poll_started(method)
             try:
-                result = await self._inner.make_request(bot, method, timeout=timeout)
+                result = await self._inner.make_request(
+                    bot,
+                    method,
+                    timeout=timeout_value,
+                )
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -245,20 +254,25 @@ class _TelegramPollingSession(BaseSession):
                 raise
             self._on_poll_succeeded(method, result)
             return result
-        return await self._inner.make_request(bot, method, timeout=timeout)
+        return await self._inner.make_request(bot, method, timeout=timeout_value)
 
     async def stream_content(
         self,
         url: str,
         headers: dict[str, object] | None = None,
-        timeout: int = 30,
+        request_timeout: int = 30,
         chunk_size: int = 65536,
         raise_for_status: bool = True,
+        **kwargs: object,
     ):
+        timeout_value = kwargs.pop("timeout", request_timeout)
+        if kwargs:
+            unknown = ", ".join(sorted(kwargs))
+            raise TypeError(f"Unexpected keyword argument(s): {unknown}")
         async for chunk in self._inner.stream_content(
             url,
             headers=headers,
-            timeout=timeout,
+            timeout=timeout_value,
             chunk_size=chunk_size,
             raise_for_status=raise_for_status,
         ):
