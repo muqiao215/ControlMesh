@@ -1703,6 +1703,40 @@ class TestTelegramRuntimeStateIntegration:
         assert tg_bot._inbound_spool is not None
         assert tg_bot._inbound_spool.stats().pending_count == 0
 
+    async def test_on_message_spool_uses_python_dump_for_aiogram_defaults(self, tmp_path: Path) -> None:
+        class _DefaultLike:
+            pass
+
+        config = _make_config(streaming_enabled=False)
+        config.controlmesh_home = str(tmp_path)
+        tg_bot, _bot_instance = _make_tg_bot(config)
+        tg_bot._orchestrator = _make_orchestrator(handle_message_text="queued reply")
+        tg_bot._bot_id = 999
+        tg_bot._bot_username = "controlmesh_bot"
+        tg_bot._configure_inbound_spool()
+        msg = _make_message(text="Hello bot", user_id=200)
+        msg.model_dump = MagicMock(
+            return_value={
+                "message_id": 10,
+                "date": 1710000000,
+                "chat": {"id": 1, "type": "private"},
+                "from": {"id": 200, "is_bot": False, "first_name": "TestUser"},
+                "text": "Hello bot",
+                "weird_default": _DefaultLike(),
+            }
+        )
+
+        with patch(
+            "controlmesh.messenger.telegram.app.run_non_streaming_message", new_callable=AsyncMock
+        ) as mock_run:
+            await tg_bot._on_message(msg)
+            await _wait_frontstage_idle(tg_bot)
+
+        msg.model_dump.assert_called_once_with(mode="python", exclude_none=True)
+        mock_run.assert_awaited_once()
+        assert tg_bot._inbound_spool is not None
+        assert tg_bot._inbound_spool.stats().pending_count == 0
+
     async def test_recover_inbound_spool_replays_pending_message_on_startup(self, tmp_path: Path) -> None:
         config = _make_config(streaming_enabled=False)
         config.controlmesh_home = str(tmp_path)

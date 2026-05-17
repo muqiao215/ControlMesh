@@ -1584,7 +1584,9 @@ class TelegramBot:
         if self._inbound_spool is None:
             self._enqueue_frontstage_run(message, key, text, thread_id=thread_id)
             return
-        enqueued = self._inbound_spool.enqueue([message.model_dump(mode="json")])
+        enqueued = self._inbound_spool.enqueue(
+            [message.model_dump(mode="python", exclude_none=True)]
+        )
         self._last_inbound_spool_stats = self._inbound_spool.stats()
         if enqueued:
             logger.debug(
