@@ -135,7 +135,6 @@ async def run_startup(bot: TelegramBot) -> None:
 
     await bot._sync_commands()
     bot._restart_watcher = asyncio.create_task(bot._watch_restart_marker())
-    bot._polling_watchdog = asyncio.create_task(bot._watch_polling_liveness())
 
     # Audit groups on startup and start periodic 24h check
     await bot.audit_groups()

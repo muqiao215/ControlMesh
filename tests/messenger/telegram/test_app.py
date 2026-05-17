@@ -204,6 +204,66 @@ class TestTelegramBotInit:
             _ = tg_bot._orch
 
 
+class TestTelegramPollingSession:
+    async def test_make_request_forwards_timeout_keyword(self) -> None:
+        from controlmesh.messenger.telegram.app import _TelegramPollingSession
+
+        inner = MagicMock()
+        inner.api = MagicMock()
+        inner.json_loads = MagicMock()
+        inner.json_dumps = MagicMock()
+        inner.timeout = 30
+        inner.middleware = MagicMock()
+        inner.make_request = AsyncMock(return_value=[])
+
+        session = _TelegramPollingSession(
+            inner,
+            on_poll_started=MagicMock(),
+            on_poll_succeeded=MagicMock(),
+            on_poll_failed=AsyncMock(),
+        )
+        bot = MagicMock()
+        method = GetUpdates(offset=1, timeout=10)
+
+        result = await session.make_request(bot, method, timeout=55)
+
+        assert result == []
+        inner.make_request.assert_awaited_once_with(bot, method, timeout=55)
+
+    async def test_stream_content_delegates_to_inner_session(self) -> None:
+        from controlmesh.messenger.telegram.app import _TelegramPollingSession
+
+        async def _fake_stream():
+            yield b"a"
+            yield b"b"
+
+        inner = MagicMock()
+        inner.api = MagicMock()
+        inner.json_loads = MagicMock()
+        inner.json_dumps = MagicMock()
+        inner.timeout = 30
+        inner.middleware = MagicMock()
+        inner.stream_content = MagicMock(return_value=_fake_stream())
+
+        session = _TelegramPollingSession(
+            inner,
+            on_poll_started=MagicMock(),
+            on_poll_succeeded=MagicMock(),
+            on_poll_failed=AsyncMock(),
+        )
+
+        chunks = [chunk async for chunk in session.stream_content("https://example.com", timeout=5)]
+
+        assert chunks == [b"a", b"b"]
+        inner.stream_content.assert_called_once_with(
+            "https://example.com",
+            headers=None,
+            timeout=5,
+            chunk_size=65536,
+            raise_for_status=True,
+        )
+
+
 class TestTelegramBotRun:
     async def test_run_returns_exit_code(self) -> None:
         tg_bot, bot_instance = _make_tg_bot()
