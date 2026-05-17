@@ -232,12 +232,12 @@ class _TelegramPollingSession(BaseSession):
         self,
         bot: Bot,
         method: TelegramMethod[object],
-        request_timeout: int | None = None,
+        timeout: int | None = None,
     ) -> object:
         if isinstance(method, GetUpdates):
             self._on_poll_started(method)
             try:
-                result = await self._inner.make_request(bot, method, request_timeout)
+                result = await self._inner.make_request(bot, method, timeout=timeout)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -245,7 +245,24 @@ class _TelegramPollingSession(BaseSession):
                 raise
             self._on_poll_succeeded(method, result)
             return result
-        return await self._inner.make_request(bot, method, request_timeout)
+        return await self._inner.make_request(bot, method, timeout=timeout)
+
+    async def stream_content(
+        self,
+        url: str,
+        headers: dict[str, object] | None = None,
+        timeout: int = 30,
+        chunk_size: int = 65536,
+        raise_for_status: bool = True,
+    ):
+        async for chunk in self._inner.stream_content(
+            url,
+            headers=headers,
+            timeout=timeout,
+            chunk_size=chunk_size,
+            raise_for_status=raise_for_status,
+        ):
+            yield chunk
 
     def __getattr__(self, name: str) -> object:
         return getattr(self._inner, name)
@@ -1567,7 +1584,9 @@ class TelegramBot:
         if self._inbound_spool is None:
             self._enqueue_frontstage_run(message, key, text, thread_id=thread_id)
             return
-        enqueued = self._inbound_spool.enqueue([message.model_dump(mode="json")])
+        enqueued = self._inbound_spool.enqueue(
+            [message.model_dump(mode="python", exclude_none=True)]
+        )
         self._last_inbound_spool_stats = self._inbound_spool.stats()
         if enqueued:
             logger.debug(

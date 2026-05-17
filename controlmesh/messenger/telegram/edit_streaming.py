@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
+from aiogram.types import ReplyParameters
 
 from controlmesh.messenger.telegram.buttons import extract_buttons
 from controlmesh.messenger.telegram.formatting import (
@@ -287,7 +288,13 @@ class EditStreamEditor:
             return
         try:
             if self._s.messages_sent == 0 and self._reply_to is not None:
-                msg = await self._reply_to.answer(display, parse_mode=ParseMode.HTML)
+                msg = await self._bot.send_message(
+                    chat_id=self._chat_id,
+                    text=display,
+                    parse_mode=ParseMode.HTML,
+                    message_thread_id=self._thread_id,
+                    reply_parameters=ReplyParameters(message_id=self._reply_to.message_id),
+                )
             else:
                 msg = await self._bot.send_message(
                     chat_id=self._chat_id,
