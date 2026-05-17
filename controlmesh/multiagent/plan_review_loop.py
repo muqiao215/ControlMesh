@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -33,6 +34,7 @@ if TYPE_CHECKING:
 
 
 _CONTROLLER_MODE = "agents_review_loop"
+logger = logging.getLogger(__name__)
 _MESH_PHASE_LIMIT = 5
 _RECOGNIZED_PHASE_STATUSES = {"pending", "running", "completed", "ask", "repair"}
 _REPAIR_FEEDBACK_WAITING = "repair_feedback_waiting"
@@ -817,7 +819,7 @@ async def _handle_release_monitor_result(
                 )
             except Exception:
                 # Fall back to the explicit approval prompt if synthetic resume cannot run.
-                pass
+                logger.exception("Synthetic release-monitor auto-advance failed for plan `%s` step `%s`", plan_id, step_id)
         _set_controller_state(
             orch,
             plan_id,
@@ -1535,7 +1537,7 @@ async def handle_task_result(orch: Orchestrator, result: TaskResult) -> str | No
                     plan_id,
                 )
             except Exception:
-                pass
+                logger.exception("Synthetic phase auto-advance failed for plan `%s` phase `%s`", plan_id, entry.phase_id)
         position, total = _phase_position(orch, plan_id, entry.phase_id)
         review = _latest_review(orch, plan_id, phase_id=entry.phase_id)
         evaluation_lines = _evaluation_lines(evaluation, review)
