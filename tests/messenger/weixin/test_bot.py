@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -13,10 +13,12 @@ from controlmesh.config import AgentConfig
 from controlmesh.infra.restart import EXIT_RESTART
 from controlmesh.messenger.weixin.auth_state import WeixinAuthStateStore
 from controlmesh.messenger.weixin.auth_store import StoredWeixinCredentials
+from controlmesh.messenger.weixin.api import WeixinIlinkApiError
 from controlmesh.messenger.weixin.bot import WeixinBot
 from controlmesh.messenger.weixin.runtime import (
     WeixinContextTokenRequiredError,
     WeixinIncomingText,
+    WeixinPollResult,
     WeixinReauthRequiredError,
 )
 
@@ -49,6 +51,38 @@ def _save_credentials(bot: WeixinBot) -> None:
 class _ExpiredRuntime:
     async def poll_once(self) -> None:
         raise WeixinReauthRequiredError("Weixin iLink session expired")
+
+
+class _RecoverableFailRuntime:
+    def __init__(self, exc: Exception) -> None:
+        self._exc = exc
+        self.cursor = "cursor-before-error"
+
+    async def poll_once(self) -> WeixinPollResult:
+        raise self._exc
+
+
+class _StallRuntime:
+    def __init__(self) -> None:
+        self.cursor = "cursor-before-stall"
+
+    async def poll_once(self) -> WeixinPollResult:
+        await asyncio.sleep(3600)
+        raise AssertionError("unreachable")
+
+
+class _SuccessfulPollRuntime:
+    def __init__(self, cursor: str = "cursor-after-rebuild") -> None:
+        self.cursor = cursor
+        self.poll_calls = 0
+
+    async def poll_once(self) -> WeixinPollResult:
+        self.poll_calls += 1
+        return WeixinPollResult(
+            cursor=self.cursor,
+            message_count=0,
+            delivered_text_count=0,
+        )
 
 
 class _RecordingRuntime:
@@ -94,6 +128,62 @@ class TestWeixinBotResilience:
         assert WeixinAuthStateStore(tmp_path).load_state() == "reauth_required"
         assert bot._runtime is None
         assert bot._stop_event.is_set() is True
+
+    async def test_poll_loop_marks_recoverable_http_error_dirty_and_rebuilds_transport(
+        self,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        bot = _make_bot(tmp_path)
+        _save_credentials(bot)
+        bot._runtime = _RecoverableFailRuntime(
+            WeixinIlinkApiError("conflict", status=409, code=409),
+        )  # type: ignore[assignment]
+        bot._stop_event = MagicMock()
+        bot._stop_event.is_set.side_effect = [False, False, True]
+        bot._wait_for_retry_delay = AsyncMock()  # type: ignore[method-assign]
+        rebuilt_runtime = _SuccessfulPollRuntime()
+        bot._build_runtime = MagicMock(return_value=rebuilt_runtime)  # type: ignore[method-assign]
+        bot._close_transport_session = AsyncMock()  # type: ignore[method-assign]
+        bot._ensure_session = MagicMock()  # type: ignore[method-assign]
+
+        with caplog.at_level(logging.WARNING):
+            await bot._poll_loop()
+
+        assert bot._build_runtime.call_count == 1
+        assert rebuilt_runtime.poll_calls == 1
+        assert bot._poll_diagnostics.transport_dirty is False
+        assert bot._poll_diagnostics.consecutive_failures == 0
+        assert bot._poll_diagnostics.last_poll_cursor == "cursor-after-rebuild"
+        assert bot._runtime is rebuilt_runtime
+        assert bot._close_transport_session.await_count == 1
+        assert "marked transport dirty reason=poll_conflict_409" in caplog.text
+
+    async def test_poll_loop_treats_timeout_as_stall_and_rebuilds_transport(
+        self,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        bot = _make_bot(tmp_path)
+        _save_credentials(bot)
+        bot._runtime = _StallRuntime()  # type: ignore[assignment]
+        bot._stop_event = MagicMock()
+        bot._stop_event.is_set.side_effect = [False, False, True]
+        bot._wait_for_retry_delay = AsyncMock()  # type: ignore[method-assign]
+        bot._poll_stall_timeout_seconds = 0.01
+        rebuilt_runtime = _SuccessfulPollRuntime(cursor="cursor-after-stall")
+        bot._build_runtime = MagicMock(return_value=rebuilt_runtime)  # type: ignore[method-assign]
+        bot._close_transport_session = AsyncMock()  # type: ignore[method-assign]
+        bot._ensure_session = MagicMock()  # type: ignore[method-assign]
+
+        with caplog.at_level(logging.WARNING):
+            await bot._poll_loop()
+
+        assert bot._build_runtime.call_count == 1
+        assert rebuilt_runtime.poll_calls == 1
+        assert bot._runtime is rebuilt_runtime
+        assert bot._poll_diagnostics.last_poll_cursor == "cursor-after-stall"
+        assert "marked transport dirty reason=poll_stall" in caplog.text
 
     async def test_watch_restart_marker_requests_restart(self, tmp_path: Path) -> None:
         bot = _make_bot(tmp_path)

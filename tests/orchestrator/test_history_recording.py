@@ -157,6 +157,40 @@ async def test_record_frontstage_assistant_turn_tolerates_missing_attachment_pat
 
 
 @pytest.mark.asyncio
+async def test_record_frontstage_assistant_turn_extracts_visible_text_from_internal_event_payload(
+    orch: Orchestrator,
+) -> None:
+    key = SessionKey.telegram(79, 7)
+
+    await orch._record_frontstage_assistant_turn(
+        key,
+        OrchestratorResult(
+            text='{"type":"item.completed","item":{"type":"agent_message","text":"Recovered final text"}}'
+        ),
+    )
+
+    turns = orch._transcripts.read_recent(key, limit=10)
+    assert len(turns) == 1
+    assert turns[0].visible_content == "Recovered final text"
+
+
+@pytest.mark.asyncio
+async def test_record_frontstage_assistant_turn_skips_metadata_only_internal_event_payload(
+    orch: Orchestrator,
+) -> None:
+    key = SessionKey.telegram(80, 8)
+
+    await orch._record_frontstage_assistant_turn(
+        key,
+        OrchestratorResult(
+            text='{"type":"item.completed","item":{"type":"command_execution","status":"completed"}}'
+        ),
+    )
+
+    assert orch._transcripts.read_recent(key, limit=10) == []
+
+
+@pytest.mark.asyncio
 async def test_record_frontstage_user_turn_accepts_string_native_chat_refs(
     orch: Orchestrator,
 ) -> None:

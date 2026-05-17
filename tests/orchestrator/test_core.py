@@ -510,6 +510,35 @@ async def test_streaming_routes_correctly(orch: Orchestrator) -> None:
     mock_streaming.assert_called_once()
 
 
+async def test_handle_message_streaming_recovers_final_text_from_runtime_history_without_json_leak(
+    orch: Orchestrator,
+) -> None:
+    async def _mock_streaming(
+        _request: object,
+        *,
+        on_text_delta: AsyncMock | None = None,
+        on_tool_activity: object = None,
+        on_tool_event: object = None,
+        on_system_status: object = None,
+    ) -> AgentResponse:
+        del on_tool_activity, on_tool_event, on_system_status
+        assert on_text_delta is not None
+        await on_text_delta("Recovered visible text")
+        return _mock_response(
+            result='{"type":"item.completed","item":{"type":"command_execution","status":"completed"}}'
+        )
+
+    object.__setattr__(orch._cli_service, "execute_streaming", AsyncMock(side_effect=_mock_streaming))
+    on_delta = AsyncMock()
+
+    result = await orch.handle_message_streaming(
+        SessionKey(chat_id=1), "Hello", on_text_delta=on_delta
+    )
+
+    assert result.text == "Recovered visible text"
+    assert "item.completed" not in result.text
+
+
 # -- error handling --
 
 

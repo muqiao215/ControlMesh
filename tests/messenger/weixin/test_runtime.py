@@ -9,10 +9,12 @@ import pytest
 
 from controlmesh.messenger.weixin.api import WeixinIlinkApiError
 from controlmesh.messenger.weixin.auth_store import StoredWeixinCredentials
+from controlmesh.messenger.weixin.inbound_spool import WeixinInboundSpool
 from controlmesh.messenger.weixin.runtime import (
     WeixinContextTokenRequiredError,
     WeixinIncomingText,
     WeixinLongPollRuntime,
+    WeixinPollResult,
     WeixinReauthRequiredError,
     WeixinUpdateBatch,
 )
@@ -45,10 +47,12 @@ class _FakeClient:
         user_id: str,
         context_token: str,
         text: str,
+        *,
+        client_ids: list[str] | None = None,
     ) -> None:
         if self.send_text_error is not None:
             raise self.send_text_error
-        self.send_text_calls.append((credentials, user_id, context_token, text))
+        self.send_text_calls.append((credentials, user_id, context_token, text, tuple(client_ids or ())))
 
 
 def _credentials() -> StoredWeixinCredentials:
@@ -100,6 +104,7 @@ class TestWeixinLongPollRuntime:
 
     async def test_poll_once_persists_cursor_and_context_for_restart(self, tmp_path: Path) -> None:
         state_store = WeixinRuntimeStateStore(tmp_path)
+        spool = WeixinInboundSpool(tmp_path, _credentials())
         client = _FakeClient(
             updates=[
                 WeixinUpdateBatch(cursor="cursor-2", messages=[_user_text_message(text="hello wx")]),
@@ -110,6 +115,7 @@ class TestWeixinLongPollRuntime:
             client=client,
             on_text=lambda _message: None,
             state_store=state_store,
+            inbound_spool=spool,
         )
 
         await runtime.poll_once()
@@ -117,6 +123,7 @@ class TestWeixinLongPollRuntime:
         assert state_store.load_state(_credentials()) == WeixinRuntimeState(
             cursor="cursor-2",
             context_tokens=(("user-1", "ctx-1"),),
+            last_inbound_drain_at=state_store.load_state(_credentials()).last_inbound_drain_at,
         )
 
         restored_client = _FakeClient(updates=[])
@@ -125,11 +132,14 @@ class TestWeixinLongPollRuntime:
             client=restored_client,
             on_text=lambda _message: None,
             state_store=state_store,
+            inbound_spool=WeixinInboundSpool(tmp_path, _credentials()),
         )
 
         await restored_runtime.send_text("user-1", "pong")
 
-        assert restored_client.send_text_calls == [(_credentials(), "user-1", "ctx-1", "pong")]
+        assert restored_client.send_text_calls == [
+            (_credentials(), "user-1", "ctx-1", "pong", restored_client.send_text_calls[0][4])
+        ]
 
     async def test_context_cache_is_bounded_and_evicts_oldest_user(self, tmp_path: Path) -> None:
         state_store = WeixinRuntimeStateStore(tmp_path)
@@ -181,6 +191,119 @@ class TestWeixinLongPollRuntime:
             )
         ]
 
+    async def test_poll_once_empty_success_still_returns_alive_result(self) -> None:
+        client = _FakeClient(
+            updates=[
+                WeixinUpdateBatch(cursor="cursor-2", messages=[]),
+            ]
+        )
+        runtime = WeixinLongPollRuntime(
+            credentials=_credentials(),
+            client=client,
+            on_text=lambda _message: None,
+        )
+
+        result = await runtime.poll_once()
+
+        assert result == WeixinPollResult(
+            cursor="cursor-2",
+            message_count=0,
+            delivered_text_count=0,
+        )
+        assert result.empty_success is True
+        assert runtime.cursor == "cursor-2"
+
+    async def test_poll_once_replays_spooled_backlog_after_restart(self, tmp_path: Path) -> None:
+        state_store = WeixinRuntimeStateStore(tmp_path)
+        spool = WeixinInboundSpool(tmp_path, _credentials())
+        first_client = _FakeClient(
+            updates=[
+                WeixinUpdateBatch(cursor="cursor-1", messages=[_user_text_message(text="hello wx")]),
+            ]
+        )
+        failing_seen: list[WeixinIncomingText] = []
+
+        async def _fail_once(message: WeixinIncomingText) -> None:
+            failing_seen.append(message)
+            raise RuntimeError("handler crashed")
+
+        failing_runtime = WeixinLongPollRuntime(
+            credentials=_credentials(),
+            client=first_client,
+            on_text=_fail_once,
+            state_store=state_store,
+            inbound_spool=spool,
+        )
+
+        with pytest.raises(RuntimeError, match="handler crashed"):
+            await failing_runtime.poll_once()
+
+        assert spool.stats().pending_count == 1
+
+        replay_seen: list[WeixinIncomingText] = []
+        restored_runtime = WeixinLongPollRuntime(
+            credentials=_credentials(),
+            client=_FakeClient(updates=[WeixinUpdateBatch(cursor="cursor-2", messages=[])]),
+            on_text=replay_seen.append,
+            state_store=state_store,
+            inbound_spool=WeixinInboundSpool(tmp_path, _credentials()),
+        )
+
+        result = await restored_runtime.poll_once()
+
+        assert [item.text for item in replay_seen] == ["hello wx"]
+        assert result.delivered_text_count == 1
+        assert result.backlog_pending_count == 0
+
+    async def test_poll_once_recovers_stale_claim_and_reports_it(self, tmp_path: Path) -> None:
+        spool = WeixinInboundSpool(tmp_path, _credentials(), claim_ttl_seconds=1.0)
+        spool.enqueue([_user_text_message(text="hello stale")])
+        claim = spool.claim_next(owner="worker-a", now=10.0)
+        assert claim is not None
+
+        seen: list[WeixinIncomingText] = []
+        runtime = WeixinLongPollRuntime(
+            credentials=_credentials(),
+            client=_FakeClient(updates=[WeixinUpdateBatch(cursor="cursor-2", messages=[])]),
+            on_text=seen.append,
+            inbound_spool=spool,
+        )
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("controlmesh.messenger.weixin.inbound_spool.time.time", lambda: 12.0)
+            mp.setattr("controlmesh.messenger.weixin.runtime.time.time", lambda: 12.0)
+            result = await runtime.poll_once()
+
+        assert result.recovered_stale_claim_count == 1
+        assert [item.text for item in seen] == ["hello stale"]
+
+    async def test_poll_once_reports_unhealthy_blocked_backlog(self, tmp_path: Path) -> None:
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("controlmesh.messenger.weixin.inbound_spool.time.time", lambda: 20.0)
+            spool = WeixinInboundSpool(
+                tmp_path,
+                _credentials(),
+                claim_ttl_seconds=60.0,
+                unhealthy_backlog_age_seconds=5.0,
+            )
+            spool.enqueue([_user_text_message(text="a1"), _user_text_message(text="a2")])
+            claim = spool.claim_next(owner="worker-a", now=20.0)
+            assert claim is not None
+
+            runtime = WeixinLongPollRuntime(
+                credentials=_credentials(),
+                client=_FakeClient(updates=[WeixinUpdateBatch(cursor="cursor-2", messages=[])]),
+                on_text=lambda _message: None,
+                inbound_spool=spool,
+            )
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("controlmesh.messenger.weixin.inbound_spool.time.time", lambda: 30.0)
+            result = await runtime.poll_once()
+
+        assert result.unhealthy_reason == "blocked_backlog"
+        assert result.blocked_lane_count == 1
+
     async def test_send_text_uses_cached_context_token(self) -> None:
         client = _FakeClient(updates=[])
         runtime = WeixinLongPollRuntime(
@@ -192,7 +315,9 @@ class TestWeixinLongPollRuntime:
 
         await runtime.send_text("user-1", "pong")
 
-        assert client.send_text_calls == [(_credentials(), "user-1", "ctx-1", "pong")]
+        assert client.send_text_calls == [
+            (_credentials(), "user-1", "ctx-1", "pong", client.send_text_calls[0][4])
+        ]
 
     async def test_reply_uses_message_context_token(self) -> None:
         client = _FakeClient(updates=[])
@@ -212,7 +337,55 @@ class TestWeixinLongPollRuntime:
         await runtime.reply(message, "pong")
 
         assert runtime.context_token_for("user-1") == "ctx-2"
-        assert client.send_text_calls == [(_credentials(), "user-1", "ctx-2", "pong")]
+        assert client.send_text_calls == [
+            (_credentials(), "user-1", "ctx-2", "pong", client.send_text_calls[0][4])
+        ]
+
+    async def test_poll_once_skips_persisted_outbound_self_echo_after_restart(self, tmp_path: Path) -> None:
+        state_store = WeixinRuntimeStateStore(tmp_path)
+        runtime = WeixinLongPollRuntime(
+            credentials=_credentials(),
+            client=_FakeClient(updates=[]),
+            on_text=lambda _message: None,
+            state_store=state_store,
+        )
+        await runtime.send_text("user-1", "pong", context_token="ctx-1")
+        persisted = state_store.load_state(_credentials())
+        client_ids = [client_id for client_id, _ in persisted.recent_outbound]
+        assert client_ids
+
+        seen: list[WeixinIncomingText] = []
+        restored_client = _FakeClient(
+            updates=[
+                WeixinUpdateBatch(
+                    cursor="cursor-echoed",
+                    messages=[
+                        {
+                            "message_id": 202,
+                            "from_user_id": "",
+                            "to_user_id": "user-1",
+                            "client_id": client_ids[0],
+                            "message_type": 2,
+                            "message_state": 2,
+                            "context_token": "ctx-1",
+                            "item_list": [{"type": 1, "text_item": {"text": "pong"}}],
+                        },
+                        _user_text_message(text="real user"),
+                    ],
+                )
+            ]
+        )
+        restored_runtime = WeixinLongPollRuntime(
+            credentials=_credentials(),
+            client=restored_client,
+            on_text=seen.append,
+            state_store=state_store,
+        )
+
+        await restored_runtime.poll_once()
+
+        assert [item.text for item in seen] == ["real user"]
+        assert state_store.load_state(_credentials()).recent_outbound == ()
 
     async def test_send_text_requires_context_token(self) -> None:
         client = _FakeClient(updates=[])

@@ -19,6 +19,7 @@ from controlmesh.i18n import t
 from controlmesh.infra.inflight import InflightTurn
 from controlmesh.log_context import set_log_context
 from controlmesh.orchestrator.hooks import HookContext
+from controlmesh.orchestrator.presentation import normalize_user_visible_output
 from controlmesh.orchestrator.registry import OrchestratorResult
 from controlmesh.session import SessionData, SessionKey
 from controlmesh.text.response_format import session_error_text, timeout_error_text
@@ -684,10 +685,23 @@ async def _normal_streaming_with_options(
     _begin_inflight(orch, request, session, is_recovery=False)
     try:
         cb = options.cbs or StreamingCallbacks()
+        streamed_chunks: list[str] = []
+
+        async def _recording_text_delta(chunk: str) -> None:
+            if chunk:
+                streamed_chunks.append(chunk)
+                orch.append_runtime_event(
+                    key,
+                    "assistant_text_delta",
+                    {"text": "".join(streamed_chunks)},
+                )
+            if cb.on_text_delta is not None:
+                await cb.on_text_delta(chunk)
+
         request = _with_foreground_watchdog(orch, request)
         response = await orch._cli_service.execute_streaming(
             request,
-            on_text_delta=cb.on_text_delta,
+            on_text_delta=_recording_text_delta,
             on_tool_activity=cb.on_tool_activity,
             on_tool_event=cb.on_tool_event,
             on_system_status=cb.on_system_status,
@@ -732,8 +746,13 @@ async def _normal_streaming_with_options(
         await _update_session(orch, session, response)
         logger.info("Streaming flow completed")
         req_model, _prov = _request_target(orch, request)
-        return _finish_normal(
-            response, session, orch._config.session_age_warning_hours, model_name=req_model
+        return await _present_streaming_response_with_recovery(
+            orch,
+            key,
+            response,
+            session=session,
+            warning_hours=orch._config.session_age_warning_hours,
+            model_name=req_model,
         )
     finally:
         orch._inflight_tracker.complete(key.chat_id)
@@ -765,14 +784,63 @@ def _finish_normal(
     model_name: str = "",
 ) -> OrchestratorResult:
     """Post-processing for normal() and normal_streaming()."""
+    presented = normalize_user_visible_output(response.result)
+
     if response.is_error:
         if response.timed_out:
             return OrchestratorResult(text=t("timeout.generic"))
-        if response.result.strip():
-            return OrchestratorResult(text=t("error.generic", detail=response.result[:500]))
+        if presented.text.strip():
+            return OrchestratorResult(text=t("error.generic", detail=presented.text[:500]))
         return OrchestratorResult(text=t("error.check_logs"))
 
-    text = response.result
+    if presented.is_metadata_only:
+        return OrchestratorResult(text=t("error.check_logs"))
+
+    text = presented.text
+    if session:
+        text += _session_age_note(session, warning_hours)
+
+    return OrchestratorResult(
+        text=text,
+        stream_fallback=response.stream_fallback,
+        model_name=model_name,
+        total_tokens=response.total_tokens,
+        input_tokens=response.input_tokens,
+        cost_usd=response.cost_usd,
+        duration_ms=response.duration_ms,
+    )
+
+
+async def _present_streaming_response_with_recovery(
+    orch: Orchestrator,
+    key: SessionKey,
+    response: AgentResponse,
+    *,
+    session: SessionData | None = None,
+    warning_hours: int = 0,
+    model_name: str = "",
+    prefix: str = "",
+) -> OrchestratorResult:
+    """Render a streaming response, reloading persisted visible text when needed."""
+    presented = normalize_user_visible_output(response.result)
+
+    if response.is_error:
+        if response.timed_out:
+            return OrchestratorResult(text=f"{prefix}{t('timeout.generic')}")
+        if presented.text.strip():
+            return OrchestratorResult(text=f"{prefix}{t('error.generic', detail=presented.text[:500])}")
+        recovered = await orch.recover_visible_assistant_text(key)
+        if not recovered:
+            return OrchestratorResult(text=f"{prefix}{t('error.check_logs')}")
+        text = f"{prefix}{recovered}"
+    elif presented.is_metadata_only or not presented.text.strip():
+        recovered = await orch.recover_visible_assistant_text(key)
+        if not recovered:
+            return OrchestratorResult(text=f"{prefix}{t('error.check_logs')}")
+        text = f"{prefix}{recovered}"
+    else:
+        text = f"{prefix}{presented.text}"
+
     if session:
         text += _session_age_note(session, warning_hours)
 
@@ -876,12 +944,16 @@ async def named_session_flow(
         _reg.clear_interrupt(key.chat_id)
         ns.status = "idle"
         return OrchestratorResult(text="")
+    orch._named_sessions.update_after_response(key.chat_id, session_name, response.session_id or "")
+    presented = normalize_user_visible_output(response.result)
     if response.is_error:
         ns.status = "idle"
-        return OrchestratorResult(text=f"{tag}{t('error.generic', detail=response.result[:500])}")
-
-    orch._named_sessions.update_after_response(key.chat_id, session_name, response.session_id or "")
-    return OrchestratorResult(text=f"{tag}{response.result}")
+        if presented.text.strip():
+            return OrchestratorResult(text=f"{tag}{t('error.generic', detail=presented.text[:500])}")
+        return OrchestratorResult(text=f"{tag}{t('error.check_logs')}")
+    if presented.is_metadata_only:
+        return OrchestratorResult(text=f"{tag}{t('error.check_logs')}")
+    return OrchestratorResult(text=f"{tag}{presented.text}")
 
 
 async def named_session_streaming(
@@ -919,9 +991,17 @@ async def named_session_streaming(
     request = _with_foreground_watchdog(orch, request)
 
     tag_sent = False
+    streamed_chunks: list[str] = []
 
     async def _tagged_text_delta(chunk: str) -> None:
         nonlocal tag_sent
+        if chunk:
+            streamed_chunks.append(chunk)
+            orch.append_runtime_event(
+                key,
+                "assistant_text_delta",
+                {"text": "".join(streamed_chunks)},
+            )
         if cb.on_text_delta is not None:
             if not tag_sent:
                 await cb.on_text_delta(tag)
@@ -941,12 +1021,14 @@ async def named_session_streaming(
         _reg2.clear_interrupt(key.chat_id)
         ns.status = "idle"
         return OrchestratorResult(text="")
-    if response.is_error:
-        ns.status = "idle"
-        return OrchestratorResult(text=f"{tag}{t('error.generic', detail=response.result[:500])}")
-
     orch._named_sessions.update_after_response(key.chat_id, session_name, response.session_id or "")
-    return OrchestratorResult(text=f"{tag}{response.result}")
+    ns.status = "idle"
+    return await _present_streaming_response_with_recovery(
+        orch,
+        key,
+        response,
+        prefix=tag,
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -1156,6 +1156,116 @@ class TestFeishuBotRouting:
             reply_to_message_id="om_first",
         )
 
+    async def test_handle_incoming_text_persists_recent_same_content_across_restart(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        first_bot = _make_bot(tmp_path)
+        first_bot._orchestrator = SimpleNamespace(
+            handle_message_streaming=AsyncMock(return_value=SimpleNamespace(text="pong"))
+        )
+        first_bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+
+        await first_bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_first",
+                text="ping",
+                thread_id="omt_thread_a",
+            )
+        )
+
+        second_bot = _make_bot(tmp_path)
+        second_bot._orchestrator = SimpleNamespace(
+            handle_message_streaming=AsyncMock(return_value=SimpleNamespace(text="pong"))
+        )
+        second_bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+        second_bot._restore_runtime_state()
+
+        await second_bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_second",
+                text=" ping \n",
+                thread_id="omt_thread_a",
+            )
+        )
+
+        second_bot._orchestrator.handle_message_streaming.assert_not_awaited()
+        second_bot._send_text_to_chat_ref.assert_not_awaited()
+
+    async def test_handle_incoming_text_allows_same_content_in_different_thread_after_restart(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        first_bot = _make_bot(tmp_path)
+        first_bot._orchestrator = SimpleNamespace(
+            handle_message_streaming=AsyncMock(return_value=SimpleNamespace(text="pong"))
+        )
+        first_bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+
+        await first_bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_first",
+                text="ping",
+                thread_id="omt_thread_a",
+            )
+        )
+
+        second_bot = _make_bot(tmp_path)
+        second_bot._orchestrator = SimpleNamespace(
+            handle_message_streaming=AsyncMock(return_value=SimpleNamespace(text="pong"))
+        )
+        second_bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+        second_bot._restore_runtime_state()
+
+        await second_bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_second",
+                text="ping",
+                thread_id="omt_thread_b",
+            )
+        )
+
+        second_bot._orchestrator.handle_message_streaming.assert_awaited_once()
+        second_bot._send_text_to_chat_ref.assert_awaited_once_with(
+            "oc_chat_1",
+            "pong",
+            reply_to_message_id="om_second",
+        )
+
+    async def test_handle_incoming_text_suppresses_persisted_outbound_self_echo_after_restart(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        first_bot = _make_bot(tmp_path, app_id="cli_echo_bot")
+        first_bot._remember_outbound_message("oc_chat_1", "om_outbound")
+
+        second_bot = _make_bot(tmp_path, app_id="cli_echo_bot")
+        second_bot._orchestrator = SimpleNamespace(
+            handle_message_streaming=AsyncMock(return_value=SimpleNamespace(text="pong"))
+        )
+        second_bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+        second_bot._restore_runtime_state()
+
+        await second_bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="cli_echo_bot",
+                chat_id="oc_chat_1",
+                message_id="om_outbound",
+                text="bot reply",
+            )
+        )
+
+        second_bot._orchestrator.handle_message_streaming.assert_not_awaited()
+        second_bot._send_text_to_chat_ref.assert_not_awaited()
+
     async def test_handle_incoming_text_emits_progress_feedback_during_streaming(
         self,
         tmp_path: Path,

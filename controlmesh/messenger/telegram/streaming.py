@@ -22,6 +22,7 @@ from controlmesh.messenger.telegram.formatting import (
     markdown_to_telegram_html,
     split_html_message,
 )
+from controlmesh.messenger.telegram.sender import remember_sent_message
 from controlmesh.text.response_format import normalize_tool_name
 
 if TYPE_CHECKING:
@@ -135,6 +136,7 @@ class StreamEditor:
                     message_thread_id=self._thread_id,
                 )
             self._last_msg = msg
+            remember_sent_message(self._bot, self._chat_id, msg)
             self._messages_sent += 1
         except TelegramBadRequest:
             if parse_mode is not None:

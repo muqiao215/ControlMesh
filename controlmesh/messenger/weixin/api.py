@@ -87,13 +87,17 @@ class WeixinIlinkHttpClient:
         user_id: str,
         context_token: str,
         text: str,
+        *,
+        client_ids: list[str] | None = None,
     ) -> None:
-        for chunk in _chunk_text(text, self._config.reply_chunk_chars):
+        chunks = _chunk_text(text, self._config.reply_chunk_chars)
+        resolved_client_ids = client_ids or [str(uuid4()) for _ in chunks]
+        for chunk, client_id in zip(chunks, resolved_client_ids, strict=True):
             await self._post(
                 credentials,
                 "/ilink/bot/sendmessage",
                 {
-                    "msg": build_text_message(user_id, context_token, chunk),
+                    "msg": build_text_message(user_id, context_token, chunk, client_id=client_id),
                     "base_info": self._base_info(),
                 },
                 timeout_ms=15000,

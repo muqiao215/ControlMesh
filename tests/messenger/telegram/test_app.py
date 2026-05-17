@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import TelegramBadRequest, TelegramConflictError
+from aiogram.methods import GetUpdates
 from aiogram.types import CallbackQuery, Chat, Message, User
 
 from controlmesh.config import AgentConfig, StreamingConfig
+from controlmesh.messenger.telegram.inbound_spool import TelegramInboundSpool
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -197,7 +200,6 @@ class TestTelegramBotRun:
         tg_bot._dp.start_polling.assert_called_once_with(
             bot_instance,
             allowed_updates=["message", "callback_query"],
-            polling_timeout=10,
             close_bot_session=True,
             handle_signals=False,
         )
@@ -213,13 +215,29 @@ class TestTelegramBotRun:
         kwargs = tg_bot._dp.start_polling.call_args.kwargs
         assert kwargs.get("handle_signals") is False
 
-    async def test_run_tracks_polling_monotonic_state(self) -> None:
-        tg_bot, _bot_instance = _make_tg_bot()
+    async def test_run_rebuilds_dirty_poll_transport_and_restarts_polling(self) -> None:
+        tg_bot, bot_instance = _make_tg_bot()
         tg_bot._dp.resolve_used_update_types = MagicMock(return_value=["message"])
-        tg_bot._dp.start_polling = AsyncMock()
-        await tg_bot.run()
-        assert tg_bot._polling_started_monotonic > 0.0
-        assert tg_bot._last_polling_success_monotonic == tg_bot._polling_started_monotonic
+
+        async def _start_polling(*_args: object, **_kwargs: object) -> None:
+            if tg_bot._poll_diagnostics.restart_reason is None:
+                tg_bot._poll_diagnostics.transport_dirty = True
+                tg_bot._poll_diagnostics.restart_reason = "poll_conflict_409"
+            else:
+                tg_bot._poll_diagnostics.transport_dirty = False
+
+        tg_bot._dp.start_polling = AsyncMock(side_effect=_start_polling)
+        async def _rebuild_transport() -> None:
+            tg_bot._poll_diagnostics.note_transport_rebuilt()
+
+        tg_bot._rebuild_poll_transport = AsyncMock(side_effect=_rebuild_transport)
+
+        code = await tg_bot.run()
+
+        assert code == 0
+        assert tg_bot._dp.start_polling.await_count == 2
+        tg_bot._rebuild_poll_transport.assert_awaited_once()
+        bot_instance.delete_webhook.assert_called_once_with(drop_pending_updates=False)
 
     async def test_shutdown_cleans_up(self) -> None:
         tg_bot, _ = _make_tg_bot()
@@ -248,14 +266,12 @@ class TestTelegramBotRun:
         tg_bot._dp.stop_polling = AsyncMock()
         bot_instance.session = MagicMock()
         bot_instance.session.close = AsyncMock()
-        tg_bot._polling_watchdog = asyncio.create_task(asyncio.sleep(100))
 
         await tg_bot.shutdown()
 
         tg_bot._dp.stop_polling.assert_called_once()
         bot_instance.delete_webhook.assert_called_once_with(drop_pending_updates=False)
         bot_instance.session.close.assert_called_once()
-        assert tg_bot._polling_watchdog.cancelled()
 
 
 # ---------------------------------------------------------------------------
@@ -1474,52 +1490,274 @@ class TestWatchRestartMarker:
         assert tg_bot._exit_code == 0
 
 
-# ---------------------------------------------------------------------------
-# _watch_polling_liveness
-# ---------------------------------------------------------------------------
-
-
-class TestWatchPollingLiveness:
-    async def test_stale_polling_requests_restart(self) -> None:
-        from controlmesh.infra.restart import EXIT_RESTART
-
+class TestTelegramPollDiagnostics:
+    async def test_restored_cursor_is_applied_to_first_poll(self) -> None:
         tg_bot, _ = _make_tg_bot()
-        tg_bot._dp.stop_polling = AsyncMock(side_effect=asyncio.CancelledError)
-        tg_bot._polling_started_monotonic = 10.0
-        tg_bot._last_polling_success_monotonic = 15.0
+        method = GetUpdates(offset=None, timeout=10)
+        tg_bot._restored_poll_offset = 444
 
-        monotonic_values = iter([205.0])
+        tg_bot._note_poll_started(method)
 
-        def _monotonic() -> float:
-            return next(monotonic_values)
+        assert method.offset == 444
+        assert tg_bot._poll_diagnostics.last_poll_offset == 444
 
-        with (
-            patch.object(asyncio, "sleep", new_callable=AsyncMock),
-            patch("controlmesh.messenger.telegram.app.time.monotonic", side_effect=_monotonic),
-            patch("controlmesh.messenger.telegram.app.logger") as mock_logger,
-        ):
-            await tg_bot._watch_polling_liveness()
+    async def test_empty_poll_success_updates_liveness_without_marking_dirty(self) -> None:
+        tg_bot, _ = _make_tg_bot()
+        method = GetUpdates(offset=55, timeout=10)
+        tg_bot._poll_diagnostics.transport_dirty = True
+        tg_bot._poll_diagnostics.restart_reason = "recoverable_network_error"
+        tg_bot._poll_diagnostics.consecutive_failures = 3
 
-        assert tg_bot._exit_code == EXIT_RESTART
-        tg_bot._dp.stop_polling.assert_called_once()
-        mock_logger.warning.assert_called_once()
+        with patch.object(tg_bot, "_persist_runtime_state") as mock_persist:
+            tg_bot._note_poll_succeeded(method, [])
 
-    async def test_fresh_polling_does_not_restart(self) -> None:
+        assert tg_bot._poll_diagnostics.last_poll_succeeded_at is not None
+        assert tg_bot._poll_diagnostics.last_poll_update_count == 0
+        assert tg_bot._poll_diagnostics.last_poll_offset == 55
+        assert tg_bot._restored_poll_offset == 55
+        assert tg_bot._poll_diagnostics.transport_dirty is False
+        assert tg_bot._poll_diagnostics.consecutive_failures == 0
+        assert tg_bot._poll_diagnostics.restart_reason is None
+        mock_persist.assert_called_once()
+
+    async def test_recoverable_poll_failure_marks_dirty_and_requests_restart(self) -> None:
         tg_bot, _ = _make_tg_bot()
         tg_bot._dp.stop_polling = AsyncMock()
-        tg_bot._polling_started_monotonic = 100.0
-        tg_bot._last_polling_success_monotonic = 150.0
+
+        await tg_bot._note_poll_failed(
+            GetUpdates(offset=77, timeout=10),
+            TelegramConflictError(method=GetUpdates(), message="conflict"),
+        )
+
+        assert tg_bot._poll_diagnostics.transport_dirty is True
+        assert tg_bot._poll_diagnostics.restart_reason == "poll_conflict_409"
+        assert tg_bot._poll_diagnostics.last_poll_offset == 77
+        tg_bot._dp.stop_polling.assert_awaited_once()
+
+    async def test_non_recoverable_poll_failure_is_ignored(self) -> None:
+        tg_bot, _ = _make_tg_bot()
+        tg_bot._dp.stop_polling = AsyncMock()
+
+        await tg_bot._note_poll_failed(
+            GetUpdates(offset=88, timeout=10),
+            TelegramBadRequest(method=GetUpdates(), message="bad request"),
+        )
+
+        assert tg_bot._poll_diagnostics.transport_dirty is False
+        tg_bot._dp.stop_polling.assert_not_awaited()
+
+    async def test_poll_watchdog_marks_stall_dirty_and_requests_restart(self) -> None:
+        tg_bot, _ = _make_tg_bot()
+        tg_bot._poll_stall_timeout_seconds = 0.01
+        tg_bot._poll_diagnostics.note_poll_started(offset=123)
+        tg_bot._poll_diagnostics.last_poll_started_at = time.monotonic() - 1.0
+        tg_bot._request_poll_restart = AsyncMock()  # type: ignore[method-assign]
+
+        with patch.object(
+            asyncio,
+            "sleep",
+            new_callable=AsyncMock,
+            side_effect=[None, asyncio.CancelledError],
+        ):
+            await tg_bot._watch_poll_health()
+
+        assert tg_bot._poll_diagnostics.transport_dirty is True
+        assert tg_bot._poll_diagnostics.restart_reason == "poll_stall"
+        tg_bot._request_poll_restart.assert_awaited_once_with("poll_stall")
+
+
+class TestTelegramRuntimeStateIntegration:
+    async def test_startup_restores_cursor_and_recent_outbound(self) -> None:
+        tg_bot, _ = _make_tg_bot()
+        tg_bot._bot_id = 999
+        tg_bot._bot_username = "controlmesh_bot"
+        tg_bot._runtime_state_store.load_state = MagicMock(
+            return_value=MagicMock(
+                cursor=321,
+                recent_outbound=(("5:42", 1710000000.0),),
+            )
+        )
+
+        tg_bot._restore_runtime_state()
+
+        assert tg_bot._restored_poll_offset == 321
+        assert tg_bot._poll_diagnostics.last_poll_offset == 321
+        assert tg_bot._recent_outbound.consume("5:42") is True
+
+    async def test_persisted_self_echo_is_suppressed_once(self) -> None:
+        tg_bot, _ = _make_tg_bot()
+        tg_bot._bot_id = 100
+        tg_bot._recent_outbound.remember("1:10")
+        tg_bot._persist_runtime_state = MagicMock()
+        message = _make_message(chat_id=1, message_id=10, text="echoed reply", user_id=100)
+        tg_bot._orchestrator = _make_orchestrator()
+
+        await tg_bot._on_message(message)
+
+        assert tg_bot._recent_outbound.consume("1:10") is False
+        tg_bot._persist_runtime_state.assert_called_once()
+
+    async def test_non_self_message_is_not_suppressed(self) -> None:
+        tg_bot, _ = _make_tg_bot()
+        tg_bot._bot_id = 100
+        tg_bot._orchestrator = _make_orchestrator()
+        tg_bot._enqueue_frontstage_run = MagicMock()
+        message = _make_message(chat_id=1, message_id=10, text="hello", user_id=200)
+
+        await tg_bot._on_message(message)
+
+        tg_bot._enqueue_frontstage_run.assert_called_once()
+
+    async def test_on_message_enqueues_into_spool_and_acknowledges_after_run(self, tmp_path: Path) -> None:
+        config = _make_config(streaming_enabled=False)
+        config.controlmesh_home = str(tmp_path)
+        tg_bot, _bot_instance = _make_tg_bot(config)
+        tg_bot._orchestrator = _make_orchestrator(handle_message_text="queued reply")
+        tg_bot._bot_id = 999
+        tg_bot._bot_username = "controlmesh_bot"
+        tg_bot._configure_inbound_spool()
+        msg = _make_message(text="Hello bot", user_id=200)
+
+        with patch(
+            "controlmesh.messenger.telegram.app.run_non_streaming_message", new_callable=AsyncMock
+        ) as mock_run:
+            await tg_bot._on_message(msg)
+            await _wait_frontstage_idle(tg_bot)
+
+        mock_run.assert_awaited_once()
+        assert tg_bot._inbound_spool is not None
+        assert tg_bot._inbound_spool.stats().pending_count == 0
+
+    async def test_recover_inbound_spool_replays_pending_message_on_startup(self, tmp_path: Path) -> None:
+        config = _make_config(streaming_enabled=False)
+        config.controlmesh_home = str(tmp_path)
+        tg_bot, _bot_instance = _make_tg_bot(config)
+        tg_bot._orchestrator = _make_orchestrator(handle_message_text="queued reply")
+        tg_bot._bot_id = 999
+        tg_bot._bot_username = "controlmesh_bot"
+        tg_bot._configure_inbound_spool()
+        assert tg_bot._inbound_spool is not None
+        tg_bot._inbound_spool.enqueue(
+            [
+                {
+                    "message_id": 70,
+                    "date": 1710000070,
+                    "chat": {"id": 1, "type": "private"},
+                    "from": {"id": 200, "is_bot": False, "first_name": "User"},
+                    "text": "replay me",
+                }
+            ]
+        )
+
+        with patch(
+            "controlmesh.messenger.telegram.app.run_non_streaming_message", new_callable=AsyncMock
+        ) as mock_run:
+            await tg_bot._recover_inbound_spool()
+            await _wait_frontstage_idle(tg_bot)
+
+        dispatch = mock_run.call_args.args[0]
+        assert dispatch.text == "replay me"
+        assert tg_bot._inbound_spool.stats().pending_count == 0
+
+    async def test_recover_inbound_spool_recovers_stale_claims(self, tmp_path: Path) -> None:
+        config = _make_config(streaming_enabled=False)
+        config.controlmesh_home = str(tmp_path)
+        tg_bot, _bot_instance = _make_tg_bot(config)
+        tg_bot._orchestrator = _make_orchestrator(handle_message_text="queued reply")
+        tg_bot._bot_id = 999
+        tg_bot._bot_username = "controlmesh_bot"
+        tg_bot._configure_inbound_spool()
+        assert tg_bot._inbound_spool is not None
+        tg_bot._inbound_spool = TelegramInboundSpool(
+            tmp_path,
+            token="test:token",
+            bot_id=999,
+            bot_username="controlmesh_bot",
+            claim_ttl_seconds=5.0,
+        )
+        tg_bot._inbound_spool.enqueue(
+            [
+                {
+                    "message_id": 71,
+                    "date": 1710000071,
+                    "chat": {"id": 1, "type": "private"},
+                    "from": {"id": 200, "is_bot": False, "first_name": "User"},
+                    "text": "stale claim",
+                }
+            ]
+        )
+        claim = tg_bot._inbound_spool.claim_next(owner="runtime-a", now=100.0)
+        assert claim is not None
 
         with (
-            patch.object(
-                asyncio, "sleep", new_callable=AsyncMock, side_effect=asyncio.CancelledError
-            ),
-            patch("controlmesh.messenger.telegram.app.time.monotonic", return_value=200.0),
+            pytest.MonkeyPatch.context() as mp,
+            patch(
+                "controlmesh.messenger.telegram.app.run_non_streaming_message", new_callable=AsyncMock
+            ) as mock_run,
         ):
-            await tg_bot._watch_polling_liveness()
+            mp.setattr("controlmesh.messenger.telegram.inbound_spool.time.time", lambda: 106.0)
+            await tg_bot._recover_inbound_spool()
+            await _wait_frontstage_idle(tg_bot)
 
-        assert tg_bot._exit_code == 0
-        tg_bot._dp.stop_polling.assert_not_called()
+        assert tg_bot._last_recovered_stale_claim_count == 1
+        assert mock_run.await_count == 1
+        assert tg_bot._inbound_spool.stats(now=106.0).pending_count == 0
+
+    async def test_keep_inbound_claim_alive_renews_until_cancelled(self, tmp_path: Path) -> None:
+        config = _make_config(streaming_enabled=False)
+        config.controlmesh_home = str(tmp_path)
+        tg_bot, _bot_instance = _make_tg_bot(config)
+        tg_bot._bot_id = 999
+        tg_bot._bot_username = "controlmesh_bot"
+        tg_bot._inbound_spool = TelegramInboundSpool(
+            tmp_path,
+            token="test:token",
+            bot_id=999,
+            bot_username="controlmesh_bot",
+            claim_ttl_seconds=3.0,
+        )
+        tg_bot._inbound_spool.enqueue(
+            [
+                {
+                    "message_id": 72,
+                    "date": 1710000072,
+                    "chat": {"id": 1, "type": "private"},
+                    "from": {"id": 200, "is_bot": False, "first_name": "User"},
+                    "text": "renew me",
+                }
+            ]
+        )
+        claim = tg_bot._inbound_spool.claim_next(owner="runtime-a", now=100.0)
+        assert claim is not None
+
+        original_sleep = asyncio.sleep
+        renew_calls = 0
+
+        async def _fast_sleep(_seconds: float) -> None:
+            await original_sleep(0)
+
+        def _renew(current_claim: object) -> object:
+            nonlocal renew_calls
+            renew_calls += 1
+            if renew_calls == 1:
+                return type(current_claim)(
+                    lane_key=current_claim.lane_key,
+                    spool_id=current_claim.spool_id,
+                    owner=current_claim.owner,
+                    claimed_at=current_claim.claimed_at,
+                    lease_expires_at=current_claim.lease_expires_at + 3.0,
+                    path=current_claim.path,
+                    entry=current_claim.entry,
+                )
+            return None
+
+        with (
+            patch("controlmesh.messenger.telegram.app.asyncio.sleep", side_effect=_fast_sleep),
+            patch.object(tg_bot._inbound_spool, "renew", side_effect=_renew),
+        ):
+            await tg_bot._keep_inbound_claim_alive(claim)
+
+        assert renew_calls == 2
 
 
 # ---------------------------------------------------------------------------

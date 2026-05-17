@@ -68,6 +68,13 @@ from controlmesh.messenger.feishu.message_context import (
     build_feishu_agent_input,
     extract_feishu_content_from_event,
 )
+from controlmesh.messenger.feishu.runtime_state import (
+    FeishuRuntimeState,
+    FeishuRuntimeStateStore,
+    default_feishu_content_store,
+    default_feishu_inbound_store,
+    default_feishu_outbound_store,
+)
 from controlmesh.messenger.feishu.native_tools import (
     FeishuNativeToolExecutor,
     format_native_tool_result,
@@ -104,12 +111,6 @@ if TYPE_CHECKING:
     from controlmesh.tasks.models import TaskResult
 
 logger = logging.getLogger(__name__)
-# Feishu long-connection retries can arrive minutes after the first delivery,
-# especially while a turn is still blocked on model/tool work.
-_FEISHU_DEDUP_TTL_SECONDS = 86400.0
-_FEISHU_DEDUP_MAX_SIZE = 10000
-_FEISHU_CONTENT_DEDUP_TTL_SECONDS = 300.0
-_FEISHU_CONTENT_DEDUP_MAX_SIZE = 4000
 _FEISHU_OLD_MESSAGE_GRACE_SECONDS = 2.0
 _FEISHU_PROGRESS_ACK_DELAY_SECONDS = 1.5
 _FEISHU_PROGRESS_MAX_MESSAGES = 8
@@ -286,14 +287,7 @@ class FeishuBot:
         self._update_observer: UpdateObserver | None = None
         self._background_tasks: set[asyncio.Task[None]] = set()
         self._paths = ControlMeshPaths(Path(config.controlmesh_home).expanduser())
-        self._dedup = DedupeCache(
-            ttl_seconds=_FEISHU_DEDUP_TTL_SECONDS,
-            max_size=_FEISHU_DEDUP_MAX_SIZE,
-        )
-        self._recent_content_dedup = DedupeCache(
-            ttl_seconds=_FEISHU_CONTENT_DEDUP_TTL_SECONDS,
-            max_size=_FEISHU_CONTENT_DEDUP_MAX_SIZE,
-        )
+        self._dedup = DedupeCache()
         self._inflight_content_keys: set[str] = set()
 
         store_path = Path(config.controlmesh_home).expanduser() / "feishu_store"
@@ -303,6 +297,10 @@ class FeishuBot:
         from controlmesh.messenger.feishu.transport import FeishuTransport
 
         self._id_map = FeishuIdMap(store_path)
+        self._runtime_state_store = FeishuRuntimeStateStore(config.controlmesh_home)
+        self._recent_inbound = default_feishu_inbound_store()
+        self._recent_content_dedup = default_feishu_content_store()
+        self._recent_outbound = default_feishu_outbound_store()
         self._inbound_server: FeishuInboundServer | None = None
         self._long_connection: FeishuLongConnectionClient | None = None
         self._card_auth_runner: FeishuCardAuthRunner | None = None
@@ -366,6 +364,7 @@ class FeishuBot:
         from controlmesh.messenger.feishu.startup import run_feishu_startup
 
         try:
+            self._restore_runtime_state()
             await run_feishu_startup(self)
             await self._stop_event.wait()
         finally:
@@ -483,7 +482,8 @@ class FeishuBot:
                 self._inflight_content_keys.discard(content_key)
             await progress.close()
         if content_key:
-            self._recent_content_dedup.check(content_key)
+            self._recent_content_dedup.remember(content_key)
+        self._persist_runtime_state()
         if auth_routed or result is None:
             return
         await self._deliver_stream_result(
@@ -495,24 +495,38 @@ class FeishuBot:
 
     async def _prepare_incoming_message(self, message: FeishuIncomingText) -> str | bool | None:
         dedup_key = f"{message.chat_id}:{message.message_id}"
-        if self._dedup.check(dedup_key):
+        if self._recent_inbound.contains(dedup_key, refresh=True):
             logger.info(
                 "Ignoring duplicate Feishu message chat_id=%s message_id=%s",
                 message.chat_id,
                 message.message_id,
             )
             return False
+        self._dedup.check(dedup_key)
+        self._recent_inbound.remember(dedup_key)
         if not self._sender_allowed(message.sender_id):
             logger.info("Ignoring Feishu message from unauthorized sender=%s", message.sender_id)
+            self._persist_runtime_state()
             return False
         if self._orchestrator is None:
             logger.warning("Ignoring Feishu message before startup")
+            self._persist_runtime_state()
             return False
         if await self._handle_auth_message(message):
+            self._persist_runtime_state()
+            return False
+        if self._is_persisted_outbound_self_echo(message):
+            logger.info(
+                "Ignoring Feishu persisted outbound self echo chat_id=%s message_id=%s",
+                message.chat_id,
+                message.message_id,
+            )
+            self._persist_runtime_state()
             return False
 
         content_key = self._should_ignore_content_duplicate(message)
         if content_key is False:
+            self._persist_runtime_state()
             return False
         logger.info(
             "Accepted Feishu message chat_id=%s message_id=%s",
@@ -537,18 +551,21 @@ class FeishuBot:
             reply_to_message_id=reply_to_message_id,
         ):
             if content_key:
-                self._recent_content_dedup.check(content_key)
+                self._recent_content_dedup.remember(content_key)
+                self._persist_runtime_state()
             return True
         if await self._handle_native_tool_command(message, reply_to_message_id=reply_to_message_id):
             if content_key:
-                self._recent_content_dedup.check(content_key)
+                self._recent_content_dedup.remember(content_key)
+                self._persist_runtime_state()
             return True
         if await self._handle_settings_panel_command(
             message,
             reply_to_message_id=reply_to_message_id,
         ):
             if content_key:
-                self._recent_content_dedup.check(content_key)
+                self._recent_content_dedup.remember(content_key)
+                self._persist_runtime_state()
             return True
         return False
 
@@ -1157,7 +1174,7 @@ class FeishuBot:
                 message.sender_id,
             )
             return False
-        if content_key and self._recent_content_dedup.check(content_key):
+        if content_key and self._recent_content_dedup.contains(content_key, refresh=True):
             logger.info(
                 "Ignoring repeated Feishu content chat_id=%s sender_id=%s",
                 message.chat_id,
@@ -1207,7 +1224,59 @@ class FeishuBot:
         normalized_text = " ".join(message.text.split())
         if not normalized_text:
             return None
-        return f"{message.chat_id}:{message.sender_id}:{message.thread_id or ''}:{normalized_text[:500]}"
+        session_anchor = message.thread_id or message.root_id or message.parent_id or ""
+        return f"{message.chat_id}:{message.sender_id}:{session_anchor}:{normalized_text[:500]}"
+
+    def _restore_runtime_state(self) -> None:
+        pending_recent_inbound = self._recent_inbound.snapshot()
+        pending_recent_content = self._recent_content_dedup.snapshot()
+        pending_recent_outbound = self._recent_outbound.snapshot()
+        state = self._runtime_state_store.load_state(
+            app_id=self._config.feishu.app_id,
+            brand=self._config.feishu.brand,
+            domain=self._config.feishu.domain,
+        )
+        self._recent_inbound = default_feishu_inbound_store(state.recent_inbound)
+        self._recent_content_dedup = default_feishu_content_store(state.recent_content)
+        self._recent_outbound = default_feishu_outbound_store(state.recent_outbound)
+        for key, seen_at in pending_recent_inbound:
+            self._recent_inbound.remember(key, now=seen_at)
+        for key, seen_at in pending_recent_content:
+            self._recent_content_dedup.remember(key, now=seen_at)
+        for key, seen_at in pending_recent_outbound:
+            self._recent_outbound.remember(key, now=seen_at)
+
+    def _persist_runtime_state(self) -> None:
+        self._runtime_state_store.save_state(
+            app_id=self._config.feishu.app_id,
+            brand=self._config.feishu.brand,
+            domain=self._config.feishu.domain,
+            state=FeishuRuntimeState(
+                recent_inbound=self._recent_inbound.snapshot(),
+                recent_content=self._recent_content_dedup.snapshot(),
+                recent_outbound=self._recent_outbound.snapshot(),
+            ),
+        )
+
+    def _remember_outbound_message(self, chat_ref: str, message_id: str | None) -> None:
+        if not chat_ref or not message_id:
+            return
+        self._recent_outbound.remember(f"{chat_ref}:{message_id}")
+        self._persist_runtime_state()
+
+    def _is_persisted_outbound_self_echo(self, message: FeishuIncomingText) -> bool:
+        bot_sender_id = self._bot_sender_id()
+        if bot_sender_id is None or message.sender_id != bot_sender_id:
+            return False
+        return self._recent_outbound.consume(f"{message.chat_id}:{message.message_id}")
+
+    def _bot_sender_id(self) -> str | None:
+        app_id = self._config.feishu.app_id
+        if not isinstance(app_id, str) or not app_id:
+            return None
+        if app_id.startswith("cli_"):
+            return app_id
+        return f"cli_{app_id}"
 
     def _is_old_message(self, message: FeishuIncomingText) -> bool:
         if message.create_time_ms is None:
@@ -1386,6 +1455,7 @@ class FeishuBot:
         if isinstance(data, dict):
             message_id = data.get("message_id")
             if isinstance(message_id, str) and message_id:
+                self._remember_outbound_message(receive_ref, message_id)
                 return message_id
         return None
 
@@ -1452,6 +1522,8 @@ class FeishuBot:
                     response.status,
                     body[:500],
                 )
+                return
+        self._remember_outbound_message(handle.chat_id, handle.message_id)
 
     async def _upload_image(self, path: Path) -> str:
         session = await self._ensure_session()

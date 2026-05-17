@@ -22,6 +22,7 @@ from controlmesh.messenger.telegram.formatting import (
     markdown_to_telegram_html,
     split_html_message,
 )
+from controlmesh.messenger.telegram.sender import remember_sent_message
 from controlmesh.text.response_format import normalize_tool_name
 
 if TYPE_CHECKING:
@@ -295,6 +296,7 @@ class EditStreamEditor:
                     message_thread_id=self._thread_id,
                 )
             self._s.active_msg = msg
+            remember_sent_message(self._bot, self._chat_id, msg)
             self._s.messages_sent += 1
             logger.debug("Message created msg_id=%d", msg.message_id)
         except TelegramBadRequest:
@@ -311,6 +313,7 @@ class EditStreamEditor:
                 message_thread_id=self._thread_id,
             )
             self._s.active_msg = msg
+            remember_sent_message(self._bot, self._chat_id, msg)
             self._s.messages_sent += 1
         except TelegramBadRequest:
             logger.exception("Failed to send even as plain text")

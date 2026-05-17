@@ -17,11 +17,19 @@ from urllib.parse import urlsplit, urlunsplit
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.client.session.base import BaseSession
 from aiogram.enums import ParseMode
-from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
+from aiogram.exceptions import (
+    TelegramAPIError,
+    TelegramBadRequest,
+    TelegramConflictError,
+    TelegramNetworkError,
+    TelegramRetryAfter,
+    TelegramServerError,
+)
 from aiogram.filters import Command, CommandStart
-from aiogram.methods import GetUpdates
-from aiogram.types import BotCommand, ChatMemberUpdated, FSInputFile, ReplyParameters
+from aiogram.methods import GetUpdates, TelegramMethod
+from aiogram.types import BotCommand, ChatMemberUpdated, FSInputFile, Message, ReplyParameters
 
 from controlmesh.command_registry import CommandTarget, get_command_names, is_command_available_for_agent
 from controlmesh.bus.bus import MessageBus
@@ -56,6 +64,11 @@ from controlmesh.messenger.telegram.handlers import (
     handle_new_session,
     strip_mention,
 )
+from controlmesh.messenger.telegram.inbound_spool import (
+    TelegramInboundClaim,
+    TelegramInboundSpool,
+    TelegramInboundSpoolStats,
+)
 from controlmesh.messenger.telegram.media import (
     has_media,
     is_command_for_others,
@@ -76,7 +89,13 @@ from controlmesh.messenger.telegram.middleware import (
 )
 from controlmesh.messenger.telegram.sender import SendRichOpts, send_rich
 from controlmesh.messenger.telegram.sender import (
+    build_outbound_message_key,
     send_files_from_text as _send_files_from_text,
+)
+from controlmesh.messenger.telegram.runtime_state import (
+    TelegramOutboundEchoStore,
+    TelegramRuntimeState,
+    TelegramRuntimeStateStore,
 )
 from controlmesh.messenger.telegram.topic import (
     TopicNameCache,
@@ -99,7 +118,7 @@ from controlmesh.text.response_format import SEP, fmt
 from controlmesh.workspace.paths import ControlMeshPaths
 
 if TYPE_CHECKING:
-    from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
+    from aiogram.types import CallbackQuery, InlineKeyboardMarkup
 
     from controlmesh.orchestrator.core import Orchestrator
 
@@ -107,10 +126,7 @@ logger = logging.getLogger(__name__)
 
 _WELCOME_IMAGE = Path(__file__).resolve().parent / "controlmesh_images" / "welcome.png"
 _CAPTION_LIMIT = 1024
-_TELEGRAM_POLLING_TIMEOUT_SECONDS = 10
-_TELEGRAM_REQUEST_TIMEOUT_SECONDS = 70.0
-_TELEGRAM_POLLING_WATCHDOG_INTERVAL_SECONDS = 30.0
-_TELEGRAM_POLLING_WATCHDOG_STALE_SECONDS = 180.0
+_INBOUND_DRAIN_OWNER = "telegram_frontstage"
 
 
 @dataclass(slots=True)
@@ -121,6 +137,119 @@ class _QueuedMessageRun:
     key: SessionKey
     text: str
     thread_id: int | None
+    claim: TelegramInboundClaim | None = None
+
+
+@dataclass(slots=True)
+class _TelegramPollDiagnostics:
+    """In-memory Telegram getUpdates liveness and recovery diagnostics."""
+
+    last_poll_started_at: float | None = None
+    last_poll_finished_at: float | None = None
+    last_poll_succeeded_at: float | None = None
+    last_poll_offset: int | None = None
+    last_poll_update_count: int = 0
+    last_poll_last_update_id: int | None = None
+    consecutive_failures: int = 0
+    transport_dirty: bool = False
+    restart_reason: str | None = None
+    last_failure_reason: str | None = None
+    restart_requested: bool = False
+
+    def note_poll_started(self, *, offset: int | None) -> None:
+        self.last_poll_started_at = time.monotonic()
+        self.last_poll_offset = offset
+
+    def note_poll_succeeded(self, *, offset: int | None, update_ids: list[int]) -> None:
+        now = time.monotonic()
+        self.last_poll_finished_at = now
+        self.last_poll_succeeded_at = now
+        self.last_poll_offset = offset
+        self.last_poll_update_count = len(update_ids)
+        self.last_poll_last_update_id = update_ids[-1] if update_ids else None
+        self.consecutive_failures = 0
+        self.transport_dirty = False
+        self.restart_reason = None
+        self.last_failure_reason = None
+        self.restart_requested = False
+
+    def note_poll_failed(self, *, reason: str, offset: int | None, mark_transport_dirty: bool) -> None:
+        self.last_poll_finished_at = time.monotonic()
+        self.last_poll_offset = offset
+        self.consecutive_failures += 1
+        self.last_failure_reason = reason
+        if mark_transport_dirty:
+            self.transport_dirty = True
+            self.restart_reason = reason
+
+    def note_transport_rebuilt(self) -> None:
+        self.transport_dirty = False
+        self.restart_requested = False
+
+    def poll_inflight_age_seconds(self) -> float | None:
+        started = self.last_poll_started_at
+        if started is None:
+            return None
+        finished = self.last_poll_finished_at
+        if finished is not None and finished >= started:
+            return None
+        return max(0.0, time.monotonic() - started)
+
+    def last_success_age_seconds(self) -> float | None:
+        succeeded = self.last_poll_succeeded_at
+        if succeeded is None:
+            return None
+        return max(0.0, time.monotonic() - succeeded)
+
+
+class _TelegramPollingSession(BaseSession):
+    """Wrap aiogram's session so Telegram polling can emit local diagnostics."""
+
+    def __init__(
+        self,
+        inner: BaseSession,
+        *,
+        on_poll_started: Callable[[GetUpdates], None],
+        on_poll_succeeded: Callable[[GetUpdates, object], None],
+        on_poll_failed: Callable[[GetUpdates, Exception], Awaitable[None]],
+    ) -> None:
+        super().__init__(
+            api=inner.api,
+            json_loads=inner.json_loads,
+            json_dumps=inner.json_dumps,
+            timeout=inner.timeout,
+        )
+        self.middleware = inner.middleware
+        self._inner = inner
+        self._on_poll_started = on_poll_started
+        self._on_poll_succeeded = on_poll_succeeded
+        self._on_poll_failed = on_poll_failed
+
+    async def close(self) -> None:
+        await self._inner.close()
+
+    async def make_request(
+        self,
+        bot: Bot,
+        method: TelegramMethod[object],
+        request_timeout: int | None = None,
+    ) -> object:
+        if isinstance(method, GetUpdates):
+            self._on_poll_started(method)
+            try:
+                result = await self._inner.make_request(bot, method, request_timeout)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                await self._on_poll_failed(method, exc)
+                raise
+            self._on_poll_succeeded(method, result)
+            return result
+        return await self._inner.make_request(bot, method, request_timeout)
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self._inner, name)
+
 
 # Backward-compatible patch points used by tests.
 TypingContext = _TypingContext
@@ -199,24 +328,6 @@ async def _cancel_task(task: asyncio.Task[None] | None) -> None:
             await task
 
 
-class _PollingHeartbeatMiddleware:
-    """Track successful ``getUpdates`` calls for polling liveness checks."""
-
-    def __init__(self, on_success: Callable[[], None]) -> None:
-        self._on_success = on_success
-
-    async def __call__(
-        self,
-        make_request: Callable[[Bot, object], Awaitable[object]],
-        bot: Bot,
-        method: object,
-    ) -> object:
-        result = await make_request(bot, method)
-        if isinstance(method, GetUpdates):
-            self._on_success()
-        return result
-
-
 def _telegram_proxy_url() -> str | None:
     """Return the first configured Telegram proxy URL from environment."""
     for key in (
@@ -276,20 +387,21 @@ class TelegramBot:
         self._agent_name = agent_name
         self._orchestrator: Orchestrator | None = None
         self._abort_all_callback: Callable[[], Awaitable[int]] | None = None
-        self._polling_started_monotonic: float = 0.0
-        self._last_polling_success_monotonic: float = 0.0
+        self._startup_complete = False
+        self._telegram_proxy = _telegram_proxy_url()
+        self._poll_timeout_seconds = 10
+        self._poll_stall_timeout_seconds = self._compute_poll_stall_timeout_seconds()
+        self._poll_diagnostics = _TelegramPollDiagnostics()
 
-        proxy = _telegram_proxy_url()
-        session = AiohttpSession(timeout=_TELEGRAM_REQUEST_TIMEOUT_SECONDS)
-        if proxy:
-            logger.info("Telegram bot using proxy %s", _redact_proxy_url(proxy))
+        session = None
+        if self._telegram_proxy:
+            logger.info("Telegram bot using proxy %s", _redact_proxy_url(self._telegram_proxy))
             try:
-                session.proxy = proxy
+                session = AiohttpSession(proxy=self._telegram_proxy)
             except RuntimeError as exc:
                 raise RuntimeError(
                     "Telegram proxy support requires aiohttp-socks to be installed"
                 ) from exc
-        session.middleware.register(_PollingHeartbeatMiddleware(self._mark_polling_success))
 
         self._bot = Bot(
             token=config.telegram_token,
@@ -301,12 +413,19 @@ class TelegramBot:
         )
         self._bot_id: int | None = None
         self._bot_username: str | None = None
+        self._runtime_state_store = TelegramRuntimeStateStore(config.controlmesh_home)
+        self._recent_outbound = TelegramOutboundEchoStore()
+        self._restored_poll_offset: int | None = None
+        self._inbound_spool: TelegramInboundSpool | None = None
+        self._last_inbound_drain_at: float | None = None
+        self._last_recovered_stale_claim_count: int = 0
+        self._last_inbound_spool_stats = TelegramInboundSpoolStats()
 
         self._dp = Dispatcher()
         self._router = Router(name="main")
         self._exit_code: int = 0
         self._restart_watcher: asyncio.Task[None] | None = None
-        self._polling_watchdog: asyncio.Task[None] | None = None
+        self._poll_watchdog: asyncio.Task[None] | None = None
         self._update_observer: UpdateObserver | None = None
         self._upgrade_lock = asyncio.Lock()
         self._group_audit_task: asyncio.Task[None] | None = None
@@ -345,6 +464,8 @@ class TelegramBot:
         self._register_member_handlers()
         self._dp.include_router(self._router)
         self._dp.startup.register(self._on_startup)
+        self._install_polling_session()
+        self._bot._controlmesh_remember_outbound_message = self._remember_outbound_message
 
     @property
     def _orch(self) -> Orchestrator:
@@ -418,10 +539,20 @@ class TelegramBot:
             await send_rich(self._bot, uid, text, opts)
 
     async def _on_startup(self) -> None:
-        from controlmesh.messenger.telegram.startup import run_startup
+        if not self._startup_complete:
+            from controlmesh.messenger.telegram.startup import run_startup
 
-        await run_startup(self)
-        self._sequential.set_bot_username(self._bot_username)
+            await run_startup(self)
+            self._restore_runtime_state()
+            self._configure_inbound_spool()
+            self._sequential.set_bot_username(self._bot_username)
+            await self._recover_inbound_spool()
+            if self._poll_watchdog is None or self._poll_watchdog.done():
+                self._poll_watchdog = asyncio.create_task(
+                    self._watch_poll_health(),
+                    name="telegram:poll-watchdog",
+                )
+            self._startup_complete = True
 
     def _register_handlers(self) -> None:
         r = self._router
@@ -722,7 +853,7 @@ class TelegramBot:
             html_caption = markdown_to_telegram_html(text)
 
         try:
-            await self._bot.send_photo(
+            message = await self._bot.send_photo(
                 chat_id=chat_id,
                 photo=FSInputFile(_WELCOME_IMAGE),
                 caption=html_caption,
@@ -731,15 +862,17 @@ class TelegramBot:
                 reply_parameters=ReplyParameters(message_id=reply_to.message_id),
                 message_thread_id=thread_id,
             )
+            self._remember_outbound_message(chat_id, getattr(message, "message_id", None))
         except TelegramBadRequest:
             logger.warning("Welcome image caption failed, retrying without")
             try:
-                await self._bot.send_photo(
+                message = await self._bot.send_photo(
                     chat_id=chat_id,
                     photo=FSInputFile(_WELCOME_IMAGE),
                     reply_parameters=ReplyParameters(message_id=reply_to.message_id),
                     message_thread_id=thread_id,
                 )
+                self._remember_outbound_message(chat_id, getattr(message, "message_id", None))
             except (TelegramAPIError, OSError):
                 logger.exception("Failed to send welcome image")
                 return False
@@ -1413,6 +1546,14 @@ class TelegramBot:
     # -- Messages --------------------------------------------------------------
 
     async def _on_message(self, message: Message) -> None:
+        if self._is_persisted_outbound_self_echo(message):
+            logger.debug(
+                "Telegram persisted self-echo suppressed chat_id=%s message_id=%s",
+                message.chat.id,
+                message.message_id,
+            )
+            self._persist_runtime_state()
+            return
         text = await self._resolve_text(message)
         if text is None:
             return
@@ -1423,7 +1564,20 @@ class TelegramBot:
 
         if self._config.scene.seen_reaction:
             await self._set_seen_reaction(message)
-        self._enqueue_frontstage_run(message, key, text, thread_id=thread_id)
+        if self._inbound_spool is None:
+            self._enqueue_frontstage_run(message, key, text, thread_id=thread_id)
+            return
+        enqueued = self._inbound_spool.enqueue([message.model_dump(mode="json")])
+        self._last_inbound_spool_stats = self._inbound_spool.stats()
+        if enqueued:
+            logger.debug(
+                "Telegram inbound spool enqueued chat_id=%s message_id=%s pending=%s blocked_lanes=%s",
+                message.chat.id,
+                message.message_id,
+                self._last_inbound_spool_stats.pending_count,
+                self._last_inbound_spool_stats.blocked_lane_count,
+            )
+        await self._drain_inbound_spool()
 
     def _enqueue_frontstage_run(
         self,
@@ -1432,6 +1586,7 @@ class TelegramBot:
         text: str,
         *,
         thread_id: int | None = None,
+        claim: TelegramInboundClaim | None = None,
     ) -> None:
         """Detach one incoming frontstage turn from the transport handler lifetime."""
         lock_key = key.lock_key
@@ -1442,6 +1597,7 @@ class TelegramBot:
                 key=key,
                 text=text,
                 thread_id=thread_id,
+                claim=claim,
             )
         )
         loop_task = self._frontstage_run_loops.get(lock_key)
@@ -1464,6 +1620,15 @@ class TelegramBot:
 
                 async with self._sequential.get_lock(lock_key):
                     try:
+                        claim = item.claim
+                        renew_task = (
+                            asyncio.create_task(
+                                self._keep_inbound_claim_alive(claim),
+                                name=f"tg-spool-lease:{item.key.chat_id}:{item.key.topic_id or 0}",
+                            )
+                            if claim is not None
+                            else None
+                        )
                         if self._use_streaming_output():
                             await self._handle_streaming(
                                 item.message,
@@ -1478,12 +1643,23 @@ class TelegramBot:
                                 item.text,
                                 thread_id=item.thread_id,
                             )
+                        if claim is not None and self._inbound_spool is not None:
+                            self._inbound_spool.ack(claim)
+                            self._last_inbound_drain_at = time.time()
+                            self._persist_runtime_state()
                     except Exception:
+                        if item.claim is not None and self._inbound_spool is not None:
+                            self._inbound_spool.release(item.claim)
                         logger.exception(
                             "Detached Telegram frontstage run failed chat_id=%s topic_id=%s",
                             item.key.chat_id,
                             item.key.topic_id,
                         )
+                    finally:
+                        if renew_task is not None:
+                            renew_task.cancel()
+                            with contextlib.suppress(asyncio.CancelledError):
+                                await renew_task
         finally:
             current = self._frontstage_run_loops.get(lock_key)
             if current is asyncio.current_task():
@@ -1734,59 +1910,55 @@ class TelegramBot:
         except asyncio.CancelledError:
             logger.debug("Restart watcher cancelled")
 
-    def _mark_polling_success(self) -> None:
-        """Record that Telegram long-polling completed a successful cycle."""
-        self._last_polling_success_monotonic = time.monotonic()
-
-    def _telegram_polling_is_stale(self, now: float) -> bool:
-        """Return True when Telegram polling appears alive but no longer progresses."""
-        started = self._polling_started_monotonic
-        last_success = self._last_polling_success_monotonic
-        if started <= 0.0 or last_success <= 0.0:
-            return False
-        if now - started < _TELEGRAM_POLLING_WATCHDOG_STALE_SECONDS:
-            return False
-        return now - last_success >= _TELEGRAM_POLLING_WATCHDOG_STALE_SECONDS
-
-    async def _watch_polling_liveness(self) -> None:
-        """Restart the service when Telegram polling stops making progress."""
+    async def _watch_poll_health(self) -> None:
+        """Request a fresh Telegram polling transport when getUpdates stalls."""
         try:
             while True:
-                await asyncio.sleep(_TELEGRAM_POLLING_WATCHDOG_INTERVAL_SECONDS)
-                now = time.monotonic()
-                if not self._telegram_polling_is_stale(now):
+                await asyncio.sleep(1.0)
+                if self._exit_code == EXIT_RESTART or self._poll_diagnostics.transport_dirty:
                     continue
-                stale_for = now - self._last_polling_success_monotonic
-                logger.warning(
-                    "Telegram polling appears stale; last successful getUpdates %.1fs ago. Restarting service.",
-                    stale_for,
+                inflight_age = self._poll_diagnostics.poll_inflight_age_seconds()
+                if inflight_age is None or inflight_age <= self._poll_stall_timeout_seconds:
+                    continue
+                offset = self._current_poll_offset()
+                self._poll_diagnostics.note_poll_failed(
+                    reason="poll_stall",
+                    offset=offset,
+                    mark_transport_dirty=True,
                 )
-                self._exit_code = EXIT_RESTART
-                await self._dp.stop_polling()
+                logger.warning(
+                    "Telegram poll marked transport dirty reason=%s offset=%s last_success_age=%s failures=%s inflight_age=%ss",
+                    "poll_stall",
+                    offset,
+                    self._format_last_success_age(),
+                    self._poll_diagnostics.consecutive_failures,
+                    f"{inflight_age:.2f}",
+                )
+                await self._request_poll_restart("poll_stall")
         except asyncio.CancelledError:
-            logger.debug("Polling watchdog cancelled")
+            logger.debug("Telegram poll watchdog cancelled")
 
     async def run(self) -> int:
         """Start polling. Returns exit code (0 = normal, 42 = restart)."""
         logger.info("Starting Telegram bot (aiogram, long-polling)...")
         await self._bot.delete_webhook(drop_pending_updates=False)
-        now = time.monotonic()
-        self._polling_started_monotonic = now
-        self._last_polling_success_monotonic = now
         allowed_updates = self._dp.resolve_used_update_types()
         logger.info("Polling allowed_updates=%s", ",".join(allowed_updates))
-        await self._dp.start_polling(
-            self._bot,
-            allowed_updates=allowed_updates,
-            polling_timeout=_TELEGRAM_POLLING_TIMEOUT_SECONDS,
-            close_bot_session=True,
-            handle_signals=False,
-        )
+        while True:
+            await self._dp.start_polling(
+                self._bot,
+                allowed_updates=allowed_updates,
+                close_bot_session=True,
+                handle_signals=False,
+            )
+            if self._exit_code == EXIT_RESTART or not self._poll_diagnostics.transport_dirty:
+                break
+            await self._rebuild_poll_transport()
         return self._exit_code
 
     async def shutdown(self) -> None:
         await _cancel_task(self._restart_watcher)
-        await _cancel_task(self._polling_watchdog)
+        await _cancel_task(self._poll_watchdog)
         await _cancel_task(self._group_audit_task)
         for task in list(self._frontstage_run_loops.values()):
             await _cancel_task(task)
@@ -1808,3 +1980,218 @@ class TelegramBot:
             await self._bot.session.close()
 
         logger.info("Telegram bot shut down")
+
+    def _install_polling_session(self) -> None:
+        raw_session = getattr(self._bot, "session", None)
+        if not isinstance(raw_session, BaseSession):
+            return
+        self._bot.session = _TelegramPollingSession(
+            raw_session,
+            on_poll_started=self._note_poll_started,
+            on_poll_succeeded=self._note_poll_succeeded,
+            on_poll_failed=self._note_poll_failed,
+        )
+
+    def _compute_poll_stall_timeout_seconds(self) -> float:
+        return max(self._poll_timeout_seconds + 15.0, self._poll_timeout_seconds * 1.25)
+
+    def _note_poll_started(self, method: GetUpdates) -> None:
+        if self._restored_poll_offset is not None and method.offset is None:
+            method.offset = self._restored_poll_offset
+        self._poll_diagnostics.note_poll_started(offset=method.offset)
+
+    def _note_poll_succeeded(self, method: GetUpdates, result: object) -> None:
+        update_ids = [update.update_id for update in result] if isinstance(result, list) else []
+        next_offset = update_ids[-1] + 1 if update_ids else method.offset
+        self._poll_diagnostics.note_poll_succeeded(offset=next_offset, update_ids=update_ids)
+        if next_offset is not None:
+            self._restored_poll_offset = next_offset
+            self._persist_runtime_state()
+        if self._inbound_spool is not None:
+            self._last_inbound_spool_stats = self._inbound_spool.stats()
+        if not update_ids:
+            logger.debug(
+                "Telegram poll success with no new updates offset=%s backlog_pending=%s blocked_lanes=%s recovered_stale_claims=%s unhealthy=%s last_success_age=%s",
+                next_offset,
+                self._last_inbound_spool_stats.pending_count,
+                self._last_inbound_spool_stats.blocked_lane_count,
+                self._last_recovered_stale_claim_count,
+                self._last_inbound_spool_stats.unhealthy_reason,
+                self._format_last_success_age(),
+            )
+
+    async def _note_poll_failed(self, method: GetUpdates, exc: Exception) -> None:
+        reason = self._recoverable_poll_reason(exc)
+        if reason is None:
+            return
+        self._poll_diagnostics.note_poll_failed(
+            reason=reason,
+            offset=method.offset,
+            mark_transport_dirty=True,
+        )
+        logger.warning(
+            "Telegram poll marked transport dirty reason=%s offset=%s last_success_age=%s failures=%s",
+            reason,
+            method.offset,
+            self._format_last_success_age(),
+            self._poll_diagnostics.consecutive_failures,
+            exc_info=exc,
+        )
+        await self._request_poll_restart(reason)
+
+    async def _request_poll_restart(self, reason: str) -> None:
+        if self._exit_code == EXIT_RESTART or self._poll_diagnostics.restart_requested:
+            return
+        self._poll_diagnostics.restart_requested = True
+        logger.info(
+            "Telegram rebuilding poll transport requested reason=%s offset=%s last_success_age=%s failures=%s",
+            reason,
+            self._current_poll_offset(),
+            self._format_last_success_age(),
+            self._poll_diagnostics.consecutive_failures,
+        )
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await self._dp.stop_polling()
+
+    async def _rebuild_poll_transport(self) -> None:
+        reason = self._poll_diagnostics.restart_reason or "dirty_transport"
+        logger.info(
+            "Telegram rebuilding poll transport reason=%s offset=%s last_success_age=%s failures=%s",
+            reason,
+            self._current_poll_offset(),
+            self._format_last_success_age(),
+            self._poll_diagnostics.consecutive_failures,
+        )
+        with contextlib.suppress(Exception):
+            await self._bot.session.close()
+        if self._telegram_proxy:
+            self._bot.session = AiohttpSession(proxy=self._telegram_proxy)
+        else:
+            self._bot.session = AiohttpSession()
+        self._install_polling_session()
+        self._poll_diagnostics.note_transport_rebuilt()
+
+    def _recoverable_poll_reason(self, exc: Exception) -> str | None:
+        if isinstance(exc, TelegramConflictError):
+            return "poll_conflict_409"
+        if isinstance(exc, TelegramNetworkError):
+            return "recoverable_network_error"
+        if isinstance(exc, TelegramRetryAfter):
+            return "recoverable_http_429"
+        if isinstance(exc, TelegramServerError):
+            return "recoverable_http_5xx"
+        return None
+
+    def _current_poll_offset(self) -> int | None:
+        return self._poll_diagnostics.last_poll_offset
+
+    def _format_last_success_age(self) -> str:
+        age = self._poll_diagnostics.last_success_age_seconds()
+        if age is None:
+            return "never"
+        return f"{age:.2f}s"
+
+    def _restore_runtime_state(self) -> None:
+        pending_recent_outbound = self._recent_outbound.snapshot()
+        state = self._runtime_state_store.load_state(
+            token=self._config.telegram_token,
+            bot_id=self._bot_id,
+            bot_username=self._bot_username,
+        )
+        self._recent_outbound = TelegramOutboundEchoStore(state.recent_outbound)
+        for message_key, seen_at in pending_recent_outbound:
+            self._recent_outbound.remember(message_key, now=seen_at)
+        self._restored_poll_offset = state.cursor
+        self._poll_diagnostics.last_poll_offset = state.cursor
+
+    def _configure_inbound_spool(self) -> None:
+        self._inbound_spool = TelegramInboundSpool(
+            self._config.controlmesh_home,
+            token=self._config.telegram_token,
+            bot_id=self._bot_id,
+            bot_username=self._bot_username,
+        )
+        self._last_inbound_spool_stats = self._inbound_spool.stats()
+
+    def _persist_runtime_state(self) -> None:
+        self._runtime_state_store.save_state(
+            token=self._config.telegram_token,
+            bot_id=self._bot_id,
+            bot_username=self._bot_username,
+            state=TelegramRuntimeState(
+                cursor=self._restored_poll_offset,
+                recent_outbound=self._recent_outbound.snapshot(),
+            ),
+        )
+
+    def _remember_outbound_message(self, chat_id: int, message_id: int | None) -> None:
+        if message_id is None:
+            return
+        self._recent_outbound.remember(build_outbound_message_key(chat_id, message_id))
+        self._persist_runtime_state()
+
+    def _is_persisted_outbound_self_echo(self, message: Message) -> bool:
+        from_user = getattr(message, "from_user", None)
+        if from_user is None or self._bot_id is None or getattr(from_user, "id", None) != self._bot_id:
+            return False
+        message_key = build_outbound_message_key(message.chat.id, message.message_id)
+        return self._recent_outbound.consume(message_key)
+
+    async def _recover_inbound_spool(self) -> None:
+        if self._inbound_spool is None:
+            return
+        self._last_recovered_stale_claim_count = self._inbound_spool.recover_stale_claims()
+        if self._last_recovered_stale_claim_count:
+            logger.info(
+                "Telegram recovered stale inbound claims count=%s",
+                self._last_recovered_stale_claim_count,
+            )
+        await self._drain_inbound_spool()
+
+    async def _drain_inbound_spool(self) -> int:
+        if self._inbound_spool is None:
+            return 0
+        delivered = 0
+        while True:
+            claim = self._inbound_spool.claim_next(owner=_INBOUND_DRAIN_OWNER)
+            if claim is None:
+                break
+            try:
+                message = Message.model_validate(claim.entry.raw)
+            except Exception:
+                self._inbound_spool.ack(claim)
+                continue
+            if self._is_persisted_outbound_self_echo(message):
+                self._inbound_spool.ack(claim)
+                self._persist_runtime_state()
+                continue
+            text = await self._resolve_text(message)
+            if text is None:
+                self._inbound_spool.ack(claim)
+                continue
+            key = get_session_key(message)
+            thread_id = get_thread_id(message)
+            self._enqueue_frontstage_run(message, key, text, thread_id=thread_id, claim=claim)
+            delivered += 1
+        self._last_inbound_spool_stats = self._inbound_spool.stats()
+        if self._last_inbound_spool_stats.unhealthy_reason:
+            logger.warning(
+                "Telegram inbound backlog unhealthy reason=%s pending=%s blocked_lanes=%s recovered_stale_claims=%s",
+                self._last_inbound_spool_stats.unhealthy_reason,
+                self._last_inbound_spool_stats.pending_count,
+                self._last_inbound_spool_stats.blocked_lane_count,
+                self._last_recovered_stale_claim_count,
+            )
+        return delivered
+
+    async def _keep_inbound_claim_alive(self, claim: TelegramInboundClaim) -> None:
+        if self._inbound_spool is None:
+            return
+        current_claim = claim
+        interval = max(1.0, self._inbound_spool.claim_ttl_seconds / 3.0)
+        while True:
+            await asyncio.sleep(interval)
+            renewed = self._inbound_spool.renew(current_claim)
+            if renewed is None:
+                return
+            current_claim = renewed

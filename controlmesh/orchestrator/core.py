@@ -82,6 +82,7 @@ from controlmesh.orchestrator.hooks import (
     MessageHookRegistry,
 )
 from controlmesh.orchestrator.observers import ObserverManager
+from controlmesh.orchestrator.presentation import normalize_user_visible_output
 from controlmesh.orchestrator.providers import ProviderManager
 from controlmesh.orchestrator.registry import CommandRegistry, OrchestratorResult
 from controlmesh.orchestrator.selectors.agent_router import RouteDecisionKind, decide_backend_route
@@ -484,6 +485,43 @@ class Orchestrator:
             topic_id=key.topic_id,
         )
         await asyncio.to_thread(self._transcripts.append_turn, turn)
+
+    def append_runtime_event(
+        self,
+        key: SessionKey,
+        event_type: str,
+        payload: dict[str, object],
+    ) -> None:
+        """Append one runtime event for a frontstage session."""
+        self._runtime_events.append_event(
+            RuntimeEvent(
+                session_key=key.storage_key,
+                event_type=event_type,
+                payload=payload,
+                transport=key.transport,
+                chat_id=key.chat_id,
+                topic_id=key.topic_id,
+            )
+        )
+
+    async def recover_visible_assistant_text(self, key: SessionKey) -> str:
+        """Recover the latest visible assistant text from persisted sources."""
+        transcript_turns = await asyncio.to_thread(self._transcripts.read_recent, key, limit=20)
+        for turn in reversed(transcript_turns):
+            if turn.role != "assistant":
+                continue
+            content = turn.visible_content.strip()
+            if content:
+                return content
+
+        runtime_events = await asyncio.to_thread(self._runtime_events.read_recent, key, limit=50)
+        for event in reversed(runtime_events):
+            if event.event_type != "assistant_text_delta":
+                continue
+            text = str(event.payload.get("text") or "").strip()
+            if text:
+                return text
+        return ""
 
     async def record_frontstage_delivery(self, envelope: Envelope) -> None:
         """Persist visible non-command deliveries that belong in frontstage history."""
@@ -1184,6 +1222,7 @@ class Orchestrator:
         text: str,
     ) -> tuple[str, list[TranscriptAttachment]]:
         """Split visible text from attached file metadata for transcript storage."""
+        text = normalize_user_visible_output(text).text
         attachments = [
             Orchestrator._attachment_from_tag(file_tag) for file_tag in extract_file_paths(text)
         ]

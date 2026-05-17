@@ -355,6 +355,46 @@ async def test_streaming_delegates_correctly(orch: Orchestrator) -> None:
     mock_streaming.assert_called_once()
 
 
+async def test_streaming_metadata_only_final_recovers_from_runtime_history(orch: Orchestrator) -> None:
+    async def _mock_streaming(
+        _request: object,
+        *,
+        on_text_delta: AsyncMock | None = None,
+        on_tool_activity: object = None,
+        on_tool_event: object = None,
+        on_system_status: object = None,
+    ) -> AgentResponse:
+        del on_tool_activity, on_tool_event, on_system_status
+        assert on_text_delta is not None
+        await on_text_delta("Recovered from runtime history")
+        return _mock_response(
+            result='{"type":"item.completed","item":{"type":"command_execution","status":"completed"}}'
+        )
+
+    object.__setattr__(orch._cli_service, "execute_streaming", AsyncMock(side_effect=_mock_streaming))
+
+    result = await normal_streaming(orch, SessionKey(chat_id=1), "Hello")
+
+    assert result.text == "Recovered from runtime history"
+
+
+async def test_streaming_metadata_only_final_without_history_stays_internal(orch: Orchestrator) -> None:
+    object.__setattr__(
+        orch._cli_service,
+        "execute_streaming",
+        AsyncMock(
+            return_value=_mock_response(
+                result='{"type":"item.completed","item":{"type":"command_execution","status":"completed"}}'
+            )
+        ),
+    )
+
+    result = await normal_streaming(orch, SessionKey(chat_id=1), "Hello")
+
+    assert result.text == "Error: check logs for details."
+    assert "item.completed" not in result.text
+
+
 async def test_streaming_fallback_flag(orch: Orchestrator) -> None:
     object.__setattr__(
         orch._cli_service,
@@ -482,6 +522,26 @@ def test_finish_normal_happy_path() -> None:
     assert not result.stream_fallback
 
 
+def test_finish_normal_extracts_visible_text_from_internal_event_payload() -> None:
+    """Structured assistant events are reduced to visible assistant text."""
+    resp = AgentResponse(
+        result='{"type":"item.completed","item":{"type":"agent_message","text":"Hello from event"}}',
+        is_error=False,
+    )
+    result = _finish_normal(resp)
+    assert result.text == "Hello from event"
+
+
+def test_finish_normal_metadata_only_internal_event_fails_closed() -> None:
+    """Metadata-only internal events never become the visible final reply."""
+    resp = AgentResponse(
+        result='{"type":"item.completed","item":{"type":"command_execution","status":"completed"}}',
+        is_error=False,
+    )
+    result = _finish_normal(resp)
+    assert result.text == "Error: check logs for details."
+
+
 def test_finish_normal_with_stream_fallback() -> None:
     """Non-error response preserves stream_fallback flag."""
     resp = AgentResponse(result="Hello", is_error=False, stream_fallback=True)
@@ -502,6 +562,16 @@ def test_finish_normal_error_with_details() -> None:
     resp = AgentResponse(result="Rate limit exceeded", is_error=True)
     result = _finish_normal(resp)
     assert result.text == "Error: Rate limit exceeded"
+
+
+def test_finish_normal_error_internal_event_uses_extracted_text() -> None:
+    """Error formatting should not leak structured payload JSON."""
+    resp = AgentResponse(
+        result='{"type":"result","result":"Provider exploded"}',
+        is_error=True,
+    )
+    result = _finish_normal(resp)
+    assert result.text == "Error: Provider exploded"
 
 
 def test_finish_normal_error_empty_result() -> None:

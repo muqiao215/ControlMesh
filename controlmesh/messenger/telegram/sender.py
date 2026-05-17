@@ -45,6 +45,24 @@ _VIDEO_SUFFIXES = frozenset({".mp4"})
 _AUDIO_SUFFIXES = frozenset({".mp3", ".m4a"})
 
 
+def build_outbound_message_key(chat_id: int, message_id: int) -> str:
+    """Build a stable key for one outbound Telegram message."""
+    return f"{chat_id}:{message_id}"
+
+
+def remember_sent_message(
+    bot: Bot,
+    chat_id: int,
+    message: Message | None,
+) -> None:
+    """Notify TelegramBot about one sent message when available."""
+    if message is None:
+        return
+    hook = getattr(bot, "_controlmesh_remember_outbound_message", None)
+    if callable(hook):
+        hook(chat_id, message.message_id)
+
+
 def _select_telegram_upload_mode(path: Path, mime: str) -> str:
     """Return best Telegram upload mode for this file.
 
@@ -61,11 +79,12 @@ def _select_telegram_upload_mode(path: Path, mime: str) -> str:
 
 
 async def _send_document(bot: Bot, chat_id: int, path: Path, thread_id: int | None) -> None:
-    await bot.send_document(
+    message = await bot.send_document(
         chat_id=chat_id,
         document=FSInputFile(path),
         message_thread_id=thread_id,
     )
+    remember_sent_message(bot, chat_id, message)
 
 
 async def _send_by_mode(
@@ -84,14 +103,27 @@ async def _send_by_mode(
 
     try:
         if upload_mode == "photo":
-            await bot.send_photo(chat_id=chat_id, photo=input_file, message_thread_id=thread_id)
+            message = await bot.send_photo(
+                chat_id=chat_id,
+                photo=input_file,
+                message_thread_id=thread_id,
+            )
         elif upload_mode == "video":
-            await bot.send_video(chat_id=chat_id, video=input_file, message_thread_id=thread_id)
+            message = await bot.send_video(
+                chat_id=chat_id,
+                video=input_file,
+                message_thread_id=thread_id,
+            )
         elif upload_mode == "audio":
-            await bot.send_audio(chat_id=chat_id, audio=input_file, message_thread_id=thread_id)
+            message = await bot.send_audio(
+                chat_id=chat_id,
+                audio=input_file,
+                message_thread_id=thread_id,
+            )
         else:
             await _send_document(bot, chat_id, path, thread_id)
             return
+        remember_sent_message(bot, chat_id, message)
     except TelegramBadRequest:
         logger.info(
             "%s upload rejected, retrying as document: %s",
@@ -156,6 +188,7 @@ async def _send_text_chunks(
                     parse_mode=ParseMode.HTML,
                     message_thread_id=thread_id,
                 )
+            remember_sent_message(bot, chat_id, last_msg)
         except TelegramNetworkError:
             logger.debug("Network error sending message (likely shutdown), skipping")
             return last_msg
@@ -174,6 +207,7 @@ async def _send_text_chunks(
                     parse_mode=None,
                     message_thread_id=thread_id,
                 )
+                remember_sent_message(bot, chat_id, last_msg)
             break
     return last_msg
 
