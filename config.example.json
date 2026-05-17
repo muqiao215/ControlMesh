@@ -19,7 +19,8 @@
     "max_session_messages": null,
 
     "permission_mode": "bypassPermissions",
-    "claude_root_permission_mode": "dontAsk",
+    "claude_root_permission_mode": "bypassPermissions",
+    "claude_root_force_bypass_via_is_sandbox": true,
     "cli_timeout": 600.0,
     "reasoning_effort": "medium",
     "file_access": "all",

@@ -470,6 +470,35 @@ def apply_config_migrations(raw: dict[str, object]) -> tuple[dict[str, object], 
                 )
             )
 
+    permission_mode = raw.get("permission_mode")
+    root_permission_mode = raw.get("claude_root_permission_mode")
+    root_force_bypass = raw.get("claude_root_force_bypass_via_is_sandbox")
+    if (
+        permission_mode == "bypassPermissions"
+        and root_permission_mode == "dontAsk"
+        and root_force_bypass in (None, False)
+    ):
+        merged["claude_root_permission_mode"] = "bypassPermissions"
+        changed = True
+        events.append(
+            ConfigMigrationEvent(
+                field="claude_root_permission_mode",
+                before="dontAsk",
+                after="bypassPermissions",
+                reason="upgraded legacy Claude root fallback default to highest-permission baseline",
+            )
+        )
+        if root_force_bypass is not True:
+            merged["claude_root_force_bypass_via_is_sandbox"] = True
+            events.append(
+                ConfigMigrationEvent(
+                    field="claude_root_force_bypass_via_is_sandbox",
+                    before=str(root_force_bypass),
+                    after="True",
+                    reason="enabled Claude root IS_SANDBOX escape hatch for highest-permission baseline",
+                )
+            )
+
     return merged, tuple(events), changed
 
 

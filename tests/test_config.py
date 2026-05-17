@@ -26,6 +26,7 @@ from controlmesh.gateways.config import (
     GatewayEventRuleConfig,
     GatewayTargetConfig,
 )
+from controlmesh.provider_health import apply_config_migrations
 from controlmesh.team.contracts import TEAM_TOPOLOGIES
 
 # -- AgentConfig defaults --
@@ -134,6 +135,52 @@ def test_deep_merge_no_change() -> None:
     defaults: dict[str, object] = {"a": 99, "b": 99}
     _, changed = deep_merge_config(data, defaults)
     assert changed is False
+
+
+def test_apply_config_migrations_upgrades_legacy_claude_root_defaults() -> None:
+    raw = {
+        "permission_mode": "bypassPermissions",
+        "claude_root_permission_mode": "dontAsk",
+        "claude_root_force_bypass_via_is_sandbox": False,
+    }
+
+    migrated, events, changed = apply_config_migrations(raw)
+
+    assert changed is True
+    assert migrated["claude_root_permission_mode"] == "bypassPermissions"
+    assert migrated["claude_root_force_bypass_via_is_sandbox"] is True
+    assert [event.field for event in events] == [
+        "claude_root_permission_mode",
+        "claude_root_force_bypass_via_is_sandbox",
+    ]
+
+
+def test_apply_config_migrations_upgrades_missing_legacy_claude_root_escape_hatch() -> None:
+    raw = {
+        "permission_mode": "bypassPermissions",
+        "claude_root_permission_mode": "dontAsk",
+    }
+
+    migrated, events, changed = apply_config_migrations(raw)
+
+    assert changed is True
+    assert migrated["claude_root_permission_mode"] == "bypassPermissions"
+    assert migrated["claude_root_force_bypass_via_is_sandbox"] is True
+    assert len(events) == 2
+
+
+def test_apply_config_migrations_preserves_explicit_claude_root_override() -> None:
+    raw = {
+        "permission_mode": "bypassPermissions",
+        "claude_root_permission_mode": "plan",
+        "claude_root_force_bypass_via_is_sandbox": False,
+    }
+
+    migrated, events, changed = apply_config_migrations(raw)
+
+    assert changed is False
+    assert migrated == raw
+    assert events == ()
 
 
 # -- ModelRegistry --
