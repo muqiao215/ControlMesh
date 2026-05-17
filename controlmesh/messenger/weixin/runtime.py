@@ -293,9 +293,7 @@ class WeixinLongPollRuntime:
         if not isinstance(client_id, str):
             return False
         consumed = self._recent_outbound.consume(client_id)
-        if consumed:
-            return True
-        return False
+        return bool(consumed)
 
     async def _drain_inbound_spool(self) -> int:
         if self._inbound_spool is None:

@@ -58,9 +58,12 @@ def remember_sent_message(
     """Notify TelegramBot about one sent message when available."""
     if message is None:
         return
+    message_id = getattr(message, "message_id", None)
+    if message_id is None:
+        return
     hook = getattr(bot, "_controlmesh_remember_outbound_message", None)
     if callable(hook):
-        hook(chat_id, message.message_id)
+        hook(chat_id, message_id)
 
 
 def _select_telegram_upload_mode(path: Path, mime: str) -> str:

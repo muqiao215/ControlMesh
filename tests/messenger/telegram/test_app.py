@@ -104,6 +104,20 @@ def _make_message(
     type(msg).message_id = PropertyMock(return_value=message_id)
     msg.text = text
     msg.answer = AsyncMock(return_value=msg)
+    msg.model_dump = MagicMock(
+        return_value={
+            "message_id": message_id,
+            "date": 1710000000,
+            "chat": {"id": chat_id, "type": chat_type},
+            "from": {"id": user_id, "is_bot": False, "first_name": "TestUser"},
+            "text": text,
+            **(
+                {"is_topic_message": True, "message_thread_id": topic_thread_id}
+                if topic_thread_id is not None
+                else {}
+            ),
+        }
+    )
 
     user = MagicMock(spec=User)
     user.id = user_id
@@ -1571,10 +1585,11 @@ class TestTelegramRuntimeStateIntegration:
         tg_bot, _ = _make_tg_bot()
         tg_bot._bot_id = 999
         tg_bot._bot_username = "controlmesh_bot"
+        recent_seen_at = time.time()
         tg_bot._runtime_state_store.load_state = MagicMock(
             return_value=MagicMock(
                 cursor=321,
-                recent_outbound=(("5:42", 1710000000.0),),
+                recent_outbound=(("5:42", recent_seen_at),),
             )
         )
 
