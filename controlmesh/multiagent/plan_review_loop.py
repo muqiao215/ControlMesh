@@ -763,7 +763,7 @@ def _extract_release_monitor_summary(result: TaskResult) -> str:
     return text[:1200]
 
 
-def _handle_release_monitor_result(
+async def _handle_release_monitor_result(
     orch: Orchestrator,
     result: TaskResult,
     *,
@@ -800,6 +800,39 @@ def _handle_release_monitor_result(
     save_gate_state(orch.paths.plans_dir, plan_id, gate)
 
     current_phase_id = str(_load_state(orch, plan_id).get("current_phase_id") or "publish")
+    if result.status == "done" and step_id in {"push_tag", "push_main"}:
+        approved_step_id = str(gate.get("approved_step_id") or "")
+        if approved_step_id == step_id:
+            transport = str(_load_state(orch, plan_id).get("source_transport") or "tg")
+            chat_id = _load_state(orch, plan_id).get("source_chat_id")
+            topic_id = _load_state(orch, plan_id).get("source_topic_id")
+            try:
+                from controlmesh.session.key import SessionKey
+
+                return await approve_current_phase(
+                    orch,
+                    SessionKey(transport=transport, chat_id=chat_id, topic_id=topic_id),
+                    plan_id,
+                    step_id,
+                )
+            except Exception:
+                # Fall back to the explicit approval prompt if synthetic resume cannot run.
+                pass
+        _set_controller_state(
+            orch,
+            plan_id,
+            status="awaiting_publish_approval",
+            current_phase_id=current_phase_id,
+            awaiting_review_phase_id=current_phase_id,
+            last_phase_task_id=result.task_id,
+        )
+        return _release_monitor_terminal_text(
+            plan_id,
+            gate,
+            monitor,
+            success=True,
+            summary=summary,
+        )
     if result.status == "done" and step_id == "verify_remote_tag":
         mark_executed(
             orch.paths.plans_dir,
@@ -835,7 +868,7 @@ def _handle_release_monitor_result(
     _set_controller_state(
         orch,
         plan_id,
-        status="awaiting_publish_approval" if result.status == "done" else "waiting_for_release_monitor",
+        status="awaiting_publish_approval" if result.status == "done" else "review_required",
         current_phase_id=current_phase_id,
         awaiting_review_phase_id=current_phase_id if result.status == "done" else "",
         last_phase_task_id=result.task_id,
@@ -1351,7 +1384,7 @@ async def handle_task_result(orch: Orchestrator, result: TaskResult) -> str | No
     plan_id = entry.plan_id
     monitor_plan_id, monitor_step_id = _release_monitor_identity(entry.name)
     if monitor_plan_id and monitor_step_id:
-        return _handle_release_monitor_result(
+        return await _handle_release_monitor_result(
             orch,
             result,
             plan_id=monitor_plan_id,
@@ -1480,9 +1513,32 @@ async def handle_task_result(orch: Orchestrator, result: TaskResult) -> str | No
                 f"Plan `{plan_id}` phase `{entry.phase_id}` completed but TOOL_RESULT.json was not consumed yet.\n"
                 f"- status: `/mesh status {plan_id}`"
             )
+        evaluation = result.evaluation or _evaluation_from_artifacts(orch, plan_id, entry.phase_id)
+        if evaluation is not None and evaluation.decision == "approve_recommended":
+            _set_controller_state(
+                orch,
+                plan_id,
+                status="review_required",
+                current_phase_id=entry.phase_id,
+                awaiting_review_phase_id=entry.phase_id,
+                last_phase_task_id=result.task_id,
+            )
+            transport = str(_load_state(orch, plan_id).get("source_transport") or "tg")
+            chat_id = _load_state(orch, plan_id).get("source_chat_id")
+            topic_id = _load_state(orch, plan_id).get("source_topic_id")
+            try:
+                from controlmesh.session.key import SessionKey
+
+                return await approve_current_phase(
+                    orch,
+                    SessionKey(transport=transport, chat_id=chat_id, topic_id=topic_id),
+                    plan_id,
+                )
+            except Exception:
+                pass
         position, total = _phase_position(orch, plan_id, entry.phase_id)
         review = _latest_review(orch, plan_id, phase_id=entry.phase_id)
-        evaluation_lines = _evaluation_lines(result.evaluation, review)
+        evaluation_lines = _evaluation_lines(evaluation, review)
         artifact_lines = [f"- {ref}" for ref in _artifact_refs(orch, plan_id, entry.phase_id)]
         _set_controller_state(
             orch,

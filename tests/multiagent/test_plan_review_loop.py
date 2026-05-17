@@ -24,7 +24,7 @@ from controlmesh.runtime import HostJob, HostJobStep
 from controlmesh.session.key import SessionKey
 from controlmesh.runtime.models import AgentInboxItem
 from controlmesh.multiagent.release_gate import ensure_publish_gate, load_gate_state, mark_executed
-from controlmesh.tasks.models import TaskEntry, TaskResult, TaskSubmit
+from controlmesh.tasks.models import EvaluationResult, TaskEntry, TaskResult, TaskSubmit
 
 
 class _FakeRegistry:
@@ -446,6 +446,323 @@ async def test_release_monitor_result_unblocks_explicit_next_step(tmp_path: Path
     gate = load_gate_state(tmp_path / "plans", plan_id)
     assert gate["monitor"]["status"] == "succeeded"
     assert (tmp_path / "plans" / plan_id / "publish" / "EXECUTED.json").is_file()
+    state = json.loads((plan_dir_for(tmp_path / "plans", plan_id) / "STATE.json").read_text(encoding="utf-8"))
+    assert state["status"] == "review_required"
+
+
+@pytest.mark.asyncio
+async def test_release_monitor_success_auto_advances_when_step_already_approved(tmp_path: Path) -> None:
+    plan_id = "release-monitor-plan-auto"
+    create_plan_files(
+        tmp_path / "plans",
+        plan_id=plan_id,
+        plan_markdown="# Release Plan",
+        phases=(PlanPhase(id="publish", title="Publish Release", workunit_kind="github_release"),),
+        status="executing",
+        current_phase=1,
+    )
+    _write_state(
+        tmp_path,
+        plan_id,
+        {
+            "schema_version": 1,
+            "plan_id": plan_id,
+            "status": "waiting_for_release_monitor",
+            "controller_mode": "agents_review_loop",
+            "current_phase_id": "publish",
+            "source_transport": "tg",
+            "source_chat_id": 42,
+        },
+    )
+    ensure_publish_gate(
+        tmp_path / "plans",
+        plan_id=plan_id,
+        repo="https://github.com/org/repo",
+        version="0.32.3",
+        commit="abc1234",
+        tag="v0.32.3",
+        commands=["git push origin main"],
+        requested_by_task="publish-task-1",
+        host_job={
+            "kind": "release",
+            "job_id": "release-v0.32.3",
+            "repo": "https://github.com/org/repo",
+            "version": "0.32.3",
+            "tag": "v0.32.3",
+            "notes_file": "docs/release-note-v0.32.3.md",
+        },
+    )
+    gate = load_gate_state(tmp_path / "plans", plan_id)
+    gate["approved_step_id"] = "push_tag"
+    gate["monitor"] = {
+        "job_id": "release-monitor-release-monitor-plan-auto-push-tag",
+        "task_name": "[release-monitor:release-monitor-plan-auto:push_tag] CI (main_ci)",
+        "awaiting_step_id": "push_tag",
+        "target_phase": "main_ci",
+        "workflow_name": "CI",
+        "schedule": "*/30 * * * * *",
+        "status": "running",
+        "provider": "claude",
+        "model": "sonnet",
+    }
+    from controlmesh.multiagent.release_gate import save_gate_state
+
+    save_gate_state(tmp_path / "plans", plan_id, gate)
+    entry = TaskEntry(
+        task_id="task-monitor-2",
+        chat_id=42,
+        parent_agent="main",
+        name="[release-monitor:release-monitor-plan-auto:push_tag] CI (main_ci)",
+        prompt_preview="monitor",
+        plan_id="",
+    )
+    hub = _FakeTaskHub(entry)
+    orch = _make_orch(tmp_path, hub)
+    orch.host_job_runner = _FakeHostJobRunner(
+        HostJob(
+            job_id="release-v0.32.3",
+            plan_id=plan_id,
+            repo="https://github.com/org/repo",
+            version="0.32.3",
+            tag="v0.32.3",
+            state="awaiting_approval",
+            current_step_id="push_tag",
+            steps=[
+                HostJobStep(
+                    id="push_tag",
+                    title="push tag",
+                    command="git push origin v0.32.3",
+                    state="awaiting_approval",
+                    approval_required=True,
+                )
+            ],
+        )
+    )
+
+    text = await handle_task_result(
+        orch,
+        TaskResult(
+            task_id="task-monitor-2",
+            chat_id=42,
+            parent_agent="main",
+            name=entry.name,
+            prompt_preview="monitor",
+            result_text="Terminal state: success",
+            delivery_text="Terminal state: success",
+            status="done",
+            elapsed_seconds=5.0,
+            provider="claude",
+            model="sonnet",
+        ),
+    )
+
+    assert text is not None
+    assert "Approved release step `push_tag`" in text
+    assert orch.host_job_runner.approvals == [("release-v0.32.3", "push_tag", "tg:42")]
+    state = json.loads((plan_dir_for(tmp_path / "plans", plan_id) / "STATE.json").read_text(encoding="utf-8"))
+    assert state["status"] == "executing"
+
+
+@pytest.mark.asyncio
+async def test_release_monitor_success_prompts_once_when_step_not_yet_approved(tmp_path: Path) -> None:
+    plan_id = "release-monitor-plan-prompt"
+    create_plan_files(
+        tmp_path / "plans",
+        plan_id=plan_id,
+        plan_markdown="# Release Plan",
+        phases=(PlanPhase(id="publish", title="Publish Release", workunit_kind="github_release"),),
+        status="executing",
+        current_phase=1,
+    )
+    _write_state(
+        tmp_path,
+        plan_id,
+        {
+            "schema_version": 1,
+            "plan_id": plan_id,
+            "status": "waiting_for_release_monitor",
+            "controller_mode": "agents_review_loop",
+            "current_phase_id": "publish",
+            "source_transport": "tg",
+            "source_chat_id": 42,
+        },
+    )
+    ensure_publish_gate(
+        tmp_path / "plans",
+        plan_id=plan_id,
+        repo="https://github.com/org/repo",
+        version="0.32.3",
+        commit="abc1234",
+        tag="v0.32.3",
+        commands=["git push origin main"],
+        requested_by_task="publish-task-1",
+        host_job={
+            "kind": "release",
+            "job_id": "release-v0.32.3",
+            "repo": "https://github.com/org/repo",
+            "version": "0.32.3",
+            "tag": "v0.32.3",
+            "notes_file": "docs/release-note-v0.32.3.md",
+        },
+    )
+    gate = load_gate_state(tmp_path / "plans", plan_id)
+    gate["monitor"] = {
+        "job_id": "release-monitor-release-monitor-plan-prompt-push-tag",
+        "task_name": "[release-monitor:release-monitor-plan-prompt:push_tag] CI (main_ci)",
+        "awaiting_step_id": "push_tag",
+        "target_phase": "main_ci",
+        "workflow_name": "CI",
+        "schedule": "*/30 * * * * *",
+        "status": "running",
+        "provider": "claude",
+        "model": "sonnet",
+    }
+    from controlmesh.multiagent.release_gate import save_gate_state
+
+    save_gate_state(tmp_path / "plans", plan_id, gate)
+    entry = TaskEntry(
+        task_id="task-monitor-3",
+        chat_id=42,
+        parent_agent="main",
+        name="[release-monitor:release-monitor-plan-prompt:push_tag] CI (main_ci)",
+        prompt_preview="monitor",
+        plan_id="",
+    )
+    hub = _FakeTaskHub(entry)
+    orch = _make_orch(tmp_path, hub)
+    orch.host_job_runner = _FakeHostJobRunner(
+        HostJob(
+            job_id="release-v0.32.3",
+            plan_id=plan_id,
+            repo="https://github.com/org/repo",
+            version="0.32.3",
+            tag="v0.32.3",
+            state="awaiting_approval",
+            current_step_id="push_tag",
+            steps=[
+                HostJobStep(
+                    id="push_tag",
+                    title="push tag",
+                    command="git push origin v0.32.3",
+                    state="awaiting_approval",
+                    approval_required=True,
+                )
+            ],
+        )
+    )
+
+    text = await handle_task_result(
+        orch,
+        TaskResult(
+            task_id="task-monitor-3",
+            chat_id=42,
+            parent_agent="main",
+            name=entry.name,
+            prompt_preview="monitor",
+            result_text="Terminal state: success",
+            delivery_text="Terminal state: success",
+            status="done",
+            elapsed_seconds=5.0,
+            provider="claude",
+            model="sonnet",
+        ),
+    )
+
+    assert text is not None
+    assert "Release monitor `CI` succeeded" in text
+    assert "approve push_tag release-v0.32.3" in text
+    assert orch.host_job_runner.approvals == []
+    state = json.loads((plan_dir_for(tmp_path / "plans", plan_id) / "STATE.json").read_text(encoding="utf-8"))
+    assert state["status"] == "awaiting_publish_approval"
+
+
+@pytest.mark.asyncio
+async def test_release_monitor_failure_moves_plan_to_review_required(tmp_path: Path) -> None:
+    plan_id = "release-monitor-plan-fail"
+    create_plan_files(
+        tmp_path / "plans",
+        plan_id=plan_id,
+        plan_markdown="# Release Plan",
+        phases=(PlanPhase(id="publish", title="Publish Release", workunit_kind="github_release"),),
+        status="executing",
+        current_phase=1,
+    )
+    _write_state(
+        tmp_path,
+        plan_id,
+        {
+            "schema_version": 1,
+            "plan_id": plan_id,
+            "status": "waiting_for_release_monitor",
+            "controller_mode": "agents_review_loop",
+            "current_phase_id": "publish",
+            "source_transport": "tg",
+            "source_chat_id": 42,
+        },
+    )
+    ensure_publish_gate(
+        tmp_path / "plans",
+        plan_id=plan_id,
+        repo="https://github.com/org/repo",
+        version="0.32.3",
+        commit="abc1234",
+        tag="v0.32.3",
+        commands=["git push origin main"],
+        requested_by_task="publish-task-1",
+        host_job={
+            "kind": "release",
+            "job_id": "release-v0.32.3",
+            "repo": "https://github.com/org/repo",
+            "version": "0.32.3",
+            "tag": "v0.32.3",
+            "notes_file": "docs/release-note-v0.32.3.md",
+        },
+    )
+    gate = load_gate_state(tmp_path / "plans", plan_id)
+    gate["monitor"] = {
+        "job_id": "release-monitor-release-monitor-plan-fail-push-tag",
+        "task_name": "[release-monitor:release-monitor-plan-fail:push_tag] CI (main_ci)",
+        "awaiting_step_id": "push_tag",
+        "target_phase": "main_ci",
+        "workflow_name": "CI",
+        "schedule": "*/30 * * * * *",
+        "status": "running",
+        "provider": "claude",
+        "model": "sonnet",
+    }
+    from controlmesh.multiagent.release_gate import save_gate_state
+
+    save_gate_state(tmp_path / "plans", plan_id, gate)
+    entry = TaskEntry(
+        task_id="task-monitor-4",
+        chat_id=42,
+        parent_agent="main",
+        name="[release-monitor:release-monitor-plan-fail:push_tag] CI (main_ci)",
+        prompt_preview="monitor",
+        plan_id="",
+    )
+    hub = _FakeTaskHub(entry)
+    orch = _make_orch(tmp_path, hub)
+
+    text = await handle_task_result(
+        orch,
+        TaskResult(
+            task_id="task-monitor-4",
+            chat_id=42,
+            parent_agent="main",
+            name=entry.name,
+            prompt_preview="monitor",
+            result_text="Terminal state: failure",
+            delivery_text="Terminal state: failure",
+            status="failed",
+            elapsed_seconds=5.0,
+            provider="claude",
+            model="sonnet",
+        ),
+    )
+
+    assert text is not None
+    assert "Release monitor `CI` failed" in text
     state = json.loads((plan_dir_for(tmp_path / "plans", plan_id) / "STATE.json").read_text(encoding="utf-8"))
     assert state["status"] == "review_required"
 
@@ -1113,6 +1430,80 @@ async def test_phase_completion_note_includes_review_buttons(tmp_path: Path) -> 
     assert "[button:Approve|/mesh approve plan-4]" in note
     assert "[button:Repair|/mesh repair plan-4]" in note
     assert "[button:Status|/mesh status plan-4]" in note
+
+
+@pytest.mark.asyncio
+async def test_phase_execution_auto_advances_on_approve_recommended(tmp_path: Path) -> None:
+    plan_id = "plan-auto-advance"
+    create_plan_files(
+        tmp_path / "plans",
+        plan_id=plan_id,
+        plan_markdown="# Plan",
+        phases=(
+            PlanPhase(id="phase-1", title="Contracts", workunit_kind="phase_execution", status="completed"),
+            PlanPhase(id="phase-2", title="Executor", workunit_kind="phase_execution"),
+        ),
+        status="executing",
+        current_phase=1,
+    )
+    _write_state(
+        tmp_path,
+        plan_id,
+        {
+            "schema_version": 1,
+            "plan_id": plan_id,
+            "status": "executing",
+            "controller_mode": "agents_review_loop",
+            "current_phase_id": "phase-1",
+            "source_transport": "tg",
+            "source_chat_id": 13,
+            "repo": "/repo",
+        },
+    )
+    entry = TaskEntry(
+        task_id="phase-task-1",
+        chat_id=13,
+        parent_agent="main",
+        name="phase",
+        prompt_preview="",
+        provider="codex",
+        model="gpt-5.5",
+        status="done",
+        workunit_kind="phase_execution",
+        plan_id=plan_id,
+        phase_id="phase-1",
+    )
+    hub = _FakeTaskHub(entry)
+    orch = _make_orch(tmp_path, hub)
+
+    note = await handle_task_result(
+        orch,
+        TaskResult(
+            task_id="phase-task-1",
+            chat_id=13,
+            parent_agent="main",
+            name="phase",
+            prompt_preview="",
+            result_text="ok",
+            status="done",
+            elapsed_seconds=1,
+            provider="codex",
+            model="gpt-5.5",
+            evaluation=EvaluationResult(
+                score=6,
+                decision="approve_recommended",
+                summary="Looks good.",
+            ),
+        ),
+    )
+
+    assert note is not None
+    assert "Started next phase `phase-2` automatically" in note
+    assert hub.submits[0].phase_id == "phase-2"
+    state = json.loads((plan_dir_for(tmp_path / "plans", plan_id) / "STATE.json").read_text())
+    assert state["status"] == "executing"
+    assert state["current_phase_id"] == "phase-2"
+    assert state.get("awaiting_review_phase_id", "") == ""
 
 
 def test_workflow_status_includes_recent_main_inbox_items(tmp_path: Path) -> None:
