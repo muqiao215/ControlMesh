@@ -115,7 +115,15 @@ class TelegramInboundSpool:
             path = self.pending_dir / f"{entry['spool_id']}.json"
             if path.exists():
                 continue
-            path.write_text(json.dumps(entry, ensure_ascii=True, sort_keys=True), encoding="utf-8")
+            path.write_text(
+                json.dumps(
+                    entry,
+                    ensure_ascii=True,
+                    sort_keys=True,
+                    default=_json_fallback,
+                ),
+                encoding="utf-8",
+            )
             self._protect_file(path)
             pending_keys.add(dedupe_key)
             enqueued += 1
@@ -427,6 +435,19 @@ def _lane_key(raw: dict[str, object]) -> str | None:
 
 def _dedupe_key(chat_id: int, message_id: int) -> str:
     return f"{chat_id}:{message_id}"
+
+
+def _json_fallback(value: object) -> object:
+    """Best-effort JSON fallback for aiogram sentinel/default objects."""
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(key): _json_fallback(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_fallback(item) for item in value]
+    return repr(value)
 
 
 def _lane_claim_name(lane_key: str) -> str:
