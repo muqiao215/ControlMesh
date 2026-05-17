@@ -171,6 +171,12 @@ class ProviderManager:
         self._provider_availability = availability
         cli_service.update_available_providers(self._available_providers)
 
+    def auth_results_snapshot(self) -> dict[str, AuthResult]:
+        """Return a fresh auth snapshot for readiness recomputation."""
+        from controlmesh.cli.auth import check_all_auth
+
+        return check_all_auth()
+
     def init_gemini_state(self, paths_workspace: object) -> None:
         """Cache Gemini API-key mode and trust workspace once at startup."""
         from controlmesh.cli.auth import gemini_uses_api_key_mode

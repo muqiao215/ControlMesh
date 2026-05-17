@@ -392,6 +392,7 @@ async def switch_model(
             updates["reasoning_effort"] = reasoning_effort
 
         await update_config_file_async(orch.paths.config_path, **updates)
+        orch.refresh_bootstrap_health()
 
         # Sub-agent: also sync model/provider/effort to agents.json so the
         # registry stays current and survives restarts without merge hacks.

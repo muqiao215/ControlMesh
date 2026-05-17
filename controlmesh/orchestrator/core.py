@@ -62,6 +62,7 @@ from controlmesh.provider_health import (
     ReadinessStatus,
     render_fallback_notice,
 )
+from controlmesh.provider_binding import normalize_provider_name
 from controlmesh.runtime.models import RuntimeEvent
 from controlmesh.runtime.store import RuntimeEventStore
 from controlmesh.orchestrator.directives import ParsedDirectives, parse_directives
@@ -368,6 +369,25 @@ class Orchestrator:
     def set_bootstrap_health(self, health: BootstrapHealth) -> None:
         """Inject structured startup/provider readiness health."""
         self._bootstrap_health = health
+
+    def refresh_bootstrap_health(self) -> None:
+        """Recompute bootstrap health from the current in-memory config/auth state."""
+        from controlmesh.provider_health import assess_bootstrap_health
+
+        try:
+            default_model, default_provider = self.resolve_runtime_target(self._config.model)
+        except ValueError:
+            default_model, default_provider = self._config.model, self._config.provider
+
+        auth_results = self._providers.auth_results_snapshot()
+        self._bootstrap_health = assess_bootstrap_health(
+            configured_provider=self._config.provider,
+            configured_model=self._config.model,
+            default_provider=default_provider,
+            default_model=default_model,
+            auth_results=auth_results,
+            model_provider_resolver=self.models.provider_for,
+        )
 
     async def handle_message(
         self,
@@ -747,6 +767,8 @@ class Orchestrator:
         """Return per-surface fallback behavior for the current bootstrap state."""
         health = self._bootstrap_health
         if health is None or health.is_ready:
+            return _FallbackDecision(allowed=True, surface=surface)
+        if normalize_provider_name(self._config.provider) != normalize_provider_name(health.default_provider):
             return _FallbackDecision(allowed=True, surface=surface)
         if health.status != ReadinessStatus.DEGRADED or not health.fallback_provider or not health.fallback_model:
             return None
