@@ -143,7 +143,11 @@ Notes:
 | `app_secret` | `str` | `""` | Feishu app secret |
 | `domain` | `str` | `"https://open.feishu.cn"` | Runtime API base URL |
 | `allow_from` | `list[str]` | `[]` | Optional sender allowlist (Feishu user IDs such as `open_id`) |
-| `group_reply_all` | `bool` | `false` | Reserved bot-only group behavior knob for later cuts |
+| `allowed_chat_ids` | `list[str]` | `[]` | Optional Feishu group/chat allowlist for `group_policy="allowlist"` |
+| `group_policy` | `"open" \| "allowlist" \| "disabled"` | `"disabled"` | Group-chat ingress policy. Default stays fail-closed. |
+| `group_message_mode` | `"passive" \| "mention_only" \| "mention_patterns"` | `"mention_only"` | How a group message becomes active after the group itself is allowed. |
+| `mention_patterns` | `list[str]` | `[]` | Plain-text activation phrases for `group_message_mode="mention_patterns"` |
+| `group_reply_all` | `bool` | `false` | Reserved outbound group behavior knob; ingress activation uses `group_policy` + `group_message_mode` |
 | `thread_isolation` | `bool` | `false` | When enabled, inbound thread/root IDs get separate ControlMesh session keys |
 | `reply_to_trigger` | `bool` | `true` | Reply to the triggering Feishu message when possible |
 | `progress_mode` | `"text" \| "card_preview" \| "card_stream"` | `"text"` | `text` sends plain progress text; `card_preview` repeatedly patches one interactive card; `card_stream` uses Feishu CardKit streaming card APIs and requires `runtime_mode="native"` |
@@ -154,6 +158,11 @@ Current implementation status:
 - bot-only mode is the production runtime path
 - `bridge` is the compatibility path for manually managed `app_id/app_secret` setups
 - `native` is the Feishu-first path; `controlmesh auth feishu register-begin` + `register-poll` writes `runtime_mode=native`
+- group ingress is a separate policy layer:
+  - `group_policy="disabled"` keeps ordinary group traffic passive
+  - `group_policy="allowlist"` requires `allowed_chat_ids`
+  - standalone slash commands still activate in allowed groups
+  - `mention_only` expects an explicit bot mention or reply/thread context
 - `card_stream` uses CardKit create/update/close APIs and falls back to ordinary text if CardKit is unavailable
 - optional device-flow auth reuses the configured app for user-token flows
 - see `docs/feishu-setup.md` for the first-time app-bot setup path

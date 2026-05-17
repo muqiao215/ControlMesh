@@ -20,6 +20,8 @@ class ParsedFeishuContent:
     message_type: str
     post_title: str | None = None
     quote_summary: str | None = None
+    chat_type: str | None = None
+    mentions: tuple[str, ...] = ()
 
 
 def extract_feishu_content_from_event(
@@ -33,13 +35,24 @@ def extract_feishu_content_from_event(
     if not kit_context:
         return fallback
     kit_text = _kit_prompt_text(kit_context)
+    chat_type = kit_context.get("chat_type")
+    mentions = _kit_mentions(kit_context)
     if message_type == "text" and kit_text:
         return ParsedFeishuContent(
             text=kit_text,
             message_type=message_type,
             quote_summary=fallback.quote_summary,
+            chat_type=chat_type if isinstance(chat_type, str) and chat_type else None,
+            mentions=mentions,
         )
-    return fallback
+    return ParsedFeishuContent(
+        text=fallback.text,
+        message_type=fallback.message_type,
+        post_title=fallback.post_title,
+        quote_summary=fallback.quote_summary,
+        chat_type=chat_type if isinstance(chat_type, str) and chat_type else None,
+        mentions=mentions,
+    )
 
 
 def extract_feishu_content(message_type: str, raw_content: object) -> ParsedFeishuContent:
@@ -302,3 +315,17 @@ def _kit_prompt_text(context: dict[str, Any]) -> str:
     if isinstance(text, str):
         return text.strip()
     return ""
+
+
+def _kit_mentions(context: dict[str, Any]) -> tuple[str, ...]:
+    raw_mentions = context.get("mentions")
+    if not isinstance(raw_mentions, list):
+        return ()
+    values: list[str] = []
+    for item in raw_mentions:
+        if not isinstance(item, dict):
+            continue
+        open_id = item.get("open_id")
+        if isinstance(open_id, str) and open_id.strip():
+            values.append(open_id.strip())
+    return tuple(dict.fromkeys(values))

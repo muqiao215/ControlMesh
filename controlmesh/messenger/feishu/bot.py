@@ -242,6 +242,8 @@ class FeishuIncomingText:
     parent_id: str | None = None
     quote_summary: str | None = None
     post_title: str | None = None
+    chat_type: str | None = None
+    mentions: tuple[str, ...] = ()
 
 
 class FeishuNotificationService:
@@ -427,6 +429,13 @@ class FeishuBot:
             return
         message = await self._parse_incoming_message(payload)
         if message is None:
+            return
+        if not self._should_deliver_group_message(message):
+            logger.info(
+                "Observed passive Feishu group message chat_id=%s message_id=%s",
+                message.chat_id,
+                message.message_id,
+            )
             return
         if self._is_old_message(message):
             logger.info(
@@ -1943,6 +1952,60 @@ class FeishuBot:
         allow_from = self._config.feishu.allow_from
         return not allow_from or sender_id in allow_from
 
+    def _should_deliver_group_message(self, message: FeishuIncomingText) -> bool:
+        if not self._is_group_chat(message):
+            return True
+        policy = self._config.feishu.group_policy
+        if policy == "disabled":
+            return False
+        if policy == "allowlist" and not self._group_chat_allowed(message.chat_id):
+            return False
+        if self._is_standalone_slash_command(message.text):
+            return True
+        mode = self._config.feishu.group_message_mode
+        if mode == "passive":
+            return True
+        if mode == "mention_only":
+            return self._message_mentions_bot(message)
+        if mode == "mention_patterns":
+            return self._message_mentions_bot(message) or self._matches_mention_patterns(message.text)
+        return False
+
+    @staticmethod
+    def _is_group_chat(message: FeishuIncomingText) -> bool:
+        chat_type = (message.chat_type or "").strip().lower()
+        return chat_type not in {"", "p2p"}
+
+    def _group_chat_allowed(self, chat_id: str) -> bool:
+        allowed = self._config.feishu.allowed_chat_ids
+        return not allowed or chat_id in allowed
+
+    @staticmethod
+    def _is_standalone_slash_command(text: str) -> bool:
+        cleaned = " ".join(text.split()).strip()
+        return cleaned.startswith("/") and len(cleaned) > 1
+
+    def _message_mentions_bot(self, message: FeishuIncomingText) -> bool:
+        if message.mentions:
+            return True
+        return bool(message.root_id or message.parent_id)
+
+    def _matches_mention_patterns(self, text: str) -> bool:
+        cleaned = " ".join(text.split()).strip()
+        if not cleaned:
+            return False
+        haystack = cleaned.casefold()
+        for raw_pattern in self._config.feishu.mention_patterns:
+            pattern = raw_pattern.strip()
+            if not pattern:
+                continue
+            candidates = {pattern.casefold()}
+            if not pattern.startswith("@"):
+                candidates.add(f"@{pattern}".casefold())
+            if any(candidate in haystack for candidate in candidates):
+                return True
+        return False
+
     async def _parse_incoming_message(self, payload: dict[str, Any]) -> FeishuIncomingText | None:
         header = payload.get("header")
         event = payload.get("event")
@@ -2004,6 +2067,8 @@ class FeishuBot:
             parent_id=parent_id if isinstance(parent_id, str) and parent_id else None,
             quote_summary=parsed_content.quote_summary if parsed_content else None,
             post_title=parsed_content.post_title if parsed_content else None,
+            chat_type=parsed_content.chat_type if parsed_content else None,
+            mentions=parsed_content.mentions if parsed_content else (),
         )
 
     @staticmethod

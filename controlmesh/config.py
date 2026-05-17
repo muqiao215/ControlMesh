@@ -203,6 +203,22 @@ class FeishuConfig(BaseModel):
         validation_alias=AliasChoices("listener_max_body_bytes", "callback_max_body_bytes"),
     )
     allow_from: list[str] = Field(default_factory=list)
+    allowed_chat_ids: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("allowed_chat_ids", "allowedChatIds"),
+    )
+    group_policy: Literal["open", "allowlist", "disabled"] = Field(
+        default="disabled",
+        validation_alias=AliasChoices("group_policy", "groupPolicy"),
+    )
+    group_message_mode: Literal["passive", "mention_only", "mention_patterns"] = Field(
+        default="mention_only",
+        validation_alias=AliasChoices("group_message_mode", "groupMessageMode"),
+    )
+    mention_patterns: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("mention_patterns", "mentionPatterns"),
+    )
     group_reply_all: bool = False
     thread_isolation: bool = False
     reply_to_trigger: bool = True

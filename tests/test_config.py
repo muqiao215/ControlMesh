@@ -231,6 +231,25 @@ def test_feishu_card_stream_requires_native_runtime_mode() -> None:
         )
 
 
+def test_feishu_group_config_fields() -> None:
+    cfg = AgentConfig(
+        transport="feishu",
+        feishu={
+            "app_id": "cli_123",
+            "app_secret": "secret",
+            "allowed_chat_ids": ["oc_group_1"],
+            "group_policy": "allowlist",
+            "group_message_mode": "mention_patterns",
+            "mention_patterns": ["清梦", "ControlMesh"],
+        },
+    )
+
+    assert cfg.feishu.allowed_chat_ids == ["oc_group_1"]
+    assert cfg.feishu.group_policy == "allowlist"
+    assert cfg.feishu.group_message_mode == "mention_patterns"
+    assert cfg.feishu.mention_patterns == ["清梦", "ControlMesh"]
+
+
 @pytest.mark.parametrize("topology", TEAM_TOPOLOGIES)
 def test_tasks_default_topology_accepts_approved_values(topology: str) -> None:
     cfg = AgentConfig(tasks={"default_topology": topology})

@@ -147,8 +147,158 @@ class TestFeishuBotRouting:
                 text="hello from feishu",
                 thread_id="omt_1",
                 create_time_ms=create_time_ms,
+                chat_type=None,
+                mentions=(),
             )
         )
+
+    async def test_handle_incoming_event_keeps_group_message_passive_by_default(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path)
+        bot.handle_incoming_text = AsyncMock()  # type: ignore[method-assign]
+
+        payload = {
+            "schema": "2.0",
+            "header": {
+                "event_id": "evt_group_1",
+                "event_type": "im.message.receive_v1",
+                "create_time": str(int(time.time() * 1000)),
+            },
+            "event": {
+                "sender": {"sender_id": {"open_id": "ou_sender"}},
+                "message": {
+                    "message_id": "om_group_1",
+                    "chat_id": "oc_group_1",
+                    "chat_type": "group",
+                    "message_type": "text",
+                    "content": '{"text":"plain group traffic"}',
+                },
+            },
+        }
+
+        await bot.handle_incoming_event(payload)
+
+        bot.handle_incoming_text.assert_not_awaited()
+
+    async def test_handle_incoming_event_activates_group_message_via_slash_command(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path, group_policy="allowlist", allowed_chat_ids=["oc_group_1"])
+        bot.handle_incoming_text = AsyncMock()  # type: ignore[method-assign]
+        create_time_ms = int(time.time() * 1000)
+
+        payload = {
+            "schema": "2.0",
+            "header": {
+                "event_id": "evt_group_2",
+                "event_type": "im.message.receive_v1",
+                "create_time": str(create_time_ms),
+            },
+            "event": {
+                "sender": {"sender_id": {"open_id": "ou_sender"}},
+                "message": {
+                    "message_id": "om_group_2",
+                    "chat_id": "oc_group_1",
+                    "chat_type": "group",
+                    "message_type": "text",
+                    "content": '{"text":" /status "}',
+                },
+            },
+        }
+
+        await bot.handle_incoming_event(payload)
+
+        bot.handle_incoming_text.assert_awaited_once_with(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_group_1",
+                message_id="om_group_2",
+                text="/status",
+                create_time_ms=create_time_ms,
+                chat_type="group",
+                mentions=(),
+            )
+        )
+
+    async def test_handle_incoming_event_activates_group_message_via_mention_only(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(
+            tmp_path,
+            group_policy="allowlist",
+            allowed_chat_ids=["oc_group_1"],
+            group_message_mode="mention_only",
+        )
+        bot.handle_incoming_text = AsyncMock()  # type: ignore[method-assign]
+        create_time_ms = int(time.time() * 1000)
+
+        payload = {
+            "schema": "2.0",
+            "header": {
+                "event_id": "evt_group_3",
+                "event_type": "im.message.receive_v1",
+                "create_time": str(create_time_ms),
+            },
+            "event": {
+                "sender": {"sender_id": {"open_id": "ou_sender"}},
+                "message": {
+                    "message_id": "om_group_3",
+                    "chat_id": "oc_group_1",
+                    "chat_type": "group",
+                    "message_type": "text",
+                    "mentions": [{"key": "@_user_1", "id": {"open_id": "ou_bot"}}],
+                    "content": '{"text":"@_user_1 帮我看下"}',
+                },
+            },
+        }
+
+        await bot.handle_incoming_event(payload)
+
+        bot.handle_incoming_text.assert_awaited_once()
+        message = bot.handle_incoming_text.await_args.args[0]
+        assert message.chat_type == "group"
+        assert message.mentions == ("ou_bot",)
+        assert message.text == "帮我看下"
+
+    async def test_handle_incoming_event_activates_group_message_via_mention_pattern(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(
+            tmp_path,
+            group_policy="allowlist",
+            allowed_chat_ids=["oc_group_1"],
+            group_message_mode="mention_patterns",
+            mention_patterns=["清梦", "ControlMesh"],
+        )
+        bot.handle_incoming_text = AsyncMock()  # type: ignore[method-assign]
+
+        payload = {
+            "schema": "2.0",
+            "header": {
+                "event_id": "evt_group_4",
+                "event_type": "im.message.receive_v1",
+                "create_time": str(int(time.time() * 1000)),
+            },
+            "event": {
+                "sender": {"sender_id": {"open_id": "ou_sender"}},
+                "message": {
+                    "message_id": "om_group_4",
+                    "chat_id": "oc_group_1",
+                    "chat_type": "group",
+                    "message_type": "text",
+                    "content": '{"text":"清梦 帮我继续"}',
+                },
+            },
+        }
+
+        await bot.handle_incoming_event(payload)
+
+        bot.handle_incoming_text.assert_awaited_once()
 
     async def test_handle_incoming_event_extracts_post_and_reply_thread_context(
         self,
