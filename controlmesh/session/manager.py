@@ -392,6 +392,8 @@ class SessionManager:
                 preserve_existing_target
                 and bool(existing.provider.strip())
                 and bool(existing.model.strip())
+                and existing.provider == prov
+                and existing.model == model_name
             ):
                 if self._apply_topic_name(existing):
                     await self._save(sessions)

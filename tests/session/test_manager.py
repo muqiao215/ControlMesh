@@ -271,6 +271,25 @@ async def test_model_update_without_provider_switch(tmp_path: Path) -> None:
     assert s2.model == "gpt-5.2-codex"
 
 
+async def test_preserve_existing_target_only_keeps_matching_provider_and_model(
+    tmp_path: Path,
+) -> None:
+    mgr = _make_manager(tmp_path)
+    s1, _ = await mgr.resolve_session(key=SessionKey(chat_id=1), provider="claude", model="sonnet")
+    await _simulate_cli_response(mgr, s1, "claude-session-id")
+
+    s2, is_new = await mgr.resolve_session(
+        key=SessionKey(chat_id=1),
+        provider="codex",
+        model="gpt-5.5",
+        preserve_existing_target=True,
+    )
+    assert is_new is False
+    assert s2.provider == "codex"
+    assert s2.model == "gpt-5.5"
+    assert s2.session_id == ""
+
+
 async def test_legacy_session_without_model_is_migrated_on_resolve(tmp_path: Path) -> None:
     path = tmp_path / "sessions.json"
     path.write_text(
