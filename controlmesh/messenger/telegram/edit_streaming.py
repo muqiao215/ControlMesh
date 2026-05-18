@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
+from aiogram.types import ReplyParameters
 from controlmesh.messenger.telegram.buttons import extract_buttons
 from controlmesh.messenger.telegram.formatting import (
     TELEGRAM_MSG_LIMIT,
