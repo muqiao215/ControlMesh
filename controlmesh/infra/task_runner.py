@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+from datetime import UTC, datetime
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -23,6 +25,7 @@ class TaskResult:
     status: str
     result_text: str
     execution: OneShotExecutionResult | None
+    artifact_path: Path | None = None
 
 
 async def run_oneshot_task(
@@ -126,7 +129,55 @@ async def execute_in_task_folder(
             timeout_label=task_label,
         )
 
+        artifact_path = await _persist_local_artifact(
+            folder=folder,
+            status=result.status,
+            result_text=result.result_text,
+            provider=exec_config.provider,
+            model=exec_config.model,
+        )
+        result = TaskResult(
+            status=result.status,
+            result_text=result.result_text,
+            execution=result.execution,
+            artifact_path=artifact_path,
+        )
+
         if result.execution is not None:
             observer.log_execution_result(result, task_label, task_id)
 
         return result
+
+
+async def _persist_local_artifact(
+    *,
+    folder: Path,
+    status: str,
+    result_text: str,
+    provider: str,
+    model: str,
+) -> Path:
+    """Write a runtime-owned artifact for cron/webhook runs.
+
+    This avoids relying on the model to create local files successfully.
+    """
+    output_dir = folder / "output"
+    artifact_path = output_dir / "last_run.json"
+
+    payload = {
+        "status": status,
+        "result_text": result_text,
+        "provider": provider,
+        "model": model,
+        "written_at": datetime.now(UTC).isoformat(),
+    }
+
+    def _write() -> Path:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        artifact_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        return artifact_path
+
+    return await asyncio.to_thread(_write)

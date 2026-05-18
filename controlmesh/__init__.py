@@ -1,3 +1,3 @@
 """ControlMesh public package and CLI entrypoint surface."""
 
-__version__ = "0.34.3"
+__version__ = "0.34.4"
