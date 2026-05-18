@@ -9,7 +9,7 @@ from controlmesh.security.paths import validate_file_path as validate_file_path
 __all__ = [
     "detect_suspicious_patterns",
     "extract_pasted_chat_transcript_message",
-    "looks_like_pasted_chat_transcript",
     "is_path_safe",
+    "looks_like_pasted_chat_transcript",
     "validate_file_path",
 ]

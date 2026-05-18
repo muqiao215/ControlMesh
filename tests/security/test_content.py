@@ -11,7 +11,6 @@ from controlmesh.security.content import (
     _fold_fullwidth_char,
     extract_pasted_chat_transcript_message,
     detect_suspicious_patterns,
-    looks_like_pasted_chat_transcript,
 )
 
 # ---------------------------------------------------------------------------
