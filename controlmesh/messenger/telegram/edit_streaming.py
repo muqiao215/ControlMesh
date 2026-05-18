@@ -286,11 +286,15 @@ class EditStreamEditor:
             return
         try:
             if self._s.messages_sent == 0 and self._reply_to is not None:
-                msg = await self._reply_to.answer(
-                    text=display,
-                    parse_mode=ParseMode.HTML,
-                    message_thread_id=self._thread_id,
-                )
+                kwargs = {
+                    "chat_id": self._chat_id,
+                    "text": display,
+                    "parse_mode": ParseMode.HTML,
+                    "reply_parameters": ReplyParameters(message_id=self._reply_to.message_id),
+                }
+                if self._thread_id is not None:
+                    kwargs["message_thread_id"] = self._thread_id
+                msg = await self._bot.send_message(**kwargs)
             else:
                 msg = await self._bot.send_message(
                     chat_id=self._chat_id,
@@ -309,12 +313,14 @@ class EditStreamEditor:
     async def _create_message_plain(self, text: str) -> None:
         """Fallback: send without HTML parse mode."""
         try:
-            msg = await self._bot.send_message(
-                chat_id=self._chat_id,
-                text=text[:TELEGRAM_MSG_LIMIT],
-                parse_mode=None,
-                message_thread_id=self._thread_id,
-            )
+            kwargs = {
+                "chat_id": self._chat_id,
+                "text": text[:TELEGRAM_MSG_LIMIT],
+                "parse_mode": None,
+            }
+            if self._thread_id is not None:
+                kwargs["message_thread_id"] = self._thread_id
+            msg = await self._bot.send_message(**kwargs)
             self._s.active_msg = msg
             remember_sent_message(self._bot, self._chat_id, msg)
             self._s.messages_sent += 1
@@ -391,19 +397,23 @@ class EditStreamEditor:
             if not display.strip():
                 continue
             try:
-                await self._bot.send_message(
-                    chat_id=self._chat_id,
-                    text=display,
-                    parse_mode=ParseMode.HTML,
-                    message_thread_id=self._thread_id,
-                )
+                kwargs = {
+                    "chat_id": self._chat_id,
+                    "text": display,
+                    "parse_mode": ParseMode.HTML,
+                }
+                if self._thread_id is not None:
+                    kwargs["message_thread_id"] = self._thread_id
+                await self._bot.send_message(**kwargs)
             except TelegramBadRequest:
-                await self._bot.send_message(
-                    chat_id=self._chat_id,
-                    text=display,
-                    parse_mode=None,
-                    message_thread_id=self._thread_id,
-                )
+                kwargs = {
+                    "chat_id": self._chat_id,
+                    "text": display,
+                    "parse_mode": None,
+                }
+                if self._thread_id is not None:
+                    kwargs["message_thread_id"] = self._thread_id
+                await self._bot.send_message(**kwargs)
             self._s.messages_sent += 1
 
 
