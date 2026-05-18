@@ -426,6 +426,18 @@ class TestEditStreamEditorThreadId:
         await editor.finalize("")
         assert bot.send_message.call_args.kwargs.get("message_thread_id") is None
 
+    async def test_reply_path_omits_thread_id_when_not_set(self) -> None:
+        reply_msg = MagicMock(spec=Message)
+        object.__setattr__(reply_msg, "message_id", 99)
+
+        bot, editor = _make_editor(reply_to=reply_msg)
+        await editor.append_text("Hello")
+        await editor.finalize("")
+
+        bot.send_message.assert_called_once()
+        assert bot.send_message.call_args.kwargs["reply_parameters"].message_id == 99
+        assert "message_thread_id" not in bot.send_message.call_args.kwargs
+
     async def test_thread_id_on_fallback_send_new(self) -> None:
         bot, editor = _make_editor(max_failures=1, thread_id=55)
         await editor.append_text("Initial")
