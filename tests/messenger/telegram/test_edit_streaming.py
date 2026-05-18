@@ -60,10 +60,12 @@ class TestEditStreamEditor:
 
     async def test_first_text_replies_when_reply_to_set(self) -> None:
         reply_msg = MagicMock(spec=Message)
-        _, editor = _make_editor(reply_to=reply_msg)
+        object.__setattr__(reply_msg, "message_id", 99)
+        bot, editor = _make_editor(reply_to=reply_msg)
         await editor.append_text("First")
         await editor.finalize("")
-        reply_msg.answer.assert_called_once()
+        bot.send_message.assert_called_once()
+        assert bot.send_message.call_args.kwargs["reply_parameters"].message_id == 99
 
     async def test_second_text_edits_same_message(self) -> None:
         bot, editor = _make_editor()

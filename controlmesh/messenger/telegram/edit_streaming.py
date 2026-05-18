@@ -287,12 +287,14 @@ class EditStreamEditor:
             return
         try:
             if self._s.messages_sent == 0 and self._reply_to is not None:
+                reply_message_id = getattr(self._reply_to, "message_id", None)
                 kwargs = {
                     "chat_id": self._chat_id,
                     "text": display,
                     "parse_mode": ParseMode.HTML,
-                    "reply_parameters": ReplyParameters(message_id=self._reply_to.message_id),
                 }
+                if reply_message_id is not None:
+                    kwargs["reply_parameters"] = ReplyParameters(message_id=reply_message_id)
                 if self._thread_id is not None:
                     kwargs["message_thread_id"] = self._thread_id
                 msg = await self._bot.send_message(**kwargs)
