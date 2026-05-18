@@ -773,6 +773,16 @@ class TestResolveText:
         result = await tg_bot._resolve_text(msg)
         assert result == "Hello"
 
+    async def test_pasted_chat_transcript_reduces_to_last_message(self) -> None:
+        tg_bot, _ = _make_tg_bot()
+        tg_bot.bot_instance_username = "mybot"
+        tg_bot._orchestrator = _make_orchestrator()
+        msg = _make_message(
+            text="""墨 染弱水三千:\n继续\nros2:\n我在a0接了一个蜂鸣器，vcc gnd正常接\n低电平触发，让他响，可以吗？"""
+        )
+        result = await tg_bot._resolve_text(msg)
+        assert result == "我在a0接了一个蜂鸣器，vcc gnd正常接\n低电平触发，让他响，可以吗？"
+
     @patch("controlmesh.messenger.telegram.app.logger")
     async def test_logs_raw_agent_event_stream_metadata(self, mock_logger: MagicMock) -> None:
         tg_bot, _ = _make_tg_bot()

@@ -112,6 +112,7 @@ from controlmesh.messenger.telegram.welcome import (
 )
 from controlmesh.multiagent.bus import AsyncInterAgentResult
 from controlmesh.security import detect_suspicious_patterns
+from controlmesh.security import extract_pasted_chat_transcript_message
 from controlmesh.session.key import SessionKey
 from controlmesh.tasks.models import TaskResult
 from controlmesh.text.response_format import SEP, fmt
@@ -1736,6 +1737,15 @@ class TelegramBot:
             if self._config.group_mention_only and not self._is_addressed(message):
                 return None
         text = strip_mention(message.text, self._bot_username)
+        transcript_message = extract_pasted_chat_transcript_message(text)
+        if transcript_message is not None:
+            logger.warning(
+                "Telegram pasted transcript reduced chat=%s message_id=%s from_user=%s",
+                message.chat.id,
+                message.message_id,
+                getattr(getattr(message, "from_user", None), "id", None),
+            )
+            text = transcript_message
         patterns = detect_suspicious_patterns(text)
         if "raw_agent_event_stream" in patterns:
             via_bot = getattr(message, "via_bot", None)

@@ -21,6 +21,7 @@ from controlmesh.log_context import set_log_context
 from controlmesh.orchestrator.hooks import HookContext
 from controlmesh.orchestrator.presentation import normalize_user_visible_output
 from controlmesh.orchestrator.registry import OrchestratorResult
+from controlmesh.security import looks_like_pasted_chat_transcript
 from controlmesh.session import SessionData, SessionKey
 from controlmesh.text.response_format import session_error_text, timeout_error_text
 from controlmesh.workspace.loader import read_startup_memory_context
@@ -176,6 +177,8 @@ def _foreground_hard_timeout(orch: Orchestrator | None = None) -> float:
 def _candidate_active_intent(text: str) -> str:
     normalized = text.strip()
     if len(normalized) < 12:
+        return ""
+    if looks_like_pasted_chat_transcript(normalized):
         return ""
     if any(normalized.startswith(prefix) for prefix in _INTENT_SKIP_PREFIXES):
         return ""

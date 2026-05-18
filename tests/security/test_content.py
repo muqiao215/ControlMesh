@@ -9,7 +9,9 @@ import pytest
 from controlmesh.security.content import (
     _fold_fullwidth,
     _fold_fullwidth_char,
+    extract_pasted_chat_transcript_message,
     detect_suspicious_patterns,
+    looks_like_pasted_chat_transcript,
 )
 
 # ---------------------------------------------------------------------------
@@ -30,6 +32,24 @@ class TestDetectSuspiciousBasic:
     def test_very_long_benign_text(self) -> None:
         text = "This is a perfectly normal message. " * 5000
         assert detect_suspicious_patterns(text) == []
+
+
+class TestPastedChatTranscriptDetection:
+    def test_extracts_last_message_from_multispeaker_paste(self) -> None:
+        text = """\n墨 染弱水三千:\n继续\nros2:\n我先看一下\n"""
+        assert extract_pasted_chat_transcript_message(text) == "我先看一下"
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "name: value",
+            "hello:\nworld",
+            "Single speaker:\njust one block\nmore text",
+            "Hello\nWorld",
+        ],
+    )
+    def test_false_positives_avoided(self, text: str) -> None:
+        assert extract_pasted_chat_transcript_message(text) is None
 
 
 # ---------------------------------------------------------------------------

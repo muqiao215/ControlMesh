@@ -77,6 +77,7 @@ _SUSPICIOUS_PATTERNS: list[tuple[re.Pattern[str], str]] = [
 
 _FULLWIDTH_RE = re.compile(r"[\uFF21-\uFF3A\uFF41-\uFF5A\uFF1C\uFF1E]")
 _FULLWIDTH_ASCII_OFFSET = 0xFEE0
+_CHAT_TRANSCRIPT_LABEL_RE = re.compile(r"^\s*([^:\n]{1,40})\s*:\s*$")
 
 
 def _fold_fullwidth_char(match: re.Match[str]) -> str:
@@ -92,6 +93,43 @@ def _fold_fullwidth_char(match: re.Match[str]) -> str:
 
 def _fold_fullwidth(text: str) -> str:
     return _FULLWIDTH_RE.sub(_fold_fullwidth_char, text)
+
+
+def extract_pasted_chat_transcript_message(text: str) -> str | None:
+    """Extract the last actual message from a pasted multi-speaker transcript."""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if len(lines) < 4:
+        return None
+
+    speakers: set[str] = set()
+    labeled_lines = 0
+    last_label_index: int | None = None
+    for idx, line in enumerate(lines):
+        match = _CHAT_TRANSCRIPT_LABEL_RE.match(line)
+        if match is None:
+            continue
+        speaker = match.group(1).strip()
+        if not speaker:
+            continue
+        if speaker.startswith(("http", "@", "/", "#")):
+            continue
+        if any(ch in speaker for ch in "<>{}[]|"):
+            continue
+        if idx + 1 >= len(lines) or _CHAT_TRANSCRIPT_LABEL_RE.match(lines[idx + 1]):
+            continue
+        speakers.add(speaker)
+        labeled_lines += 1
+        last_label_index = idx
+
+    if labeled_lines < 2 or len(speakers) < 2 or last_label_index is None:
+        return None
+    payload = "\n".join(lines[last_label_index + 1 :]).strip()
+    return payload or None
+
+
+def looks_like_pasted_chat_transcript(text: str) -> bool:
+    """Return True when text looks like a pasted multi-speaker transcript."""
+    return extract_pasted_chat_transcript_message(text) is not None
 
 
 def detect_suspicious_patterns(text: str) -> list[str]:

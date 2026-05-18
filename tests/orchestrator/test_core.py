@@ -459,6 +459,22 @@ async def test_normal_flow_updates_foreground_active_intent(orch: Orchestrator) 
     assert state.active_repo == str(orch.paths.workspace)
 
 
+async def test_normal_flow_ignores_pasted_chat_transcripts_for_active_intent(
+    orch: Orchestrator,
+) -> None:
+    key = SessionKey(chat_id=1)
+    object.__setattr__(orch._cli_service, "execute", AsyncMock(return_value=_mock_response()))
+
+    await orch.handle_message(
+        key,
+        """墨 染弱水三千:\n继续\nros2:\n我在a0接了一个蜂鸣器，vcc gnd正常接\n低电平触发，让他响，可以吗？""",
+    )
+
+    state = await orch.get_foreground_state(key)
+    assert state.active_intent == ""
+    assert state.active_repo == ""
+
+
 async def test_directive_only_returns_hint(orch: Orchestrator) -> None:
     result = await orch.handle_message(SessionKey(chat_id=1), "@opus")
     assert "Next message" in result.text
