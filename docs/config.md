@@ -143,9 +143,15 @@ Notes:
 | `app_secret` | `str` | `""` | Feishu app secret |
 | `domain` | `str` | `"https://open.feishu.cn"` | Runtime API base URL |
 | `allow_from` | `list[str]` | `[]` | Optional sender allowlist (Feishu user IDs such as `open_id`) |
-| `group_reply_all` | `bool` | `false` | Reserved bot-only group behavior knob for later cuts |
+| `group_allow_from` | `list[str]` | `[]` | Optional Feishu group `chat_id` allowlist when `group_policy="allowlist"` |
+| `dm_policy` | `"allow" \| "allowlist" \| "disabled"` | `"allow"` | Direct-message ingress policy |
+| `group_policy` | `"disabled" \| "allowlist" \| "open"` | `"allowlist"` | Group ingress policy |
+| `require_mention_in_group` | `bool` | `true` | Require explicit trigger in groups unless command/reply policy allows otherwise |
+| `group_reply_all` | `bool` | `false` | Backward-compat bypass that accepts all eligible group messages |
+| `group_reply_mode` | `"reply" \| "thread" \| "inline"` | `"reply"` | Group reply binding strategy |
 | `thread_isolation` | `bool` | `false` | When enabled, inbound thread/root IDs get separate ControlMesh session keys |
 | `reply_to_trigger` | `bool` | `true` | Reply to the triggering Feishu message when possible |
+| `groups` | `dict[str, object]` | `{}` | Per-group override table keyed by Feishu `chat_id`; supports `enabled`, `group_policy`, `group_allow_from`, `require_mention`, `thread_isolation`, `reply_mode`, `allow_from_users` |
 | `progress_mode` | `"text" \| "card_preview" \| "card_stream"` | `"text"` | `text` sends plain progress text; `card_preview` repeatedly patches one interactive card; `card_stream` uses Feishu CardKit streaming card APIs and requires `runtime_mode="native"` |
 
 Current implementation status:

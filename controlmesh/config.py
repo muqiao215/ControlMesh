@@ -177,6 +177,36 @@ class MatrixConfig(BaseModel):
     store_path: str = "matrix_store"  # relative to controlmesh_home
 
 
+class FeishuGroupConfig(BaseModel):
+    """Per-group Feishu policy overrides keyed by group chat_id."""
+
+    enabled: bool = True
+    group_policy: Literal["disabled", "allowlist", "open"] | None = Field(
+        default=None,
+        validation_alias=AliasChoices("group_policy", "groupPolicy"),
+    )
+    group_allow_from: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("group_allow_from", "groupAllowFrom"),
+    )
+    require_mention: bool | None = Field(
+        default=None,
+        validation_alias=AliasChoices("require_mention", "requireMention"),
+    )
+    thread_isolation: bool | None = Field(
+        default=None,
+        validation_alias=AliasChoices("thread_isolation", "threadIsolation"),
+    )
+    reply_mode: Literal["reply", "thread", "inline"] | None = Field(
+        default=None,
+        validation_alias=AliasChoices("reply_mode", "replyMode"),
+    )
+    allow_from_users: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("allow_from_users", "allowFromUsers"),
+    )
+
+
 class FeishuConfig(BaseModel):
     """Feishu bot-only transport settings."""
 
@@ -203,9 +233,30 @@ class FeishuConfig(BaseModel):
         validation_alias=AliasChoices("listener_max_body_bytes", "callback_max_body_bytes"),
     )
     allow_from: list[str] = Field(default_factory=list)
+    group_allow_from: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("group_allow_from", "groupAllowFrom"),
+    )
+    dm_policy: Literal["allow", "allowlist", "disabled"] = Field(
+        default="allow",
+        validation_alias=AliasChoices("dm_policy", "dmPolicy"),
+    )
+    group_policy: Literal["disabled", "allowlist", "open"] = Field(
+        default="allowlist",
+        validation_alias=AliasChoices("group_policy", "groupPolicy"),
+    )
+    require_mention_in_group: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("require_mention_in_group", "requireMentionInGroup"),
+    )
     group_reply_all: bool = False
+    group_reply_mode: Literal["reply", "thread", "inline"] = Field(
+        default="reply",
+        validation_alias=AliasChoices("group_reply_mode", "groupReplyMode"),
+    )
     thread_isolation: bool = False
     reply_to_trigger: bool = True
+    groups: dict[str, FeishuGroupConfig] = Field(default_factory=dict)
     progress_mode: Literal["text", "card_preview", "card_stream"] = "text"
 
     @field_validator("listener_path")

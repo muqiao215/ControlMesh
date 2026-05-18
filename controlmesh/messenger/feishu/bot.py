@@ -21,7 +21,7 @@ from controlmesh.bus.lock_pool import LockPool
 from controlmesh.cli.stream_events import ToolResultEvent, ToolUseEvent
 from controlmesh.cli.types import AgentRequest
 from controlmesh.command_registry import normalize_command_name
-from controlmesh.config import AgentConfig
+from controlmesh.config import AgentConfig, FeishuGroupConfig
 from controlmesh.files.allowed_roots import resolve_allowed_roots
 from controlmesh.files.storage import sanitize_filename as _sanitize_filename
 from controlmesh.files.tags import FILE_PATH_RE, extract_file_paths
@@ -242,6 +242,9 @@ class FeishuIncomingText:
     parent_id: str | None = None
     quote_summary: str | None = None
     post_title: str | None = None
+    chat_type: str | None = None
+    mentions_bot: bool = False
+    replies_to_bot: bool = False
 
 
 class FeishuNotificationService:
@@ -443,10 +446,11 @@ class FeishuBot:
             return
 
         chat_id = self._id_map.chat_to_int(message.chat_id)
-        reply_to = message.message_id if self._config.feishu.reply_to_trigger else None
+        reply_to = self._reply_target_for_message(message)
+        thread_isolation = self._thread_isolation_for_message(message)
         topic_id = (
             self._id_map.thread_to_int(message.thread_id)
-            if self._config.feishu.thread_isolation and message.thread_id
+            if thread_isolation and message.thread_id
             else None
         )
         await self._maybe_send_command_guide(message, reply_to_message_id=reply_to)
@@ -504,8 +508,20 @@ class FeishuBot:
             return False
         self._dedup.check(dedup_key)
         self._recent_inbound.remember(dedup_key)
-        if not self._sender_allowed(message.sender_id):
+        if not self._sender_allowed_for_message(message):
             logger.info("Ignoring Feishu message from unauthorized sender=%s", message.sender_id)
+            self._persist_runtime_state()
+            return False
+        if not self._message_allowed_by_group_policy(message):
+            logger.info("Ignoring Feishu message from unauthorized group chat_id=%s", message.chat_id)
+            self._persist_runtime_state()
+            return False
+        if not self._message_passes_group_trigger(message):
+            logger.info(
+                "Ignoring Feishu group message without explicit trigger chat_id=%s message_id=%s",
+                message.chat_id,
+                message.message_id,
+            )
             self._persist_runtime_state()
             return False
         if self._orchestrator is None:
@@ -1943,6 +1959,46 @@ class FeishuBot:
         allow_from = self._config.feishu.allow_from
         return not allow_from or sender_id in allow_from
 
+    def _sender_allowed_for_message(self, message: FeishuIncomingText) -> bool:
+        if self._is_group_message(message):
+            allow_from = self._group_user_allowlist_for_message(message)
+            return not allow_from or message.sender_id in allow_from
+        if self._config.feishu.dm_policy == "disabled":
+            return False
+        if self._config.feishu.dm_policy == "allowlist":
+            return self._sender_allowed(message.sender_id)
+        return True
+
+    def _message_allowed_by_group_policy(self, message: FeishuIncomingText) -> bool:
+        if not self._is_group_message(message):
+            return True
+        policy = self._group_policy_for_message(message)
+        if policy == "disabled":
+            return False
+        if policy == "open":
+            return True
+        allow_from = self._group_allowlist_for_message(message)
+        return not allow_from or message.chat_id in allow_from
+
+    def _message_passes_group_trigger(self, message: FeishuIncomingText) -> bool:
+        if not self._is_group_message(message):
+            return True
+        if self._config.feishu.group_reply_all:
+            return True
+        if self._is_group_command_trigger(message.text):
+            return True
+        if not self._require_mention_for_message(message):
+            return True
+        return message.mentions_bot or message.replies_to_bot
+
+    @staticmethod
+    def _is_group_message(message: FeishuIncomingText) -> bool:
+        return (message.chat_type or "").lower() == "group"
+
+    def _is_group_command_trigger(self, text: str) -> bool:
+        command = normalize_command_name(text)
+        return command in {"help", "start", "info", "status", "settings", "cm", "back"}
+
     async def _parse_incoming_message(self, payload: dict[str, Any]) -> FeishuIncomingText | None:
         header = payload.get("header")
         event = payload.get("event")
@@ -1992,6 +2048,7 @@ class FeishuBot:
         root_id = message.get("root_id")
         parent_id = message.get("parent_id")
         create_time_ms = self._extract_create_time_ms(header.get("create_time"))
+        chat_type = message.get("chat_type")
         return FeishuIncomingText(
             sender_id=sender_id,
             chat_id=chat_id,
@@ -2004,7 +2061,121 @@ class FeishuBot:
             parent_id=parent_id if isinstance(parent_id, str) and parent_id else None,
             quote_summary=parsed_content.quote_summary if parsed_content else None,
             post_title=parsed_content.post_title if parsed_content else None,
+            chat_type=chat_type if isinstance(chat_type, str) and chat_type else None,
+            mentions_bot=self._message_mentions_bot(message),
+            replies_to_bot=self._message_replies_to_bot(message),
         )
+
+    def _message_mentions_bot(self, message: dict[str, Any]) -> bool:
+        mentions = message.get("mentions")
+        if not isinstance(mentions, list):
+            return False
+        bot_sender_id = self._bot_sender_id()
+        for item in mentions:
+            if not isinstance(item, dict):
+                continue
+            mention_id = item.get("id")
+            if isinstance(mention_id, dict):
+                open_id = mention_id.get("open_id")
+                if isinstance(open_id, str) and open_id and open_id == bot_sender_id:
+                    return True
+            key = item.get("key")
+            if isinstance(key, str) and key.lower() == "@all":
+                return True
+        return False
+
+    def _message_replies_to_bot(self, message: dict[str, Any]) -> bool:
+        parent_id = message.get("parent_id")
+        root_id = message.get("root_id")
+        if not isinstance(parent_id, str) and not isinstance(root_id, str):
+            return False
+        bot_sender_id = self._bot_sender_id()
+        if not bot_sender_id:
+            return False
+        lineage_candidates = (
+            message.get("parent_sender_id"),
+            message.get("root_sender_id"),
+            message.get("reply_to"),
+            message.get("upper_message"),
+        )
+        for candidate in lineage_candidates:
+            sender = self._extract_reply_sender_id(candidate)
+            if sender and sender == bot_sender_id:
+                return True
+        return False
+
+    def _group_overrides_for_message(self, message: FeishuIncomingText) -> FeishuGroupConfig | None:
+        return self._config.feishu.groups.get(message.chat_id)
+
+    def _group_policy_for_message(self, message: FeishuIncomingText) -> str:
+        overrides = self._group_overrides_for_message(message)
+        if overrides is not None and overrides.enabled is False:
+            return "disabled"
+        if overrides is not None and overrides.group_policy is not None:
+            return overrides.group_policy
+        return self._config.feishu.group_policy
+
+    def _group_allowlist_for_message(self, message: FeishuIncomingText) -> list[str]:
+        overrides = self._group_overrides_for_message(message)
+        if overrides is not None and overrides.group_allow_from:
+            return list(overrides.group_allow_from)
+        return self._config.feishu.group_allow_from
+
+    def _require_mention_for_message(self, message: FeishuIncomingText) -> bool:
+        overrides = self._group_overrides_for_message(message)
+        if overrides is not None and overrides.require_mention is not None:
+            return overrides.require_mention
+        return self._config.feishu.require_mention_in_group
+
+    def _thread_isolation_for_message(self, message: FeishuIncomingText) -> bool:
+        overrides = self._group_overrides_for_message(message)
+        if overrides is not None and overrides.thread_isolation is not None:
+            return overrides.thread_isolation
+        return self._config.feishu.thread_isolation
+
+    def _reply_mode_for_message(self, message: FeishuIncomingText) -> str:
+        overrides = self._group_overrides_for_message(message)
+        if overrides is not None and overrides.reply_mode is not None:
+            return overrides.reply_mode
+        return self._config.feishu.group_reply_mode
+
+    def _group_user_allowlist_for_message(self, message: FeishuIncomingText) -> list[str]:
+        overrides = self._group_overrides_for_message(message)
+        if overrides is not None and overrides.allow_from_users:
+            return list(overrides.allow_from_users)
+        return self._config.feishu.allow_from
+
+    def _reply_target_for_message(self, message: FeishuIncomingText) -> str | None:
+        if not self._config.feishu.reply_to_trigger:
+            return None
+        mode = self._reply_mode_for_message(message)
+        if mode == "inline":
+            return None
+        if mode == "thread":
+            return message.parent_id or message.root_id or message.message_id
+        return message.message_id
+
+    @classmethod
+    def _extract_reply_sender_id(cls, payload: object) -> str | None:
+        if isinstance(payload, dict):
+            direct_open_id = payload.get("open_id")
+            if isinstance(direct_open_id, str) and direct_open_id:
+                return direct_open_id
+            nested_sender = payload.get("sender_id")
+            if isinstance(nested_sender, dict):
+                sender = cls._extract_sender_id({"sender_id": nested_sender})
+                if sender:
+                    return sender
+            sender = cls._extract_sender_id(payload)
+            if sender:
+                return sender
+            for key in ("parent_sender_id", "root_sender_id"):
+                nested = payload.get(key)
+                if isinstance(nested, dict):
+                    sender = cls._extract_sender_id({"sender_id": nested})
+                    if sender:
+                        return sender
+        return None
 
     @staticmethod
     def _extract_message_identity(

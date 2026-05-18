@@ -989,6 +989,368 @@ class TestFeishuBotRouting:
             reply_to_message_id="om_1",
         )
 
+    async def test_handle_incoming_text_blocks_group_not_in_allowlist(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path, group_allow_from=["oc_group_allowed"])
+        bot._orchestrator = SimpleNamespace(
+            handle_message_streaming=AsyncMock(return_value=SimpleNamespace(text="pong"))
+        )
+        bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_group_denied",
+                message_id="om_1",
+                text="ping",
+                chat_type="group",
+                mentions_bot=True,
+            )
+        )
+
+        bot._orchestrator.handle_message_streaming.assert_not_awaited()
+        bot._send_text_to_chat_ref.assert_not_awaited()
+
+    async def test_handle_incoming_text_blocks_group_without_mention_by_default(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path, group_allow_from=["oc_chat_1"])
+        bot._orchestrator = SimpleNamespace(
+            handle_message_streaming=AsyncMock(return_value=SimpleNamespace(text="pong"))
+        )
+        bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="ping",
+                chat_type="group",
+                mentions_bot=False,
+            )
+        )
+
+        bot._orchestrator.handle_message_streaming.assert_not_awaited()
+        bot._send_text_to_chat_ref.assert_not_awaited()
+
+    async def test_handle_incoming_text_allows_group_with_bot_mention(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path, group_allow_from=["oc_chat_1"])
+        bot._orchestrator = SimpleNamespace(
+            handle_message_streaming=AsyncMock(return_value=SimpleNamespace(text="pong"))
+        )
+        bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="ping",
+                chat_type="group",
+                mentions_bot=True,
+            )
+        )
+
+        bot._orchestrator.handle_message_streaming.assert_awaited_once()
+        bot._send_text_to_chat_ref.assert_awaited_once_with(
+            "oc_chat_1",
+            "pong",
+            reply_to_message_id="om_1",
+        )
+
+    async def test_handle_incoming_text_thread_isolation_routes_distinct_topic_ids(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(
+            tmp_path,
+            group_allow_from=["oc_chat_1"],
+            thread_isolation=True,
+            require_mention_in_group=False,
+        )
+        bot._orchestrator = SimpleNamespace(
+            handle_message_streaming=AsyncMock(return_value=SimpleNamespace(text="pong"))
+        )
+        bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="ping one",
+                chat_type="group",
+                thread_id="omt_a",
+            )
+        )
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_2",
+                text="ping two",
+                chat_type="group",
+                thread_id="omt_b",
+            )
+        )
+
+        first_call = bot._orchestrator.handle_message_streaming.await_args_list[0]
+        second_call = bot._orchestrator.handle_message_streaming.await_args_list[1]
+        first_session = first_call.args[0]
+        second_session = second_call.args[0]
+        assert first_session.chat_id == second_session.chat_id
+        assert first_session.topic_id != second_session.topic_id
+
+    async def test_handle_incoming_text_reply_to_bot_triggers_without_mention(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path, group_allow_from=["oc_chat_1"])
+        bot._orchestrator = SimpleNamespace(
+            handle_message_streaming=AsyncMock(return_value=SimpleNamespace(text="pong"))
+        )
+        bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="follow up",
+                chat_type="group",
+                mentions_bot=False,
+                replies_to_bot=True,
+                parent_id="om_parent",
+            )
+        )
+
+        bot._orchestrator.handle_message_streaming.assert_awaited_once()
+        bot._send_text_to_chat_ref.assert_awaited_once_with(
+            "oc_chat_1",
+            "pong",
+            reply_to_message_id="om_1",
+        )
+
+    async def test_handle_incoming_text_inline_reply_mode_sends_without_reply_binding(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(
+            tmp_path,
+            group_allow_from=["oc_chat_1"],
+            require_mention_in_group=False,
+            group_reply_mode="inline",
+        )
+        bot._orchestrator = SimpleNamespace(
+            handle_message_streaming=AsyncMock(return_value=SimpleNamespace(text="pong"))
+        )
+        bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="ping",
+                chat_type="group",
+            )
+        )
+
+        bot._send_text_to_chat_ref.assert_awaited_once_with(
+            "oc_chat_1",
+            "pong",
+            reply_to_message_id=None,
+        )
+
+    async def test_handle_incoming_text_group_override_disables_mention_requirement(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(
+            tmp_path,
+            group_allow_from=["oc_chat_1"],
+            require_mention_in_group=True,
+            groups={
+                "oc_chat_1": {
+                    "require_mention": False,
+                    "thread_isolation": True,
+                    "reply_mode": "thread",
+                }
+            },
+        )
+        bot._orchestrator = SimpleNamespace(
+            handle_message_streaming=AsyncMock(return_value=SimpleNamespace(text="pong"))
+        )
+        bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="ping",
+                chat_type="group",
+                mentions_bot=False,
+                thread_id="omt_a",
+                root_id="om_root",
+            )
+        )
+
+        call = bot._orchestrator.handle_message_streaming.await_args
+        session = call.args[0]
+        assert session.topic_id is not None
+        bot._send_text_to_chat_ref.assert_awaited_once_with(
+            "oc_chat_1",
+            "pong",
+            reply_to_message_id="om_root",
+        )
+
+    async def test_handle_incoming_text_group_command_bypasses_mention_requirement(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path, group_allow_from=["oc_chat_1"], require_mention_in_group=True)
+        bot._orchestrator = _make_settings_orchestrator(bot, tmp_path)
+        bot._send_card_to_chat_ref = AsyncMock(return_value="om_help")  # type: ignore[method-assign]
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="/help",
+                chat_type="group",
+                mentions_bot=False,
+            )
+        )
+
+        bot._send_card_to_chat_ref.assert_awaited_once()
+        bot._orchestrator.handle_message_streaming.assert_not_awaited()
+
+    async def test_handle_incoming_text_group_override_user_allowlist_blocks_other_senders(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(
+            tmp_path,
+            require_mention_in_group=False,
+            group_policy="open",
+            groups={
+                "oc_chat_1": {
+                    "allow_from_users": ["ou_allowed"],
+                }
+            },
+        )
+        bot._orchestrator = SimpleNamespace(
+            handle_message_streaming=AsyncMock(return_value=SimpleNamespace(text="pong"))
+        )
+        bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_other",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="ping",
+                chat_type="group",
+            )
+        )
+
+        bot._orchestrator.handle_message_streaming.assert_not_awaited()
+        bot._send_text_to_chat_ref.assert_not_awaited()
+
+    async def test_handle_incoming_text_group_override_user_allowlist_allows_matching_sender(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(
+            tmp_path,
+            require_mention_in_group=False,
+            group_policy="open",
+            groups={
+                "oc_chat_1": {
+                    "allow_from_users": ["ou_allowed"],
+                }
+            },
+        )
+        bot._orchestrator = SimpleNamespace(
+            handle_message_streaming=AsyncMock(return_value=SimpleNamespace(text="pong"))
+        )
+        bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_allowed",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="ping",
+                chat_type="group",
+            )
+        )
+
+        bot._orchestrator.handle_message_streaming.assert_awaited_once()
+        bot._send_text_to_chat_ref.assert_awaited_once_with(
+            "oc_chat_1",
+            "pong",
+            reply_to_message_id="om_1",
+        )
+
+    async def test_handle_incoming_event_detects_reply_to_bot_from_parent_sender_id(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path, app_id="cli_bot_open_id", group_allow_from=["oc_chat_1"])
+        bot.handle_incoming_text = AsyncMock()  # type: ignore[method-assign]
+        create_time_ms = int(time.time() * 1000)
+
+        payload = {
+            "schema": "2.0",
+            "header": {
+                "event_id": "evt_1",
+                "event_type": "im.message.receive_v1",
+                "create_time": str(create_time_ms),
+                "tenant_key": "tenant_1",
+                "app_id": "cli_123",
+            },
+            "event": {
+                "sender": {"sender_id": {"open_id": "ou_sender"}},
+                "message": {
+                    "message_id": "om_1",
+                    "chat_id": "oc_chat_1",
+                    "chat_type": "group",
+                    "parent_id": "om_parent",
+                    "message_type": "text",
+                    "content": '{"text":"follow up"}',
+                    "parent_sender_id": {"open_id": "cli_bot_open_id"},
+                },
+            },
+        }
+
+        await bot.handle_incoming_event(payload)
+
+        bot.handle_incoming_text.assert_awaited_once_with(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="follow up",
+                thread_id="om_parent",
+                create_time_ms=create_time_ms,
+                message_type="text",
+                parent_id="om_parent",
+                chat_type="group",
+                mentions_bot=False,
+                replies_to_bot=True,
+            )
+        )
+
     async def test_handle_incoming_text_native_runtime_sends_command_guide_once_per_chat(
         self,
         tmp_path: Path,

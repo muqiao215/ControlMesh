@@ -283,6 +283,66 @@ def test_qqbot_account_config_fields() -> None:
     assert cfg.activate_on_bot_reply is True
 
 
+def test_feishu_config_group_fields() -> None:
+    cfg = AgentConfig(
+        transport="feishu",
+        feishu={
+            "app_id": "cli_x",
+            "app_secret": "sec_y",
+            "allow_from": ["ou_user"],
+            "group_allow_from": ["oc_group"],
+            "dm_policy": "allowlist",
+            "group_policy": "open",
+            "require_mention_in_group": False,
+            "group_reply_mode": "thread",
+            "groups": {
+                "oc_group": {
+                    "enabled": True,
+                    "require_mention": False,
+                    "thread_isolation": True,
+                    "reply_mode": "inline",
+                }
+            },
+        },
+    )
+    assert cfg.feishu.allow_from == ["ou_user"]
+    assert cfg.feishu.group_allow_from == ["oc_group"]
+    assert cfg.feishu.dm_policy == "allowlist"
+    assert cfg.feishu.group_policy == "open"
+    assert cfg.feishu.require_mention_in_group is False
+    assert cfg.feishu.group_reply_mode == "thread"
+    assert cfg.feishu.groups["oc_group"].reply_mode == "inline"
+    assert cfg.feishu.groups["oc_group"].thread_isolation is True
+
+
+def test_feishu_group_config_accepts_typed_group_overrides() -> None:
+    cfg = AgentConfig(
+        transport="feishu",
+        feishu={
+            "app_id": "cli_x",
+            "app_secret": "sec_y",
+            "groups": {
+                "oc_group": {
+                    "enabled": True,
+                    "group_policy": "allowlist",
+                    "group_allow_from": ["oc_group"],
+                    "require_mention": False,
+                    "thread_isolation": True,
+                    "reply_mode": "thread",
+                    "allow_from_users": ["ou_owner", "ou_admin"],
+                }
+            },
+        },
+    )
+    group = cfg.feishu.groups["oc_group"]
+    assert group.group_policy == "allowlist"
+    assert group.group_allow_from == ["oc_group"]
+    assert group.require_mention is False
+    assert group.thread_isolation is True
+    assert group.reply_mode == "thread"
+    assert group.allow_from_users == ["ou_owner", "ou_admin"]
+
+
 def test_qqbot_config_accepts_accounts_mapping() -> None:
     cfg = AgentConfig(
         transport="qqbot",

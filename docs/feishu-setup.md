@@ -83,8 +83,20 @@ Minimal Feishu-only config shape after successful registration:
     "app_id": "cli_xxx",
     "app_secret": "xxx",
     "domain": "https://open.feishu.cn",
+    "group_allow_from": ["oc_group_alpha"],
+    "group_policy": "allowlist",
+    "require_mention_in_group": true,
+    "group_reply_mode": "reply",
     "reply_to_trigger": true,
-    "progress_mode": "card_stream"
+    "progress_mode": "card_stream",
+    "groups": {
+      "oc_group_alpha": {
+        "require_mention": false,
+        "thread_isolation": true,
+        "reply_mode": "thread",
+        "allow_from_users": ["ou_owner"]
+      }
+    }
   }
 }
 ```

@@ -63,9 +63,27 @@
         "allow_from": [
             "ou_xxxxxxxxxxxx"
         ],
+        "group_allow_from": [
+            "oc_xxxxxxxxxxxx"
+        ],
+        "dm_policy": "allowlist",
+        "group_policy": "allowlist",
+        "require_mention_in_group": true,
         "group_reply_all": false,
+        "group_reply_mode": "reply",
         "thread_isolation": false,
-        "reply_to_trigger": true
+        "reply_to_trigger": true,
+        "groups": {
+            "oc_xxxxxxxxxxxx": {
+                "enabled": true,
+                "require_mention": false,
+                "thread_isolation": true,
+                "reply_mode": "thread",
+                "allow_from_users": [
+                    "ou_xxxxxxxxxxxx"
+                ]
+            }
+        }
     },
 
     "weixin": {
