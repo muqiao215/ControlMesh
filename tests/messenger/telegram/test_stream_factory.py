@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from unittest.mock import MagicMock
 
 from controlmesh.config import StreamingConfig
@@ -45,3 +46,12 @@ class TestCreateStreamEditor:
         editor = create_stream_editor(bot, chat_id=1, cfg=cfg, thread_id=42)
         assert isinstance(editor, EditStreamEditor)
         assert editor._thread_id == 42
+
+    def test_edit_mode_import_failure_falls_back_to_append_mode(self, monkeypatch) -> None:
+        from controlmesh.messenger.telegram.streaming import StreamEditor, create_stream_editor
+
+        bot = MagicMock()
+        cfg = StreamingConfig(append_mode=False)
+        monkeypatch.setitem(sys.modules, "controlmesh.messenger.telegram.edit_streaming", None)
+        editor = create_stream_editor(bot, chat_id=1, cfg=cfg)
+        assert isinstance(editor, StreamEditor)

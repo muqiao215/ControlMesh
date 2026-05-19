@@ -1988,12 +1988,34 @@ class TelegramBot:
         allowed_updates = self._dp.resolve_used_update_types()
         logger.info("Polling allowed_updates=%s", ",".join(allowed_updates))
         while True:
-            await self._dp.start_polling(
-                self._bot,
-                allowed_updates=allowed_updates,
-                close_bot_session=True,
-                handle_signals=False,
-            )
+            start_polling_error = False
+            try:
+                await self._dp.start_polling(
+                    self._bot,
+                    allowed_updates=allowed_updates,
+                    close_bot_session=True,
+                    handle_signals=False,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                start_polling_error = True
+                raise
+            finally:
+                if (
+                    not start_polling_error
+                    and self._exit_code != EXIT_RESTART
+                    and self._poll_diagnostics.transport_dirty
+                    and not self._poll_diagnostics.restart_requested
+                ):
+                    self._poll_diagnostics.restart_requested = True
+                    logger.warning(
+                        "Telegram polling stopped while transport was dirty; forcing transport rebuild reason=%s offset=%s last_success_age=%s failures=%s",
+                        self._poll_diagnostics.restart_reason or "dirty_transport",
+                        self._current_poll_offset(),
+                        self._format_last_success_age(),
+                        self._poll_diagnostics.consecutive_failures,
+                    )
             if self._exit_code == EXIT_RESTART or not self._poll_diagnostics.transport_dirty:
                 break
             await self._rebuild_poll_transport()

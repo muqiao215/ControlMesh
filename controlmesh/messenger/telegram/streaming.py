@@ -155,13 +155,23 @@ def create_stream_editor(
     cfg: StreamingConfig | None = None,
     thread_id: int | None = None,
 ) -> StreamEditorProtocol:
-    """Create the appropriate stream editor based on config."""
+    """Create the appropriate stream editor based on config.
+
+    If edit-mode dependencies fail to import at runtime, degrade to append
+    mode so Telegram can still deliver a reply instead of dropping the turn.
+    """
     from controlmesh.config import StreamingConfig
 
     c = cfg or StreamingConfig()
     if c.append_mode:
         return StreamEditor(bot, chat_id, reply_to=reply_to, thread_id=thread_id)
-    from controlmesh.messenger.telegram.edit_streaming import EditStreamEditor
+    try:
+        from controlmesh.messenger.telegram.edit_streaming import EditStreamEditor
+    except Exception:
+        logger.exception(
+            "Telegram edit-mode stream editor unavailable; falling back to append mode"
+        )
+        return StreamEditor(bot, chat_id, reply_to=reply_to, thread_id=thread_id)
 
     return EditStreamEditor(
         bot,

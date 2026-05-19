@@ -313,6 +313,30 @@ class TestTelegramBotRun:
         tg_bot._rebuild_poll_transport.assert_awaited_once()
         bot_instance.delete_webhook.assert_called_once_with(drop_pending_updates=False)
 
+    async def test_run_rebuilds_dirty_transport_after_clean_polling_return(self) -> None:
+        tg_bot, _bot_instance = _make_tg_bot()
+        tg_bot._dp.resolve_used_update_types = MagicMock(return_value=["message"])
+
+        async def _start_polling(*_args: object, **_kwargs: object) -> None:
+            if tg_bot._dp.start_polling.await_count == 1:
+                tg_bot._poll_diagnostics.transport_dirty = True
+                tg_bot._poll_diagnostics.restart_reason = "recoverable_network_error"
+            else:
+                tg_bot._poll_diagnostics.transport_dirty = False
+
+        tg_bot._dp.start_polling = AsyncMock(side_effect=_start_polling)
+
+        async def _rebuild_transport() -> None:
+            tg_bot._poll_diagnostics.note_transport_rebuilt()
+
+        tg_bot._rebuild_poll_transport = AsyncMock(side_effect=_rebuild_transport)
+
+        code = await tg_bot.run()
+
+        assert code == 0
+        assert tg_bot._dp.start_polling.await_count == 2
+        tg_bot._rebuild_poll_transport.assert_awaited_once()
+
     async def test_shutdown_cleans_up(self) -> None:
         tg_bot, _ = _make_tg_bot()
         tg_bot._orchestrator = MagicMock()
