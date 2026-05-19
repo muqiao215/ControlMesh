@@ -239,8 +239,7 @@ def check_opencode_auth() -> AuthResult:
 
     if any(_has_nonempty_env(name) for name in _OPENCODE_AUTH_ENV_KEYS):
         diagnostic = _opencode_runnable_diagnostic()
-        status = AuthStatus.AUTHENTICATED if not diagnostic else AuthStatus.INSTALLED
-        result = AuthResult("opencode", status, diagnostic=diagnostic)
+        result = AuthResult("opencode", AuthStatus.AUTHENTICATED, diagnostic=diagnostic)
         logger.debug("Auth check provider=%s status=%s (env key)", result.provider, result.status)
         return result
 
@@ -261,8 +260,13 @@ def check_opencode_auth() -> AuthResult:
         )
         if auth_source is not None:
             diagnostic = _opencode_runnable_diagnostic()
-            status = AuthStatus.AUTHENTICATED if not diagnostic else AuthStatus.INSTALLED
-            result = AuthResult("opencode", status, auth_source, source_age, diagnostic=diagnostic)
+            result = AuthResult(
+                "opencode",
+                AuthStatus.AUTHENTICATED,
+                auth_source,
+                source_age,
+                diagnostic=diagnostic,
+            )
             logger.debug(
                 "Auth check provider=%s status=%s (config key)",
                 result.provider,
@@ -275,8 +279,13 @@ def check_opencode_auth() -> AuthResult:
 
     if auth_file is not None and auth_providers:
         diagnostic = _opencode_runnable_diagnostic()
-        status = AuthStatus.AUTHENTICATED if not diagnostic else AuthStatus.INSTALLED
-        result = AuthResult("opencode", status, auth_file, auth_age, diagnostic=diagnostic)
+        result = AuthResult(
+            "opencode",
+            AuthStatus.AUTHENTICATED,
+            auth_file,
+            auth_age,
+            diagnostic=diagnostic,
+        )
         logger.debug(
             "Auth check provider=%s status=%s (auth file)",
             result.provider,

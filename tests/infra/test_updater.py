@@ -702,6 +702,28 @@ class TestBuildUpgradeCommand:
             "controlmesh==0.25.0",
         ]
 
+    def test_uv_tool_install_falls_back_to_python_m_pip_without_uv(self) -> None:
+        with (
+            patch("controlmesh.infra.updater.shutil.which", return_value=None),
+            patch("controlmesh.infra.updater.sys.executable", "/tmp/cm-python"),
+        ):
+            cmd = _build_upgrade_command(
+                mode="uv_tool",
+                package_spec="controlmesh==0.25.0",
+                target_version="0.25.0",
+                force_reinstall=False,
+            )
+
+        assert cmd == [
+            "/tmp/cm-python",
+            "-m",
+            "pip",
+            "install",
+            "--upgrade",
+            "--no-cache-dir",
+            "controlmesh==0.25.0",
+        ]
+
 
 class TestBuildPackageSpec:
     """Test source-aware package spec selection."""
