@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
@@ -35,6 +36,11 @@ def _make_config(
     )
 
 
+@pytest.fixture(autouse=True)
+def _isolated_controlmesh_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CONTROLMESH_HOME", str(tmp_path / ".controlmesh"))
+
+
 def _make_tg_bot(
     config: AgentConfig | None = None,
     *,
@@ -48,6 +54,7 @@ def _make_tg_bot(
     from controlmesh.messenger.telegram.app import TelegramBot
 
     cfg = config or _make_config()
+    cfg.controlmesh_home = os.environ.get("CONTROLMESH_HOME", cfg.controlmesh_home)
     if bot_instance is None:
         bot_instance = MagicMock()
         bot_instance.edit_message_reply_markup = AsyncMock()
@@ -681,7 +688,7 @@ class TestOnMessage:
             release.set()
             await asyncio.gather(*tg_bot._frontstage_run_loops.values(), return_exceptions=True)
 
-    async def test_on_message_background_queue_preserves_session_order(self) -> None:
+    async def test_on_message_background_queue_uses_latest_intent(self) -> None:
         config = _make_config(streaming_enabled=False)
         tg_bot, _bot_instance = _make_tg_bot(config)
         tg_bot._orchestrator = _make_orchestrator(handle_message_text="queued reply")
@@ -704,13 +711,13 @@ class TestOnMessage:
             await tg_bot._on_message(msg1)
             await tg_bot._on_message(msg2)
             await asyncio.sleep(0.05)
-            assert order == ["first"]
+            assert order == ["second"]
             release_first.set()
             await asyncio.gather(*tg_bot._frontstage_run_loops.values(), return_exceptions=True)
 
-        assert order == ["first", "second"]
+        assert order == ["second"]
 
-    async def test_on_message_background_queue_continues_after_failed_run(self) -> None:
+    async def test_on_message_background_queue_discards_failed_old_run(self) -> None:
         config = _make_config(streaming_enabled=False)
         tg_bot, _bot_instance = _make_tg_bot(config)
         tg_bot._orchestrator = _make_orchestrator(handle_message_text="queued reply")
@@ -733,7 +740,7 @@ class TestOnMessage:
             await tg_bot._on_message(msg2)
             await _wait_frontstage_idle(tg_bot)
 
-        assert order == ["first", "second"]
+        assert order == ["second"]
 
     async def test_routes_text_to_streaming(self) -> None:
         tg_bot, _ = _make_tg_bot()

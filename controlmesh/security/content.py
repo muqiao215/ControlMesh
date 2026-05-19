@@ -132,6 +132,20 @@ def looks_like_pasted_chat_transcript(text: str) -> bool:
     return extract_pasted_chat_transcript_message(text) is not None
 
 
+def classify_inbound_text(text: str) -> str:
+    """Classify inbound Telegram text for mailbox routing."""
+    stripped = text.strip()
+    if not stripped:
+        return "quarantine"
+    if stripped.startswith("/"):
+        return "control_command"
+    if extract_pasted_chat_transcript_message(stripped) is not None:
+        return "pasted_transcript_extractable"
+    if detect_suspicious_patterns(stripped):
+        return "quarantine"
+    return "normal_chat"
+
+
 def detect_suspicious_patterns(text: str) -> list[str]:
     """Scan text for prompt injection patterns. Empty list = clean."""
     folded = _fold_fullwidth(text)

@@ -25,6 +25,17 @@ class TelegramRuntimeState:
     recent_outbound: tuple[tuple[str, float], ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class TelegramLaneState:
+    """Durable latest-intent marker for one Telegram lane."""
+
+    lane_key: str
+    latest_message_id: int
+    latest_spool_id: str | None
+    generation: int
+    updated_at: float
+
+
 def telegram_runtime_identity_fingerprint(
     *,
     token: str,

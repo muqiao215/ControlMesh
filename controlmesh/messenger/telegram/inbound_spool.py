@@ -27,6 +27,8 @@ class TelegramInboundSpoolEntry:
     chat_id: int
     message_id: int
     enqueued_at: float
+    generation: int
+    retry_count: int
     raw: dict[str, object]
     path: Path
 
@@ -79,6 +81,10 @@ class TelegramInboundSpool:
         self.root = Path(controlmesh_home).expanduser() / relative_root / fingerprint
         self.pending_dir = self.root / "pending"
         self.claims_dir = self.root / "claims"
+        self.superseded_dir = self.root / "superseded"
+        self.quarantine_dir = self.root / "quarantine"
+        self.dead_letter_dir = self.root / "dead_letter"
+        self.lane_state_dir = self.root / "lane_state"
 
     @property
     def claim_ttl_seconds(self) -> float:
@@ -110,6 +116,8 @@ class TelegramInboundSpool:
                 "chat_id": chat_id,
                 "message_id": message_id,
                 "enqueued_at": time.time(),
+                "generation": 0,
+                "retry_count": 0,
                 "raw": raw,
             }
             path = self.pending_dir / f"{entry['spool_id']}.json"
@@ -129,22 +137,28 @@ class TelegramInboundSpool:
             enqueued += 1
         return enqueued
 
-    def claim_next(self, *, owner: str, now: float | None = None) -> TelegramInboundClaim | None:
-        """Claim the next deliverable entry, recovering stale claims first."""
+    def claim_latest(self, *, owner: str, now: float | None = None) -> TelegramInboundClaim | None:
+        """Claim the latest deliverable entry per lane."""
         current = time.time() if now is None else now
         self._ensure_dirs()
         entries = self._load_pending_entries()
         pending_ids = {entry.spool_id for entry in entries}
         claims = self._load_active_claims(now=current, pending_ids=pending_ids)
-        seen_lanes: set[str] = set()
+        latest_by_lane = self.latest_by_lane(entries)
+        latest_ids = {entry.spool_id for entry in latest_by_lane.values()}
         for entry in entries:
-            if entry.lane_key in claims or entry.lane_key in seen_lanes:
+            if entry.spool_id not in latest_ids:
+                self.supersede(entry, reason="stale_superseded")
+        for lane_key, entry in latest_by_lane.items():
+            if lane_key in claims:
                 continue
-            seen_lanes.add(entry.lane_key)
             claimed = self._try_claim_entry(entry, owner=owner, now=current)
             if claimed is not None:
                 return claimed
         return None
+
+    def claim_next(self, *, owner: str, now: float | None = None) -> TelegramInboundClaim | None:
+        return self.claim_latest(owner=owner, now=now)
 
     def renew(
         self,
@@ -186,6 +200,98 @@ class TelegramInboundSpool:
         with contextlib.suppress(FileNotFoundError):
             claim.entry.path.unlink()
         self._remove_claim_file(claim.path, spool_id=claim.spool_id)
+
+    def retry_later(
+        self,
+        claim: TelegramInboundClaim,
+        *,
+        reason: str,
+        max_retries: int = 2,
+    ) -> bool:
+        """Keep transient failures retryable with a small bounded budget."""
+        entry = self.find_pending(claim.entry.chat_id, claim.entry.message_id)
+        if entry is None:
+            self._remove_claim_file(claim.path, spool_id=claim.spool_id)
+            return False
+        retry_count = entry.retry_count + 1
+        if retry_count > max_retries:
+            self.dead_letter(claim, reason=reason)
+            return False
+        payload = {
+            "schema_version": 1,
+            "spool_id": entry.spool_id,
+            "lane_key": entry.lane_key,
+            "dedupe_key": entry.dedupe_key,
+            "chat_id": entry.chat_id,
+            "message_id": entry.message_id,
+            "enqueued_at": entry.enqueued_at,
+            "generation": entry.generation,
+            "retry_count": retry_count,
+            "raw": entry.raw,
+            "last_retry_reason": reason,
+        }
+        entry.path.write_text(
+            json.dumps(payload, ensure_ascii=True, sort_keys=True, default=_json_fallback),
+            encoding="utf-8",
+        )
+        self._protect_file(entry.path)
+        self._remove_claim_file(claim.path, spool_id=claim.spool_id)
+        return True
+
+    def clear_claim(self, lane_key: str) -> None:
+        claim_path = self.claims_dir / f"{_lane_claim_name(lane_key)}.json"
+        with contextlib.suppress(FileNotFoundError):
+            claim_path.unlink()
+
+    def find_pending(self, chat_id: int, message_id: int) -> TelegramInboundSpoolEntry | None:
+        dedupe_key = _dedupe_key(chat_id, message_id)
+        for entry in self._load_pending_entries():
+            if entry.dedupe_key == dedupe_key:
+                return entry
+        return None
+
+    def latest_by_lane(
+        self,
+        entries: list[TelegramInboundSpoolEntry] | None = None,
+    ) -> dict[str, TelegramInboundSpoolEntry]:
+        pending_entries = self._load_pending_entries() if entries is None else entries
+        latest: dict[str, TelegramInboundSpoolEntry] = {}
+        for entry in pending_entries:
+            current = latest.get(entry.lane_key)
+            if current is None or (entry.message_id, entry.enqueued_at, entry.spool_id) > (
+                current.message_id,
+                current.enqueued_at,
+                current.spool_id,
+            ):
+                latest[entry.lane_key] = entry
+        return latest
+
+    def supersede(self, claim_or_entry: TelegramInboundClaim | TelegramInboundSpoolEntry, *, reason: str) -> None:
+        entry = claim_or_entry.entry if isinstance(claim_or_entry, TelegramInboundClaim) else claim_or_entry
+        self._move_entry(entry, self.superseded_dir, reason=reason)
+        if isinstance(claim_or_entry, TelegramInboundClaim):
+            self._remove_claim_file(claim_or_entry.path, spool_id=claim_or_entry.spool_id)
+
+    def supersede_lane(self, lane_key: str, *, reason: str) -> int:
+        count = 0
+        for entry in self._load_pending_entries():
+            if entry.lane_key != lane_key:
+                continue
+            self.supersede(entry, reason=reason)
+            count += 1
+        return count
+
+    def quarantine(self, claim_or_entry: TelegramInboundClaim | TelegramInboundSpoolEntry, *, reason: str) -> None:
+        entry = claim_or_entry.entry if isinstance(claim_or_entry, TelegramInboundClaim) else claim_or_entry
+        self._move_entry(entry, self.quarantine_dir, reason=reason)
+        if isinstance(claim_or_entry, TelegramInboundClaim):
+            self._remove_claim_file(claim_or_entry.path, spool_id=claim_or_entry.spool_id)
+
+    def dead_letter(self, claim_or_entry: TelegramInboundClaim | TelegramInboundSpoolEntry, *, reason: str) -> None:
+        entry = claim_or_entry.entry if isinstance(claim_or_entry, TelegramInboundClaim) else claim_or_entry
+        self._move_entry(entry, self.dead_letter_dir, reason=reason)
+        if isinstance(claim_or_entry, TelegramInboundClaim):
+            self._remove_claim_file(claim_or_entry.path, spool_id=claim_or_entry.spool_id)
 
     def recover_stale_claims(self, *, now: float | None = None) -> int:
         """Drop expired or orphaned claims so backlog can resume."""
@@ -230,7 +336,14 @@ class TelegramInboundSpool:
 
     def clear(self) -> None:
         """Remove all pending entries and claims for this bot identity."""
-        for directory in (self.pending_dir, self.claims_dir):
+        for directory in (
+            self.pending_dir,
+            self.claims_dir,
+            self.superseded_dir,
+            self.quarantine_dir,
+            self.dead_letter_dir,
+            self.lane_state_dir,
+        ):
             if not directory.exists():
                 continue
             for path in directory.glob("*.json"):
@@ -351,6 +464,8 @@ class TelegramInboundSpool:
                 chat_id=0,
                 message_id=0,
                 enqueued_at=0.0,
+                generation=0,
+                retry_count=0,
                 raw={},
                 path=pending_path,
             )
@@ -372,8 +487,41 @@ class TelegramInboundSpool:
             path.unlink()
 
     def _ensure_dirs(self) -> None:
-        self.pending_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-        self.claims_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        for directory in (
+            self.pending_dir,
+            self.claims_dir,
+            self.superseded_dir,
+            self.quarantine_dir,
+            self.dead_letter_dir,
+            self.lane_state_dir,
+        ):
+            directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+
+    def _move_entry(self, entry: TelegramInboundSpoolEntry, target_dir: Path, *, reason: str) -> None:
+        target_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        target_path = target_dir / f"{entry.spool_id}.json"
+        payload = {
+            "schema_version": 1,
+            "reason": reason,
+            "entry": {
+                "spool_id": entry.spool_id,
+                "lane_key": entry.lane_key,
+                "dedupe_key": entry.dedupe_key,
+                "chat_id": entry.chat_id,
+                "message_id": entry.message_id,
+                "enqueued_at": entry.enqueued_at,
+                "generation": entry.generation,
+                "retry_count": entry.retry_count,
+                "raw": entry.raw,
+            },
+        }
+        target_path.write_text(
+            json.dumps(payload, ensure_ascii=True, sort_keys=True, default=_json_fallback),
+            encoding="utf-8",
+        )
+        self._protect_file(target_path)
+        with contextlib.suppress(FileNotFoundError):
+            entry.path.unlink()
 
     @staticmethod
     def _protect_file(path: Path) -> None:
@@ -392,12 +540,16 @@ def _coerce_pending_entry(
     chat_id = value.get("chat_id")
     message_id = value.get("message_id")
     enqueued_at = value.get("enqueued_at")
+    generation = value.get("generation", 0)
+    retry_count = value.get("retry_count", 0)
     raw = value.get("raw")
     if not isinstance(spool_id, str) or not isinstance(lane_key, str) or not isinstance(dedupe_key, str):
         return None
     if not isinstance(chat_id, int) or not isinstance(message_id, int):
         return None
     if not isinstance(enqueued_at, (int, float)) or not isinstance(raw, dict):
+        return None
+    if not isinstance(generation, int) or not isinstance(retry_count, int):
         return None
     return TelegramInboundSpoolEntry(
         spool_id=spool_id,
@@ -406,6 +558,8 @@ def _coerce_pending_entry(
         chat_id=chat_id,
         message_id=message_id,
         enqueued_at=float(enqueued_at),
+        generation=generation,
+        retry_count=retry_count,
         raw=raw,
         path=path,
     )

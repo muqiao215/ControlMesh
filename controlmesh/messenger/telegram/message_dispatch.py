@@ -87,6 +87,7 @@ class NonStreamingDispatch:
     reply_to: Message | None = None
     thread_id: int | None = None
     scene_config: SceneConfig | None = None
+    before_send: Callable[[], Awaitable[bool]] | None = None
 
 
 @dataclass(slots=True)
@@ -102,6 +103,7 @@ class StreamingDispatch:
     allowed_roots: list[Path] | None
     thread_id: int | None = None
     scene_config: SceneConfig | None = None
+    before_send: Callable[[], Awaitable[bool]] | None = None
 
 
 async def run_non_streaming_message(
@@ -118,6 +120,9 @@ async def run_non_streaming_message(
     footer = _build_footer(result, dispatch.scene_config)
     result.text += footer
     deliver_text = result.text
+    before_send = getattr(dispatch, "before_send", None)
+    if before_send is not None and not await before_send():
+        return result.text
     reply_id = dispatch.reply_to.message_id if dispatch.reply_to else None
     await send_rich(
         dispatch.bot,
@@ -138,6 +143,8 @@ async def run_streaming_message(
     """Execute one streaming turn and deliver text/files to Telegram."""
     logger.info("Streaming flow started")
 
+    before_send = getattr(dispatch, "before_send", None)
+
     editor = create_stream_editor(
         dispatch.bot,
         dispatch.key.chat_id,
@@ -156,13 +163,19 @@ async def run_streaming_message(
     )
 
     async def on_text(delta: str) -> None:
+        if before_send is not None and not await before_send():
+            return
         await coalescer.feed(delta)
 
     async def on_tool(tool_name: str) -> None:
+        if before_send is not None and not await before_send():
+            return
         await coalescer.flush(force=True)
         await editor.append_tool(tool_name)
 
     async def on_system(status: str | None) -> None:
+        if before_send is not None and not await before_send():
+            return
         system_map: dict[str, str] = {
             "thinking": "THINKING",
             "compacting": "COMPACTING",
@@ -183,6 +196,8 @@ async def run_streaming_message(
         await editor.append_system(label)
 
     async def on_tool_event(event: ToolUseEvent | ToolResultEvent) -> None:
+        if before_send is not None and not await before_send():
+            return
         await coalescer.flush(force=True)
         await editor.append_text(format_tool_event_text(event))
 
@@ -215,9 +230,13 @@ async def run_streaming_message(
     coalescer.stop()
     footer = _build_footer(result, dispatch.scene_config)
     if footer:
+        if before_send is not None and not await before_send():
+            return result.text
         await editor.append_text(footer)
         result.text += footer
     deliver_text = result.text
+    if before_send is not None and not await before_send():
+        return result.text
     await editor.finalize(deliver_text)
 
     logger.info(
@@ -227,6 +246,8 @@ async def run_streaming_message(
     )
 
     if result.stream_fallback or not editor.has_content:
+        if before_send is not None and not await before_send():
+            return result.text
         await send_rich(
             dispatch.bot,
             dispatch.key.chat_id,
@@ -238,6 +259,8 @@ async def run_streaming_message(
             ),
         )
     else:
+        if before_send is not None and not await before_send():
+            return result.text
         await send_files_from_text(
             dispatch.bot,
             dispatch.key.chat_id,

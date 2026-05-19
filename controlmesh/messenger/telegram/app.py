@@ -24,6 +24,7 @@ from aiogram.exceptions import (
     TelegramBadRequest,
     TelegramConflictError,
     TelegramNetworkError,
+    TelegramForbiddenError,
     TelegramRetryAfter,
     TelegramServerError,
 )
@@ -69,6 +70,7 @@ from controlmesh.messenger.telegram.inbound_spool import (
     TelegramInboundSpool,
     TelegramInboundSpoolStats,
 )
+from controlmesh.messenger.telegram.lane_state import TelegramLaneStateStore
 from controlmesh.messenger.telegram.media import (
     has_media,
     is_command_for_others,
@@ -112,6 +114,7 @@ from controlmesh.messenger.telegram.welcome import (
 )
 from controlmesh.multiagent.bus import AsyncInterAgentResult
 from controlmesh.security import detect_suspicious_patterns
+from controlmesh.security import classify_inbound_text
 from controlmesh.security import extract_pasted_chat_transcript_message
 from controlmesh.session.key import SessionKey
 from controlmesh.tasks.models import TaskResult
@@ -128,6 +131,18 @@ logger = logging.getLogger(__name__)
 _WELCOME_IMAGE = Path(__file__).resolve().parent / "controlmesh_images" / "welcome.png"
 _CAPTION_LIMIT = 1024
 _INBOUND_DRAIN_OWNER = "telegram_frontstage"
+_CONTROL_COMMAND_PREFIXES = (
+    "/model",
+    "/provider",
+    "/stop",
+    "/interrupt",
+    "/reset",
+    "/new",
+    "/session",
+    "/upgrade",
+    "/status",
+    "/queue",
+)
 
 
 @dataclass(slots=True)
@@ -139,6 +154,10 @@ class _QueuedMessageRun:
     text: str
     thread_id: int | None
     claim: TelegramInboundClaim | None = None
+    lane_key: str = ""
+    input_message_id: int = 0
+    input_spool_id: str | None = None
+    generation: int = 0
 
 
 @dataclass(slots=True)
@@ -447,6 +466,7 @@ class TelegramBot:
         self._bot_username: str | None = None
         self._runtime_state_store = TelegramRuntimeStateStore(config.controlmesh_home)
         self._recent_outbound = TelegramOutboundEchoStore()
+        self._lane_state_store: TelegramLaneStateStore | None = None
         self._restored_poll_offset: int | None = None
         self._inbound_spool: TelegramInboundSpool | None = None
         self._last_inbound_drain_at: float | None = None
@@ -1032,6 +1052,7 @@ class TelegramBot:
     # -- Interrupt, abort, commands, sessions ----------------------------------
 
     async def _on_interrupt(self, chat_id: int, message: Message) -> bool:
+        self._bump_lane_generation_for_message(message, reason="interrupt")
         return await handle_interrupt(
             self._orchestrator,
             self._bot,
@@ -1049,6 +1070,7 @@ class TelegramBot:
         )
 
     async def _on_abort(self, chat_id: int, message: Message) -> bool:
+        await self._supersede_lane_runtime(message, reason="abort")
         return await handle_abort(
             self._orchestrator,
             self._bot,
@@ -1087,6 +1109,8 @@ class TelegramBot:
             return False
 
         text_lower = (message.text or "").strip().lower()
+        if self._is_control_command_text(text_lower):
+            self._bump_lane_generation_for_message(message, reason="quick_command")
 
         direct = await self._dispatch_direct_command(chat_id, message, text_lower)
         if direct is not None or self._orchestrator is None:
@@ -1124,6 +1148,7 @@ class TelegramBot:
             return
         if self._config.group_mention_only and not self._is_addressed(message):
             return
+        await self._supersede_lane_runtime(message, reason="user_stop")
         await handle_abort(
             self._orchestrator,
             self._bot,
@@ -1136,6 +1161,8 @@ class TelegramBot:
             return
         if self._config.group_mention_only and not self._is_addressed(message):
             return
+        if self._is_control_command_text(message.text or ""):
+            self._bump_lane_generation_for_message(message, reason="control_command")
         await handle_command(self._orch, self._bot, message)
 
     async def _on_new(self, message: Message) -> None:
@@ -1143,6 +1170,7 @@ class TelegramBot:
             return
         if self._config.group_mention_only and not self._is_addressed(message):
             return
+        await self._supersede_lane_runtime(message, reason="new_session")
         await handle_new_session(self._orch, self._bot, message, topic_names=self._topic_names)
 
     async def _on_forum_topic_created(self, message: Message) -> None:
@@ -1227,6 +1255,7 @@ class TelegramBot:
             return
 
         prompt = parts[1].strip()
+        self._bump_lane_generation_for_message(message, reason="session_command")
 
         # Parse optional @directive prefix:
         #   @provider [model] <prompt>    — e.g. @codex, @claude opus
@@ -1460,6 +1489,7 @@ class TelegramBot:
         from controlmesh.orchestrator.selectors.model_selector import handle_model_callback
 
         async with self._sequential.get_lock(key.lock_key):
+            await self._supersede_lane_by_key(key, reason="model_selector")
             resp = await handle_model_callback(self._orch, key, data)
         await edit_selector_response(self._bot, key.chat_id, message_id, resp)
 
@@ -1586,6 +1616,12 @@ class TelegramBot:
             )
             self._persist_runtime_state()
             return
+        raw_text = strip_mention(message.text or "", self._bot_username) if message.text else ""
+        inbound_kind = classify_inbound_text(raw_text) if raw_text else "normal_chat"
+        if inbound_kind == "control_command":
+            self._bump_lane_generation_for_message(message, reason="control_command")
+            await self._on_command(message)
+            return
         text = await self._resolve_text(message)
         if text is None:
             return
@@ -1597,11 +1633,34 @@ class TelegramBot:
         if self._config.scene.seen_reaction:
             await self._set_seen_reaction(message)
         if self._inbound_spool is None:
-            self._enqueue_frontstage_run(message, key, text, thread_id=thread_id)
+            generation = self._update_lane_latest_for_message(message, spool_id=None)
+            self._enqueue_frontstage_run(
+                message,
+                key,
+                text,
+                thread_id=thread_id,
+                lane_key=self._message_lane_key(message),
+                input_message_id=message.message_id,
+                input_spool_id=None,
+                generation=generation,
+            )
+            return
+        if inbound_kind == "quarantine":
+            entry = self._inbound_spool.enqueue([message.model_dump(mode="python", exclude_none=True)])
+            if entry:
+                pending = self._inbound_spool.find_pending(message.chat.id, message.message_id)
+                if pending is not None:
+                    self._inbound_spool.quarantine(pending, reason="suspicious_input")
             return
         enqueued = self._inbound_spool.enqueue(
             [message.model_dump(mode="python", exclude_none=True)]
         )
+        pending_entry = self._inbound_spool.find_pending(message.chat.id, message.message_id)
+        if pending_entry is not None:
+            generation = self._update_lane_latest_for_message(message, spool_id=pending_entry.spool_id)
+            if generation != pending_entry.generation:
+                # lane_state is the source of truth; spool generation is advisory only
+                pass
         self._last_inbound_spool_stats = self._inbound_spool.stats()
         if enqueued:
             logger.debug(
@@ -1621,6 +1680,10 @@ class TelegramBot:
         *,
         thread_id: int | None = None,
         claim: TelegramInboundClaim | None = None,
+        lane_key: str = "",
+        input_message_id: int = 0,
+        input_spool_id: str | None = None,
+        generation: int = 0,
     ) -> None:
         """Detach one incoming frontstage turn from the transport handler lifetime."""
         lock_key = key.lock_key
@@ -1632,6 +1695,10 @@ class TelegramBot:
                 text=text,
                 thread_id=thread_id,
                 claim=claim,
+                lane_key=lane_key,
+                input_message_id=input_message_id,
+                input_spool_id=input_spool_id,
+                generation=generation,
             )
         )
         loop_task = self._frontstage_run_loops.get(lock_key)
@@ -1651,9 +1718,18 @@ class TelegramBot:
                 item = queue.popleft()
                 if not queue:
                     self._frontstage_run_queues.pop(lock_key, None)
+                renew_task: asyncio.Task[None] | None = None
 
                 async with self._sequential.get_lock(lock_key):
                     try:
+                        if not await self._freshness_guard(
+                            item.lane_key,
+                            item.input_message_id,
+                            item.generation,
+                        ):
+                            if item.claim is not None and self._inbound_spool is not None:
+                                self._inbound_spool.supersede(item.claim, reason="stale_before_run")
+                            continue
                         claim = item.claim
                         renew_task = (
                             asyncio.create_task(
@@ -1669,6 +1745,9 @@ class TelegramBot:
                                 item.key,
                                 item.text,
                                 thread_id=item.thread_id,
+                                lane_key=item.lane_key,
+                                input_message_id=item.input_message_id,
+                                generation=item.generation,
                             )
                         else:
                             await self._handle_non_streaming(
@@ -1676,11 +1755,30 @@ class TelegramBot:
                                 item.key,
                                 item.text,
                                 thread_id=item.thread_id,
+                                lane_key=item.lane_key,
+                                input_message_id=item.input_message_id,
+                                generation=item.generation,
                             )
                         if claim is not None and self._inbound_spool is not None:
                             self._inbound_spool.ack(claim)
                             self._last_inbound_drain_at = time.time()
                             self._persist_runtime_state()
+                    except (TelegramRetryAfter, TelegramNetworkError, TelegramServerError):
+                        if item.claim is not None and self._inbound_spool is not None:
+                            self._inbound_spool.retry_later(item.claim, reason="transient_telegram_error")
+                        logger.exception(
+                            "Detached Telegram frontstage transient failure chat_id=%s topic_id=%s",
+                            item.key.chat_id,
+                            item.key.topic_id,
+                        )
+                    except (TelegramForbiddenError, TelegramBadRequest):
+                        if item.claim is not None and self._inbound_spool is not None:
+                            self._inbound_spool.dead_letter(item.claim, reason="unrunnable_or_rejected")
+                        logger.exception(
+                            "Detached Telegram frontstage unrecoverable delivery failure chat_id=%s topic_id=%s",
+                            item.key.chat_id,
+                            item.key.topic_id,
+                        )
                     except Exception:
                         if item.claim is not None and self._inbound_spool is not None:
                             self._inbound_spool.release(item.claim)
@@ -1737,8 +1835,9 @@ class TelegramBot:
             if self._config.group_mention_only and not self._is_addressed(message):
                 return None
         text = strip_mention(message.text, self._bot_username)
+        inbound_kind = classify_inbound_text(text)
         transcript_message = extract_pasted_chat_transcript_message(text)
-        if transcript_message is not None:
+        if inbound_kind == "pasted_transcript_extractable" and transcript_message is not None:
             logger.warning(
                 "Telegram pasted transcript reduced chat=%s message_id=%s from_user=%s",
                 message.chat.id,
@@ -1762,6 +1861,9 @@ class TelegramBot:
                 type(forward_origin).__name__ if forward_origin is not None else None,
                 getattr(reply_to, "message_id", None),
             )
+            return None
+        if inbound_kind == "quarantine":
+            return None
         return text
 
     def _use_streaming_output(self) -> bool:
@@ -1769,7 +1871,15 @@ class TelegramBot:
         return self._config.streaming.enabled and self._config.streaming.output_mode != "off"
 
     async def _handle_streaming(
-        self, message: Message, key: SessionKey, text: str, *, thread_id: int | None = None
+        self,
+        message: Message,
+        key: SessionKey,
+        text: str,
+        *,
+        thread_id: int | None = None,
+        lane_key: str = "",
+        input_message_id: int = 0,
+        generation: int = 0,
     ) -> None:
         """Streaming flow: coalescer -> stream editor -> Telegram."""
         await run_streaming_message(
@@ -1783,6 +1893,7 @@ class TelegramBot:
                 allowed_roots=self.file_roots(self._orch.paths),
                 thread_id=thread_id,
                 scene_config=self._config.scene,
+                before_send=lambda: self._freshness_guard(lane_key, input_message_id, generation),
             ),
         )
 
@@ -1793,6 +1904,9 @@ class TelegramBot:
         text: str,
         *,
         thread_id: int | None = None,
+        lane_key: str = "",
+        input_message_id: int = 0,
+        generation: int = 0,
     ) -> None:
         """Non-streaming flow: one-shot orchestrator call -> Telegram delivery."""
         await run_non_streaming_message(
@@ -1805,6 +1919,7 @@ class TelegramBot:
                 reply_to=reply_to,
                 thread_id=thread_id,
                 scene_config=self._config.scene,
+                before_send=lambda: self._freshness_guard(lane_key, input_message_id, generation),
             ),
         )
 
@@ -1892,6 +2007,16 @@ class TelegramBot:
         """Handle ``upg:yes:<version>``, ``upg:no``, and ``upg:cl:<version>`` callbacks."""
         from controlmesh.messenger.telegram.upgrade_handler import handle_upgrade_callback
 
+        fake_message = Message.model_validate(
+            {
+                "message_id": message_id,
+                "date": int(time.time()),
+                "chat": {"id": chat_id, "type": "private"},
+                "text": "/upgrade",
+                "message_thread_id": thread_id,
+            }
+        )
+        await self._supersede_lane_runtime(fake_message, reason="upgrade_restart")
         await handle_upgrade_callback(self, chat_id, message_id, data, thread_id=thread_id)
 
     async def _sync_commands(self) -> None:
@@ -2176,6 +2301,12 @@ class TelegramBot:
             bot_id=self._bot_id,
             bot_username=self._bot_username,
         )
+        self._lane_state_store = TelegramLaneStateStore(
+            self._config.controlmesh_home,
+            token=self._config.telegram_token,
+            bot_id=self._bot_id,
+            bot_username=self._bot_username,
+        )
         self._last_inbound_spool_stats = self._inbound_spool.stats()
 
     def _persist_runtime_state(self) -> None:
@@ -2211,20 +2342,90 @@ class TelegramBot:
                 "Telegram recovered stale inbound claims count=%s",
                 self._last_recovered_stale_claim_count,
             )
+        for entry in list(self._inbound_spool._load_pending_entries()):
+            kind = classify_inbound_text(str(entry.raw.get("text", "") or ""))
+            if kind == "quarantine":
+                self._inbound_spool.quarantine(entry, reason="startup_hygiene")
         await self._drain_inbound_spool()
+
+    def _lane_state(self, lane_key: str) -> TelegramLaneStateStore:
+        if self._lane_state_store is None:
+            self._lane_state_store = TelegramLaneStateStore(
+                self._config.controlmesh_home,
+                token=self._config.telegram_token,
+                bot_id=self._bot_id,
+                bot_username=self._bot_username,
+            )
+        return self._lane_state_store
+
+    def _lane_is_current(self, lane_key: str, message_id: int, generation: int) -> bool:
+        if self._lane_state_store is None:
+            return True
+        return self._lane_state_store.is_current(lane_key, message_id, generation)
+
+    def _message_lane_key(self, message: Message) -> str:
+        thread_id = get_thread_id(message) or 0
+        return f"{message.chat.id}:{thread_id}"
+
+    def _bump_lane_generation_for_message(self, message: Message, *, reason: str) -> int:
+        state = self._lane_state(self._message_lane_key(message)).bump_generation(
+            self._message_lane_key(message),
+            reason=reason,
+        )
+        return state.generation
+
+    def _update_lane_latest_for_message(
+        self,
+        message: Message,
+        *,
+        spool_id: str | None,
+    ) -> int:
+        state = self._lane_state(self._message_lane_key(message)).update_latest(
+            self._message_lane_key(message),
+            message.message_id,
+            spool_id,
+        )
+        return state.generation
+
+    async def _supersede_lane_runtime(self, message: Message, *, reason: str) -> None:
+        lane_key = self._message_lane_key(message)
+        self._bump_lane_generation_for_message(message, reason=reason)
+        if self._inbound_spool is not None:
+            self._inbound_spool.clear_claim(lane_key)
+            self._inbound_spool.supersede_lane(lane_key, reason=reason)
+        queue = self._frontstage_run_queues.get((message.chat.id, get_thread_id(message)))
+        if queue:
+            queue.clear()
+
+    async def _supersede_lane_by_key(self, key: SessionKey, *, reason: str) -> None:
+        lane_key = f"{key.chat_id}:{key.topic_id or 0}"
+        self._lane_state(lane_key).bump_generation(lane_key, reason=reason)
+        if self._inbound_spool is not None:
+            self._inbound_spool.clear_claim(lane_key)
+            self._inbound_spool.supersede_lane(lane_key, reason=reason)
+        queue = self._frontstage_run_queues.get(key.lock_key)
+        if queue:
+            queue.clear()
+
+    def _is_control_command_text(self, text: str) -> bool:
+        lowered = text.strip().lower()
+        return lowered.startswith(_CONTROL_COMMAND_PREFIXES)
+
+    async def _freshness_guard(self, lane_key: str, message_id: int, generation: int) -> bool:
+        return self._lane_is_current(lane_key, message_id, generation)
 
     async def _drain_inbound_spool(self) -> int:
         if self._inbound_spool is None:
             return 0
         delivered = 0
         while True:
-            claim = self._inbound_spool.claim_next(owner=_INBOUND_DRAIN_OWNER)
+            claim = self._inbound_spool.claim_latest(owner=_INBOUND_DRAIN_OWNER)
             if claim is None:
                 break
             try:
                 message = Message.model_validate(claim.entry.raw)
             except Exception:
-                self._inbound_spool.ack(claim)
+                self._inbound_spool.dead_letter(claim, reason="invalid_message_payload")
                 continue
             if self._is_persisted_outbound_self_echo(message):
                 self._inbound_spool.ack(claim)
@@ -2232,11 +2433,22 @@ class TelegramBot:
                 continue
             text = await self._resolve_text(message)
             if text is None:
-                self._inbound_spool.ack(claim)
+                self._inbound_spool.quarantine(claim, reason="non_runnable_input")
                 continue
             key = get_session_key(message)
             thread_id = get_thread_id(message)
-            self._enqueue_frontstage_run(message, key, text, thread_id=thread_id, claim=claim)
+            generation = self._update_lane_latest_for_message(message, spool_id=claim.spool_id)
+            self._enqueue_frontstage_run(
+                message,
+                key,
+                text,
+                thread_id=thread_id,
+                claim=claim,
+                lane_key=claim.entry.lane_key,
+                input_message_id=message.message_id,
+                input_spool_id=claim.spool_id,
+                generation=generation,
+            )
             delivered += 1
         self._last_inbound_spool_stats = self._inbound_spool.stats()
         if self._last_inbound_spool_stats.unhealthy_reason:
