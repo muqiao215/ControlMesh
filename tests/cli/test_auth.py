@@ -527,7 +527,7 @@ def test_check_opencode_auth_downgrades_to_installed_when_no_runnable_model(
     result = check_opencode_auth()
 
     assert result.provider == "opencode"
-    assert result.status == AuthStatus.INSTALLED
+    assert result.status == AuthStatus.AUTHENTICATED
     assert "no runnable runtime model passed preflight" in result.diagnostic
 
 

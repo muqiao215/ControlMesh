@@ -158,6 +158,12 @@ def _build_upgrade_command(
 ) -> list[str]:
     """Build provider-specific upgrade command."""
     if mode == "uv_tool":
+        if shutil.which("uv") is None:
+            cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "--no-cache-dir"]
+            if force_reinstall:
+                cmd.append("--force-reinstall")
+            cmd.append(package_spec)
+            return cmd
         cmd = ["uv", "tool", "install", "--force-reinstall", "--refresh"]
         cmd.append(package_spec)
         return cmd
