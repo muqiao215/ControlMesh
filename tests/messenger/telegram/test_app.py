@@ -756,7 +756,13 @@ class TestOnMessage:
         from controlmesh.session.key import SessionKey
 
         mock_stream.assert_called_once_with(
-            msg, SessionKey(chat_id=1), "Hello streaming", thread_id=None
+            msg,
+            SessionKey(chat_id=1),
+            "Hello streaming",
+            thread_id=None,
+            lane_key="1:0",
+            input_message_id=10,
+            generation=1,
         )
 
     async def test_returns_early_for_none_text(self) -> None:
@@ -786,7 +792,13 @@ class TestOnMessage:
         from controlmesh.session.key import SessionKey
 
         mock_stream.assert_called_once_with(
-            msg, SessionKey(chat_id=1), "clean text", thread_id=None
+            msg,
+            SessionKey(chat_id=1),
+            "clean text",
+            thread_id=None,
+            lane_key="1:0",
+            input_message_id=10,
+            generation=1,
         )
 
 
@@ -830,7 +842,7 @@ class TestResolveText:
 
         result = await tg_bot._resolve_text(msg)
 
-        assert result == '清梦:\n{"type":"item.completed","item":{"type":"agent_message"}}'
+        assert result is None
         mock_logger.warning.assert_called_once()
         assert "raw agent event stream received" in mock_logger.warning.call_args.args[0]
 
