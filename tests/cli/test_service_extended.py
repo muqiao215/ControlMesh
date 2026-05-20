@@ -180,9 +180,31 @@ def test_resolve_provider_uses_live_opencode_discovery_for_empty_override(tmp_pa
     assert model == "zhipuai/glm-5.1"
 
 
+def test_resolve_provider_uses_discovered_opencode_model_when_runtime_default_is_missing(
+    tmp_path: Path,
+) -> None:
+    svc = _make_service(tmp_path)
+    with (
+        patch("controlmesh.cli.service.resolve_opencode_runnable_model_sync", return_value=""),
+        patch(
+            "controlmesh.cli.service.discover_opencode_models_sync",
+            return_value=("zhipuai/glm-5.1", "zhipuai/glm-4.5"),
+        ),
+    ):
+        provider, model = svc.resolve_provider(
+            AgentRequest(prompt="test", provider_override="opencode", chat_id=1)
+        )
+
+    assert provider == "opencode"
+    assert model == "zhipuai/glm-5.1"
+
+
 def test_resolve_provider_errors_when_opencode_model_unresolved(tmp_path: Path) -> None:
     svc = _make_service(tmp_path)
-    with patch("controlmesh.cli.service.resolve_opencode_runnable_model_sync", return_value=""):
+    with (
+        patch("controlmesh.cli.service.resolve_opencode_runnable_model_sync", return_value=""),
+        patch("controlmesh.cli.service.discover_opencode_models_sync", return_value=()),
+    ):
         try:
             svc.resolve_provider(AgentRequest(prompt="test", provider_override="opencode", chat_id=1))
         except ValueError as exc:
@@ -191,22 +213,20 @@ def test_resolve_provider_errors_when_opencode_model_unresolved(tmp_path: Path) 
             raise AssertionError("expected ValueError")
 
 
-def test_resolve_provider_errors_when_explicit_opencode_model_is_unrunnable(tmp_path: Path) -> None:
+def test_resolve_provider_keeps_explicit_opencode_model_when_probe_fails(tmp_path: Path) -> None:
     svc = _make_service(tmp_path)
     with patch("controlmesh.cli.service.probe_opencode_model_sync", return_value=False):
-        try:
-            svc.resolve_provider(
-                AgentRequest(
-                    prompt="test",
-                    provider_override="opencode",
-                    model_override="openai/gpt-4.1",
-                    chat_id=1,
-                )
+        provider, model = svc.resolve_provider(
+            AgentRequest(
+                prompt="test",
+                provider_override="opencode",
+                model_override="openai/gpt-4.1",
+                chat_id=1,
             )
-        except ValueError as exc:
-            assert str(exc) == "error:opencode_model_unrunnable model=openai/gpt-4.1"
-        else:
-            raise AssertionError("expected ValueError")
+        )
+
+    assert provider == "opencode"
+    assert model == "openai/gpt-4.1"
 
 
 def test_make_cli_with_openai_agents_provider_override(tmp_path: Path) -> None:
