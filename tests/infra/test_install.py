@@ -234,6 +234,8 @@ class TestRuntimeProvenance:
             provenance = detect_runtime_provenance()
 
         assert provenance.matches_expected is True
+        assert provenance.path_matches_expected is True
+        assert provenance.version_matches_expected is True
         assert provenance.imported_version == "0.24.18"
 
     def test_packaged_install_detects_source_tree_drift(self) -> None:
@@ -256,5 +258,34 @@ class TestRuntimeProvenance:
             provenance = detect_runtime_provenance()
 
         assert provenance.matches_expected is False
+        assert provenance.path_matches_expected is False
+        assert provenance.version_matches_expected is False
         assert "outside expected runtime root" in provenance.reason
+        assert "does not match installed package version" in provenance.reason
+
+    def test_packaged_install_tracks_version_mismatch_separately(self) -> None:
+        info = InstallInfo(mode="uv_tool", source="pypi")
+        fake_module_file = (
+            "/root/.local/share/uv/tools/controlmesh/lib/python3.12/site-packages/controlmesh/__init__.py"
+        )
+
+        with (
+            patch("controlmesh.infra.install.detect_install_info", return_value=info),
+            patch(
+                "controlmesh.infra.install._installed_distribution_root",
+                return_value=Path("/root/.local/share/uv/tools/controlmesh/lib/python3.12/site-packages"),
+            ),
+            patch("controlmesh.infra.install.controlmesh.__file__", fake_module_file),
+            patch("controlmesh.infra.install.controlmesh.__version__", "0.31.3"),
+            patch("controlmesh.infra.install.sys.executable", "/usr/bin/python3.12"),
+            patch("controlmesh.infra.install.sys.prefix", "/root/.local/share/uv/tools/controlmesh"),
+            patch("controlmesh.infra.install.Path.cwd", return_value=Path("/root")),
+            patch("controlmesh.infra.install.os.environ", {"PYTHONPATH": ""}),
+            patch("controlmesh.infra.version.importlib.metadata.version", return_value="0.34.7"),
+        ):
+            provenance = detect_runtime_provenance()
+
+        assert provenance.matches_expected is False
+        assert provenance.path_matches_expected is True
+        assert provenance.version_matches_expected is False
         assert "does not match installed package version" in provenance.reason

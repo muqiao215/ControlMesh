@@ -226,6 +226,8 @@ class TestPerformUpgradePipeline:
                 "controlmesh.infra.updater.detect_runtime_provenance",
                 return_value=SimpleNamespace(
                     matches_expected=False,
+                    path_matches_expected=False,
+                    version_matches_expected=False,
                     reason="imported module is outside expected runtime root",
                 ),
             ),
@@ -244,6 +246,58 @@ class TestPerformUpgradePipeline:
         assert "resolved_target_version=none" in output
         assert "/root/ControlMesh/controlmesh/__init__.py" in output
         mock_upgrade.assert_not_called()
+
+    async def test_allows_upgrade_when_only_runtime_version_drifted(self) -> None:
+        with (
+            patch(
+                "controlmesh.infra.updater.detect_install_info",
+                return_value=InstallInfo(mode="uv_tool", source="pypi"),
+            ),
+            patch(
+                "controlmesh.infra.updater.detect_runtime_provenance",
+                return_value=SimpleNamespace(
+                    matches_expected=False,
+                    path_matches_expected=True,
+                    version_matches_expected=False,
+                    reason="imported version 0.31.3 does not match installed package version 0.34.7",
+                ),
+            ),
+            patch(
+                "controlmesh.infra.updater._inspect_current_runtime",
+                return_value=(
+                    "0.31.3",
+                    "/root/.local/share/uv/tools/controlmesh/lib/python3.12/site-packages/controlmesh/__init__.py",
+                    "/root/.local/share/uv/tools/controlmesh/bin/python3",
+                ),
+            ),
+            patch(
+                "controlmesh.infra.updater._inspect_runtime_after_upgrade",
+                new=AsyncMock(
+                    return_value=(
+                        "0.34.10",
+                        "/root/.local/share/uv/tools/controlmesh/lib/python3.12/site-packages/controlmesh/__init__.py",
+                        "/root/.local/share/uv/tools/controlmesh/bin/python3",
+                    )
+                ),
+            ),
+            patch(
+                "controlmesh.infra.updater._perform_upgrade_impl",
+                new=AsyncMock(return_value=(True, "first-pass")),
+            ) as mock_upgrade,
+            patch(
+                "controlmesh.infra.updater._wait_for_install_change",
+                new=AsyncMock(return_value=InstalledState(version="0.34.10")),
+            ),
+        ):
+            changed, version, output = await perform_upgrade_pipeline(
+                current_version="0.34.7",
+                target_version="0.34.10",
+            )
+
+        assert changed is True
+        assert version == "0.34.10"
+        assert "Refusing upgrade: current runtime import path is polluted." not in output
+        mock_upgrade.assert_called_once_with(target_version="0.34.10", force_reinstall=False)
 
     async def test_missing_distribution_reports_broken_publish_when_github_release_exists(self) -> None:
         with (
@@ -685,7 +739,7 @@ class TestBuildUpgradeCommand:
             "controlmesh==0.22.4",
         ]
 
-    def test_uv_tool_install_uses_force_reinstall_refresh(self) -> None:
+    def test_uv_tool_install_uses_force_refresh_reinstall(self) -> None:
         cmd = _build_upgrade_command(
             mode="uv_tool",
             package_spec="controlmesh==0.25.0",
@@ -697,7 +751,25 @@ class TestBuildUpgradeCommand:
             "uv",
             "tool",
             "install",
-            "--force-reinstall",
+            "--force",
+            "--refresh",
+            "--reinstall",
+            "controlmesh==0.25.0",
+        ]
+
+    def test_uv_tool_install_without_reinstall_uses_force_refresh(self) -> None:
+        cmd = _build_upgrade_command(
+            mode="uv_tool",
+            package_spec="controlmesh==0.25.0",
+            target_version="0.25.0",
+            force_reinstall=False,
+        )
+
+        assert cmd == [
+            "uv",
+            "tool",
+            "install",
+            "--force",
             "--refresh",
             "controlmesh==0.25.0",
         ]

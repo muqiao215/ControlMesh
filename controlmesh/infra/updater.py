@@ -164,7 +164,9 @@ def _build_upgrade_command(
                 cmd.append("--force-reinstall")
             cmd.append(package_spec)
             return cmd
-        cmd = ["uv", "tool", "install", "--force-reinstall", "--refresh"]
+        cmd = ["uv", "tool", "install", "--force", "--refresh"]
+        if force_reinstall:
+            cmd.append("--reinstall")
         cmd.append(package_spec)
         return cmd
 
@@ -853,7 +855,8 @@ async def perform_upgrade_pipeline(
 
     provenance = detect_runtime_provenance()
     pre_version, pre_imported_file, pre_python = _inspect_current_runtime()
-    if _runtime_import_looks_polluted(pre_imported_file) or not provenance.matches_expected:
+    path_mismatch = not getattr(provenance, "path_matches_expected", provenance.matches_expected)
+    if _runtime_import_looks_polluted(pre_imported_file) or path_mismatch:
         message = (
             "Refusing upgrade: current runtime import path is polluted.\n"
             f"version: {pre_version}\n"
