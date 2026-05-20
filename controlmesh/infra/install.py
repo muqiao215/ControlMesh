@@ -48,6 +48,8 @@ class RuntimeProvenance:
     cwd: str
     pythonpath: str
     matches_expected: bool
+    path_matches_expected: bool
+    version_matches_expected: bool
     reason: str = ""
 
 
@@ -197,6 +199,8 @@ def detect_runtime_provenance() -> RuntimeProvenance:
     pythonpath = os.environ.get("PYTHONPATH", "")
 
     matches_expected = True
+    path_matches_expected = True
+    version_matches_expected = True
     reasons: list[str] = []
 
     if info.mode != "dev":
@@ -204,9 +208,11 @@ def detect_runtime_provenance() -> RuntimeProvenance:
         imported_path = Path(imported_file)
         if expected_root is not None and expected_root not in imported_path.parents:
             matches_expected = False
+            path_matches_expected = False
             reasons.append(f"imported module is outside expected runtime root {expected_root}")
         if imported_version != current_version:
             matches_expected = False
+            version_matches_expected = False
             reasons.append(
                 f"imported version {imported_version} does not match installed package version {current_version}"
             )
@@ -221,5 +227,7 @@ def detect_runtime_provenance() -> RuntimeProvenance:
         cwd=cwd,
         pythonpath=pythonpath,
         matches_expected=matches_expected,
+        path_matches_expected=path_matches_expected,
+        version_matches_expected=version_matches_expected,
         reason="; ".join(reasons),
     )
