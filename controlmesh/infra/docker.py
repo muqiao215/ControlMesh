@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 _CONTROLMESH_MOUNT = "/controlmesh"
 _CONTAINER_WS = f"{_CONTROLMESH_MOUNT}/workspace"
 _MOUNT_PREFIX = "/mnt"
+_REDACTED_ENV_VALUE = "***REDACTED***"
 
 
 def _needs_uid_mapping() -> bool:
@@ -372,7 +373,7 @@ class DockerManager:
         cmd.append(image)
 
         logger.info("Starting Docker container '%s' from image '%s'", name, image)
-        logger.debug("docker run cmd: %s", " ".join(cmd))
+        logger.debug("docker run cmd: %s", " ".join(_redact_docker_env_values(cmd)))
         rc, output = await self._exec(*cmd)
         if rc != 0:
             logger.error("docker run failed:\n%s", output[-2000:])
@@ -458,3 +459,25 @@ class DockerManager:
         except OSError as exc:
             logger.debug("Docker command failed: %s -> %s", args[:3], exc)
             return 1, str(exc)
+
+
+def _redact_docker_env_values(cmd: list[str]) -> list[str]:
+    """Redact values passed after Docker ``-e``/``--env`` flags for logging."""
+    redacted: list[str] = []
+    redact_next = False
+    for arg in cmd:
+        if redact_next:
+            redacted.append(_redact_env_assignment(arg))
+            redact_next = False
+            continue
+        redacted.append(arg)
+        if arg in {"-e", "--env"}:
+            redact_next = True
+    return redacted
+
+
+def _redact_env_assignment(value: str) -> str:
+    key, sep, _raw_value = value.partition("=")
+    if not sep:
+        return value
+    return f"{key}={_REDACTED_ENV_VALUE}"

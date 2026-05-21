@@ -16,6 +16,8 @@ from controlmesh.team.contracts import TEAM_TOPOLOGIES
 logger = logging.getLogger(__name__)
 NULLISH_TEXT_VALUES: frozenset[str] = frozenset({"null", "none"})
 DEFAULT_EMPTY_GEMINI_API_KEY: str = "null"
+_SENSITIVE_CONFIG_KEY_PARTS = ("token", "secret", "password", "api_key", "apikey", "key")
+_REDACTED_VALUE = "***REDACTED***"
 
 # Intentional bind-all: the API is designed for private-network use (Tailscale).
 # Public exposure is gated by ``allow_public`` + a prominent warning at startup.
@@ -560,7 +562,24 @@ def update_config_file(config_path: Path, **updates: object) -> None:
     data: dict[str, object] = json.loads(config_path.read_text(encoding="utf-8"))
     data.update(updates)
     atomic_json_save(config_path, data)
-    logger.info("Persisted config update: %s", ", ".join(f"{k}={v}" for k, v in updates.items()))
+    safe_updates = _redact_sensitive_config(updates)
+    logger.info("Persisted config update: %s", ", ".join(f"{k}={v}" for k, v in safe_updates.items()))
+
+
+def _redact_sensitive_config(value: object, *, key: str = "") -> object:
+    """Return a log-safe representation of a config update."""
+    if _is_sensitive_config_key(key):
+        return _REDACTED_VALUE
+    if isinstance(value, dict):
+        return {str(k): _redact_sensitive_config(v, key=str(k)) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_redact_sensitive_config(item) for item in value]
+    return value
+
+
+def _is_sensitive_config_key(key: str) -> bool:
+    normalized = key.lower().replace("-", "_")
+    return any(part in normalized for part in _SENSITIVE_CONFIG_KEY_PARTS)
 
 
 async def update_config_file_async(config_path: Path, **updates: object) -> None:

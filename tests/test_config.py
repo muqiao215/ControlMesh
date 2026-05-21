@@ -70,6 +70,30 @@ def test_config_example_validates_against_agent_config() -> None:
     assert cfg.gateways.events["ask-user-question"].enabled is False
 
 
+def test_update_config_file_redacts_sensitive_values_in_logs(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from controlmesh.config import update_config_file
+
+    config_path = tmp_path / "config.json"
+    config_path.write_text("{}", encoding="utf-8")
+
+    with caplog.at_level("INFO", logger="controlmesh.config"):
+        update_config_file(
+            config_path,
+            api={"token": "ghp_secret_token"},
+            feishu={"app_secret": "sec_secret"},
+            public_value="visible",
+        )
+
+    log_text = caplog.text
+    assert "ghp_secret_token" not in log_text
+    assert "sec_secret" not in log_text
+    assert "***REDACTED***" in log_text
+    assert "public_value=visible" in log_text
+
+
 def test_agent_config_normalizes_nullish_gemini_api_key() -> None:
     assert AgentConfig(gemini_api_key="null").gemini_api_key is None
     assert AgentConfig(gemini_api_key=" NONE ").gemini_api_key is None

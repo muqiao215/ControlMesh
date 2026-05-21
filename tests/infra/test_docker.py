@@ -207,6 +207,26 @@ class TestDockerManager:
         rc, _ = await mgr._exec("sleep", "10", deadline_seconds=0.1)
         assert rc != 0
 
+    def test_redact_docker_env_values_hides_secret_values(self) -> None:
+        from controlmesh.infra.docker import _redact_docker_env_values
+
+        cmd = [
+            "docker",
+            "run",
+            "-e",
+            "API_KEY=sk-secret",
+            "--env",
+            "PLAIN=value",
+            "image",
+        ]
+
+        redacted = _redact_docker_env_values(cmd)
+
+        assert "API_KEY=***REDACTED***" in redacted
+        assert "PLAIN=***REDACTED***" in redacted
+        assert "sk-secret" not in " ".join(redacted)
+        assert "PLAIN=value" not in redacted
+
     async def test_mounts_full_controlmesh_home(
         self, docker_config: DockerConfig, docker_paths: ControlMeshPaths
     ) -> None:
