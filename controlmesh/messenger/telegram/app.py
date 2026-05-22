@@ -128,6 +128,35 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+
+def _log_text_preview(text: str | None, *, limit: int = 120) -> str:
+    """Return a compact diagnostic preview without logging full user content."""
+    if not text:
+        return ""
+    preview = text.replace("\n", "\\n").replace("\r", "\\r")[:limit]
+    for marker in ("token=", "key=", "password=", "secret="):
+        lower = preview.lower()
+        start = lower.find(marker)
+        if start < 0:
+            continue
+        value_start = start + len(marker)
+        value_end = len(preview)
+        for separator in (" ", "&", "\\n"):
+            pos = preview.find(separator, value_start)
+            if pos >= 0:
+                value_end = min(value_end, pos)
+        preview = f"{preview[:value_start]}[redacted]{preview[value_end:]}"
+    scheme_pos = preview.find("://")
+    if scheme_pos >= 0:
+        query_pos = preview.find("?", scheme_pos + 3)
+        fragment_pos = preview.find("#", scheme_pos + 3)
+        redaction_pos = min(pos for pos in (query_pos, fragment_pos) if pos >= 0) if query_pos >= 0 or fragment_pos >= 0 else -1
+        if redaction_pos >= 0:
+            tail = "..." if len(text) > limit else ""
+            return f"{preview[:redaction_pos]}?[redacted]{tail}"
+    return f"{preview}..." if len(text) > limit else preview
+
+
 _WELCOME_IMAGE = Path(__file__).resolve().parent / "controlmesh_images" / "welcome.png"
 _CAPTION_LIMIT = 1024
 _INBOUND_DRAIN_OWNER = "telegram_frontstage"
@@ -1822,17 +1851,47 @@ class TelegramBot:
                     and not is_media_addressed(message, self._bot_id, self._bot_username)
                 )
             ):
+                logger.info(
+                    "telegram drop: media not addressed chat_id=%s message_id=%s from_user=%s content_type=%s",
+                    message.chat.id,
+                    message.message_id,
+                    getattr(getattr(message, "from_user", None), "id", None),
+                    getattr(message, "content_type", None),
+                )
                 return None
             paths = self._orch.paths
             return await resolve_media_text(
                 self._bot, message, paths.telegram_files_dir, paths.workspace
             )
         if not message.text:
+            logger.info(
+                "telegram drop: no message.text chat_id=%s message_id=%s from_user=%s content_type=%s",
+                message.chat.id,
+                message.message_id,
+                getattr(getattr(message, "from_user", None), "id", None),
+                getattr(message, "content_type", None),
+            )
             return None
         if is_group:
             if self._is_for_others(message):
+                logger.info(
+                    "telegram drop: command for other bot chat_id=%s message_id=%s from_user=%s text_preview=%r entities=%r",
+                    message.chat.id,
+                    message.message_id,
+                    getattr(getattr(message, "from_user", None), "id", None),
+                    _log_text_preview(message.text),
+                    getattr(message, "entities", None),
+                )
                 return None
             if self._config.group_mention_only and not self._is_addressed(message):
+                logger.info(
+                    "telegram drop: group_mention_only not addressed chat_id=%s message_id=%s from_user=%s text_preview=%r entities=%r",
+                    message.chat.id,
+                    message.message_id,
+                    getattr(getattr(message, "from_user", None), "id", None),
+                    _log_text_preview(message.text),
+                    getattr(message, "entities", None),
+                )
                 return None
         text = strip_mention(message.text, self._bot_username)
         inbound_kind = classify_inbound_text(text)
@@ -1863,6 +1922,13 @@ class TelegramBot:
             )
             return None
         if inbound_kind == "quarantine":
+            logger.warning(
+                "telegram drop: inbound quarantine chat_id=%s message_id=%s from_user=%s patterns=%s",
+                message.chat.id,
+                message.message_id,
+                getattr(getattr(message, "from_user", None), "id", None),
+                ", ".join(patterns) if patterns else "none",
+            )
             return None
         return text
 

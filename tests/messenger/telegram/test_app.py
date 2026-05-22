@@ -110,6 +110,10 @@ def _make_message(
     msg.chat.type = chat_type
     type(msg).message_id = PropertyMock(return_value=message_id)
     msg.text = text
+    msg.entities = None
+    msg.caption = None
+    msg.caption_entities = None
+    msg.reply_to_message = None
     msg.answer = AsyncMock(return_value=msg)
     msg.model_dump = MagicMock(
         return_value={
@@ -816,6 +820,17 @@ class TestResolveText:
         result = await tg_bot._resolve_text(msg)
         assert result == "Hello"
 
+    async def test_plain_url_message_is_not_treated_as_media_or_suspicious(self) -> None:
+        tg_bot, _ = _make_tg_bot()
+        tg_bot.bot_instance_username = "mybot"
+        tg_bot._orchestrator = _make_orchestrator()
+        msg = _make_message(text="https://github.com/muqiao215/ControlMesh")
+        msg.entities = [MagicMock(type="url", offset=0, length=len(msg.text))]
+
+        result = await tg_bot._resolve_text(msg)
+
+        assert result == "https://github.com/muqiao215/ControlMesh"
+
     async def test_pasted_chat_transcript_reduces_to_last_message(self) -> None:
         tg_bot, _ = _make_tg_bot()
         tg_bot.bot_instance_username = "mybot"
@@ -852,6 +867,28 @@ class TestResolveText:
         msg = _make_message(text=None)
         result = await tg_bot._resolve_text(msg)
         assert result is None
+
+    @patch("controlmesh.messenger.telegram.app.logger")
+    async def test_logs_group_mention_only_drop_reason(self, mock_logger: MagicMock) -> None:
+        cfg = _make_config(group_mention_only=True)
+        tg_bot, _ = _make_tg_bot(cfg)
+        tg_bot.bot_instance_username = "mybot"
+        tg_bot._bot_username = "mybot"
+        tg_bot._orchestrator = _make_orchestrator()
+        msg = _make_message(
+            chat_id=-100,
+            chat_type="supergroup",
+            text="https://github.com/muqiao215/ControlMesh",
+        )
+        msg.entities = [MagicMock(type="url", offset=0, length=len(msg.text))]
+
+        result = await tg_bot._resolve_text(msg)
+
+        assert result is None
+        assert any(
+            "group_mention_only not addressed" in call.args[0]
+            for call in mock_logger.info.call_args_list
+        )
 
     @patch("controlmesh.messenger.telegram.app.resolve_media_text", new_callable=AsyncMock)
     @patch("controlmesh.messenger.telegram.app.has_media", return_value=True)

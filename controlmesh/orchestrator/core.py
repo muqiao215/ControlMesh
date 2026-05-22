@@ -115,6 +115,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _NATIVE_COMMAND_MODE_PROVIDERS = frozenset({"claude", "codex", "gemini", "claw", "opencode"})
+_PROVIDER_CONFIG_ERROR_PREFIXES = (
+    "error:invalid_provider_token",
+    "error:model_provider_mismatch",
+    "error:opencode_model_unrunnable",
+    "error:opencode_default_model_unresolved",
+    "error:missing_model_for_runtime_provider",
+)
 
 
 _TextCallback = Callable[[str], Awaitable[None]]
@@ -429,13 +436,53 @@ class Orchestrator:
         except (CLIError, StreamError, SessionError, CronError, WebhookError, WorkspaceError):
             logger.exception("Domain error in handle_message")
             result = OrchestratorResult(text="An internal error occurred. Please try again.")
-        except (OSError, RuntimeError, ValueError, TypeError, KeyError):
+        except ValueError as exc:
+            provider_error = self._provider_config_error_message(exc)
+            if provider_error is not None:
+                logger.warning("Provider configuration error in handle_message: %s", exc)
+                result = OrchestratorResult(text=provider_error)
+            else:
+                logger.exception("Unexpected error in handle_message")
+                result = OrchestratorResult(text="An internal error occurred. Please try again.")
+        except (OSError, RuntimeError, TypeError, KeyError):
             logger.exception("Unexpected error in handle_message")
             result = OrchestratorResult(text="An internal error occurred. Please try again.")
 
         if should_record_history:
             await self._record_frontstage_assistant_turn(dispatch.key, result)
         return result
+
+    @staticmethod
+    def _provider_config_error_message(exc: ValueError) -> str | None:
+        """Render known provider/model binding failures without exposing arbitrary exceptions."""
+        message = str(exc).strip()
+        if not message.startswith(_PROVIDER_CONFIG_ERROR_PREFIXES):
+            return None
+        if message.startswith("error:opencode_model_unrunnable"):
+            return (
+                "OpenCode model is not runnable with the current configuration.\n\n"
+                f"{message}\n\n"
+                "Check your OpenCode provider config, model id, and API key, then switch models again."
+            )
+        if message == "error:opencode_default_model_unresolved":
+            return (
+                "OpenCode has no runnable default model configured.\n\n"
+                "Set a valid OpenCode model in ControlMesh, or configure OpenCode with a runnable "
+                "default model and API key."
+            )
+        if message.startswith("error:model_provider_mismatch"):
+            return (
+                "The selected model does not match the selected provider.\n\n"
+                f"{message}\n\n"
+                "Switch to a model that belongs to this provider, or change the provider first."
+            )
+        if message.startswith("error:missing_model_for_runtime_provider"):
+            return (
+                "The selected runtime provider needs an explicit model.\n\n"
+                f"{message}\n\n"
+                "Set a model for this provider before sending the request again."
+            )
+        return f"Provider configuration error.\n\n{message}"
 
     @staticmethod
     def _is_history_read_command(cmd: str) -> bool:

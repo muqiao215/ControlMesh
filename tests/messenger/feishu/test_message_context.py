@@ -77,3 +77,33 @@ def test_extract_content_falls_back_to_cm_post_parser_when_auth_kit_unavailable(
 
     assert parsed.text == "**项目更新**\n\n继续推进"
     assert parsed.post_title == "项目更新"
+
+
+def test_post_link_is_rendered_into_agent_text(monkeypatch) -> None:
+    monkeypatch.setattr(
+        message_context,
+        "parse_feishu_auth_kit_message_context",
+        lambda _payload: {},
+    )
+    content = {
+        "zh_cn": {
+            "content": [
+                [
+                    {"tag": "text", "text": "看看 "},
+                    {
+                        "tag": "a",
+                        "text": "ControlMesh",
+                        "href": "https://github.com/muqiao215/ControlMesh",
+                    },
+                ]
+            ],
+        }
+    }
+
+    parsed = message_context.extract_feishu_content_from_event(
+        {"event": {"message": {"message_type": "post", "content": content}}},
+        "post",
+        content,
+    )
+
+    assert parsed.text == "看看 [ControlMesh](https://github.com/muqiao215/ControlMesh)"

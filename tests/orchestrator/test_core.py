@@ -807,6 +807,20 @@ async def test_infrastructure_errors_return_safe_message(
     assert "internal error" in result.text.lower()
 
 
+async def test_provider_config_value_error_returns_actionable_message(orch: Orchestrator) -> None:
+    object.__setattr__(
+        orch._cli_service,
+        "execute",
+        AsyncMock(side_effect=ValueError("error:opencode_model_unrunnable model=zhipuai/glm-5.1")),
+    )
+
+    result = await orch.handle_message(SessionKey(chat_id=1), "Hello")
+
+    assert "OpenCode model is not runnable" in result.text
+    assert "error:opencode_model_unrunnable model=zhipuai/glm-5.1" in result.text
+    assert "internal error" not in result.text.lower()
+
+
 async def test_cancelled_error_propagates(orch: Orchestrator) -> None:
     object.__setattr__(orch._cli_service, "execute", AsyncMock(side_effect=asyncio.CancelledError))
     with pytest.raises(asyncio.CancelledError):
