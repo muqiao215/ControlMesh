@@ -17,7 +17,12 @@ def test_docker_wrap_without_container() -> None:
 
 def test_docker_wrap_with_container() -> None:
     cmd = ["claude", "-p", "hello"]
-    cfg = CLIConfig(docker_container="my-sandbox", chat_id=42, working_dir="/workspace")
+    cfg = CLIConfig(
+        docker_container="my-sandbox",
+        chat_id=42,
+        working_dir="/workspace",
+        claude_root_force_bypass_via_is_sandbox=False,
+    )
     result_cmd, cwd = docker_wrap(cmd, cfg)
     assert result_cmd == [
         "docker",
@@ -38,8 +43,6 @@ def test_docker_wrap_with_container() -> None:
         "CONTROLMESH_SHARED_MEMORY_PATH=/controlmesh/SHAREDMEMORY.md",
         "-e",
         "CONTROLMESH_INTERAGENT_HOST=host.docker.internal",
-        "-e",
-        "IS_SANDBOX=1",
         "my-sandbox",
         "claude",
         "-p",
@@ -50,7 +53,12 @@ def test_docker_wrap_with_container() -> None:
 
 def test_docker_wrap_interactive() -> None:
     cmd = ["gemini", "--output-format", "json"]
-    cfg = CLIConfig(docker_container="my-sandbox", chat_id=42, working_dir="/workspace")
+    cfg = CLIConfig(
+        docker_container="my-sandbox",
+        chat_id=42,
+        working_dir="/workspace",
+        claude_root_force_bypass_via_is_sandbox=False,
+    )
     result_cmd, cwd = docker_wrap(cmd, cfg, interactive=True)
     assert result_cmd == [
         "docker",
@@ -72,8 +80,6 @@ def test_docker_wrap_interactive() -> None:
         "CONTROLMESH_SHARED_MEMORY_PATH=/controlmesh/SHAREDMEMORY.md",
         "-e",
         "CONTROLMESH_INTERAGENT_HOST=host.docker.internal",
-        "-e",
-        "IS_SANDBOX=1",
         "my-sandbox",
         "gemini",
         "--output-format",

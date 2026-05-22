@@ -780,6 +780,10 @@ class TestUpgradeCli:
         current = get_current_version()
         with (
             patch("controlmesh.infra.install.detect_install_mode", return_value="pipx"),
+            patch(
+                "controlmesh.infra.install.classify_runtime",
+                return_value=SimpleNamespace(kind="official-package"),
+            ),
             patch(f"{_LIFECYCLE}.resolve_paths", return_value=paths),
             patch(
                 "controlmesh.infra.updater.perform_upgrade_pipeline",
@@ -798,6 +802,10 @@ class TestUpgradeCli:
         paths.controlmesh_home.mkdir(parents=True)
         with (
             patch("controlmesh.infra.install.detect_install_mode", return_value="pip"),
+            patch(
+                "controlmesh.infra.install.classify_runtime",
+                return_value=SimpleNamespace(kind="official-package"),
+            ),
             patch(f"{_LIFECYCLE}.resolve_paths", return_value=paths),
             patch(
                 "controlmesh.infra.updater.perform_upgrade_pipeline",
@@ -1167,6 +1175,7 @@ class TestMainDispatch:
             patch("sys.argv", ["controlmesh"]),
             patch("controlmesh.__main__.detect_runtime_provenance", return_value=provenance),
             patch("controlmesh.__main__.classify_runtime", return_value=runtime),
+            patch("controlmesh.__main__._is_configured", return_value=True),
             patch("controlmesh.__main__._start_bot") as mock_start,
         ):
             main()
