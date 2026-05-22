@@ -646,6 +646,18 @@ class TestOnRestart:
 
 
 class TestOnMessage:
+    async def test_groups_disabled_blocks_group_messages(self) -> None:
+        cfg = _make_config()
+        cfg.telegram_groups_enabled = False
+        tg_bot, _ = _make_tg_bot(cfg)
+        tg_bot._orchestrator = _make_orchestrator()
+        msg = _make_message(chat_type="group", chat_id=-1001, text="Hello group")
+
+        await tg_bot._on_message(msg)
+
+        tg_bot._orchestrator.handle_message.assert_not_called()
+        tg_bot._orchestrator.handle_message_streaming.assert_not_called()
+
     async def test_routes_text_to_non_streaming(self) -> None:
         config = _make_config(streaming_enabled=False)
         tg_bot, _bot_instance = _make_tg_bot(config)
@@ -871,6 +883,7 @@ class TestResolveText:
     @patch("controlmesh.messenger.telegram.app.logger")
     async def test_logs_group_mention_only_drop_reason(self, mock_logger: MagicMock) -> None:
         cfg = _make_config(group_mention_only=True)
+        cfg.telegram_groups_enabled = True
         tg_bot, _ = _make_tg_bot(cfg)
         tg_bot.bot_instance_username = "mybot"
         tg_bot._bot_username = "mybot"
@@ -909,6 +922,7 @@ class TestResolveText:
         self, _mock_has: MagicMock, _mock_addr: MagicMock
     ) -> None:
         cfg = _make_config(group_mention_only=True)
+        cfg.telegram_groups_enabled = True
         tg_bot, _ = _make_tg_bot(cfg)
         tg_bot._orchestrator = _make_orchestrator()
         msg = _make_message(chat_type="group")
@@ -921,7 +935,9 @@ class TestResolveText:
     async def test_media_in_group_not_addressed_mention_not_required(
         self, _mock_has: MagicMock, mock_resolve: AsyncMock
     ) -> None:
-        tg_bot, _ = _make_tg_bot()
+        cfg = _make_config()
+        cfg.telegram_groups_enabled = True
+        tg_bot, _ = _make_tg_bot(cfg)
         tg_bot._orchestrator = _make_orchestrator()
         msg = _make_message(chat_type="group")
         mock_resolve.return_value = "[MEDIA]"
@@ -935,7 +951,9 @@ class TestResolveText:
     async def test_media_in_group_addressed(
         self, _mock_has: MagicMock, _mock_addr: MagicMock, mock_resolve: AsyncMock
     ) -> None:
-        tg_bot, _ = _make_tg_bot()
+        cfg = _make_config()
+        cfg.telegram_groups_enabled = True
+        tg_bot, _ = _make_tg_bot(cfg)
         tg_bot._orchestrator = _make_orchestrator()
         msg = _make_message(chat_type="supergroup")
         mock_resolve.return_value = "[MEDIA]"
@@ -948,7 +966,9 @@ class TestResolveText:
     async def test_media_in_group_for_other_bot(
         self, _mock_has: MagicMock, _mock_others: MagicMock
     ) -> None:
-        tg_bot, _ = _make_tg_bot()
+        cfg = _make_config()
+        cfg.telegram_groups_enabled = True
+        tg_bot, _ = _make_tg_bot(cfg)
         tg_bot._orchestrator = _make_orchestrator()
         msg = _make_message(chat_type="group")
 

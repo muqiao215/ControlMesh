@@ -85,6 +85,7 @@ Changes take effect on the next CLI invocation (mtime-based cache invalidation, 
 | `transports` | `list[str]` | `[]` | List of transports to run in parallel (e.g. `["telegram", "matrix"]`). When empty, falls back to single `transport` value. |
 | `telegram_token` | `str` | `""` | Telegram bot token (required when `transport=telegram`) |
 | `allowed_user_ids` | `list[int]` | `[]` | Telegram user allowlist (applies in both private and group chats) |
+| `telegram_groups_enabled` | `bool` | `false` | Telegram group ingress master switch. When `false`, group chats are rejected and the bot auto-leaves them |
 | `allowed_group_ids` | `list[int]` | `[]` | Telegram group allowlist (which groups the bot can operate in; default `[]` = no groups, fail-closed). In groups, both the group and the user must be allowlisted |
 | `group_mention_only` | `bool` | `false` | Mention/reply gating in group rooms. Telegram: filter only (no auth bypass). Matrix: in non-DM rooms this bypasses `allowed_users` and uses room + mention/reply as gate |
 | `matrix` | `MatrixConfig` | see below | Matrix homeserver connection (required when `transport=matrix`) |

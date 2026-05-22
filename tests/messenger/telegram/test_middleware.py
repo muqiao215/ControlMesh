@@ -128,6 +128,18 @@ class TestAuthMiddleware:
         handler.assert_not_called()
         assert result is None
 
+    async def test_groups_disabled_blocks_all_groups(self) -> None:
+        from controlmesh.messenger.telegram.middleware import AuthMiddleware
+
+        mw = AuthMiddleware(allowed_user_ids={100}, allowed_group_ids={-1001}, groups_enabled=False)
+        handler = AsyncMock()
+        msg = _make_message(user_id=100, chat_type="group", chat_id=-1001)
+
+        result = await mw(handler, msg, {})
+
+        handler.assert_not_called()
+        assert result is None
+
     async def test_supergroup_uses_group_check(self) -> None:
         """Supergroups also go through group allowlist check."""
         from controlmesh.messenger.telegram.middleware import AuthMiddleware

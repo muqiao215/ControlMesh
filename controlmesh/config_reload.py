@@ -54,6 +54,7 @@ _HOT_RELOADABLE: frozenset[str] = frozenset(
         "cli_parameters",
         "allowed_user_ids",
         "allowed_group_ids",
+        "telegram_groups_enabled",
         "group_mention_only",
         "scene",
         "image",

@@ -100,10 +100,12 @@ class AuthMiddleware(BaseMiddleware):
         allowed_user_ids: set[int],
         *,
         allowed_group_ids: set[int] | None = None,
+        groups_enabled: bool = True,
         on_rejected: RejectedCallback | None = None,
     ) -> None:
         self._allowed_users = allowed_user_ids
         self._allowed_groups = allowed_group_ids or set()
+        self._groups_enabled = groups_enabled
         self._on_rejected = on_rejected
 
     async def __call__(
@@ -130,6 +132,8 @@ class AuthMiddleware(BaseMiddleware):
         chat_type = chat.type if chat else None
 
         if chat_type in ("group", "supergroup"):
+            if not self._groups_enabled:
+                return None
             group_id = chat.id if chat else None
             if group_id not in self._allowed_groups:
                 if self._on_rejected and chat:

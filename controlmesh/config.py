@@ -629,6 +629,7 @@ class AgentConfig(BaseModel):
     user_timezone: str = ""
     language: str = "en"
     update_check: bool = True
+    telegram_groups_enabled: bool = False
     group_mention_only: bool = False
     interagent_port: int = 8799
     transport: str = "telegram"  # "telegram" | "matrix" | "feishu" | "weixin" | "qqbot"

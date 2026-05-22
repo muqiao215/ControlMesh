@@ -51,7 +51,8 @@ If you authenticated Codex instead, use:
 }
 ```
 
-If you want group access, also set `allowed_group_ids`.
+Group chat handling is disabled by default. To enable it, set
+`telegram_groups_enabled: true` and also set `allowed_group_ids`.
 
 Start ControlMesh:
 

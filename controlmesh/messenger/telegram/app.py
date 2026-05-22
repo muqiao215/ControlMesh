@@ -517,6 +517,7 @@ class TelegramBot:
         allowed_groups = set(config.allowed_group_ids)
         self._allowed_users = allowed
         self._allowed_groups = allowed_groups
+        self._groups_enabled = bool(config.telegram_groups_enabled)
         self._chat_tracker: ChatTracker | None = None  # set in _on_startup
         self._topic_names = TopicNameCache()
         self._lock_pool = lock_pool or LockPool()
@@ -534,12 +535,21 @@ class TelegramBot:
         self._sequential.set_abort_all_handler(self._on_abort_all)
         self._sequential.set_quick_command_handler(self._on_quick_command)
         on_rejected = self._on_group_rejected
-        auth = AuthMiddleware(allowed, allowed_group_ids=allowed_groups, on_rejected=on_rejected)
-        self._router.message.outer_middleware(auth)
-        self._router.message.outer_middleware(self._sequential)
-        self._router.callback_query.outer_middleware(
-            AuthMiddleware(allowed, allowed_group_ids=allowed_groups, on_rejected=on_rejected)
+        self._message_auth = AuthMiddleware(
+            allowed,
+            allowed_group_ids=allowed_groups,
+            groups_enabled=self._groups_enabled,
+            on_rejected=on_rejected,
         )
+        self._callback_auth = AuthMiddleware(
+            allowed,
+            allowed_group_ids=allowed_groups,
+            groups_enabled=self._groups_enabled,
+            on_rejected=on_rejected,
+        )
+        self._router.message.outer_middleware(self._message_auth)
+        self._router.message.outer_middleware(self._sequential)
+        self._router.callback_query.outer_middleware(self._callback_auth)
 
         self._register_handlers()
         self._register_member_handlers()
@@ -628,6 +638,7 @@ class TelegramBot:
             self._configure_inbound_spool()
             self._sequential.set_bot_username(self._bot_username)
             await self._recover_inbound_spool()
+            await self.audit_groups()
             if self._poll_watchdog is None or self._poll_watchdog.done():
                 self._poll_watchdog = asyncio.create_task(
                     self._watch_poll_health(),
@@ -692,6 +703,12 @@ class TelegramBot:
             self._allowed_groups.update(config.allowed_group_ids)
             logger.info("Auth hot-reloaded: allowed_group_ids (%d)", len(self._allowed_groups))
             self._group_audit_task = asyncio.create_task(self._fire_audit())
+        if "telegram_groups_enabled" in hot:
+            val = bool(config.telegram_groups_enabled)
+            self._groups_enabled = val
+            self._message_auth._groups_enabled = val
+            self._callback_auth._groups_enabled = val
+            logger.info("Auth hot-reloaded: telegram_groups_enabled=%s", val)
         if "language" in hot:
             _rebuild_commands()
             self._lang_sync_task = asyncio.create_task(self._sync_commands())
@@ -707,6 +724,13 @@ class TelegramBot:
     async def _on_bot_added(self, event: ChatMemberUpdated) -> None:
         """Bot was added to a group."""
         chat = event.chat
+        if not self._groups_enabled:
+            with contextlib.suppress(TelegramAPIError):
+                await self._bot.leave_chat(chat.id)
+            if self._chat_tracker:
+                self._chat_tracker.record_leave(chat.id, "auto_left")
+            logger.info("Auto-left group chat_id=%d because telegram_groups_enabled=false", chat.id)
+            return
         allowed = chat.id in self._allowed_groups
         if self._chat_tracker:
             self._chat_tracker.record_join(
@@ -783,6 +807,15 @@ class TelegramBot:
         left = 0
         for rec in self._chat_tracker.get_all():
             if rec.status != "active":
+                continue
+            if not self._groups_enabled:
+                try:
+                    await self._bot.leave_chat(rec.chat_id)
+                except TelegramAPIError:
+                    logger.debug("audit_groups: leave_chat failed for %d", rec.chat_id, exc_info=True)
+                self._chat_tracker.record_leave(rec.chat_id, "auto_left")
+                logger.info("Audit: auto-left group %d (%s) because telegram_groups_enabled=false", rec.chat_id, rec.title)
+                left += 1
                 continue
             if rec.chat_id in self._allowed_groups:
                 continue
@@ -1645,6 +1678,15 @@ class TelegramBot:
             )
             self._persist_runtime_state()
             return
+        if not self._groups_enabled and message.chat.type in ("group", "supergroup"):
+            logger.info(
+                "telegram drop: groups disabled chat_id=%s message_id=%s from_user=%s text_preview=%r",
+                message.chat.id,
+                message.message_id,
+                getattr(getattr(message, "from_user", None), "id", None),
+                _log_text_preview(message.text),
+            )
+            return
         raw_text = strip_mention(message.text or "", self._bot_username) if message.text else ""
         inbound_kind = classify_inbound_text(raw_text) if raw_text else "normal_chat"
         if inbound_kind == "control_command":
@@ -1842,6 +1884,16 @@ class TelegramBot:
     async def _resolve_text(self, message: Message) -> str | None:
         """Extract processable text from *message* (plain text or media prompt)."""
         is_group = message.chat.type in ("group", "supergroup")
+        if is_group and not self._groups_enabled:
+            logger.info(
+                "telegram drop: groups disabled chat_id=%s message_id=%s from_user=%s text_preview=%r content_type=%s",
+                message.chat.id,
+                message.message_id,
+                getattr(getattr(message, "from_user", None), "id", None),
+                _log_text_preview(message.text),
+                getattr(message, "content_type", None),
+            )
+            return None
 
         if has_media(message):
             if is_group and (

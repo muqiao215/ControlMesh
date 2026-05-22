@@ -48,6 +48,7 @@ def test_agent_config_defaults() -> None:
     assert cfg.claude_root_force_bypass_via_is_sandbox is True
     assert cfg.gemini_api_key is None
     assert cfg.telegram_token == ""
+    assert cfg.telegram_groups_enabled is False
     assert cfg.allowed_user_ids == []
     assert cfg.codex_hooks == CodexHooksConfig()
     assert cfg.gateways == GatewayDispatchConfig()

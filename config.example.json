@@ -36,6 +36,7 @@
         -1001234567890,
         -1009876543210
     ],
+    "telegram_groups_enabled": false,
     "group_mention_only": false,
 
     "matrix": {
