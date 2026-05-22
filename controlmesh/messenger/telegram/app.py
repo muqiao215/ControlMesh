@@ -1717,14 +1717,28 @@ class TelegramBot:
             )
             return
         if inbound_kind == "quarantine":
-            entry = self._inbound_spool.enqueue([message.model_dump(mode="python", exclude_none=True)])
+            entry = self._inbound_spool.enqueue(
+                [
+                    message.model_dump(
+                        mode="python",
+                        exclude_none=True,
+                        exclude={"link_preview_options"},
+                    )
+                ]
+            )
             if entry:
                 pending = self._inbound_spool.find_pending(message.chat.id, message.message_id)
                 if pending is not None:
                     self._inbound_spool.quarantine(pending, reason="suspicious_input")
             return
         enqueued = self._inbound_spool.enqueue(
-            [message.model_dump(mode="python", exclude_none=True)]
+            [
+                message.model_dump(
+                    mode="python",
+                    exclude_none=True,
+                    exclude={"link_preview_options"},
+                )
+            ]
         )
         pending_entry = self._inbound_spool.find_pending(message.chat.id, message.message_id)
         if pending_entry is not None:

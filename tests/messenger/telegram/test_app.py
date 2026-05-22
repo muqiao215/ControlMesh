@@ -1842,7 +1842,11 @@ class TestTelegramRuntimeStateIntegration:
             await tg_bot._on_message(msg)
             await _wait_frontstage_idle(tg_bot)
 
-        msg.model_dump.assert_called_once_with(mode="python", exclude_none=True)
+        msg.model_dump.assert_called_once_with(
+            mode="python",
+            exclude_none=True,
+            exclude={"link_preview_options"},
+        )
         mock_run.assert_awaited_once()
         assert tg_bot._inbound_spool is not None
         assert tg_bot._inbound_spool.stats().pending_count == 0
