@@ -253,9 +253,8 @@ def uninstall() -> None:
 
 def upgrade() -> None:
     """Stop bot, upgrade package, restart."""
-    from controlmesh.infra.install import detect_install_mode
+    from controlmesh.infra.install import classify_runtime, detect_runtime_provenance
     from controlmesh.infra.updater import (
-        check_source_upgrade_status,
         perform_upgrade_pipeline,
         resolve_upgrade_target,
     )
@@ -272,28 +271,28 @@ def upgrade() -> None:
     )
 
     current = get_current_version()
-    mode = detect_install_mode()
+    runtime = classify_runtime(detect_runtime_provenance())
     requested_version = sys.argv[2] if len(sys.argv) >= 3 else None
 
-    if mode == "dev":
-        preflight = asyncio.run(check_source_upgrade_status(current_version=current))
-        if preflight.output:
-            _console.print(f"[dim]{preflight.output}[/dim]")
-        if not preflight.actionable:
-            _console.print(t_rich("lifecycle.upgrade.unchanged", version=current))
-            return
-        resolved_target = requested_version
-    else:
-        requested_logged, resolved_target = asyncio.run(
-            resolve_upgrade_target(
-                current_version=current,
-                requested_version=requested_version,
-            )
+    if runtime.kind == "hotfix-package":
+        _console.print(
+            "[yellow]Detected packaged hotfix runtime. Default upgrade will not overwrite it in this pass.[/yellow]"
         )
-        requested_version = requested_logged
-        if resolved_target is None:
-            _console.print(t_rich("lifecycle.upgrade.unchanged", version=current))
-            return
+        _console.print(
+            f"[dim]installed={runtime.hotfix_version or current} base={runtime.base_version} manager={runtime.manager}[/dim]"
+        )
+        return
+
+    requested_logged, resolved_target = asyncio.run(
+        resolve_upgrade_target(
+            current_version=current,
+            requested_version=requested_version,
+        )
+    )
+    requested_version = requested_logged
+    if runtime.kind == "official-package" and resolved_target is None:
+        _console.print(t_rich("lifecycle.upgrade.unchanged", version=current))
+        return
 
     # 1. Graceful stop
     stop_bot()
@@ -312,7 +311,7 @@ def upgrade() -> None:
 
     if not changed:
         _console.print(t_rich("lifecycle.upgrade.unchanged", version=actual))
-        if mode == "dev":
+        if runtime.kind in {"source-direct", "editable-install"}:
             _console.print(t_rich("lifecycle.upgrade.restarting"))
             _resume_after_upgrade()
         return

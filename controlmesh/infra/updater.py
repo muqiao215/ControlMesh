@@ -8,15 +8,26 @@ import inspect
 import json
 import logging
 import os
+import re
 import shutil
 import sys
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Iterator
 
 import controlmesh
 
-from controlmesh.infra.install import InstallInfo, detect_install_info, detect_runtime_provenance
+from controlmesh.infra.install import (
+    HotfixManifest,
+    InstallInfo,
+    classify_runtime,
+    detect_install_info,
+    detect_runtime_provenance,
+    hotfix_artifacts_dir,
+    save_hotfix_manifest,
+)
 from controlmesh.infra.version import (
     VersionInfo,
     _parse_version,
@@ -34,6 +45,8 @@ _VERIFY_DELAYS_S: tuple[float, ...] = (0.15, 0.35, 0.75, 1.5)
 VersionCallback = Callable[[VersionInfo], Awaitable[None]]
 
 _UPGRADE_SENTINEL_NAME = "upgrade-sentinel.json"
+_VERSION_LINE_RE = re.compile(r'^(version\s*=\s*")([^"]+)(")\s*$', re.MULTILINE)
+_INIT_VERSION_RE = re.compile(r'^(__version__\s*=\s*")([^"]+)(")\s*$', re.MULTILINE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,7 +177,9 @@ def _build_upgrade_command(
                 cmd.append("--force-reinstall")
             cmd.append(package_spec)
             return cmd
-        cmd = ["uv", "tool", "install", "--force-reinstall", "--refresh"]
+        cmd = ["uv", "tool", "install", "--force", "--refresh"]
+        if force_reinstall:
+            cmd.append("--reinstall")
         cmd.append(package_spec)
         return cmd
 
@@ -299,6 +314,166 @@ def _short_commit(commit_id: str | None) -> str:
     if not commit_id:
         return "unknown"
     return commit_id[:7]
+
+
+def _hotfix_version(base_version: str, commit_id: str | None) -> str:
+    """Build a PEP 440 local version identifier for a packaged hotfix."""
+    stamp = datetime.now(UTC).strftime("%Y%m%d")
+    suffix = _short_commit(commit_id)
+    return f"{base_version}+hotfix.{stamp}.{suffix}"
+
+
+def _replace_single_version(pattern: re.Pattern[str], text: str, version: str, label: str) -> str:
+    """Replace exactly one version declaration in a text blob."""
+    replaced, count = pattern.subn(rf'\g<1>{version}\g<3>', text, count=1)
+    if count != 1:
+        raise ValueError(f"Could not update {label} version declaration")
+    return replaced
+
+
+@contextlib.contextmanager
+def _temporary_hotfix_version(repo_root: Path, hotfix_version: str) -> Iterator[None]:
+    """Temporarily rewrite package version files for wheel build."""
+    pyproject_path = repo_root / "pyproject.toml"
+    init_path = repo_root / "controlmesh" / "__init__.py"
+    original_pyproject = pyproject_path.read_text(encoding="utf-8")
+    original_init = init_path.read_text(encoding="utf-8")
+    pyproject_path.write_text(
+        _replace_single_version(_VERSION_LINE_RE, original_pyproject, hotfix_version, "pyproject"),
+        encoding="utf-8",
+    )
+    init_path.write_text(
+        _replace_single_version(_INIT_VERSION_RE, original_init, hotfix_version, "__init__"),
+        encoding="utf-8",
+    )
+    try:
+        yield
+    finally:
+        pyproject_path.write_text(original_pyproject, encoding="utf-8")
+        init_path.write_text(original_init, encoding="utf-8")
+
+
+async def _build_hotfix_artifacts(
+    *,
+    repo_root: Path,
+    base_version: str,
+    commit_id: str | None,
+    manager: str,
+) -> tuple[str, Path, Path | None, HotfixManifest]:
+    """Build a hotfix wheel plus patch artifact and return its manifest."""
+    artifacts_dir = hotfix_artifacts_dir()
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+    hotfix_version = _hotfix_version(base_version, commit_id)
+    wheel_dir = artifacts_dir / hotfix_version
+    wheel_dir.mkdir(parents=True, exist_ok=True)
+
+    patch_file: Path | None = None
+    ok, patch_output = await _git_output(repo_root, "diff", "HEAD")
+    if ok and patch_output.strip():
+        patch_file = wheel_dir / f"{hotfix_version}.patch"
+        patch_file.write_text(patch_output, encoding="utf-8")
+
+    with _temporary_hotfix_version(repo_root, hotfix_version):
+        env = {**os.environ, "PIP_NO_CACHE_DIR": "1"}
+        build_cmd = ["uv", "build", "--wheel", "--out-dir", str(wheel_dir), str(repo_root)]
+        ok, build_output = await _run_upgrade_command(build_cmd, env=env, cwd=str(repo_root))
+        if not ok:
+            raise RuntimeError(build_output.strip() or "Failed to build hotfix wheel")
+
+    wheels = sorted(wheel_dir.glob("*.whl"))
+    if not wheels:
+        raise RuntimeError("Hotfix build finished without a wheel artifact")
+    wheel_path = wheels[-1]
+
+    manifest = HotfixManifest(
+        kind="controlmesh-hotfix",
+        base_version=base_version,
+        hotfix_version=hotfix_version,
+        source_path=str(repo_root),
+        git_sha=commit_id,
+        dirty=patch_file is not None,
+        patch_file=str(patch_file) if patch_file else None,
+        installed_by=manager,
+        installed_at=datetime.now(UTC).isoformat(),
+    )
+    return hotfix_version, wheel_path, patch_file, manifest
+
+
+async def _install_hotfix_wheel(
+    *,
+    wheel_path: Path,
+    manager: str,
+    repo_root: Path,
+) -> tuple[bool, str]:
+    """Install a locally-built hotfix wheel back into the managed runtime."""
+    env = {**os.environ, "PIP_NO_CACHE_DIR": "1"}
+    if manager == "uv_tool":
+        cmd = ["uv", "tool", "install", "--force", "--reinstall", str(wheel_path)]
+        return await _run_upgrade_command(cmd, env=env, cwd=str(repo_root))
+    if manager == "pipx":
+        cmd = ["pipx", "install", "--force", str(wheel_path)]
+        return await _run_upgrade_command(cmd, env=env, cwd=str(repo_root))
+    cmd = [
+        "uv",
+        "pip",
+        "install",
+        "--python",
+        sys.executable,
+        "--reinstall",
+        str(wheel_path),
+    ]
+    return await _run_upgrade_command(cmd, env=env, cwd=str(repo_root))
+
+
+async def _seal_source_hotfix_pipeline(
+    *,
+    current_version: str,
+    runtime_kind: str,
+    repo_root: Path,
+    manager: str,
+    outputs: list[str] | None = None,
+) -> tuple[bool, str, str]:
+    """Build and install a packaged hotfix from a source-direct/editable runtime."""
+    outputs = list(outputs or [])
+    outputs.append(f"runtime_kind={runtime_kind}")
+    current_commit = await _get_git_head(repo_root)
+    hotfix_version, wheel_path, _patch_file, manifest = await _build_hotfix_artifacts(
+        repo_root=repo_root,
+        base_version=current_version,
+        commit_id=current_commit,
+        manager=manager,
+    )
+    outputs.append(f"built_hotfix={hotfix_version}")
+    outputs.append(f"wheel={wheel_path}")
+
+    ok, install_output = await _install_hotfix_wheel(
+        wheel_path=wheel_path,
+        manager=manager,
+        repo_root=repo_root,
+    )
+    outputs.append(install_output)
+    if not ok:
+        return False, current_version, _combine_outputs(outputs)
+
+    save_hotfix_manifest(manifest)
+    installed_state = await _wait_for_install_change(InstalledState(version=current_version))
+    post_version, post_imported_file, post_python = await _inspect_runtime_after_upgrade()
+    if (
+        post_version != hotfix_version
+        or _runtime_import_looks_polluted(post_imported_file)
+        or str(repo_root).replace("\\", "/") in post_imported_file.replace("\\", "/")
+    ):
+        outputs.append(
+            "Hotfix wheel installed, but runtime verification failed.\n"
+            f"version: {post_version}\n"
+            f"file: {post_imported_file}\n"
+            f"python: {post_python}\n"
+            f"observed_installed_version: {installed_state.version}"
+        )
+        return False, current_version, _combine_outputs(outputs)
+
+    return True, hotfix_version, _combine_outputs(outputs)
 
 
 async def check_source_upgrade_status(
@@ -835,13 +1010,6 @@ async def perform_upgrade_pipeline(
     Returns:
         ``(changed, installed_version, output)``
     """
-    install_info = detect_install_info()
-    if install_info.mode == "dev":
-        return await _perform_source_upgrade_pipeline(
-            current_version=current_version,
-            install_info=install_info,
-        )
-
     normalized_target = _normalize_target_version(target_version)
     normalized_requested = _normalize_target_version(requested_version) or normalized_target
     outputs: list[str] = [
@@ -852,8 +1020,47 @@ async def perform_upgrade_pipeline(
     ]
 
     provenance = detect_runtime_provenance()
+    install_info = detect_install_info()
+    runtime = classify_runtime(provenance, install_info=install_info)
+    outputs.append(
+        f"runtime_kind={runtime.kind}\n"
+        f"runtime_manager={runtime.manager}\n"
+        f"base_version={runtime.base_version}"
+    )
+
+    if runtime.kind in {"source-direct", "editable-install"}:
+        repo_root_text = runtime.source_path
+        if not repo_root_text:
+            return False, current_version, _combine_outputs([*outputs, "Could not determine source checkout to seal."])
+        try:
+            repo_root = Path(repo_root_text).expanduser().resolve()
+        except OSError:
+            return False, current_version, _combine_outputs([*outputs, f"Invalid source checkout path: {repo_root_text}"])
+        try:
+            return await _seal_source_hotfix_pipeline(
+                current_version=current_version,
+                runtime_kind=runtime.kind,
+                repo_root=repo_root,
+                manager=runtime.manager,
+                outputs=outputs,
+            )
+        except Exception as exc:
+            outputs.append(str(exc))
+            return False, current_version, _combine_outputs(outputs)
+
+    if runtime.kind == "hotfix-package":
+        message = (
+            "Detected packaged hotfix runtime. Default upgrade will not overwrite it.\n"
+            f"installed={runtime.hotfix_version or current_version}\n"
+            f"base={runtime.base_version}\n"
+            "Support for explicit discard/rebase flags is not implemented in this pass."
+        )
+        return False, current_version, _combine_outputs([*outputs, message])
+
+    install_info = runtime.install_info
     pre_version, pre_imported_file, pre_python = _inspect_current_runtime()
-    if _runtime_import_looks_polluted(pre_imported_file) or not provenance.matches_expected:
+    path_mismatch = not getattr(provenance, "path_matches_expected", provenance.matches_expected)
+    if _runtime_import_looks_polluted(pre_imported_file) or path_mismatch:
         message = (
             "Refusing upgrade: current runtime import path is polluted.\n"
             f"version: {pre_version}\n"

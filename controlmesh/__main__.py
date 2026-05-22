@@ -53,7 +53,7 @@ from controlmesh.config import (
     deep_merge_config,
 )
 from controlmesh.i18n import t_rich
-from controlmesh.infra.install import detect_runtime_provenance
+from controlmesh.infra.install import classify_runtime, detect_runtime_provenance
 from controlmesh.infra.json_store import atomic_json_save
 from controlmesh.infra.version import get_current_version
 from controlmesh.provider_health import (
@@ -563,12 +563,14 @@ def _print_version() -> None:
 
 
 def _enforce_runtime_provenance() -> None:
-    """Fail fast when packaged installs import controlmesh from the wrong path."""
+    """Fail fast on unknown packaged drift, but allow explicit source hotfix states."""
     provenance = detect_runtime_provenance()
-    if provenance.matches_expected:
+    runtime = classify_runtime(provenance)
+    if runtime.kind in {"official-package", "hotfix-package", "source-direct", "editable-install"}:
         return
 
     _console.print("[red]ControlMesh runtime path drift detected.[/red]")
+    _console.print(f"Runtime kind: {runtime.kind}")
     _console.print(f"Install mode: {provenance.install_info.mode}/{provenance.install_info.source}")
     _console.print(f"Installed version: {provenance.installed_version}")
     _console.print(f"Imported version: {provenance.imported_version}")
@@ -580,10 +582,10 @@ def _enforce_runtime_provenance() -> None:
     if provenance.reason:
         _console.print(f"Reason: {provenance.reason}")
     _console.print(
-        "[yellow]Refusing to start because the live process is not importing ControlMesh from the expected installed runtime.[/yellow]"
+        "[yellow]Refusing to start because the live process is in an unknown runtime state, not a recognized packaged or source-hotfix runtime.[/yellow]"
     )
     _console.print(
-        "[dim]Fix the service wrapper or environment so it runs the packaged install directly, then restart the service.[/dim]"
+        "[dim]Fix the service wrapper or seal the source checkout into a packaged hotfix, then restart the service.[/dim]"
     )
     raise SystemExit(2)
 

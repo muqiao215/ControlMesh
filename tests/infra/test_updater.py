@@ -226,6 +226,8 @@ class TestPerformUpgradePipeline:
                 "controlmesh.infra.updater.detect_runtime_provenance",
                 return_value=SimpleNamespace(
                     matches_expected=False,
+                    path_matches_expected=False,
+                    version_matches_expected=False,
                     reason="imported module is outside expected runtime root",
                 ),
             ),
@@ -244,6 +246,58 @@ class TestPerformUpgradePipeline:
         assert "resolved_target_version=none" in output
         assert "/root/ControlMesh/controlmesh/__init__.py" in output
         mock_upgrade.assert_not_called()
+
+    async def test_allows_upgrade_when_only_runtime_version_drifted(self) -> None:
+        with (
+            patch(
+                "controlmesh.infra.updater.detect_install_info",
+                return_value=InstallInfo(mode="uv_tool", source="pypi"),
+            ),
+            patch(
+                "controlmesh.infra.updater.detect_runtime_provenance",
+                return_value=SimpleNamespace(
+                    matches_expected=False,
+                    path_matches_expected=True,
+                    version_matches_expected=False,
+                    reason="imported version 0.31.3 does not match installed package version 0.34.7",
+                ),
+            ),
+            patch(
+                "controlmesh.infra.updater._inspect_current_runtime",
+                return_value=(
+                    "0.31.3",
+                    "/root/.local/share/uv/tools/controlmesh/lib/python3.12/site-packages/controlmesh/__init__.py",
+                    "/root/.local/share/uv/tools/controlmesh/bin/python3",
+                ),
+            ),
+            patch(
+                "controlmesh.infra.updater._inspect_runtime_after_upgrade",
+                new=AsyncMock(
+                    return_value=(
+                        "0.34.10",
+                        "/root/.local/share/uv/tools/controlmesh/lib/python3.12/site-packages/controlmesh/__init__.py",
+                        "/root/.local/share/uv/tools/controlmesh/bin/python3",
+                    )
+                ),
+            ),
+            patch(
+                "controlmesh.infra.updater._perform_upgrade_impl",
+                new=AsyncMock(return_value=(True, "first-pass")),
+            ) as mock_upgrade,
+            patch(
+                "controlmesh.infra.updater._wait_for_install_change",
+                new=AsyncMock(return_value=InstalledState(version="0.34.10")),
+            ),
+        ):
+            changed, version, output = await perform_upgrade_pipeline(
+                current_version="0.34.7",
+                target_version="0.34.10",
+            )
+
+        assert changed is True
+        assert version == "0.34.10"
+        assert "Refusing upgrade: current runtime import path is polluted." not in output
+        mock_upgrade.assert_called_once_with(target_version="0.34.10", force_reinstall=False)
 
     async def test_missing_distribution_reports_broken_publish_when_github_release_exists(self) -> None:
         with (
@@ -499,89 +553,89 @@ class TestResolveUpgradeTarget:
     async def test_dev_install_fast_forwards_and_refreshes_editable_install(self) -> None:
         with (
             patch(
-                "controlmesh.infra.updater.detect_install_info",
-                return_value=InstallInfo(
-                    mode="dev",
-                    source="dev",
-                    local_path="/repo/controlmesh",
+                "controlmesh.infra.updater.classify_runtime",
+                return_value=SimpleNamespace(
+                    kind="source-direct",
+                    manager="uv_tool",
+                    base_version="1.0.0",
+                    source_path="/repo/controlmesh",
+                    hotfix_version=None,
+                    install_info=InstallInfo(mode="dev", source="dev", local_path="/repo/controlmesh"),
+                    provenance=SimpleNamespace(),
                 ),
             ),
             patch(
-                "controlmesh.infra.updater._resolve_source_repo_root",
-                new=AsyncMock(return_value=(Path("/repo/controlmesh"), "repo-root")),
-            ),
-            patch(
-                "controlmesh.infra.updater._read_source_state",
-                new=AsyncMock(return_value=InstalledState(version="1.0.0", commit_id="old123")),
-            ),
-            patch(
-                "controlmesh.infra.updater._git_output",
+                "controlmesh.infra.updater._get_git_head",
                 new=AsyncMock(
-                    side_effect=[
-                        (True, "main"),
-                        (True, ""),
-                        (True, "fetch-ok"),
-                        (True, "origin/main"),
-                        (True, "0\t3"),
-                        (True, "pull-ok"),
-                    ]
+                    return_value="old123",
                 ),
             ),
             patch(
-                "controlmesh.infra.updater._run_upgrade_command",
-                new=AsyncMock(return_value=(True, "reinstall-ok")),
-            ) as mock_run,
+                "controlmesh.infra.updater._build_hotfix_artifacts",
+                new=AsyncMock(
+                    return_value=(
+                        "1.0.0+hotfix.20260522.old123",
+                        Path("/tmp/controlmesh-1.0.0+hotfix.whl"),
+                        None,
+                        SimpleNamespace(),
+                    )
+                ),
+            ),
             patch(
-                "controlmesh.infra.updater._wait_for_source_state_change",
-                new=AsyncMock(return_value=InstalledState(version="1.0.0", commit_id="new456")),
+                "controlmesh.infra.updater._install_hotfix_wheel",
+                new=AsyncMock(return_value=(True, "install-ok")),
+            ),
+            patch("controlmesh.infra.updater.save_hotfix_manifest"),
+            patch(
+                "controlmesh.infra.updater._wait_for_install_change",
+                new=AsyncMock(return_value=InstalledState(version="1.0.0+hotfix.20260522.old123")),
+            ),
+            patch(
+                "controlmesh.infra.updater._inspect_runtime_after_upgrade",
+                new=AsyncMock(
+                    return_value=(
+                        "1.0.0+hotfix.20260522.old123",
+                        "/venv/site-packages/controlmesh/__init__.py",
+                        "/tmp/cm-python",
+                    )
+                ),
             ),
         ):
             changed, version, output = await perform_upgrade_pipeline(current_version="1.0.0")
 
         assert changed is True
-        assert version == "1.0.0"
-        assert "pull-ok" in output
-        assert "reinstall-ok" in output
-        assert mock_run.call_args.kwargs["cwd"] == "/repo/controlmesh"
+        assert version == "1.0.0+hotfix.20260522.old123"
+        assert "install-ok" in output
 
     async def test_dev_install_refuses_dirty_worktree(self) -> None:
         with (
             patch(
-                "controlmesh.infra.updater.detect_install_info",
-                return_value=InstallInfo(
-                    mode="dev",
-                    source="dev",
-                    local_path="/repo/controlmesh",
+                "controlmesh.infra.updater.classify_runtime",
+                return_value=SimpleNamespace(
+                    kind="source-direct",
+                    manager="uv_tool",
+                    base_version="1.0.0",
+                    source_path="/repo/controlmesh",
+                    hotfix_version=None,
+                    install_info=InstallInfo(mode="dev", source="dev", local_path="/repo/controlmesh"),
+                    provenance=SimpleNamespace(
+                        matches_expected=False,
+                        path_matches_expected=False,
+                        version_matches_expected=True,
+                        reason="",
+                        installed_version="1.0.0",
+                        imported_file="/repo/controlmesh/controlmesh/__init__.py",
+                        executable="/usr/bin/python3",
+                    ),
                 ),
             ),
-            patch(
-                "controlmesh.infra.updater._resolve_source_repo_root",
-                new=AsyncMock(return_value=(Path("/repo/controlmesh"), "repo-root")),
-            ),
-            patch(
-                "controlmesh.infra.updater._read_source_state",
-                new=AsyncMock(return_value=InstalledState(version="1.0.0", commit_id="old123")),
-            ),
-            patch(
-                "controlmesh.infra.updater._git_output",
-                new=AsyncMock(
-                    side_effect=[
-                        (True, "main"),
-                        (True, " M controlmesh/infra/updater.py\n?? notes.txt"),
-                    ]
-                ),
-            ),
-            patch(
-                "controlmesh.infra.updater._run_upgrade_command",
-                new=AsyncMock(return_value=(True, "should-not-run")),
-            ) as mock_run,
+            patch("controlmesh.infra.updater._build_hotfix_artifacts", new=AsyncMock(side_effect=RuntimeError("dirty worktree"))),
         ):
             changed, version, output = await perform_upgrade_pipeline(current_version="1.0.0")
 
         assert changed is False
         assert version == "1.0.0"
-        assert "worktree has uncommitted or untracked changes" in output
-        mock_run.assert_not_called()
+        assert "dirty worktree" in output
 
 
 class TestPerformUpgradeImpl:
@@ -685,7 +739,7 @@ class TestBuildUpgradeCommand:
             "controlmesh==0.22.4",
         ]
 
-    def test_uv_tool_install_uses_force_reinstall_refresh(self) -> None:
+    def test_uv_tool_install_uses_force_refresh_reinstall(self) -> None:
         cmd = _build_upgrade_command(
             mode="uv_tool",
             package_spec="controlmesh==0.25.0",
@@ -697,7 +751,25 @@ class TestBuildUpgradeCommand:
             "uv",
             "tool",
             "install",
-            "--force-reinstall",
+            "--force",
+            "--refresh",
+            "--reinstall",
+            "controlmesh==0.25.0",
+        ]
+
+    def test_uv_tool_install_without_reinstall_uses_force_refresh(self) -> None:
+        cmd = _build_upgrade_command(
+            mode="uv_tool",
+            package_spec="controlmesh==0.25.0",
+            target_version="0.25.0",
+            force_reinstall=False,
+        )
+
+        assert cmd == [
+            "uv",
+            "tool",
+            "install",
+            "--force",
             "--refresh",
             "controlmesh==0.25.0",
         ]

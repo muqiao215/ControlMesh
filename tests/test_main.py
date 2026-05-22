@@ -847,26 +847,25 @@ class TestUpgradeCli:
         paths = _make_paths(tmp_path)
         paths.controlmesh_home.mkdir(parents=True)
         with (
-            patch("controlmesh.infra.install.detect_install_mode", return_value="dev"),
-            patch(f"{_LIFECYCLE}.resolve_paths", return_value=paths),
+            patch("controlmesh.infra.install.detect_runtime_provenance"),
             patch(
-                "controlmesh.infra.updater.check_source_upgrade_status",
-                new=AsyncMock(
-                    return_value=SimpleNamespace(
-                        actionable=False,
-                        output="dirty worktree",
-                    )
+                "controlmesh.infra.install.classify_runtime",
+                return_value=SimpleNamespace(
+                    kind="hotfix-package",
+                    manager="uv_tool",
+                    base_version="0.22.4",
+                    source_path="/repo/controlmesh",
+                    hotfix_version="0.22.4+hotfix.20260522.deadbee",
+                    install_info=SimpleNamespace(mode="dev", source="dev", local_path="/repo/controlmesh"),
+                    provenance=SimpleNamespace(),
                 ),
-            ) as mock_status,
-            patch(
-                "controlmesh.infra.updater.perform_upgrade_pipeline",
-                new=AsyncMock(return_value=(False, get_current_version(), "should not run")),
-            ) as mock_pipeline,
+            ),
+            patch(f"{_LIFECYCLE}.resolve_paths", return_value=paths),
+            patch("controlmesh.infra.updater.perform_upgrade_pipeline") as mock_pipeline,
             patch(f"{_LIFECYCLE}.stop_bot") as mock_stop,
             patch(f"{_LIFECYCLE}._re_exec_bot") as mock_exec,
         ):
             upgrade()
-        mock_status.assert_called_once()
         mock_stop.assert_not_called()
         mock_pipeline.assert_not_called()
         mock_exec.assert_not_called()
@@ -1114,6 +1113,8 @@ class TestMainDispatch:
             cwd="/root/ControlMesh",
             pythonpath="/root/ControlMesh",
             matches_expected=False,
+            path_matches_expected=False,
+            version_matches_expected=False,
             reason="imported module is outside expected runtime root /root/.local/share/uv/tools/controlmesh",
         )
 
@@ -1127,6 +1128,50 @@ class TestMainDispatch:
 
         assert exc.value.code == 2
         assert mock_print.called
+
+    def test_main_allows_source_hotfix_runtime(self) -> None:
+        from controlmesh.__main__ import main
+        from controlmesh.infra.install import HotfixManifest, InstallInfo, RuntimeClassification, RuntimeProvenance
+
+        provenance = RuntimeProvenance(
+            install_info=InstallInfo(mode="dev", source="dev", local_path="/root/ControlMesh"),
+            imported_version="0.36.0+hotfix.20260522.d7d96b9",
+            installed_version="0.36.0+hotfix.20260522.d7d96b9",
+            imported_file="/root/.local/share/uv/tools/controlmesh/lib/python3.12/site-packages/controlmesh/__init__.py",
+            executable="/usr/bin/python3.12",
+            sys_prefix="/root/.local/share/uv/tools/controlmesh",
+            cwd="/root",
+            pythonpath="",
+            matches_expected=False,
+            path_matches_expected=True,
+            version_matches_expected=True,
+            reason="",
+        )
+        runtime = RuntimeClassification(
+            kind="hotfix-package",
+            install_info=provenance.install_info,
+            provenance=provenance,
+            manager="uv_tool",
+            base_version="0.36.0",
+            source_path="/root/ControlMesh",
+            hotfix_version=provenance.installed_version,
+            manifest=HotfixManifest(
+                kind="controlmesh-hotfix",
+                base_version="0.36.0",
+                hotfix_version=provenance.installed_version,
+                source_path="/root/ControlMesh",
+            ),
+        )
+
+        with (
+            patch("sys.argv", ["controlmesh"]),
+            patch("controlmesh.__main__.detect_runtime_provenance", return_value=provenance),
+            patch("controlmesh.__main__.classify_runtime", return_value=runtime),
+            patch("controlmesh.__main__._start_bot") as mock_start,
+        ):
+            main()
+
+        mock_start.assert_called_once_with(False)
 
     def test_version_short_flag(self) -> None:
         from controlmesh.__main__ import main

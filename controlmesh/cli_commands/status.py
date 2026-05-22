@@ -17,6 +17,7 @@ from rich.text import Text
 
 from controlmesh.cli.auth import check_all_auth
 from controlmesh.i18n import t_rich
+from controlmesh.infra.install import classify_runtime, detect_runtime_provenance
 from controlmesh.infra.platform import is_windows
 from controlmesh.provider_health import (
     FleetDoctorHostResult,
@@ -172,6 +173,18 @@ def print_status() -> None:
         error_count=error_count,
     )
     lines = build_status_lines(summary, paths=paths)
+    runtime = classify_runtime(detect_runtime_provenance())
+    lines.append("")
+    lines.append("Runtime:")
+    lines.append(f"  Kind:       [cyan]{runtime.kind}[/cyan]")
+    lines.append(f"  Manager:    [cyan]{runtime.manager}[/cyan]")
+    lines.append(f"  Version:    [cyan]{runtime.provenance.installed_version}[/cyan]")
+    lines.append(f"  Base:       [cyan]{runtime.base_version}[/cyan]")
+    if runtime.source_path:
+        lines.append(f"  Source:     [cyan]{runtime.source_path}[/cyan]")
+    lines.append(f"  Import:     [cyan]{runtime.provenance.imported_file}[/cyan]")
+    if runtime.hotfix_version:
+        lines.append(f"  Hotfix:     [cyan]{runtime.hotfix_version}[/cyan]")
 
     _console.print(
         Panel(

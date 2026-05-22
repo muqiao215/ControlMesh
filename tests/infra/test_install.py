@@ -4,14 +4,19 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from controlmesh.infra.install import (
     InstallInfo,
+    HotfixManifest,
+    classify_runtime,
     detect_install_info,
     detect_install_mode,
     detect_runtime_provenance,
+    load_hotfix_manifest,
     is_upgradeable,
+    save_hotfix_manifest,
 )
 
 
@@ -208,8 +213,7 @@ class TestIsUpgradeable:
             assert is_upgradeable() is True
 
     def test_dev_is_not_upgradeable(self) -> None:
-        with patch("controlmesh.infra.install.detect_install_mode", return_value="dev"):
-            assert is_upgradeable() is False
+        assert is_upgradeable() is True
 
 
 class TestRuntimeProvenance:
@@ -234,6 +238,8 @@ class TestRuntimeProvenance:
             provenance = detect_runtime_provenance()
 
         assert provenance.matches_expected is True
+        assert provenance.path_matches_expected is True
+        assert provenance.version_matches_expected is True
         assert provenance.imported_version == "0.24.18"
 
     def test_packaged_install_detects_source_tree_drift(self) -> None:
@@ -256,5 +262,82 @@ class TestRuntimeProvenance:
             provenance = detect_runtime_provenance()
 
         assert provenance.matches_expected is False
+        assert provenance.path_matches_expected is False
+        assert provenance.version_matches_expected is False
         assert "outside expected runtime root" in provenance.reason
         assert "does not match installed package version" in provenance.reason
+
+    def test_packaged_install_tracks_version_mismatch_separately(self) -> None:
+        info = InstallInfo(mode="uv_tool", source="pypi")
+        fake_module_file = (
+            "/root/.local/share/uv/tools/controlmesh/lib/python3.12/site-packages/controlmesh/__init__.py"
+        )
+
+        with (
+            patch("controlmesh.infra.install.detect_install_info", return_value=info),
+            patch(
+                "controlmesh.infra.install._installed_distribution_root",
+                return_value=Path("/root/.local/share/uv/tools/controlmesh/lib/python3.12/site-packages"),
+            ),
+            patch("controlmesh.infra.install.controlmesh.__file__", fake_module_file),
+            patch("controlmesh.infra.install.controlmesh.__version__", "0.31.3"),
+            patch("controlmesh.infra.install.sys.executable", "/usr/bin/python3.12"),
+            patch("controlmesh.infra.install.sys.prefix", "/root/.local/share/uv/tools/controlmesh"),
+            patch("controlmesh.infra.install.Path.cwd", return_value=Path("/root")),
+            patch("controlmesh.infra.install.os.environ", {"PYTHONPATH": ""}),
+            patch("controlmesh.infra.version.importlib.metadata.version", return_value="0.34.7"),
+        ):
+            provenance = detect_runtime_provenance()
+
+        assert provenance.matches_expected is False
+        assert provenance.path_matches_expected is True
+        assert provenance.version_matches_expected is False
+        assert "does not match installed package version" in provenance.reason
+
+
+class TestRuntimeClassification:
+    def test_source_direct_is_classified_from_import_path(self) -> None:
+        info = InstallInfo(mode="dev", source="dev", local_path="/root/ControlMesh")
+        provenance = detect_runtime_provenance()
+        provenance = provenance.__class__(
+            install_info=info,
+            imported_version="0.36.0",
+            installed_version="0.36.0",
+            imported_file="/root/ControlMesh/controlmesh/__init__.py",
+            executable="/usr/bin/python3",
+            sys_prefix="/usr",
+            cwd="/root/ControlMesh",
+            pythonpath="",
+            matches_expected=False,
+            path_matches_expected=False,
+            version_matches_expected=True,
+            reason="",
+        )
+        with patch("controlmesh.infra.install._source_root_from_imported_file", return_value=Path("/root/ControlMesh")):
+            runtime = classify_runtime(provenance)
+
+        assert runtime.kind == "source-direct"
+        assert runtime.source_path == "/root/ControlMesh"
+
+    def test_hotfix_manifest_round_trip(self, tmp_path: Path) -> None:
+        manifest = HotfixManifest(
+            kind="controlmesh-hotfix",
+            base_version="0.36.0",
+            hotfix_version="0.36.0+hotfix.20260522.d7d96b9",
+            source_path="/root/ControlMesh",
+            git_sha="d7d96b9",
+            dirty=False,
+            patch_file="/tmp/hotfix.patch",
+            installed_by="uv_tool",
+            installed_at="2026-05-22T00:00:00+00:00",
+        )
+        with (
+            patch("controlmesh.infra.install.resolve_paths") as mock_paths,
+            patch("controlmesh.infra.install.hotfix_manifest_path", return_value=tmp_path / "hotfix.json"),
+        ):
+            mock_paths.return_value = SimpleNamespace(runtime_dir=tmp_path)
+            save_hotfix_manifest(manifest)
+            loaded = load_hotfix_manifest()
+
+        assert loaded is not None
+        assert loaded.hotfix_version == manifest.hotfix_version

@@ -28,8 +28,14 @@ def get_current_version() -> str:
         return "0.0.0"
 
 
+def strip_local_version(v: str) -> str:
+    """Drop any PEP 440 local version suffix from *v*."""
+    return v.split("+", 1)[0]
+
+
 def _parse_version(v: str) -> tuple[int, ...]:
     """Parse dotted version string into a comparable tuple."""
+    v = strip_local_version(v)
     parts: list[int] = []
     for segment in v.split("."):
         try:
