@@ -12,10 +12,10 @@ import re
 import shutil
 import sys
 from collections.abc import Awaitable, Callable
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Iterator
 
 import controlmesh
 
@@ -325,7 +325,7 @@ def _hotfix_version(base_version: str, commit_id: str | None) -> str:
 
 def _replace_single_version(pattern: re.Pattern[str], text: str, version: str, label: str) -> str:
     """Replace exactly one version declaration in a text blob."""
-    replaced, count = pattern.subn(rf'\g<1>{version}\g<3>', text, count=1)
+    replaced, count = pattern.subn(rf"\g<1>{version}\g<3>", text, count=1)
     if count != 1:
         raise ValueError(f"Could not update {label} version declaration")
     return replaced
@@ -1033,7 +1033,7 @@ async def perform_upgrade_pipeline(
         if not repo_root_text:
             return False, current_version, _combine_outputs([*outputs, "Could not determine source checkout to seal."])
         try:
-            repo_root = Path(repo_root_text).expanduser().resolve()
+            repo_root = await asyncio.to_thread(lambda: Path(repo_root_text).expanduser().resolve())
         except OSError:
             return False, current_version, _combine_outputs([*outputs, f"Invalid source checkout path: {repo_root_text}"])
         try:

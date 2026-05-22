@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import contextlib
 import logging
 import os
 import sys
@@ -314,9 +313,7 @@ def _runtime_looks_source_direct(provenance: RuntimeProvenance) -> bool:
     if imported_root is None:
         return False
     expected_root = _installed_distribution_root()
-    if expected_root is not None and _path_within(expected_root, Path(provenance.imported_file)):
-        return False
-    return True
+    return not (expected_root is not None and _path_within(expected_root, Path(provenance.imported_file)))
 
 
 def detect_runtime_provenance() -> RuntimeProvenance:
