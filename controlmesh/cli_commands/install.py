@@ -67,6 +67,7 @@ def _install_extra(name: str) -> None:
 
 def print_install_help() -> None:
     """Show available extras."""
+    console = Console()
     table = Table(show_header=True, header_style="bold")
     table.add_column(t_rich("install.col_extra"))
     table.add_column(t_rich("install.col_description"))
@@ -80,7 +81,12 @@ def print_install_help() -> None:
         )
         table.add_row(name, desc, status)
 
-    Console().print(Panel(table, title="controlmesh install <extra>"))
+    console.print(Panel(table, title="controlmesh install <extra>"))
+    console.print()
+    console.print("After installing ControlMesh, choose a chat setup path:")
+    console.print("  Feishu native: controlmesh feishu native setup")
+    console.print("  Telegram wizard: controlmesh setup")
+    console.print("  Optional extras: controlmesh install matrix | controlmesh install api")
 
 
 def cmd_install(args: list[str]) -> None:

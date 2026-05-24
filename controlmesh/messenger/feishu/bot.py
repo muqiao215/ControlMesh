@@ -1994,6 +1994,7 @@ class FeishuBot:
                 self._config,
                 session_factory=self._ensure_session,
                 get_tenant_access_token=self._get_tenant_access_token,
+                start_app_permission_flow=self._ensure_auth_orchestration_runner().start_permission_flow,
                 start_user_auth_flow=self._ensure_card_auth_runner().start_retryable_auth_flow,
                 text_reply=self._reply_card_auth_text,
             )

@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-from controlmesh.cli.init_wizard import _WizardConfig, _write_config, run_onboarding
+from controlmesh.cli.init_wizard import _WizardConfig, _ask_transport, _write_config, run_onboarding
 from controlmesh.workspace.paths import ControlMeshPaths
 
 
@@ -68,6 +68,47 @@ def test_write_config_normalizes_existing_null_gemini_api_key(tmp_path: Path) ->
 
     data = json.loads(paths.config_path.read_text(encoding="utf-8"))
     assert data["gemini_api_key"] == "null"
+
+
+def test_write_config_feishu_native_sets_native_runtime_defaults(tmp_path: Path) -> None:
+    paths = _make_paths(tmp_path)
+
+    with (
+        patch("controlmesh.cli.init_wizard.resolve_paths", return_value=paths),
+        patch("controlmesh.cli.init_wizard.init_workspace"),
+    ):
+        _write_config(
+            _WizardConfig(
+                transport="feishu",
+                user_timezone="UTC",
+                docker_enabled=False,
+            )
+        )
+
+    data = json.loads(paths.config_path.read_text(encoding="utf-8"))
+    assert data["transport"] == "feishu"
+    assert data["feishu"]["mode"] == "bot_only"
+    assert data["feishu"]["brand"] == "feishu"
+    assert data["feishu"]["runtime_mode"] == "native"
+    assert data["feishu"]["progress_mode"] == "card_stream"
+    assert data["feishu"]["domain"] == "https://open.feishu.cn"
+
+
+def test_ask_transport_supports_feishu_native(monkeypatch) -> None:
+    class _FakeConsole:
+        def print(self, *_args: object, **_kwargs: object) -> None:
+            return None
+
+    class _FakeSelect:
+        def ask(self) -> str:
+            return "Feishu native"
+
+    monkeypatch.setattr(
+        "controlmesh.cli.init_wizard.questionary.select",
+        lambda *_args, **_kwargs: _FakeSelect(),
+    )
+
+    assert _ask_transport(_FakeConsole()) == "feishu"
 
 
 def test_run_onboarding_returns_false_when_service_install_fails(tmp_path: Path) -> None:

@@ -11,6 +11,7 @@ from typing import Any
 from controlmesh.config import AgentConfig
 from controlmesh.integrations.feishu_auth_kit import run_feishu_auth_kit_json
 from controlmesh.messenger.feishu.auth.app_info import AppInfoAccessError, FeishuAppInfoCache
+from controlmesh.messenger.feishu.auth.brand import build_permission_url
 from controlmesh.messenger.feishu.auth.token_store import FeishuTokenStore
 from controlmesh.messenger.feishu.native_tools import all_native_user_auth_scopes
 
@@ -74,12 +75,13 @@ def filter_useful_user_auth_scopes(
 
 
 class FeishuNativeAuthUsefulRunner:
-    """Authorize all currently granted user scopes except excluded enterprise domains."""
+    """Authorize useful native scopes while excluding heavy enterprise domains."""
 
     def __init__(
         self,
         config: AgentConfig,
         *,
+        start_app_permission_flow: Callable[..., Awaitable[None]],
         start_user_auth_flow: Callable[..., Awaitable[None]],
         text_reply: Callable[[str, str, str | None], Awaitable[None]],
         session_factory: Callable[[], Awaitable[Any]] | None = None,
@@ -91,8 +93,10 @@ class FeishuNativeAuthUsefulRunner:
         token_store: FeishuTokenStore | None = None,
         batch_size: int = 100,
         excluded_scope_keywords: Iterable[str] = _DEFAULT_EXCLUDED_SCOPE_KEYWORDS,
+        target_scopes: Iterable[str] | None = None,
     ) -> None:
         self._config = config
+        self._start_app_permission_flow = start_app_permission_flow
         self._start_user_auth_flow = start_user_auth_flow
         self._text_reply = text_reply
         self._session_factory = session_factory
@@ -105,6 +109,7 @@ class FeishuNativeAuthUsefulRunner:
         self._batch_size = batch_size
         self._excluded_scope_keywords = tuple(excluded_scope_keywords)
         self._preserve_scopes = all_native_user_auth_scopes()
+        self._target_scopes = tuple(target_scopes or all_native_user_auth_scopes())
 
     async def handle_message(self, message: FeishuIncomingText) -> bool:
         if self._config.feishu.runtime_mode != "native":
@@ -112,9 +117,8 @@ class FeishuNativeAuthUsefulRunner:
         if not is_native_auth_useful_command(message.text):
             return False
 
-        app_scopes = await self._load_app_scopes()
         requested_scopes = filter_useful_user_auth_scopes(
-            app_scopes,
+            self._target_scopes,
             excluded_scope_keywords=self._excluded_scope_keywords,
             preserve_scopes=self._preserve_scopes,
         )
@@ -126,12 +130,32 @@ class FeishuNativeAuthUsefulRunner:
             )
             return True
 
+        app_scopes = await self._load_app_scopes()
         user_scopes = self._load_user_scopes(message.sender_id)
         plan = await self._plan_scopes(
             requested_scopes=requested_scopes,
             app_scopes=app_scopes,
             user_scopes=user_scopes,
         )
+        unavailable_scopes = _string_list(plan.get("unavailable_scopes"))
+        if unavailable_scopes:
+            permission_url = _permission_url(self._config, unavailable_scopes)
+            await self._text_reply(
+                message.chat_id,
+                _render_app_scope_missing_text(
+                    unavailable_scopes=unavailable_scopes,
+                    permission_url=permission_url,
+                ),
+                message.message_id if self._config.feishu.reply_to_trigger else None,
+            )
+            await self._start_app_permission_flow(
+                message,
+                required_scopes=unavailable_scopes,
+                permission_url=permission_url,
+                retry_text=message.text,
+            )
+            return True
+
         batches = _list_of_string_lists(plan.get("batches"))
         next_batch = batches[0] if batches else _string_list(plan.get("missing_user_scopes"))
         if next_batch:
@@ -162,7 +186,7 @@ class FeishuNativeAuthUsefulRunner:
         if self._get_app_scopes is not None:
             return _string_list(await _maybe_await(self._get_app_scopes()))
         if self._session_factory is None or self._get_tenant_access_token is None:
-            return []
+            return list(self._target_scopes)
         try:
             session = await self._session_factory()
             tenant_access_token = await _maybe_await(self._get_tenant_access_token())
@@ -174,8 +198,8 @@ class FeishuNativeAuthUsefulRunner:
                 token_type="user",
             )
         except AppInfoAccessError:
-            logger.warning("Feishu auth-useful could not inspect app scopes")
-            return []
+            logger.warning("Feishu auth-useful could not inspect app scopes; falling back to optimistic planning")
+            return list(self._target_scopes)
 
     def _load_user_scopes(self, user_open_id: str) -> list[str]:
         if self._get_user_scopes is not None:
@@ -214,6 +238,16 @@ async def _maybe_await(value: Any) -> Any:
     return value
 
 
+def _permission_url(config: AgentConfig, scopes: list[str]) -> str:
+    return build_permission_url(
+        app_id=config.feishu.app_id,
+        scopes=scopes,
+        brand=config.feishu.brand,
+        token_type="user",
+        op_from="controlmesh-feishu-auth-useful",
+    )
+
+
 def _string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
@@ -234,8 +268,20 @@ def _list_of_string_lists(value: Any) -> list[list[str]]:
 
 def _render_no_scopes_text() -> str:
     return (
-        "当前应用里没有需要补的非黑名单用户权限。\n\n"
+        "当前 useful 目标里没有需要补的非黑名单用户权限。\n\n"
         "这个命令会自动跳过邮件、HR、Payroll、Minutes、OKR、Tasks 这些重域。"
+    )
+
+
+def _render_app_scope_missing_text(*, unavailable_scopes: list[str], permission_url: str) -> str:
+    scope_lines = "\n".join(f"- {scope}" for scope in unavailable_scopes)
+    return (
+        "飞书 useful 授权需要先补齐应用权限。\n\n"
+        "请打开下面的飞书快捷授权页。页面会直接带上这次缺少的权限：\n"
+        f"{permission_url}\n\n"
+        "缺少的应用权限：\n"
+        f"{scope_lines}\n\n"
+        "权限保存后，点卡片里的继续，或重新发 `/feishu_auth_useful`。"
     )
 
 

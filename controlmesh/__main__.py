@@ -434,12 +434,12 @@ def _validate_feishu_config(config: AgentConfig) -> None:
     if not fs.app_id:
         _console.print("Feishu transport requires an existing Feishu self-built app.")
         _console.print("Missing field: feishu.app_id.")
-        _console.print("Run `controlmesh auth feishu setup` for zero-app onboarding guidance.")
+        _console.print("Run `controlmesh feishu native setup` to start the official scan-create registration flow.")
         sys.exit(1)
     if not fs.app_secret:
         _console.print("Feishu transport requires an existing Feishu self-built app.")
         _console.print("Missing field: feishu.app_secret.")
-        _console.print("Run `controlmesh auth feishu setup` for zero-app onboarding guidance.")
+        _console.print("Run `controlmesh feishu native setup` to start the official scan-create registration flow.")
         sys.exit(1)
 
 

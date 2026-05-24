@@ -180,7 +180,7 @@ def build_command_guide_text(
         "常用命令:",
         *controlmesh_lines,
         "/feishu_auth_all — 批量补齐飞书原生权限",
-        "/feishu_auth_useful — 除黑名单外批量补齐应用已开放权限",
+        "/feishu_auth_useful — 补齐常用飞书原生权限, 自动跳过重企业域",
         "",
         "Native Commands 提示:",
         "/compact — native compact context",
@@ -205,7 +205,7 @@ def _command_center_markdown(
         + "\n".join(command_lines)
         + "\n\n**Feishu**\n"
         + "- `/feishu_auth_all` narrow native auth path\n"
-        + "- `/feishu_auth_useful` bulk auth excluding heavy enterprise domains\n\n"
+        + "- `/feishu_auth_useful` useful native auth path excluding heavy enterprise domains\n\n"
         + "Use `/cm` to open Native Commands for the current CLI.\n\n"
         + runtime_note
     )

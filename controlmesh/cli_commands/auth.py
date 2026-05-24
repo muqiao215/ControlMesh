@@ -872,8 +872,8 @@ def _render_feishu_setup_guidance(config: AgentConfig) -> None:
     _console.print(f"Feishu Open Platform app console: {_FEISHU_APP_CONSOLE_URL}")
     _console.print(f"Feishu self-built app guide: {_FEISHU_APP_DEV_GUIDE_URL}")
     _console.print("Required setup for a new user with no Feishu bot:")
-    _console.print("1. Preferred native path: run `controlmesh auth feishu register-begin` and scan the official QR flow.")
-    _console.print("2. Then run `controlmesh auth feishu register-poll --device-code <code>` until credentials are returned.")
+    _console.print("1. Preferred native path: run `controlmesh feishu native setup` and scan the official QR flow.")
+    _console.print("2. ControlMesh saves a pending registration and auto-completes config writeback after approval.")
     _console.print("3. That path writes `runtime_mode=native` and enables CardKit streaming by default.")
     _console.print("4. Manual bridge fallback: create a Feishu self-built app in the app console.")
     _console.print("5. Put the app_id/app_secret into config.json and keep `runtime_mode=bridge`.")
@@ -883,6 +883,7 @@ def _render_feishu_setup_guidance(config: AgentConfig) -> None:
     _console.print("9. Subscribe to message receive events such as im.message.receive_v1.")
     _console.print("10. Add the bot to a chat and send a first message to validate inbound/reply wiring.")
     _console.print("Manual fallback remains valid if the official scan-to-create flow is unavailable in your environment.")
+    _console.print("Advanced/manual commands remain available under `controlmesh auth feishu register-begin|register-poll`.")
     _console.print("After app credentials exist, `controlmesh auth feishu login` only performs optional device-flow user auth.")
     _console.print("It does not create a new app or bot.")
 

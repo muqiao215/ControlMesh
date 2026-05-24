@@ -11,11 +11,14 @@ Product-friendly bootstrap alias:
 
 ```bash
 controlmesh feishu native bootstrap
+controlmesh feishu native setup
 ```
 
-This is a real runnable alias for `controlmesh auth feishu setup`. Start here
-if you want the Feishu-native product path first and the lower-level auth
-commands second.
+`bootstrap` prints setup guidance. `setup` is the stable one-command wrapper for
+the scan-create registration path: it creates the official Feishu/Lark
+registration session, prints the QR/link and user code, saves a pending
+registration file, and auto-completes ControlMesh config writeback after the
+operator approves the QR flow.
 
 ## Feishu-only path
 
@@ -36,8 +39,7 @@ npm install -g @anthropic-ai/claude-code
 claude auth
 
 controlmesh feishu native bootstrap
-controlmesh auth feishu register-begin
-controlmesh auth feishu register-poll --device-code "<device_code>" --interval 5 --expires-in 600
+controlmesh feishu native setup
 controlmesh auth feishu doctor
 controlmesh auth feishu probe
 controlmesh service install
@@ -140,8 +142,7 @@ If you have never created a Feishu bot before, try the scan-to-create path first
 
 ```bash
 controlmesh feishu native bootstrap
-controlmesh auth feishu register-begin
-controlmesh auth feishu register-poll --device-code "<device_code>" --interval 5 --expires-in 600
+controlmesh feishu native setup
 ```
 
 `register-begin` prints JSON equivalent to
@@ -150,6 +151,12 @@ controlmesh auth feishu register-poll --device-code "<device_code>" --interval 5
 Render or open the QR URL for the user to scan with Feishu/Lark, then call
 `register-poll` until it returns `status=success` with `app_id`, `app_secret`,
 `domain`, and optionally `open_id`.
+
+In the stable product flow, `controlmesh feishu native setup` calls
+`register-begin`, stores the pending registration under the ControlMesh config
+directory, and launches the auto-complete helper. After the QR flow is approved,
+the helper calls `register-complete`, writes config, probes the app, and starts
+the installed service when available.
 
 ControlMesh now closes the CLI loop on `register-poll`:
 
@@ -334,6 +341,12 @@ Native-only OAPI MVP:
 - This wrapper currently targets the native-only MVP scopes behind
   `contact.search_user`, `contact.get_user`, and `im.get_messages`. `bridge`
   does not support it.
+- `/feishu_auth_useful` is the lower-friction companion path. It targets the
+  same useful native user scopes but filters out heavy enterprise domains such
+  as mail, HR, Payroll, Minutes, OKR, and Tasks. It must not treat
+  `offline_access` alone as success: if useful target scopes are not yet opened
+  on the app, it sends the same Feishu permission card first; only after app
+  scopes are available does it start user OAuth batches.
 - Current manual smoke entry:
 
 ```bash

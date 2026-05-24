@@ -156,7 +156,7 @@ def _show_disclaimer(console: Console) -> None:
 
 
 def _ask_transport(console: Console) -> str:
-    """Prompt for the messaging transport (Telegram or Matrix)."""
+    """Prompt for the messaging transport."""
     console.print(
         Panel(
             t_rich("wizard.transport.body"),
@@ -168,10 +168,12 @@ def _ask_transport(console: Console) -> str:
 
     selected: str | None = questionary.select(
         t_rich("wizard.transport.prompt"),
-        choices=["Telegram", "Matrix"],
+        choices=["Feishu native", "Telegram", "Matrix"],
     ).ask()
     if selected is None:
         _abort()
+    if selected == "Feishu native":
+        return "feishu"
     return "matrix" if selected == "Matrix" else "telegram"
 
 
@@ -557,9 +559,20 @@ def _load_existing_config(config_path: Path) -> dict[str, object]:
 
 def _apply_transport_config(merged: dict[str, object], cfg: _WizardConfig) -> None:
     """Write transport-specific keys into *merged*."""
-    if cfg.get("transport", "telegram") == "telegram":
+    transport = cfg.get("transport", "telegram")
+    if transport == "telegram":
         merged["telegram_token"] = cfg.get("telegram_token", "")
         merged["allowed_user_ids"] = cfg.get("allowed_user_ids") or []
+    elif transport == "feishu":
+        feishu_section = merged.get("feishu")
+        if not isinstance(feishu_section, dict):
+            feishu_section = {}
+            merged["feishu"] = feishu_section
+        feishu_section.setdefault("mode", "bot_only")
+        feishu_section.setdefault("brand", "feishu")
+        feishu_section["runtime_mode"] = "native"
+        feishu_section["progress_mode"] = "card_stream"
+        feishu_section.setdefault("domain", "https://open.feishu.cn")
     else:  # matrix
         matrix_section = merged.get("matrix")
         if not isinstance(matrix_section, dict):
@@ -644,6 +657,19 @@ def run_onboarding() -> bool:
         console.print()
         allowed_user_ids = _ask_user_id(console)
         console.print()
+    elif transport == "feishu":
+        console.print(
+            Panel(
+                "Feishu native setup uses the official scan-create flow.\n\n"
+                "After this wizard writes the base config, run:\n\n"
+                "  controlmesh feishu native setup\n\n"
+                "That command prints the Feishu QR/link and auto-completes config writeback after approval.",
+                title="Feishu Native",
+                border_style="blue",
+                padding=(1, 2),
+            )
+        )
+        console.print()
     else:  # matrix
         matrix_homeserver = _ask_matrix_homeserver(console)
         console.print()
@@ -704,6 +730,11 @@ def run_onboarding() -> bool:
             + "\n"
             + t_rich("wizard.complete.logs", path=paths.logs_dir)
             + "\n\n"
+            + (
+                "Feishu next step: run `controlmesh feishu native setup` to scan-create the app bot.\n\n"
+                if transport == "feishu"
+                else ""
+            )
             + action,
             title=t_rich("wizard.complete.title"),
             border_style="green",

@@ -28,6 +28,15 @@ class TestPrintInstallHelp:
     def test_runs_without_error(self) -> None:
         print_install_help()
 
+    def test_prints_post_install_chat_setup_guidance(self) -> None:
+        console = MagicMock()
+        with patch("controlmesh.cli_commands.install.Console", return_value=console):
+            print_install_help()
+
+        rendered = "\n".join(str(call) for call in console.print.call_args_list)
+        assert "controlmesh feishu native setup" in rendered
+        assert "controlmesh setup" in rendered
+
 
 class TestCmdInstall:
     """Tests for cmd_install entry point."""

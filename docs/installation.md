@@ -85,6 +85,18 @@ Telegram + WeChat). After initial setup, configure the `transports` array in
 
 If service install succeeds, onboarding returns without starting foreground bot.
 
+For Feishu-native deployments, the shortest post-install path is:
+
+```bash
+controlmesh feishu native setup
+```
+
+That command starts the official scan-create flow, prints the Feishu QR/link and
+user code, saves a pending registration file, and auto-completes ControlMesh
+config writeback after the QR flow is approved. It is the stable CLI wrapper for
+the lower-level `controlmesh auth feishu register-begin` and
+`controlmesh auth feishu register-complete` commands.
+
 ## Feishu-only quick path
 
 If you do not use Telegram or Matrix, skip them entirely. A minimal
@@ -107,8 +119,7 @@ npm install -g @anthropic-ai/claude-code
 claude auth
 
 controlmesh feishu native bootstrap
-controlmesh auth feishu register-begin
-controlmesh auth feishu register-poll --device-code "<device_code>" --interval 5 --expires-in 600
+controlmesh feishu native setup
 controlmesh auth feishu doctor
 controlmesh auth feishu probe
 controlmesh service install

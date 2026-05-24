@@ -66,6 +66,7 @@ def test_filter_useful_user_auth_scopes_excludes_blacklist_but_preserves_native_
 
 @pytest.mark.asyncio
 async def test_auth_useful_starts_first_filtered_user_scope_batch(tmp_path: Path) -> None:
+    app_permission_calls: list[dict[str, Any]] = []
     user_auth_calls: list[dict[str, Any]] = []
     replies: list[tuple[str, str, str | None]] = []
 
@@ -106,8 +107,25 @@ async def test_auth_useful_starts_first_filtered_user_scope_batch(tmp_path: Path
             }
         )
 
+    async def _start_app_permission_flow(
+        message: FeishuIncomingText,
+        *,
+        required_scopes: list[str],
+        permission_url: str,
+        retry_text: str,
+    ) -> None:
+        app_permission_calls.append(
+            {
+                "message": message,
+                "required_scopes": required_scopes,
+                "permission_url": permission_url,
+                "retry_text": retry_text,
+            }
+        )
+
     runner = FeishuNativeAuthUsefulRunner(
         _config(tmp_path),
+        start_app_permission_flow=_start_app_permission_flow,
         get_app_scopes=lambda: [
             "mail:message:readonly",
             "payroll:payment:readonly",
@@ -118,6 +136,7 @@ async def test_auth_useful_starts_first_filtered_user_scope_batch(tmp_path: Path
         start_user_auth_flow=_start_user_auth_flow,
         text_reply=lambda chat_id, text, reply_to: _record_reply(replies, chat_id, text, reply_to),
         run_json=_run_json,
+        target_scopes=("contact:user:search", "space:document:retrieve"),
     )
 
     handled = await runner.handle_message(_message())
@@ -125,20 +144,93 @@ async def test_auth_useful_starts_first_filtered_user_scope_batch(tmp_path: Path
     assert handled is True
     assert "开始飞书扩展用户授权, 第 1/2 批." in replies[0][1]
     assert "contact:user:search" in replies[0][1]
+    assert app_permission_calls == []
     assert user_auth_calls[0]["required_scopes"] == ["contact:user:search"]
     assert user_auth_calls[0]["retry_text"] == "/feishu_auth_useful"
 
 
 @pytest.mark.asyncio
-async def test_auth_useful_replies_when_only_blacklisted_scopes_exist(tmp_path: Path) -> None:
+async def test_auth_useful_starts_app_permission_flow_when_target_scopes_are_not_open(
+    tmp_path: Path,
+) -> None:
+    app_permission_calls: list[dict[str, Any]] = []
+    user_auth_calls: list[dict[str, Any]] = []
+    replies: list[tuple[str, str, str | None]] = []
+
+    def _run_json(args: list[str]) -> dict[str, Any]:
+        requested_scopes = [
+            args[index + 1]
+            for index, item in enumerate(args[:-1])
+            if item == "--requested-scope"
+        ]
+        assert requested_scopes == ["contact:user:search", "space:document:retrieve"]
+        return {
+            "requested_scopes": requested_scopes,
+            "app_granted_scopes": ["offline_access"],
+            "user_granted_scopes": ["offline_access"],
+            "already_granted_scopes": [],
+            "missing_user_scopes": [],
+            "unavailable_scopes": ["contact:user:search", "space:document:retrieve"],
+            "batches": [],
+        }
+
+    async def _start_app_permission_flow(
+        message: FeishuIncomingText,
+        *,
+        required_scopes: list[str],
+        permission_url: str,
+        retry_text: str,
+    ) -> None:
+        app_permission_calls.append(
+            {
+                "message": message,
+                "required_scopes": required_scopes,
+                "permission_url": permission_url,
+                "retry_text": retry_text,
+            }
+        )
+
+    async def _start_user_auth_flow(*_args: Any, **_kwargs: Any) -> None:
+        user_auth_calls.append({"called": True})
+
+    runner = FeishuNativeAuthUsefulRunner(
+        _config(tmp_path),
+        get_app_scopes=lambda: ["offline_access"],
+        get_user_scopes=lambda _open_id: ["offline_access"],
+        start_app_permission_flow=_start_app_permission_flow,
+        start_user_auth_flow=_start_user_auth_flow,
+        text_reply=lambda chat_id, text, reply_to: _record_reply(replies, chat_id, text, reply_to),
+        run_json=_run_json,
+        target_scopes=("contact:user:search", "space:document:retrieve"),
+    )
+
+    handled = await runner.handle_message(_message())
+
+    assert handled is True
+    assert "需要先补齐应用权限" in replies[0][1]
+    assert "contact:user:search" in replies[0][1]
+    assert "space:document:retrieve" in replies[0][1]
+    assert "token_type=user" in app_permission_calls[0]["permission_url"]
+    assert app_permission_calls[0]["required_scopes"] == [
+        "contact:user:search",
+        "space:document:retrieve",
+    ]
+    assert app_permission_calls[0]["retry_text"] == "/feishu_auth_useful"
+    assert user_auth_calls == []
+
+
+@pytest.mark.asyncio
+async def test_auth_useful_replies_when_only_blacklisted_target_scopes_exist(tmp_path: Path) -> None:
     replies: list[tuple[str, str, str | None]] = []
 
     runner = FeishuNativeAuthUsefulRunner(
         _config(tmp_path),
         get_app_scopes=lambda: ["mail:message:readonly", "payroll:payment:readonly"],
         get_user_scopes=lambda _open_id: [],
+        start_app_permission_flow=lambda *_args, **_kwargs: _return(None),
         start_user_auth_flow=lambda *_args, **_kwargs: _return(None),
         text_reply=lambda chat_id, text, reply_to: _record_reply(replies, chat_id, text, reply_to),
+        target_scopes=("mail:message:readonly", "payroll:payment:readonly"),
     )
 
     handled = await runner.handle_message(_message())
