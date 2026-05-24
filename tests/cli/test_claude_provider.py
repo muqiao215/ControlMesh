@@ -87,6 +87,8 @@ def _fake_streaming_process(
     proc.stdout.readline = AsyncMock(side_effect=lambda: next(line_iter))
     proc.stderr = MagicMock()
     proc.stderr.read = AsyncMock(return_value=stderr)
+    stderr_iter = iter([*stderr.splitlines(keepends=True), b""])
+    proc.stderr.readline = AsyncMock(side_effect=lambda: next(stderr_iter))
     return proc
 
 
@@ -298,7 +300,8 @@ class TestSend:
 
         assert resp.timed_out is True
         assert resp.is_error is True
-        assert resp.result == ""
+        assert "CLI timed out." in resp.result
+        assert "provider: CLI" in resp.result
         proc.wait.assert_awaited_once()
 
     async def test_empty_stdout_is_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -573,7 +576,7 @@ class TestSendStreaming:
         assert "stream-json" in called_cmd
         assert "--verbose" in called_cmd
 
-    async def test_stderr_truncated_at_500_chars(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_stderr_diagnostic_preserved(self, monkeypatch: pytest.MonkeyPatch) -> None:
         cli = _make_cli(monkeypatch)
         long_stderr = b"X" * 1000
         proc = _fake_streaming_process([], stderr=long_stderr, returncode=1)
@@ -583,7 +586,9 @@ class TestSendStreaming:
 
         result_events = [e for e in events if isinstance(e, ResultEvent)]
         assert len(result_events) == 1
-        assert len(result_events[0].result) == 500
+        assert "provider: CLI" in result_events[0].result
+        assert "stderr_tail:" in result_events[0].result
+        assert "X" * 100 in result_events[0].result
 
     async def test_streaming_limit_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Verify the 4MB buffer limit is passed to create_subprocess_exec."""

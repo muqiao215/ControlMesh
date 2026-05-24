@@ -12,7 +12,6 @@ import pytest
 
 from controlmesh.background.models import BackgroundResult, BackgroundSubmit
 from controlmesh.background.observer import (
-    BACKGROUND_IDLE_TIMEOUT_SECONDS,
     BACKGROUND_MAX_RUNTIME_SECONDS,
     MAX_TASKS_PER_CHAT,
     BackgroundObserver,
@@ -227,12 +226,14 @@ class TestExecution:
         await asyncio.sleep(0.05)
 
         request = cli_service.execute.call_args[0][0]
-        assert request.timeout_seconds == BACKGROUND_IDLE_TIMEOUT_SECONDS
+        assert request.timeout_seconds == BACKGROUND_MAX_RUNTIME_SECONDS
         assert request.hard_timeout_seconds == BACKGROUND_MAX_RUNTIME_SECONDS + 30.0
         assert request.timeout_controller is not None
-        assert request.timeout_controller.idle_timeout_seconds == BACKGROUND_IDLE_TIMEOUT_SECONDS
+        assert request.timeout_controller.idle_timeout_seconds is None
         assert request.timeout_controller.max_runtime_seconds == BACKGROUND_MAX_RUNTIME_SECONDS
         assert request.timeout_controller.state.mode == "background"
+        assert request.liveness_policy is not None
+        assert request.liveness_policy.kill_on_idle is False
         await observer.shutdown()
 
 

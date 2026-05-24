@@ -21,7 +21,14 @@ from controlmesh.cli.base import (
     CLIConfig,
     _win_feed_stdin,
 )
+from controlmesh.cli.diagnostics import (
+    ProviderRunDiagnostic,
+    diagnostic_from_completed_process,
+)
+from controlmesh.cli.liveness import RunLivenessPolicy
+from controlmesh.cli.liveness import BACKGROUND_POLICY, FOREGROUND_POLICY
 from controlmesh.cli.stream_events import ResultEvent, StreamEvent
+from controlmesh.cli.supervisor import ProviderRunSupervisor
 from controlmesh.cli.timeout_controller import TimeoutController
 from controlmesh.cli.types import CLIResponse
 from controlmesh.infra.platform import CREATION_FLAGS as _CREATION_FLAGS
@@ -89,6 +96,15 @@ class SubprocessSpec:
     timeout_seconds: float | None = None
     timeout_controller: TimeoutController | None = None
     hard_timeout_seconds: float | None = None
+    liveness_policy: RunLivenessPolicy | None = None
+
+    def policy(self) -> RunLivenessPolicy:
+        """Return explicit or mode-derived liveness policy for this run."""
+        if self.liveness_policy is not None:
+            return self.liveness_policy
+        if self.timeout_controller and self.timeout_controller.state.mode == "background":
+            return BACKGROUND_POLICY
+        return FOREGROUND_POLICY
 
 
 @dataclass(slots=True)
@@ -97,6 +113,7 @@ class SubprocessResult:
 
     process: asyncio.subprocess.Process
     stderr_bytes: bytes
+    diagnostic: ProviderRunDiagnostic | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -113,12 +130,14 @@ PostHandler = Callable[[SubprocessResult], AsyncGenerator[StreamEvent, None]]
 async def _default_post_handler(result: SubprocessResult) -> AsyncGenerator[StreamEvent, None]:
     """Yield an error ``ResultEvent`` when the process exited non-zero."""
     if result.process.returncode != 0:
-        stderr_text = (
-            result.stderr_bytes.decode(errors="replace")[:2000] if result.stderr_bytes else ""
+        diagnostic = result.diagnostic or diagnostic_from_completed_process(
+            "CLI",
+            stderr=result.stderr_bytes,
+            returncode=result.process.returncode,
         )
         yield ResultEvent(
             type="result",
-            result=stderr_text[:500],
+            result=diagnostic.render_user_error(),
             is_error=True,
             returncode=result.process.returncode,
         )
@@ -158,6 +177,9 @@ async def run_streaming_subprocess(
     if process.stdout is None or process.stderr is None:
         msg = "Subprocess created without stdout/stderr pipes"
         raise RuntimeError(msg)
+    supervisor = ProviderRunSupervisor(provider_label, spec.policy())
+    supervisor.started(pid=process.pid, command=spec.exec_cmd)
+    diagnostic = supervisor.diagnostic
     _win_feed_stdin(process, spec.prompt)
     logger.info("%s subprocess starting pid=%s", provider_label, process.pid)
     if spec.timeout_controller:
@@ -174,13 +196,14 @@ async def run_streaming_subprocess(
         if reg
         else None
     )
-    stderr_drain = asyncio.create_task(process.stderr.read())
+    stderr_drain = asyncio.create_task(_drain_stderr(process, supervisor))
 
     try:
-        async for event in _stream_with_timeout(process, spec, line_handler):
+        async for event in _stream_with_timeout(process, spec, line_handler, supervisor):
             yield event
         stderr_bytes = await stderr_drain
     except TimeoutError:
+        supervisor.timed_out(_timeout_reason(spec), process.returncode)
         cleanup = _schedule_timeout_cleanup(process, provider_label=provider_label, spec=spec)
         if _should_await_timeout_cleanup(spec):
             await cleanup
@@ -191,10 +214,13 @@ async def run_streaming_subprocess(
             _timeout_reason(spec),
             timeout_s,
         )
+        supervisor.final_error()
         yield ResultEvent(
             type="result",
-            result=f"__TIMEOUT__{int(timeout_s)}",
+            subtype="timeout_error",
+            result=diagnostic.render_user_error(),
             is_error=True,
+            returncode=process.returncode,
         )
         return
     finally:
@@ -203,9 +229,16 @@ async def run_streaming_subprocess(
             reg.unregister(tracked)
 
     await process.wait()
+    supervisor.exited(process.returncode)
 
     handler = post_handler or _default_post_handler
-    async for event in handler(SubprocessResult(process=process, stderr_bytes=stderr_bytes)):
+    async for event in handler(
+        SubprocessResult(
+            process=process,
+            stderr_bytes=stderr_bytes,
+            diagnostic=diagnostic,
+        )
+    ):
         yield event
 
 
@@ -218,6 +251,7 @@ async def _stream_with_timeout(
     process: asyncio.subprocess.Process,
     spec: SubprocessSpec,
     line_handler: LineHandler,
+    supervisor: ProviderRunSupervisor | None = None,
 ) -> AsyncGenerator[StreamEvent, None]:
     """Read stdout lines with either a plain timeout or a managed controller.
 
@@ -226,7 +260,12 @@ async def _stream_with_timeout(
     Otherwise a plain ``asyncio.timeout`` is used (backward-compatible).
     """
     if spec.timeout_controller:
-        async for event in _stream_with_controller(process, spec.timeout_controller, line_handler):
+        async for event in _stream_with_controller(
+            process,
+            spec.timeout_controller,
+            line_handler,
+            supervisor,
+        ):
             yield event
     else:
         async with asyncio.timeout(spec.timeout_seconds):
@@ -235,8 +274,12 @@ async def _stream_with_timeout(
                 if not line_bytes:
                     break
                 line = line_bytes.decode(errors="replace").rstrip()
+                if supervisor is not None:
+                    supervisor.stdout(line)
                 logger.debug("Stream line: %s", line[:120])
                 async for event in line_handler(line):
+                    if supervisor is not None:
+                        supervisor.parsed(event)
                     yield event
 
 
@@ -244,6 +287,7 @@ async def _stream_with_controller(
     process: asyncio.subprocess.Process,
     tc: TimeoutController,
     line_handler: LineHandler,
+    supervisor: ProviderRunSupervisor | None = None,
 ) -> AsyncGenerator[StreamEvent, None]:
     """Streaming read loop managed by a :class:`TimeoutController`.
 
@@ -263,9 +307,13 @@ async def _stream_with_controller(
                     return  # EOF
                 tc.record_output()
                 line = line_bytes.decode(errors="replace").rstrip()
+                if supervisor is not None:
+                    supervisor.stdout(line)
                 logger.debug("Stream line: %s", line[:120])
                 async for event in line_handler(line):
                     _record_event_activity(tc, event)
+                    if supervisor is not None:
+                        supervisor.parsed(event)
                     yield event
 
         timeout_secs = tc.timeout_seconds
@@ -278,9 +326,13 @@ async def _stream_with_controller(
                             return  # EOF
                         tc.record_output()
                         line = line_bytes.decode(errors="replace").rstrip()
+                        if supervisor is not None:
+                            supervisor.stdout(line)
                         logger.debug("Stream line: %s", line[:120])
                         async for event in line_handler(line):
                             _record_event_activity(tc, event)
+                            if supervisor is not None:
+                                supervisor.parsed(event)
                             yield event
             except TimeoutError:
                 if tc.uses_idle_liveness:
@@ -327,6 +379,9 @@ async def run_oneshot_subprocess(
         env=oneshot_env,
         creationflags=_CREATION_FLAGS,
     )
+    supervisor = ProviderRunSupervisor(provider_label, spec.policy())
+    supervisor.started(pid=process.pid, command=spec.exec_cmd)
+    diagnostic = supervisor.diagnostic
     logger.info("%s subprocess starting pid=%s", provider_label, process.pid)
 
     reg = config.process_registry
@@ -350,7 +405,14 @@ async def run_oneshot_subprocess(
         else:
             async with asyncio.timeout(spec.timeout_seconds):
                 stdout, stderr = await process.communicate(input=stdin_data)
+        for line in stdout.decode(errors="replace").splitlines():
+            if line.rstrip():
+                supervisor.stdout(line.rstrip())
+        for line in stderr.decode(errors="replace").splitlines():
+            if line.rstrip():
+                supervisor.stderr(line.rstrip())
     except TimeoutError:
+        supervisor.timed_out(_timeout_reason(spec), process.returncode)
         cleanup = _schedule_timeout_cleanup(process, provider_label=provider_label, spec=spec)
         if _should_await_timeout_cleanup(spec):
             await cleanup
@@ -360,12 +422,27 @@ async def run_oneshot_subprocess(
             _timeout_reason(spec),
             _reported_timeout_seconds(spec),
         )
-        return CLIResponse(result="", is_error=True, timed_out=True)
+        return CLIResponse(
+            result=supervisor.final_error().message,
+            is_error=True,
+            timed_out=True,
+            returncode=process.returncode,
+            stderr="\n".join(diagnostic.stderr_tail),
+        )
     finally:
         if tracked and reg:
             reg.unregister(tracked)
 
-    return parse_output(stdout, stderr, process.returncode)
+    supervisor.exited(process.returncode)
+    response = parse_output(stdout, stderr, process.returncode)
+    if response.is_error and not response.result.strip():
+        response.result = supervisor.final_error().message
+    elif process.returncode not in (0, None):
+        response.result = supervisor.final_error().message
+        response.is_error = True
+    if response.is_error and not response.stderr:
+        response.stderr = "\n".join(diagnostic.stderr_tail)
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -405,6 +482,26 @@ def _reported_timeout_seconds(spec: SubprocessSpec) -> float:
         if spec.timeout_controller.timeout_reason == "max_runtime":
             return spec.timeout_controller.max_runtime_seconds or 0.0
     return spec.timeout_seconds or 0.0
+
+
+async def _drain_stderr(
+    process: asyncio.subprocess.Process,
+    supervisor: ProviderRunSupervisor,
+) -> bytes:
+    """Read stderr line-by-line while retaining a complete byte copy."""
+    chunks: list[bytes] = []
+    stderr = process.stderr
+    if stderr is None:
+        return b""
+    while True:
+        line_bytes = await stderr.readline()
+        if not line_bytes:
+            break
+        chunks.append(line_bytes)
+        text = line_bytes.decode(errors="replace").rstrip()
+        if text:
+            supervisor.stderr(text)
+    return b"".join(chunks)
 
 
 async def _cancel_drain(drain: asyncio.Task[bytes]) -> None:

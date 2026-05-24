@@ -2026,6 +2026,12 @@ class TelegramBot:
                 thread_id=thread_id,
                 scene_config=self._config.scene,
                 before_send=lambda: self._freshness_guard(lane_key, input_message_id, generation),
+                before_critical_send=lambda: self._freshness_guard(
+                    lane_key,
+                    input_message_id,
+                    generation,
+                    freshness_bypass=True,
+                ),
             ),
         )
 
@@ -2052,6 +2058,12 @@ class TelegramBot:
                 thread_id=thread_id,
                 scene_config=self._config.scene,
                 before_send=lambda: self._freshness_guard(lane_key, input_message_id, generation),
+                before_critical_send=lambda: self._freshness_guard(
+                    lane_key,
+                    input_message_id,
+                    generation,
+                    freshness_bypass=True,
+                ),
             ),
         )
 
@@ -2543,7 +2555,16 @@ class TelegramBot:
         lowered = text.strip().lower()
         return lowered.startswith(_CONTROL_COMMAND_PREFIXES)
 
-    async def _freshness_guard(self, lane_key: str, message_id: int, generation: int) -> bool:
+    async def _freshness_guard(
+        self,
+        lane_key: str,
+        message_id: int,
+        generation: int,
+        *,
+        freshness_bypass: bool = False,
+    ) -> bool:
+        if freshness_bypass:
+            return True
         return self._lane_is_current(lane_key, message_id, generation)
 
     async def _drain_inbound_spool(self) -> int:

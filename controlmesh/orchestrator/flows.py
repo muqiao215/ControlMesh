@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from controlmesh.cli.stream_events import ToolResultEvent, ToolUseEvent
+from controlmesh.cli.liveness import FOREGROUND_POLICY, timeout_controller_for_policy
 from controlmesh.cli.timeout_controller import TimeoutConfig as TCConfig
 from controlmesh.cli.timeout_controller import TimeoutController
 from controlmesh.cli.types import AgentRequest, AgentResponse
@@ -31,12 +32,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-FOREGROUND_IDLE_TIMEOUT_SECONDS = 300.0
+FOREGROUND_IDLE_TIMEOUT_SECONDS = FOREGROUND_POLICY.idle_soft_timeout_s
 FOREGROUND_HARD_KILL_GRACE_SECONDS = 30.0
 
 # Backward-compatible alias used by existing tests/imports.
 FOREGROUND_SOFT_TIMEOUT_SECONDS = FOREGROUND_IDLE_TIMEOUT_SECONDS
-FOREGROUND_MAX_RUNTIME_SECONDS = 1800.0
+FOREGROUND_MAX_RUNTIME_SECONDS = FOREGROUND_POLICY.hard_timeout_s
 FOREGROUND_HARD_KILL_TIMEOUT_SECONDS = (
     FOREGROUND_IDLE_TIMEOUT_SECONDS + FOREGROUND_HARD_KILL_GRACE_SECONDS
 )
@@ -118,25 +119,13 @@ def _make_timeout_controller(orch: Orchestrator, kind: str) -> TimeoutController
 
 def _make_foreground_watchdog(request: AgentRequest, *, max_runtime_seconds: float) -> TimeoutController:
     """Create idle-first foreground liveness watchdog state."""
-    controller = TimeoutController(
-        TCConfig(
-            timeout_seconds=FOREGROUND_IDLE_TIMEOUT_SECONDS,
-            idle_timeout_seconds=FOREGROUND_IDLE_TIMEOUT_SECONDS,
-            max_runtime_seconds=max_runtime_seconds,
-            mode="foreground",
-            warning_intervals=[],
-            extend_on_activity=False,
-            activity_extension=0.0,
-            max_extensions=0,
-        ),
-    )
-    controller.attach_process(
-        pid=None,
+    return timeout_controller_for_policy(
+        FOREGROUND_POLICY,
+        mode="foreground",
         chat_id=request.chat_id,
         turn_id=request.process_label,
-        mode="foreground",
+        max_runtime_seconds=max_runtime_seconds,
     )
-    return controller
 
 
 def _with_foreground_watchdog(
@@ -153,6 +142,7 @@ def _with_foreground_watchdog(
             request,
             max_runtime_seconds=max_runtime_seconds,
         ),
+        liveness_policy=FOREGROUND_POLICY,
     )
 
 
@@ -352,7 +342,10 @@ async def _handle_timeout(
         elif request.timeout_controller.timeout_reason == "max_runtime":
             timeout_s = request.timeout_controller.max_runtime_seconds or timeout_s
     logger.warning("Session timed out after %.0fs model=%s", timeout_s, model_name)
-    return OrchestratorResult(text=timeout_error_text(model_name, timeout_s))
+    text = timeout_error_text(model_name, timeout_s)
+    if response.result.strip():
+        text = f"{text}\n\n{response.result.strip()}"
+    return OrchestratorResult(text=text)
 
 
 def _sigkill_user_msg() -> str:

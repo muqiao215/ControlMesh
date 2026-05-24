@@ -11,6 +11,7 @@ from aiogram.types import Chat, Message, User
 from controlmesh.cli.stream_events import ToolResultEvent, ToolUseEvent
 from controlmesh.config import StreamingConfig
 from controlmesh.messenger.telegram.message_dispatch import (
+    NonStreamingDispatch,
     StreamingDispatch,
     run_non_streaming_message,
     run_streaming_message,
@@ -85,6 +86,74 @@ async def test_non_streaming_long_reply_stays_full_without_auto_attachment() -> 
     assert "Output trimmed for chat view" not in delivered
     assert "<file:" not in delivered
     assert delivered.count("line") == 80
+
+
+@pytest.mark.asyncio
+async def test_non_streaming_critical_error_bypasses_freshness_guard() -> None:
+    message = _make_message()
+    orchestrator = MagicMock()
+    orchestrator.handle_message = AsyncMock(
+        return_value=SimpleNamespace(
+            text="Codex exited with code 1 and produced no stdout/stderr.",
+            metadata={},
+            model_name=None,
+        )
+    )
+    normal_guard = AsyncMock(return_value=False)
+    critical_guard = AsyncMock(return_value=True)
+    dispatch = NonStreamingDispatch(
+        bot=MagicMock(),
+        orchestrator=orchestrator,
+        reply_to=message,
+        key=SessionKey(chat_id=1),
+        text="hello",
+        allowed_roots=None,
+        before_send=normal_guard,
+        before_critical_send=critical_guard,
+    )
+
+    with patch(
+        "controlmesh.messenger.telegram.message_dispatch.send_rich", new_callable=AsyncMock
+    ) as mock_send:
+        await run_non_streaming_message(dispatch)
+
+    normal_guard.assert_not_awaited()
+    critical_guard.assert_awaited()
+    mock_send.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_non_streaming_timeout_bypasses_freshness_guard() -> None:
+    message = _make_message()
+    orchestrator = MagicMock()
+    orchestrator.handle_message = AsyncMock(
+        return_value=SimpleNamespace(
+            text="Agent timed out. Please try again.",
+            metadata={},
+            model_name=None,
+        )
+    )
+    normal_guard = AsyncMock(return_value=False)
+    critical_guard = AsyncMock(return_value=True)
+    dispatch = NonStreamingDispatch(
+        bot=MagicMock(),
+        orchestrator=orchestrator,
+        reply_to=message,
+        key=SessionKey(chat_id=1),
+        text="hello",
+        allowed_roots=None,
+        before_send=normal_guard,
+        before_critical_send=critical_guard,
+    )
+
+    with patch(
+        "controlmesh.messenger.telegram.message_dispatch.send_rich", new_callable=AsyncMock
+    ) as mock_send:
+        await run_non_streaming_message(dispatch)
+
+    normal_guard.assert_not_awaited()
+    critical_guard.assert_awaited()
+    mock_send.assert_awaited_once()
 
 
 @pytest.mark.asyncio

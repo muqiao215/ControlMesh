@@ -99,16 +99,33 @@ class CodexCLI(BaseCLI):
             return ["--full-auto"]
         return ["--sandbox", cfg.sandbox_mode]
 
+    def _common_codex_flags(self, *, json_output: bool) -> list[str]:
+        """Return Codex flags shared by new and resumed executions."""
+        cfg = self._config
+        flags: list[str] = []
+        if json_output:
+            flags.append("--json")
+        flags += ["--color", "never"]
+        flags += self._sandbox_flags()
+        flags.append("--skip-git-repo-check")
+
+        if cfg.model:
+            flags += ["--model", cfg.model]
+        if cfg.reasoning_effort and cfg.reasoning_effort != "default":
+            flags += ["-c", f"model_reasoning_effort={cfg.reasoning_effort}"]
+        if cfg.instructions:
+            flags += ["--instructions", cfg.instructions]
+        for img in cfg.images:
+            flags += ["--image", img]
+        if cfg.cli_parameters:
+            flags.extend(cfg.cli_parameters)
+        return flags
+
     def _build_resume_command(
         self, final_prompt: str, session_id: str, *, json_output: bool
     ) -> list[str]:
         """Build command to resume an existing Codex session."""
-        cmd = [self._cli, "exec", "resume"]
-        if json_output:
-            cmd.append("--json")
-        if self._config.permission_mode == "bypassPermissions":
-            cmd.append("--dangerously-bypass-approvals-and-sandbox")
-        cmd.append("--skip-git-repo-check")
+        cmd = [self._cli, "exec", "resume", *self._common_codex_flags(json_output=json_output)]
         cmd += ["--", session_id]
         if not _IS_WINDOWS:
             cmd.append(final_prompt)
@@ -121,31 +138,12 @@ class CodexCLI(BaseCLI):
         *,
         json_output: bool = True,
     ) -> list[str]:
-        cfg = self._config
         final_prompt = self._compose_prompt(prompt)
 
         if resume_session:
             return self._build_resume_command(final_prompt, resume_session, json_output=json_output)
 
-        cmd = [self._cli, "exec"]
-        if json_output:
-            cmd.append("--json")
-        cmd += ["--color", "never"]
-        cmd += self._sandbox_flags()
-        cmd.append("--skip-git-repo-check")
-
-        if cfg.model:
-            cmd += ["--model", cfg.model]
-        if cfg.reasoning_effort and cfg.reasoning_effort != "default":
-            cmd += ["-c", f"model_reasoning_effort={cfg.reasoning_effort}"]
-        if cfg.instructions:
-            cmd += ["--instructions", cfg.instructions]
-        for img in cfg.images:
-            cmd += ["--image", img]
-
-        # Add extra CLI parameters before the separator
-        if cfg.cli_parameters:
-            cmd.extend(cfg.cli_parameters)
+        cmd = [self._cli, "exec", *self._common_codex_flags(json_output=json_output)]
 
         # On Windows, .CMD wrappers mangle arguments with special characters.
         # The prompt is passed via stdin instead (see send / send_streaming).
@@ -312,10 +310,20 @@ def _codex_final_result(
     thread_id: str | None,
 ) -> ResultEvent:
     """Build the final ResultEvent after the stream loop completes."""
-    stderr_text = result.stderr_bytes.decode(errors="replace")[:2000] if result.stderr_bytes else ""
-
     if result.process.returncode != 0:
-        error_detail = stderr_text or "\n".join(accumulated_text) or "(no output)"
+        error_detail = (
+            result.diagnostic.render_user_error()
+            if result.diagnostic is not None
+            else (
+                result.stderr_bytes.decode(errors="replace")[:2000]
+                if result.stderr_bytes
+                else ""
+            )
+            or (
+                "\n".join(accumulated_text)
+                or f"Codex exited with code {result.process.returncode} and produced no stdout/stderr."
+            )
+        )
         logger.error(
             "Codex stream exited with code %d: %s",
             result.process.returncode,
@@ -323,7 +331,7 @@ def _codex_final_result(
         )
         return ResultEvent(
             type="result",
-            result=error_detail[:500],
+            result=error_detail,
             is_error=True,
             returncode=result.process.returncode,
         )

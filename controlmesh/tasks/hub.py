@@ -24,6 +24,7 @@ from controlmesh.memory.runtime_capture import (
 )
 from controlmesh.multiagent.release_gate import ensure_publish_gate, load_gate_state
 from controlmesh.messenger.address import ChatRef, TopicRef
+from controlmesh.cli.liveness import BACKGROUND_POLICY, timeout_controller_for_policy
 from controlmesh.runtime import (
     AgentInboxItem,
     AgentInboxStore,
@@ -1280,6 +1281,7 @@ class TaskHub:
         t0 = time.monotonic()
         try:
             timeout = self._config.timeout_seconds
+            effective_timeout = max(timeout, BACKGROUND_POLICY.hard_timeout_s)
             self._append_runtime_lifecycle_event(entry, "task.lifecycle.started")
             binding = entry.binding
             if binding is None or not binding.assistant:
@@ -1293,7 +1295,16 @@ class TaskHub:
                 chat_id=entry.chat_id,
                 process_label=f"task:{entry.task_id}",
                 allowed_tools=_task_allowed_tools(entry),
-                timeout_seconds=timeout,
+                timeout_seconds=effective_timeout,
+                hard_timeout_seconds=effective_timeout + 30.0,
+                timeout_controller=timeout_controller_for_policy(
+                    BACKGROUND_POLICY,
+                    mode="background",
+                    chat_id=entry.chat_id,
+                    turn_id=f"task:{entry.task_id}",
+                    max_runtime_seconds=effective_timeout,
+                ),
+                liveness_policy=BACKGROUND_POLICY,
                 resume_session=resume_session,
             )
 
@@ -1322,7 +1333,7 @@ class TaskHub:
             response = await cli.execute(request)
 
             elapsed = time.monotonic() - t0
-            status, error = self._response_status(entry, response, timeout=timeout)
+            status, error = self._response_status(entry, response, timeout=effective_timeout)
 
             # Accumulate turns (resume adds to previous count)
             total_turns = entry.num_turns + response.num_turns

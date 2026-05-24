@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from controlmesh.cli.base import CLIConfig
+from controlmesh.cli.diagnostics import ProviderRunDiagnostic
 from controlmesh.cli.factory import create_cli
 from controlmesh.cli.introspection import ProviderIntrospection
 from controlmesh.cli.opencode_discovery import (
@@ -224,6 +225,7 @@ class CLIService:
         )
 
         t0 = time.monotonic()
+        provider, _model = self.resolve_provider(request)
         response = await cli.send(
             prompt=request.prompt,
             resume_session=request.resume_session,
@@ -234,6 +236,7 @@ class CLIService:
         )
         elapsed_ms = (time.monotonic() - t0) * 1000
 
+        response = _ensure_visible_cli_error(response, provider=provider)
         agent_resp = _cli_response_to_agent_response(response)
         self._log_call(request, agent_resp, elapsed_ms)
         return agent_resp
@@ -298,8 +301,10 @@ class CLIService:
         if not result_event.session_id and callbacks.init_session_id:
             result_event.session_id = callbacks.init_session_id
 
-        # Detect timeout marker from executor.
-        timed_out = (result_event.result or "").startswith("__TIMEOUT__")
+        timed_out = (
+            result_event.subtype == "timeout_error"
+            or (result_event.result or "").startswith("__TIMEOUT__")
+        )
 
         logger.info(
             "CLI streaming completed label=%s fallback=%s timed_out=%s",
@@ -307,18 +312,22 @@ class CLIService:
             stream_error,
             timed_out,
         )
-        cli_resp = CLIResponse(
-            session_id=result_event.session_id,
-            result="" if timed_out else (result_event.result or accumulated_text),
-            is_error=result_event.is_error,
-            timed_out=timed_out,
-            returncode=result_event.returncode,
-            duration_ms=result_event.duration_ms,
-            duration_api_ms=result_event.duration_api_ms,
-            total_cost_usd=result_event.total_cost_usd,
-            usage=result_event.usage,
-            model_usage=result_event.model_usage,
-            num_turns=result_event.num_turns,
+        provider, _model = self.resolve_provider(request)
+        cli_resp = _ensure_visible_cli_error(
+            CLIResponse(
+                session_id=result_event.session_id,
+                result=result_event.result or accumulated_text,
+                is_error=result_event.is_error,
+                timed_out=timed_out,
+                returncode=result_event.returncode,
+                duration_ms=result_event.duration_ms,
+                duration_api_ms=result_event.duration_api_ms,
+                total_cost_usd=result_event.total_cost_usd,
+                usage=result_event.usage,
+                model_usage=result_event.model_usage,
+                num_turns=result_event.num_turns,
+            ),
+            provider=provider,
         )
         return _cli_response_to_agent_response(cli_resp)
 
@@ -583,3 +592,21 @@ def _cli_response_to_agent_response(
         duration_ms=resp.duration_ms,
         stream_fallback=stream_fallback,
     )
+
+
+def _ensure_visible_cli_error(resp: CLIResponse, *, provider: str) -> CLIResponse:
+    """Ensure failed provider results are never user-invisible."""
+    failed = resp.is_error or resp.timed_out or resp.returncode not in (0, None)
+    if not failed or resp.result.strip():
+        return resp
+    diag = ProviderRunDiagnostic(provider=provider or "CLI")
+    if resp.timed_out:
+        diag.note_timeout("timeout", resp.returncode)
+    else:
+        diag.note_exit(resp.returncode)
+    for line in resp.stderr.splitlines():
+        if line.strip():
+            diag.note_stderr(line.strip())
+    resp.result = diag.render_user_error()
+    resp.is_error = True
+    return resp

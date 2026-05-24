@@ -14,6 +14,7 @@ import pytest
 
 from controlmesh.cli.base import CLIConfig
 from controlmesh.cli.codex_provider import CodexCLI, _codex_final_result, _log_cmd
+from controlmesh.cli.diagnostics import ProviderRunDiagnostic
 from controlmesh.cli.executor import SubprocessResult
 from controlmesh.cli.process_registry import ProcessRegistry
 from controlmesh.cli.stream_events import (
@@ -77,6 +78,8 @@ def _make_streaming_process(
     # stderr mock
     stderr_mock = AsyncMock()
     stderr_mock.read = AsyncMock(return_value=stderr)
+    stderr_lines = [*stderr.splitlines(keepends=True), b""]
+    stderr_mock.readline = AsyncMock(side_effect=stderr_lines)
     proc.stderr = stderr_mock
 
     return proc
@@ -250,16 +253,43 @@ class TestBuildCommand:
         assert "--dangerously-bypass-approvals-and-sandbox" in cmd
         assert "--skip-git-repo-check" in cmd
         assert "thread-abc" in cmd
-        # resume does not include --model or --color
-        assert "--model" not in cmd
-        assert "--color" not in cmd
+        assert "--model" in cmd
+        assert "--color" in cmd
 
     def test_resume_session_omits_sandbox_flags(self, monkeypatch: pytest.MonkeyPatch) -> None:
         cli = _make_cli(monkeypatch, permission_mode="default", sandbox_mode="read-only")
         cmd = cli._build_command("hello", resume_session="thread-abc")
-        assert "--sandbox" not in cmd
+        assert "--sandbox" in cmd
+        assert "read-only" in cmd
         assert "--full-auto" not in cmd
         assert "--skip-git-repo-check" in cmd
+
+    def test_resume_reuses_common_flags(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        cli = _make_cli(
+            monkeypatch,
+            model="gpt-5.2-codex",
+            reasoning_effort="high",
+            instructions="/tmp/INS.md",
+            images=["img.png"],
+            cli_parameters=["--foo", "bar"],
+        )
+        cmd = cli._build_command("hello", resume_session="thread-abc")
+        for expected in (
+            "--json",
+            "--color",
+            "never",
+            "--model",
+            "gpt-5.2-codex",
+            "-c",
+            "model_reasoning_effort=high",
+            "--instructions",
+            "/tmp/INS.md",
+            "--image",
+            "img.png",
+            "--foo",
+            "bar",
+        ):
+            assert expected in cmd
 
     def test_resume_session_json_output_false(self, monkeypatch: pytest.MonkeyPatch) -> None:
         cli = _make_cli(monkeypatch)
@@ -869,9 +899,21 @@ class TestCodexFinalResult:
 
         result = _codex_final_result(SubprocessResult(process=proc, stderr_bytes=b""), [], None)
         assert result.is_error is True
-        assert result.result == "(no output)"
+        assert result.result == "Codex exited with code 1 and produced no stdout/stderr."
 
-    def test_error_result_truncated_at_500(self) -> None:
+    def test_error_uses_diagnostic_when_available(self) -> None:
+        proc = MagicMock(spec=asyncio.subprocess.Process)
+        proc.returncode = 1
+        diag = ProviderRunDiagnostic(provider="Codex")
+        diag.note_exit(1)
+
+        result = _codex_final_result(
+            SubprocessResult(process=proc, stderr_bytes=b"", diagnostic=diag), [], None
+        )
+        assert result.is_error is True
+        assert "Codex exited with code 1 and produced no stdout/stderr." in result.result
+
+    def test_error_result_preserves_diagnostic_detail(self) -> None:
         proc = MagicMock(spec=asyncio.subprocess.Process)
         proc.returncode = 1
 
@@ -880,7 +922,7 @@ class TestCodexFinalResult:
             SubprocessResult(process=proc, stderr_bytes=long_stderr), [], None
         )
         assert result.is_error is True
-        assert len(result.result) <= 500
+        assert len(result.result) == 600
 
     def test_stderr_bytes_truncated_at_2000(self) -> None:
         proc = MagicMock(spec=asyncio.subprocess.Process)
@@ -890,9 +932,8 @@ class TestCodexFinalResult:
         result = _codex_final_result(
             SubprocessResult(process=proc, stderr_bytes=long_stderr), [], None
         )
-        # The error_detail uses stderr_text which is truncated at 2000
-        # then the result is further truncated at 500
         assert result.is_error is True
+        assert len(result.result) == 2000
 
 
 # ---------------------------------------------------------------------------
@@ -1111,11 +1152,11 @@ class TestResumeCommandArgOrder:
         assert cmd[-1] == "my prompt"
 
     def test_resume_with_empty_images_no_crash(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Resume path ignores images even if set (they're not in the resume branch)."""
+        """Resume path reuses image flags from the initial invocation path."""
         cli = _make_cli(monkeypatch, images=["img.png"])
         cmd = cli._build_command("go", resume_session="th-1")
-        # Images are not added to resume commands
-        assert "--image" not in cmd
+        assert "--image" in cmd
+        assert "img.png" in cmd
 
 
 class TestStreamingContinueSessionIgnored:

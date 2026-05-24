@@ -13,7 +13,10 @@ from controlmesh.cli.executor import (
     _cleanup_timed_out_process,
     _stream_with_controller,
     _stream_with_timeout,
+    run_oneshot_subprocess,
 )
+from controlmesh.cli.base import CLIConfig
+from controlmesh.cli.types import CLIResponse
 from controlmesh.cli.stream_events import StreamEvent
 from controlmesh.cli.timeout_controller import (
     TimeoutConfig,
@@ -130,7 +133,7 @@ class TestStreamWithController:
         tc = TimeoutController(
             TimeoutConfig(
                 timeout_seconds=0.05,
-                idle_timeout_seconds=0.15,
+                idle_timeout_seconds=0.3,
                 max_runtime_seconds=1.0,
                 mode="foreground",
                 extend_on_activity=False,
@@ -248,6 +251,72 @@ class TestOneshotWithController:
 
         with pytest.raises(TimeoutError):
             await tc.run_with_timeout(slow_communicate())
+
+
+class TestOneshotDiagnostics:
+    async def test_nonzero_empty_output_returns_visible_diagnostic(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        process = MagicMock()
+        process.pid = 123
+        process.returncode = 1
+        process.communicate = AsyncMock(return_value=(b"", b""))
+
+        async def fake_create(*_args: object, **_kwargs: object) -> MagicMock:
+            return process
+
+        def parse_output(stdout: bytes, stderr: bytes, returncode: int | None) -> CLIResponse:
+            assert stdout == b""
+            assert stderr == b""
+            return CLIResponse(result="", is_error=True, returncode=returncode)
+
+        monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_create)
+
+        response = await run_oneshot_subprocess(
+            CLIConfig(provider="codex"),
+            SubprocessSpec(["fake"], None, "", timeout_seconds=1),
+            parse_output,
+            provider_label="Codex",
+        )
+
+        assert response.is_error is True
+        assert response.returncode == 1
+        assert "Codex exited with code 1 and produced no stdout/stderr." in response.result
+        assert "provider: Codex" in response.result
+
+    async def test_nonzero_stderr_returns_visible_diagnostic(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        process = MagicMock()
+        process.pid = 123
+        process.returncode = 2
+        process.communicate = AsyncMock(return_value=(b"", b"fatal auth\n"))
+
+        async def fake_create(*_args: object, **_kwargs: object) -> MagicMock:
+            return process
+
+        def parse_output(_stdout: bytes, stderr: bytes, returncode: int | None) -> CLIResponse:
+            return CLIResponse(
+                result="",
+                is_error=True,
+                returncode=returncode,
+                stderr=stderr.decode(),
+            )
+
+        monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_create)
+
+        response = await run_oneshot_subprocess(
+            CLIConfig(provider="claude"),
+            SubprocessSpec(["fake"], None, "", timeout_seconds=1),
+            parse_output,
+            provider_label="Claude",
+        )
+
+        assert response.is_error is True
+        assert "Claude exited with code 2." in response.result
+        assert "fatal auth" in response.result
 
 
 class TestSoftHardSubprocessCleanup:

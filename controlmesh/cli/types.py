@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
+    from controlmesh.cli.liveness import RunLivenessPolicy
     from controlmesh.cli.timeout_controller import TimeoutController
 
 
@@ -63,6 +64,7 @@ class AgentRequest:
     timeout_seconds: float | None = None
     hard_timeout_seconds: float | None = None
     timeout_controller: TimeoutController | None = None
+    liveness_policy: RunLivenessPolicy | None = None
 
 
 @dataclass(frozen=True, slots=True)

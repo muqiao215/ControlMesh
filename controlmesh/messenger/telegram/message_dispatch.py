@@ -88,6 +88,7 @@ class NonStreamingDispatch:
     thread_id: int | None = None
     scene_config: SceneConfig | None = None
     before_send: Callable[[], Awaitable[bool]] | None = None
+    before_critical_send: Callable[[], Awaitable[bool]] | None = None
 
 
 @dataclass(slots=True)
@@ -104,6 +105,7 @@ class StreamingDispatch:
     thread_id: int | None = None
     scene_config: SceneConfig | None = None
     before_send: Callable[[], Awaitable[bool]] | None = None
+    before_critical_send: Callable[[], Awaitable[bool]] | None = None
 
 
 async def run_non_streaming_message(
@@ -121,7 +123,9 @@ async def run_non_streaming_message(
     result.text += footer
     deliver_text = result.text
     before_send = getattr(dispatch, "before_send", None)
-    if before_send is not None and not await before_send():
+    before_critical_send = getattr(dispatch, "before_critical_send", None) or before_send
+    guard = before_critical_send if _is_critical_result(result.text) else before_send
+    if guard is not None and not await guard():
         return result.text
     reply_id = dispatch.reply_to.message_id if dispatch.reply_to else None
     await send_rich(
@@ -144,6 +148,7 @@ async def run_streaming_message(
     logger.info("Streaming flow started")
 
     before_send = getattr(dispatch, "before_send", None)
+    before_critical_send = getattr(dispatch, "before_critical_send", None) or before_send
 
     editor = create_stream_editor(
         dispatch.bot,
@@ -229,13 +234,14 @@ async def run_streaming_message(
     await coalescer.flush(force=True)
     coalescer.stop()
     footer = _build_footer(result, dispatch.scene_config)
+    final_guard = before_critical_send if _is_critical_result(result.text) else before_send
     if footer:
-        if before_send is not None and not await before_send():
+        if final_guard is not None and not await final_guard():
             return result.text
         await editor.append_text(footer)
         result.text += footer
     deliver_text = result.text
-    if before_send is not None and not await before_send():
+    if final_guard is not None and not await final_guard():
         return result.text
     await editor.finalize(deliver_text)
 
@@ -246,7 +252,7 @@ async def run_streaming_message(
     )
 
     if result.stream_fallback or not editor.has_content:
-        if before_send is not None and not await before_send():
+        if final_guard is not None and not await final_guard():
             return result.text
         await send_rich(
             dispatch.bot,
@@ -259,7 +265,7 @@ async def run_streaming_message(
             ),
         )
     else:
-        if before_send is not None and not await before_send():
+        if final_guard is not None and not await final_guard():
             return result.text
         await send_files_from_text(
             dispatch.bot,
@@ -270,3 +276,21 @@ async def run_streaming_message(
         )
 
     return result.text
+
+
+def _is_critical_result(text: str) -> bool:
+    """Return True for diagnostics that must bypass lane freshness checks."""
+    lower = text.lower()
+    critical_markers = (
+        "diagnostic_error",
+        "timeout_error",
+        "process_exit_error",
+        "provider_crash",
+        "timed out",
+        "timeout",
+        "agent timed out",
+        "exited with code",
+        "exited abnormally",
+        "produced no stdout/stderr",
+    )
+    return any(marker in lower for marker in critical_markers)
