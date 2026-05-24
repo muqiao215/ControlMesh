@@ -254,42 +254,53 @@ class TestBuildCommand:
         assert "--skip-git-repo-check" in cmd
         assert "thread-abc" in cmd
         assert "--model" in cmd
-        assert "--color" in cmd
+        assert "--color" not in cmd
 
     def test_resume_session_omits_sandbox_flags(self, monkeypatch: pytest.MonkeyPatch) -> None:
         cli = _make_cli(monkeypatch, permission_mode="default", sandbox_mode="read-only")
         cmd = cli._build_command("hello", resume_session="thread-abc")
-        assert "--sandbox" in cmd
-        assert "read-only" in cmd
+        assert "--sandbox" not in cmd
+        assert "read-only" not in cmd
         assert "--full-auto" not in cmd
         assert "--skip-git-repo-check" in cmd
 
-    def test_resume_reuses_common_flags(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_resume_uses_only_resume_supported_flags(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         cli = _make_cli(
             monkeypatch,
             model="gpt-5.2-codex",
             reasoning_effort="high",
             instructions="/tmp/INS.md",
             images=["img.png"],
-            cli_parameters=["--foo", "bar"],
+            cli_parameters=[
+                "--enable",
+                "feature-x",
+                "--output-schema",
+                "schema.json",
+                "--color",
+                "never",
+                "--foo",
+                "bar",
+            ],
         )
         cmd = cli._build_command("hello", resume_session="thread-abc")
         for expected in (
             "--json",
-            "--color",
-            "never",
             "--model",
             "gpt-5.2-codex",
             "-c",
             "model_reasoning_effort=high",
-            "--instructions",
-            "/tmp/INS.md",
             "--image",
             "img.png",
-            "--foo",
-            "bar",
+            "--enable",
+            "feature-x",
+            "--output-schema",
+            "schema.json",
         ):
             assert expected in cmd
+        for unsupported in ("--color", "never", "--instructions", "/tmp/INS.md", "--foo", "bar"):
+            assert unsupported not in cmd
 
     def test_resume_session_json_output_false(self, monkeypatch: pytest.MonkeyPatch) -> None:
         cli = _make_cli(monkeypatch)

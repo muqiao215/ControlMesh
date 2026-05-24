@@ -100,7 +100,7 @@ class CodexCLI(BaseCLI):
         return ["--sandbox", cfg.sandbox_mode]
 
     def _common_codex_flags(self, *, json_output: bool) -> list[str]:
-        """Return Codex flags shared by new and resumed executions."""
+        """Return Codex flags for new executions."""
         cfg = self._config
         flags: list[str] = []
         if json_output:
@@ -121,11 +121,30 @@ class CodexCLI(BaseCLI):
             flags.extend(cfg.cli_parameters)
         return flags
 
+    def _resume_codex_flags(self, *, json_output: bool) -> list[str]:
+        """Return only flags accepted by ``codex exec resume``."""
+        cfg = self._config
+        flags: list[str] = []
+        if json_output:
+            flags.append("--json")
+        if cfg.permission_mode == "bypassPermissions":
+            flags.append("--dangerously-bypass-approvals-and-sandbox")
+        flags.append("--skip-git-repo-check")
+
+        if cfg.model:
+            flags += ["--model", cfg.model]
+        if cfg.reasoning_effort and cfg.reasoning_effort != "default":
+            flags += ["-c", f"model_reasoning_effort={cfg.reasoning_effort}"]
+        for img in cfg.images:
+            flags += ["--image", img]
+        flags.extend(_resume_supported_cli_parameters(cfg.cli_parameters))
+        return flags
+
     def _build_resume_command(
         self, final_prompt: str, session_id: str, *, json_output: bool
     ) -> list[str]:
         """Build command to resume an existing Codex session."""
-        cmd = [self._cli, "exec", "resume", *self._common_codex_flags(json_output=json_output)]
+        cmd = [self._cli, "exec", "resume", *self._resume_codex_flags(json_output=json_output)]
         cmd += ["--", session_id]
         if not _IS_WINDOWS:
             cmd.append(final_prompt)
@@ -374,3 +393,47 @@ def _looks_like_codex_event_stream(raw: str) -> bool:
             continue
         return False
     return saw_event
+
+
+def _resume_supported_cli_parameters(parameters: list[str]) -> list[str]:
+    """Filter custom flags down to the subset supported by ``codex exec resume``."""
+    supported_standalone = {
+        "--all",
+        "--dangerously-bypass-hook-trust",
+        "--ephemeral",
+        "--ignore-rules",
+        "--ignore-user-config",
+        "--strict-config",
+    }
+    supported_with_value = {
+        "-c",
+        "--config",
+        "--disable",
+        "--enable",
+        "-i",
+        "--image",
+        "-m",
+        "--model",
+        "-o",
+        "--output-last-message",
+        "--output-schema",
+    }
+    filtered: list[str] = []
+    index = 0
+    while index < len(parameters):
+        param = parameters[index]
+        if param in supported_standalone:
+            filtered.append(param)
+            index += 1
+            continue
+        if param in supported_with_value:
+            if index + 1 < len(parameters):
+                filtered.extend((param, parameters[index + 1]))
+                index += 2
+                continue
+            logger.warning("Dropping Codex resume CLI flag without value: %s", param)
+            index += 1
+            continue
+        logger.warning("Dropping unsupported Codex resume CLI parameter: %s", param)
+        index += 1
+    return filtered
