@@ -115,8 +115,9 @@ async def test_auth_all_routes_missing_app_scopes_to_permission_card(tmp_path: P
     assert handled is True
     assert replies[0][0] == "oc_chat_1"
     assert "批量授权需要先补齐应用权限" in replies[0][1]
-    assert "/auth?q=contact%3Auser%3Asearch" in replies[0][1]
-    assert "开发者后台" in replies[0][1]
+    assert "去申请权限" in replies[0][1]
+    assert "一键补充权限页" in replies[0][1]
+    assert "开发者后台" not in replies[0][1]
     assert "contact:user:search" in replies[0][1]
     assert replies[0][2] == "om_1"
     assert app_permission_calls[0]["required_scopes"] == ["contact:user:search"]

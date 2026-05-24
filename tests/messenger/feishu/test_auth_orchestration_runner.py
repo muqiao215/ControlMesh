@@ -118,10 +118,10 @@ async def test_start_permission_flow_routes_auth_kit_card_and_saves_runtime_cont
     assert sender.sent[0][0] == "oc_chat_1"
     assert sender.sent[0][2] == "om_1"
     card = sender.sent[0][1]
-    assert "Open permission page" in str(card)
+    assert "去申请权限" in str(card)
+    assert "已完成，继续" in str(card)
     assert "permissions_granted_continue" in str(card)
-    assert "app-level boundary" in str(card)
-    assert "continue / retry" in str(card)
+    assert "一键补充权限页" in str(card)
     stored = FeishuAuthRuntimeStore(tmp_path).load("op_123")
     assert stored is not None
     assert stored.retry_text == "continue original task"

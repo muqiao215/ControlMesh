@@ -221,11 +221,12 @@ def _render_app_scope_missing_text(*, unavailable_scopes: list[str], permission_
     scope_lines = "\n".join(f"- {scope}" for scope in unavailable_scopes)
     return (
         "批量授权需要先补齐应用权限。\n\n"
-        "请打开下面的飞书快捷授权页。页面会直接带上这次缺少的权限，不用再去开发者后台慢慢找：\n"
-        f"{permission_url}\n\n"
+        "我会发一张权限申请卡。请点卡片里的“去申请权限”，它会打开飞书一键补充权限页，"
+        "并自动预选这次缺少的权限。\n\n"
         "缺少的应用权限：\n"
         f"{scope_lines}\n\n"
-        "权限保存后，点卡片里的继续，或重新发 `/feishu_auth_all`。"
+        "申请并审核通过后，回到卡片点“已完成，继续”，或重新发 `/feishu_auth_all`。\n\n"
+        f"如果卡片按钮打不开，可复制这个同款一键补权限链接：\n{permission_url}"
     )
 
 

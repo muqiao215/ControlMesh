@@ -386,8 +386,9 @@ def _feishu_card_from_auth_kit(card: object) -> dict[str, Any]:
     if card.get("type") == "permission_missing":
         message = (
             f"{message}\n\n"
-            "This is an app-level boundary handled by the app owner/admin, not user OAuth.\n"
-            "After the app permissions are approved, come back here and tap continue / retry."
+            "这是应用权限申请步骤，不是用户 OAuth 授权。\n"
+            "请先点“去申请权限”打开飞书一键补充权限页，缺失权限会自动预选；"
+            "申请并审核通过后，回到这张卡点“已完成，继续”。"
         )
     operation_id = str(card.get("operation_id") or "")
     fields = card.get("fields") if isinstance(card.get("fields"), dict) else {}
@@ -411,7 +412,7 @@ def _feishu_card_from_auth_kit(card: object) -> dict[str, Any]:
                     {
                         "tag": "button",
                         "type": "primary",
-                        "text": {"tag": "plain_text", "content": "Open permission page"},
+                        "text": {"tag": "plain_text", "content": "去申请权限"},
                         "multi_url": {
                             "url": link_url,
                             "pc_url": link_url,
@@ -422,7 +423,7 @@ def _feishu_card_from_auth_kit(card: object) -> dict[str, Any]:
                     {
                         "tag": "button",
                         "type": "default",
-                        "text": {"tag": "plain_text", "content": "I have granted permissions"},
+                        "text": {"tag": "plain_text", "content": "已完成，继续"},
                         "value": {
                             "action": "permissions_granted_continue",
                             "operation_id": operation_id,

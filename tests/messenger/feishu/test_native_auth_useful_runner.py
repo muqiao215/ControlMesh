@@ -208,6 +208,8 @@ async def test_auth_useful_starts_app_permission_flow_when_target_scopes_are_not
 
     assert handled is True
     assert "需要先补齐应用权限" in replies[0][1]
+    assert "去申请权限" in replies[0][1]
+    assert "一键补充权限页" in replies[0][1]
     assert "contact:user:search" in replies[0][1]
     assert "space:document:retrieve" in replies[0][1]
     assert "token_type=user" in app_permission_calls[0]["permission_url"]
