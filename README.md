@@ -7,7 +7,7 @@ ControlMesh is the private product line built on top of the current Ductor runti
 What is true today:
 
 - Official CLI execution only: `claude`, `codex`, `gemini`
-- Multi-transport runtime: Telegram, Matrix, and an early Feishu bot-only surface
+- Multi-transport runtime: Telegram, Matrix, and an experimental Feishu surface with bot transport plus device-flow auth helpers
 - Sessions, background tasks, cron jobs, webhooks, and sub-agents
 - File-backed operational state under `~/.ductor/`
 - A new file-backed harness control plane is being staged under [`plans/`](plans/README.md)
@@ -40,7 +40,7 @@ ductor
 
 The runtime package is still named `ductor`, so install and CLI entrypoints remain `ductor` for now.
 
-The onboarding wizard handles CLI checks, transport setup (Telegram or Matrix), timezone, optional Docker, and optional background service install.
+The onboarding wizard handles CLI checks, transport setup (Telegram or Matrix), timezone, optional Docker, and optional background service install. Feishu is available as an experimental runtime path through config plus `ductor auth feishu ...` commands.
 
 **Requirements:** Python 3.11+, at least one CLI installed (`claude`, `codex`, or `gemini`), and either:
 
@@ -205,7 +205,7 @@ Main chat:  "Ask codex-agent to write tests for the API"
 ## Features
 
 - **Multi-transport** — run Telegram and Matrix simultaneously, or pick one
-- **Feishu early path** — bot-only transport skeleton now exists for the next integration line
+- **Feishu auth path** — experimental Feishu transport with text or single-card preview plus device-flow auth helpers
 - **Multi-language** — UI in English, Deutsch, Nederlands, Français, Русский, Español, Português
 - **Real-time streaming** — live message edits (Telegram) or segment-based output (Matrix)
 - **Provider switching** — `/model` to change provider/model (never blocks, even during active processes)
@@ -227,7 +227,7 @@ Telegram is the primary transport — full feature set, battle-tested, zero extr
 |---|---|---|---|---|
 | **Telegram** | primary | Live message edits | Inline keyboards | `pip install ductor` |
 | **Matrix** | supported | Segment-based (new messages) | Emoji reactions | `ductor install matrix` |
-| **Feishu** | experimental | Text by default, optional single-card preview mode | Interactive card preview only | built-in skeleton |
+| **Feishu** | experimental | Text by default, optional single-card preview mode | Interactive card preview + auth cards | built-in |
 
 Both transports can run **in parallel** on the same agent:
 
@@ -289,6 +289,49 @@ Matrix auth uses room and user allowlists in the `matrix` config block:
 - Room-level filtering (`allowed_rooms`) still applies.
 
 The bot logs in with password on first start, then persists `access_token` and `device_id` for subsequent runs. E2EE is supported via `matrix-nio[e2e]`.
+
+### Feishu
+
+Feishu in this branch is still a domestic `bot_only` runtime, but it is no longer just a dead skeleton.
+
+- Transport/runtime auth still uses app credentials in the `feishu` config block.
+- Optional user auth uses Feishu device-flow helpers through `ductor auth feishu login`.
+- Runtime auth state is persisted under `~/.ductor/feishu_store/` and `ductor auth feishu status` reports whether `bot_only` or `device_flow` is currently active.
+
+Current Feishu scope in this branch:
+
+- domestic Feishu only (`brand="feishu"`)
+- bot transport only (`mode="bot_only"`)
+- progress rendering via `text` or `card_preview`
+- device-flow login/status/logout helpers are implemented
+
+Not in this branch:
+
+- Feishu native runtime mode
+- CardKit streaming (`card_stream`)
+- scan-create registration/bootstrap flow
+- auth continuation/retry orchestration from the newer mainline
+
+Minimal Feishu config shape:
+
+```json
+{
+  "transport": "feishu",
+  "transports": ["feishu"],
+  "feishu": {
+    "mode": "bot_only",
+    "brand": "feishu",
+    "app_id": "cli_xxxxxxxxxxxx",
+    "app_secret": "sec_xxxxxxxxxxxx",
+    "domain": "https://open.feishu.cn",
+    "listener_host": "127.0.0.1",
+    "listener_port": 8765,
+    "listener_path": "/feishu/events",
+    "allow_from": ["ou_xxxxxxxxxxxx"],
+    "progress_mode": "card_preview"
+  }
+}
+```
 
 ## Language
 
@@ -367,6 +410,10 @@ ductor agents remove NAME
 
 ductor api enable       # Enable WebSocket API (beta)
 ductor api disable      # Disable WebSocket API
+
+ductor auth feishu login
+ductor auth feishu status
+ductor auth feishu logout
 
 ductor install matrix   # Install Matrix transport extra
 ductor install api      # Install API/PyNaCl extra

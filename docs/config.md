@@ -88,7 +88,7 @@ Changes take effect on the next CLI invocation (mtime-based cache invalidation, 
 | `allowed_group_ids` | `list[int]` | `[]` | Telegram group allowlist (which groups the bot can operate in; default `[]` = no groups, fail-closed). In groups, both the group and the user must be allowlisted |
 | `group_mention_only` | `bool` | `false` | Mention/reply gating in group rooms. Telegram: filter only (no auth bypass). Matrix: in non-DM rooms this bypasses `allowed_users` and uses room + mention/reply as gate |
 | `matrix` | `MatrixConfig` | see below | Matrix homeserver connection (required when `transport=matrix`) |
-| `feishu` | `FeishuConfig` | see below | Feishu domestic bot-only transport skeleton (required when `transport=feishu`) |
+| `feishu` | `FeishuConfig` | see below | Experimental Feishu domestic bot transport plus device-flow auth helpers (required when `transport=feishu`) |
 | `streaming` | `StreamingConfig` | see below | Streaming tuning |
 | `docker` | `DockerConfig` | see below | Docker sidecar config |
 | `heartbeat` | `HeartbeatConfig` | see below | Background heartbeat config |
@@ -141,6 +141,10 @@ Notes:
 | `app_id` | `str` | `""` | Feishu app ID |
 | `app_secret` | `str` | `""` | Feishu app secret |
 | `domain` | `str` | `"https://open.feishu.cn"` | Runtime API base URL |
+| `listener_host` | `str` | `"127.0.0.1"` | Local Feishu callback listener bind host |
+| `listener_port` | `int` | `8765` | Local Feishu callback listener port |
+| `listener_path` | `str` | `"/feishu/events"` | Local Feishu callback path |
+| `listener_max_body_bytes` | `int` | `262144` | Max accepted callback request body size |
 | `allow_from` | `list[str]` | `[]` | Optional sender allowlist (Feishu user IDs such as `open_id`) |
 | `group_reply_all` | `bool` | `false` | Reserved bot-only group behavior knob for later cuts |
 | `thread_isolation` | `bool` | `false` | When enabled, inbound thread/root IDs get separate Ductor session keys |
@@ -153,7 +157,9 @@ Current implementation status:
 - bot-only mode only
 - plain-text inbound/outbound plumbing by default
 - optional `card_preview` mode can reuse a single interactive card for progress/final updates
-- no user OAuth, QR setup, webhook mode, or Feishu tool suite yet
+- Feishu device-flow auth helpers exist via `ductor auth feishu login|status|logout`
+- active auth state is persisted under `~/.ductor/feishu_store/`
+- no native runtime mode, CardKit streaming, scan-create registration flow, or Feishu tool suite yet
 
 ## `CLIParametersConfig`
 

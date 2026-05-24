@@ -11,6 +11,7 @@
 4. One of these messaging transports:
    - **Telegram**: Bot token from [@BotFather](https://t.me/BotFather) + user ID from [@userinfobot](https://t.me/userinfobot)
    - **Matrix**: install Matrix support first (`ductor install matrix` or `pip install \"ductor[matrix]\"`), then provide homeserver URL, user ID, and password/access token
+   - **Feishu (experimental)**: domestic Feishu app `app_id` + `app_secret`; optional user auth can later be added with `ductor auth feishu login`
 5. Docker optional (recommended for sandboxing)
 
 ## Install
@@ -51,6 +52,13 @@ On first run, onboarding does:
 - offers Docker sandboxing (with optional AI/ML package selection),
 - offers service install,
 - writes config and seeds `~/.ductor/`.
+
+Feishu is not part of the interactive onboarding path in this branch. Configure the `feishu` block manually in `config.json` or from `config.example.json`, then optionally run:
+
+```bash
+ductor auth feishu login
+ductor auth feishu status
+```
 
 Multiple transports can run in parallel (e.g. Telegram + Matrix
 simultaneously). After initial setup, configure the `transports` array

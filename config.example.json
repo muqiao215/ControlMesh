@@ -59,6 +59,10 @@
         "app_id": "cli_xxxxxxxxxxxx",
         "app_secret": "sec_xxxxxxxxxxxx",
         "domain": "https://open.feishu.cn",
+        "listener_host": "127.0.0.1",
+        "listener_port": 8765,
+        "listener_path": "/feishu/events",
+        "listener_max_body_bytes": 262144,
         "allow_from": [
             "ou_xxxxxxxxxxxx"
         ],
