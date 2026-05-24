@@ -166,6 +166,29 @@ class CLIParametersConfig(BaseModel):
     gemini: list[str] = Field(default_factory=list)
 
 
+class TerminalConfig(BaseModel):
+    """Settings for the local ControlMesh enhanced terminal."""
+
+    enabled: bool = True
+    default_provider: str = "codex"
+    default_model: str = "gpt-5.5"
+    default_mode: Literal["enhanced", "native"] = "enhanced"
+    prompt: str = "cm> "
+    native_escape_command: str = "/cm"
+    back_command: str = "/back"
+    show_background_notifications: bool = True
+    background_notification_interval_seconds: float = 2.0
+    inbox_enabled: bool = True
+    memory_auto_context: bool = False
+    memory_inject_requires_confirmation: bool = True
+    pty_raw_mode: bool = True
+    pty_line_mode_fallback: bool = True
+    foreground_provider_reuse: bool = True
+    foreground_session_name: str = "terminal-main"
+    enable_background_agents: bool = True
+    native_provider_args: dict[str, list[str]] = Field(default_factory=dict)
+
+
 class MatrixConfig(BaseModel):
     """Matrix homeserver connection settings."""
 
@@ -651,6 +674,7 @@ class AgentConfig(BaseModel):
     webhooks: WebhookConfig = Field(default_factory=WebhookConfig)
     api: ApiConfig = Field(default_factory=ApiConfig)
     cli_parameters: CLIParametersConfig = Field(default_factory=CLIParametersConfig)
+    terminal: TerminalConfig = Field(default_factory=TerminalConfig)
     image: ImageConfig = Field(default_factory=ImageConfig)
     timeouts: TimeoutConfig = Field(default_factory=TimeoutConfig)
     tasks: TasksConfig = Field(default_factory=TasksConfig)

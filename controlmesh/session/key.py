@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from hashlib import blake2b
 
 from controlmesh.messenger.address import (
     ChatRef,
@@ -67,6 +68,14 @@ class SessionKey:
     def matrix(cls, chat_id: ChatRef) -> SessionKey:
         """Create a Matrix session key."""
         return cls(transport="mx", chat_id=chat_id)
+
+    @classmethod
+    def terminal(cls, name: str = "main") -> SessionKey:
+        """Create a stable session key for the local enhanced terminal."""
+        normalized = name.strip() or "main"
+        digest = blake2b(normalized.encode("utf-8"), digest_size=8).digest()
+        chat_id = int.from_bytes(digest, byteorder="big", signed=False)
+        return cls(transport="terminal", chat_id=chat_id)
 
     @classmethod
     def parse(cls, raw: str) -> SessionKey:

@@ -20,28 +20,30 @@ secondary compatibility/runtime modules.
 9. `docs/modules/setup_wizard.md` -- CLI commands, onboarding, restart/upgrade lifecycle.
 10. `docs/modules/service_management.md` -- systemd/launchd/Task Scheduler backends and operational behavior.
 11. `docs/architecture.md` -- startup, routing, streaming, callbacks, observers.
-12. `docs/config.md` -- config schema, merge behavior, hot-reload boundaries.
-13. `docs/modules/config_reload.md` -- runtime config reload details.
-14. `docs/modules/orchestrator.md` -- routing core, flows, selectors, lifecycle split.
-15. `docs/modules/bus.md` -- unified Envelope/MessageBus delivery architecture.
-16. `docs/modules/session.md` -- transport-aware `SessionKey(transport, chat_id, topic_id)` isolation model.
-17. `docs/modules/api.md` -- direct WebSocket ingress and HTTP file endpoints.
-18. `docs/modules/bot.md` -- Telegram transport (messenger/telegram/), middleware, topic routing.
-19. `docs/modules/cli.md` -- provider wrappers, stream parsing, process control.
-20. `docs/modules/codex-hooks.md` -- Codex-native lifecycle capability matrix and fallback ownership.
-21. `docs/modules/gateways.md` -- transport-neutral gateway config skeleton for future external dispatch.
-22. `docs/modules/team.md` -- additive team state layer, read-only API envelope, and phase machine.
-23. `docs/modules/harness.md` -- file-driven control plane, controller/worker boundaries, automatic adjudication, and TDD/live/checkpoint governance.
-24. `docs/modules/cli_commands.md` -- CLI command split from `__main__.py`.
-25. `docs/modules/workspace.md` -- `~/.controlmesh` seeding, rules sync, skill sync.
-26. `docs/modules/memory_v2.md` -- additive `MEMORY.md` / daily memory / dreaming-state substrate.
-27. `docs/modules/multiagent.md` -- supervisor, bus bridge, sub-agent runtime.
-28. Remaining module docs (`matrix`, `background`, `cron`, `webhook`, `heartbeat`, `cleanup`, `infra`, `supervisor`, `security`, `logging`, `files`, `text`, `skill_system`).
+12. `docs/terminal.md` -- enhanced terminal, `/cm` native mode, `/back`, and legacy bot runtime.
+13. `docs/config.md` -- config schema, merge behavior, hot-reload boundaries.
+14. `docs/modules/config_reload.md` -- runtime config reload details.
+15. `docs/modules/orchestrator.md` -- routing core, flows, selectors, lifecycle split.
+16. `docs/modules/bus.md` -- unified Envelope/MessageBus delivery architecture.
+17. `docs/modules/session.md` -- transport-aware `SessionKey(transport, chat_id, topic_id)` isolation model.
+18. `docs/modules/api.md` -- direct WebSocket ingress and HTTP file endpoints.
+19. `docs/modules/bot.md` -- Telegram transport (messenger/telegram/), middleware, topic routing.
+20. `docs/modules/cli.md` -- provider wrappers, stream parsing, process control.
+21. `docs/modules/codex-hooks.md` -- Codex-native lifecycle capability matrix and fallback ownership.
+22. `docs/modules/gateways.md` -- transport-neutral gateway config skeleton for future external dispatch.
+23. `docs/modules/team.md` -- additive team state layer, read-only API envelope, and phase machine.
+24. `docs/modules/harness.md` -- file-driven control plane, controller/worker boundaries, automatic adjudication, and TDD/live/checkpoint governance.
+25. `docs/modules/cli_commands.md` -- CLI command split from `__main__.py`.
+26. `docs/modules/workspace.md` -- `~/.controlmesh` seeding, rules sync, skill sync.
+27. `docs/modules/memory_v2.md` -- additive `MEMORY.md` / daily memory / dreaming-state substrate.
+28. `docs/modules/multiagent.md` -- supervisor, bus bridge, sub-agent runtime.
+29. Remaining module docs (`matrix`, `background`, `cron`, `webhook`, `heartbeat`, `cleanup`, `infra`, `supervisor`, `security`, `logging`, `files`, `text`, `skill_system`).
 
 ## System in 60 Seconds
 
 - `controlmesh/__main__.py`: thin CLI entrypoint (dispatch) + config loading.
 - `controlmesh/cli_commands/`: concrete CLI subcommand implementations (`agents`, `docker`, `service`, `api`, `install`, lifecycle/status helpers).
+- `controlmesh/terminal/`: enhanced local terminal, native provider line-mode bridge, inbox, and explicit memory injection.
 - `controlmesh/messenger/`: transport-agnostic protocols, capabilities, notifications, registry.
 - `controlmesh/messenger/telegram/`: aiogram handlers, auth/sequencing middleware, streaming dispatch, callback routing, group audit/chat tracking.
 - `controlmesh/messenger/matrix/`: matrix-nio handlers, segment streaming, reaction buttons, formatting.
@@ -73,6 +75,8 @@ Runtime behavior notes:
 - [Telegram Setup](telegram-setup.md)
 - [WeChat / Weixin Setup](weixin-setup.md)
 - [QQ Bot Official Pivot](qqbot-official-pivot.md)
+- [Terminal](terminal.md)
+- [v0.41.0 Release Note](release-note-v0.41.0.md)
 - [v0.40.3 Release Note](release-note-v0.40.3.md)
 - [v0.40.2 Release Note](release-note-v0.40.2.md)
 - [v0.40.1 Release Note](release-note-v0.40.1.md)

@@ -100,6 +100,28 @@ class AsyncInterAgentResult:
 AsyncResultCallback = Callable[["AsyncInterAgentResult"], Awaitable[None]]
 
 
+def _stack_orchestrator(stack: AgentStack):
+    """Return an orchestrator from real AgentStack or legacy test doubles."""
+    bot = getattr(stack, "bot", None)
+    if bot is not None:
+        try:
+            return bot.orchestrator
+        except AttributeError:
+            pass
+    return getattr(stack, "orchestrator", None)
+
+
+def _stack_notification_service(stack: AgentStack):
+    """Return a notification service from real AgentStack or test doubles."""
+    bot = getattr(stack, "bot", None)
+    if bot is not None:
+        try:
+            return bot.notification_service
+        except AttributeError:
+            pass
+    return getattr(stack, "notification_service", None)
+
+
 class InterAgentBus:
     """In-memory async bus for agent-to-agent communication.
 
@@ -161,7 +183,7 @@ class InterAgentBus:
         logger.info("Bus: %s -> %s (%d chars)", sender, recipient, len(message))
 
         try:
-            orch = target.bot.orchestrator
+            orch = _stack_orchestrator(target)
             if orch is None:
                 return InterAgentResponse(
                     sender=recipient,
@@ -272,7 +294,7 @@ class InterAgentBus:
         t0 = time.time()
         try:
             target = self._agents[task.recipient]
-            orch = target.bot.orchestrator
+            orch = _stack_orchestrator(target)
             if orch is None:
                 await self._deliver_async_result(
                     AsyncInterAgentResult(
@@ -381,7 +403,9 @@ class InterAgentBus:
             if target is None:
                 return
 
-            ns = target.bot.notification_service
+            ns = _stack_notification_service(target)
+            if ns is None:
+                return
 
             # Use explicit summary if provided, otherwise truncate message
             if task.summary:

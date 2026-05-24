@@ -28,6 +28,27 @@
     "transport": "telegram",
     "transports": ["telegram"],
 
+    "terminal": {
+        "enabled": true,
+        "default_provider": "codex",
+        "default_model": "gpt-5.5",
+        "default_mode": "enhanced",
+        "prompt": "cm> ",
+        "native_escape_command": "/cm",
+        "back_command": "/back",
+        "show_background_notifications": true,
+        "background_notification_interval_seconds": 2.0,
+        "inbox_enabled": true,
+        "memory_auto_context": false,
+        "memory_inject_requires_confirmation": true,
+        "pty_raw_mode": true,
+        "pty_line_mode_fallback": true,
+        "foreground_provider_reuse": true,
+        "foreground_session_name": "terminal-main",
+        "enable_background_agents": true,
+        "native_provider_args": {}
+    },
+
     "telegram_token": "YOUR_BOT_TOKEN_HERE",
     "allowed_user_ids": [
         123456789

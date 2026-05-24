@@ -47,6 +47,7 @@ from controlmesh.cli_commands.status import (
     print_usage as _print_usage,
 )
 from controlmesh.cli_commands.tasks import cmd_tasks as _cmd_tasks
+from controlmesh.cli_commands.terminal import cmd_terminal as _cmd_terminal
 from controlmesh.config import (
     DEFAULT_EMPTY_GEMINI_API_KEY,
     AgentConfig,
@@ -557,6 +558,11 @@ def _default_action(verbose: bool) -> None:
     _start_bot(verbose)
 
 
+def _cmd_bot(verbose: bool) -> None:
+    """Run the legacy chat transport runtime."""
+    _default_action(verbose)
+
+
 def _print_version() -> None:
     """Print the installed ControlMesh version."""
     _console.print(get_current_version())
@@ -617,6 +623,9 @@ _COMMANDS: dict[str, str] = {
     "auth": "auth",
     "runtime": "runtime",
     "tasks": "tasks",
+    "terminal": "terminal",
+    "term": "terminal",
+    "bot": "bot",
     "feishu": "feishu",
     "qq": "qq",
 }
@@ -661,12 +670,16 @@ def main() -> None:
         "auth": lambda: _cmd_auth(args),
         "runtime": lambda: _cmd_runtime(args),
         "tasks": lambda: _cmd_tasks(args),
+        "terminal": lambda: _cmd_terminal(args),
+        "bot": lambda: _cmd_bot(verbose),
         "feishu": lambda: _cmd_feishu(args),
     }
 
     handler = dispatch.get(action) if action else None
     if handler is not None:
         handler()
+    elif sys.stdin.isatty() and sys.stdout.isatty():
+        _cmd_terminal(args)
     else:
         _default_action(verbose)
 

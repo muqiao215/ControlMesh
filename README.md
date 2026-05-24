@@ -6,11 +6,19 @@ ControlMesh is a chat-native task runtime for official coding CLIs, with a
 file-backed memory layer, a first-class multi-agent runtime
 ## 中文
 
-### 手机端多代理平台
+### Enhanced Terminal 与手机端多代理平台
 
 ControlMesh 是一个开源的 chat-native task runtime：把 Claude、Codex、
 Gemini 等官方编码 CLI 接进飞书、Telegram 和微信，让它们像长期在线的任务
 机器人一样执行工作，并带上文件型记忆层和多代理运行时。
+
+从 0.41.0 开始，在交互式终端直接运行 `controlmesh` 会进入
+ControlMesh Enhanced Terminal：
+
+- 默认提示符是 `cm>`，普通输入复用 ControlMesh Orchestrator、记忆、任务和路由能力。
+- 输入 `/cm` 进入真实 Codex/Claude/OpenCode 等 provider 原生 CLI。
+- 在原生模式输入 `/back` 回到 `cm>`。
+- 旧聊天机器人 runtime 仍保留为 `controlmesh bot`。
 
 它不是一次性的聊天壳。主线是飞书里的后台任务闭环：创建任务、任务后台执行、
 任务缺信息时通过 `ask_parent` 回问飞书、父会话恢复任务、结果回到同一聊天上下文。
@@ -113,6 +121,13 @@ Feishu native + Telegram + 微信入口为主。
 ```bash
 pipx install controlmesh
 controlmesh
+```
+
+交互式 `controlmesh` 会进入 enhanced terminal。要启动旧的聊天 transport
+runtime，使用：
+
+```bash
+controlmesh bot
 ```
 
 如果你想直接跟踪 GitHub 最新 `main`，不用等下一次 PyPI 发布：

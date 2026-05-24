@@ -123,6 +123,28 @@ _TRANSPORT_IDENTITY_CHANGED: dict[str, _IdentityCheck] = {
 }
 
 
+def _stack_orchestrator(stack: AgentStack):
+    """Return an orchestrator from real AgentStack or legacy test doubles."""
+    bot = getattr(stack, "bot", None)
+    if bot is not None:
+        try:
+            return bot.orchestrator
+        except AttributeError:
+            pass
+    return getattr(stack, "orchestrator", None)
+
+
+def _stack_notification_service(stack: AgentStack):
+    """Return a notification service from real AgentStack or test doubles."""
+    bot = getattr(stack, "bot", None)
+    if bot is not None:
+        try:
+            return bot.notification_service
+        except AttributeError:
+            pass
+    return getattr(stack, "notification_service", None)
+
+
 class AgentSupervisor:
     """Manages the main agent and dynamically created sub-agents.
 
@@ -154,6 +176,7 @@ class AgentSupervisor:
         self._host_job_runner: HostJobRunner | None = None
         self._host_job_reconcile_task: asyncio.Task[None] | None = None
         self._host_job_projection: dict[str, _HostJobProjectionState] = {}
+        self._sub_agent_transport_enabled = True
 
     @property
     def stacks(self) -> dict[str, AgentStack]:
@@ -167,77 +190,17 @@ class AgentSupervisor:
     def bus(self) -> InterAgentBus | None:
         return self._bus
 
+    @property
+    def task_hub(self) -> TaskHub | None:
+        return self._task_hub
+
     async def start(self) -> int:
         """Start main agent + all sub-agents. Blocks until main agent exits."""
-        self._running = True
+        await self.start_core()
+        await self.start_main_stack(transport_enabled=True)
 
-        # Initialize inter-agent bus
-        from controlmesh.multiagent.bus import InterAgentBus
-        from controlmesh.multiagent.internal_api import InternalAgentAPI
-
-        self._bus = InterAgentBus()
-        self._internal_api = InternalAgentAPI(
-            self._bus,
-            port=self._main_config.interagent_port,
-            docker_mode=self._main_config.docker.enabled,
-        )
-        self._internal_api.set_health_ref(self._health)
-        started = await self._internal_api.start()
-        if not started:
-            msg = "Internal agent API failed to start"
-            raise RuntimeError(msg)
-        logger.info("InterAgentBus and internal API started")
-
-        # Initialize task hub (background task delegation)
-        if self._main_config.tasks.enabled:
-            from controlmesh.tasks.hub import TaskHub
-            from controlmesh.tasks.registry import TaskRegistry
-
-            registry = TaskRegistry(
-                registry_path=self._main_paths.tasks_registry_path,
-                tasks_dir=self._main_paths.tasks_dir,
-            )
-            self._task_hub = TaskHub(
-                registry,
-                self._main_paths,
-                cli_service=None,  # Set per-agent in _post_startup
-                config=self._main_config.tasks,
-                runtime_config=self._main_config,
-            )
-            self._internal_api.set_task_hub(self._task_hub)
-            logger.info(
-                "TaskHub initialized (max_parallel=%d)", self._main_config.tasks.max_parallel
-            )
-
-        from controlmesh.runtime import HostJobRunner
-
-        self._host_job_runner = HostJobRunner(self._main_paths)
-        self._host_job_reconcile_task = asyncio.create_task(
-            self._host_job_reconcile_loop(),
-            name="host-job-reconcile",
-        )
-
-        # 1. Start main agent
-        main_stack = await AgentStack.create(
-            "main",
-            self._main_config,
-            is_main=True,
-        )
-        self._stacks["main"] = main_stack
-        self._health["main"] = AgentHealth(name="main")
-        self._bus.register("main", main_stack)
-        self._bus.set_async_result_handler("main", main_stack.bot.on_async_interagent_result)
-
-        self._tasks["main"] = asyncio.create_task(
-            self._supervised_run("main", main_stack),
-            name="agent:main",
-        )
-
-        # 2. Wait for main agent startup (Docker, workspace, auth) before
-        #    starting sub-agents.  This ensures Docker is set up exactly once
-        #    by the main agent; sub-agents reuse the existing container.
-        #    Timeout is extended when Docker extras are configured because the
-        #    first image build can take several minutes.
+        # Wait for main agent startup (Docker, workspace, auth) before
+        # starting sub-agents. This preserves the existing chat runtime behavior.
         startup_timeout = 120
         if self._main_config.docker.enabled and self._main_config.docker.extras:
             from controlmesh.infra.docker_extras import calculate_build_timeout, resolve_extras
@@ -254,20 +217,9 @@ class AgentSupervisor:
                 startup_timeout,
             )
 
-        # 3. Load and start sub-agents from agents.json
-        await self._sync_sub_agents()
+        await self.start_sub_agents(transport_enabled=True)
 
-        # 4. Start shared knowledge sync (SHAREDMEMORY.md → all agents)
-        from controlmesh.multiagent.shared_knowledge import SharedKnowledgeSync
-
-        shared_path = self._main_paths.controlmesh_home / "SHAREDMEMORY.md"
-        self._shared_knowledge = SharedKnowledgeSync(shared_path, self)
-        await self._shared_knowledge.start()
-
-        # 5. Start FileWatcher for agents.json
-        await self._watcher.start()
-
-        # 6. Wait for main agent to finish — it determines the exit code
+        # Wait for main agent to finish — it determines the exit code.
         await self._main_done.wait()
         main_task = self._tasks.get("main")
         exit_code = 0
@@ -278,6 +230,105 @@ class AgentSupervisor:
                 exit_code = 1
 
         return exit_code
+
+    async def start_core(self) -> None:
+        """Start shared supervisor services without starting a transport bot."""
+        if self._running and self._bus is not None:
+            return
+        self._running = True
+        from controlmesh.multiagent.bus import InterAgentBus
+        from controlmesh.multiagent.internal_api import InternalAgentAPI
+
+        self._bus = InterAgentBus()
+        self._internal_api = InternalAgentAPI(
+            self._bus,
+            port=self._main_config.interagent_port,
+            docker_mode=self._main_config.docker.enabled,
+        )
+        self._internal_api.set_health_ref(self._health)
+        started = await self._internal_api.start()
+        if not started:
+            msg = "Internal agent API failed to start"
+            raise RuntimeError(msg)
+        logger.info("InterAgentBus and internal API started")
+
+        if self._main_config.tasks.enabled:
+            from controlmesh.tasks.hub import TaskHub
+            from controlmesh.tasks.registry import TaskRegistry
+
+            registry = TaskRegistry(
+                registry_path=self._main_paths.tasks_registry_path,
+                tasks_dir=self._main_paths.tasks_dir,
+            )
+            self._task_hub = TaskHub(
+                registry,
+                self._main_paths,
+                cli_service=None,
+                config=self._main_config.tasks,
+                runtime_config=self._main_config,
+            )
+            self._internal_api.set_task_hub(self._task_hub)
+            logger.info(
+                "TaskHub initialized (max_parallel=%d)", self._main_config.tasks.max_parallel
+            )
+
+        from controlmesh.runtime import HostJobRunner
+
+        self._host_job_runner = HostJobRunner(self._main_paths)
+        self._host_job_reconcile_task = asyncio.create_task(
+            self._host_job_reconcile_loop(),
+            name="host-job-reconcile",
+        )
+
+    async def start_main_stack(self, *, transport_enabled: bool = True) -> None:
+        """Start the main stack for chat runtime, or a headless main for terminal."""
+        mode = "transport" if transport_enabled else "headless"
+        main_stack = await AgentStack.create(
+            "main",
+            self._main_config,
+            is_main=True,
+            mode=mode,
+        )
+        self._stacks["main"] = main_stack
+        self._health["main"] = AgentHealth(name="main")
+        if self._bus is not None:
+            self._bus.register("main", main_stack)
+            self._bus.set_async_result_handler("main", main_stack.bot.on_async_interagent_result)
+
+        if not transport_enabled:
+            self._inject_headless_startup(main_stack)
+            self._main_ready.set()
+            return
+
+        self._tasks["main"] = asyncio.create_task(
+            self._supervised_run("main", main_stack),
+            name="agent:main",
+        )
+
+    async def start_sub_agents(self, *, transport_enabled: bool = True) -> None:
+        """Start sub-agents and shared knowledge sync."""
+        self._sub_agent_transport_enabled = transport_enabled
+        await self._sync_sub_agents(transport_enabled=transport_enabled)
+
+        from controlmesh.multiagent.shared_knowledge import SharedKnowledgeSync
+
+        shared_path = self._main_paths.controlmesh_home / "SHAREDMEMORY.md"
+        self._shared_knowledge = SharedKnowledgeSync(shared_path, self)
+        await self._shared_knowledge.start()
+
+        await self._watcher.start()
+
+    def _inject_headless_startup(self, stack: AgentStack) -> None:
+        orch = _stack_orchestrator(stack)
+        if orch is None:
+            return
+        orch.supervisor = self
+        if stack.is_main:
+            orch.register_multiagent_commands()
+        if self._task_hub is not None:
+            self._wire_task_hub(stack)
+        if self._host_job_runner is not None:
+            orch.set_host_job_runner(self._host_job_runner)
 
     def _finish_agent(self, name: str, health: AgentHealth) -> None:
         """Mark an agent as stopped and signal main-done if it is the main agent."""
@@ -431,7 +482,7 @@ class AgentSupervisor:
         supervisor = self
 
         async def _post_startup() -> None:
-            orch = stack.bot.orchestrator
+            orch = _stack_orchestrator(stack)
             if orch is None:
                 return
             orch.supervisor = supervisor
@@ -458,8 +509,9 @@ class AgentSupervisor:
             # Wire task hub: set CLI service and register handlers
             if supervisor._task_hub is not None:
                 supervisor._wire_task_hub(stack)
-            if supervisor._host_job_runner is not None:
-                stack.bot.orchestrator.set_host_job_runner(supervisor._host_job_runner)
+            orch = _stack_orchestrator(stack)
+            if supervisor._host_job_runner is not None and orch is not None:
+                orch.set_host_job_runner(supervisor._host_job_runner)
 
             logger.debug("Supervisor reference injected into agent '%s'", stack.name)
 
@@ -477,7 +529,7 @@ class AgentSupervisor:
         if hub is None:
             return
 
-        orch = stack.bot.orchestrator
+        orch = _stack_orchestrator(stack)
         if orch is None:
             return
 
@@ -527,6 +579,7 @@ class AgentSupervisor:
             name,
             old_stack.config,
             is_main=old_stack.is_main,
+            mode=old_stack.mode,
         )
         self._stacks[name] = new_stack
         if self._bus:
@@ -536,14 +589,19 @@ class AgentSupervisor:
 
     # -- Sub-agent lifecycle ------------------------------------------------
 
-    async def _sync_sub_agents(self) -> None:
+    async def _sync_sub_agents(self, *, transport_enabled: bool = True) -> None:
         """Load agents.json and start any sub-agents not yet running."""
         sub_agents = self._registry.load()
         for sub_cfg in sub_agents:
             if sub_cfg.name not in self._stacks:
-                await self._start_sub_agent(sub_cfg)
+                await self._start_sub_agent(sub_cfg, transport_enabled=transport_enabled)
 
-    async def _start_sub_agent(self, sub_cfg: SubAgentConfig) -> None:
+    async def _start_sub_agent(
+        self,
+        sub_cfg: SubAgentConfig,
+        *,
+        transport_enabled: bool = True,
+    ) -> None:
         """Create and start a new sub-agent."""
         name = sub_cfg.name
         if name == "main":
@@ -554,7 +612,8 @@ class AgentSupervisor:
         config = merge_sub_agent_config(self._main_config, sub_cfg, agent_home)
 
         try:
-            stack = await AgentStack.create(name, config)
+            mode = sub_cfg.mode if transport_enabled else "headless"
+            stack = await AgentStack.create(name, config, mode=mode)
         except Exception:
             logger.exception("Failed to create sub-agent '%s'", name)
             return
@@ -576,10 +635,14 @@ class AgentSupervisor:
             self._bus.register(name, stack)
             self._bus.set_async_result_handler(name, stack.bot.on_async_interagent_result)
 
-        self._tasks[name] = asyncio.create_task(
-            self._supervised_run(name, stack),
-            name=f"agent:{name}",
-        )
+        if stack.mode == "headless":
+            self._inject_headless_startup(stack)
+            self._health[name].mark_running()
+        else:
+            self._tasks[name] = asyncio.create_task(
+                self._supervised_run(name, stack),
+                name=f"agent:{name}",
+            )
 
         # Sync shared knowledge into the new agent's durable memory file.
         if self._shared_knowledge:
@@ -654,7 +717,10 @@ class AgentSupervisor:
             # Start new agents
             for name in desired_names - current_sub:
                 logger.info("agents.json: new agent '%s' detected, starting", name)
-                await self._start_sub_agent(desired[name])
+                await self._start_sub_agent(
+                    desired[name],
+                    transport_enabled=self._sub_agent_transport_enabled,
+                )
 
             # Stop removed agents
             for name in current_sub - desired_names:
@@ -674,7 +740,10 @@ class AgentSupervisor:
                 if _config_changed(new_config, existing.config):
                     logger.info("agents.json: agent '%s' config changed, restarting", name)
                     await self.stop_agent(name)
-                    await self._start_sub_agent(sub_cfg)
+                    await self._start_sub_agent(
+                        sub_cfg,
+                        transport_enabled=self._sub_agent_transport_enabled,
+                    )
 
     # -- Notifications ------------------------------------------------------
 
@@ -684,7 +753,10 @@ class AgentSupervisor:
         if main is None:
             return
         try:
-            await main.bot.notification_service.notify_all(f"**[Supervisor]** {message}")
+            service = _stack_notification_service(main)
+            if service is None:
+                return
+            await service.notify_all(f"**[Supervisor]** {message}")
         except Exception:
             logger.exception("Failed to notify main agent")
 
@@ -693,7 +765,10 @@ class AgentSupervisor:
         if main is None:
             return
         try:
-            await main.bot.notification_service.notify_all(
+            service = _stack_notification_service(main)
+            if service is None:
+                return
+            await service.notify_all(
                 fmt(
                     t("upgrade.available_header"),
                     SEP,
@@ -713,7 +788,7 @@ class AgentSupervisor:
         """
         killed = 0
         for name, stack in list(self._stacks.items()):
-            orch = stack.bot.orchestrator
+            orch = _stack_orchestrator(stack)
             if orch is None:
                 continue
             try:

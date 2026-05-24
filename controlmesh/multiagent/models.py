@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -28,14 +29,17 @@ class SubAgentConfig(BaseModel):
     """
 
     name: str
+    mode: Literal["transport", "headless"] = "transport"
     transport: str = "telegram"  # "telegram" | "matrix"
+    workspace_policy: Literal["isolated", "shared", "shared_readonly"] = "isolated"
+    terminal_visible: bool = True
 
-    # Telegram credentials (required when transport=telegram)
+    # Telegram credentials (required when mode=transport and transport=telegram)
     telegram_token: str = ""
     allowed_user_ids: list[int] | None = None
     allowed_group_ids: list[int] | None = None
 
-    # Matrix credentials (required when transport=matrix)
+    # Matrix credentials (required when mode=transport and transport=matrix)
     matrix: MatrixConfig | None = None
 
     # Group behaviour
