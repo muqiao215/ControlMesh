@@ -8,6 +8,7 @@ import time
 from dataclasses import dataclass
 
 import aiohttp
+import controlmesh
 
 from controlmesh.infra.install import detect_install_info
 
@@ -25,6 +26,9 @@ def get_current_version() -> str:
     try:
         return importlib.metadata.version(_PACKAGE_NAME)
     except importlib.metadata.PackageNotFoundError:
+        fallback = getattr(controlmesh, "__version__", None)
+        if isinstance(fallback, str) and fallback.strip():
+            return fallback
         return "0.0.0"
 
 
