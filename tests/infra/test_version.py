@@ -57,20 +57,24 @@ class TestGetCurrentVersion:
             assert get_current_version() == "1.5.0"
 
     def test_returns_fallback_when_not_installed(self) -> None:
-        with patch(
-            "controlmesh.infra.version.importlib.metadata.version",
-            side_effect=importlib.metadata.PackageNotFoundError,
+        with (
+            patch(
+                "controlmesh.infra.version.importlib.metadata.version",
+                side_effect=importlib.metadata.PackageNotFoundError,
+            ),
+            patch("controlmesh.infra.version.controlmesh.__version__", "0.39.0"),
         ):
-            with patch("controlmesh.infra.version.controlmesh.__version__", "0.39.0"):
-                assert get_current_version() == "0.39.0"
+            assert get_current_version() == "0.39.0"
 
     def test_returns_zero_only_when_metadata_and_module_version_missing(self) -> None:
-        with patch(
-            "controlmesh.infra.version.importlib.metadata.version",
-            side_effect=importlib.metadata.PackageNotFoundError,
+        with (
+            patch(
+                "controlmesh.infra.version.importlib.metadata.version",
+                side_effect=importlib.metadata.PackageNotFoundError,
+            ),
+            patch("controlmesh.infra.version.controlmesh.__version__", ""),
         ):
-            with patch("controlmesh.infra.version.controlmesh.__version__", ""):
-                assert get_current_version() == "0.0.0"
+            assert get_current_version() == "0.0.0"
 
 
 def _mock_pypi_session(
