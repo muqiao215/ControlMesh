@@ -326,6 +326,10 @@ def test_feishu_config_group_fields() -> None:
                     "require_mention": False,
                     "thread_isolation": True,
                     "reply_mode": "inline",
+                    "agent_roster": ["main", "coder"],
+                    "default_agent": "coder",
+                    "allow_interagent_handoff": True,
+                    "max_handoff_depth": 1,
                 }
             },
         },
@@ -338,6 +342,10 @@ def test_feishu_config_group_fields() -> None:
     assert cfg.feishu.group_reply_mode == "thread"
     assert cfg.feishu.groups["oc_group"].reply_mode == "inline"
     assert cfg.feishu.groups["oc_group"].thread_isolation is True
+    assert cfg.feishu.groups["oc_group"].agent_roster == ["main", "coder"]
+    assert cfg.feishu.groups["oc_group"].default_agent == "coder"
+    assert cfg.feishu.groups["oc_group"].allow_interagent_handoff is True
+    assert cfg.feishu.groups["oc_group"].max_handoff_depth == 1
 
 
 def test_feishu_group_config_accepts_typed_group_overrides() -> None:
@@ -355,6 +363,10 @@ def test_feishu_group_config_accepts_typed_group_overrides() -> None:
                     "thread_isolation": True,
                     "reply_mode": "thread",
                     "allow_from_users": ["ou_owner", "ou_admin"],
+                    "agentRoster": ["reviewer"],
+                    "defaultAgent": "reviewer",
+                    "allowInteragentHandoff": True,
+                    "maxHandoffDepth": 1,
                 }
             },
         },
@@ -366,6 +378,10 @@ def test_feishu_group_config_accepts_typed_group_overrides() -> None:
     assert group.thread_isolation is True
     assert group.reply_mode == "thread"
     assert group.allow_from_users == ["ou_owner", "ou_admin"]
+    assert group.agent_roster == ["reviewer"]
+    assert group.default_agent == "reviewer"
+    assert group.allow_interagent_handoff is True
+    assert group.max_handoff_depth == 1
 
 
 def test_qqbot_config_accepts_accounts_mapping() -> None:

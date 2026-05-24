@@ -45,6 +45,14 @@ class _FakeTaskResult:
     thread_id: int | None = None
 
 
+@dataclass
+class _FakeInterAgentResponse:
+    sender: str = "coder"
+    text: str = "coded it"
+    success: bool = True
+    error: str | None = None
+
+
 def _make_bot(
     tmp_path: Path,
     *,
@@ -74,6 +82,30 @@ def _make_bot(
     bot.send_text = AsyncMock()  # type: ignore[method-assign]
     bot.broadcast_text = AsyncMock()  # type: ignore[method-assign]
     return bot
+
+
+class _FakeInterAgentBus:
+    def __init__(self, response: _FakeInterAgentResponse | None = None) -> None:
+        self.response = response or _FakeInterAgentResponse()
+        self.calls: list[dict[str, object]] = []
+
+    async def send(
+        self,
+        *,
+        sender: str,
+        recipient: str,
+        message: str,
+        new_session: bool = False,
+    ) -> _FakeInterAgentResponse:
+        self.calls.append(
+            {
+                "sender": sender,
+                "recipient": recipient,
+                "message": message,
+                "new_session": new_session,
+            }
+        )
+        return self.response
 
 
 def _make_settings_orchestrator(bot: FeishuBot, tmp_path: Path) -> SimpleNamespace:
@@ -1065,6 +1097,50 @@ class TestFeishuBotRouting:
             reply_to_message_id="om_1",
         )
 
+    async def test_handle_incoming_event_does_not_treat_at_all_as_bot_mention(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(tmp_path, app_id="cli_bot_open_id", group_allow_from=["oc_chat_1"])
+        bot.handle_incoming_text = AsyncMock()  # type: ignore[method-assign]
+        create_time_ms = int(time.time() * 1000)
+
+        payload = {
+            "schema": "2.0",
+            "header": {
+                "event_id": "evt_1",
+                "event_type": "im.message.receive_v1",
+                "create_time": str(create_time_ms),
+                "tenant_key": "tenant_1",
+                "app_id": "cli_123",
+            },
+            "event": {
+                "sender": {"sender_id": {"open_id": "ou_sender"}},
+                "message": {
+                    "message_id": "om_1",
+                    "chat_id": "oc_chat_1",
+                    "chat_type": "group",
+                    "message_type": "text",
+                    "content": '{"text":"@all ping"}',
+                    "mentions": [{"key": "@all"}],
+                },
+            },
+        }
+
+        await bot.handle_incoming_event(payload)
+
+        bot.handle_incoming_text.assert_awaited_once_with(
+            FeishuIncomingText(
+                sender_id="ou_sender",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="ping",
+                create_time_ms=create_time_ms,
+                chat_type="group",
+                mentions_bot=False,
+            )
+        )
+
     async def test_handle_incoming_text_thread_isolation_routes_distinct_topic_ids(
         self,
         tmp_path: Path,
@@ -1299,6 +1375,136 @@ class TestFeishuBotRouting:
         bot._send_text_to_chat_ref.assert_awaited_once_with(
             "oc_chat_1",
             "pong",
+            reply_to_message_id="om_1",
+        )
+
+    async def test_handle_incoming_text_group_routes_explicit_named_agent(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(
+            tmp_path,
+            require_mention_in_group=False,
+            group_policy="open",
+            groups={
+                "oc_chat_1": {
+                    "agent_roster": ["main", "coder"],
+                    "allow_interagent_handoff": True,
+                    "max_handoff_depth": 1,
+                }
+            },
+        )
+        bus = _FakeInterAgentBus(_FakeInterAgentResponse(sender="coder", text="done"))
+        bot._orchestrator = SimpleNamespace(
+            supervisor=SimpleNamespace(bus=bus),
+            handle_message_streaming=AsyncMock(return_value=SimpleNamespace(text="main")),
+        )
+        bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_allowed",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="@coder implement this",
+                chat_type="group",
+                thread_id="omt_thread",
+            )
+        )
+
+        assert bus.calls
+        assert bus.calls[0]["sender"] == "main"
+        assert bus.calls[0]["recipient"] == "coder"
+        assert bus.calls[0]["new_session"] is False
+        prompt = str(bus.calls[0]["message"])
+        assert "[Feishu controlled group handoff]" in prompt
+        assert "target_agent=coder" in prompt
+        assert "remaining_handoff_depth=0" in prompt
+        assert prompt.endswith("implement this")
+        bot._orchestrator.handle_message_streaming.assert_not_awaited()
+        bot._send_text_to_chat_ref.assert_awaited_once_with(
+            "oc_chat_1",
+            "[coder]\ndone",
+            reply_to_message_id="om_1",
+        )
+
+    async def test_handle_incoming_text_group_routes_default_agent_without_handoff(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(
+            tmp_path,
+            require_mention_in_group=False,
+            group_policy="open",
+            groups={
+                "oc_chat_1": {
+                    "agent_roster": ["main", "reviewer"],
+                    "default_agent": "reviewer",
+                    "allow_interagent_handoff": False,
+                    "max_handoff_depth": 1,
+                }
+            },
+        )
+        bus = _FakeInterAgentBus(_FakeInterAgentResponse(sender="reviewer", text="reviewed"))
+        bot._orchestrator = SimpleNamespace(
+            supervisor=SimpleNamespace(bus=bus),
+            handle_message_streaming=AsyncMock(return_value=SimpleNamespace(text="main")),
+        )
+        bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_allowed",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="please review",
+                chat_type="group",
+            )
+        )
+
+        assert bus.calls[0]["recipient"] == "reviewer"
+        prompt = str(bus.calls[0]["message"])
+        assert "handoff_allowed=false" in prompt
+        assert "remaining_handoff_depth=0" in prompt
+        assert prompt.endswith("please review")
+        bot._send_text_to_chat_ref.assert_awaited_once_with(
+            "oc_chat_1",
+            "[reviewer]\nreviewed",
+            reply_to_message_id="om_1",
+        )
+
+    async def test_handle_incoming_text_group_unknown_agent_falls_back_to_main(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(
+            tmp_path,
+            require_mention_in_group=False,
+            group_policy="open",
+            groups={"oc_chat_1": {"agent_roster": ["coder"]}},
+        )
+        bus = _FakeInterAgentBus()
+        bot._orchestrator = SimpleNamespace(
+            supervisor=SimpleNamespace(bus=bus),
+            handle_message_streaming=AsyncMock(return_value=SimpleNamespace(text="main answer")),
+        )
+        bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_allowed",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="@unknown question",
+                chat_type="group",
+            )
+        )
+
+        assert bus.calls == []
+        bot._orchestrator.handle_message_streaming.assert_awaited_once()
+        bot._send_text_to_chat_ref.assert_awaited_once_with(
+            "oc_chat_1",
+            "main answer",
             reply_to_message_id="om_1",
         )
 

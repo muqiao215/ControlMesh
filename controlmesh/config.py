@@ -207,6 +207,40 @@ class FeishuGroupConfig(BaseModel):
         default_factory=list,
         validation_alias=AliasChoices("allow_from_users", "allowFromUsers"),
     )
+    agent_roster: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("agent_roster", "agentRoster"),
+    )
+    default_agent: str = Field(
+        default="",
+        validation_alias=AliasChoices("default_agent", "defaultAgent"),
+    )
+    allow_interagent_handoff: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("allow_interagent_handoff", "allowInteragentHandoff"),
+    )
+    max_handoff_depth: int = Field(
+        default=1,
+        validation_alias=AliasChoices("max_handoff_depth", "maxHandoffDepth"),
+    )
+
+    @field_validator("agent_roster")
+    @classmethod
+    def _validate_agent_roster(cls, value: list[str]) -> list[str]:
+        return [item.strip() for item in value if item.strip()]
+
+    @field_validator("default_agent")
+    @classmethod
+    def _validate_default_agent(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("max_handoff_depth")
+    @classmethod
+    def _validate_max_handoff_depth(cls, value: int) -> int:
+        if value < 0:
+            msg = "Feishu group max_handoff_depth must be >= 0"
+            raise ValueError(msg)
+        return value
 
 
 class FeishuConfig(BaseModel):

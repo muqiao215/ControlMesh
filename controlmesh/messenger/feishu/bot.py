@@ -118,6 +118,24 @@ _TextStreamCallback = Callable[[str], Awaitable[None]]
 _StatusStreamCallback = Callable[[str | None], Awaitable[None]]
 _ToolEventStreamCallback = Callable[[ToolUseEvent | ToolResultEvent], Awaitable[None]]
 _FEISHU_COMMAND_GUIDE_VERSION = 3
+_FEISHU_AGENT_TARGET_PREFIXES = ("agent:", "agent=", "@agent:")
+
+
+@dataclass(frozen=True, slots=True)
+class FeishuAgentRoute:
+    """Resolved Feishu group routing target."""
+
+    agent: str
+    text: str
+    via_default: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class SimpleTextResult:
+    """Small result adapter for Feishu delivery paths."""
+
+    text: str
+    status: str = "completed"
 
 
 def _stream_callbacks_for_output_mode(
@@ -472,12 +490,20 @@ class FeishuBot:
                     progress.start()
                 if content_key:
                     self._inflight_content_keys.add(content_key)
-                auth_routed, result = await self._run_streaming_turn(
-                    message,
-                    chat_id=chat_id,
-                    topic_id=topic_id,
-                    progress=progress,
-                )
+                route = self._resolve_group_agent_route(message)
+                if route is not None:
+                    result = await self._run_group_agent_route(
+                        message,
+                        route=route,
+                    )
+                    auth_routed = False
+                else:
+                    auth_routed, result = await self._run_streaming_turn(
+                        message,
+                        chat_id=chat_id,
+                        topic_id=topic_id,
+                        progress=progress,
+                    )
         except Exception as exc:
             await progress.finish_failure(str(exc))
             raise
@@ -1032,6 +1058,131 @@ class FeishuBot:
             await self._handle_native_tool_auth_required(message, exc.contract)
             return True, None
         return False, result
+
+    async def _run_group_agent_route(
+        self,
+        message: FeishuIncomingText,
+        *,
+        route: FeishuAgentRoute,
+    ) -> Any:
+        bus = self._interagent_bus()
+        if bus is None:
+            return SimpleTextResult(
+                text="Agent handoff is unavailable: multi-agent runtime is not active.",
+                status="failed",
+            )
+        prompt = self._build_group_agent_handoff_prompt(message, route=route)
+        response = await bus.send(
+            sender=self._agent_name,
+            recipient=route.agent,
+            message=prompt,
+            new_session=False,
+        )
+        if not response.success:
+            error = response.error or f"Agent `{route.agent}` did not return a result."
+            return SimpleTextResult(text=error, status="failed")
+        visible = f"[{route.agent}]\n{response.text.strip()}" if response.text.strip() else ""
+        return SimpleTextResult(text=visible, status="completed")
+
+    def _interagent_bus(self) -> Any | None:
+        if self._orchestrator is None:
+            return None
+        supervisor = getattr(self._orchestrator, "supervisor", None)
+        return getattr(supervisor, "bus", None)
+
+    def _resolve_group_agent_route(self, message: FeishuIncomingText) -> FeishuAgentRoute | None:
+        if not self._is_group_message(message):
+            return None
+        overrides = self._group_overrides_for_message(message)
+        if overrides is None:
+            return None
+        roster = self._group_agent_roster_for_message(message)
+        if not roster:
+            return None
+
+        explicit = self._extract_explicit_agent_target(message.text, roster)
+        if explicit is not None:
+            agent, routed_text = explicit
+            if agent == self._agent_name:
+                return None
+            return FeishuAgentRoute(agent=agent, text=routed_text)
+
+        default_agent = overrides.default_agent
+        if default_agent and default_agent in roster and default_agent != self._agent_name:
+            return FeishuAgentRoute(agent=default_agent, text=message.text.strip(), via_default=True)
+        return None
+
+    def _group_agent_roster_for_message(self, message: FeishuIncomingText) -> list[str]:
+        overrides = self._group_overrides_for_message(message)
+        if overrides is None:
+            return []
+        return [name for name in overrides.agent_roster if name != self._agent_name]
+
+    def _extract_explicit_agent_target(
+        self,
+        text: str,
+        roster: list[str],
+    ) -> tuple[str, str] | None:
+        stripped = text.strip()
+        if not stripped:
+            return None
+        words = stripped.split(maxsplit=1)
+        first = words[0]
+        rest = words[1].strip() if len(words) > 1 else ""
+        for prefix in _FEISHU_AGENT_TARGET_PREFIXES:
+            if first.lower().startswith(prefix):
+                candidate = first[len(prefix) :].strip()
+                if candidate in roster:
+                    return candidate, rest
+        if first.startswith("@"):
+            candidate = first[1:].strip()
+            if candidate in roster:
+                return candidate, rest
+        return None
+
+    def _build_group_agent_handoff_prompt(
+        self,
+        message: FeishuIncomingText,
+        *,
+        route: FeishuAgentRoute,
+    ) -> str:
+        overrides = self._group_overrides_for_message(message)
+        allow_handoff = bool(overrides and overrides.allow_interagent_handoff)
+        configured_depth = overrides.max_handoff_depth if allow_handoff and overrides else 0
+        handoff_depth_used = 1 if allow_handoff and configured_depth > 0 else 0
+        remaining_depth = max(configured_depth - handoff_depth_used, 0)
+
+        routed_message = FeishuIncomingText(
+            sender_id=message.sender_id,
+            chat_id=message.chat_id,
+            message_id=message.message_id,
+            text=route.text or message.text,
+            thread_id=message.thread_id,
+            create_time_ms=message.create_time_ms,
+            message_type=message.message_type,
+            root_id=message.root_id,
+            parent_id=message.parent_id,
+            quote_summary=message.quote_summary,
+            post_title=message.post_title,
+            chat_type=message.chat_type,
+            mentions_bot=message.mentions_bot,
+            replies_to_bot=message.replies_to_bot,
+        )
+        user_text = build_feishu_agent_input(routed_message)
+        return (
+            "[Feishu controlled group handoff]\n"
+            f"source_agent={self._agent_name}\n"
+            f"target_agent={route.agent}\n"
+            f"chat_id={message.chat_id}\n"
+            f"thread_id={message.thread_id or ''}\n"
+            f"reply_target=original_feishu_group_thread\n"
+            f"handoff_allowed={'true' if allow_handoff else 'false'}\n"
+            f"remaining_handoff_depth={remaining_depth}\n"
+            "Do not start a free bot-to-bot conversation. Answer this delegated request and "
+            "return the final answer here.\n"
+            "[/Feishu controlled group handoff]\n\n"
+            f"{user_text}"
+        )
 
     def _should_use_bundled_native_runtime(self) -> bool:
         if self._config.feishu.runtime_mode != "native" or self._orchestrator is None:
@@ -2079,9 +2230,6 @@ class FeishuBot:
                 open_id = mention_id.get("open_id")
                 if isinstance(open_id, str) and open_id and open_id == bot_sender_id:
                     return True
-            key = item.get("key")
-            if isinstance(key, str) and key.lower() == "@all":
-                return True
         return False
 
     def _message_replies_to_bot(self, message: dict[str, Any]) -> bool:
