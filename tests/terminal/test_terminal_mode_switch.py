@@ -11,6 +11,11 @@ from controlmesh.orchestrator.registry import OrchestratorResult
 from controlmesh.terminal.enhanced_shell import EnhancedShell
 
 
+class _Inbox:
+    def list_unread(self) -> list[object]:
+        return []
+
+
 @pytest.mark.asyncio
 async def test_enter_native_runs_native_session() -> None:
     runtime = type("Runtime", (), {"provider": "codex"})()
@@ -28,7 +33,7 @@ async def test_native_command_enters_native_session() -> None:
     runtime = type(
         "Runtime",
         (),
-        {"provider": "codex", "inbox": type("Inbox", (), {"list_unread": lambda self: []})()},
+        {"provider": "codex", "inbox": _Inbox()},
     )()
     inputs = iter(["native", "exit"])
     shell = EnhancedShell(runtime=runtime, config=AgentConfig(), prompt_input=lambda _prompt: next(inputs))
@@ -46,7 +51,7 @@ async def test_cm_command_shows_guidance_with_legacy_config() -> None:
         (),
         {
             "provider": "codex",
-            "inbox": type("Inbox", (), {"list_unread": lambda self: []})(),
+            "inbox": _Inbox(),
             "handle_control_command": AsyncMock(),
         },
     )()
@@ -75,7 +80,7 @@ async def test_unknown_plain_text_does_not_call_model() -> None:
         (),
         {
             "provider": "codex",
-            "inbox": type("Inbox", (), {"list_unread": lambda self: []})(),
+            "inbox": _Inbox(),
             "handle_user_message": AsyncMock(),
         },
     )()
@@ -101,7 +106,7 @@ async def test_chat_command_calls_model_with_message() -> None:
         (),
         {
             "provider": "codex",
-            "inbox": type("Inbox", (), {"list_unread": lambda self: []})(),
+            "inbox": _Inbox(),
             "handle_user_message": AsyncMock(return_value=OrchestratorResult(text="ok")),
         },
     )()
@@ -121,7 +126,7 @@ async def test_slash_chat_command_calls_model_with_message() -> None:
         (),
         {
             "provider": "codex",
-            "inbox": type("Inbox", (), {"list_unread": lambda self: []})(),
+            "inbox": _Inbox(),
             "handle_user_message": AsyncMock(return_value=OrchestratorResult(text="ok")),
         },
     )()
