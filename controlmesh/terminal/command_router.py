@@ -5,28 +5,35 @@ from __future__ import annotations
 from rich.console import Console
 
 from controlmesh.orchestrator.registry import OrchestratorResult
+from controlmesh.terminal.help import TERMINAL_HELP
 from controlmesh.terminal.rendering import render_result
 
 
 class TerminalCommandRouter:
     """Handle terminal-local commands before falling back to Orchestrator."""
 
-    CONTROL_PREFIXES = (
-        "/tasks",
-        "/task",
-        "/agents",
-        "/agent",
-        "/@",
-        "/memory",
-        "/cron",
-        "/inbox",
-        "/status",
-        "/model",
-        "/route",
-        "/help",
-        "/upgrade",
-        "/diagnose",
+    CONTROL_COMMANDS = frozenset(
+        {
+            "tasks",
+            "task",
+            "agents",
+            "agent",
+            "agent_start",
+            "agent_stop",
+            "agent_restart",
+            "memory",
+            "cron",
+            "inbox",
+            "status",
+            "model",
+            "route",
+            "upgrade",
+            "diagnose",
+            "history",
+            "sessions",
+        }
     )
+    LOCAL_COMMANDS = frozenset({"help", "cm"})
 
     def __init__(self, runtime, console: Console | None = None) -> None:
         self.runtime = runtime
@@ -35,21 +42,33 @@ class TerminalCommandRouter:
     def is_terminal_command(self, line: str) -> bool:
         """Return whether this line is a terminal/ControlMesh command."""
         text = line.strip()
-        return text.startswith(self.CONTROL_PREFIXES)
+        if not text:
+            return False
+        head = _command_head(text)
+        if head.startswith("@"):
+            return True
+        return head in self.CONTROL_COMMANDS or head in self.LOCAL_COMMANDS
 
     async def handle(self, line: str) -> OrchestratorResult | None:
         """Handle a terminal command and render its result."""
         text = line.strip()
-        if text.startswith("/inbox"):
-            result = await self._handle_inbox(text)
-        elif text.startswith("/@"):
-            result = await self._handle_at_agent(text)
-        elif text.startswith("/memory search "):
-            result = await self._handle_memory_search(text)
-        elif text.startswith("/memory inject "):
-            result = await self._handle_memory_inject(text)
+        canonical = _canonical_command(text)
+        if canonical == "/help":
+            result = OrchestratorResult(text=TERMINAL_HELP)
+        elif canonical == "/cm":
+            result = OrchestratorResult(
+                text="`/cm` has moved to `native` in the terminal. Run `native` to enter provider CLI."
+            )
+        elif canonical.startswith("/inbox"):
+            result = await self._handle_inbox(canonical)
+        elif canonical.startswith("/@"):
+            result = await self._handle_at_agent(canonical)
+        elif canonical.startswith("/memory search "):
+            result = await self._handle_memory_search(canonical)
+        elif canonical.startswith("/memory inject "):
+            result = await self._handle_memory_inject(canonical)
         else:
-            result = await self.runtime.handle_control_command(text)
+            result = await self.runtime.handle_control_command(canonical)
         render_result(self.console, result)
         return result
 
@@ -101,3 +120,15 @@ class TerminalCommandRouter:
         except KeyError as exc:
             return OrchestratorResult(text=str(exc))
         return OrchestratorResult(text=f"Queued {hit_id} for the next enhanced message.")
+
+
+def _command_head(text: str) -> str:
+    head = text.split(None, 1)[0]
+    return head.removeprefix("/")
+
+
+def _canonical_command(text: str) -> str:
+    stripped = text.strip()
+    if stripped.startswith("/"):
+        return stripped
+    return f"/{stripped}"

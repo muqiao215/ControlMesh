@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Awaitable, Callable
+from contextlib import contextmanager
 
 from controlmesh.config import AgentConfig
 from controlmesh.orchestrator.core import Orchestrator
@@ -13,6 +15,7 @@ from controlmesh.terminal.memory_context import TerminalMemoryContext
 from controlmesh.workspace.paths import resolve_paths
 
 _TextCallback = Callable[[str], Awaitable[None]]
+logger = logging.getLogger(__name__)
 
 
 class TerminalRuntime:
@@ -56,9 +59,17 @@ class TerminalRuntime:
             from controlmesh.multiagent.supervisor import AgentSupervisor
 
             supervisor = AgentSupervisor(self.config)
-            await supervisor.start_core()
-            await supervisor.start_sub_agents(transport_enabled=False)
-        except Exception:
+            with _suppress_optional_startup_tracebacks():
+                await supervisor.start_core()
+                await supervisor.start_sub_agents(transport_enabled=False)
+        except Exception as exc:
+            logger.warning(
+                "Optional terminal background runtime did not start: %s: %s",
+                type(exc).__name__,
+                exc,
+            )
+            if "supervisor" in locals():
+                await supervisor.stop_all()
             return
         self.supervisor = supervisor
         if self.orchestrator is not None:
@@ -121,3 +132,19 @@ def _config_with_terminal_provider(config: AgentConfig, provider: str) -> AgentC
     data["provider"] = provider
     data["model"] = model
     return AgentConfig.model_validate(data)
+
+
+@contextmanager
+def _suppress_optional_startup_tracebacks():
+    noisy_loggers = [
+        logging.getLogger("controlmesh.multiagent.internal_api"),
+        logging.getLogger("controlmesh.multiagent.supervisor"),
+    ]
+    old_disabled = [log.disabled for log in noisy_loggers]
+    try:
+        for log in noisy_loggers:
+            log.disabled = True
+        yield
+    finally:
+        for log, disabled in zip(noisy_loggers, old_disabled, strict=True):
+            log.disabled = disabled

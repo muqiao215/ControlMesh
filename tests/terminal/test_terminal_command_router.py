@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from io import StringIO
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from rich.console import Console
 
 from controlmesh.orchestrator.registry import OrchestratorResult
 from controlmesh.terminal.command_router import TerminalCommandRouter
@@ -47,3 +49,79 @@ async def test_memory_inject_queues_hit() -> None:
     memory.inject.assert_called_once_with("hit_001")
     assert result is not None
     assert "Queued hit_001" in result.text
+
+
+@pytest.mark.asyncio
+async def test_help_is_local_and_does_not_call_runtime() -> None:
+    runtime = SimpleNamespace(handle_control_command=AsyncMock())
+    output = StringIO()
+    router = TerminalCommandRouter(runtime, console=Console(file=output, width=120))
+
+    result = await router.handle("help")
+
+    runtime.handle_control_command.assert_not_awaited()
+    assert result is not None
+    assert "ControlMesh Terminal" in result.text
+    assert "chat <message>" in output.getvalue()
+
+
+@pytest.mark.asyncio
+async def test_slash_help_is_local_and_does_not_call_runtime() -> None:
+    runtime = SimpleNamespace(handle_control_command=AsyncMock())
+    router = TerminalCommandRouter(runtime)
+
+    result = await router.handle("/help")
+
+    runtime.handle_control_command.assert_not_awaited()
+    assert result is not None
+    assert "native" in result.text
+
+
+@pytest.mark.asyncio
+async def test_status_routes_to_controlmesh_status_command() -> None:
+    runtime = SimpleNamespace(
+        handle_control_command=AsyncMock(return_value=OrchestratorResult(text="status ok"))
+    )
+    router = TerminalCommandRouter(runtime)
+
+    result = await router.handle("status")
+
+    runtime.handle_control_command.assert_awaited_once_with("/status")
+    assert result is not None
+    assert result.text == "status ok"
+
+
+@pytest.mark.asyncio
+async def test_slash_status_routes_to_controlmesh_status_command() -> None:
+    runtime = SimpleNamespace(
+        handle_control_command=AsyncMock(return_value=OrchestratorResult(text="status ok"))
+    )
+    router = TerminalCommandRouter(runtime)
+
+    await router.handle("/status")
+
+    runtime.handle_control_command.assert_awaited_once_with("/status")
+
+
+@pytest.mark.asyncio
+async def test_non_slash_runtime_command_is_canonicalized() -> None:
+    runtime = SimpleNamespace(
+        handle_control_command=AsyncMock(return_value=OrchestratorResult(text="tasks"))
+    )
+    router = TerminalCommandRouter(runtime)
+
+    await router.handle("tasks list")
+
+    runtime.handle_control_command.assert_awaited_once_with("/tasks list")
+
+
+@pytest.mark.asyncio
+async def test_cm_returns_compatibility_guidance() -> None:
+    runtime = SimpleNamespace(handle_control_command=AsyncMock())
+    router = TerminalCommandRouter(runtime)
+
+    result = await router.handle("/cm")
+
+    runtime.handle_control_command.assert_not_awaited()
+    assert result is not None
+    assert "native" in result.text

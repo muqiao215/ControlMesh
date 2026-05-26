@@ -15,6 +15,8 @@ from controlmesh.terminal.native_pty import NativePTYSession
 class EnhancedShell:
     """Interactive ``cm>`` shell backed by the ControlMesh orchestrator."""
 
+    UNKNOWN_COMMAND_HINT = "Unknown command. Run `help`, or use `chat <message>` for model chat."
+
     def __init__(
         self,
         *,
@@ -31,25 +33,38 @@ class EnhancedShell:
 
     async def run(self) -> None:
         """Run the enhanced shell until exit."""
-        self.console.print("[bold green]ControlMesh Enhanced Codex[/bold green]")
-        self.console.print("[dim]输入 /cm 进入 Codex 原生模式，/exit 退出。[/dim]")
+        self.console.print("[bold green]ControlMesh Terminal[/bold green]")
+        self.console.print(
+            "[dim]Type help for commands. Use chat <message> for model chat, native for provider CLI, exit to quit.[/dim]"
+        )
         while True:
-            line = await asyncio.to_thread(self._prompt_input, self._prompt())
+            try:
+                line = await asyncio.to_thread(self._prompt_input, self._prompt())
+            except (EOFError, KeyboardInterrupt):
+                self.console.print()
+                return
             text = line.strip()
             if not text:
                 continue
             if text in {"/exit", "exit", "quit"}:
                 return
-            if text == self.config.terminal.native_escape_command:
+            if text in self._native_commands():
                 await self.enter_native()
                 continue
             if text == self.config.terminal.back_command:
                 self.console.print("Already in ControlMesh enhanced mode.")
                 continue
+            chat_message = self._chat_message(text)
+            if chat_message is not None:
+                if chat_message:
+                    await self._handle_chat_safely(chat_message)
+                else:
+                    self.console.print("Usage: chat <message>")
+                continue
             if self.router.is_terminal_command(text):
                 await self.router.handle(text)
                 continue
-            await self.handle_enhanced_message(line)
+            self.console.print(self.UNKNOWN_COMMAND_HINT)
 
     async def enter_native(self) -> None:
         """Run the native provider session and return to enhanced mode."""
@@ -83,3 +98,24 @@ class EnhancedShell:
         if updates and self.config.terminal.show_background_notifications:
             return f"cm [{updates} updates]> "
         return base
+
+    @staticmethod
+    def _chat_message(text: str) -> str | None:
+        if text == "chat" or text.startswith("chat "):
+            return text.removeprefix("chat").strip()
+        if text == "/chat" or text.startswith("/chat "):
+            return text.removeprefix("/chat").strip()
+        return None
+
+    async def _handle_chat_safely(self, text: str) -> None:
+        try:
+            await self.handle_enhanced_message(text)
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            self.console.print("\nInterrupted.")
+
+    def _native_commands(self) -> set[str]:
+        commands = {"/native", "native"}
+        configured = self.config.terminal.native_escape_command
+        if configured and configured != "/cm":
+            commands.add(configured)
+        return commands

@@ -174,7 +174,7 @@ class TerminalConfig(BaseModel):
     default_model: str = "gpt-5.5"
     default_mode: Literal["enhanced", "native"] = "enhanced"
     prompt: str = "cm> "
-    native_escape_command: str = "/cm"
+    native_escape_command: str = "/native"
     back_command: str = "/back"
     show_background_notifications: bool = True
     background_notification_interval_seconds: float = 2.0
