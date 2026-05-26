@@ -6,13 +6,13 @@ import asyncio
 import html as html_mod
 import logging
 import re
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from aiogram.enums import ParseMode
-from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError
+from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, TelegramRetryAfter
 from aiogram.types import FSInputFile, InlineKeyboardMarkup, ReplyParameters
 
 from controlmesh.files.tags import FILE_PATH_RE, extract_file_paths, guess_mime, path_from_file_tag
@@ -43,6 +43,55 @@ logger = logging.getLogger(__name__)
 _PHOTO_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"})
 _VIDEO_SUFFIXES = frozenset({".mp4"})
 _AUDIO_SUFFIXES = frozenset({".mp3", ".m4a"})
+_SEND_RETRY_DELAYS_SECONDS = (0.75, 2.0)
+
+
+async def _with_telegram_send_retries(
+    operation: str,
+    func: Callable[[], Awaitable[Message | object]],
+) -> Message | object:
+    """Run one Telegram send/edit operation with short retry on transient transport errors."""
+    attempts = len(_SEND_RETRY_DELAYS_SECONDS) + 1
+    for attempt in range(1, attempts + 1):
+        try:
+            return await func()
+        except TelegramRetryAfter as exc:
+            delay = max(float(getattr(exc, "retry_after", 1.0)), 0.0)
+            if attempt >= attempts:
+                logger.warning(
+                    "Telegram %s failed after retry-after attempts=%d",
+                    operation,
+                    attempts,
+                    exc_info=True,
+                )
+                raise
+            logger.warning(
+                "Telegram %s rate limited; retrying in %.2fs attempt=%d/%d",
+                operation,
+                delay,
+                attempt + 1,
+                attempts,
+            )
+            await asyncio.sleep(delay)
+        except TelegramNetworkError:
+            if attempt >= attempts:
+                logger.warning(
+                    "Telegram %s network error after attempts=%d",
+                    operation,
+                    attempts,
+                    exc_info=True,
+                )
+                raise
+            delay = _SEND_RETRY_DELAYS_SECONDS[attempt - 1]
+            logger.warning(
+                "Telegram %s network error; retrying in %.2fs attempt=%d/%d",
+                operation,
+                delay,
+                attempt + 1,
+                attempts,
+                exc_info=True,
+            )
+            await asyncio.sleep(delay)
 
 
 def build_outbound_message_key(chat_id: int, message_id: int) -> str:
@@ -82,10 +131,13 @@ def _select_telegram_upload_mode(path: Path, mime: str) -> str:
 
 
 async def _send_document(bot: Bot, chat_id: int, path: Path, thread_id: int | None) -> None:
-    message = await bot.send_document(
-        chat_id=chat_id,
-        document=FSInputFile(path),
-        message_thread_id=thread_id,
+    message = await _with_telegram_send_retries(
+        "send_document",
+        lambda: bot.send_document(
+            chat_id=chat_id,
+            document=FSInputFile(path),
+            message_thread_id=thread_id,
+        ),
     )
     remember_sent_message(bot, chat_id, message)
 
@@ -106,22 +158,31 @@ async def _send_by_mode(
 
     try:
         if upload_mode == "photo":
-            message = await bot.send_photo(
-                chat_id=chat_id,
-                photo=input_file,
-                message_thread_id=thread_id,
+            message = await _with_telegram_send_retries(
+                "send_photo",
+                lambda: bot.send_photo(
+                    chat_id=chat_id,
+                    photo=input_file,
+                    message_thread_id=thread_id,
+                ),
             )
         elif upload_mode == "video":
-            message = await bot.send_video(
-                chat_id=chat_id,
-                video=input_file,
-                message_thread_id=thread_id,
+            message = await _with_telegram_send_retries(
+                "send_video",
+                lambda: bot.send_video(
+                    chat_id=chat_id,
+                    video=input_file,
+                    message_thread_id=thread_id,
+                ),
             )
         elif upload_mode == "audio":
-            message = await bot.send_audio(
-                chat_id=chat_id,
-                audio=input_file,
-                message_thread_id=thread_id,
+            message = await _with_telegram_send_retries(
+                "send_audio",
+                lambda: bot.send_audio(
+                    chat_id=chat_id,
+                    audio=input_file,
+                    message_thread_id=thread_id,
+                ),
             )
         else:
             await _send_document(bot, chat_id, path, thread_id)
@@ -174,27 +235,30 @@ async def _send_text_chunks(
     for i, chunk in enumerate(chunks):
         try:
             if reply_to_message_id and i == 0:
-                last_msg = await bot.send_message(
-                    chat_id=chat_id,
-                    text=chunk,
-                    parse_mode=ParseMode.HTML,
-                    reply_parameters=ReplyParameters(
-                        message_id=reply_to_message_id,
-                        allow_sending_without_reply=True,
+                last_msg = await _with_telegram_send_retries(
+                    "send_message",
+                    lambda: bot.send_message(
+                        chat_id=chat_id,
+                        text=chunk,
+                        parse_mode=ParseMode.HTML,
+                        reply_parameters=ReplyParameters(
+                            message_id=reply_to_message_id,
+                            allow_sending_without_reply=True,
+                        ),
+                        message_thread_id=thread_id,
                     ),
-                    message_thread_id=thread_id,
                 )
             else:
-                last_msg = await bot.send_message(
-                    chat_id=chat_id,
-                    text=chunk,
-                    parse_mode=ParseMode.HTML,
-                    message_thread_id=thread_id,
+                last_msg = await _with_telegram_send_retries(
+                    "send_message",
+                    lambda: bot.send_message(
+                        chat_id=chat_id,
+                        text=chunk,
+                        parse_mode=ParseMode.HTML,
+                        message_thread_id=thread_id,
+                    ),
                 )
             remember_sent_message(bot, chat_id, last_msg)
-        except TelegramNetworkError:
-            logger.debug("Network error sending message (likely shutdown), skipping")
-            return last_msg
         except TelegramBadRequest:
             logger.warning(
                 "HTML send failed at chunk %d/%d, falling back to plain text", i, len(chunks)
@@ -204,11 +268,14 @@ async def _send_text_chunks(
             remaining = "\n\n".join(chunks[i:])
             plain = html_mod.unescape(re.sub(r"<[^>]+>", "", remaining))
             for pc in split_html_message(plain):
-                last_msg = await bot.send_message(
-                    chat_id=chat_id,
-                    text=pc,
-                    parse_mode=None,
-                    message_thread_id=thread_id,
+                last_msg = await _with_telegram_send_retries(
+                    "send_message_plain",
+                    lambda: bot.send_message(
+                        chat_id=chat_id,
+                        text=pc,
+                        parse_mode=None,
+                        message_thread_id=thread_id,
+                    ),
                 )
                 remember_sent_message(bot, chat_id, last_msg)
             break
@@ -245,13 +312,14 @@ async def send_rich(
 
     if button_markup is not None and last_msg is not None:
         try:
-            await bot.edit_message_reply_markup(
-                chat_id=chat_id,
-                message_id=last_msg.message_id,
-                reply_markup=button_markup,
+            await _with_telegram_send_retries(
+                "edit_message_reply_markup",
+                lambda: bot.edit_message_reply_markup(
+                    chat_id=chat_id,
+                    message_id=last_msg.message_id,
+                    reply_markup=button_markup,
+                ),
             )
-        except TelegramNetworkError:
-            logger.debug("Network error attaching keyboard (likely shutdown)")
         except TelegramBadRequest:
             logger.warning("Failed to attach button keyboard in send_rich")
 
@@ -276,26 +344,32 @@ async def send_file(
     """Send a local file with Telegram media/document routing."""
     if allowed_roots is not None and not is_path_safe(path, allowed_roots):
         logger.warning("File path blocked (outside allowed roots): %s", path)
-        await bot.send_message(
-            chat_id=chat_id,
-            text=(
-                f"Could not send <code>{path.name}</code> — "
-                f"file is outside the allowed directory.\n\n"
-                f'Fix: set <code>"file_access": "all"</code> in '
-                f"<code>config.json</code>, then <b>/restart</b>."
+        await _with_telegram_send_retries(
+            "send_message_file_blocked",
+            lambda: bot.send_message(
+                chat_id=chat_id,
+                text=(
+                    f"Could not send <code>{path.name}</code> -- "
+                    f"file is outside the allowed directory.\n\n"
+                    f'Fix: set <code>"file_access": "all"</code> in '
+                    f"<code>config.json</code>, then <b>/restart</b>."
+                ),
+                parse_mode="HTML",
+                message_thread_id=thread_id,
             ),
-            parse_mode="HTML",
-            message_thread_id=thread_id,
         )
         return
 
     if not await asyncio.to_thread(path.exists):
         logger.warning("File not found, skipping: %s", path)
-        await bot.send_message(
-            chat_id=chat_id,
-            text=f"[File not found: {path.name}]",
-            parse_mode=None,
-            message_thread_id=thread_id,
+        await _with_telegram_send_retries(
+            "send_message_file_missing",
+            lambda: bot.send_message(
+                chat_id=chat_id,
+                text=f"[File not found: {path.name}]",
+                parse_mode=None,
+                message_thread_id=thread_id,
+            ),
         )
         return
 
@@ -311,21 +385,25 @@ async def send_file(
         )
 
         logger.info("Sent file: %s (%s)", path.name, mime)
-    except TelegramNetworkError:
-        logger.debug("Network error sending file (likely shutdown), skipping: %s", path)
     except OSError:
         logger.exception("Failed to send file: %s", path)
-        await bot.send_message(
-            chat_id=chat_id,
-            text=f"[Failed to send: {path.name}]",
-            parse_mode=None,
-            message_thread_id=thread_id,
+        await _with_telegram_send_retries(
+            "send_message_file_os_error",
+            lambda: bot.send_message(
+                chat_id=chat_id,
+                text=f"[Failed to send: {path.name}]",
+                parse_mode=None,
+                message_thread_id=thread_id,
+            ),
         )
     except TelegramBadRequest:
         logger.exception("Telegram rejected file upload: %s", path)
-        await bot.send_message(
-            chat_id=chat_id,
-            text=f"[Failed to send: {path.name}]",
-            parse_mode=None,
-            message_thread_id=thread_id,
+        await _with_telegram_send_retries(
+            "send_message_file_rejected",
+            lambda: bot.send_message(
+                chat_id=chat_id,
+                text=f"[Failed to send: {path.name}]",
+                parse_mode=None,
+                message_thread_id=thread_id,
+            ),
         )

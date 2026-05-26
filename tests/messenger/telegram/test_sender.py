@@ -5,7 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from aiogram.exceptions import TelegramBadRequest
+import pytest
+from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError
+from aiogram.methods import GetUpdates
 
 
 class TestSendRich:
@@ -78,6 +80,40 @@ class TestSendRich:
 
         await send_rich(bot, 1, "test")
         assert bot.send_message.call_count == 2
+
+    async def test_send_rich_retries_transient_network_error(self) -> None:
+        from controlmesh.messenger.telegram.sender import send_rich
+
+        sent_msg = MagicMock()
+        sent_msg.message_id = 123
+        bot = MagicMock()
+        bot.send_message = AsyncMock(
+            side_effect=[
+                TelegramNetworkError(GetUpdates(), "Request timeout error"),
+                sent_msg,
+            ],
+        )
+
+        with patch("controlmesh.messenger.telegram.sender.asyncio.sleep", new_callable=AsyncMock):
+            await send_rich(bot, 1, "test")
+
+        assert bot.send_message.call_count == 2
+
+    async def test_send_rich_raises_after_persistent_network_error(self) -> None:
+        from controlmesh.messenger.telegram.sender import send_rich
+
+        bot = MagicMock()
+        bot.send_message = AsyncMock(
+            side_effect=TelegramNetworkError(GetUpdates(), "ServerDisconnectedError"),
+        )
+
+        with (
+            patch("controlmesh.messenger.telegram.sender.asyncio.sleep", new_callable=AsyncMock),
+            pytest.raises(TelegramNetworkError),
+        ):
+            await send_rich(bot, 1, "test")
+
+        assert bot.send_message.call_count == 3
 
 
 class TestSendRichButtons:
