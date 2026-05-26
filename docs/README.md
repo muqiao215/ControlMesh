@@ -76,7 +76,7 @@ Runtime behavior notes:
 - [WeChat / Weixin Setup](weixin-setup.md)
 - [QQ Bot Official Pivot](qqbot-official-pivot.md)
 - [Terminal](terminal.md)
-- [v0.41.6 Release Note](release-note-v0.41.6.md)
+- [v0.41.7 Release Note](release-note-v0.41.7.md)
 - [v0.41.0 Release Note](release-note-v0.41.0.md)
 - [v0.40.3 Release Note](release-note-v0.40.3.md)
 - [v0.40.2 Release Note](release-note-v0.40.2.md)

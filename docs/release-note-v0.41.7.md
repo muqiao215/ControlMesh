@@ -1,4 +1,4 @@
-# ControlMesh v0.41.6
+# ControlMesh v0.41.7
 
 Compared to **v0.41.5**, this patch release hardens Telegram outbound delivery
 when the Telegram transport briefly disconnects.

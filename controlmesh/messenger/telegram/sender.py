@@ -92,6 +92,7 @@ async def _with_telegram_send_retries(
                 exc_info=True,
             )
             await asyncio.sleep(delay)
+    raise RuntimeError(f"Telegram {operation} retry loop exhausted unexpectedly")
 
 
 def build_outbound_message_key(chat_id: int, message_id: int) -> str:
@@ -237,7 +238,7 @@ async def _send_text_chunks(
             if reply_to_message_id and i == 0:
                 last_msg = await _with_telegram_send_retries(
                     "send_message",
-                    lambda: bot.send_message(
+                    lambda chunk=chunk: bot.send_message(
                         chat_id=chat_id,
                         text=chunk,
                         parse_mode=ParseMode.HTML,
@@ -251,7 +252,7 @@ async def _send_text_chunks(
             else:
                 last_msg = await _with_telegram_send_retries(
                     "send_message",
-                    lambda: bot.send_message(
+                    lambda chunk=chunk: bot.send_message(
                         chat_id=chat_id,
                         text=chunk,
                         parse_mode=ParseMode.HTML,
@@ -270,7 +271,7 @@ async def _send_text_chunks(
             for pc in split_html_message(plain):
                 last_msg = await _with_telegram_send_retries(
                     "send_message_plain",
-                    lambda: bot.send_message(
+                    lambda pc=pc: bot.send_message(
                         chat_id=chat_id,
                         text=pc,
                         parse_mode=None,
