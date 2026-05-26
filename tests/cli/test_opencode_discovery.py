@@ -170,6 +170,52 @@ def test_probe_opencode_model_sync_returns_true_on_pong() -> None:
         assert probe_opencode_model_sync("zhipuai/glm-5.1") is True
 
 
+def test_probe_opencode_model_sync_returns_true_on_success_without_pong() -> None:
+    result = subprocess.CompletedProcess(
+        args=["opencode", "run"],
+        returncode=0,
+        stdout='{"type":"step_start","sessionID":"ses_123"}\n',
+        stderr="",
+    )
+    with (
+        patch("controlmesh.cli.opencode_discovery.which", return_value="/usr/bin/opencode"),
+        patch("controlmesh.cli.opencode_discovery.subprocess.run", return_value=result),
+    ):
+        assert probe_opencode_model_sync("zai-coding-plan/glm-5.1") is True
+
+
+def test_probe_opencode_model_sync_falls_back_to_discovery_on_timeout() -> None:
+    def fake_run(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=args[0], timeout=kwargs["timeout"])
+
+    with (
+        patch("controlmesh.cli.opencode_discovery.which", return_value="/usr/bin/opencode"),
+        patch("controlmesh.cli.opencode_discovery.subprocess.run", side_effect=fake_run),
+        patch(
+            "controlmesh.cli.opencode_discovery.discover_opencode_models_sync",
+            return_value=("zai-coding-plan/glm-5.1",),
+        ) as discover_mock,
+    ):
+        assert probe_opencode_model_sync("zai-coding-plan/glm-5.1", deadline=15.0) is True
+
+    discover_mock.assert_called_once_with(deadline=10.0)
+
+
+def test_probe_opencode_model_sync_returns_false_when_timeout_model_not_discovered() -> None:
+    def fake_run(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=args[0], timeout=kwargs["timeout"])
+
+    with (
+        patch("controlmesh.cli.opencode_discovery.which", return_value="/usr/bin/opencode"),
+        patch("controlmesh.cli.opencode_discovery.subprocess.run", side_effect=fake_run),
+        patch(
+            "controlmesh.cli.opencode_discovery.discover_opencode_models_sync",
+            return_value=("zai-coding-plan/glm-4.5-air",),
+        ),
+    ):
+        assert probe_opencode_model_sync("zai-coding-plan/glm-5.1", deadline=15.0) is False
+
+
 def test_probe_opencode_model_sync_returns_false_on_failure() -> None:
     result = subprocess.CompletedProcess(
         args=["opencode", "run"],
