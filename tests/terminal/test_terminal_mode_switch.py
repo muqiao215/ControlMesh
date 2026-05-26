@@ -74,7 +74,7 @@ async def test_cm_command_shows_guidance_with_legacy_config() -> None:
 
 
 @pytest.mark.asyncio
-async def test_unknown_plain_text_does_not_call_model() -> None:
+async def test_plain_text_calls_model() -> None:
     runtime = type(
         "Runtime",
         (),
@@ -95,8 +95,8 @@ async def test_unknown_plain_text_does_not_call_model() -> None:
 
     await shell.run()
 
-    runtime.handle_user_message.assert_not_awaited()
-    assert "Unknown command" in output.getvalue()
+    runtime.handle_user_message.assert_awaited_once()
+    assert runtime.handle_user_message.await_args.args[0] == "hello there"
 
 
 @pytest.mark.asyncio

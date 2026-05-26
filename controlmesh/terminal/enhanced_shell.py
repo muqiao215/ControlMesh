@@ -15,8 +15,6 @@ from controlmesh.terminal.native_pty import NativePTYSession
 class EnhancedShell:
     """Interactive ``cm>`` shell backed by the ControlMesh orchestrator."""
 
-    UNKNOWN_COMMAND_HINT = "Unknown command. Run `help`, or use `chat <message>` for model chat."
-
     def __init__(
         self,
         *,
@@ -35,7 +33,7 @@ class EnhancedShell:
         """Run the enhanced shell until exit."""
         self.console.print("[bold green]ControlMesh Terminal[/bold green]")
         self.console.print(
-            "[dim]Type help for commands. Use chat <message> for model chat, native for provider CLI, exit to quit.[/dim]"
+            "[dim]Type a message to chat. Use model to switch models, help for commands, native for provider CLI, exit to quit.[/dim]"
         )
         while True:
             try:
@@ -64,7 +62,7 @@ class EnhancedShell:
             if self.router.is_terminal_command(text):
                 await self.router.handle(text)
                 continue
-            self.console.print(self.UNKNOWN_COMMAND_HINT)
+            await self._handle_chat_safely(line)
 
     async def enter_native(self) -> None:
         """Run the native provider session and return to enhanced mode."""

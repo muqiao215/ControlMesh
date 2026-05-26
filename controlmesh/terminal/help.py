@@ -25,7 +25,10 @@ Memory/history:
   sessions
 
 Interaction:
-  chat <message>       Send an explicit model chat message
+  <message>            Chat with the selected model
+  chat <message>       Chat with the model
+  /chat <message>      Chat with the model
   native               Enter the provider-native CLI
+  /native              Enter the provider-native CLI
   inbox                Show terminal inbox
 """
