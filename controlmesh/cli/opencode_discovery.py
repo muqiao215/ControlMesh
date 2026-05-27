@@ -161,7 +161,17 @@ def probe_opencode_model_sync(model: str, *, deadline: float = PROBE_TIMEOUT) ->
             timeout=deadline,
             creationflags=_CREATION_FLAGS,
         )
-    except (subprocess.TimeoutExpired, OSError):
+    except subprocess.TimeoutExpired:
+        discovered = discover_opencode_models_sync(deadline=min(deadline, DISCOVERY_TIMEOUT))
+        if normalized in discovered:
+            logger.info(
+                "OpenCode probe timed out but model is discoverable model=%s",
+                normalized,
+            )
+            return True
+        logger.warning("OpenCode probe timed out and model was not discoverable model=%s", normalized)
+        return False
+    except OSError:
         logger.warning("OpenCode probe failed model=%s", normalized, exc_info=True)
         return False
 
@@ -175,7 +185,13 @@ def probe_opencode_model_sync(model: str, *, deadline: float = PROBE_TIMEOUT) ->
         return False
 
     output = (result.stdout or "").strip()
-    return "PONG" in output
+    if "PONG" not in output:
+        logger.info(
+            "OpenCode probe completed without echoed sentinel model=%s stdout_prefix=%s",
+            normalized,
+            output[:200],
+        )
+    return True
 
 
 def resolve_opencode_runnable_model_sync(*, deadline: float = DISCOVERY_TIMEOUT) -> str:
