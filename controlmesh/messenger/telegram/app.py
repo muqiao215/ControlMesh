@@ -250,6 +250,23 @@ class _TelegramPollDiagnostics:
             return None
         return max(0.0, time.monotonic() - succeeded)
 
+    def last_poll_activity_age_seconds(self) -> float | None:
+        latest = max(
+            (
+                value
+                for value in (
+                    self.last_poll_started_at,
+                    self.last_poll_finished_at,
+                    self.last_poll_succeeded_at,
+                )
+                if value is not None
+            ),
+            default=None,
+        )
+        if latest is None:
+            return None
+        return max(0.0, time.monotonic() - latest)
+
 
 class _TelegramPollingSession(BaseSession):
     """Wrap aiogram's session so Telegram polling can emit local diagnostics."""
@@ -471,6 +488,9 @@ class TelegramBot:
         self._telegram_proxy = _telegram_proxy_url()
         self._poll_timeout_seconds = 10
         self._poll_stall_timeout_seconds = self._compute_poll_stall_timeout_seconds()
+        self._poll_idle_timeout_seconds = self._compute_poll_idle_timeout_seconds()
+        self._poll_transport_rebuild_attempts = 0
+        self._poll_transport_rebuild_restart_threshold = 3
         self._poll_diagnostics = _TelegramPollDiagnostics()
 
         session = None
@@ -1814,6 +1834,7 @@ class TelegramBot:
                         ):
                             if item.claim is not None and self._inbound_spool is not None:
                                 self._inbound_spool.supersede(item.claim, reason="stale_before_run")
+                                await self._continue_inbound_spool_progress(item.claim)
                             continue
                         claim = item.claim
                         renew_task = (
@@ -1848,6 +1869,7 @@ class TelegramBot:
                             self._inbound_spool.ack(claim)
                             self._last_inbound_drain_at = time.time()
                             self._persist_runtime_state()
+                            await self._continue_inbound_spool_progress(claim)
                     except (TelegramRetryAfter, TelegramNetworkError, TelegramServerError):
                         if item.claim is not None and self._inbound_spool is not None:
                             self._inbound_spool.retry_later(item.claim, reason="transient_telegram_error")
@@ -1859,6 +1881,7 @@ class TelegramBot:
                     except (TelegramForbiddenError, TelegramBadRequest):
                         if item.claim is not None and self._inbound_spool is not None:
                             self._inbound_spool.dead_letter(item.claim, reason="unrunnable_or_rejected")
+                            await self._continue_inbound_spool_progress(item.claim)
                         logger.exception(
                             "Detached Telegram frontstage unrecoverable delivery failure chat_id=%s topic_id=%s",
                             item.key.chat_id,
@@ -2230,23 +2253,41 @@ class TelegramBot:
                 if self._exit_code == EXIT_RESTART or self._poll_diagnostics.transport_dirty:
                     continue
                 inflight_age = self._poll_diagnostics.poll_inflight_age_seconds()
-                if inflight_age is None or inflight_age <= self._poll_stall_timeout_seconds:
+                if inflight_age is not None and inflight_age > self._poll_stall_timeout_seconds:
+                    offset = self._current_poll_offset()
+                    self._poll_diagnostics.note_poll_failed(
+                        reason="poll_stall",
+                        offset=offset,
+                        mark_transport_dirty=True,
+                    )
+                    logger.warning(
+                        "Telegram poll marked transport dirty reason=%s offset=%s last_success_age=%s failures=%s inflight_age=%ss",
+                        "poll_stall",
+                        offset,
+                        self._format_last_success_age(),
+                        self._poll_diagnostics.consecutive_failures,
+                        f"{inflight_age:.2f}",
+                    )
+                    await self._request_poll_restart("poll_stall")
+                    continue
+                activity_age = self._poll_diagnostics.last_poll_activity_age_seconds()
+                if activity_age is None or activity_age <= self._poll_idle_timeout_seconds:
                     continue
                 offset = self._current_poll_offset()
                 self._poll_diagnostics.note_poll_failed(
-                    reason="poll_stall",
+                    reason="poll_idle",
                     offset=offset,
                     mark_transport_dirty=True,
                 )
                 logger.warning(
-                    "Telegram poll marked transport dirty reason=%s offset=%s last_success_age=%s failures=%s inflight_age=%ss",
-                    "poll_stall",
+                    "Telegram poll marked transport dirty reason=%s offset=%s last_success_age=%s failures=%s idle_age=%ss",
+                    "poll_idle",
                     offset,
                     self._format_last_success_age(),
                     self._poll_diagnostics.consecutive_failures,
-                    f"{inflight_age:.2f}",
+                    f"{activity_age:.2f}",
                 )
-                await self._request_poll_restart("poll_stall")
+                await self._request_poll_restart("poll_idle")
         except asyncio.CancelledError:
             logger.debug("Telegram poll watchdog cancelled")
 
@@ -2274,6 +2315,22 @@ class TelegramBot:
                 if (
                     not start_polling_error
                     and self._exit_code != EXIT_RESTART
+                    and not self._poll_diagnostics.transport_dirty
+                ):
+                    self._poll_diagnostics.note_poll_failed(
+                        reason="polling_returned",
+                        offset=self._current_poll_offset(),
+                        mark_transport_dirty=True,
+                    )
+                    logger.warning(
+                        "Telegram polling returned unexpectedly; forcing transport rebuild offset=%s last_success_age=%s failures=%s",
+                        self._current_poll_offset(),
+                        self._format_last_success_age(),
+                        self._poll_diagnostics.consecutive_failures,
+                    )
+                if (
+                    not start_polling_error
+                    and self._exit_code != EXIT_RESTART
                     and self._poll_diagnostics.transport_dirty
                     and not self._poll_diagnostics.restart_requested
                 ):
@@ -2286,6 +2343,18 @@ class TelegramBot:
                         self._poll_diagnostics.consecutive_failures,
                     )
             if self._exit_code == EXIT_RESTART or not self._poll_diagnostics.transport_dirty:
+                break
+            self._poll_transport_rebuild_attempts += 1
+            if self._poll_transport_rebuild_attempts >= self._poll_transport_rebuild_restart_threshold:
+                logger.error(
+                    "Telegram polling exceeded local transport rebuild threshold=%s; escalating to process restart reason=%s offset=%s last_success_age=%s failures=%s",
+                    self._poll_transport_rebuild_restart_threshold,
+                    self._poll_diagnostics.restart_reason or "dirty_transport",
+                    self._current_poll_offset(),
+                    self._format_last_success_age(),
+                    self._poll_diagnostics.consecutive_failures,
+                )
+                self._exit_code = EXIT_RESTART
                 break
             await self._rebuild_poll_transport()
         return self._exit_code
@@ -2329,6 +2398,9 @@ class TelegramBot:
     def _compute_poll_stall_timeout_seconds(self) -> float:
         return max(self._poll_timeout_seconds + 15.0, self._poll_timeout_seconds * 1.25)
 
+    def _compute_poll_idle_timeout_seconds(self) -> float:
+        return max(self._poll_stall_timeout_seconds * 2.0, self._poll_timeout_seconds + 35.0)
+
     def _note_poll_started(self, method: GetUpdates) -> None:
         if self._restored_poll_offset is not None and method.offset is None:
             method.offset = self._restored_poll_offset
@@ -2338,6 +2410,7 @@ class TelegramBot:
         update_ids = [update.update_id for update in result] if isinstance(result, list) else []
         next_offset = update_ids[-1] + 1 if update_ids else method.offset
         self._poll_diagnostics.note_poll_succeeded(offset=next_offset, update_ids=update_ids)
+        self._poll_transport_rebuild_attempts = 0
         if next_offset is not None:
             self._restored_poll_offset = next_offset
             self._persist_runtime_state()
@@ -2625,3 +2698,10 @@ class TelegramBot:
             if renewed is None:
                 return
             current_claim = renewed
+
+    async def _continue_inbound_spool_progress(self, claim: TelegramInboundClaim) -> None:
+        if self._inbound_spool is None:
+            return
+        if self._inbound_spool.find_pending(claim.entry.chat_id, claim.entry.message_id) is not None:
+            return
+        await self._drain_inbound_spool()
