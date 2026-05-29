@@ -273,9 +273,11 @@ class TestTelegramPollingSession:
 
 class TestTelegramBotRun:
     async def test_run_returns_exit_code(self) -> None:
+        from controlmesh.infra.restart import EXIT_RESTART
+
         tg_bot, bot_instance = _make_tg_bot()
         tg_bot._dp.resolve_used_update_types = MagicMock(return_value=["message", "callback_query"])
-        tg_bot._dp.start_polling = AsyncMock()
+        tg_bot._dp.start_polling = AsyncMock(side_effect=lambda *_args, **_kwargs: setattr(tg_bot, "_exit_code", EXIT_RESTART))
         code = await tg_bot.run()
         bot_instance.delete_webhook.assert_called_once_with(drop_pending_updates=False)
         tg_bot._dp.start_polling.assert_called_once_with(
@@ -284,19 +286,23 @@ class TestTelegramBotRun:
             close_bot_session=True,
             handle_signals=False,
         )
-        assert code == 0
+        assert code == EXIT_RESTART
 
     async def test_run_disables_aiogram_signal_handling(self) -> None:
         """start_polling must receive handle_signals=False so that aiogram
         does not overwrite the supervisor's SIGINT/SIGTERM handler."""
+        from controlmesh.infra.restart import EXIT_RESTART
+
         tg_bot, _bot_instance = _make_tg_bot()
         tg_bot._dp.resolve_used_update_types = MagicMock(return_value=["message"])
-        tg_bot._dp.start_polling = AsyncMock()
+        tg_bot._dp.start_polling = AsyncMock(side_effect=lambda *_args, **_kwargs: setattr(tg_bot, "_exit_code", EXIT_RESTART))
         await tg_bot.run()
         kwargs = tg_bot._dp.start_polling.call_args.kwargs
         assert kwargs.get("handle_signals") is False
 
     async def test_run_rebuilds_dirty_poll_transport_and_restarts_polling(self) -> None:
+        from controlmesh.infra.restart import EXIT_RESTART
+
         tg_bot, bot_instance = _make_tg_bot()
         tg_bot._dp.resolve_used_update_types = MagicMock(return_value=["message"])
 
@@ -305,7 +311,7 @@ class TestTelegramBotRun:
                 tg_bot._poll_diagnostics.transport_dirty = True
                 tg_bot._poll_diagnostics.restart_reason = "poll_conflict_409"
             else:
-                tg_bot._poll_diagnostics.transport_dirty = False
+                tg_bot._exit_code = EXIT_RESTART
 
         tg_bot._dp.start_polling = AsyncMock(side_effect=_start_polling)
         async def _rebuild_transport() -> None:
@@ -315,12 +321,14 @@ class TestTelegramBotRun:
 
         code = await tg_bot.run()
 
-        assert code == 0
+        assert code == EXIT_RESTART
         assert tg_bot._dp.start_polling.await_count == 2
         tg_bot._rebuild_poll_transport.assert_awaited_once()
         bot_instance.delete_webhook.assert_called_once_with(drop_pending_updates=False)
 
     async def test_run_rebuilds_dirty_transport_after_clean_polling_return(self) -> None:
+        from controlmesh.infra.restart import EXIT_RESTART
+
         tg_bot, _bot_instance = _make_tg_bot()
         tg_bot._dp.resolve_used_update_types = MagicMock(return_value=["message"])
 
@@ -329,7 +337,7 @@ class TestTelegramBotRun:
                 tg_bot._poll_diagnostics.transport_dirty = True
                 tg_bot._poll_diagnostics.restart_reason = "recoverable_network_error"
             else:
-                tg_bot._poll_diagnostics.transport_dirty = False
+                tg_bot._exit_code = EXIT_RESTART
 
         tg_bot._dp.start_polling = AsyncMock(side_effect=_start_polling)
 
@@ -340,9 +348,79 @@ class TestTelegramBotRun:
 
         code = await tg_bot.run()
 
-        assert code == 0
+        assert code == EXIT_RESTART
         assert tg_bot._dp.start_polling.await_count == 2
         tg_bot._rebuild_poll_transport.assert_awaited_once()
+
+    async def test_run_treats_unexpected_polling_return_after_activity_as_recoverable(self) -> None:
+        from controlmesh.infra.restart import EXIT_RESTART
+
+        tg_bot, _bot_instance = _make_tg_bot()
+        tg_bot._dp.resolve_used_update_types = MagicMock(return_value=["message"])
+
+        async def _start_polling(*_args: object, **_kwargs: object) -> None:
+            if tg_bot._dp.start_polling.await_count == 1:
+                tg_bot._poll_diagnostics.note_poll_started(offset=91)
+                tg_bot._poll_diagnostics.note_poll_succeeded(offset=92, update_ids=[91])
+            else:
+                tg_bot._exit_code = EXIT_RESTART
+
+        tg_bot._dp.start_polling = AsyncMock(side_effect=_start_polling)
+
+        async def _rebuild_transport() -> None:
+            tg_bot._poll_diagnostics.note_transport_rebuilt()
+
+        tg_bot._rebuild_poll_transport = AsyncMock(side_effect=_rebuild_transport)
+
+        code = await tg_bot.run()
+
+        assert code == EXIT_RESTART
+        assert tg_bot._dp.start_polling.await_count == 2
+        assert tg_bot._poll_diagnostics.last_failure_reason == "polling_returned"
+        tg_bot._rebuild_poll_transport.assert_awaited_once()
+
+    async def test_run_marks_unexpected_polling_return_dirty_without_prior_poll_activity(self) -> None:
+        from controlmesh.infra.restart import EXIT_RESTART
+
+        tg_bot, _bot_instance = _make_tg_bot()
+        tg_bot._dp.resolve_used_update_types = MagicMock(return_value=["message"])
+
+        async def _start_polling(*_args: object, **_kwargs: object) -> None:
+            if tg_bot._dp.start_polling.await_count > 1:
+                tg_bot._exit_code = EXIT_RESTART
+
+        tg_bot._dp.start_polling = AsyncMock(side_effect=_start_polling)
+
+        async def _rebuild_transport() -> None:
+            tg_bot._poll_diagnostics.note_transport_rebuilt()
+
+        tg_bot._rebuild_poll_transport = AsyncMock(side_effect=_rebuild_transport)
+
+        code = await tg_bot.run()
+
+        assert code == EXIT_RESTART
+        assert tg_bot._dp.start_polling.await_count == 2
+        tg_bot._rebuild_poll_transport.assert_awaited_once()
+
+    async def test_run_escalates_to_restart_after_repeated_transport_rebuilds(self) -> None:
+        from controlmesh.infra.restart import EXIT_RESTART
+
+        tg_bot, _bot_instance = _make_tg_bot()
+        tg_bot._dp.resolve_used_update_types = MagicMock(return_value=["message"])
+        tg_bot._poll_transport_rebuild_restart_threshold = 2
+
+        async def _start_polling(*_args: object, **_kwargs: object) -> None:
+            tg_bot._poll_diagnostics.transport_dirty = True
+            tg_bot._poll_diagnostics.restart_reason = "poll_idle"
+
+        tg_bot._dp.start_polling = AsyncMock(side_effect=_start_polling)
+        tg_bot._rebuild_poll_transport = AsyncMock(side_effect=tg_bot._poll_diagnostics.note_transport_rebuilt)
+
+        code = await tg_bot.run()
+
+        assert code == EXIT_RESTART
+        assert tg_bot._dp.start_polling.await_count == 2
+        assert tg_bot._rebuild_poll_transport.await_count == 1
 
     async def test_shutdown_cleans_up(self) -> None:
         tg_bot, _ = _make_tg_bot()
@@ -1692,6 +1770,27 @@ class TestTelegramPollDiagnostics:
         assert tg_bot._poll_diagnostics.restart_reason == "poll_stall"
         tg_bot._request_poll_restart.assert_awaited_once_with("poll_stall")
 
+    async def test_poll_watchdog_marks_idle_dirty_and_requests_restart(self) -> None:
+        tg_bot, _ = _make_tg_bot()
+        tg_bot._poll_idle_timeout_seconds = 0.01
+        now = time.monotonic()
+        tg_bot._poll_diagnostics.last_poll_started_at = now - 1.0
+        tg_bot._poll_diagnostics.last_poll_finished_at = now - 1.0
+        tg_bot._poll_diagnostics.last_poll_succeeded_at = now - 1.0
+        tg_bot._request_poll_restart = AsyncMock()  # type: ignore[method-assign]
+
+        with patch.object(
+            asyncio,
+            "sleep",
+            new_callable=AsyncMock,
+            side_effect=[None, asyncio.CancelledError],
+        ):
+            await tg_bot._watch_poll_health()
+
+        assert tg_bot._poll_diagnostics.transport_dirty is True
+        assert tg_bot._poll_diagnostics.restart_reason == "poll_idle"
+        tg_bot._request_poll_restart.assert_awaited_once_with("poll_idle")
+
 
 class TestTelegramRuntimeStateIntegration:
     async def test_startup_restores_cursor_and_recent_outbound(self) -> None:
@@ -1920,6 +2019,55 @@ class TestTelegramRuntimeStateIntegration:
             await tg_bot._keep_inbound_claim_alive(claim)
 
         assert renew_calls == 2
+
+    async def test_frontstage_completion_resumes_blocked_inbound_spool_lane(self, tmp_path: Path) -> None:
+        config = _make_config(streaming_enabled=False)
+        config.controlmesh_home = str(tmp_path)
+        tg_bot, _bot_instance = _make_tg_bot(config)
+        tg_bot._orchestrator = _make_orchestrator(handle_message_text="queued reply")
+        tg_bot._bot_id = 999
+        tg_bot._bot_username = "controlmesh_bot"
+        tg_bot._configure_inbound_spool()
+        assert tg_bot._inbound_spool is not None
+        tg_bot._inbound_spool.enqueue(
+            [
+                {
+                    "message_id": 80,
+                    "date": 1710000080,
+                    "chat": {"id": 1, "type": "private"},
+                    "from": {"id": 200, "is_bot": False, "first_name": "User"},
+                    "text": "first",
+                },
+            ]
+        )
+
+        with patch(
+            "controlmesh.messenger.telegram.app.run_non_streaming_message", new_callable=AsyncMock
+        ) as mock_run:
+            async def _run(dispatch: object) -> None:
+                if dispatch.text == "first":
+                    assert tg_bot._inbound_spool is not None
+                    tg_bot._inbound_spool.enqueue(
+                        [
+                            {
+                                "message_id": 81,
+                                "date": 1710000081,
+                                "chat": {"id": 1, "type": "private"},
+                                "from": {"id": 200, "is_bot": False, "first_name": "User"},
+                                "text": "second",
+                            }
+                        ]
+                    )
+
+            mock_run.side_effect = _run
+
+            await tg_bot._recover_inbound_spool()
+            await _wait_frontstage_idle(tg_bot)
+
+        assert mock_run.await_count == 2
+        dispatched_texts = [call.args[0].text for call in mock_run.await_args_list]
+        assert dispatched_texts == ["first", "second"]
+        assert tg_bot._inbound_spool.stats().pending_count == 0
 
 
 # ---------------------------------------------------------------------------
