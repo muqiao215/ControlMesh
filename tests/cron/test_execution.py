@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from controlmesh.cli.param_resolver import TaskExecutionConfig
 from controlmesh.cron.execution import (
@@ -352,3 +355,112 @@ class TestIndent:
 
     def test_single_line(self) -> None:
         assert indent("hello", ">> ") == ">> hello"
+
+
+class TestExecuteOneShotTimeoutKill:
+    """The timeout path must reap the whole process group and never block the loop.
+
+    Regression: provider CLIs (e.g. ``claude``) spawn worker subprocesses that
+    inherit stdout/stderr.  Killing only the lead PID left those pipe holders
+    alive, so the post-timeout ``communicate()`` blocked forever and froze the
+    main asyncio loop (no Telegram poller, no cron, no model-cache refresh).
+    """
+
+    def test_starts_subprocess_in_own_session_on_posix(self) -> None:
+        if sys.platform == "win32":
+            pytest.skip("POSIX-only: start_new_session enables process-group kill")
+
+        async def run() -> None:
+            with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec:
+                proc = AsyncMock()
+                proc.communicate.return_value = (b'{"result":"ok"}', b"")
+                proc.returncode = 0
+                mock_exec.return_value = proc
+                await execute_one_shot(
+                    OneShotCommand(cmd=["/usr/bin/claude", "-p", "--", "hi"]),
+                    cwd=Path("/tmp"),
+                    provider="claude",
+                    timeout_seconds=60,
+                    timeout_label="Test",
+                )
+            assert mock_exec.call_args[1].get("start_new_session") is True
+
+        asyncio.run(run())
+
+    async def test_post_kill_drain_is_bounded(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A pipe held open by an orphaned grandchild must not block the loop."""
+        monkeypatch.setattr("controlmesh.cron.execution._POST_KILL_DRAIN_SECONDS", 0.05)
+
+        async def hang_forever(_input: bytes | None = None) -> tuple[bytes, bytes]:
+            await asyncio.sleep(3600)
+            return (b"", b"")
+
+        proc = AsyncMock()
+        proc.pid = 424242
+        proc.returncode = None
+        proc.communicate = hang_forever
+
+        async def fake_create(*_args: object, **_kwargs: object) -> AsyncMock:
+            return proc
+
+        monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_create)
+
+        kill_calls: list[int] = []
+        monkeypatch.setattr(
+            "controlmesh.cron.execution.force_kill_process_tree",
+            lambda pid: kill_calls.append(pid),
+        )
+        monkeypatch.setattr("os.getpgid", lambda _pid: 424242)
+        monkeypatch.setattr("os.killpg", lambda *_a, **_k: None)
+
+        result = await execute_one_shot(
+            OneShotCommand(cmd=["/usr/bin/claude", "-p", "--", "hi"]),
+            cwd=Path("/tmp"),
+            provider="claude",
+            timeout_seconds=0.01,
+            timeout_label="Test",
+        )
+
+        # The bounded drain returned instead of hanging on the dead pipe.
+        assert result.timed_out is True
+        assert result.status == "error:timeout"
+        assert result.stdout == b""
+        assert 424242 in kill_calls
+
+    async def test_timeout_kills_process_group(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """On timeout the whole session/group is signalled, not just the lead PID."""
+        monkeypatch.setattr("controlmesh.cron.execution._POST_KILL_DRAIN_SECONDS", 0.05)
+
+        async def hang_forever(_input: bytes | None = None) -> tuple[bytes, bytes]:
+            await asyncio.sleep(3600)
+            return (b"", b"")
+
+        proc = AsyncMock()
+        proc.pid = 777
+        proc.returncode = None
+        proc.communicate = hang_forever
+
+        async def fake_create(*_args: object, **_kwargs: object) -> AsyncMock:
+            return proc
+
+        monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_create)
+
+        group_signalled: list[int] = []
+        monkeypatch.setattr(
+            "controlmesh.cron.execution.force_kill_process_tree", lambda _pid: None
+        )
+        monkeypatch.setattr("os.getpgid", lambda pid: pid)
+        monkeypatch.setattr(
+            "os.killpg",
+            lambda pgid, _sig: group_signalled.append(pgid),
+        )
+
+        await execute_one_shot(
+            OneShotCommand(cmd=["/usr/bin/claude", "-p", "--", "hi"]),
+            cwd=Path("/tmp"),
+            provider="claude",
+            timeout_seconds=0.01,
+            timeout_label="Test",
+        )
+
+        assert 777 in group_signalled

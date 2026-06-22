@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
+import signal
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -20,6 +23,14 @@ from controlmesh.infra.platform import CREATION_FLAGS as _CREATION_FLAGS
 from controlmesh.infra.process_tree import force_kill_process_tree
 
 logger = logging.getLogger(__name__)
+
+_IS_WINDOWS = sys.platform == "win32"
+
+# Hard ceiling for draining a killed subprocess's pipes. Provider CLIs such as
+# ``claude`` spawn worker subprocesses that inherit stdout/stderr; if any of
+# those survivors keep a pipe write-end open, ``communicate()`` would otherwise
+# block the event loop forever. This bound guarantees the loop stays live.
+_POST_KILL_DRAIN_SECONDS = 10.0
 
 
 @dataclass(slots=True)
@@ -267,9 +278,43 @@ class OneShotExecutionResult:
     timed_out: bool
 
 
-def _force_kill(proc: asyncio.subprocess.Process) -> None:
-    """Force-kill a subprocess and any descendants."""
+def _kill_subprocess_group(proc: asyncio.subprocess.Process) -> None:
+    """Force-kill a task subprocess together with every descendant it spawned.
+
+    Cron/webhook provider CLIs (e.g. ``claude``) routinely launch worker
+    subprocesses that inherit the parent's stdout/stderr pipes.  Killing only
+    the lead PID leaves those pipe write-ends held open by orphaned
+    grandchildren, so a following ``communicate()`` never observes EOF and the
+    asyncio loop deadlocks.
+
+    Each task is started in its own session (``start_new_session=True``), so
+    signalling the whole process group reliably reaps every pipe-holder even
+    when grandchildren were reparented to init between kill and reap.  The
+    PID-tree kill remains as a best-effort fallback for children that escaped
+    their session.
+    """
+    if _IS_WINDOWS:
+        force_kill_process_tree(proc.pid)
+        return
+    with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
+        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
     force_kill_process_tree(proc.pid)
+
+
+async def _drain_or_abandon(proc: asyncio.subprocess.Process) -> tuple[bytes, bytes]:
+    """Best-effort pipe drain after killing the subprocess group.
+
+    Returns whatever output was flushed within ``_POST_KILL_DRAIN_SECONDS``.
+    If grandchildren still hold the pipes despite the group kill, the drain is
+    abandoned (returning empty buffers) instead of blocking the event loop.
+    """
+    try:
+        async with asyncio.timeout(_POST_KILL_DRAIN_SECONDS):
+            return await proc.communicate()
+    except TimeoutError:
+        return (b"", b"")
+    except asyncio.CancelledError:
+        return (b"", b"")
 
 
 async def execute_one_shot(
@@ -292,6 +337,7 @@ async def execute_one_shot(
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         env=env,
+        start_new_session=not _IS_WINDOWS,
         creationflags=_CREATION_FLAGS,
     )
 
@@ -301,11 +347,11 @@ async def execute_one_shot(
             stdout, stderr = await proc.communicate(input=stdin_input)
     except TimeoutError:
         timed_out = True
-        _force_kill(proc)
-        stdout, stderr = await proc.communicate()
+        _kill_subprocess_group(proc)
+        stdout, stderr = await _drain_or_abandon(proc)
     except asyncio.CancelledError:
-        _force_kill(proc)
-        await proc.wait()
+        _kill_subprocess_group(proc)
+        await _drain_or_abandon(proc)
         raise
 
     if timed_out:
