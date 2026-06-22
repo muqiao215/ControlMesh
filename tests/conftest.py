@@ -26,6 +26,8 @@ def _no_real_process_signals() -> object:
     system processes — sending signals to them crashes the desktop session.
     """
     with (
+        # Cron timeout cleanup also sends group signals directly.
+        patch("os.killpg", return_value=None, create=True),
         patch(
             "controlmesh.cli.process_registry.terminate_process_tree",
             return_value=None,
