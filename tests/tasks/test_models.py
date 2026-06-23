@@ -232,6 +232,42 @@ class TestTaskSubmit:
         assert sub.tool_use_id == "toolu_bg_123"
         assert sub.external_task is False
 
+    def test_micro_commit_fields_default_and_assign(self) -> None:
+        sub = TaskSubmit(
+            chat_id=1,
+            prompt="patch and test",
+            message_id=10,
+            thread_id=None,
+            parent_agent="main",
+            auto_micro_commit=True,
+            auto_micro_commit_push=True,
+            micro_commit_message="chore(ai): commit patch",
+        )
+        assert sub.auto_micro_commit is True
+        assert sub.auto_micro_commit_push is True
+        assert sub.micro_commit_message == "chore(ai): commit patch"
+
+    def test_task_entry_micro_commit_roundtrip(self) -> None:
+        entry = TaskEntry(
+            task_id="mc1",
+            chat_id=1,
+            parent_agent="main",
+            name="patch",
+            prompt_preview="patch",
+            provider="codex",
+            model="",
+            status="running",
+            auto_micro_commit=True,
+            auto_micro_commit_push=True,
+            micro_commit_message="chore(ai): commit patch",
+        )
+
+        restored = TaskEntry.from_dict(entry.to_dict())
+
+        assert restored.auto_micro_commit is True
+        assert restored.auto_micro_commit_push is True
+        assert restored.micro_commit_message == "chore(ai): commit patch"
+
 
 class TestTaskResult:
     def test_fields(self) -> None:

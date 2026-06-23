@@ -94,6 +94,9 @@ class TaskSubmit:
     expected_repo: str = ""
     expected_remote: str = ""
     expected_branch: str = ""
+    auto_micro_commit: bool = False
+    auto_micro_commit_push: bool = False
+    micro_commit_message: str = ""
     tool_use_id: str = ""
     external_task: bool = False
     idempotency_key: str = ""
@@ -145,6 +148,9 @@ class TaskEntry:
     expected_repo: str = ""
     expected_remote: str = ""
     expected_branch: str = ""
+    auto_micro_commit: bool = False
+    auto_micro_commit_push: bool = False
+    micro_commit_message: str = ""
     tool_use_id: str = ""
     tool_name: str = ""
     external_task: bool = False
@@ -199,6 +205,9 @@ class TaskEntry:
             "expected_repo": self.expected_repo,
             "expected_remote": self.expected_remote,
             "expected_branch": self.expected_branch,
+            "auto_micro_commit": self.auto_micro_commit,
+            "auto_micro_commit_push": self.auto_micro_commit_push,
+            "micro_commit_message": self.micro_commit_message,
             "tool_use_id": self.tool_use_id,
             "tool_name": self.tool_name,
             "external_task": self.external_task,
@@ -257,6 +266,9 @@ class TaskEntry:
             expected_repo=d.get("expected_repo", ""),
             expected_remote=d.get("expected_remote", ""),
             expected_branch=d.get("expected_branch", ""),
+            auto_micro_commit=bool(d.get("auto_micro_commit", False)),
+            auto_micro_commit_push=bool(d.get("auto_micro_commit_push", False)),
+            micro_commit_message=d.get("micro_commit_message", ""),
             tool_use_id=d.get("tool_use_id", ""),
             tool_name=d.get("tool_name", ""),
             external_task=bool(d.get("external_task", False)),

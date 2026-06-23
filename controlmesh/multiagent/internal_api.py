@@ -322,6 +322,9 @@ class InternalAgentAPI:
             expected_repo=data.get("expected_repo") or "",
             expected_remote=data.get("expected_remote") or "",
             expected_branch=data.get("expected_branch") or "",
+            auto_micro_commit=bool(data.get("auto_micro_commit", False)),
+            auto_micro_commit_push=bool(data.get("auto_micro_commit_push", False)),
+            micro_commit_message=data.get("micro_commit_message") or "",
             tool_use_id=data.get("tool_use_id") or "",
             external_task=bool(data.get("external_task", False)),
             idempotency_key=data.get("idempotency_key") or "",
@@ -410,7 +413,14 @@ class InternalAgentAPI:
                 )
 
         try:
-            resumed_id = self._task_hub.resume(task_id, prompt, parent_agent=sender)
+            resumed_id = self._task_hub.resume(
+                task_id,
+                prompt,
+                parent_agent=sender,
+                auto_micro_commit=data.get("auto_micro_commit"),
+                auto_micro_commit_push=data.get("auto_micro_commit_push"),
+                micro_commit_message=data.get("micro_commit_message") or "",
+            )
         except ValueError as exc:
             return web.json_response({"success": False, "error": str(exc)})
 

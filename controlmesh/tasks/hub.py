@@ -257,6 +257,19 @@ REPO EXECUTION CONTRACT (MANDATORY):
 - Run every repo command from repo_root explicitly.
 """
 
+_MICRO_COMMIT_TEMPLATE = """
+
+AUTO MICRO-COMMIT CONTRACT (MANDATORY):
+- This task is configured for intent-complete micro-commits.
+- Only commit after the intended change is complete and relevant verification has passed.
+- Before committing, run `git status --short` from repo_root and inspect the diff.
+- If there are no file changes, do not create an empty commit.
+- If unrelated pre-existing changes are present, do not revert them; commit only this task's intended changes when you can isolate them confidently.
+- Commit command: `git commit -m {message}`
+- Include the commit hash and verification evidence in EVIDENCE.json and RESULT.md.
+{push_rule}
+"""
+
 _RESUME_REMINDER = """
 
 ---
@@ -265,6 +278,10 @@ REMINDER: You are a background task agent with NO direct user access.
 - Need to see whether the parent changed requirements? Use: python3 tools/task_tools/check_task_updates.py
 - Do NOT put questions in your response — the user cannot see them.
 - When done, RESULT.md/TASKMEMORY.md may still help humans, but runtime canonicalizes TOOL_RESULT itself.
+"""
+
+_RESUME_MICRO_COMMIT_OVERRIDE = """
+- Auto micro-commit policy for this resumed turn: {policy}.
 """
 
 
@@ -818,6 +835,7 @@ class TaskHub:
         )
         if entry.repo_root:
             full_prompt += _REPO_PREFLIGHT_TEMPLATE.format(repo_root=entry.repo_root)
+        full_prompt += _micro_commit_contract(entry)
         full_prompt += TASK_PROMPT_SUFFIX.format(
             taskmemory_path=artifacts.taskmemory,
             evidence_path=artifacts.evidence,
@@ -875,7 +893,16 @@ class TaskHub:
 
         return resolve
 
-    def resume(self, task_id: str, follow_up: str, *, parent_agent: str = "") -> str:
+    def resume(
+        self,
+        task_id: str,
+        follow_up: str,
+        *,
+        parent_agent: str = "",
+        auto_micro_commit: object = None,
+        auto_micro_commit_push: object = None,
+        micro_commit_message: str = "",
+    ) -> str:
         """Resume a completed task's CLI session with a follow-up. Returns task_id."""
         self._check_enabled()
 
@@ -893,6 +920,16 @@ class TaskHub:
             msg = f"Task '{task_id}' has no provider recorded"
             raise ValueError(msg)
 
+        policy_updates: dict[str, object] = {}
+        if auto_micro_commit is not None:
+            policy_updates["auto_micro_commit"] = bool(auto_micro_commit)
+        if auto_micro_commit_push is not None:
+            policy_updates["auto_micro_commit_push"] = bool(auto_micro_commit_push)
+            if bool(auto_micro_commit_push):
+                policy_updates["auto_micro_commit"] = True
+        if micro_commit_message:
+            policy_updates["micro_commit_message"] = micro_commit_message
+
         parent_question = entry.last_question or None
 
         # Reset to running — same entry, same folder, same task_id
@@ -903,9 +940,11 @@ class TaskHub:
             error="",
             result_preview="",
             last_question="",
+            **policy_updates,
         )
         refreshed = self._registry.get(task_id)
         if refreshed is not None:
+            entry = refreshed
             capture_task_resume(
                 self._paths,
                 refreshed,
@@ -920,6 +959,8 @@ class TaskHub:
         full_prompt = (
             follow_up
             + _RESUME_REMINDER.format(taskmemory_path=artifacts.taskmemory)
+            + _resume_micro_commit_override(policy_updates, entry)
+            + _micro_commit_contract(entry)
             + self._plan_artifact_notice(entry)
         )
         self._spawn(entry, full_prompt, entry.thinking, resume_session=entry.session_id)
@@ -2743,6 +2784,33 @@ def _append_attach_resume_hint(result_text: str, task_id: str, session_id: str) 
         f"To resume follow-up work in the same background session, use:\n"
         f'python3 tools/task_tools/resume_task.py {task_id} "your follow-up"'
     )
+
+
+def _micro_commit_contract(entry: TaskEntry) -> str:
+    """Return the opt-in micro-commit worker contract for repo-writing tasks."""
+    if not entry.auto_micro_commit and not entry.auto_micro_commit_push:
+        return ""
+    message = (entry.micro_commit_message or "").strip()
+    if not message:
+        message = "chore(ai): auto-commit after test pass"
+    push_rule = (
+        "- After the commit succeeds, run `git push` from repo_root and report the pushed branch."
+        if entry.auto_micro_commit_push
+        else "- Do not push unless the parent explicitly resumes or tells this task to push."
+    )
+    return _MICRO_COMMIT_TEMPLATE.format(
+        message=json.dumps(message),
+        push_rule=push_rule,
+    )
+
+
+def _resume_micro_commit_override(updates: dict[str, object], entry: TaskEntry) -> str:
+    """Make resume-time policy overrides explicit to the worker."""
+    if not updates:
+        return ""
+    state = "enabled" if entry.auto_micro_commit or entry.auto_micro_commit_push else "disabled"
+    push = "push enabled" if entry.auto_micro_commit_push else "push disabled"
+    return _RESUME_MICRO_COMMIT_OVERRIDE.format(policy=f"{state}, {push}")
 
 
 _RESULT_TEMPLATE_TEXT = "Write the final worker-facing result here before finishing."

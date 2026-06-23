@@ -94,6 +94,18 @@ class TestCreate:
         assert entry.expected_branch == "main"
         assert entry.tool_use_id == "toolu_bg_review"
 
+    def test_create_persists_micro_commit_policy(self, registry: TaskRegistry) -> None:
+        submit = _submit("patch repo", name="Patch")
+        submit.auto_micro_commit = True
+        submit.auto_micro_commit_push = True
+        submit.micro_commit_message = "chore(ai): commit patch"
+
+        entry = registry.create(submit, "codex", "")
+
+        assert entry.auto_micro_commit is True
+        assert entry.auto_micro_commit_push is True
+        assert entry.micro_commit_message == "chore(ai): commit patch"
+
 
 class TestGet:
     def test_get_existing(self, registry: TaskRegistry) -> None:

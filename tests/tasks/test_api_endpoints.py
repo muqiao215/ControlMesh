@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 def _make_task_hub(
     *,
     submit_returns: str = "abc123",
+    resume_returns: str = "abc123",
     list_returns: list[object] | None = None,
     question_answer: str = "Yes, use HTML",
     cancel_returns: bool = True,
@@ -24,6 +25,7 @@ def _make_task_hub(
 ) -> MagicMock:
     hub = MagicMock()
     hub.submit = MagicMock(return_value=submit_returns)
+    hub.resume = MagicMock(return_value=resume_returns)
     hub.forward_question = AsyncMock(return_value=question_answer)
     hub.cancel = AsyncMock(return_value=cancel_returns)
     hub.tell = MagicMock(return_value=tell_returns)
@@ -138,6 +140,30 @@ class TestTaskCreate:
         assert submit.phase_title == "Audit repository"
         assert submit.phase_metadata == {"gate_kind": "release_publish"}
 
+    async def test_forwards_micro_commit_fields_to_task_submit(
+        self, api_client: TestClient
+    ) -> None:
+        hub = api_client.app["_test_hub"]
+
+        resp = await api_client.post(
+            "/tasks/create",
+            json={
+                "from": "main",
+                "prompt": "patch repo",
+                "repo_root": "/repo/controlmesh",
+                "auto_micro_commit": True,
+                "auto_micro_commit_push": True,
+                "micro_commit_message": "chore(ai): commit patch",
+            },
+        )
+
+        assert resp.status == 200
+        submit = hub.submit.call_args.args[0]
+        assert submit.repo_root == "/repo/controlmesh"
+        assert submit.auto_micro_commit is True
+        assert submit.auto_micro_commit_push is True
+        assert submit.micro_commit_message == "chore(ai): commit patch"
+
     async def test_rejects_provider_model_mismatch_before_cli_execution(
         self,
         aiohttp_client: object,
@@ -195,6 +221,40 @@ class TestTaskAskParent:
     async def test_missing_fields(self, api_client: TestClient) -> None:
         resp = await api_client.post("/tasks/ask_parent", json={"task_id": "abc"})
         assert resp.status == 400
+
+
+class TestTaskResume:
+    async def test_resumes_with_auto_micro_commit_overrides(
+        self, api_client: TestClient
+    ) -> None:
+        hub = api_client.app["_test_hub"]
+        entry = MagicMock()
+        entry.parent_agent = "main"
+        hub.registry.get.return_value = entry
+
+        resp = await api_client.post(
+            "/tasks/resume",
+            json={
+                "task_id": "abc",
+                "prompt": "finish the patch",
+                "from": "main",
+                "auto_micro_commit": True,
+                "auto_micro_commit_push": False,
+                "micro_commit_message": "chore(ai): resume patch",
+            },
+        )
+
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["success"] is True
+        hub.resume.assert_called_once_with(
+            "abc",
+            "finish the patch",
+            parent_agent="main",
+            auto_micro_commit=True,
+            auto_micro_commit_push=False,
+            micro_commit_message="chore(ai): resume patch",
+        )
 
 
 class TestTaskList:

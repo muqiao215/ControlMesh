@@ -568,6 +568,35 @@ agent_slots:
 
         await hub.shutdown()
 
+    async def test_auto_micro_commit_contract_is_embedded_in_worker_prompt(
+        self,
+        registry: TaskRegistry,
+        tmp_path: Path,
+    ) -> None:
+        cli = _make_cli_service("patch output")
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=cli,
+            config=_make_config(),
+        )
+        hub.set_result_handler("main", AsyncMock())
+
+        submit = _submit(prompt="Implement patch", name="Patch")
+        submit.repo_root = "/repo/controlmesh"
+        submit.auto_micro_commit = True
+        submit.auto_micro_commit_push = True
+        submit.micro_commit_message = "chore(ai): commit patch"
+        hub.submit(submit)
+        await asyncio.sleep(0.1)
+
+        request = cli.execute.await_args.args[0]
+        assert "AUTO MICRO-COMMIT CONTRACT" in request.prompt
+        assert 'git commit -m "chore(ai): commit patch"' in request.prompt
+        assert "git push" in request.prompt
+
+        await hub.shutdown()
+
     async def test_explicit_provider_binding_rejects_invalid_provider_token(
         self,
         registry: TaskRegistry,
@@ -1772,6 +1801,42 @@ class TestResume:
         assert updated.provider == "codex"
         assert updated.model == "gpt-4.1"
         assert updated.thinking == "high"
+
+    async def test_resume_can_override_micro_commit_policy(
+        self, registry: TaskRegistry, tmp_path: Path
+    ) -> None:
+        cli = _make_cli_service()
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=cli,
+            config=_make_config(),
+        )
+        hub.set_result_handler("main", AsyncMock())
+        task_id = hub.submit(_submit())
+        await asyncio.sleep(0.1)
+        entry = registry.get(task_id)
+        assert entry is not None
+        assert entry.status == "done"
+        cli.execute.reset_mock()
+
+        hub.resume(
+            entry.task_id,
+            "Finish the patch",
+            auto_micro_commit=True,
+            auto_micro_commit_push=True,
+            micro_commit_message="chore(ai): resume patch",
+        )
+        await asyncio.sleep(0.1)
+
+        updated = registry.get(entry.task_id)
+        assert updated is not None
+        assert updated.auto_micro_commit is True
+        assert updated.auto_micro_commit_push is True
+        assert updated.micro_commit_message == "chore(ai): resume patch"
+        request = cli.execute.await_args.args[0]
+        assert "AUTO MICRO-COMMIT CONTRACT" in request.prompt
+        assert "push enabled" in request.prompt
 
     def test_resume_fails_if_no_session_id(self, registry: TaskRegistry, tmp_path: Path) -> None:
         hub = self._hub(registry, tmp_path)

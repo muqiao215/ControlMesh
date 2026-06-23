@@ -300,6 +300,123 @@ def test_create_task_supports_prompt_file_for_shell_unsafe_text(tmp_path: Path) 
     ]
 
 
+def test_create_task_supports_micro_commit_flags(tmp_path: Path) -> None:
+    deployed_dir = _install_deployed_task_tools(tmp_path)
+    server, thread = _start_task_api()
+    try:
+        result = _run_tool(
+            deployed_dir / "create_task.py",
+            server.server_address[1],
+            [
+                "--name",
+                "Patch task",
+                "--repo-root",
+                "/repo/controlmesh",
+                "--auto-micro-commit-push",
+                "--micro-commit-message",
+                "chore(ai): commit patch",
+                "Implement and verify the patch",
+            ],
+        )
+    finally:
+        server.shutdown()
+        thread.join()
+
+    assert result.returncode == 0, result.stderr
+    requests: list[tuple[str, dict[str, Any]]] = server.requests  # type: ignore[attr-defined]
+    assert requests == [
+        (
+            "/tasks/create",
+            {
+                "from": "main",
+                "prompt": "Implement and verify the patch",
+                "name": "Patch task",
+                "auto_micro_commit": True,
+                "auto_micro_commit_push": True,
+                "micro_commit_message": "chore(ai): commit patch",
+                "repo_root": "/repo/controlmesh",
+            },
+        )
+    ]
+
+
+def test_route_task_supports_micro_commit_flags(tmp_path: Path) -> None:
+    deployed_dir = _install_deployed_task_tools(tmp_path)
+    server, thread = _start_task_api()
+    try:
+        result = _run_tool(
+            deployed_dir / "route_task.py",
+            server.server_address[1],
+            [
+                "--kind",
+                "patch_candidate",
+                "--repo-root",
+                "/repo/controlmesh",
+                "--auto-micro-commit",
+                "--micro-commit-message",
+                "chore(ai): routed patch",
+                "Patch the failing case",
+            ],
+        )
+    finally:
+        server.shutdown()
+        thread.join()
+
+    assert result.returncode == 0, result.stderr
+    requests: list[tuple[str, dict[str, Any]]] = server.requests  # type: ignore[attr-defined]
+    assert requests == [
+        (
+            "/tasks/create",
+            {
+                "from": "main",
+                "prompt": "Patch the failing case",
+                "route": "auto",
+                "workunit_kind": "patch_candidate",
+                "auto_micro_commit": True,
+                "micro_commit_message": "chore(ai): routed patch",
+                "repo_root": "/repo/controlmesh",
+            },
+        )
+    ]
+
+
+def test_resume_task_supports_micro_commit_overrides(tmp_path: Path) -> None:
+    deployed_dir = _install_deployed_task_tools(tmp_path)
+    server, thread = _start_task_api()
+    try:
+        result = _run_tool(
+            deployed_dir / "resume_task.py",
+            server.server_address[1],
+            [
+                "--no-auto-micro-commit-push",
+                "--auto-micro-commit",
+                "--micro-commit-message",
+                "chore(ai): resume commit",
+                "task-123",
+                "Finish the follow-up",
+            ],
+        )
+    finally:
+        server.shutdown()
+        thread.join()
+
+    assert result.returncode == 0, result.stderr
+    requests: list[tuple[str, dict[str, Any]]] = server.requests  # type: ignore[attr-defined]
+    assert requests == [
+        (
+            "/tasks/resume",
+            {
+                "task_id": "task-123",
+                "prompt": "Finish the follow-up",
+                "from": "main",
+                "auto_micro_commit": True,
+                "auto_micro_commit_push": False,
+                "micro_commit_message": "chore(ai): resume commit",
+            },
+        )
+    ]
+
+
 def test_release_task_submits_only_first_phase_with_full_manifest(
     tmp_path: Path, monkeypatch: Any
 ) -> None:

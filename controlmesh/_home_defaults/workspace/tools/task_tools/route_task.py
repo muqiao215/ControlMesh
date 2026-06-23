@@ -20,6 +20,19 @@ Options:
     --model MODEL      Legacy model hint only
     --capability CAP   Required capability hint (repeatable)
     --evaluator NAME   Evaluator hint, e.g. foreground
+    --auto-micro-commit
+                      Ask the worker to commit when intent is complete and checks pass
+    --auto-micro-commit-push
+                      Also ask the worker to git push after the micro-commit
+    --micro-commit-message MSG
+                      Commit message for the automatic micro-commit
+    --repo-root PATH  Explicit repository checkout for repo work
+    --expected-repo NAME
+                      Expected repository name for worker preflight evidence
+    --expected-remote TEXT
+                      Expected git remote hint for worker preflight evidence
+    --expected-branch NAME
+                      Expected branch hint for worker preflight evidence
 """
 
 from __future__ import annotations
@@ -75,6 +88,13 @@ def main() -> None:
     provider = ""
     model = ""
     evaluator = ""
+    auto_micro_commit = False
+    auto_micro_commit_push = False
+    micro_commit_message = ""
+    repo_root = ""
+    expected_repo = ""
+    expected_remote = ""
+    expected_branch = ""
     required_capabilities: list[str] = []
 
     while args:
@@ -110,6 +130,28 @@ def main() -> None:
             args = args[2:]
         elif args[0] == "--evaluator" and len(args) >= 2:
             evaluator = args[1]
+            args = args[2:]
+        elif args[0] == "--auto-micro-commit":
+            auto_micro_commit = True
+            args = args[1:]
+        elif args[0] == "--auto-micro-commit-push":
+            auto_micro_commit = True
+            auto_micro_commit_push = True
+            args = args[1:]
+        elif args[0] == "--micro-commit-message" and len(args) >= 2:
+            micro_commit_message = args[1]
+            args = args[2:]
+        elif args[0] == "--repo-root" and len(args) >= 2:
+            repo_root = args[1]
+            args = args[2:]
+        elif args[0] == "--expected-repo" and len(args) >= 2:
+            expected_repo = args[1]
+            args = args[2:]
+        elif args[0] == "--expected-remote" and len(args) >= 2:
+            expected_remote = args[1]
+            args = args[2:]
+        elif args[0] == "--expected-branch" and len(args) >= 2:
+            expected_branch = args[1]
             args = args[2:]
         else:
             break
@@ -154,6 +196,20 @@ def main() -> None:
         body["required_capabilities"] = required_capabilities
     if evaluator:
         body["evaluator"] = evaluator
+    if auto_micro_commit:
+        body["auto_micro_commit"] = True
+    if auto_micro_commit_push:
+        body["auto_micro_commit_push"] = True
+    if micro_commit_message:
+        body["micro_commit_message"] = micro_commit_message
+    if repo_root:
+        body["repo_root"] = repo_root
+    if expected_repo:
+        body["expected_repo"] = expected_repo
+    if expected_remote:
+        body["expected_remote"] = expected_remote
+    if expected_branch:
+        body["expected_branch"] = expected_branch
 
     chat_id = os.environ.get("CONTROLMESH_CHAT_ID", "")
     topic_id = os.environ.get("CONTROLMESH_TOPIC_ID", "")

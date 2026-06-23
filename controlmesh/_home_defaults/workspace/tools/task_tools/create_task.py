@@ -27,6 +27,19 @@ Options:
     --prompt-file PATH Read the task prompt from file
     --phase-id ID      PlanFiles phase id
     --phase-title TXT  PlanFiles phase title
+    --auto-micro-commit
+                      Ask the worker to commit when intent is complete and checks pass
+    --auto-micro-commit-push
+                      Also ask the worker to git push after the micro-commit
+    --micro-commit-message MSG
+                      Commit message for the automatic micro-commit
+    --repo-root PATH  Explicit repository checkout for repo work
+    --expected-repo NAME
+                      Expected repository name for worker preflight evidence
+    --expected-remote TEXT
+                      Expected git remote hint for worker preflight evidence
+    --expected-branch NAME
+                      Expected branch hint for worker preflight evidence
 
 Environment variables CONTROLMESH_AGENT_NAME and CONTROLMESH_INTERAGENT_PORT are
 automatically set by the ControlMesh framework.
@@ -93,6 +106,13 @@ def main() -> None:
     prompt_file = ""
     phase_id = ""
     phase_title = ""
+    auto_micro_commit = False
+    auto_micro_commit_push = False
+    micro_commit_message = ""
+    repo_root = ""
+    expected_repo = ""
+    expected_remote = ""
+    expected_branch = ""
 
     # Parse named options
     while args:
@@ -149,6 +169,28 @@ def main() -> None:
             args = args[2:]
         elif args[0] == "--phase-title" and len(args) >= 2:
             phase_title = args[1]
+            args = args[2:]
+        elif args[0] == "--auto-micro-commit":
+            auto_micro_commit = True
+            args = args[1:]
+        elif args[0] == "--auto-micro-commit-push":
+            auto_micro_commit = True
+            auto_micro_commit_push = True
+            args = args[1:]
+        elif args[0] == "--micro-commit-message" and len(args) >= 2:
+            micro_commit_message = args[1]
+            args = args[2:]
+        elif args[0] == "--repo-root" and len(args) >= 2:
+            repo_root = args[1]
+            args = args[2:]
+        elif args[0] == "--expected-repo" and len(args) >= 2:
+            expected_repo = args[1]
+            args = args[2:]
+        elif args[0] == "--expected-remote" and len(args) >= 2:
+            expected_remote = args[1]
+            args = args[2:]
+        elif args[0] == "--expected-branch" and len(args) >= 2:
+            expected_branch = args[1]
             args = args[2:]
         else:
             break
@@ -209,6 +251,20 @@ def main() -> None:
         body["phase_id"] = phase_id
     if phase_title:
         body["phase_title"] = phase_title
+    if auto_micro_commit:
+        body["auto_micro_commit"] = True
+    if auto_micro_commit_push:
+        body["auto_micro_commit_push"] = True
+    if micro_commit_message:
+        body["micro_commit_message"] = micro_commit_message
+    if repo_root:
+        body["repo_root"] = repo_root
+    if expected_repo:
+        body["expected_repo"] = expected_repo
+    if expected_remote:
+        body["expected_remote"] = expected_remote
+    if expected_branch:
+        body["expected_branch"] = expected_branch
 
     # Propagate sender context so task results route back to the originating chat/topic
     chat_id = os.environ.get("CONTROLMESH_CHAT_ID", "")
