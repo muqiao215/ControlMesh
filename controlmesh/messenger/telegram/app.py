@@ -160,6 +160,33 @@ def _log_text_preview(text: str | None, *, limit: int = 120) -> str:
 _WELCOME_IMAGE = Path(__file__).resolve().parent / "controlmesh_images" / "welcome.png"
 _CAPTION_LIMIT = 1024
 _INBOUND_DRAIN_OWNER = "telegram_frontstage"
+# Hard ceiling for keeping a single inbound claim alive. A frontstage run that
+# hangs forever (e.g. a provider call that never returns) must not renew the
+# lease indefinitely, otherwise recover_stale_claims() can never reclaim the
+# lane and that chat stays blocked. When the cap is hit the renewal loop stops,
+# the lease expires within claim_ttl, and the backlog recovery reclaims it.
+_MAX_CLAIM_LIFETIME_SECONDS = 1800.0
+
+
+def _poll_restart_backoff_seconds(
+    *,
+    consecutive_failures: int,
+    retry_after_seconds: float,
+) -> float:
+    """Seconds to wait before re-issuing getUpdates after a poll failure.
+
+    ``retry_after`` (Telegram 429) wins when Telegram explicitly asked us to
+    wait; otherwise we back off exponentially with the consecutive failure
+    count.  Returning 0 means "no wait".  The cap keeps a long outage from
+    parking the bot, while still damping the reconnect storm that itself
+    triggers flood control.
+    """
+    retry_after = max(0.0, float(retry_after_seconds or 0.0))
+    consecutive = max(0, int(consecutive_failures))
+    if retry_after <= 0 and consecutive <= 0:
+        return 0.0
+    exponential = min(60.0, 0.5 * (2 ** min(consecutive, 7)))
+    return max(retry_after, exponential)
 _CONTROL_COMMAND_PREFIXES = (
     "/model",
     "/provider",
@@ -203,6 +230,7 @@ class _TelegramPollDiagnostics:
     transport_dirty: bool = False
     restart_reason: str | None = None
     last_failure_reason: str | None = None
+    last_retry_after_seconds: float = 0.0
     restart_requested: bool = False
 
     def note_poll_started(self, *, offset: int | None) -> None:
@@ -220,13 +248,22 @@ class _TelegramPollDiagnostics:
         self.transport_dirty = False
         self.restart_reason = None
         self.last_failure_reason = None
+        self.last_retry_after_seconds = 0.0
         self.restart_requested = False
 
-    def note_poll_failed(self, *, reason: str, offset: int | None, mark_transport_dirty: bool) -> None:
+    def note_poll_failed(
+        self,
+        *,
+        reason: str,
+        offset: int | None,
+        mark_transport_dirty: bool,
+        retry_after_seconds: float = 0.0,
+    ) -> None:
         self.last_poll_finished_at = time.monotonic()
         self.last_poll_offset = offset
         self.consecutive_failures += 1
         self.last_failure_reason = reason
+        self.last_retry_after_seconds = max(0.0, float(retry_after_seconds or 0.0))
         if mark_transport_dirty:
             self.transport_dirty = True
             self.restart_reason = reason
@@ -2224,9 +2261,32 @@ class TelegramBot:
 
     async def _watch_poll_health(self) -> None:
         """Request a fresh Telegram polling transport when getUpdates stalls."""
+        next_backlog_log = 0.0
         try:
             while True:
                 await asyncio.sleep(1.0)
+                snapshot = self._last_inbound_spool_stats
+                if (
+                    self._inbound_spool is not None
+                    and snapshot is not None
+                    and (snapshot.pending_count or snapshot.blocked_lane_count)
+                    and time.monotonic() >= next_backlog_log
+                ):
+                    live = self._inbound_spool.stats()
+                    if live.pending_count or live.blocked_lane_count:
+                        oldest_age = (
+                            f"{live.oldest_pending_age_seconds:.0f}"
+                            if live.oldest_pending_age_seconds is not None
+                            else "n/a"
+                        )
+                        logger.info(
+                            "Telegram inbound backlog pending=%s blocked_lanes=%s oldest_age=%ss unhealthy=%s",
+                            live.pending_count,
+                            live.blocked_lane_count,
+                            oldest_age,
+                            live.unhealthy_reason or "no",
+                        )
+                    next_backlog_log = time.monotonic() + 60.0
                 if self._exit_code == EXIT_RESTART or self._poll_diagnostics.transport_dirty:
                     continue
                 inflight_age = self._poll_diagnostics.poll_inflight_age_seconds()
@@ -2287,8 +2347,32 @@ class TelegramBot:
                     )
             if self._exit_code == EXIT_RESTART or not self._poll_diagnostics.transport_dirty:
                 break
+            backoff = self._compute_poll_restart_backoff_seconds()
+            if backoff > 0:
+                logger.info(
+                    "Telegram backing off %.1fs before poll restart reason=%s failures=%s retry_after=%.1fs",
+                    backoff,
+                    self._poll_diagnostics.restart_reason or "dirty_transport",
+                    self._poll_diagnostics.consecutive_failures,
+                    float(self._poll_diagnostics.last_retry_after_seconds or 0.0),
+                )
+                await asyncio.sleep(backoff)
             await self._rebuild_poll_transport()
         return self._exit_code
+
+    def _compute_poll_restart_backoff_seconds(self) -> float:
+        """Honor Telegram 429 retry_after and add exponential backoff on failures.
+
+        Without this, a burst of transient network errors makes controlmesh
+        rebuild the transport and immediately re-issue getUpdates, which trips
+        Telegram's getUpdates flood control (429) and locks inbound delivery
+        out for an escalating window -- every chat stops receiving replies
+        while the process stays alive.
+        """
+        return _poll_restart_backoff_seconds(
+            consecutive_failures=self._poll_diagnostics.consecutive_failures,
+            retry_after_seconds=self._poll_diagnostics.last_retry_after_seconds,
+        )
 
     async def shutdown(self) -> None:
         await _cancel_task(self._restart_watcher)
@@ -2358,10 +2442,17 @@ class TelegramBot:
         reason = self._recoverable_poll_reason(exc)
         if reason is None:
             return
+        retry_after = 0.0
+        if isinstance(exc, TelegramRetryAfter):
+            try:
+                retry_after = float(getattr(exc, "retry_after", 0) or 0)
+            except (TypeError, ValueError):
+                retry_after = 0.0
         self._poll_diagnostics.note_poll_failed(
             reason=reason,
             offset=method.offset,
             mark_transport_dirty=True,
+            retry_after_seconds=retry_after,
         )
         logger.warning(
             "Telegram poll marked transport dirty reason=%s offset=%s last_success_age=%s failures=%s",
@@ -2619,7 +2710,17 @@ class TelegramBot:
             return
         current_claim = claim
         interval = max(1.0, self._inbound_spool.claim_ttl_seconds / 3.0)
+        deadline = time.monotonic() + _MAX_CLAIM_LIFETIME_SECONDS
         while True:
+            if time.monotonic() >= deadline:
+                logger.warning(
+                    "Telegram inbound claim exceeded max lifetime; letting lease expire "
+                    "so the backlog can be reclaimed lane=%s chat_id=%s spool_id=%s",
+                    claim.lane_key,
+                    claim.entry.chat_id,
+                    claim.spool_id,
+                )
+                return
             await asyncio.sleep(interval)
             renewed = self._inbound_spool.renew(current_claim)
             if renewed is None:
