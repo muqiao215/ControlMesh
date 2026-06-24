@@ -18,6 +18,7 @@ from controlmesh.cli.diagnostics import ProviderRunDiagnostic
 from controlmesh.cli.factory import create_cli
 from controlmesh.cli.introspection import ProviderIntrospection
 from controlmesh.cli.opencode_discovery import (
+    discover_opencode_models_sync,
     probe_opencode_model_sync,
     resolve_opencode_runnable_model_sync,
 )
@@ -417,14 +418,23 @@ class CLIService:
                 and preflight_requested_model
                 and not probe_opencode_model_sync(requested_model)
             ):
-                msg = f"error:opencode_model_unrunnable model={requested_model}"
-                raise ValueError(msg)
+                logger.warning(
+                    "OpenCode preflight probe failed for model=%s; continuing with requested model",
+                    requested_model,
+                )
             return provider, requested_model
 
         if provider == "opencode":
             model = resolve_opencode_runnable_model_sync()
             if model:
                 return provider, model
+            discovered = discover_opencode_models_sync()
+            if discovered:
+                logger.warning(
+                    "OpenCode default model unresolved; falling back to first discovered model=%s",
+                    discovered[0],
+                )
+                return provider, discovered[0]
             if (
                 self._config.provider == "opencode"
                 and self._config.default_model
