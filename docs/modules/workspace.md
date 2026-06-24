@@ -33,6 +33,8 @@ Important runtime paths:
 - `api_files_dir`: `~/.controlmesh/workspace/api_files`
 - `skills_dir`: `~/.controlmesh/workspace/skills`
 - `bundled_skills_dir`: package `_home_defaults/workspace/skills`
+- `server_profile_path`: `~/.controlmesh/workspace/SERVER_PROFILE.md`
+- `server_soul_path`: `~/.controlmesh/workspace/SERVER_SOUL.md`
 
 ## `init_workspace()` order
 
@@ -73,6 +75,8 @@ Special case:
 ### Zone 3 (seed once)
 
 - all other files: copied only when missing.
+- `SERVER_PROFILE.md` and `SERVER_SOUL.md` are host-local Zone 3 templates.
+  They are ignored by startup context while they contain `status: unconfigured`.
 
 Skipped template files (handled by `RulesSelector`):
 
@@ -170,4 +174,16 @@ See `docs/modules/skill_system.md`.
 ## Loader helpers
 
 - `read_file(path) -> str | None`
+- `read_startup_context(paths) -> str`
 - `read_startup_memory_context(paths) -> str`
+
+`read_startup_context()` is the new-session prompt context builder. It composes,
+in order:
+
+1. configured `SERVER_PROFILE.md`
+2. configured `SERVER_SOUL.md`
+3. meaningful durable memory from `MEMORY.md`
+
+The profile and soul files are host-local authorities for server identity and
+stable operating doctrine. They should hold durable role/boundary behavior, not
+current health, secrets, transient incidents, or routing score state.

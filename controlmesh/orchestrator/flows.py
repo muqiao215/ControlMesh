@@ -25,7 +25,7 @@ from controlmesh.orchestrator.registry import OrchestratorResult
 from controlmesh.security import looks_like_pasted_chat_transcript
 from controlmesh.session import SessionData, SessionKey
 from controlmesh.text.response_format import session_error_text, timeout_error_text
-from controlmesh.workspace.loader import read_startup_memory_context
+from controlmesh.workspace.loader import read_startup_context
 
 if TYPE_CHECKING:
     from controlmesh.orchestrator.core import Orchestrator
@@ -241,9 +241,9 @@ async def _prepare_normal(
 
     append_prompt = None
     if is_new and prompt_policy.include_append_prompt:
-        memory_context = await asyncio.to_thread(read_startup_memory_context, orch.paths)
-        if memory_context.strip():
-            append_prompt = memory_context
+        startup_context = await asyncio.to_thread(read_startup_context, orch.paths)
+        if startup_context.strip():
+            append_prompt = startup_context
 
         roster = _build_agent_roster(orch)
         if roster:

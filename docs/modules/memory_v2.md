@@ -9,6 +9,14 @@ Additive memory-v2 primitives inspired by OpenClaw's mature split between:
 
 `MEMORY.md` is now the sole durable memory surface.
 
+Host identity/personality is intentionally separate from memory-v2:
+
+- `SERVER_PROFILE.md` stores durable host identity, role, and boundaries.
+- `SERVER_SOUL.md` stores stable host operating doctrine.
+
+Those files can be injected into new sessions as startup context, but they are
+not memory authorities and are not indexed/promoted by memory-v2.
+
 ## What Exists in Cut 2
 
 ### File layout

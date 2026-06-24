@@ -15,6 +15,10 @@ def test_memory_v2_paths() -> None:
     )
 
     assert paths.authority_memory_path == Path("/home/test/.controlmesh/workspace/MEMORY.md")
+    assert paths.server_profile_path == Path(
+        "/home/test/.controlmesh/workspace/SERVER_PROFILE.md"
+    )
+    assert paths.server_soul_path == Path("/home/test/.controlmesh/workspace/SERVER_SOUL.md")
     assert paths.dream_diary_path == Path("/home/test/.controlmesh/workspace/DREAMS.md")
     assert paths.memory_v2_daily_dir == Path("/home/test/.controlmesh/workspace/memory")
     assert paths.memory_v2_machine_state_dir == Path("/home/test/.controlmesh/workspace/memory/.dreams")

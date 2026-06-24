@@ -246,6 +246,16 @@ class ControlMeshPaths:
         return self.workspace / "MEMORY.md"
 
     @property
+    def server_profile_path(self) -> Path:
+        """Host identity, role, and operational boundaries for prompt context."""
+        return self.workspace / "SERVER_PROFILE.md"
+
+    @property
+    def server_soul_path(self) -> Path:
+        """Host operating doctrine for stable behavior/personality context."""
+        return self.workspace / "SERVER_SOUL.md"
+
+    @property
     def dream_diary_path(self) -> Path:
         """Dream diary markdown for cross-day synthesis output."""
         return self.workspace / "DREAMS.md"
