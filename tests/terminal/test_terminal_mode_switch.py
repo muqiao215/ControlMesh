@@ -16,6 +16,16 @@ class _Inbox:
         return []
 
 
+class _Runtime:
+    provider = "codex"
+
+    def __init__(self) -> None:
+        self.inbox = _Inbox()
+
+    def current_model_label(self) -> str:
+        return "codex / gpt-5.5"
+
+
 @pytest.mark.asyncio
 async def test_enter_native_runs_native_session() -> None:
     runtime = type("Runtime", (), {"provider": "codex"})()
@@ -30,11 +40,7 @@ async def test_enter_native_runs_native_session() -> None:
 
 @pytest.mark.asyncio
 async def test_native_command_enters_native_session() -> None:
-    runtime = type(
-        "Runtime",
-        (),
-        {"provider": "codex", "inbox": _Inbox()},
-    )()
+    runtime = _Runtime()
     inputs = iter(["native", "exit"])
     shell = EnhancedShell(runtime=runtime, config=AgentConfig(), prompt_input=lambda _prompt: next(inputs))
     shell.enter_native = AsyncMock()
@@ -46,15 +52,8 @@ async def test_native_command_enters_native_session() -> None:
 
 @pytest.mark.asyncio
 async def test_cm_command_shows_guidance_with_legacy_config() -> None:
-    runtime = type(
-        "Runtime",
-        (),
-        {
-            "provider": "codex",
-            "inbox": _Inbox(),
-            "handle_control_command": AsyncMock(),
-        },
-    )()
+    runtime = _Runtime()
+    runtime.handle_control_command = AsyncMock()
     config = AgentConfig()
     config.terminal.native_escape_command = "/cm"
     inputs = iter(["/cm", "exit"])
@@ -75,15 +74,8 @@ async def test_cm_command_shows_guidance_with_legacy_config() -> None:
 
 @pytest.mark.asyncio
 async def test_plain_text_calls_model() -> None:
-    runtime = type(
-        "Runtime",
-        (),
-        {
-            "provider": "codex",
-            "inbox": _Inbox(),
-            "handle_user_message": AsyncMock(),
-        },
-    )()
+    runtime = _Runtime()
+    runtime.handle_user_message = AsyncMock()
     inputs = iter(["hello there", "exit"])
     output = StringIO()
     shell = EnhancedShell(
@@ -101,15 +93,8 @@ async def test_plain_text_calls_model() -> None:
 
 @pytest.mark.asyncio
 async def test_chat_command_calls_model_with_message() -> None:
-    runtime = type(
-        "Runtime",
-        (),
-        {
-            "provider": "codex",
-            "inbox": _Inbox(),
-            "handle_user_message": AsyncMock(return_value=OrchestratorResult(text="ok")),
-        },
-    )()
+    runtime = _Runtime()
+    runtime.handle_user_message = AsyncMock(return_value=OrchestratorResult(text="ok"))
     inputs = iter(["chat hello", "exit"])
     shell = EnhancedShell(runtime=runtime, config=AgentConfig(), prompt_input=lambda _prompt: next(inputs))
 
@@ -121,15 +106,8 @@ async def test_chat_command_calls_model_with_message() -> None:
 
 @pytest.mark.asyncio
 async def test_slash_chat_command_calls_model_with_message() -> None:
-    runtime = type(
-        "Runtime",
-        (),
-        {
-            "provider": "codex",
-            "inbox": _Inbox(),
-            "handle_user_message": AsyncMock(return_value=OrchestratorResult(text="ok")),
-        },
-    )()
+    runtime = _Runtime()
+    runtime.handle_user_message = AsyncMock(return_value=OrchestratorResult(text="ok"))
     inputs = iter(["/chat hello", "exit"])
     shell = EnhancedShell(runtime=runtime, config=AgentConfig(), prompt_input=lambda _prompt: next(inputs))
 

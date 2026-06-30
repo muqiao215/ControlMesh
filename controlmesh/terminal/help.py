@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 
-TERMINAL_HELP = """ControlMesh Terminal
+TERMINAL_HELP = """ControlMesh
 
 Core:
+  <message>            Chat with the selected model
+  model                Show current model and switch commands
+  model <provider>     Switch to provider default model
+  model <provider> <model>
+  status               Show runtime status
+  native               Open the raw provider CLI
   help                 Show this help
-  status               Show ControlMesh status
-  model                Show or change the active model
-  diagnose             Run diagnostics
-  exit                 Quit the terminal
+  exit                 Quit
 
 Runtime:
   tasks list           List tasks
@@ -18,17 +21,16 @@ Runtime:
   agents               List agents
   cron list            List cron jobs
 
-Memory/history:
+Memory:
   memory today         Show today's memory
   memory search <query>
   history
   sessions
 
-Interaction:
-  <message>            Chat with the selected model
-  chat <message>       Chat with the model
-  /chat <message>      Chat with the model
-  native               Enter the provider-native CLI
-  /native              Enter the provider-native CLI
+Compatibility:
+  chat <message>       Explicit chat form
+  /chat <message>      Explicit chat form
+  /native              Same as native
+  /help                Same as help
   inbox                Show terminal inbox
 """

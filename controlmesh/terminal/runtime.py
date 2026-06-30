@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from controlmesh.config import AgentConfig
 from controlmesh.orchestrator.core import Orchestrator
 from controlmesh.orchestrator.registry import OrchestratorResult
+from controlmesh.provider_binding import normalize_provider_name
 from controlmesh.session import SessionKey
 from controlmesh.terminal.inbox import TerminalInbox
 from controlmesh.terminal.memory_context import TerminalMemoryContext
@@ -108,6 +109,70 @@ class TerminalRuntime:
             message_id=0,
         )
 
+    def current_model_label(self) -> str:
+        """Return the active provider/model label for terminal chrome."""
+        orch = self._require_orchestrator()
+        try:
+            model, provider = orch.resolve_runtime_target(orch._config.model)
+        except ValueError:
+            provider = normalize_provider_name(orch._config.provider)
+            model = orch._config.model
+        return f"{provider} / {model}"
+
+    def model_overview(self) -> OrchestratorResult:
+        """Return terminal-native model switching guidance."""
+        orch = self._require_orchestrator()
+        current = self.current_model_label()
+        providers = ["codex", "claude", "gemini", "opencode", "claw"]
+        lines = [
+            "Model",
+            f"Current: {current}",
+            "",
+            "Switch with:",
+        ]
+        for provider in providers:
+            default_model = orch.default_model_for_provider(provider).strip()
+            suffix = f" {default_model}" if default_model else " <model>"
+            lines.append(f"  model {provider}{suffix}")
+        lines.extend(
+            [
+                "",
+                "Examples:",
+                "  model codex gpt-5.5",
+                "  model claude sonnet",
+                "  model gemini gemini-2.5-pro",
+                "",
+                "Use `native` for the raw provider CLI.",
+            ]
+        )
+        return OrchestratorResult(text="\n".join(lines))
+
+    async def switch_model(self, provider: str, model: str | None = None) -> OrchestratorResult:
+        """Switch the terminal model using the shared model-switching path."""
+        orch = self._require_orchestrator()
+        normalized_provider = normalize_provider_name(provider)
+        selected_model = (model or "").strip() or orch.default_model_for_provider(normalized_provider)
+        if not selected_model:
+            return OrchestratorResult(
+                text=(
+                    f"No default model is known for `{normalized_provider}`.\n"
+                    f"Run `model {normalized_provider} <model>`."
+                )
+            )
+
+        from controlmesh.orchestrator.selectors.model_selector import switch_model
+
+        try:
+            summary = await switch_model(
+                orch,
+                self.session_key,
+                selected_model,
+                provider_override=normalized_provider,
+            )
+        except ValueError as exc:
+            return OrchestratorResult(text=f"Could not switch model: {exc}")
+        return OrchestratorResult(text=summary)
+
     async def send_agent(self, agent: str, message: str) -> OrchestratorResult:
         """Send a message to a registered sub-agent."""
         supervisor = self.supervisor
@@ -117,6 +182,12 @@ class TerminalRuntime:
         if not response.success:
             return OrchestratorResult(text=response.error or "Agent request failed.")
         return OrchestratorResult(text=response.text)
+
+    def _require_orchestrator(self) -> Orchestrator:
+        if self.orchestrator is None:
+            msg = "Terminal orchestrator is not started"
+            raise RuntimeError(msg)
+        return self.orchestrator
 
     async def stop(self) -> None:
         """Stop runtime-owned resources."""

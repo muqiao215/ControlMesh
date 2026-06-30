@@ -61,7 +61,7 @@ async def test_help_is_local_and_does_not_call_runtime() -> None:
 
     runtime.handle_control_command.assert_not_awaited()
     assert result is not None
-    assert "ControlMesh Terminal" in result.text
+    assert result.text.startswith("ControlMesh")
     assert "chat <message>" in output.getvalue()
 
 
@@ -125,3 +125,35 @@ async def test_cm_returns_compatibility_guidance() -> None:
     runtime.handle_control_command.assert_not_awaited()
     assert result is not None
     assert "native" in result.text
+
+
+@pytest.mark.asyncio
+async def test_model_overview_is_terminal_native() -> None:
+    runtime = SimpleNamespace(
+        model_overview=Mock(return_value=OrchestratorResult(text="Model\nCurrent: codex / gpt-5.5")),
+        handle_control_command=AsyncMock(),
+    )
+    router = TerminalCommandRouter(runtime)
+
+    result = await router.handle("model")
+
+    runtime.model_overview.assert_called_once_with()
+    runtime.handle_control_command.assert_not_awaited()
+    assert result is not None
+    assert "Current:" in result.text
+
+
+@pytest.mark.asyncio
+async def test_model_switch_is_terminal_native() -> None:
+    runtime = SimpleNamespace(
+        switch_model=AsyncMock(return_value=OrchestratorResult(text="switched")),
+        handle_control_command=AsyncMock(),
+    )
+    router = TerminalCommandRouter(runtime)
+
+    result = await router.handle("model codex gpt-5.5")
+
+    runtime.switch_model.assert_awaited_once_with("codex", "gpt-5.5")
+    runtime.handle_control_command.assert_not_awaited()
+    assert result is not None
+    assert result.text == "switched"

@@ -31,10 +31,9 @@ class EnhancedShell:
 
     async def run(self) -> None:
         """Run the enhanced shell until exit."""
-        self.console.print("[bold green]ControlMesh Terminal[/bold green]")
-        self.console.print(
-            "[dim]Type a message to chat. Use model to switch models, help for commands, native for provider CLI, exit to quit.[/dim]"
-        )
+        self.console.print("[bold green]ControlMesh[/bold green]")
+        self.console.print(f"[dim]{self.runtime.current_model_label()}[/dim]")
+        self.console.print("[dim]Ask anything, or run: model, tasks, agents, memory, native, help[/dim]")
         while True:
             try:
                 line = await asyncio.to_thread(self._prompt_input, self._prompt())

@@ -59,6 +59,10 @@ class TerminalCommandRouter:
             result = OrchestratorResult(
                 text="`/cm` has moved to `native` in the terminal. Run `native` to enter provider CLI."
             )
+        elif canonical == "/model":
+            result = self.runtime.model_overview()
+        elif canonical.startswith("/model "):
+            result = await self._handle_model(canonical)
         elif canonical.startswith("/inbox"):
             result = await self._handle_inbox(canonical)
         elif canonical.startswith("/@"):
@@ -71,6 +75,14 @@ class TerminalCommandRouter:
             result = await self.runtime.handle_control_command(canonical)
         render_result(self.console, result)
         return result
+
+    async def _handle_model(self, text: str) -> OrchestratorResult:
+        parts = text.removeprefix("/model").strip().split(None, 1)
+        if not parts:
+            return self.runtime.model_overview()
+        provider = parts[0]
+        model = parts[1] if len(parts) > 1 else None
+        return await self.runtime.switch_model(provider, model)
 
     async def _handle_at_agent(self, text: str) -> OrchestratorResult:
         parts = text[2:].strip().split(None, 1)
