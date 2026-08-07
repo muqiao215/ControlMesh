@@ -2,7 +2,7 @@
 
 ## Current
 
-Local implementation and verification are complete; preparing the final commit and remote CI verification.
+Complete. The canonical lifecycle matrix is committed, pushed, and verified locally and remotely.
 
 ## Done
 
@@ -21,10 +21,13 @@ Local implementation and verification are complete; preparing the final commit a
 - Full local verification passed: `uv run python -m pytest -q` (5550 passed),
   `uv run ruff check .`, protocol generation drift check, lifecycle/provider/protocol
   goldens (14 passed), SDK smoke (11 passed), and Web production build.
+- Implementation commit `81adfad` was pushed to `origin/main`; GitHub Actions run
+  `31204618822` completed successfully, including Python 3.11/3.12, Ruff, Mypy,
+  package build, installed Alpha smoke, and protocol/SDK/Web gates.
 
 ## Remaining
 
-- Push and verify final remote CI.
+- None for this work unit.
 
 ## Issues
 
@@ -33,4 +36,5 @@ Local implementation and verification are complete; preparing the final commit a
 
 ## Next
 
-Review the final diff, commit and push, then verify the final GitHub Actions run.
+Build a consumer-side parity harness that reads the committed matrix before proposing any
+mutation API or runtime ownership transfer.
