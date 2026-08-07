@@ -83,10 +83,12 @@ Maintain the completed read-only product layer. Runtime ownership ports remain i
 
 ## Blocked Runtime Ports
 
-These remain blocked until golden behavior tests exist:
+The Python task-lifecycle matrix now supplies the canonical behavior baseline. These ports
+remain blocked until a candidate implementation consumes that matrix successfully and has
+explicit rollback gates:
 
 - TaskHub and task state transitions.
-- Provider process execution and timeout behavior.
+- Provider process execution and timeout behavior (provider reference goldens exist; port gates remain).
 - Memory writes and promotion.
 - Workspace path mutation.
 - Transport adapters and message delivery semantics.

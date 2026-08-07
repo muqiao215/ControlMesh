@@ -1,0 +1,194 @@
+{
+  "cases": [
+    {
+      "domain": "create",
+      "expected": {
+        "event_types": [
+          "task.folder.seeded"
+        ],
+        "seeded_files": [
+          "AGENTS.md",
+          "CLAUDE.md",
+          "EVIDENCE.json",
+          "GEMINI.md",
+          "RESULT.md",
+          "TASKMEMORY.md",
+          "WORKUNIT.json",
+          "events.jsonl"
+        ],
+        "task": {
+          "chat_id": 42,
+          "model": "gpt-5",
+          "provider": "codex",
+          "status": "running",
+          "task_id": "a1b2c3d4",
+          "thinking": "high",
+          "thread_id": 11,
+          "transport": "web"
+        }
+      },
+      "id": "create.basic",
+      "operation": "TaskRegistry.create"
+    },
+    {
+      "domain": "tell",
+      "expected": {
+        "sequence": 1,
+        "updates": [
+          {
+            "from": "main",
+            "message": "Use the canonical schema",
+            "sent_at": "<timestamp>",
+            "sequence": 1
+          }
+        ]
+      },
+      "id": "tell.running",
+      "operation": "TaskHub.tell"
+    },
+    {
+      "domain": "tell",
+      "expected": {
+        "error": {
+          "message": "Task 'a1b2c3d4' is not currently running",
+          "type": "ValueError"
+        }
+      },
+      "id": "tell.not_running",
+      "operation": "TaskHub.tell"
+    },
+    {
+      "domain": "ask_parent",
+      "expected": {
+        "delivery_count": 1,
+        "last_question": "Which contract?",
+        "question_count": 1,
+        "response": "Question forwarded to parent agent. Finish your current work — you will be resumed with the answer."
+      },
+      "id": "ask_parent.basic",
+      "operation": "TaskHub.forward_question"
+    },
+    {
+      "domain": "ask_parent",
+      "expected": {
+        "response": "Error: Task not found"
+      },
+      "id": "ask_parent.missing",
+      "operation": "TaskHub.forward_question"
+    },
+    {
+      "domain": "resume",
+      "expected": {
+        "error": "",
+        "last_question": "",
+        "model": "gpt-5",
+        "provider": "codex",
+        "returned_task_id": "a1b2c3d4",
+        "same_task_id": true,
+        "session_id": "session-1",
+        "status": "running"
+      },
+      "id": "resume.waiting",
+      "operation": "TaskHub.resume"
+    },
+    {
+      "domain": "resume",
+      "expected": {
+        "error": {
+          "message": "Task 'a1b2c3d4' has no resumable session",
+          "type": "ValueError"
+        }
+      },
+      "id": "resume.no_session",
+      "operation": "TaskHub.resume"
+    },
+    {
+      "domain": "cancel",
+      "expected": {
+        "cancelled": false
+      },
+      "id": "cancel.missing",
+      "operation": "TaskHub.cancel"
+    },
+    {
+      "domain": "cancel",
+      "expected": {
+        "cancelled": true
+      },
+      "id": "cancel.running",
+      "operation": "TaskHub.cancel"
+    },
+    {
+      "domain": "recovery",
+      "expected": {
+        "error": "Bot restarted while detached task state was unresolved",
+        "status": "stale",
+        "task_id_preserved": true
+      },
+      "id": "recovery.restart_stale",
+      "operation": "TaskRegistry.__init__"
+    },
+    {
+      "domain": "workspace",
+      "expected": {
+        "default_folder_used": false,
+        "task_folder": "<root>/agents/reviewer/workspace/tasks/b2c3d4e5",
+        "tasks_dir": "<root>/agents/reviewer/workspace/tasks"
+      },
+      "id": "workspace.custom_tasks_dir",
+      "operation": "TaskRegistry.create"
+    },
+    {
+      "domain": "artifact",
+      "expected": {
+        "content": "safe content",
+        "mime": "text/plain",
+        "name": "summary.txt",
+        "relative_path": "reports/summary.txt",
+        "size": 12
+      },
+      "id": "artifact.read",
+      "operation": "open_task_artifact"
+    },
+    {
+      "domain": "artifact",
+      "expected": {
+        "error": {
+          "message": "artifact path is invalid",
+          "type": "InvalidArtifactPathError"
+        }
+      },
+      "id": "artifact.traversal",
+      "operation": "validate_artifact_relative_path"
+    },
+    {
+      "domain": "artifact",
+      "expected": {
+        "error": {
+          "message": "artifact not found",
+          "type": "ArtifactNotFoundError"
+        }
+      },
+      "id": "artifact.missing_task",
+      "operation": "open_task_artifact"
+    }
+  ],
+  "normalizers": [
+    "task_ids",
+    "timestamps",
+    "temporary_roots",
+    "process_ids"
+  ],
+  "oracle": "python",
+  "required_domains": [
+    "create",
+    "tell",
+    "ask_parent",
+    "resume",
+    "cancel",
+    "recovery",
+    "workspace",
+    "artifact"
+  ],
+  "schema_version": "controlmesh.task_lifecycle_golden.v1"
+}

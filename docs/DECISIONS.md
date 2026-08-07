@@ -149,6 +149,29 @@ Revisit when:
 Authentication scopes, browser credential storage, origin/CSRF controls, audit behavior,
 and task mutation parity are explicitly approved.
 
+## 2026-08-08 — Use an executable Python lifecycle oracle
+
+Decision:
+
+Generate one versioned task-lifecycle parity matrix by executing production Python
+ownership paths, normalize only unstable identity/time/root/process values, and require
+Schema validation plus a no-drift CI check.
+
+Why:
+
+Scattered unit tests and hand-written snapshots cannot prove cross-language mutation
+parity across persistence, events, recovery, workspace isolation, and artifact containment.
+
+Rejected:
+
+SDK-only smoke evidence, prose-only matrices, raw temporary snapshots, and treating the
+matrix as permission to expose mutation APIs.
+
+Revisit when:
+
+The fixture envelope cannot express a required observable behavior without unstable or
+implementation-private data.
+
 ## 2026-06-03 — Keep topology selection explicit
 
 Decision:

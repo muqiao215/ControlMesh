@@ -214,7 +214,9 @@ Python history/task/provider read models
 - Provider streaming, timeout, liveness, and recovery semantics require golden fixtures
   before any port.
 - Task lifecycle mutations span persisted state, events, provider processes, delivery, and
-  recovery; SDK smoke tests alone do not establish parity.
+  recovery; SDK smoke tests alone do not establish parity. The executable Python oracle at
+  `tests/golden/runners/task_lifecycle.py` generates the versioned lifecycle matrix and CI
+  checks it for drift. Its JSON Schema is the cross-language fixture-shape authority.
 - Artifact download security depends on platform support for descriptor-relative no-follow
   opening and fails closed when unavailable.
 - The dashboard stores a locally entered token in browser storage and must remain

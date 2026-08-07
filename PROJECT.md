@@ -82,7 +82,7 @@ The approved TypeScript foundation is complete:
   topologies, artifact metadata, and descriptor-safe artifact downloads;
 - runtime-validated TypeScript SDK;
 - local read-only Web dashboard;
-- protocol, provider golden, SDK, facade, artifact-security, and Web build gates.
+- protocol, provider and task-lifecycle golden, SDK, facade, artifact-security, and Web build gates.
 - GitHub CI runs the frozen protocol/golden/SDK/Web gate as a required product-layer job
   and exposes one aggregate `CI success` check for the complete workflow.
 
@@ -96,13 +96,19 @@ and wheel-bundled dashboard assets.
 Mutation-shaped SDK ideas are not supported product behavior. Real task mutation and all
 transport/provider execution remain Python-owned.
 
+The canonical Python task-lifecycle parity matrix now executes create, tell, ask_parent,
+resume, cancel, recovery, workspace, and artifact ownership paths and records normalized,
+JSON-Schema-validated observations. It is a required CI drift gate, not authorization to
+add mutation APIs.
+
 Provider authentication tests isolate operator XDG paths while retaining explicit XDG
 override coverage. The Codex streaming timeout test uses a complete stderr stream double,
 so the full Python suite passes with runtime warnings promoted to errors.
 
 ## Current Priority
 
-1. Build the Python task-lifecycle golden parity matrix before considering mutation APIs.
+1. Build a consumer-side parity harness against the canonical Python lifecycle matrix;
+   keep mutation APIs blocked until a candidate implementation passes it plus rollback gates.
 2. Collect read-only Alpha feedback without expanding the localhost/browser security
    boundary.
 3. Decide browser credential storage and operator scope before any non-local Web use.
@@ -114,4 +120,4 @@ so the full Python suite passes with runtime warnings promoted to errors.
 - Full documentation catalog → `docs/README.md`
 - TypeScript migration contracts and status → `docs/typescript-migration/`
 - Historical and active work → `plans/`
-- Current active work → `plans/project-memory-v1/`
+- Current active work → `plans/task-lifecycle-golden-parity/`

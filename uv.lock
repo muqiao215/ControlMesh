@@ -454,6 +454,7 @@ api = [
     { name = "pynacl" },
 ]
 dev = [
+    { name = "jsonschema" },
     { name = "matrix-nio" },
     { name = "mypy" },
     { name = "pynacl" },
@@ -475,6 +476,7 @@ openai-agents = [
     { name = "openai-agents" },
 ]
 test = [
+    { name = "jsonschema" },
     { name = "pytest" },
     { name = "pytest-aiohttp" },
     { name = "pytest-asyncio" },
@@ -490,6 +492,7 @@ requires-dist = [
     { name = "controlmesh", extras = ["test", "lint", "api", "matrix"], marker = "extra == 'dev'" },
     { name = "cronsim", specifier = ">=2.7" },
     { name = "filetype", specifier = ">=1.2.0" },
+    { name = "jsonschema", marker = "extra == 'test'", specifier = ">=4.26.0" },
     { name = "lark-oapi", specifier = ">=1.5.5" },
     { name = "matrix-nio", marker = "extra == 'matrix'", specifier = ">=0.25.0" },
     { name = "mypy", marker = "extra == 'lint'", specifier = ">=1.19.1" },
