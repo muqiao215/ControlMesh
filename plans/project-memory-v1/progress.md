@@ -2,7 +2,7 @@
 
 ## Current
 
-Delivering the verified progressive project-memory migration.
+Project-memory migration is complete; development continues in a separate task plan.
 
 ## Done
 
@@ -19,11 +19,11 @@ Delivering the verified progressive project-memory migration.
 - Verified 7 project-memory contract tests, Ruff, and all local entry-document links.
 - Verified the migration selection (100 passed), protocol generation, provider goldens
   (12 passed), SDK smoke tests (11 passed), and Web build.
+- Committed and pushed the migration as `8daccd3`.
 
 ## Remaining
 
-- Commit and push the documentation migration.
-- Start the XDG-hermetic test task.
+- None for this task.
 
 ## Issues
 
@@ -32,4 +32,4 @@ Delivering the verified progressive project-memory migration.
 
 ## Next
 
-Commit and push this migration, then create the next task memory directory.
+Use `plans/xdg-auth-test-isolation/` for the next work unit.

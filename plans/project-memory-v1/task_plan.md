@@ -42,8 +42,8 @@ duplicate current state. The user approved a smaller memory model centered on `P
 - [x] Retire superseded repository-truth documents without losing durable knowledge.
 - [x] Update repository coordination tests for the new standard.
 - [x] Verify documentation and migration gates.
-- [ ] Commit and push the documentation migration.
-- [ ] Create the next task plan and begin the XDG-hermetic test fix.
+- [x] Commit and push the documentation migration.
+- [x] Create the next task plan and begin the XDG-hermetic test fix.
 
 ## Success
 
@@ -55,11 +55,11 @@ duplicate current state. The user approved a smaller memory model centered on `P
 
 ## Status
 
-Current phase: delivery.
+Current phase: complete.
 
 ## Next Step
 
-Commit and push the verified project-memory migration.
+Continue development through `plans/xdg-auth-test-isolation/`.
 
 ## Decisions Made
 

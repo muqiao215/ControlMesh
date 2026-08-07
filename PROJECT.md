@@ -87,15 +87,15 @@ The approved TypeScript foundation is complete:
 Mutation-shaped SDK ideas are not supported product behavior. Real task mutation and all
 transport/provider execution remain Python-owned.
 
-The current known engineering gap is that two OpenCode auth tests inherit operator XDG
-paths. They pass when XDG paths are isolated, but the full test suite should be hermetic
-without requiring a special shell environment.
+OpenCode authentication tests now isolate operator XDG paths while retaining explicit XDG
+override coverage. The full Python suite passes under the operator's normal environment.
+One existing Codex streaming timeout test still emits an unawaited `AsyncMock` warning.
 
 ## Current Priority
 
-1. Make OpenCode auth tests hermetic with respect to `XDG_DATA_HOME` and
-   `XDG_CONFIG_HOME` without changing production discovery behavior.
-2. Add explicit protocol, golden, SDK, and Web build gates to CI.
+1. Add explicit protocol, golden, SDK, and Web build gates to CI.
+2. Remove the existing Codex streaming timeout test warning without changing timeout
+   behavior.
 3. Prepare a read-only facade/dashboard alpha release.
 4. Build the Python task-lifecycle golden parity matrix before considering mutation APIs.
 

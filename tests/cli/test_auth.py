@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+
+import pytest
 
 from controlmesh.cli.auth import (
     AuthResult,
@@ -22,8 +23,12 @@ from controlmesh.cli.auth import (
     read_opencode_default_model,
 )
 
-if TYPE_CHECKING:
-    import pytest
+
+@pytest.fixture(autouse=True)
+def _isolate_xdg_homes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep provider auth tests independent of operator XDG configuration."""
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
 
 
 def test_auth_status_values() -> None:

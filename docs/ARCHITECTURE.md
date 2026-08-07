@@ -202,7 +202,8 @@ Python history/task/provider read models
 
 ## Fragile Areas
 
-- Provider auth discovery can be affected by operator environment variables and XDG paths.
+- Provider auth discovery intentionally honors operator environment variables and XDG
+  paths; tests that mock user homes must isolate ambient XDG configuration.
 - Provider streaming, timeout, liveness, and recovery semantics require golden fixtures
   before any port.
 - Task lifecycle mutations span persisted state, events, provider processes, delivery, and
