@@ -64,4 +64,6 @@ Review the final diff, commit, push, and inspect the resulting GitHub Actions ru
 
 | Error | Attempt | Resolution |
 |---|---:|---|
-| None | 1 | — |
+| Remote Python matrix could not execute `pnpm generate:protocol` | 1 | Install pinned Node/pnpm in the matrix jobs and assert the setup in the workflow contract test. |
+| Initial YAML patch matched the Ruff job instead of the test matrix | 2 | Contract test failed immediately; moved the setup steps into the matrix job and retained the assertion. |
+| Second broad context patch matched Mypy instead of the test matrix | 3 | Use job-name-specific patch context for removal/insertion; keep the contract test as the oracle. |

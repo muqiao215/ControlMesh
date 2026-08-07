@@ -25,11 +25,17 @@ Preparing the locally verified CI work for push and remote verification.
 - SDK smoke: 11 passed.
 - Web build: passed.
 - Updated `PROJECT.md` to advance the current priority to the read-only alpha release.
+- Pushed `98f85fa`; remote product-layer, Ruff, mypy, and build jobs passed.
+- Remote Python 3.11/3.12 jobs exposed a missing pnpm toolchain dependency in the full
+  protocol test. Added pinned pnpm/Node setup to the matrix and extended the contract test.
+- Two broad YAML insertion attempts landed in Ruff then Mypy; the workflow contract test
+  rejected both. A job-scoped patch now places setup only in the Python matrix.
+- Remote-derived workflow fix verification: 2 workflow tests passed; Ruff and diff checks
+  passed.
 
 ## Remaining
 
-- Review and commit.
-- Commit, push, and verify remote Actions.
+- Commit, push, and verify the replacement Actions run.
 
 ## Issues
 
@@ -37,4 +43,4 @@ Preparing the locally verified CI work for push and remote verification.
 
 ## Next
 
-Review the final diff, commit, and push to `origin/main`.
+Commit and push the pinned pnpm setup for the Python matrix, then watch the replacement run.

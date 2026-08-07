@@ -50,3 +50,7 @@ def test_ci_workflow_requires_protocol_sdk_and_web_gates() -> None:
 
     required_jobs = set(data["jobs"]["ci-success"]["needs"])
     assert required_jobs == {"ruff", "mypy", "test", "build", "product-layer"}
+
+    python_test_uses = [step["uses"] for step in data["jobs"]["test"]["steps"] if "uses" in step]
+    assert "pnpm/action-setup@v4" in python_test_uses
+    assert "actions/setup-node@v4" in python_test_uses
