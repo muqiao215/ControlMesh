@@ -2,8 +2,8 @@
 
 ## Current
 
-The candidate, dual-run diff, rollback gate, internal facade, and API-boundary review are
-implemented; integrating durable documentation and complete verification.
+Complete. The candidate, dual-run diff, rollback gate, internal facade, and API-boundary
+review are implemented, pushed, and verified locally and remotely.
 
 ## Done
 
@@ -28,10 +28,13 @@ implemented; integrating durable documentation and complete verification.
   golden/protocol (16 passed), SDK (12 passed), and Web production build.
 - Final bundle review found and removed an internal-module barrel export; a rebuilt Web
   bundle is byte-for-byte unchanged, while private parity/typecheck/golden/SDK gates remain green.
+- Implementation commit `a8afe29` and CI cache correction `6222657` are on `origin/main`.
+  GitHub Actions run `31206863522` completed successfully across Python 3.11/3.12,
+  product parity/SDK/Web, Ruff, Mypy, package build, and installed Alpha smoke.
 
 ## Remaining
 
-- Review the final diff, commit/push, and verify remote CI.
+- None for this work unit.
 
 ## Issues
 
@@ -47,4 +50,5 @@ implemented; integrating durable documentation and complete verification.
 
 ## Next
 
-Commit and push the reviewed change, then verify final GitHub Actions.
+Obtain explicit product/security decisions from `MUTATION_API_REVIEW.md` before proposing
+any public create/tell/resume/cancel surface.

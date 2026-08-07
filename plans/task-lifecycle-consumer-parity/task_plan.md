@@ -39,7 +39,7 @@ authorization, idempotency, and audit requirements for future mutation APIs.
 - [x] Add internal facade and prove public surfaces remain read-only.
 - [x] Record mutation API authorization/idempotency/audit review.
 - [x] Integrate tests/CI and run complete local gates.
-- [ ] Update durable memory, commit, push, and verify final GitHub Actions.
+- [x] Update durable memory, commit, push, and verify final GitHub Actions.
 
 ## Success
 
@@ -50,11 +50,12 @@ final local and remote gates are green.
 
 ## Status
 
-Current phase: commit, push, and remote CI verification.
+Current phase: complete.
 
 ## Next Step
 
-Commit and push, then monitor GitHub Actions for the exact final HEAD.
+Await explicit approval of the deferred mutation API admission decisions; do not expose
+public mutation methods before that review.
 
 ## Decisions Made
 
