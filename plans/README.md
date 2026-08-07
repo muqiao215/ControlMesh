@@ -1,5 +1,14 @@
 # ControlMesh Plans
 
+Repository-level truth is defined by:
+
+- `REQUIREMENTS.md`
+- `IMPLEMENTATION.md`
+- `HANDOFF.md`
+- `AGENTS.md`
+
+This directory contains program, product-line, and task execution records beneath those repository-level contracts.
+
 This directory is the working control plane for ControlMesh.
 
 ControlMesh does not treat chat history as project truth.

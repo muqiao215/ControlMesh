@@ -1,5 +1,14 @@
 # Execution Plan
 
+## Implementation Status
+
+- Status: completed and verified.
+- Stages 6 and 7 landed in the Python-owned team runtime.
+- Stage 8 convergence is covered by the shared execution spine and the four-topology
+  contract, runtime, presentation, interruption, and regression tests.
+- Verified during the 2026-08-07 migration closeout with the topology/routing selection:
+  `433 passed`.
+
 ## Goal
 
 在已完成的 Step 1-5 基线上，继续推进两个延后拓扑：
@@ -347,4 +356,4 @@ Do not start with:
 - [x] interruption/resume kept as base contract
 - [x] director_worker minimum product cut frozen
 - [x] debate_judge minimum product cut frozen
-- [ ] implementation branch/code work started
+- [x] implementation branch/code work completed and regression-verified

@@ -3,7 +3,19 @@
 中文 | [English](#english)
 
 ControlMesh is a chat-native task runtime for official coding CLIs, with a
-file-backed memory layer, a first-class multi-agent runtime
+file-backed memory layer, and a first-class multi-agent runtime.
+
+## Repository execution truth
+
+Contributors and agents should start here:
+
+- [`REQUIREMENTS.md`](REQUIREMENTS.md): complete repository-level requirements and acceptance criteria
+- [`IMPLEMENTATION.md`](IMPLEMENTATION.md): architecture, ownership boundaries, and verification workflow
+- [`HANDOFF.md`](HANDOFF.md): current worktree state, completed work, risks, and next task
+- [`AGENTS.md`](AGENTS.md): stable operating rules for any agent taking over the repository
+
+Plans and chat history are supporting context. These four files define the repository-level collaboration contract.
+
 ## 中文
 
 ### Enhanced Terminal 与手机端多代理平台
