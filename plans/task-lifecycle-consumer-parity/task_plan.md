@@ -70,3 +70,4 @@ Commit and push, then monitor GitHub Actions for the exact final HEAD.
 | Combined Schema/test/docs patch missed a formatted test context line | 1 | Split the change by file and patch against the current formatted source. |
 | `pnpm exec tsc` was unavailable because the workspace had no TypeScript compiler dependency | 1 | Add an explicit workspace TypeScript/Bun typecheck toolchain and make candidate typechecking a gate. |
 | Internal candidate was included in the Web bundle through the runtime-facade barrel export | 1 | Remove the barrel export; keep imports on the private module path and verify the built dashboard is unchanged. |
+| GitHub Pytest jobs passed tests but failed `setup-node` post-cache validation | 1 | The jobs never install pnpm dependencies, so no pnpm store exists on a cache miss; remove the unused pnpm cache from Pytest setup-node only. |

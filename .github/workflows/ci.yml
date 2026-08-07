@@ -100,7 +100,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
       - name: Toolchain doctor
         run: python scripts/doctor_toolchain.py --strict --require-bun
       - name: Install dependencies

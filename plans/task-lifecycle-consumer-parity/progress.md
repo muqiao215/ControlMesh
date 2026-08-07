@@ -40,6 +40,10 @@ implemented; integrating durable documentation and complete verification.
   Python oracle.
 - First rollback-gate generation exposed that Bun 1.3.14 does not implement
   `BunFile.textSync()`; switched the synchronous library path to `readFileSync`.
+- CI run `31206461590` passed both Python test suites and every product/code gate, but both
+  Pytest jobs failed afterward because `actions/setup-node` tried to save a pnpm cache for
+  jobs that never run pnpm install. Removed that unused cache setting; product-layer cache
+  remains enabled where pnpm is actually installed.
 
 ## Next
 
