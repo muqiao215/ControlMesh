@@ -2,7 +2,7 @@
 
 ## Current
 
-The Alpha is published. Repairing the prerelease visibility verifier and closing evidence.
+Complete. The Alpha is published and post-release main is verified.
 
 ## Done
 
@@ -45,10 +45,12 @@ The Alpha is published. Repairing the prerelease visibility verifier and closing
   prerelease. Created the GitHub release from the verified tag/note as a prerelease with
   `--latest=false`, confirmed `v0.41.9` remains Latest, and cancelled the impossible wait.
 - Updated future publish verification to require files under `releases[expected]`.
+- Pushed post-release verifier repair `177a4bd`; Actions run `31202441756` passed every
+  required job and aggregate `CI success`.
 
 ## Remaining
 
-- Commit/push the verifier repair and final evidence, then verify final main CI.
+- None.
 
 ## Issues
 
@@ -56,4 +58,4 @@ The Alpha is published. Repairing the prerelease visibility verifier and closing
 
 ## Next
 
-Verify the prerelease visibility repair, commit/push, and wait for final main CI.
+Create the Python task-lifecycle golden parity matrix plan.

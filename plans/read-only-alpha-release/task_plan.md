@@ -38,7 +38,7 @@ that another user can install, start, and evaluate.
 - [x] Add or repair reproducible installation and real-environment smoke verification.
 - [x] Execute release checklist and the relevant full local gates.
 - [x] Update durable project memory and task evidence.
-- [ ] Commit, push, and verify GitHub Actions on final HEAD.
+- [x] Commit, push, and verify GitHub Actions on final HEAD.
 
 ## Success
 
@@ -50,11 +50,11 @@ that another user can install, start, and evaluate.
 
 ## Status
 
-Current phase: push the verified release candidate and inspect remote CI.
+Complete. The Alpha is published and the post-release main branch is green.
 
 ## Next Step
 
-Commit and push the release candidate, then wait for the final `CI success` gate.
+Begin the Python task-lifecycle golden parity matrix plan.
 
 ## Decisions Made
 

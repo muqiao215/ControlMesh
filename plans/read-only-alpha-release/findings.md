@@ -46,6 +46,8 @@
 - PyPI prereleases appear under `releases[expected]` while `info.version` continues to name
   the latest stable release. Visibility automation must check exact-version files, not
   require a prerelease to replace the stable default.
+- Post-release Actions run `31202441756` passed all required jobs after the verifier repair,
+  including the isolated installed-wheel Alpha smoke.
 
 ## Technical Decisions
 
