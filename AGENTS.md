@@ -1,79 +1,74 @@
-# Agent Operating Rules
+# Project Instructions
 
-Every agent taking over this repository must read these files in order:
+## Start Here
 
-1. `REQUIREMENTS.md`
-2. `IMPLEMENTATION.md`
-3. `HANDOFF.md`
-4. the relevant line-specific plan or migration status document
+First read:
 
-## Repository Truth
+1. `PROJECT.md`
 
-- Requirements are authoritative in `REQUIREMENTS.md`.
-- Architecture and implementation method are authoritative in `IMPLEMENTATION.md`.
-- Current state and next work are authoritative in `HANDOFF.md`.
-- JSON Schema is authoritative for cross-language payload shape.
-- Python is authoritative for runtime behavior.
-- Chat history is context, not project truth.
+Then read only what the task requires:
+
+- Architecture and ownership boundaries → `docs/ARCHITECTURE.md`
+- Historical decisions and rejected directions → `docs/DECISIONS.md`
+- Active substantial work → the relevant `plans/<task>/` directory
+
+Do not load unrelated documentation by default. `docs/README.md` is a catalog, not a
+required reading list.
+
+## Project Memory
+
+Conversation history is context, not project memory.
+
+Update `PROJECT.md` only when confirmed user intent, priorities, constraints, non-goals,
+or project stage changes.
+
+Update `docs/ARCHITECTURE.md` when durable knowledge about how the system works or who owns
+behavior changes.
+
+Update `docs/DECISIONS.md` when an important choice is made that a future agent may
+otherwise revisit.
+
+For substantial work that spans multiple files, requires investigation, or may cross
+sessions, maintain:
+
+- `plans/<task>/task_plan.md`
+- `plans/<task>/findings.md`
+- `plans/<task>/progress.md`
+
+Use the globally installed `planning-with-files` skill for this workflow. Keep transient
+discoveries in task findings; promote only durable knowledge into project documents.
 
 ## Before Editing
 
-- Run `git status --short` and preserve existing worktree changes.
+- Run `git status --short` and preserve existing changes.
 - Read the modules and tests that own the requested behavior.
-- Resolve requirement IDs affected by the change.
-- Confirm whether the change is read-only, mutating, persisted, transport-facing, or provider-facing.
+- Determine whether the change is read-only, mutating, persisted, transport-facing, or
+  provider-facing.
 - Do not assume generated files are hand-written.
 
-## Change Rules
+## Development
 
-- Keep changes scoped to the active requirement and ownership boundary.
-- Do not rename persisted fields, task statuses, provider names, transport names, or relative paths without an approved migration.
-- Do not move Python runtime ownership into TypeScript without golden parity and rollback gates.
-- Do not let Web or SDK code read private ControlMesh files directly.
-- Do not expose absolute artifact paths.
-- Do not commit secrets, credentials, `.env` files, auth profiles, caches, virtual environments, runtime logs, or dependency directories.
-- Collaboration documents, task plans, findings, progress, evidence, and lockfiles are intended to be tracked.
+- Use existing development, testing, review, and validation mechanisms.
+- Keep changes inside the active ownership boundary.
+- Do not silently reinterpret or weaken user requirements.
+- Do not rename persisted fields, task statuses, provider names, transport names, or
+  relative paths without an explicit migration.
+- Python owns runtime behavior. JSON Schema owns cross-language payload shape. TypeScript
+  product layers do not write private runtime files.
+- Do not expose absolute artifact paths or weaken authentication/path containment.
+- Do not commit secrets, credentials, `.env` files, auth profiles, caches, virtual
+  environments, runtime logs, dependency directories, or local agent session state.
+- Before reporting completion, run verification proportional to the change and record the
+  exact result in the task progress file.
 
-## Required Handoff Discipline
+## Documentation
 
-Before ending a work unit, update `HANDOFF.md` with:
+Keep documentation concise and linked rather than duplicated.
 
-- objective and requirement IDs;
-- files changed;
-- behavior completed;
-- exact verification commands and results;
-- known risks or unverified areas;
-- one concrete next step;
-- whether any local server/process is running.
+- Code explains implementation.
+- `PROJECT.md` explains intent and current direction.
+- `docs/ARCHITECTURE.md` explains the durable system map and invariants.
+- `docs/DECISIONS.md` explains why important choices were made.
+- Task files explain the current work only.
 
-Do not mark work complete based only on code inspection. State clearly when tests could not run.
-
-## Standard Verification
-
-Python facade/protocol work:
-
-```bash
-uv run python -m pytest tests/api/test_admin_catalog.py tests/protocol tests/tasks/test_models.py -q
-uv run ruff check controlmesh/api controlmesh/protocol tests/api tests/protocol
-```
-
-TypeScript protocol/SDK/Web work:
-
-```bash
-pnpm install
-pnpm check:protocol
-pnpm test:golden
-pnpm test:sdk
-pnpm --filter @controlmesh/web build
-```
-
-Use narrower commands while iterating, then run the relevant full gate before handoff.
-
-## Forbidden Shortcuts
-
-- Do not edit generated protocol models directly.
-- Do not instantiate mutation-capable registries solely to serve read-only APIs.
-- Do not weaken authentication or path containment to make a test pass.
-- Do not add a mutating TypeScript endpoint because an SDK method already exists.
-- Do not delete unrelated user changes or reset a dirty worktree.
-- Do not treat ignored files as the only place for important project state.
+Do not introduce new process or infrastructure unless a real task requires it.

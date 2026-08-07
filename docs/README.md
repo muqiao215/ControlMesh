@@ -7,37 +7,20 @@ long work through `/tasks/*` primitives, and returns status/results to the same
 chat. Matrix, sub-agents, cron, webhook, and direct API transports remain
 secondary compatibility/runtime modules.
 
-## Onboarding (Read in This Order)
+## Start Here
 
-1. `docs/feishu-setup.md` -- Feishu native bootstrap, auth boundary, and OAPI tools.
-2. `docs/modules/tasks.md` -- background task loop and runtime primitives.
-3. `docs/telegram-setup.md` -- Telegram bot token setup, allowlists, and everyday runtime usage.
-4. `docs/installation.md` -- install path and transport choices.
-5. `docs/weixin-setup.md` -- WeChat/Weixin QR login and reply readiness.
-6. `docs/case-pack/README.md` -- case-pack canonical source, semantic lint, and renderer contract.
-7. `docs/system_overview.md` -- fastest end-to-end mental model.
-8. `docs/developer_quickstart.md` -- shortest path for contributors/junior devs.
-9. `docs/modules/setup_wizard.md` -- CLI commands, onboarding, restart/upgrade lifecycle.
-10. `docs/modules/service_management.md` -- systemd/launchd/Task Scheduler backends and operational behavior.
-11. `docs/architecture.md` -- startup, routing, streaming, callbacks, observers.
-12. `docs/terminal.md` -- enhanced terminal, `/cm` native mode, `/back`, and legacy bot runtime.
-13. `docs/config.md` -- config schema, merge behavior, hot-reload boundaries.
-14. `docs/modules/config_reload.md` -- runtime config reload details.
-15. `docs/modules/orchestrator.md` -- routing core, flows, selectors, lifecycle split.
-16. `docs/modules/bus.md` -- unified Envelope/MessageBus delivery architecture.
-17. `docs/modules/session.md` -- transport-aware `SessionKey(transport, chat_id, topic_id)` isolation model.
-18. `docs/modules/api.md` -- direct WebSocket ingress and HTTP file endpoints.
-19. `docs/modules/bot.md` -- Telegram transport (messenger/telegram/), middleware, topic routing.
-20. `docs/modules/cli.md` -- provider wrappers, stream parsing, process control.
-21. `docs/modules/codex-hooks.md` -- Codex-native lifecycle capability matrix and fallback ownership.
-22. `docs/modules/gateways.md` -- transport-neutral gateway config skeleton for future external dispatch.
-23. `docs/modules/team.md` -- additive team state layer, read-only API envelope, and phase machine.
-24. `docs/modules/harness.md` -- file-driven control plane, controller/worker boundaries, automatic adjudication, and TDD/live/checkpoint governance.
-25. `docs/modules/cli_commands.md` -- CLI command split from `__main__.py`.
-26. `docs/modules/workspace.md` -- `~/.controlmesh` seeding, rules sync, skill sync.
-27. `docs/modules/memory_v2.md` -- additive `MEMORY.md` / daily memory / dreaming-state substrate.
-28. `docs/modules/multiagent.md` -- supervisor, bus bridge, sub-agent runtime.
-29. Remaining module docs (`matrix`, `background`, `cron`, `webhook`, `heartbeat`, `cleanup`, `infra`, `supervisor`, `security`, `logging`, `files`, `text`, `skill_system`).
+This file is a catalog, not a mandatory reading list. Begin at the layer that matches your
+need:
+
+- Product intent and current priority → `PROJECT.md`
+- System map and ownership boundaries → `docs/ARCHITECTURE.md`
+- Historical rationale → `docs/DECISIONS.md`
+- Install and first run → `docs/installation.md`
+- Fast runtime mental model → `docs/system_overview.md`
+- Contributor setup → `docs/developer_quickstart.md`
+- Current substantial work → the relevant `plans/<task>/`
+
+Load module and transport documentation only when the task reaches that area.
 
 ## System in 60 Seconds
 
@@ -68,7 +51,8 @@ Runtime behavior notes:
 
 ## Documentation Index
 
-- [Architecture](architecture.md)
+- [Architecture](ARCHITECTURE.md)
+- [Decisions](DECISIONS.md)
 - [System Overview](system_overview.md)
 - [Installation](installation.md)
 - [Feishu Setup](feishu-setup.md)

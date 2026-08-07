@@ -67,7 +67,8 @@ Before registering the operation, the implementation work unit must:
 1. Add automated tests for every matrix ID and link those IDs to test names.
 2. Run the Python facade/security gates and the SDK/Web gates if those layers change.
 3. Remove `x-controlmesh-status: planned` only after all cases pass.
-4. Update `MW-006`, migration status, and `HANDOFF.md` in the same work unit.
+4. Update migration status and the active task's `progress.md` in the same work unit;
+   promote durable architecture or decisions only when they changed.
 
 The production route is registered with `HEAD` disabled and remains gated by every matrix case.
 

@@ -1,155 +1,42 @@
 # ControlMesh
 
-中文 | [English](#english)
+ControlMesh is a local-first, chat-native task runtime for official coding CLIs. It connects
+Claude, Codex, Gemini, OpenCode, and configured providers to persistent workspaces,
+background tasks, multi-agent coordination, messaging transports, and operational tools.
 
-ControlMesh is a chat-native task runtime for official coding CLIs, with a
-file-backed memory layer, and a first-class multi-agent runtime.
+## What
 
-## Repository execution truth
+ControlMesh lets you:
 
-Contributors and agents should start here:
+- work interactively in an enhanced local terminal;
+- run the legacy bot runtime through Feishu, Telegram, WeChat, Matrix, and compatible
+  transports;
+- create persistent background tasks that can ask for input, resume, recover, and deliver
+  results;
+- coordinate bounded multi-agent topologies on a shared Python runtime;
+- inspect tasks, providers, events, topologies, and artifacts through a local read-only Web
+  dashboard.
 
-- [`REQUIREMENTS.md`](REQUIREMENTS.md): complete repository-level requirements and acceptance criteria
-- [`IMPLEMENTATION.md`](IMPLEMENTATION.md): architecture, ownership boundaries, and verification workflow
-- [`HANDOFF.md`](HANDOFF.md): current worktree state, completed work, risks, and next task
-- [`AGENTS.md`](AGENTS.md): stable operating rules for any agent taking over the repository
+Python remains the authoritative runtime. The TypeScript workspace provides public protocol
+models, runtime validation, an SDK, and the local dashboard.
 
-Plans and chat history are supporting context. These four files define the repository-level collaboration contract.
+## Quick Start
 
-## 中文
-
-### Enhanced Terminal 与手机端多代理平台
-
-ControlMesh 是一个开源的 chat-native task runtime：把 Claude、Codex、
-Gemini 等官方编码 CLI 接进飞书、Telegram 和微信，让它们像长期在线的任务
-机器人一样执行工作，并带上文件型记忆层和多代理运行时。
-
-从 0.41.0 开始，在交互式终端直接运行 `controlmesh` 会进入
-ControlMesh Enhanced Terminal：
-
-- 默认提示符是 `cm>`，普通输入复用 ControlMesh Orchestrator、记忆、任务和路由能力。
-- 输入 `/cm` 进入真实 Codex/Claude/OpenCode 等 provider 原生 CLI。
-- 在原生模式输入 `/back` 回到 `cm>`。
-- 旧聊天机器人 runtime 仍保留为 `controlmesh bot`。
-
-它不是一次性的聊天壳。主线是飞书里的后台任务闭环：创建任务、任务后台执行、
-任务缺信息时通过 `ask_parent` 回问飞书、父会话恢复任务、结果回到同一聊天上下文。
-支持对接Telegram 和微信/WeChat ；Matrix 保留为次级兼容 transport。
-在这个闭环下面，ControlMesh 还提供 file-backed 的记忆层、共享 `TaskHub`、agent 间消息总线，以及主 agent / sub-agent 的统一运行时。
-
-### 随时可以编码，无损心流
-
-- 把 Claude、Codex、Gemini 变成飞书、Telegram 或微信里的长期任务机器人。
-- 任务路由系统时自动转后台多代理，可以把claude,codex包装为更强大的子代理。
-- 需要 worker 缺信息时能在聊天里优雅回问并 resume 的团队。
-- 需要主 agent 和多个 sub-agent 分工协作，但又共享任务总线和共享知识的团队。
-- 想把机器人部署到 VPS、NAS 或树莓派，做 24/7 工作入口的开发者。
-
-### 产品能力
-
-| 能力 | 说明 |
-|---|---|
-| Feishu Native Runtime | 内置 `feishu-auth-kit` 第一方模块快照，提供扫码创建机器人、CardKit 单卡、权限引导、原生 OAPI 工具 |
-| 后台任务闭环 | `/tasks/create`、`tell`、`ask_parent`、`resume`、`list` 构成可演示任务 runtime |
-| 官方 CLI worker | 复用 Claude、Codex、Gemini 等官方命令行工具执行任务 |
-| 记忆层 | `MEMORY.md` 作为持久权威记忆，配合 `memory/YYYY-MM-DD.md`、`DREAMS.md` 和确定性 promotion/search |
-| 多代理运行时 | `AgentSupervisor` 管理 main/sub-agents；共享 `InterAgentBus`、`InternalAgentAPI`、可选共享 `TaskHub` |
-| 持久工作区 | 会话、任务记忆、文件、输出和运行状态保存在本机 |
-| 文件交付 | 文本、图片、音频、文档等输出可发回聊天入口 |
-| 可选 topology | 支持 `pipeline`、`fanout_merge`、`director_worker`、`debate_judge` 四条已批准拓扑 |
-| 多入口触达 | Feishu 是 native/runtime-first 主线；Telegram 和微信/WeChat 是已有重要入口 |
-| 运维友好 | `tasks doctor`、Feishu doctor、systemd、restart、配置校验 |
-| 兼容入口 | Matrix、API、cron、webhook 仍可用，但不是首页主线 |
-
-### 记忆层与多代理
-
-ControlMesh 显式分层的 agent workspace：
-
-- `MEMORY.md` 是唯一的持久权威记忆文件。
-- `memory/YYYY-MM-DD.md` 保存每日工作记录；`DREAMS.md` 保存跨天综合结果。
-- promotion、dreaming、search 走确定性、文件可审阅的路径，不把向量库当权威源。
-- 多代理运行时由 `AgentSupervisor` 承载：main agent 常驻，sub-agent 可按需增减。
-- agent 各自隔离会话、工作区和入口凭证，但共享 `InterAgentBus`、内部 API、可选共享 `TaskHub`。
-- `SHAREDMEMORY.md` 会同步进各 agent 的 `MEMORY.md`，形成共享知识底板。
-
-### Feishu 体验
-
-ControlMesh 当前公开主线是 Feishu Native 模式。
-
-最小闭环：
-
-- `controlmesh feishu native bootstrap` 进入友好的飞书原生启动入口。
-- 内置 [`feishu-auth-kit`](https://github.com/muqiao215/feishu-auth-kit) 作为从 ControlMesh 抽取出来的 Feishu 第一方模块，完成扫码创建、凭证写回、权限引导、消息上下文、CardKit 和 retry contract。
-- `feishu-auth-kit` 的公开仓库是这套第一方模块的独立同步形态；ControlMesh 发布包必须包含这套模块，外部 CLI 只作为开发覆盖或故障 fallback。
-- 当 Feishu native 使用 Codex provider 时，agent turn 主路径直接消费内置 plugin 的 `CodexCliRunner`、`AgentEvent` 和 `SingleCardRun`，再由 ControlMesh 负责飞书发送与卡片更新。
-- Feishu 卡片展示任务状态、工具步骤和最终结果。
-- 长任务通过 task runtime 后台执行，缺信息时走 `/tasks/ask_parent`，父会话再 `/tasks/resume`。
-- 运行中的任务如果中途需要补充新要求，不必取消重开；父会话可直接 `/tasks/tell`，worker 再主动检查更新。
-- `/feishu_auth_all` 进行当前 MVP 工具所需权限的批量引导。
-- 已接入第一批只读原生工具：联系人搜索、用户读取、群消息读取、Drive 文件列表。
-
-### Telegram 与微信入口
-
-Feishu 是当前 native/runtime-first 主线，但 ControlMesh 不是只服务飞书：
-
-- Telegram：成熟的 token-based 入口，适合个人 DM、群组、长期在线任务机器人和文件交付。
-- 微信/WeChat：已有 Weixin iLink 入口，支持扫码登录、长轮询收消息，并在首条微信消息后建立回复上下文。
-- Matrix：保留为 secondary/compatibility transport，适合已经使用 Matrix/Element 的团队。
-
-Bridge 模式、Matrix、cron、webhook 和 API 仍是兼容能力；公开产品叙事以
-Feishu native + Telegram + 微信入口为主。
-
-### Topology 执行线
-
-后台任务可以显式使用四条已批准拓扑：
-
-- `pipeline`
-- `fanout_merge`
-- `director_worker`
-- `debate_judge`
-
-它们共用同一个 `TaskHub` + typed topology execution seam。
-
-关键边界：
-
-- 选择始终显式，不会自动推断 topology。
-- `/tasks topology` 用来查看或设置后台任务默认 topology。
-- `director_worker` 保持 director-only ask-parent。
-- `debate_judge` 在最终轮 tie 时升级到 parent，而不是静默自动裁决。
-
-### Runtime primitives
-
-任务闭环的稳定 runtime primitives：
-
-- `/tasks/create`
-- `/tasks/resume`
-- `/tasks/tell`
-- `/tasks/ask_parent`
-- `/tasks/list`
-- `/interagent/send`
-
-### 快速开始
+Install the released CLI:
 
 ```bash
 pipx install controlmesh
 controlmesh
 ```
 
-交互式 `controlmesh` 会进入 enhanced terminal。要启动旧的聊天 transport
-runtime，使用：
+`controlmesh` opens the enhanced terminal. Use `/cm` for provider-native mode and `/back`
+to return. Start the legacy messaging runtime with:
 
 ```bash
 controlmesh bot
 ```
 
-如果你想直接跟踪 GitHub 最新 `main`，不用等下一次 PyPI 发布：
-
-```bash
-pipx install "git+https://github.com/muqiao215/ControlMesh.git@main"
-controlmesh
-```
-
-从源码运行：
+Develop from source:
 
 ```bash
 git clone https://github.com/muqiao215/ControlMesh.git
@@ -158,323 +45,33 @@ uv sync --locked --all-extras --dev
 uv run controlmesh
 ```
 
-检查本机 toolchain 是否满足仓库基线：
+Verify the toolchain:
 
 ```bash
-python ./scripts/doctor_toolchain.py --strict --require-bun
+python scripts/doctor_toolchain.py --strict --require-bun
 ```
 
-首次启动会引导你完成 CLI 检查、聊天入口配置、时区设置和可选服务安装。
+## Documentation
 
-### Feishu 从零配置
+- [Project Context](PROJECT.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Decisions](docs/DECISIONS.md)
+- [Installation](docs/installation.md)
+- [Feishu Setup](docs/feishu-setup.md)
+- [Telegram Setup](docs/telegram-setup.md)
+- [WeChat Setup](docs/weixin-setup.md)
+- [Enhanced Terminal](docs/terminal.md)
+- [Full Documentation Index](docs/README.md)
 
-Native 模式：
+Contributors and coding agents should begin with [AGENTS.md](AGENTS.md).
 
-```bash
-controlmesh feishu native bootstrap
-controlmesh auth feishu setup
-controlmesh auth feishu register-begin
-controlmesh auth feishu register-poll --device-code "<device_code>" --interval 5 --expires-in 600
-controlmesh auth feishu doctor
-controlmesh auth feishu probe
-```
+## Status
 
-Feishu-only 安装是支持的，不需要 Telegram 或 Matrix。最短路径是：
+The Python terminal, bot, task, provider, memory, transport, and multi-agent runtime is the
+stable core. The authenticated `/api/v1` facade, TypeScript SDK, and local Web dashboard are
+an additive read-only product layer. TypeScript task mutation and runtime replacement remain
+blocked until Python golden parity and rollback gates exist.
 
-```bash
-pipx install controlmesh
-npm install -g @anthropic-ai/claude-code
-claude auth
+## License
 
-controlmesh feishu native bootstrap
-controlmesh auth feishu register-begin
-controlmesh auth feishu register-poll --device-code "<device_code>" --interval 5 --expires-in 600
-controlmesh service install
-```
-
-这条路径里：
-
-- 聊天入口只有 Feishu
-- 不需要 `telegram_token`
-- 不需要 Matrix 配置
-- Claude Code / Codex / Gemini / OpenCode 负责模型 runtime，Feishu 负责聊天入口
-
-任务 runtime：
-
-```bash
-controlmesh tasks doctor
-controlmesh tasks list
-```
-
-聊天入口里的 topology 控制命令：
-
-```text
-/tasks topology status
-/tasks topology director_worker
-```
-
-### 常用命令
-
-```bash
-controlmesh status
-controlmesh restart
-controlmesh service install
-controlmesh api enable
-```
-
-QQ 路线现状：
-
-- 官方主线路径：ControlMesh 直接实现官方 QQ Bot runtime，但以 Tencent/OpenClaw `qqbot` 源码作为协议与产品语义的主要参考
-- 迁移说明见：[`docs/qqbot-official-pivot.md`](docs/qqbot-official-pivot.md)
-
-重要状态更新：
-
-- 旧的 `NapCat / OneBot / controlmesh-qqbot` 桥接路径已从仓库删除，不再作为可用入口保留。
-- 当前主线方向是官方 QQ Bot 路线：ControlMesh 内置 direct official `qqbot` runtime，并持续以 Tencent/OpenClaw `qqbot` 源码作为 source of truth。
-- 变更说明见：[`docs/release-note-qqbot-official-runtime.md`](docs/release-note-qqbot-official-runtime.md)
-
-### 正式发版
-
-正式 GitHub Release 不要让 `gh release create` 隐式建 tag。ControlMesh 仓库内置了一个
-“先定锚、再挂牌”的发版脚本：
-
-```bash
-scripts/release_github.sh v0.21.0 --notes-file /tmp/release-notes.md
-```
-
-它会固定执行这条顺序：
-
-- 先确认 `main` CI 已经是绿色
-- 校验工作树干净、版本号和 tag 一致
-- 本地构建分发包并做 `twine check`
-- 先创建或验证本地 annotated tag
-- 先推分支，再单独推 tag
-- 先核对远端 tag 指向
-- 由 tag workflow 继续完成：
-  - 再次校验 tag commit 的 `main` CI 结果
-  - 构建并发布 PyPI
-  - 等待 PyPI 可见
-  - 最后创建或更新 GitHub Release
-
-这条脚本的原则是：GitHub Release 必须晚于 PyPI publish 成功，不能先挂牌再补包。
-
-### 文档
-
-- 安装：[`docs/installation.md`](docs/installation.md)
-- Feishu 设置：[`docs/feishu-setup.md`](docs/feishu-setup.md)
-- Telegram 设置：[`docs/telegram-setup.md`](docs/telegram-setup.md)
-- 微信/WeChat 设置：[`docs/weixin-setup.md`](docs/weixin-setup.md)
-- Case-pack contract：[`docs/case-pack/README.md`](docs/case-pack/README.md)
-- 文档总览：[`docs/README.md`](docs/README.md)
-- 最新发版说明：[`docs/release-note-v0.34.11.md`](docs/release-note-v0.34.11.md)
-- Memory v2：[`docs/modules/memory_v2.md`](docs/modules/memory_v2.md)
-- 多代理运行时：[`docs/modules/multiagent.md`](docs/modules/multiagent.md)
-- QQ 迁移变更说明：[`docs/release-note-qqbot-official-runtime.md`](docs/release-note-qqbot-official-runtime.md)
-- 配置示例：[`config.example.json`](config.example.json)
-
-### 许可证
-
-MIT License. See [`LICENSE`](LICENSE).
-
----
-
-## English
-
-ControlMesh is an open-source chat-native task runtime for command-line coding
-agents, with a file-backed memory layer and a first-class multi-agent runtime.
-
-It turns official CLIs such as Claude, Codex, and Gemini into long-running chat
-bots that can spawn background tasks, ask the parent chat for missing context,
-resume the worker, and return results through the same conversation. Feishu
-native is the runtime-first product path; Telegram and WeChat/Weixin are also
-existing important entrypoints. Under that loop, ControlMesh also provides a
-file-backed memory substrate, a shared task hub, inter-agent messaging, and one
-runtime that can host a main agent plus sub-agents. Matrix remains a secondary
-compatibility transport.
-
-### Who It Is For
-
-- Developers who want Claude, Codex, or Gemini as long-running Feishu,
-  Telegram, or WeChat workers.
-- Teams that need a task loop: create, ask-parent, resume, return.
-- Teams that need a main agent plus sub-agents with shared tasks and shared knowledge.
-- Builders who need agents to work with files and commands, not just produce chat text.
-- Operators who want an always-on chat task entrypoint on a VPS, NAS, or Raspberry Pi.
-
-### Features
-
-| Feature | Description |
-|---|---|
-| Feishu Native Runtime | Bundled first-party `feishu-auth-kit` snapshot for scan-created bots, CardKit cards, permission onboarding, and native OAPI tools |
-| Background task loop | `/tasks/create`, `ask_parent`, `resume`, and `list` form the runtime loop |
-| Official CLI workers | Run Claude, Codex, Gemini, and other local CLI agents |
-| Memory layer | `MEMORY.md` as durable authority, plus `memory/YYYY-MM-DD.md`, `DREAMS.md`, and deterministic promotion/search |
-| Multi-agent runtime | `AgentSupervisor` manages main/sub-agents with shared `InterAgentBus`, `InternalAgentAPI`, and optional shared `TaskHub` |
-| Persistent workspace | Keep sessions, task memory, files, outputs, and runtime state on your machine |
-| File delivery | Return text, images, audio, documents, and generated artifacts to the chat entrypoint |
-| Selectable topologies | Supports the approved `pipeline`, `fanout_merge`, `director_worker`, and `debate_judge` topology line |
-| Multi-entrypoint access | Feishu is native/runtime-first; Telegram and WeChat/Weixin are existing important entrypoints |
-| Operations | `tasks doctor`, Feishu doctor, systemd service, restart, config validation |
-| Compatibility lanes | Matrix, API, cron, and webhooks remain available as secondary lanes |
-
-### Memory Layer And Multi-Agent Runtime
-
-ControlMesh is no longer just a chat wrapper with a little persistence:
-
-- `MEMORY.md` is the sole durable authority file.
-- `memory/YYYY-MM-DD.md` keeps daily notes; `DREAMS.md` keeps cross-day synthesis output.
-- Promotion, dreaming, and search stay deterministic and file-backed rather than making an index the source of truth.
-- The multi-agent runtime is hosted by `AgentSupervisor`: one main agent, optional sub-agents.
-- Agents keep isolated sessions, workspaces, and credentials, while sharing `InterAgentBus`, the internal API bridge, and an optional shared `TaskHub`.
-- `SHAREDMEMORY.md` syncs into each agent's `MEMORY.md` as the shared knowledge substrate.
-
-### Feishu Modes
-
-**Native mode** is the primary product path.
-
-- `controlmesh feishu native bootstrap` is the product-friendly entrypoint.
-- Bundles [`feishu-auth-kit`](https://github.com/muqiao215/feishu-auth-kit)
-  as a first-party Feishu module extracted from ControlMesh for scan-to-create
-  onboarding, credential write-back, permission flows, message context,
-  CardKit, and retry contracts.
-- The standalone `feishu-auth-kit` repo is the synced reusable form of the
-  same first-party module. ControlMesh includes a vendored snapshot; external
-  CLI resolution is a development override or fallback, not the product
-  dependency.
-- Shows status, tool steps, and final output in a single Feishu card.
-- Provides `/feishu_auth_all` for guided authorization of the current MVP tools.
-- Includes first read-only native tools for contacts, users, group messages, and Drive files.
-- Pairs with the background task runtime so long work can ask the parent chat
-  for missing input and then resume cleanly.
-
-### Telegram And WeChat Entrypoints
-
-Feishu is the current native/runtime-first path, but ControlMesh is not a
-Feishu-only product:
-
-- Telegram: mature token-based entrypoint for personal DMs, groups, always-on
-  task bots, and file delivery.
-- WeChat/Weixin: existing Weixin iLink entrypoint with QR login, long-poll
-  inbound messages, and reply context after the first WeChat message.
-- Matrix: secondary compatibility transport for teams already using
-  Matrix/Element.
-
-Bridge mode, Matrix, cron, webhooks, and API remain available. The
-public product story now centers on Feishu native plus Telegram and WeChat
-entrypoints.
-
-### Topology execution line
-
-Background tasks can explicitly use four approved topologies:
-
-- `pipeline`
-- `fanout_merge`
-- `director_worker`
-- `debate_judge`
-
-They share one `TaskHub`-backed typed execution seam.
-
-Important boundaries:
-
-- Selection stays explicit; ControlMesh does not infer a topology automatically.
-- `/tasks topology` shows or updates the default topology for background tasks.
-- `director_worker` keeps parent escalation director-only.
-- `debate_judge` escalates final-round ties to the parent instead of silently auto-resolving them.
-
-### Runtime primitives
-
-- `/tasks/create`
-- `/tasks/resume`
-- `/tasks/tell`
-- `/tasks/ask_parent`
-- `/tasks/list`
-- `/interagent/send`
-
-### Quick Start
-
-```bash
-pipx install controlmesh
-controlmesh
-```
-
-To track the latest GitHub `main` directly instead of waiting for the next PyPI release:
-
-```bash
-pipx install "git+https://github.com/muqiao215/ControlMesh.git@main"
-controlmesh
-```
-
-Run from source:
-
-```bash
-git clone https://github.com/muqiao215/ControlMesh.git
-cd ControlMesh
-uv sync --locked --all-extras --dev
-uv run controlmesh
-```
-
-### Feishu Setup
-
-Native mode:
-
-```bash
-controlmesh feishu native bootstrap
-controlmesh auth feishu setup
-controlmesh auth feishu register-begin
-controlmesh auth feishu register-poll --device-code "<device_code>" --interval 5 --expires-in 600
-controlmesh auth feishu doctor
-controlmesh auth feishu probe
-```
-
-Feishu-only is a first-class path. You do not need Telegram or Matrix if your
-deployment only uses Feishu. The shortest setup is:
-
-```bash
-pipx install controlmesh
-npm install -g @anthropic-ai/claude-code
-claude auth
-
-controlmesh feishu native bootstrap
-controlmesh auth feishu register-begin
-controlmesh auth feishu register-poll --device-code "<device_code>" --interval 5 --expires-in 600
-controlmesh service install
-```
-
-In that setup:
-
-- Feishu is the only chat surface
-- Telegram is not required
-- Matrix is not required
-- Claude Code / Codex / Gemini / OpenCode provide the model runtime behind the
-  Feishu transport
-
-Task runtime:
-
-```bash
-controlmesh tasks doctor
-controlmesh tasks list
-```
-
-Topology control from chat:
-
-```text
-/tasks topology status
-/tasks topology debate_judge
-```
-
-### Documentation
-
-- Installation: [`docs/installation.md`](docs/installation.md)
-- Feishu setup: [`docs/feishu-setup.md`](docs/feishu-setup.md)
-- Telegram setup: [`docs/telegram-setup.md`](docs/telegram-setup.md)
-- WeChat/Weixin setup: [`docs/weixin-setup.md`](docs/weixin-setup.md)
-- Case-pack contract: [`docs/case-pack/README.md`](docs/case-pack/README.md)
-- Documentation index: [`docs/README.md`](docs/README.md)
-- Latest release note: [`docs/release-note-v0.34.11.md`](docs/release-note-v0.34.11.md)
-- Memory v2: [`docs/modules/memory_v2.md`](docs/modules/memory_v2.md)
-- Multi-agent runtime: [`docs/modules/multiagent.md`](docs/modules/multiagent.md)
-- Example config: [`config.example.json`](config.example.json)
-
-### License
-
-MIT License. See [`LICENSE`](LICENSE).
+MIT. See [LICENSE](LICENSE).

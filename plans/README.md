@@ -1,13 +1,19 @@
 # ControlMesh Plans
 
-Repository-level truth is defined by:
+Repository-level memory is indexed by `AGENTS.md` and `PROJECT.md`. Architecture and
+durable rationale live in `docs/ARCHITECTURE.md` and `docs/DECISIONS.md`.
 
-- `REQUIREMENTS.md`
-- `IMPLEMENTATION.md`
-- `HANDOFF.md`
-- `AGENTS.md`
+This directory contains historical plans and active task memory. For substantial new work,
+create only:
 
-This directory contains program, product-line, and task execution records beneath those repository-level contracts.
+```text
+plans/<task>/
+  task_plan.md
+  findings.md
+  progress.md
+```
+
+Simple tasks do not need a plan directory.
 
 This directory is the working control plane for ControlMesh.
 
@@ -56,7 +62,8 @@ plans/
 
 ## Ground Rules
 
-- `_program/` is canonical program truth.
+- `PROJECT.md` is canonical for project intent and current priority.
+- An active `plans/<task>/` directory is canonical only for that task's execution state.
 - Product lines get their own sibling directories copied from `_line_template/`.
 - `tasks/<task-id>/` is task-local evidence space, not canonical truth.
 - Background workers may write only task-local outputs and proposed updates.

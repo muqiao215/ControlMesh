@@ -107,7 +107,7 @@ Start here:
 
 - [System Overview](https://github.com/muqiao215/ControlMesh/blob/main/docs/system_overview.md): fastest end-to-end runtime understanding
 - [Developer Quickstart](https://github.com/muqiao215/ControlMesh/blob/main/docs/developer_quickstart.md): contributor onboarding + key behavioral facts
-- [Architecture](https://github.com/muqiao215/ControlMesh/blob/main/docs/architecture.md): startup sequence, routing, callbacks, background systems
+- [Architecture](https://github.com/muqiao215/ControlMesh/blob/main/docs/ARCHITECTURE.md): system map, ownership boundaries, invariants, and read-next links
 - [Configuration](https://github.com/muqiao215/ControlMesh/blob/main/docs/config.md): full config schema, merge behavior, timeout matrix
 - [Service Management](https://github.com/muqiao215/ControlMesh/blob/main/docs/modules/service_management.md): systemd, launchd, Task Scheduler behavior
 - [Matrix Setup](https://github.com/muqiao215/ControlMesh/blob/main/docs/matrix-setup.md): Matrix install/config/runtime caveats

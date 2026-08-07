@@ -152,4 +152,4 @@ If API is wrong:
 - auth allowlists (`allowed_user_ids`, `allowed_group_ids`) are hot-reloadable.
 - `controlmesh agents add` is a Telegram-focused scaffold; Matrix sub-agents are supported through `agents.json` or the bundled agent tool scripts.
 
-Continue with `docs/system_overview.md` and `docs/architecture.md` for complete runtime detail.
+Continue with `docs/system_overview.md` and `docs/ARCHITECTURE.md` for the runtime map.
