@@ -40,6 +40,9 @@
   build output is ignored and no installed CLI serves it. An alpha installed from PyPI
   would therefore expose the facade but not the promised dashboard. The release needs
   bundled compiled assets plus a localhost-only static launcher.
+- Candidate Actions run `31201196298` passed the new installed-wheel smoke and every
+  existing required job on GitHub-hosted runners, proving the local release result is not
+  host-specific.
 
 ## Technical Decisions
 

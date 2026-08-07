@@ -31,10 +31,13 @@ Release candidate implementation and local verification are complete; preparing 
   artifact containment, and wheel-bundled dashboard loading all passed.
 - `uv build` produced the expected wheel/sdist; Twine passed both; both archives contain
   the bundled dashboard.
+- Pushed release-candidate commit `8bf1cf1`.
+- Candidate GitHub Actions run `31201196298` passed Python 3.11/3.12, Ruff, mypy, build,
+  Protocol/SDK/Web, the installed read-only Alpha smoke, and aggregate `CI success`.
 
 ## Remaining
 
-- Commit/push and verify final remote CI.
+- Commit this remote evidence and verify the final release HEAD's remote CI.
 - Push `v0.42.0a1`, verify PyPI visibility and GitHub prerelease creation.
 
 ## Issues
@@ -43,4 +46,4 @@ Release candidate implementation and local verification are complete; preparing 
 
 ## Next
 
-Commit and push the release candidate, then inspect the resulting GitHub Actions run.
+Commit and push the candidate-run evidence, then verify final HEAD before tagging.
