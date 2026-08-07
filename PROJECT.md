@@ -83,21 +83,21 @@ The approved TypeScript foundation is complete:
 - runtime-validated TypeScript SDK;
 - local read-only Web dashboard;
 - protocol, provider golden, SDK, facade, artifact-security, and Web build gates.
+- GitHub CI runs the frozen protocol/golden/SDK/Web gate as a required product-layer job
+  and exposes one aggregate `CI success` check for the complete workflow.
 
 Mutation-shaped SDK ideas are not supported product behavior. Real task mutation and all
 transport/provider execution remain Python-owned.
 
-OpenCode authentication tests now isolate operator XDG paths while retaining explicit XDG
-override coverage. The full Python suite passes under the operator's normal environment.
-One existing Codex streaming timeout test still emits an unawaited `AsyncMock` warning.
+Provider authentication tests isolate operator XDG paths while retaining explicit XDG
+override coverage. The Codex streaming timeout test uses a complete stderr stream double,
+so the full Python suite passes with runtime warnings promoted to errors.
 
 ## Current Priority
 
-1. Add explicit protocol, golden, SDK, and Web build gates to CI.
-2. Remove the existing Codex streaming timeout test warning without changing timeout
-   behavior.
-3. Prepare a read-only facade/dashboard alpha release.
-4. Build the Python task-lifecycle golden parity matrix before considering mutation APIs.
+1. Prepare a read-only facade/dashboard alpha release.
+2. Build the Python task-lifecycle golden parity matrix before considering mutation APIs.
+3. Decide browser credential storage and operator scope before any non-local Web use.
 
 ## Knowledge Map
 

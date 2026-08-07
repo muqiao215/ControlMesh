@@ -622,6 +622,7 @@ class TestSendStreaming:
 
         stderr_mock = AsyncMock()
         stderr_mock.read = AsyncMock(return_value=b"")
+        stderr_mock.readline = AsyncMock(return_value=b"")
         proc.stderr = stderr_mock
 
         with patch("controlmesh.cli.executor.asyncio") as mock_asyncio:

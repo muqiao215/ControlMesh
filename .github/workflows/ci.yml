@@ -16,6 +16,8 @@ on:
 env:
   UV_VERSION: "0.11.7"
   BUN_VERSION: "1.3.11"
+  NODE_VERSION: "22"
+  PNPM_VERSION: "10.33.4"
 
 jobs:
   ruff:
@@ -123,6 +125,59 @@ jobs:
       - name: Build distribution
         run: uv build
 
+  product-layer:
+    name: Protocol, SDK, and Web
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.notify_test) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Toolchain doctor
+        run: python scripts/doctor_toolchain.py --strict --require-bun
+      - name: Install Python dependencies
+        run: uv sync --all-extras --dev
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Check generated protocol synchronization
+        run: pnpm check:protocol
+      - name: Run protocol and provider golden tests
+        run: pnpm test:golden
+      - name: Run SDK smoke tests
+        run: pnpm test:sdk
+      - name: Build local Web dashboard
+        run: pnpm --filter @controlmesh/web build
+
+  ci-success:
+    name: CI success
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.notify_test) }}
+    needs:
+      - ruff
+      - mypy
+      - test
+      - build
+      - product-layer
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm all required gates passed
+        run: echo "All required ControlMesh CI gates passed."
+
   failure-smoke:
     name: Synthetic failure for notification test
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.notify_test }}
@@ -140,6 +195,7 @@ jobs:
       - mypy
       - test
       - build
+      - product-layer
       - failure-smoke
     if: ${{ always() && contains(needs.*.result, 'failure') }}
     runs-on: ubuntu-latest
@@ -160,6 +216,7 @@ jobs:
           MYPY_RESULT: ${{ needs.mypy.result }}
           TEST_RESULT: ${{ needs.test.result }}
           BUILD_RESULT: ${{ needs.build.result }}
+          PRODUCT_LAYER_RESULT: ${{ needs.product-layer.result }}
           SMOKE_RESULT: ${{ needs.failure-smoke.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
@@ -182,6 +239,7 @@ jobs:
               f"mypy: {os.environ['MYPY_RESULT']}",
               f"test: {os.environ['TEST_RESULT']}",
               f"build: {os.environ['BUILD_RESULT']}",
+              f"product_layer: {os.environ['PRODUCT_LAYER_RESULT']}",
               f"synthetic_failure: {os.environ['SMOKE_RESULT']}",
               f"run: {os.environ['RUN_URL']}",
           ]
