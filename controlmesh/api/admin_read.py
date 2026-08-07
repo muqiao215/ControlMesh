@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from controlmesh.history.index import (
@@ -12,6 +13,7 @@ from controlmesh.history.index import (
     IndexedTaskCatalogRow,
     IndexedTranscriptTurn,
 )
+from controlmesh.infra.json_store import load_json
 from controlmesh.messenger.address import ChatRef, TopicRef
 from controlmesh.workspace.paths import ControlMeshPaths
 
@@ -49,7 +51,34 @@ class AdminHistoryCatalogReader:
     """Compact read model for derived admin catalog HTTP endpoints."""
 
     def __init__(self, paths: ControlMeshPaths) -> None:
+        self._paths = paths
         self._index = HistoryIndex(paths)
+
+    @property
+    def index(self) -> HistoryIndex:
+        """Expose the derived index for read-only protocol facade adapters."""
+        return self._index
+
+    def sorted_task_rows(self) -> list[IndexedTaskCatalogRow]:
+        """Return task rows in the same ordering as the task catalog endpoint."""
+        return sorted(
+            self._index.list_task_catalog_rows(),
+            key=lambda row: (row.completed_at or row.created_at, row.created_at, row.task_id),
+            reverse=True,
+        )
+
+    def task_folder(self, task_id: str) -> Path | None:
+        """Return the persisted task folder path without mutating task state."""
+        raw_registry = load_json(self._paths.tasks_registry_path)
+        if not isinstance(raw_registry, dict):
+            return None
+        for raw_task in raw_registry.get("tasks", []):
+            if not isinstance(raw_task, dict) or raw_task.get("task_id") != task_id:
+                continue
+            tasks_dir = raw_task.get("tasks_dir")
+            root = Path(str(tasks_dir)) if tasks_dir else self._paths.tasks_dir
+            return root / task_id
+        return None
 
     def sessions(self, *, limit: int = DEFAULT_CATALOG_LIMIT) -> dict[str, Any]:
         """Return bounded session summaries with transcript/runtime kept distinct."""
@@ -78,11 +107,7 @@ class AdminHistoryCatalogReader:
     def tasks(self, *, limit: int = DEFAULT_CATALOG_LIMIT) -> dict[str, Any]:
         """Return bounded task catalog rows from the derived index."""
         self._index.sync()
-        rows = sorted(
-            self._index.list_task_catalog_rows(),
-            key=lambda row: (row.completed_at or row.created_at, row.created_at, row.task_id),
-            reverse=True,
-        )
+        rows = self.sorted_task_rows()
         return {
             "items": [_task_row_json(row) for row in rows[:limit]],
             "limit": limit,

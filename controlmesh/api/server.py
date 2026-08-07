@@ -48,6 +48,7 @@ from aiohttp import BodyPartReader, WSMsgType, web
 from controlmesh.api.admin_read import AdminHistoryCatalogReader
 from controlmesh.api.catalog_http import CatalogHttpHandlers
 from controlmesh.api.crypto import E2ESession
+from controlmesh.api.v1_facade import V1FacadeHttpHandlers
 from controlmesh.bus.lock_pool import LockPool
 from controlmesh.files.image_processor import process_image
 from controlmesh.files.prompt import MediaInfo, build_media_prompt
@@ -200,6 +201,10 @@ class ApiServer:
         self._provider_info: list[dict[str, object]] = []
         self._active_state_getter: Callable[[], tuple[str, str]] | None = None
         self._catalog_http = CatalogHttpHandlers(token=config.token)
+        self._v1_facade_http = V1FacadeHttpHandlers(
+            token=config.token,
+            provider_info_getter=lambda: self._provider_info,
+        )
 
     # -- Handler wiring --------------------------------------------------------
 
@@ -234,6 +239,7 @@ class ApiServer:
     def set_admin_catalog_reader(self, reader: AdminHistoryCatalogReader) -> None:
         """Set the derived read-only admin catalog reader."""
         self._catalog_http.set_reader(reader)
+        self._v1_facade_http.set_reader(reader)
 
     # -- Lifecycle -------------------------------------------------------------
 
@@ -257,6 +263,17 @@ class ApiServer:
         app.router.add_get("/catalog/sessions", self._handle_catalog_sessions)
         app.router.add_get("/catalog/tasks", self._handle_catalog_tasks)
         app.router.add_get("/catalog/teams", self._handle_catalog_teams)
+        app.router.add_get("/api/v1/tasks", self._handle_v1_tasks)
+        app.router.add_get("/api/v1/tasks/{task_id}/events", self._handle_v1_task_events)
+        app.router.add_get(
+            "/api/v1/tasks/{task_id}/artifacts/content",
+            self._handle_v1_task_artifact_content,
+            allow_head=False,
+        )
+        app.router.add_get("/api/v1/tasks/{task_id}/artifacts", self._handle_v1_task_artifacts)
+        app.router.add_get("/api/v1/tasks/{task_id}", self._handle_v1_task)
+        app.router.add_get("/api/v1/providers", self._handle_v1_providers)
+        app.router.add_get("/api/v1/topologies", self._handle_v1_topologies)
 
         self._runner = web.AppRunner(app, access_log=None)
         await self._runner.setup()
@@ -400,6 +417,34 @@ class ApiServer:
     async def _handle_catalog_teams(self, request: web.Request) -> web.Response:
         """Return derived read-only team catalog summaries."""
         return await self._catalog_http.handle_teams(request)
+
+    async def _handle_v1_tasks(self, request: web.Request) -> web.Response:
+        """Return protocol v1 read-only task catalog rows."""
+        return await self._v1_facade_http.handle_tasks(request)
+
+    async def _handle_v1_task(self, request: web.Request) -> web.Response:
+        """Return one protocol v1 read-only task catalog row."""
+        return await self._v1_facade_http.handle_task(request)
+
+    async def _handle_v1_task_events(self, request: web.Request) -> web.Response:
+        """Return protocol v1 read-only task events."""
+        return await self._v1_facade_http.handle_task_events(request)
+
+    async def _handle_v1_task_artifacts(self, request: web.Request) -> web.Response:
+        """Return protocol v1 read-only task artifact metadata."""
+        return await self._v1_facade_http.handle_task_artifacts(request)
+
+    async def _handle_v1_task_artifact_content(self, request: web.Request) -> web.StreamResponse:
+        """Stream one authenticated protocol v1 task artifact."""
+        return await self._v1_facade_http.handle_task_artifact_content(request)
+
+    async def _handle_v1_providers(self, request: web.Request) -> web.Response:
+        """Return protocol v1 provider capability rows."""
+        return await self._v1_facade_http.handle_providers(request)
+
+    async def _handle_v1_topologies(self, request: web.Request) -> web.Response:
+        """Return protocol v1 read-only topology graphs."""
+        return await self._v1_facade_http.handle_topologies(request)
 
     # -- WebSocket handlers ----------------------------------------------------
 
