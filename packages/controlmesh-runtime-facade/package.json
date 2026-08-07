@@ -1,0 +1,9 @@
+{
+  "name": "@controlmesh/runtime-facade",
+  "version": "0.41.9-alpha.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "dependencies": {}
+}

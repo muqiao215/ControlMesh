@@ -1,0 +1,11 @@
+{
+  "name": "@controlmesh/plugin-api",
+  "version": "0.41.9-alpha.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "dependencies": {
+    "@controlmesh/protocol": "workspace:*"
+  }
+}

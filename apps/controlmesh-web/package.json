@@ -1,0 +1,15 @@
+{
+  "name": "@controlmesh/web",
+  "version": "0.41.9-alpha.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun scripts/dev-server.mjs",
+    "build": "bun scripts/build.mjs",
+    "preview": "bun scripts/dev-server.mjs"
+  },
+  "dependencies": {
+    "@controlmesh/sdk": "workspace:*"
+  },
+  "devDependencies": {}
+}
