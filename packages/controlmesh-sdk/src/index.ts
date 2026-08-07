@@ -3,8 +3,6 @@ export * from "./errors";
 export { ProtocolValidationError } from "@controlmesh/protocol";
 export type {
   Artifact,
-  AskParentResponse,
-  DoctorResult,
   ProviderCapability,
   RuntimeEvent,
   Task,

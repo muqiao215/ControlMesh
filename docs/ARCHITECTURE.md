@@ -45,7 +45,8 @@ Terminal / Feishu / Telegram / WeChat / Matrix / API
 - `controlmesh/api/` → WebSocket/direct API and authenticated read-only v1 facade.
 - `schemas/controlmesh/v1/` → cross-language JSON Schema source.
 - `packages/` → TypeScript protocol, SDK, facade helpers, and presentation packages.
-- `apps/controlmesh-web/` → local read-only dashboard.
+- `apps/controlmesh-web/` → dashboard source and deterministic Bun build.
+- `controlmesh/web_static/` → generated dashboard assets bundled in the Python wheel.
 - `tests/` → Python, protocol, golden, SDK-facing, security, and integration coverage.
 - `docs/` → architecture index, decisions, operational guides, and module detail.
 - `plans/` → historical plans and active task memory.
@@ -58,7 +59,9 @@ Terminal / Feishu / Telegram / WeChat / Matrix / API
 - `controlmesh/orchestrator/lifecycle.py` → orchestrator construction and shutdown.
 - `controlmesh/multiagent/supervisor.py` → main/sub-agent stacks and shared services.
 - `controlmesh/api/server.py` → WebSocket, file, catalog, and `/api/v1` routes.
-- `apps/controlmesh-web/` → local dashboard build and development server.
+- `controlmesh api serve` → standalone localhost-only read-only facade and bundled
+  dashboard, without starting a transport runtime.
+- `apps/controlmesh-web/` → dashboard source/build; packaged use enters at `/dashboard/`.
 
 ## Components
 
@@ -128,6 +131,7 @@ Responsibilities:
 - project Python state through authenticated read-only adapters;
 - validate all public SDK JSON responses at runtime;
 - render local read-only task, provider, topology, event, and artifact views.
+- serve the compiled dashboard from the same local origin as `/api/v1`.
 
 Dependency direction:
 
@@ -135,6 +139,7 @@ Dependency direction:
 JSON Schema
   -> generated Python models -> Python adapters/facade
   -> generated TypeScript models/validators -> SDK -> Web
+  -> deterministic Web build -> Python wheel -> localhost /dashboard/
 ```
 
 TypeScript never constructs private task or artifact filesystem paths.
@@ -187,6 +192,8 @@ Python history/task/provider read models
 - Artifact paths stay relative; safe open uses Python-resolved persisted task directories,
   metadata allowlisting, descriptor-relative traversal, and no-follow semantics.
 - Web/SDK code cannot read private ControlMesh files or own provider/transport execution.
+- Standalone Alpha serving binds to `127.0.0.1`, registers no legacy upload/WebSocket
+  mutation routes, and keeps the SDK surface read-only.
 - High-risk routing and release/publish behavior stays foreground unless an explicitly
   trusted and approved worker contract allows it.
 - `director_worker` and `debate_judge` use typed control decisions, bounded rounds, and

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "controlmesh"
-version = "0.41.9"
+version = "0.42.0a1"
 description = "ControlMesh brings official coding CLIs into Telegram, Matrix, and Feishu with persistent workspaces, long-running jobs, and production-friendly bot operations."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -16,7 +16,7 @@ keywords = [
     "claude", "codex", "cli", "automation", "streaming",
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 3 - Alpha",
     "Environment :: Console",
     "Framework :: AsyncIO",
     "Intended Audience :: Developers",

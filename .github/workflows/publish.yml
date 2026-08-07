@@ -174,18 +174,23 @@ jobs:
 
           with zipfile.ZipFile(wheel) as zf:
               wheel_hits = [name for name in zf.namelist() if name.startswith("controlmesh_runtime/")]
+              dashboard_hits = [
+                  name for name in zf.namelist() if name.startswith("controlmesh/web_static/")
+              ]
           with tarfile.open(sdist) as tf:
               sdist_hits = [name for name in tf.getnames() if "controlmesh_runtime/" in name]
 
-          if not wheel_hits or not sdist_hits:
+          if not wheel_hits or not sdist_hits or not dashboard_hits:
               raise SystemExit(
-                  "Built distributions are missing controlmesh_runtime. "
-                  f"wheel_hits={len(wheel_hits)} sdist_hits={len(sdist_hits)}"
+                  "Built distributions are missing runtime or dashboard files. "
+                  f"wheel_hits={len(wheel_hits)} sdist_hits={len(sdist_hits)} "
+                  f"dashboard_hits={len(dashboard_hits)}"
               )
 
           print(
               "Dist contents verified: "
-              f"wheel_hits={len(wheel_hits)} sdist_hits={len(sdist_hits)}"
+              f"wheel_hits={len(wheel_hits)} sdist_hits={len(sdist_hits)} "
+              f"dashboard_hits={len(dashboard_hits)}"
           )
           PY
       - uses: actions/upload-artifact@v6
@@ -286,8 +291,12 @@ jobs:
             echo "Missing release note: $notes_file"
             exit 1
           fi
+          release_flags=(--latest)
+          if [[ "$TAG_NAME" =~ (a|b|rc)[0-9]+$ ]]; then
+            release_flags=(--prerelease --latest=false)
+          fi
           if gh release view "$TAG_NAME" >/dev/null 2>&1; then
-            gh release edit "$TAG_NAME" --title "$TAG_NAME" --notes-file "$notes_file" --latest
+            gh release edit "$TAG_NAME" --title "$TAG_NAME" --notes-file "$notes_file" "${release_flags[@]}"
           else
-            gh release create "$TAG_NAME" --title "$TAG_NAME" --notes-file "$notes_file"
+            gh release create "$TAG_NAME" --title "$TAG_NAME" --notes-file "$notes_file" "${release_flags[@]}"
           fi

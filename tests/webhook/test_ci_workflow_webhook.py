@@ -30,6 +30,7 @@ def test_ci_workflow_sends_telegram_notification_on_failure() -> None:
     assert 'f"ruff: {os.environ[\'RUFF_RESULT\']}"' in run_script
     assert 'f"mypy: {os.environ[\'MYPY_RESULT\']}"' in run_script
     assert 'f"product_layer: {os.environ[\'PRODUCT_LAYER_RESULT\']}"' in run_script
+    assert 'f"alpha_smoke: {os.environ[\'ALPHA_SMOKE_RESULT\']}"' in run_script
     assert 'f"synthetic_failure: {os.environ[\'SMOKE_RESULT\']}"' in run_script
 
 
@@ -47,10 +48,24 @@ def test_ci_workflow_requires_protocol_sdk_and_web_gates() -> None:
     assert "pnpm test:golden" in run_commands
     assert "pnpm test:sdk" in run_commands
     assert "pnpm --filter @controlmesh/web build" in run_commands
+    assert "git diff --exit-code controlmesh/web_static" in run_commands
 
     required_jobs = set(data["jobs"]["ci-success"]["needs"])
-    assert required_jobs == {"ruff", "mypy", "test", "build", "product-layer"}
+    assert required_jobs == {
+        "ruff",
+        "mypy",
+        "test",
+        "build",
+        "product-layer",
+        "alpha-smoke",
+    }
 
     python_test_uses = [step["uses"] for step in data["jobs"]["test"]["steps"] if "uses" in step]
     assert "pnpm/action-setup@v4" in python_test_uses
     assert "actions/setup-node@v4" in python_test_uses
+
+    alpha_smoke = data["jobs"]["alpha-smoke"]
+    alpha_commands = [step["run"] for step in alpha_smoke["steps"] if "run" in step]
+    assert "pnpm install --frozen-lockfile" in alpha_commands
+    assert "bash scripts/smoke_read_only_alpha.sh" in alpha_commands
+    assert "git diff --exit-code controlmesh/web_static" in alpha_commands

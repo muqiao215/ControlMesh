@@ -14,8 +14,11 @@ type ViewState = {
 };
 
 const app = document.querySelector<HTMLElement>("#app");
+const defaultBaseUrl = window.location.pathname.startsWith("/dashboard")
+  ? window.location.origin
+  : "http://127.0.0.1:8741";
 const state: ViewState = {
-  baseUrl: localStorage.getItem("controlmesh.baseUrl") || "http://127.0.0.1:8765",
+  baseUrl: localStorage.getItem("controlmesh.baseUrl") || defaultBaseUrl,
   token: localStorage.getItem("controlmesh.token") || "",
   tasks: [],
   selectedTaskId: "",

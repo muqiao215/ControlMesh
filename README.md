@@ -51,12 +51,24 @@ Verify the toolchain:
 python scripts/doctor_toolchain.py --strict --require-bun
 ```
 
+Evaluate the read-only Alpha from an isolated install:
+
+```bash
+pipx install --suffix=-alpha "controlmesh[api]==0.42.0a1"
+controlmesh-alpha api serve
+```
+
+Open the printed local dashboard URL and enter the printed bearer token. The Alpha server
+binds only to `127.0.0.1` and exposes read-only `/api/v1` routes; see the
+[read-only Alpha guide](docs/read-only-alpha.md) for the complete five-minute flow.
+
 ## Documentation
 
 - [Project Context](PROJECT.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Decisions](docs/DECISIONS.md)
 - [Installation](docs/installation.md)
+- [Read-only Alpha](docs/read-only-alpha.md)
 - [Feishu Setup](docs/feishu-setup.md)
 - [Telegram Setup](docs/telegram-setup.md)
 - [WeChat Setup](docs/weixin-setup.md)

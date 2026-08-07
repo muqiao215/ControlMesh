@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
+import argparse
+import asyncio
 import json
+import os
+import secrets
+import signal
 from collections.abc import Callable
+from contextlib import suppress
 
 from rich.console import Console
 from rich.panel import Panel
@@ -15,7 +21,7 @@ from controlmesh.workspace.paths import resolve_paths
 
 _console = Console()
 
-_API_SUBCOMMANDS = frozenset({"enable", "disable"})
+_API_SUBCOMMANDS = frozenset({"enable", "disable", "serve"})
 
 
 def _parse_api_subcommand(args: list[str]) -> str | None:
@@ -40,6 +46,10 @@ def print_api_help() -> None:
     table.add_column()
     table.add_row("controlmesh api enable", "Enable the WebSocket API server")
     table.add_row("controlmesh api disable", "Disable the WebSocket API server")
+    table.add_row(
+        "controlmesh api serve",
+        "Serve the local read-only API and bundled dashboard",
+    )
 
     # Show current status
     paths = resolve_paths()
@@ -154,6 +164,62 @@ def api_disable() -> None:
     _console.print(t_rich("docker.restart_hint"))
 
 
+def _parse_serve_options(args: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(prog="controlmesh api serve")
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8741)
+    parser.add_argument("--token", default=os.environ.get("CONTROLMESH_API_TOKEN", ""))
+    return parser.parse_args(args[args.index("serve") + 1 :])
+
+
+async def _serve_read_only(options: argparse.Namespace) -> None:
+    from controlmesh.api.admin_read import AdminHistoryCatalogReader
+    from controlmesh.api.server import ApiServer
+    from controlmesh.config import ApiConfig
+
+    if options.host != "127.0.0.1":
+        raise SystemExit("read-only alpha server must bind to 127.0.0.1")
+    if not 0 <= options.port <= 65535:
+        raise SystemExit("port must be between 0 and 65535")
+
+    token = options.token or secrets.token_urlsafe(32)
+    server = ApiServer(
+        ApiConfig(
+            enabled=True,
+            host=options.host,
+            port=options.port,
+            token=token,
+            allow_public=False,
+        ),
+        read_only=True,
+    )
+    server.set_admin_catalog_reader(AdminHistoryCatalogReader(resolve_paths()))
+    await server.start()
+    port = server.bound_port
+    _console.print(f"Read-only API: http://127.0.0.1:{port}/api/v1")
+    _console.print(f"Dashboard: http://127.0.0.1:{port}/dashboard/")
+    _console.print(f"Bearer token: {token}")
+    _console.print("Press Ctrl+C to stop.")
+
+    stopped = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for watched_signal in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(watched_signal, stopped.set)
+        except NotImplementedError:
+            break
+    try:
+        await stopped.wait()
+    finally:
+        await server.stop()
+
+
+def api_serve(args: list[str]) -> None:
+    """Run the local-only read-only facade without starting a transport runtime."""
+    with suppress(KeyboardInterrupt):
+        asyncio.run(_serve_read_only(_parse_serve_options(args)))
+
+
 def cmd_api(args: list[str]) -> None:
     """Handle 'controlmesh api <subcommand>'."""
     sub = _parse_api_subcommand(args)
@@ -164,6 +230,7 @@ def cmd_api(args: list[str]) -> None:
     dispatch: dict[str, Callable[[], None]] = {
         "enable": api_enable,
         "disable": api_disable,
+        "serve": lambda: api_serve(args),
     }
     _console.print()
     dispatch[sub]()

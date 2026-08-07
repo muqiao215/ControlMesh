@@ -1,5 +1,28 @@
 # Decisions
 
+## 2026-08-08 — Ship the read-only Alpha as one Python install
+
+Decision:
+
+Bundle the deterministic Web build in the Python wheel, serve it same-origin from
+`controlmesh api serve`, restrict that standalone server to `127.0.0.1`, and expose only
+supported read operations in the Alpha TypeScript SDK.
+
+Why:
+
+A PyPI Alpha that requires a source checkout for its dashboard is not independently
+installable. Same-origin serving also avoids a new CORS/security contract, while the
+localhost/read-only limits preserve Python ownership and the approved product boundary.
+
+Rejected:
+
+Source-only Web evaluation, a separate remote dashboard deployment, enabling CORS broadly,
+and leaving unsupported mutation-shaped SDK methods as apparent public capabilities.
+
+Revisit when:
+
+Remote authentication/origin policy or task-mutation parity is explicitly approved.
+
 ## 2026-08-07 — Use progressive project memory
 
 Decision:

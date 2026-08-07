@@ -1,8 +1,6 @@
 import type {
   Artifact,
-  AskParentResponse,
   ControlMeshError as ControlMeshErrorEnvelope,
-  DoctorResult,
   ProviderCapability,
   Task,
   TaskEvent,
@@ -20,19 +18,6 @@ export interface ControlMeshClientOptions {
   baseUrl?: string;
   token?: string;
   fetch?: typeof fetch;
-}
-
-export interface CreateTaskInput {
-  prompt: string;
-  provider?: string;
-  model?: string;
-  transport?: string;
-  [key: string]: unknown;
-}
-
-export interface MessageInput {
-  text?: string;
-  [key: string]: unknown;
 }
 
 export interface ListTasksQuery {
@@ -59,34 +44,6 @@ export class ControlMeshClient {
     this.baseUrl = options.baseUrl ?? "http://127.0.0.1:8765";
     this.token = options.token;
     this.fetchImpl = options.fetch ?? fetch;
-  }
-
-  createTask(input: CreateTaskInput): Promise<Task> {
-    return this.requestValidated("/api/v1/tasks", "task.schema.json", {
-      method: "POST",
-      body: input,
-    });
-  }
-
-  tellTask(taskId: string, input: MessageInput): Promise<TaskEvent> {
-    return this.requestValidated(`/api/v1/tasks/${encodeURIComponent(taskId)}/tell`, "task-event.schema.json", {
-      method: "POST",
-      body: input,
-    });
-  }
-
-  resumeTask(taskId: string, input: MessageInput = {}): Promise<Task> {
-    return this.requestValidated(`/api/v1/tasks/${encodeURIComponent(taskId)}/resume`, "task.schema.json", {
-      method: "POST",
-      body: input,
-    });
-  }
-
-  cancelTask(taskId: string, input: MessageInput = {}): Promise<Task> {
-    return this.requestValidated(`/api/v1/tasks/${encodeURIComponent(taskId)}/cancel`, "task.schema.json", {
-      method: "POST",
-      body: input,
-    });
   }
 
   listTasks(query: ListTasksQuery = {}): Promise<TaskList> {
@@ -125,17 +82,6 @@ export class ControlMeshClient {
     }
   }
 
-  sendAskParentResponse(requestId: string, input: MessageInput): Promise<AskParentResponse> {
-    return this.requestValidated(
-      `/api/v1/ask-parent/${encodeURIComponent(requestId)}/response`,
-      "ask-parent-response.schema.json",
-      {
-      method: "POST",
-      body: input,
-      },
-    );
-  }
-
   listArtifacts(taskId: string): Promise<Artifact[]> {
     return this.requestValidatedList(
       `/api/v1/tasks/${encodeURIComponent(taskId)}/artifacts`,
@@ -167,13 +113,6 @@ export class ControlMeshClient {
       "topology.schema.json",
     );
     return body.items;
-  }
-
-  runDoctor(input: Record<string, unknown> = {}): Promise<DoctorResult[]> {
-    return this.requestValidatedList("/api/v1/doctor", "doctor-result.schema.json", {
-      method: "POST",
-      body: input,
-    });
   }
 
   private async requestValidated<T>(

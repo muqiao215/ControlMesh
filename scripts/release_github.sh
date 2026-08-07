@@ -4,7 +4,7 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/release_github.sh vX.Y.Z [options]
+  scripts/release_github.sh vX.Y.Z[prerelease] [options]
 
 Options:
   --branch <name>       Branch to push before pushing the tag (default: current branch)
@@ -146,7 +146,7 @@ done
   usage
   exit 1
 }
-[[ "$tag" =~ ^v[0-9]+(\.[0-9]+){1,2}([.-][A-Za-z0-9]+)?$ ]] || die "tag must look like vX.Y.Z"
+[[ "$tag" =~ ^v[0-9]+(\.[0-9]+){1,2}((a|b|rc)[0-9]+|([.-][A-Za-z0-9]+([.-][A-Za-z0-9]+)*))?$ ]] || die "tag must look like vX.Y.Z or vX.Y.ZaN"
 
 require_cmd git
 require_cmd gh
@@ -221,11 +221,7 @@ if [[ "$dry_run" -eq 0 ]]; then
 fi
 
 if [[ "$dry_run" -eq 1 ]]; then
-  if gh_supports_release_verify_tag; then
-    echo "dry-run: would run gh release create $tag --verify-tag"
-  else
-    echo "dry-run: would run gh release create $tag (without --verify-tag; remote tag already verified)"
-  fi
+  echo "dry-run: publish workflow would publish PyPI, verify visibility, and create the GitHub Release"
   exit 0
 fi
 

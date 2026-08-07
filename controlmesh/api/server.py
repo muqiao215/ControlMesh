@@ -69,6 +69,8 @@ if TYPE_CHECKING:
     from controlmesh.config import ApiConfig
 
 logger = logging.getLogger(__name__)
+_WEB_ROOT = Path(__file__).resolve().parent.parent / "web_static"
+_WEB_ASSETS = frozenset({"main.js", "styles.css"})
 
 # Callback types matching Orchestrator.handle_message_streaming / abort
 StreamingMessageHandler = Callable[..., Awaitable[Any]]
@@ -186,6 +188,7 @@ class ApiServer:
         *,
         default_chat_id: int = 0,
         lock_pool: LockPool | None = None,
+        read_only: bool = False,
     ) -> None:
         self._config = config
         self._default_chat_id = default_chat_id
@@ -194,6 +197,7 @@ class ApiServer:
         self._runner: web.AppRunner | None = None
         self._lock_pool = lock_pool if lock_pool is not None else LockPool()
         self._active_ws: set[web.WebSocketResponse] = set()
+        self._read_only = read_only
         # File context (set via set_file_context)
         self._allowed_roots: Sequence[Path] | None = None
         self._upload_dir: Path | None = None
@@ -257,12 +261,16 @@ class ApiServer:
 
         app = web.Application(client_max_size=_MAX_UPLOAD_BYTES)
         app.router.add_get("/health", self._handle_health)
-        app.router.add_get("/ws", self._handle_websocket)
-        app.router.add_get("/files", self._handle_file_download)
-        app.router.add_post("/upload", self._handle_file_upload)
-        app.router.add_get("/catalog/sessions", self._handle_catalog_sessions)
-        app.router.add_get("/catalog/tasks", self._handle_catalog_tasks)
-        app.router.add_get("/catalog/teams", self._handle_catalog_teams)
+        app.router.add_get("/dashboard", self._handle_dashboard_redirect)
+        app.router.add_get("/dashboard/", self._handle_dashboard_index)
+        app.router.add_get("/dashboard/assets/{name}", self._handle_dashboard_asset)
+        if not self._read_only:
+            app.router.add_get("/ws", self._handle_websocket)
+            app.router.add_get("/files", self._handle_file_download)
+            app.router.add_post("/upload", self._handle_file_upload)
+            app.router.add_get("/catalog/sessions", self._handle_catalog_sessions)
+            app.router.add_get("/catalog/tasks", self._handle_catalog_tasks)
+            app.router.add_get("/catalog/teams", self._handle_catalog_teams)
         app.router.add_get("/api/v1/tasks", self._handle_v1_tasks)
         app.router.add_get("/api/v1/tasks/{task_id}/events", self._handle_v1_task_events)
         app.router.add_get(
@@ -298,6 +306,18 @@ class ApiServer:
             self._runner = None
         logger.info("API server stopped")
 
+    @property
+    def bound_port(self) -> int:
+        """Return the actual TCP port after startup, including ephemeral port zero."""
+        if self._runner is None:
+            raise RuntimeError("API server is not running")
+        for site in self._runner.sites:
+            raw_server = getattr(site, "_server", None)
+            sockets = getattr(raw_server, "sockets", None)
+            if sockets:
+                return int(sockets[0].getsockname()[1])
+        raise RuntimeError("API server has no bound socket")
+
     # -- Bearer token auth for HTTP endpoints ----------------------------------
 
     def _verify_bearer(self, request: web.Request) -> bool:
@@ -316,6 +336,27 @@ class ApiServer:
                 "connections": len(self._active_ws),
             }
         )
+
+    async def _handle_dashboard_redirect(self, _request: web.Request) -> web.Response:
+        """Redirect to the slash-terminated dashboard so relative assets resolve."""
+        raise web.HTTPPermanentRedirect(location="/dashboard/")
+
+    async def _handle_dashboard_index(self, _request: web.Request) -> web.StreamResponse:
+        """Serve the bundled read-only dashboard entrypoint."""
+        index = _WEB_ROOT / "index.html"
+        if not index.is_file():
+            return web.json_response({"error": "dashboard assets unavailable"}, status=503)
+        return web.FileResponse(index)
+
+    async def _handle_dashboard_asset(self, request: web.Request) -> web.StreamResponse:
+        """Serve one allowlisted bundled dashboard asset."""
+        name = request.match_info["name"]
+        if name not in _WEB_ASSETS:
+            raise web.HTTPNotFound
+        asset = _WEB_ROOT / "assets" / name
+        if not asset.is_file():
+            raise web.HTTPNotFound
+        return web.FileResponse(asset)
 
     async def _handle_file_download(self, request: web.Request) -> web.StreamResponse:
         """Serve a file from the filesystem (Bearer token auth, path validation)."""

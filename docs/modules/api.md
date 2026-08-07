@@ -10,6 +10,33 @@ Provides transport-independent access to the same orchestrator/session system us
 - authenticated file download/upload endpoints
 - shared session model (`SessionKey`) with optional channel isolation
 
+## Read-only Alpha entrypoint
+
+`controlmesh api serve` starts only the authenticated `/api/v1` read facade, health check,
+and bundled dashboard. It does not start a messaging transport, WebSocket session, file
+upload, or legacy catalog route. This mode is restricted to `127.0.0.1` and is the
+supported `0.42.0a1` evaluation path.
+
+```bash
+controlmesh api serve
+```
+
+The command prints an ephemeral bearer token and the same-origin dashboard URL at
+`/dashboard/`. Set `CONTROLMESH_API_TOKEN` for a repeatable local token.
+
+Read-only endpoints:
+
+- `GET /api/v1/tasks`
+- `GET /api/v1/tasks/{task_id}`
+- `GET /api/v1/tasks/{task_id}/events`
+- `GET /api/v1/tasks/{task_id}/artifacts`
+- `GET /api/v1/tasks/{task_id}/artifacts/content?relative_path=...`
+- `GET /api/v1/providers`
+- `GET /api/v1/topologies`
+
+The sections below describe the older direct WebSocket mode enabled through config; those
+mutation-capable compatibility routes are not registered by `api serve`.
+
 ## Official QQ direction
 
 This API remains available as a backend surface for external adapters, but it

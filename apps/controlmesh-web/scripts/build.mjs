@@ -1,10 +1,12 @@
-import { mkdir, copyFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, rm, copyFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const repository = path.resolve(root, "../..");
 const dist = path.join(root, "dist");
 const assets = path.join(dist, "assets");
+const packaged = path.join(repository, "controlmesh", "web_static");
 
 await mkdir(assets, { recursive: true });
 
@@ -32,12 +34,15 @@ await writeFile(
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ControlMesh</title>
-    <link rel="stylesheet" href="/assets/styles.css" />
+    <link rel="stylesheet" href="assets/styles.css" />
   </head>
   <body>
     <main id="app"></main>
-    <script type="module" src="/assets/main.js"></script>
+    <script type="module" src="assets/main.js"></script>
   </body>
 </html>
 `,
 );
+
+await rm(packaged, { recursive: true, force: true });
+await cp(dist, packaged, { recursive: true });

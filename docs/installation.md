@@ -29,6 +29,19 @@ Choose one lane:
 pipx install controlmesh
 ```
 
+### Read-only Alpha
+
+To evaluate the local facade and bundled dashboard without replacing the stable release:
+
+```bash
+pipx install --suffix=-alpha "controlmesh[api]==0.42.0a1"
+controlmesh-alpha api serve
+```
+
+This exact-version install does not require `--pre`. The suffix keeps the Alpha alongside
+an existing stable `controlmesh` installation. Continue with the
+[read-only Alpha guide](read-only-alpha.md).
+
 ### pip
 
 ```bash
