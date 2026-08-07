@@ -1,0 +1,9 @@
+{
+  "schema_version": "controlmesh.golden_fixture.v1",
+  "name": "golden.provider.fake.success",
+  "input": { "behavior": "success", "prompt": "hello" },
+  "expected": {
+    "response": { "result": "fake success", "is_error": false, "returncode": 0, "timed_out": false },
+    "event_kinds": ["provider_started", "process_exit"]
+  }
+}

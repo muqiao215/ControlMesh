@@ -1,0 +1,10 @@
+{
+  "schema_version": "controlmesh.golden_fixture.v1",
+  "name": "golden.provider.fake.timeout",
+  "input": { "behavior": "timeout", "prompt": "wait" },
+  "expected": {
+    "response": { "is_error": true, "returncode": null, "timed_out": true },
+    "result_contains": "Fake timed out.",
+    "event_kinds": ["provider_started", "timeout_error", "diagnostic_error"]
+  }
+}

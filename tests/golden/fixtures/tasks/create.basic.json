@@ -1,0 +1,13 @@
+{
+  "schema_version": "controlmesh.golden_fixture.v1",
+  "name": "golden.task.create.basic",
+  "input": {
+    "prompt": "Review the repository.",
+    "provider": "codex",
+    "transport": "web"
+  },
+  "expected": {
+    "status": "running"
+  },
+  "normalizers": ["timestamps", "task_ids"]
+}
