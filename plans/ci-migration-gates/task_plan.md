@@ -36,8 +36,8 @@ unawaited `AsyncMock` warning in the Codex streaming timeout test.
 - [x] Fix the warning at its test/mocking ownership boundary.
 - [x] Run focused checks, complete Python/Ruff gates, and all pnpm gates.
 - [x] Update `PROJECT.md` and task memory with durable results.
-- [ ] Commit and push.
-- [ ] Inspect the remote GitHub Actions run and resolve any failures.
+- [x] Commit and push.
+- [x] Inspect the remote GitHub Actions run and resolve any failures.
 
 ## Success
 
@@ -48,11 +48,11 @@ unawaited `AsyncMock` warning in the Codex streaming timeout test.
 
 ## Status
 
-Current phase: delivery and remote verification.
+Complete. Local verification and remote GitHub Actions are green.
 
 ## Next Step
 
-Review the final diff, commit, push, and inspect the resulting GitHub Actions run.
+Prepare the read-only alpha release plan from the now-enforced CI baseline.
 
 ## Decisions Made
 

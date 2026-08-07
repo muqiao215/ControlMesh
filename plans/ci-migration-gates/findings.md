@@ -27,6 +27,9 @@
   suite made pnpm part of the Python test job's real toolchain contract. Skipping that test
   would weaken coverage; the correct fix is to install the pinned Node/pnpm toolchain in
   the Python matrix jobs too.
+- Replacement run `31196983579` passed every required job, including the Python 3.11/3.12
+  matrix and the aggregate `CI success` gate, proving the repaired toolchain contract on
+  GitHub-hosted runners.
 
 ## Technical Decisions
 

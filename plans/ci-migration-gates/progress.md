@@ -2,7 +2,7 @@
 
 ## Current
 
-Preparing the locally verified CI work for push and remote verification.
+Complete. The migration gates are enforced locally and remotely.
 
 ## Done
 
@@ -32,10 +32,13 @@ Preparing the locally verified CI work for push and remote verification.
   rejected both. A job-scoped patch now places setup only in the Python matrix.
 - Remote-derived workflow fix verification: 2 workflow tests passed; Ruff and diff checks
   passed.
+- Pushed `f4f527c` with the Python-matrix toolchain fix.
+- Replacement Actions run `31196983579` passed Python 3.11/3.12, Ruff, mypy, package
+  build, protocol/SDK/Web migration gates, and the aggregate `CI success` job.
 
 ## Remaining
 
-- Commit, push, and verify the replacement Actions run.
+- None.
 
 ## Issues
 
@@ -43,4 +46,4 @@ Preparing the locally verified CI work for push and remote verification.
 
 ## Next
 
-Commit and push the pinned pnpm setup for the Python matrix, then watch the replacement run.
+Create the read-only alpha release plan and execute its release-readiness checks.
