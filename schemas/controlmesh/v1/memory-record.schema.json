@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.controlmesh.dev/controlmesh/v1/memory-record.schema.json",
+  "title": "MemoryRecord",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema_version", "record_id", "source_file", "created_at"],
+  "properties": {
+    "schema_version": { "const": "controlmesh.memory_record.v1" },
+    "record_id": { "type": "string", "minLength": 1 },
+    "source_file": { "type": "string", "minLength": 1 },
+    "section": { "type": "string" },
+    "text": { "type": "string" },
+    "promotion_state": { "type": "string" },
+    "created_at": { "type": "string" },
+    "metadata": { "type": "object", "additionalProperties": true }
+  }
+}

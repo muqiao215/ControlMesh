@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.controlmesh.dev/controlmesh/v1/doctor-result.schema.json",
+  "title": "DoctorResult",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema_version", "code", "severity", "message"],
+  "properties": {
+    "schema_version": { "const": "controlmesh.doctor_result.v1" },
+    "code": { "type": "string", "minLength": 1 },
+    "severity": { "type": "string", "enum": ["info", "warning", "error"] },
+    "message": { "type": "string" },
+    "fix_hint": { "type": "string" },
+    "details": { "type": "object", "additionalProperties": true }
+  }
+}

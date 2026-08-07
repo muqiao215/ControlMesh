@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.controlmesh.dev/controlmesh/v1/transport-message.schema.json",
+  "title": "TransportMessage",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema_version", "transport", "message_id", "chat_id", "created_at"],
+  "properties": {
+    "schema_version": { "const": "controlmesh.transport_message.v1" },
+    "transport": { "type": "string", "minLength": 1 },
+    "message_id": { "type": ["string", "integer"] },
+    "chat_id": { "type": ["string", "integer"] },
+    "thread_id": { "type": ["string", "integer", "null"] },
+    "sender_id": { "type": ["string", "integer", "null"] },
+    "text": { "type": "string" },
+    "command": { "type": "string" },
+    "raw_payload": {},
+    "created_at": { "type": "string" }
+  }
+}

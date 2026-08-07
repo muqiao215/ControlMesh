@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.controlmesh.dev/controlmesh/v1/agent-event.schema.json",
+  "title": "AgentEvent",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema_version", "event_id", "agent_id", "event_type", "created_at"],
+  "properties": {
+    "schema_version": { "const": "controlmesh.agent_event.v1" },
+    "event_id": { "type": "string", "minLength": 1 },
+    "agent_id": { "type": "string", "minLength": 1 },
+    "parent_agent": { "type": "string" },
+    "role": { "type": "string" },
+    "task_id": { "type": "string" },
+    "event_type": { "type": "string", "minLength": 1 },
+    "created_at": { "type": "string" },
+    "payload": { "type": "object", "additionalProperties": true }
+  }
+}

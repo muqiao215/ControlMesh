@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.controlmesh.dev/controlmesh/v1/config.schema.json",
+  "title": "ControlMeshConfig",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema_version"],
+  "properties": {
+    "schema_version": { "const": "controlmesh.config.v1" },
+    "providers": { "type": "object", "additionalProperties": true },
+    "api": { "type": "object", "additionalProperties": true },
+    "messengers": { "type": "object", "additionalProperties": true },
+    "workspace": { "type": "object", "additionalProperties": true }
+  }
+}

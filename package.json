@@ -1,0 +1,15 @@
+{
+  "name": "controlmesh-workspace",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.33.4",
+  "scripts": {
+    "generate:protocol": "node packages/controlmesh-protocol/scripts/generate.mjs",
+    "generate:protocol:python": "uv run python scripts/generate_protocol.py",
+    "generate:all-protocol": "pnpm generate:protocol && pnpm generate:protocol:python",
+    "check:protocol": "pnpm generate:all-protocol && git diff --exit-code packages/controlmesh-protocol/src/generated packages/controlmesh-protocol/src/validators controlmesh/protocol/generated",
+    "test:golden": "uv run python -m pytest tests/protocol tests/golden -q",
+    "test:sdk": "pnpm --filter @controlmesh/sdk test:smoke"
+  },
+  "devDependencies": {}
+}

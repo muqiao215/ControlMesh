@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.controlmesh.dev/controlmesh/v1/topology.schema.json",
+  "title": "Topology",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema_version", "topology_id", "nodes", "edges"],
+  "properties": {
+    "schema_version": { "const": "controlmesh.topology.v1" },
+    "topology_id": { "type": "string", "minLength": 1 },
+    "name": { "type": "string" },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["id", "kind"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "kind": { "type": "string", "minLength": 1 },
+          "label": { "type": "string" },
+          "status": { "type": ["string", "null"] },
+          "role": { "type": ["string", "null"] },
+          "provider": { "type": ["string", "null"] },
+          "owner": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["source", "target", "kind"],
+        "properties": {
+          "source": { "type": "string", "minLength": 1 },
+          "target": { "type": "string", "minLength": 1 },
+          "kind": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

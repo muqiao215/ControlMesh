@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.controlmesh.dev/controlmesh/v1/task.schema.json",
+  "title": "Task",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema_version", "task_id", "chat_id", "parent_agent", "status", "created_at"],
+  "properties": {
+    "schema_version": { "const": "controlmesh.task.v1" },
+    "task_id": { "type": "string", "minLength": 1 },
+    "source_kind": { "type": "string" },
+    "chat_id": { "type": ["string", "integer"] },
+    "thread_id": { "type": ["string", "integer", "null"] },
+    "parent_agent": { "type": "string" },
+    "name": { "type": "string" },
+    "prompt_preview": { "type": "string" },
+    "provider": { "type": "string" },
+    "model": { "type": "string" },
+    "status": { "$ref": "task-state.schema.json" },
+    "transport": { "type": "string" },
+    "topology": { "type": "string" },
+    "session_id": { "type": "string" },
+    "created_at": { "type": ["number", "string"] },
+    "completed_at": { "type": ["number", "string", "null"] },
+    "elapsed_seconds": { "type": "number" },
+    "result_preview": { "type": "string" },
+    "last_question": { "type": "string" }
+  }
+}

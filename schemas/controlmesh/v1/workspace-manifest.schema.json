@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.controlmesh.dev/controlmesh/v1/workspace-manifest.schema.json",
+  "title": "WorkspaceManifest",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema_version", "workspace_root", "paths"],
+  "properties": {
+    "schema_version": { "const": "controlmesh.workspace_manifest.v1" },
+    "workspace_root": { "type": "string" },
+    "paths": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    }
+  }
+}

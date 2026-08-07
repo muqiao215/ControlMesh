@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.controlmesh.dev/controlmesh/v1/log-event.schema.json",
+  "title": "LogEvent",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema_version", "level", "source", "message", "timestamp"],
+  "properties": {
+    "schema_version": { "const": "controlmesh.log_event.v1" },
+    "level": { "type": "string", "enum": ["debug", "info", "warning", "error"] },
+    "source": { "type": "string" },
+    "task_id": { "type": "string" },
+    "message": { "type": "string" },
+    "timestamp": { "type": ["number", "string"] },
+    "correlation_id": { "type": "string" }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.controlmesh.dev/controlmesh/v1/provider-capability.schema.json",
+  "title": "ProviderCapability",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema_version", "name", "available", "health"],
+  "properties": {
+    "schema_version": { "const": "controlmesh.provider_capability.v1" },
+    "name": { "type": "string", "minLength": 1 },
+    "available": { "type": "boolean" },
+    "version": { "type": "string" },
+    "last_checked_at": { "type": ["number", "string", "null"] },
+    "health": { "type": "string", "enum": ["ok", "degraded", "unavailable"] },
+    "detail": { "type": "string" },
+    "capabilities": { "type": "object", "additionalProperties": true }
+  }
+}

@@ -1,0 +1,193 @@
+openapi: 3.1.0
+info:
+  title: ControlMesh Admin API
+  version: 0.41.9-alpha.0
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: API health
+  /catalog/tasks:
+    get:
+      summary: Read-only task catalog
+      responses:
+        "200":
+          description: Task catalog rows
+  /catalog/sessions:
+    get:
+      summary: Read-only session catalog
+      responses:
+        "200":
+          description: Session catalog rows
+  /catalog/teams:
+    get:
+      summary: Read-only team catalog
+      responses:
+        "200":
+          description: Team catalog rows
+  /api/v1/tasks:
+    get:
+      summary: Read-only protocol task list
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Task list using controlmesh.task.v1 items
+  /api/v1/tasks/{task_id}:
+    get:
+      summary: Read-only protocol task detail
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: One controlmesh.task.v1 item
+        "404":
+          description: Task not found
+  /api/v1/tasks/{task_id}/events:
+    get:
+      summary: Read-only protocol task events
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of controlmesh.task_event.v1 items
+        "404":
+          description: Task not found
+  /api/v1/tasks/{task_id}/artifacts:
+    get:
+      summary: Read-only task artifact metadata
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of controlmesh.artifact.v1 metadata items
+        "404":
+          description: Task not found
+  /api/v1/tasks/{task_id}/artifacts/content:
+    get:
+      summary: Download one task artifact by its metadata relative path
+      description: >-
+        MW-006 operation backed by the Python safe-open primitive. Every
+        x-controlmesh-security-tests case is required to remain passing.
+      operationId: downloadTaskArtifact
+      x-controlmesh-status: active
+      x-controlmesh-security-tests:
+        - AD-AUTH-001
+        - AD-AUTH-002
+        - AD-AUTH-003
+        - AD-AUTH-004
+        - AD-PATH-001
+        - AD-PATH-002
+        - AD-PATH-003
+        - AD-PATH-004
+        - AD-PATH-005
+        - AD-PATH-006
+        - AD-TASK-001
+        - AD-DIR-001
+        - AD-ALLOW-001
+        - AD-ALLOW-002
+        - AD-ALLOW-003
+        - AD-SYMLINK-001
+        - AD-SYMLINK-002
+        - AD-SYMLINK-003
+        - AD-FILE-001
+        - AD-FILE-002
+        - AD-MIME-001
+        - AD-MIME-002
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+        - name: relative_path
+          in: query
+          required: true
+          description: Exact relative_path from controlmesh.artifact.v1 metadata.
+          allowEmptyValue: false
+          schema:
+            type: string
+            minLength: 1
+      responses:
+        "200":
+          description: Binary artifact content from an already validated file handle
+          headers:
+            Content-Disposition:
+              description: Safe attachment filename without filesystem path disclosure
+              schema:
+                type: string
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Content-Type-Options:
+              schema:
+                type: string
+                const: nosniff
+          content:
+            "*/*":
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: Invalid relative artifact path
+          content:
+            application/json:
+              schema:
+                $ref: ../v1/error.schema.json
+        "401":
+          description: Missing or invalid Bearer token
+          content:
+            application/json:
+              schema:
+                $ref: ../v1/error.schema.json
+        "404":
+          description: Task or allowlisted artifact not found
+          content:
+            application/json:
+              schema:
+                $ref: ../v1/error.schema.json
+  /api/v1/providers:
+    get:
+      summary: Read-only provider capability list
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Provider capability list
+  /api/v1/topologies:
+    get:
+      summary: Read-only Python-projected team topology graphs
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of controlmesh.topology.v1 items
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer

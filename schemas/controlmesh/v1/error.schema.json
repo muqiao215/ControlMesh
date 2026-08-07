@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.controlmesh.dev/controlmesh/v1/error.schema.json",
+  "title": "ControlMeshError",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema_version", "code", "message"],
+  "properties": {
+    "schema_version": { "const": "controlmesh.error.v1" },
+    "code": { "type": "string", "minLength": 1 },
+    "message": { "type": "string" },
+    "retryable": { "type": "boolean" },
+    "correlation_id": { "type": "string" },
+    "python_trace_id": { "type": "string" },
+    "details": { "type": "object", "additionalProperties": true }
+  }
+}

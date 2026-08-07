@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.controlmesh.dev/controlmesh/v1/runtime-event.schema.json",
+  "title": "RuntimeEvent",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema_version", "event_id", "session_key", "event_type", "created_at", "transport", "chat_id"],
+  "properties": {
+    "schema_version": { "const": "controlmesh.runtime_event.v1" },
+    "event_id": { "type": "string", "minLength": 1 },
+    "session_key": { "type": "string", "minLength": 1 },
+    "event_type": { "type": "string", "minLength": 1 },
+    "payload": { "type": "object", "additionalProperties": true },
+    "created_at": { "type": "string" },
+    "transport": { "type": "string" },
+    "chat_id": { "type": ["string", "integer"] },
+    "topic_id": { "type": ["string", "integer", "null"] }
+  }
+}

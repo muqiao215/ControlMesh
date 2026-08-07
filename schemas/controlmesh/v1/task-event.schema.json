@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.controlmesh.dev/controlmesh/v1/task-event.schema.json",
+  "title": "TaskEvent",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema_version", "event_id", "task_id", "event_type", "created_at"],
+  "properties": {
+    "schema_version": { "const": "controlmesh.task_event.v1" },
+    "event_id": { "type": "string", "minLength": 1 },
+    "task_id": { "type": "string", "minLength": 1 },
+    "event_type": { "type": "string", "minLength": 1 },
+    "status": { "$ref": "task-state.schema.json" },
+    "created_at": { "type": "string" },
+    "transport": { "type": "string" },
+    "chat_id": { "type": ["string", "integer", "null"] },
+    "topic_id": { "type": ["string", "integer", "null"] },
+    "payload": { "type": "object", "additionalProperties": true }
+  }
+}

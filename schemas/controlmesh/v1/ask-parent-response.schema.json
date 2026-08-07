@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.controlmesh.dev/controlmesh/v1/ask-parent-response.schema.json",
+  "title": "AskParentResponse",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema_version", "response_id", "request_id", "task_id", "text", "created_at"],
+  "properties": {
+    "schema_version": { "const": "controlmesh.ask_parent_response.v1" },
+    "response_id": { "type": "string", "minLength": 1 },
+    "request_id": { "type": "string", "minLength": 1 },
+    "task_id": { "type": "string", "minLength": 1 },
+    "text": { "type": "string" },
+    "created_at": { "type": "string" }
+  }
+}

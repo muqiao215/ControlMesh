@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.controlmesh.dev/controlmesh/v1/task-state.schema.json",
+  "title": "TaskState",
+  "description": "Stable task lifecycle states exposed at the ControlMesh protocol boundary.",
+  "type": "string",
+  "enum": [
+    "running",
+    "done",
+    "failed",
+    "cancelled",
+    "waiting",
+    "detached",
+    "recovering",
+    "stale",
+    "timeout"
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.controlmesh.dev/controlmesh/v1/artifact.schema.json",
+  "title": "Artifact",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema_version", "task_id", "relative_path"],
+  "properties": {
+    "schema_version": { "const": "controlmesh.artifact.v1" },
+    "task_id": { "type": "string", "minLength": 1 },
+    "relative_path": { "type": "string", "minLength": 1 },
+    "name": { "type": "string" },
+    "mime": { "type": "string" },
+    "size": { "type": ["integer", "null"], "minimum": 0 },
+    "sha256": { "type": "string" },
+    "created_at": { "type": "string" }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.controlmesh.dev/controlmesh/v1/provider-event.schema.json",
+  "title": "ProviderEvent",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema_version", "provider", "kind", "created_at"],
+  "properties": {
+    "schema_version": { "const": "controlmesh.provider_event.v1" },
+    "provider": { "type": "string", "minLength": 1 },
+    "kind": { "type": "string", "minLength": 1 },
+    "phase": { "type": "string" },
+    "created_at": { "type": ["number", "string"] },
+    "pid": { "type": ["integer", "null"] },
+    "command": { "type": "array", "items": { "type": "string" } },
+    "text": { "type": "string" },
+    "event_type": { "type": "string" },
+    "payload": {},
+    "idle_for_s": { "type": "number" },
+    "elapsed_s": { "type": "number" },
+    "exit_code": { "type": ["integer", "null"] },
+    "reason": { "type": "string" },
+    "message": { "type": "string" },
+    "timed_out": { "type": "boolean" }
+  }
+}
