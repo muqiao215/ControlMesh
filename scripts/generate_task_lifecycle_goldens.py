@@ -20,8 +20,12 @@ def render() -> str:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true", help="fail if the committed matrix differs")
+    parser.add_argument("--stdout", action="store_true", help="print the generated matrix")
     args = parser.parse_args()
     actual = render()
+    if args.stdout:
+        print(actual, end="")
+        return 0
     if args.check:
         if not OUTPUT.is_file() or OUTPUT.read_text(encoding="utf-8") != actual:
             print(f"task lifecycle golden drift: run {Path(__file__).name}")

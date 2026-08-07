@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://controlmesh.dev/schemas/lifecycle-rollback-gate-v1.json",
+  "title": "ControlMesh lifecycle candidate rollback gate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "matrix_schema_version", "matrix_sha256", "candidate", "candidate_admitted", "production_owner", "rollback_owner", "public_mutation_api", "covered_domains", "case_count", "matched_case_count", "diff_count", "missing_case_count", "extra_case_count"],
+  "properties": {
+    "schema_version": {"const": "controlmesh.lifecycle_rollback_gate.v1"},
+    "matrix_schema_version": {"const": "controlmesh.task_lifecycle_golden.v2"},
+    "matrix_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "candidate": {"const": "typescript-internal-runtime-facade"},
+    "candidate_admitted": {"type": "boolean"},
+    "production_owner": {"const": "python"},
+    "rollback_owner": {"const": "python"},
+    "public_mutation_api": {"const": false},
+    "covered_domains": {
+      "type": "array",
+      "prefixItems": [{"const": "create"}, {"const": "tell"}, {"const": "ask_parent"}, {"const": "resume"}, {"const": "cancel"}, {"const": "recovery"}, {"const": "workspace"}, {"const": "artifact"}],
+      "items": false
+    },
+    "case_count": {"type": "integer", "minimum": 1},
+    "matched_case_count": {"type": "integer", "minimum": 0},
+    "diff_count": {"type": "integer", "minimum": 0},
+    "missing_case_count": {"type": "integer", "minimum": 0},
+    "extra_case_count": {"type": "integer", "minimum": 0}
+  },
+  "allOf": [{
+    "if": {"properties": {"candidate_admitted": {"const": true}}},
+    "then": {"properties": {"diff_count": {"const": 0}, "missing_case_count": {"const": 0}, "extra_case_count": {"const": 0}}}
+  }]
+}

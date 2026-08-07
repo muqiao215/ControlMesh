@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://controlmesh.dev/schemas/task-lifecycle-golden-matrix-v1.json",
+  "$id": "https://controlmesh.dev/schemas/task-lifecycle-golden-matrix-v2.json",
   "title": "ControlMesh task-lifecycle golden parity matrix",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "oracle", "normalizers", "required_domains", "cases"],
   "properties": {
-    "schema_version": {"const": "controlmesh.task_lifecycle_golden.v1"},
+    "schema_version": {"const": "controlmesh.task_lifecycle_golden.v2"},
     "oracle": {"const": "python"},
     "normalizers": {
       "type": "array",
@@ -28,11 +28,12 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "domain", "operation", "expected"],
+        "required": ["id", "domain", "operation", "input", "expected"],
         "properties": {
           "id": {"type": "string", "pattern": "^[a-z_]+\\.[a-z0-9_]+$"},
           "domain": {"enum": ["create", "tell", "ask_parent", "resume", "cancel", "recovery", "workspace", "artifact"]},
           "operation": {"type": "string", "minLength": 1},
+          "input": {"type": "object"},
           "expected": {"type": "object"}
         }
       }

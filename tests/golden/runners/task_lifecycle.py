@@ -18,7 +18,7 @@ from controlmesh.tasks.models import TaskInFlight, TaskSubmit
 from controlmesh.tasks.registry import TaskRegistry
 from controlmesh.workspace.paths import ControlMeshPaths
 
-SCHEMA_VERSION = "controlmesh.task_lifecycle_golden.v1"
+SCHEMA_VERSION = "controlmesh.task_lifecycle_golden.v2"
 REQUIRED_DOMAINS = (
     "create",
     "tell",
@@ -58,9 +58,19 @@ def _cli() -> MagicMock:
 
 
 def _case(
-    case_id: str, domain: str, operation: str, expected: dict[str, object]
+    case_id: str,
+    domain: str,
+    operation: str,
+    input_: dict[str, object],
+    expected: dict[str, object],
 ) -> dict[str, object]:
-    return {"id": case_id, "domain": domain, "operation": operation, "expected": expected}
+    return {
+        "id": case_id,
+        "domain": domain,
+        "operation": operation,
+        "input": input_,
+        "expected": expected,
+    }
 
 
 def _error(callable_) -> dict[str, str]:
@@ -86,6 +96,18 @@ async def build_matrix() -> dict[str, object]:
                 "create.basic",
                 "create",
                 "TaskRegistry.create",
+                {
+                    "task_id": "a1b2c3d4",
+                    "chat_id": 42,
+                    "thread_id": 11,
+                    "prompt": "Review the repository.",
+                    "name": "Repository review",
+                    "parent_agent": "main",
+                    "provider": "codex",
+                    "model": "gpt-5",
+                    "thinking": "high",
+                    "transport": "web",
+                },
                 {
                     "task": {
                         "task_id": created.task_id,
@@ -121,6 +143,13 @@ async def build_matrix() -> dict[str, object]:
                 "tell",
                 "TaskHub.tell",
                 {
+                    "task_id": created.task_id,
+                    "message": "Use the canonical schema",
+                    "parent_agent": "main",
+                    "sent_at": "<timestamp>",
+                    "in_flight": True,
+                },
+                {
                     "sequence": sequence,
                     "updates": updates,
                 },
@@ -133,6 +162,7 @@ async def build_matrix() -> dict[str, object]:
                 "tell.not_running",
                 "tell",
                 "TaskHub.tell",
+                {"task_id": created.task_id, "message": "too late", "in_flight": False},
                 {
                     "error": _error(lambda: hub.tell(created.task_id, "too late")),
                 },
@@ -151,6 +181,11 @@ async def build_matrix() -> dict[str, object]:
                 "ask_parent",
                 "TaskHub.forward_question",
                 {
+                    "task_id": created.task_id,
+                    "question": "Which contract?",
+                    "handler_registered": True,
+                },
+                {
                     "response": response,
                     "question_count": questioned.question_count,
                     "last_question": questioned.last_question,
@@ -164,6 +199,7 @@ async def build_matrix() -> dict[str, object]:
                 "ask_parent.missing",
                 "ask_parent",
                 "TaskHub.forward_question",
+                {"task_id": "missing-task", "question": "Anyone there?"},
                 {"response": missing},
             )
         )
@@ -180,6 +216,14 @@ async def build_matrix() -> dict[str, object]:
                 "resume.waiting",
                 "resume",
                 "TaskHub.resume",
+                {
+                    "task_id": created.task_id,
+                    "follow_up": "Use JSON Schema",
+                    "from_status": "waiting",
+                    "provider": "codex",
+                    "model": "gpt-5",
+                    "session_id": "session-1",
+                },
                 {
                     "returned_task_id": resumed,
                     "same_task_id": resumed == created.task_id,
@@ -199,6 +243,13 @@ async def build_matrix() -> dict[str, object]:
                 "resume",
                 "TaskHub.resume",
                 {
+                    "task_id": created.task_id,
+                    "follow_up": "continue",
+                    "from_status": "waiting",
+                    "provider": "codex",
+                    "session_id": "",
+                },
+                {
                     "error": _error(lambda: hub.resume(created.task_id, "continue")),
                 },
             )
@@ -209,6 +260,7 @@ async def build_matrix() -> dict[str, object]:
                 "cancel.missing",
                 "cancel",
                 "TaskHub.cancel",
+                {"task_id": "missing-task", "exists": False},
                 {"cancelled": await hub.cancel("missing-task")},
             )
         )
@@ -220,6 +272,7 @@ async def build_matrix() -> dict[str, object]:
                 "cancel.running",
                 "cancel",
                 "TaskHub.cancel",
+                {"task_id": created.task_id, "exists": True, "in_flight": True},
                 {"cancelled": await hub.cancel(created.task_id)},
             )
         )
@@ -233,6 +286,7 @@ async def build_matrix() -> dict[str, object]:
                 "recovery.restart_stale",
                 "recovery",
                 "TaskRegistry.__init__",
+                {"task_id": created.task_id, "persisted_status": "running", "folder_exists": True},
                 {
                     "status": recovered.status,
                     "error": recovered.error,
@@ -249,6 +303,11 @@ async def build_matrix() -> dict[str, object]:
                 "workspace.custom_tasks_dir",
                 "workspace",
                 "TaskRegistry.create",
+                {
+                    "task_id": "b2c3d4e5",
+                    "tasks_dir": "<root>/agents/reviewer/workspace/tasks",
+                    "default_tasks_dir": "<root>/home/workspace/tasks",
+                },
                 {
                     "tasks_dir": "<root>/agents/reviewer/workspace/tasks",
                     "task_folder": "<root>/agents/reviewer/workspace/tasks/b2c3d4e5",
@@ -268,6 +327,11 @@ async def build_matrix() -> dict[str, object]:
                     "artifact",
                     "open_task_artifact",
                     {
+                        "task_id": custom.task_id,
+                        "relative_path": "reports/summary.txt",
+                        "content": "safe content",
+                    },
+                    {
                         "relative_path": opened.relative_path,
                         "name": opened.name,
                         "mime": opened.mime,
@@ -281,6 +345,7 @@ async def build_matrix() -> dict[str, object]:
                 "artifact.traversal",
                 "artifact",
                 "validate_artifact_relative_path",
+                {"relative_path": "../secret.txt"},
                 {
                     "error": _error(lambda: validate_artifact_relative_path("../secret.txt")),
                 },
@@ -291,6 +356,7 @@ async def build_matrix() -> dict[str, object]:
                 "artifact.missing_task",
                 "artifact",
                 "open_task_artifact",
+                {"task_id": "missing-task", "relative_path": "RESULT.md"},
                 {
                     "error": _error(
                         lambda: open_task_artifact(reader, "missing-task", "RESULT.md")

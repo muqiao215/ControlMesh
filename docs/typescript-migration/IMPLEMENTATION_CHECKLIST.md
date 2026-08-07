@@ -34,6 +34,7 @@ This repository now implements the safe Option B foundation from `controlmesh_ty
 | Python-projected topology facade | Done | `controlmesh/api/protocol_adapters.py`, `controlmesh/api/v1_facade.py`, `packages/controlmesh-sdk/`, `apps/controlmesh-web/` |
 | Provider reference golden fixtures | Done | `tests/golden/fixtures/providers/`, `tests/golden/test_provider_golden.py` |
 | Python task-lifecycle parity matrix | Done | `tests/golden/fixtures/tasks/lifecycle.matrix.json`, `tests/golden/test_task_lifecycle_golden.py` |
+| TypeScript lifecycle consumer and dual-run rollback gate | Done (internal only) | `packages/controlmesh-runtime-facade/src/lifecycle-parity.ts`, `tests/golden/fixtures/tasks/lifecycle.rollback-gate.json` |
 | SDK smoke tests | Done | `packages/controlmesh-sdk/test/client-smoke.test.ts` |
 | Web dashboard read-only wiring | Done | `apps/controlmesh-web/src/main.ts`, `apps/controlmesh-web/src/styles.css` |
 
@@ -80,7 +81,7 @@ The artifact metadata edge-case slice is complete:
 - symlink escapes, empty/missing folders, disappearing/unreadable files, and absolute-path non-disclosure are covered;
 - `MW-004` and `MW-005` are completed.
 
-All approved read-only migration slices are complete, including MW-006, runtime validation, Python-projected topology data, provider reference goldens, and the Python task-lifecycle oracle. Mutating task APIs and transport ports remain deliberately blocked until a candidate consumer proves matrix parity and satisfies rollback gates.
+All approved read-only migration slices and the internal lifecycle candidate gate are complete. The candidate matches 14/14 Python cases, but Python remains production/rollback owner and public mutation APIs remain blocked pending `MUTATION_API_REVIEW.md` approval.
 
 ## Verification Commands
 

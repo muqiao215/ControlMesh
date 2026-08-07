@@ -79,13 +79,14 @@ Completed Web dashboard read-only wiring:
 
 ### Current Next Step
 
-Maintain the completed read-only product layer. Runtime ownership ports remain intentionally blocked by their existing parity and Python-ownership requirements.
+Review the deferred mutation API admission choices in `MUTATION_API_REVIEW.md`. Do not add
+public mutation methods merely because the internal candidate parity gate is green.
 
 ## Blocked Runtime Ports
 
-The Python task-lifecycle matrix now supplies the canonical behavior baseline. These ports
-remain blocked until a candidate implementation consumes that matrix successfully and has
-explicit rollback gates:
+The private TypeScript candidate now consumes the Python task-lifecycle matrix and passes
+the digest-bound rollback gate. These production ownership ports remain blocked until an
+explicit migration and API-admission decision:
 
 - TaskHub and task state transitions.
 - Provider process execution and timeout behavior (provider reference goldens exist; port gates remain).

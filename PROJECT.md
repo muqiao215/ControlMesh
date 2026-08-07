@@ -101,14 +101,20 @@ resume, cancel, recovery, workspace, and artifact ownership paths and records no
 JSON-Schema-validated observations. It is a required CI drift gate, not authorization to
 add mutation APIs.
 
+The private TypeScript runtime-facade candidate consumes those case inputs and independently
+matches all 14 observations. CI dual-runs the live Python oracle and TypeScript candidate,
+reports JSON-path drift, and verifies a digest-bound rollback gate that retains Python as
+production and rollback owner. OpenAPI, the public SDK, and Web remain read-only.
+
 Provider authentication tests isolate operator XDG paths while retaining explicit XDG
 override coverage. The Codex streaming timeout test uses a complete stderr stream double,
 so the full Python suite passes with runtime warnings promoted to errors.
 
 ## Current Priority
 
-1. Build a consumer-side parity harness against the canonical Python lifecycle matrix;
-   keep mutation APIs blocked until a candidate implementation passes it plus rollback gates.
+1. Review the deferred create/tell/resume/cancel API admission choices—operation scopes,
+   idempotency retention, task revisions, audit access, canary policy, and rollback triggers—
+   before proposing any public mutation surface.
 2. Collect read-only Alpha feedback without expanding the localhost/browser security
    boundary.
 3. Decide browser credential storage and operator scope before any non-local Web use.
@@ -120,4 +126,4 @@ so the full Python suite passes with runtime warnings promoted to errors.
 - Full documentation catalog → `docs/README.md`
 - TypeScript migration contracts and status → `docs/typescript-migration/`
 - Historical and active work → `plans/`
-- Current active work → `plans/task-lifecycle-golden-parity/`
+- Current active work → `plans/task-lifecycle-consumer-parity/`

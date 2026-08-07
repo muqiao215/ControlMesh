@@ -22,6 +22,17 @@ Check committed fixtures without writing:
 pnpm check:lifecycle-golden
 ```
 
+Run the live Python oracle and private TypeScript candidate together, then verify the
+digest-bound rollback gate:
+
+```bash
+pnpm check:lifecycle-parity
+```
+
+The gate produces structured JSON-path differences and fails on value drift, missing
+cases, extra cases, stale Python fixtures, or a stale rollback artifact. A green gate keeps
+Python as production/rollback owner and does not expose public mutation APIs.
+
 Required critical fixtures:
 
 - `tasks/lifecycle.matrix.json`

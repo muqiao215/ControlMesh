@@ -5,5 +5,9 @@
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test:parity": "bun test test/*.test.ts"
+  },
   "dependencies": {}
 }

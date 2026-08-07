@@ -216,7 +216,10 @@ Python history/task/provider read models
 - Task lifecycle mutations span persisted state, events, provider processes, delivery, and
   recovery; SDK smoke tests alone do not establish parity. The executable Python oracle at
   `tests/golden/runners/task_lifecycle.py` generates the versioned lifecycle matrix and CI
-  checks it for drift. Its JSON Schema is the cross-language fixture-shape authority.
+  checks it for drift. Its JSON Schema is the cross-language fixture-shape authority. The
+  private `@controlmesh/runtime-facade` candidate consumes matrix inputs in memory; the
+  dual-run gate compares every normalized observation, records JSON-path differences, and
+  keeps Python as both production and rollback owner. It is not transport-facing.
 - Artifact download security depends on platform support for descriptor-relative no-follow
   opening and fails closed when unavailable.
 - The dashboard stores a locally entered token in browser storage and must remain

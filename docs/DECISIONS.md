@@ -149,6 +149,29 @@ Revisit when:
 Authentication scopes, browser credential storage, origin/CSRF controls, audit behavior,
 and task mutation parity are explicitly approved.
 
+## 2026-08-08 — Admit a private TypeScript lifecycle candidate without transferring ownership
+
+Decision:
+
+Allow the private runtime-facade package to execute the canonical lifecycle matrix in
+memory, require a live Python/TypeScript dual-run with structured diffs and a digest-bound
+rollback gate, and keep public OpenAPI/SDK/Web mutation surfaces absent.
+
+Why:
+
+This proves a cross-language consumer can reproduce observable semantics while avoiding
+production file writes, premature API commitments, or a runtime ownership transfer.
+
+Rejected:
+
+Echoing matrix expectations, switching production ownership after fixture parity, and
+adding public mutation methods before authorization/idempotency/audit review.
+
+Revisit when:
+
+The deferred operation-specific admission choices in
+`docs/typescript-migration/MUTATION_API_REVIEW.md` are explicitly approved.
+
 ## 2026-08-08 — Use an executable Python lifecycle oracle
 
 Decision:

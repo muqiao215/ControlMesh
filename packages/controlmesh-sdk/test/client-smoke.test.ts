@@ -235,3 +235,11 @@ test("malformed error envelopes are rejected before SDK error mapping", async ()
 
   await expect(client.getTask("task-1")).rejects.toBeInstanceOf(ProtocolValidationError);
 });
+
+test("public SDK remains read-only after internal lifecycle candidate admission", () => {
+  const methods = Object.getOwnPropertyNames(ControlMeshClient.prototype);
+  expect(methods).not.toContain("createTask");
+  expect(methods).not.toContain("tellTask");
+  expect(methods).not.toContain("resumeTask");
+  expect(methods).not.toContain("cancelTask");
+});

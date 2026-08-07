@@ -28,6 +28,18 @@
         }
       },
       "id": "create.basic",
+      "input": {
+        "chat_id": 42,
+        "model": "gpt-5",
+        "name": "Repository review",
+        "parent_agent": "main",
+        "prompt": "Review the repository.",
+        "provider": "codex",
+        "task_id": "a1b2c3d4",
+        "thinking": "high",
+        "thread_id": 11,
+        "transport": "web"
+      },
       "operation": "TaskRegistry.create"
     },
     {
@@ -44,6 +56,13 @@
         ]
       },
       "id": "tell.running",
+      "input": {
+        "in_flight": true,
+        "message": "Use the canonical schema",
+        "parent_agent": "main",
+        "sent_at": "<timestamp>",
+        "task_id": "a1b2c3d4"
+      },
       "operation": "TaskHub.tell"
     },
     {
@@ -55,6 +74,11 @@
         }
       },
       "id": "tell.not_running",
+      "input": {
+        "in_flight": false,
+        "message": "too late",
+        "task_id": "a1b2c3d4"
+      },
       "operation": "TaskHub.tell"
     },
     {
@@ -66,6 +90,11 @@
         "response": "Question forwarded to parent agent. Finish your current work — you will be resumed with the answer."
       },
       "id": "ask_parent.basic",
+      "input": {
+        "handler_registered": true,
+        "question": "Which contract?",
+        "task_id": "a1b2c3d4"
+      },
       "operation": "TaskHub.forward_question"
     },
     {
@@ -74,6 +103,10 @@
         "response": "Error: Task not found"
       },
       "id": "ask_parent.missing",
+      "input": {
+        "question": "Anyone there?",
+        "task_id": "missing-task"
+      },
       "operation": "TaskHub.forward_question"
     },
     {
@@ -89,6 +122,14 @@
         "status": "running"
       },
       "id": "resume.waiting",
+      "input": {
+        "follow_up": "Use JSON Schema",
+        "from_status": "waiting",
+        "model": "gpt-5",
+        "provider": "codex",
+        "session_id": "session-1",
+        "task_id": "a1b2c3d4"
+      },
       "operation": "TaskHub.resume"
     },
     {
@@ -100,6 +141,13 @@
         }
       },
       "id": "resume.no_session",
+      "input": {
+        "follow_up": "continue",
+        "from_status": "waiting",
+        "provider": "codex",
+        "session_id": "",
+        "task_id": "a1b2c3d4"
+      },
       "operation": "TaskHub.resume"
     },
     {
@@ -108,6 +156,10 @@
         "cancelled": false
       },
       "id": "cancel.missing",
+      "input": {
+        "exists": false,
+        "task_id": "missing-task"
+      },
       "operation": "TaskHub.cancel"
     },
     {
@@ -116,6 +168,11 @@
         "cancelled": true
       },
       "id": "cancel.running",
+      "input": {
+        "exists": true,
+        "in_flight": true,
+        "task_id": "a1b2c3d4"
+      },
       "operation": "TaskHub.cancel"
     },
     {
@@ -126,6 +183,11 @@
         "task_id_preserved": true
       },
       "id": "recovery.restart_stale",
+      "input": {
+        "folder_exists": true,
+        "persisted_status": "running",
+        "task_id": "a1b2c3d4"
+      },
       "operation": "TaskRegistry.__init__"
     },
     {
@@ -136,6 +198,11 @@
         "tasks_dir": "<root>/agents/reviewer/workspace/tasks"
       },
       "id": "workspace.custom_tasks_dir",
+      "input": {
+        "default_tasks_dir": "<root>/home/workspace/tasks",
+        "task_id": "b2c3d4e5",
+        "tasks_dir": "<root>/agents/reviewer/workspace/tasks"
+      },
       "operation": "TaskRegistry.create"
     },
     {
@@ -148,6 +215,11 @@
         "size": 12
       },
       "id": "artifact.read",
+      "input": {
+        "content": "safe content",
+        "relative_path": "reports/summary.txt",
+        "task_id": "b2c3d4e5"
+      },
       "operation": "open_task_artifact"
     },
     {
@@ -159,6 +231,9 @@
         }
       },
       "id": "artifact.traversal",
+      "input": {
+        "relative_path": "../secret.txt"
+      },
       "operation": "validate_artifact_relative_path"
     },
     {
@@ -170,6 +245,10 @@
         }
       },
       "id": "artifact.missing_task",
+      "input": {
+        "relative_path": "RESULT.md",
+        "task_id": "missing-task"
+      },
       "operation": "open_task_artifact"
     }
   ],
@@ -190,5 +269,5 @@
     "workspace",
     "artifact"
   ],
-  "schema_version": "controlmesh.task_lifecycle_golden.v1"
+  "schema_version": "controlmesh.task_lifecycle_golden.v2"
 }

@@ -1,0 +1,25 @@
+{
+  "schema_version": "controlmesh.lifecycle_rollback_gate.v1",
+  "matrix_schema_version": "controlmesh.task_lifecycle_golden.v2",
+  "matrix_sha256": "d031a4e2c806c4e76e693234e4830e3b520a74e76964a74eeb6d73ccc125cf41",
+  "candidate": "typescript-internal-runtime-facade",
+  "candidate_admitted": true,
+  "production_owner": "python",
+  "rollback_owner": "python",
+  "public_mutation_api": false,
+  "covered_domains": [
+    "create",
+    "tell",
+    "ask_parent",
+    "resume",
+    "cancel",
+    "recovery",
+    "workspace",
+    "artifact"
+  ],
+  "case_count": 14,
+  "matched_case_count": 14,
+  "diff_count": 0,
+  "missing_case_count": 0,
+  "extra_case_count": 0
+}
