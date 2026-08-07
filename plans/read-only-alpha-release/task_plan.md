@@ -78,3 +78,5 @@ Commit and push the release candidate, then wait for the final `CI success` gate
 | First architecture documentation patch used mismatched duplicate context | 1 | Locate exact repository-map and entry-point lines, then apply smaller section-specific edits. |
 | Expanded focused Ruff rejected the test's all-interface literal and regex dots | 1 | Use a documentation-only non-loopback address and an explicitly escaped match pattern. |
 | Host has `uv` but no standalone `uvx` executable for Twine | 1 | Use the equivalent portable form `uv tool run --from twine twine check` and update the checklist. |
+| Prerelease visibility job waited for `info.version == 0.42.0a1` even though PyPI correctly kept stable `0.41.9` as latest | 1 | Confirmed `releases["0.42.0a1"]` has both files, created the verified GitHub prerelease manually, cancelled the impossible wait, and changed future verification to require files under the exact release key. |
+| `gh release view` does not support the requested `isLatest` JSON field | 1 | Verify prerelease status through supported `isPrerelease` output and stable latest through `gh release list`. |

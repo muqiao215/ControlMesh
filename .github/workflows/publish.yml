@@ -257,28 +257,33 @@ jobs:
                       "Pragma": "no-cache",
                   },
               )
-              version = ""
+              latest_version = ""
+              release_files = []
               error = ""
               try:
                   with urllib.request.urlopen(request, timeout=20) as response:
                       payload = json.load(response)
-                  version = payload.get("info", {}).get("version", "") or ""
+                  latest_version = payload.get("info", {}).get("version", "") or ""
+                  release_files = payload.get("releases", {}).get(expected, []) or []
               except urllib.error.HTTPError as exc:
                   error = f"HTTP {exc.code}"
               except Exception as exc:  # pragma: no cover - workflow diagnostics
                   error = f"{type(exc).__name__}: {exc}"
 
-              if version == expected:
-                  print(f"PyPI now reports {project_name}=={expected}")
+              if release_files:
+                  print(
+                      f"PyPI contains {project_name}=={expected} "
+                      f"with {len(release_files)} file(s); latest={latest_version}"
+                  )
                   raise SystemExit(0)
 
-              detail = version or "<missing>"
+              detail = f"latest={latest_version or '<missing>'} files={len(release_files)}"
               if error:
                   detail = f"{detail} ({error})"
-              print(f"Attempt {attempt}/{attempts}: PyPI reports '{detail}'")
+              print(f"Attempt {attempt}/{attempts}: PyPI reports {detail}")
               time.sleep(delay_seconds)
 
-          print(f"PyPI never reported {project_name}=={expected} after publish.")
+          print(f"PyPI never exposed files for {project_name}=={expected} after publish.")
           raise SystemExit(1)
           PY
       - name: Create or update GitHub Release after PyPI publish succeeds

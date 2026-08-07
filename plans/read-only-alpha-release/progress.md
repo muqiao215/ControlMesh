@@ -2,7 +2,7 @@
 
 ## Current
 
-Release candidate implementation and local verification are complete; preparing push.
+The Alpha is published. Repairing the prerelease visibility verifier and closing evidence.
 
 ## Done
 
@@ -34,11 +34,21 @@ Release candidate implementation and local verification are complete; preparing 
 - Pushed release-candidate commit `8bf1cf1`.
 - Candidate GitHub Actions run `31201196298` passed Python 3.11/3.12, Ruff, mypy, build,
   Protocol/SDK/Web, the installed read-only Alpha smoke, and aggregate `CI success`.
+- Final release HEAD `0d57828` passed Actions run `31201549528`, including aggregate
+  `CI success`; release dry-run matched version, tag, commit, and clean branch state.
+- The release script reran the full suite (`5548 passed`), rebuilt both distributions, and
+  pushed annotated tag `v0.42.0a1` at `0d57828`.
+- Publish run `31202096422` passed main-CI verification, build, Twine, distribution-content
+  verification, and trusted PyPI upload. PyPI exposes two files for `0.42.0a1` while
+  correctly retaining `0.41.9` as stable latest.
+- The workflow's visibility step incorrectly waited for PyPI `info.version` to become the
+  prerelease. Created the GitHub release from the verified tag/note as a prerelease with
+  `--latest=false`, confirmed `v0.41.9` remains Latest, and cancelled the impossible wait.
+- Updated future publish verification to require files under `releases[expected]`.
 
 ## Remaining
 
-- Commit this remote evidence and verify the final release HEAD's remote CI.
-- Push `v0.42.0a1`, verify PyPI visibility and GitHub prerelease creation.
+- Commit/push the verifier repair and final evidence, then verify final main CI.
 
 ## Issues
 
@@ -46,4 +56,4 @@ Release candidate implementation and local verification are complete; preparing 
 
 ## Next
 
-Commit and push the candidate-run evidence, then verify final HEAD before tagging.
+Verify the prerelease visibility repair, commit/push, and wait for final main CI.

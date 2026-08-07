@@ -86,7 +86,7 @@ The approved TypeScript foundation is complete:
 - GitHub CI runs the frozen protocol/golden/SDK/Web gate as a required product-layer job
   and exposes one aggregate `CI success` check for the complete workflow.
 
-The `0.42.0a1` read-only release candidate is installable as one Python artifact: the
+The published `0.42.0a1` read-only Alpha is installable as one Python artifact: the
 deterministic dashboard build ships in the wheel, `controlmesh api serve` exposes the
 authenticated facade and dashboard only on `127.0.0.1`, and the public Alpha SDK surface
 contains only supported read operations. CI includes a required isolated-wheel smoke that
@@ -102,8 +102,9 @@ so the full Python suite passes with runtime warnings promoted to errors.
 
 ## Current Priority
 
-1. Publish and post-verify the `0.42.0a1` read-only facade/dashboard prerelease.
-2. Build the Python task-lifecycle golden parity matrix before considering mutation APIs.
+1. Build the Python task-lifecycle golden parity matrix before considering mutation APIs.
+2. Collect read-only Alpha feedback without expanding the localhost/browser security
+   boundary.
 3. Decide browser credential storage and operator scope before any non-local Web use.
 
 ## Knowledge Map

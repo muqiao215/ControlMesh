@@ -43,6 +43,9 @@
 - Candidate Actions run `31201196298` passed the new installed-wheel smoke and every
   existing required job on GitHub-hosted runners, proving the local release result is not
   host-specific.
+- PyPI prereleases appear under `releases[expected]` while `info.version` continues to name
+  the latest stable release. Visibility automation must check exact-version files, not
+  require a prerelease to replace the stable default.
 
 ## Technical Decisions
 

@@ -48,6 +48,8 @@ def test_alpha_distribution_and_publish_contracts_are_present() -> None:
     publish_source = (ROOT / ".github/workflows/publish.yml").read_text(encoding="utf-8")
     assert "dashboard_hits" in publish_source
     assert "--prerelease --latest=false" in publish_source
+    assert 'payload.get("releases", {}).get(expected, [])' in publish_source
+    assert "if release_files:" in publish_source
 
     ci = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
     assert "alpha-smoke" in ci["jobs"]["ci-success"]["needs"]
