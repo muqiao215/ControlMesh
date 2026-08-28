@@ -8,7 +8,10 @@ from controlmesh_runtime.contracts import (
     UpdateAction,
 )
 from controlmesh_runtime.evidence_identity import EvidenceSubject, RuntimeEvidenceIdentity
+from controlmesh_runtime.execution_payloads import ExecutionPlanPayload, ExecutionResultPayload
+from controlmesh_runtime.execution_runtime_events import build_runtime_event_from_execution_payload
 from controlmesh_runtime.promotion_controller import PromotionController
+from controlmesh_runtime.recovery import RecoveryExecutionStatus, RecoveryIntent
 from controlmesh_runtime.runtime_message_api import query, signal, update
 from controlmesh_runtime.store import RuntimeStore
 from controlmesh_runtime.summary.contracts import SummaryKind, SummaryRecord
@@ -63,6 +66,27 @@ def _line_summary(identity: RuntimeEvidenceIdentity) -> SummaryRecord:
         source_refs=(f"summary:{identity.packet_id}",),
         key_facts=("line checkpoint",),
     )
+
+
+def _persist_completed_execution(store: RuntimeStore, identity: RuntimeEvidenceIdentity) -> None:
+    for payload in (
+        ExecutionPlanPayload(
+            execution_event_type="execution.plan_created", plan_id=identity.plan_id,
+            task_id=identity.task_id, line=identity.line, worker_id="worker-1",
+            intent=RecoveryIntent.RESTART_WORKER, requires_human_gate=False,
+            next_step_token=RecoveryIntent.RESTART_WORKER.value, step_count=1,
+        ),
+        ExecutionResultPayload(
+            plan_id=identity.plan_id, task_id=identity.task_id, line=identity.line,
+            worker_id="worker-1", result_status=RecoveryExecutionStatus.COMPLETED,
+            completed_step_count=1, requires_human_gate=False,
+        ),
+    ):
+        store.append_execution_evidence(
+            build_runtime_event_from_execution_payload(
+                payload, packet_id=identity.packet_id, message=payload.execution_event_type
+            )
+        )
 
 
 def test_signal_request_summary_appends_control_event(tmp_path: Path) -> None:
@@ -129,6 +153,7 @@ def test_update_promote_is_idempotent_for_same_latest_summaries(tmp_path: Path) 
     store = RuntimeStore(tmp_path)
     store.save_summary_record(_task_summary(identity))
     store.save_summary_record(_line_summary(identity))
+    _persist_completed_execution(store, identity)
 
     first = update(
         root=tmp_path,

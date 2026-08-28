@@ -149,6 +149,31 @@ Revisit when:
 Authentication scopes, browser credential storage, origin/CSRF controls, audit behavior,
 and task mutation parity are explicitly approved.
 
+## 2026-08-29 — Gate result writeback and promotion on the current typed episode
+
+Decision:
+
+Use the existing four-field runtime evidence identity as the writeback idempotency and
+freshness boundary. Only the persisted plan owner may record the latest episode's terminal
+result; identical retries reuse the prior event and conflicting retries fail closed.
+Controller promotion requires one current completed result and rechecks execution, review,
+and summary snapshots immediately before canonical writes.
+
+Why:
+
+Summary identity alone cannot prove that a result is owned, successful, current after
+recovery, or unchanged between eligibility and write time.
+
+Rejected:
+
+Task-ID-only matching, filename/text correlation, worker-direct promotion, and treating a
+committed golden fixture or successful delivery as promotion authority.
+
+Revisit when:
+
+Execution evidence moves to a transactional store with equivalent identity, idempotency,
+freshness, and rollback guarantees.
+
 ## 2026-08-08 — Admit a private TypeScript lifecycle candidate without transferring ownership
 
 Decision:

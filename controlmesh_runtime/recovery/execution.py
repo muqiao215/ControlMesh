@@ -124,6 +124,8 @@ class RecoveryExecutionStatus(StrEnum):
     PARTIALLY_COMPLETED = auto()
     COMPLETED = auto()
     FAILED = auto()
+    CANCELLED = auto()
+    DELIVERY_FAILED = auto()
     ABORTED = auto()
     BLOCKED_BY_HUMAN_GATE = auto()
 

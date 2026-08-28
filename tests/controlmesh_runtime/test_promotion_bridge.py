@@ -12,6 +12,8 @@ from controlmesh_runtime.canonical_section_writer import (
 )
 from controlmesh_runtime.contracts import ReviewOutcome
 from controlmesh_runtime.evidence_identity import EvidenceSubject, RuntimeEvidenceIdentity
+from controlmesh_runtime.execution_payloads import ExecutionPlanPayload, ExecutionResultPayload
+from controlmesh_runtime.execution_runtime_events import build_runtime_event_from_execution_payload
 from controlmesh_runtime.promotion_bridge import (
     PromotionBridge,
     PromotionEligibility,
@@ -105,6 +107,35 @@ def _summary(
     )
 
 
+def _persist_completed_execution(store: RuntimeStore, identity: RuntimeEvidenceIdentity) -> None:
+    plan = ExecutionPlanPayload(
+        execution_event_type="execution.plan_created",
+        plan_id=identity.plan_id,
+        task_id=identity.task_id,
+        line=identity.line,
+        worker_id="worker-1",
+        intent=RecoveryIntent.RESTART_WORKER,
+        requires_human_gate=False,
+        next_step_token=RecoveryIntent.RESTART_WORKER.value,
+        step_count=1,
+    )
+    result = ExecutionResultPayload(
+        plan_id=identity.plan_id,
+        task_id=identity.task_id,
+        line=identity.line,
+        worker_id="worker-1",
+        result_status=RecoveryExecutionStatus.COMPLETED,
+        completed_step_count=1,
+        requires_human_gate=False,
+    )
+    store.append_execution_evidence(
+        build_runtime_event_from_execution_payload(plan, packet_id=identity.packet_id, message="plan")
+    )
+    store.append_execution_evidence(
+        build_runtime_event_from_execution_payload(result, packet_id=identity.packet_id, message="result")
+    )
+
+
 def test_summary_promotion_v1_promotes_review_and_latest_summaries_without_execution_result(tmp_path: Path) -> None:
     _write_line_files(tmp_path, "demo-line")
     store = RuntimeStore(tmp_path)
@@ -131,6 +162,8 @@ def test_summary_promotion_v1_promotes_review_and_latest_summaries_without_execu
     )
     store.save_summary_record(task_summary)
     store.save_summary_record(line_summary)
+    store.save_review_record(review)
+    _persist_completed_execution(store, identity)
 
     eligibility = bridge.evaluate_summary_promotion(
         SummaryPromotionInput(
@@ -358,6 +391,8 @@ def test_summary_promotion_v1_rechecks_freshness_at_write_time(
     line_summary = _summary(identity, subject=EvidenceSubject.LINE, key_facts=("line",))
     store.save_summary_record(task_summary)
     store.save_summary_record(line_summary)
+    store.save_review_record(review)
+    _persist_completed_execution(store, identity)
     inp = SummaryPromotionInput(
         line="demo-line",
         submitted_by=PromotionSource.CONTROLLER,

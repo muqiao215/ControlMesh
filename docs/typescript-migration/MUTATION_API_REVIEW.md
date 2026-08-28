@@ -13,6 +13,9 @@ owner.
 - Machine rollback gate: `tests/golden/fixtures/tasks/lifecycle.rollback-gate.json`
 - Negative exposure checks: OpenAPI contains only GET operations and the public SDK has no
   create/tell/resume/cancel methods.
+- Python result-writeback/promotion matrix:
+  `tests/golden/fixtures/runtime/result-writeback-promotion.matrix.json`; this hardens
+  internal ownership and canonical promotion but grants no transport-facing permission.
 
 Parity is necessary but not sufficient for API admission. A later proposal must satisfy
 the following review before changing OpenAPI, SDK, or Web surfaces.

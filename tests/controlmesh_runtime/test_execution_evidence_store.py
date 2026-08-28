@@ -63,6 +63,18 @@ def _execution_runtime_event(packet_id: str, *, failure_class: FailureClass | No
 def test_runtime_store_appends_execution_evidence_in_separate_namespace(store: RuntimeStore) -> None:
     first = _execution_runtime_event("packet-1")
     second = _execution_runtime_event("packet-1", failure_class=FailureClass.INFRA)
+    second = second.model_copy(
+        update={
+            "payload": {
+                **second.payload,
+                "plan_id": first.payload["plan_id"],
+                "task_id": first.payload["task_id"],
+                "line": first.payload["line"],
+                "worker_id": first.payload["worker_id"],
+            },
+            "worker_id": first.worker_id,
+        }
+    )
 
     store.append_execution_evidence(first)
     store.append_execution_evidence(second)

@@ -10,9 +10,10 @@
     "check:protocol": "pnpm generate:all-protocol && git diff --exit-code packages/controlmesh-protocol/src/generated packages/controlmesh-protocol/src/validators controlmesh/protocol/generated",
     "generate:lifecycle-golden": "uv run python scripts/generate_task_lifecycle_goldens.py",
     "check:lifecycle-golden": "uv run python scripts/generate_task_lifecycle_goldens.py --check",
+    "check:result-writeback-golden": "uv run python scripts/generate_result_writeback_promotion_golden.py --check",
     "generate:lifecycle-rollback-gate": "bun packages/controlmesh-runtime-facade/scripts/check-lifecycle-parity.ts --write",
     "check:lifecycle-parity": "bun packages/controlmesh-runtime-facade/scripts/check-lifecycle-parity.ts",
-    "test:golden": "pnpm check:lifecycle-golden && pnpm --filter @controlmesh/runtime-facade typecheck && pnpm --filter @controlmesh/runtime-facade test:parity && pnpm check:lifecycle-parity && uv run python -m pytest tests/protocol tests/golden -q",
+    "test:golden": "pnpm check:lifecycle-golden && pnpm check:result-writeback-golden && pnpm --filter @controlmesh/runtime-facade typecheck && pnpm --filter @controlmesh/runtime-facade test:parity && pnpm check:lifecycle-parity && uv run python -m pytest tests/protocol tests/golden -q",
     "test:sdk": "pnpm --filter @controlmesh/sdk test:smoke"
   },
   "devDependencies": {

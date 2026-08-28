@@ -16,7 +16,7 @@ from controlmesh_runtime.canonical_section_writer import (
     CanonicalWriteShape,
 )
 from controlmesh_runtime.contracts import ReviewOutcome
-from controlmesh_runtime.evidence_identity import EvidenceSubject
+from controlmesh_runtime.evidence_identity import EvidenceSubject, RuntimeEvidenceIdentity
 from controlmesh_runtime.promotion_receipt import PromotionReceipt
 from controlmesh_runtime.records import ReviewRecord
 from controlmesh_runtime.recovery.execution import (
@@ -116,6 +116,7 @@ class PromotionWriteIntent(BaseModel):
     intent_id: str = Field(default_factory=lambda: uuid4().hex)
     line: str
     submitted_by: PromotionSource
+    evidence_identity: RuntimeEvidenceIdentity
     source_review_id: str
     source_task_summary_id: str
     source_line_summary_id: str
@@ -229,6 +230,7 @@ class PromotionBridge:
 
     def evaluate_summary_promotion(self, inp: SummaryPromotionInput) -> PromotionEligibility:
         self._validate_current_summary_snapshots(inp)
+        self._store.validate_promotable_execution(inp.review_record.evidence_identity)
         status_token = _status_token_for_outcome(inp.review_record.outcome)
         checkpoint_token = f"checkpoint-{inp.line}-{status_token}"
         reasons = [f"review_outcome={inp.review_record.outcome.plan_token}"]
@@ -256,7 +258,7 @@ class PromotionBridge:
         updated_files = self._writer.write(
             line=inp.line,
             patches=gate.write_intent.patches,
-            pre_write_check=lambda: self._validate_write_intent_summary_snapshots(gate.write_intent),
+            pre_write_check=lambda: self._validate_write_intent_freshness(gate.write_intent),
         )
         trace = root_trace(inp.trace_id)
         receipt = self._store.save_promotion_receipt(
@@ -302,6 +304,14 @@ class PromotionBridge:
         if current_task_summary.summary_id != intent.expected_task_summary_id:
             msg = "promotion write intent task summary freshness check failed"
             raise ValueError(msg)
+
+    def _validate_write_intent_freshness(self, intent: PromotionWriteIntent) -> None:
+        self._store.validate_promotable_execution(intent.evidence_identity)
+        review = self._store.load_review_record(intent.evidence_identity.task_id)
+        if review.review_id != intent.source_review_id or review.evidence_identity != intent.evidence_identity:
+            msg = "promotion write intent review freshness check failed"
+            raise ValueError(msg)
+        self._validate_write_intent_summary_snapshots(intent)
         current_line_summary = self._store.load_summary_record(intent.line_summary_entity_id)
         if current_line_summary.summary_id != intent.expected_line_summary_id:
             msg = "promotion write intent line summary freshness check failed"
@@ -476,6 +486,7 @@ def _build_summary_promotion_write_intent(
     return PromotionWriteIntent(
         line=inp.line,
         submitted_by=inp.submitted_by,
+        evidence_identity=inp.review_record.evidence_identity,
         source_review_id=inp.review_record.review_id,
         source_task_summary_id=inp.latest_task_summary.summary_id,
         source_line_summary_id=inp.latest_line_summary.summary_id,

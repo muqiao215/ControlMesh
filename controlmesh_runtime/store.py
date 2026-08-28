@@ -11,6 +11,8 @@ from controlmesh_runtime.evidence_identity import RuntimeEvidenceIdentity
 from controlmesh_runtime.execution_runtime_events import (
     extract_execution_payload_from_runtime_event,
 )
+from controlmesh_runtime.execution_payloads import ExecutionResultPayload
+from controlmesh_runtime.recovery import RecoveryExecutionStatus
 from controlmesh_runtime.promotion_receipt import PromotionReceipt
 from controlmesh_runtime.records import ReviewRecord
 from controlmesh_runtime.serde import (
@@ -138,9 +140,118 @@ class RuntimeStore:
         return read_jsonl_models(self.paths.events_path(packet_id), RuntimeEvent)
 
     def append_execution_evidence(self, event: RuntimeEvent) -> RuntimeEvent:
-        extract_execution_payload_from_runtime_event(event)
+        payload = extract_execution_payload_from_runtime_event(event)
+        identity = RuntimeEvidenceIdentity(
+            packet_id=event.packet_id,
+            task_id=payload.task_id,
+            line=payload.line,
+            plan_id=payload.plan_id,
+        )
+        existing = self.load_execution_evidence(event.packet_id)
+        for recorded in existing:
+            recorded_payload = extract_execution_payload_from_runtime_event(recorded)
+            recorded_identity = RuntimeEvidenceIdentity(
+                packet_id=recorded.packet_id,
+                task_id=recorded_payload.task_id,
+                line=recorded_payload.line,
+                plan_id=recorded_payload.plan_id,
+            )
+            if recorded_identity != identity:
+                msg = "execution evidence packet identity conflict"
+                raise ValueError(msg)
+        if isinstance(payload, ExecutionResultPayload):
+            self._validate_result_writeback(identity, payload, existing)
+            for recorded in existing:
+                recorded_payload = extract_execution_payload_from_runtime_event(recorded)
+                if not isinstance(recorded_payload, ExecutionResultPayload):
+                    continue
+                if recorded_payload == payload:
+                    return recorded
+                msg = "execution result idempotency conflict"
+                raise ValueError(msg)
         append_jsonl_record(self.paths.execution_evidence_path(event.packet_id), event)
         return event
+
+    def validate_promotable_execution(self, identity: RuntimeEvidenceIdentity) -> ExecutionResultPayload:
+        """Require the current episode's single successful terminal result."""
+        events = self.load_execution_evidence(identity.packet_id)
+        results: list[ExecutionResultPayload] = []
+        for event in events:
+            payload = extract_execution_payload_from_runtime_event(event)
+            observed = RuntimeEvidenceIdentity(
+                packet_id=event.packet_id,
+                task_id=payload.task_id,
+                line=payload.line,
+                plan_id=payload.plan_id,
+            )
+            if observed != identity:
+                msg = "promotion execution identity mismatch"
+                raise ValueError(msg)
+            if isinstance(payload, ExecutionResultPayload):
+                results.append(payload)
+        if len(results) != 1:
+            msg = "promotion requires exactly one execution result"
+            raise ValueError(msg)
+        result = results[0]
+        self._validate_result_writeback(identity, result, events, allow_recorded_result=True)
+        if result.result_status is not RecoveryExecutionStatus.COMPLETED:
+            msg = "promotion requires completed execution result"
+            raise ValueError(msg)
+        return result
+
+    def _validate_result_writeback(
+        self,
+        identity: RuntimeEvidenceIdentity,
+        payload: ExecutionResultPayload,
+        existing: list[RuntimeEvent],
+        *,
+        allow_recorded_result: bool = False,
+    ) -> None:
+        plan_payloads = [
+            extract_execution_payload_from_runtime_event(item)
+            for item in existing
+            if extract_execution_payload_from_runtime_event(item).execution_event_type
+            in {"execution.plan_created", "execution.plan_approved"}
+        ]
+        if not plan_payloads:
+            msg = "execution result requires a persisted execution plan"
+            raise ValueError(msg)
+        owner = plan_payloads[-1].worker_id
+        if owner is None or payload.worker_id != owner:
+            msg = "execution result must be reported by the runtime owner"
+            raise ValueError(msg)
+        latest = self._latest_execution_identity(identity.task_id)
+        if latest is not None and latest != identity:
+            msg = "execution result belongs to a stale execution episode"
+            raise ValueError(msg)
+        if not allow_recorded_result and any(
+            isinstance(extract_execution_payload_from_runtime_event(item), ExecutionResultPayload)
+            for item in existing
+        ):
+            return
+
+    def _latest_execution_identity(self, task_id: str) -> RuntimeEvidenceIdentity | None:
+        candidates: list[tuple[str, RuntimeEvidenceIdentity]] = []
+        evidence_dir = self.paths.execution_evidence_dir
+        if not evidence_dir.exists():
+            return None
+        for path in evidence_dir.glob("*.jsonl"):
+            for event in self.load_execution_evidence(path.stem):
+                payload = extract_execution_payload_from_runtime_event(event)
+                if payload.task_id != task_id or payload.execution_event_type != "execution.plan_created":
+                    continue
+                candidates.append(
+                    (
+                        event.created_at,
+                        RuntimeEvidenceIdentity(
+                            packet_id=event.packet_id,
+                            task_id=payload.task_id,
+                            line=payload.line,
+                            plan_id=payload.plan_id,
+                        ),
+                    )
+                )
+        return max(candidates, key=lambda item: (item[0], item[1].packet_id))[1] if candidates else None
 
     def load_execution_evidence(self, packet_id: str) -> list[RuntimeEvent]:
         events = read_jsonl_models(self.paths.execution_evidence_path(packet_id), RuntimeEvent)

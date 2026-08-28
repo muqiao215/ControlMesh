@@ -1,0 +1,79 @@
+{
+  "cases": [
+    {
+      "accepted": true,
+      "event_count": 2,
+      "id": "writeback.first_success",
+      "result_event_id": "<stable>"
+    },
+    {
+      "accepted": true,
+      "event_count": 2,
+      "id": "writeback.identical_retry",
+      "same_event": true
+    },
+    {
+      "accepted": false,
+      "error": "ValueError: execution result idempotency conflict",
+      "event_count": 2,
+      "id": "writeback.conflicting_retry"
+    },
+    {
+      "accepted": false,
+      "error": "ValueError: execution result must be reported by the runtime owner",
+      "id": "writeback.wrong_owner"
+    },
+    {
+      "accepted": false,
+      "error": "ValueError: execution result belongs to a stale execution episode",
+      "id": "writeback.stale_episode"
+    },
+    {
+      "accepted": false,
+      "error": "ValueError: promotion execution identity mismatch",
+      "id": "promotion.crosswired_identity"
+    },
+    {
+      "accepted": false,
+      "id": "promotion.non_success_statuses",
+      "rejected": {
+        "cancelled": "ValueError: promotion requires completed execution result",
+        "delivery_failed": "ValueError: promotion requires completed execution result",
+        "failed": "ValueError: promotion requires completed execution result"
+      }
+    },
+    {
+      "accepted": false,
+      "canonical_unchanged": true,
+      "error": "ValueError: execution result belongs to a stale execution episode",
+      "id": "promotion.prewrite_freshness"
+    },
+    {
+      "accepted": true,
+      "control_event_count": 1,
+      "id": "promotion.controller_accept",
+      "proposed_files_remain_task_local": true,
+      "receipt_count": 1,
+      "review_source": "promotion_controller",
+      "task_evidence_unchanged": true,
+      "verification_commands": [
+        "uv run pytest -q"
+      ]
+    },
+    {
+      "accepted": true,
+      "control_event_count": 1,
+      "id": "delivery.safe_retry",
+      "reason": "already_promoted",
+      "receipt_count": 1
+    }
+  ],
+  "identity_fields": [
+    "packet_id",
+    "task_id",
+    "line",
+    "plan_id"
+  ],
+  "production_owner": "python",
+  "schema_version": "controlmesh.result_writeback_promotion_golden.v1"
+}

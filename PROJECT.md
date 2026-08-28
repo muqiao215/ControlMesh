@@ -110,14 +110,22 @@ Provider authentication tests isolate operator XDG paths while retaining explici
 override coverage. The Codex streaming timeout test uses a complete stderr stream double,
 so the full Python suite passes with runtime warnings promoted to errors.
 
+Result writeback now fail-closes on cross-identity packets, non-owner reporters, stale
+recovery episodes, and conflicting retries. Identical result retries reuse the original
+event. Controller promotion requires the current episode's single `completed` result and
+rechecks execution, review, and summary freshness immediately before canonical writes. A
+production-Python-generated ten-case golden matrix is a required drift gate.
+
 ## Current Priority
 
-1. Review the deferred create/tell/resume/cancel API admission choices—operation scopes,
+1. Collect operational evidence for the hardened writeback/promotion gate and keep
+   `test_execution`, `code_review`, and `patch_candidate` task-local/controller-promoted.
+2. Review the deferred create/tell/resume/cancel API admission choices—operation scopes,
    idempotency retention, task revisions, audit access, canary policy, and rollback triggers—
    before proposing any public mutation surface.
-2. Collect read-only Alpha feedback without expanding the localhost/browser security
+3. Collect read-only Alpha feedback without expanding the localhost/browser security
    boundary.
-3. Decide browser credential storage and operator scope before any non-local Web use.
+4. Decide browser credential storage and operator scope before any non-local Web use.
 
 ## Knowledge Map
 
@@ -126,4 +134,4 @@ so the full Python suite passes with runtime warnings promoted to errors.
 - Full documentation catalog → `docs/README.md`
 - TypeScript migration contracts and status → `docs/typescript-migration/`
 - Historical and active work → `plans/`
-- Current active work → `plans/task-lifecycle-consumer-parity/`
+- Current active work → `plans/result-writeback-promotion-golden-gate/`

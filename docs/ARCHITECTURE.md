@@ -82,6 +82,13 @@ Key locations:
 
 Python owns all mutation and recovery decisions.
 
+Execution evidence is keyed by the shared `packet_id + task_id + line + plan_id` identity.
+The runtime store admits a terminal result only from the persisted plan owner and only for
+the latest task episode. An identical retry returns the original event; a conflicting retry
+or packet identity drift is rejected before JSONL append. Summary promotion loads that
+single current terminal result, admits only `completed`, and rechecks execution, persisted
+review, and summary snapshots in the writer's immediate pre-write hook.
+
 ### Provider Execution
 
 Responsibilities:
@@ -220,6 +227,10 @@ Python history/task/provider read models
   private `@controlmesh/runtime-facade` candidate consumes matrix inputs in memory; the
   dual-run gate compares every normalized observation, records JSON-path differences, and
   keeps Python as both production and rollback owner. It is not transport-facing.
+- Result writeback and promotion safety is frozen by
+  `tests/golden/runners/result_writeback_promotion.py`. Its ten normalized cases exercise
+  production Python store/controller paths, and its committed Schema-validated fixture is
+  checked for exact inventory and field drift by `pnpm test:golden`.
 - Artifact download security depends on platform support for descriptor-relative no-follow
   opening and fails closed when unavailable.
 - The dashboard stores a locally entered token in browser storage and must remain
