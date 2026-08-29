@@ -202,6 +202,37 @@ class MatrixConfig(BaseModel):
     store_path: str = "matrix_store"  # relative to controlmesh_home
 
 
+class FeishuBotLoopGuardConfig(BaseModel):
+    """Loop protection for explicit bot-to-bot Feishu handoffs."""
+
+    enabled: bool = True
+    window_seconds: float = Field(
+        default=60.0,
+        validation_alias=AliasChoices("window_seconds", "windowSeconds"),
+    )
+    max_bot_mentions: int = Field(
+        default=5,
+        validation_alias=AliasChoices("max_bot_mentions", "maxBotMentions"),
+    )
+    scope: Literal["chat", "chat+sender"] = "chat"
+
+    @field_validator("window_seconds")
+    @classmethod
+    def _validate_window_seconds(cls, value: float) -> float:
+        if value <= 0:
+            msg = "Feishu bot loop guard window_seconds must be > 0"
+            raise ValueError(msg)
+        return value
+
+    @field_validator("max_bot_mentions")
+    @classmethod
+    def _validate_max_bot_mentions(cls, value: int) -> int:
+        if value <= 0:
+            msg = "Feishu bot loop guard max_bot_mentions must be > 0"
+            raise ValueError(msg)
+        return value
+
+
 class FeishuGroupConfig(BaseModel):
     """Per-group Feishu policy overrides keyed by group chat_id."""
 
@@ -246,16 +277,66 @@ class FeishuGroupConfig(BaseModel):
         default=1,
         validation_alias=AliasChoices("max_handoff_depth", "maxHandoffDepth"),
     )
+    multi_bot_mode: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("multi_bot_mode", "multiBotMode"),
+    )
+    coordinator_agent: str = Field(
+        default="",
+        validation_alias=AliasChoices("coordinator_agent", "coordinatorAgent"),
+    )
+    local_bot_agent: str = Field(
+        default="",
+        validation_alias=AliasChoices("local_bot_agent", "localBotAgent"),
+    )
+    bot_identities: dict[str, str] = Field(
+        default_factory=dict,
+        validation_alias=AliasChoices("bot_identities", "botIdentities"),
+    )
+    broadcast_command: str = Field(
+        default="/all",
+        validation_alias=AliasChoices("broadcast_command", "broadcastCommand"),
+    )
+    capture_passive_context: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("capture_passive_context", "capturePassiveContext"),
+    )
+    bot_loop_guard: FeishuBotLoopGuardConfig = Field(
+        default_factory=FeishuBotLoopGuardConfig,
+        validation_alias=AliasChoices("bot_loop_guard", "botLoopGuard"),
+    )
 
     @field_validator("agent_roster")
     @classmethod
     def _validate_agent_roster(cls, value: list[str]) -> list[str]:
         return [item.strip() for item in value if item.strip()]
 
-    @field_validator("default_agent")
+    @field_validator("default_agent", "coordinator_agent", "local_bot_agent")
     @classmethod
-    def _validate_default_agent(cls, value: str) -> str:
+    def _validate_agent_name(cls, value: str) -> str:
         return value.strip()
+
+    @field_validator("bot_identities")
+    @classmethod
+    def _validate_bot_identities(cls, value: dict[str, str]) -> dict[str, str]:
+        normalized = {
+            str(agent).strip(): str(open_id).strip()
+            for agent, open_id in value.items()
+            if str(agent).strip() and str(open_id).strip()
+        }
+        if len(set(normalized.values())) != len(normalized):
+            msg = "Feishu group bot_identities values must be unique"
+            raise ValueError(msg)
+        return normalized
+
+    @field_validator("broadcast_command")
+    @classmethod
+    def _validate_broadcast_command(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized.startswith("/") or any(char.isspace() for char in normalized):
+            msg = "Feishu group broadcast_command must be one slash command token"
+            raise ValueError(msg)
+        return normalized
 
     @field_validator("max_handoff_depth")
     @classmethod
@@ -264,6 +345,24 @@ class FeishuGroupConfig(BaseModel):
             msg = "Feishu group max_handoff_depth must be >= 0"
             raise ValueError(msg)
         return value
+
+    @model_validator(mode="after")
+    def _validate_multi_bot_mode(self) -> FeishuGroupConfig:
+        if not self.multi_bot_mode:
+            return self
+        if not self.coordinator_agent:
+            msg = "Feishu multi_bot_mode requires coordinator_agent"
+            raise ValueError(msg)
+        if not self.local_bot_agent:
+            msg = "Feishu multi_bot_mode requires local_bot_agent"
+            raise ValueError(msg)
+        if self.coordinator_agent not in self.bot_identities:
+            msg = "Feishu multi_bot_mode requires coordinator_agent in bot_identities"
+            raise ValueError(msg)
+        if self.local_bot_agent not in self.bot_identities:
+            msg = "Feishu multi_bot_mode requires local_bot_agent in bot_identities"
+            raise ValueError(msg)
+        return self
 
 
 class FeishuConfig(BaseModel):

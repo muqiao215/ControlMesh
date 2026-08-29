@@ -152,7 +152,7 @@ Notes:
 | `group_reply_mode` | `"reply" \| "thread" \| "inline"` | `"reply"` | Group reply binding strategy |
 | `thread_isolation` | `bool` | `false` | When enabled, inbound thread/root IDs get separate ControlMesh session keys |
 | `reply_to_trigger` | `bool` | `true` | Reply to the triggering Feishu message when possible |
-| `groups` | `dict[str, object]` | `{}` | Per-group override table keyed by Feishu `chat_id`; supports `enabled`, `group_policy`, `group_allow_from`, `require_mention`, `thread_isolation`, `reply_mode`, `allow_from_users` |
+| `groups` | `dict[str, object]` | `{}` | Per-group override table keyed by Feishu `chat_id`; includes ordinary group policy, controlled logical-agent handoff, and opt-in real-bot coordination fields |
 | `progress_mode` | `"text" \| "card_preview" \| "card_stream"` | `"text"` | `text` sends plain progress text; `card_preview` repeatedly patches one interactive card; `card_stream` uses Feishu CardKit streaming card APIs and requires `runtime_mode="native"` |
 
 Current implementation status:
@@ -164,6 +164,22 @@ Current implementation status:
 - `card_stream` uses CardKit create/update/close APIs and falls back to ordinary text if CardKit is unavailable
 - optional device-flow auth reuses the configured app for user-token flows
 - see `docs/feishu-setup.md` for the first-time app-bot setup path
+- see `docs/feishu-multi-bot-coordination.md` before enabling multiple real bot identities
+
+Multi-bot fields under `feishu.groups.{chat_id}`:
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `multi_bot_mode` | `bool` | `false` | Enables coordinator/exact-target arbitration for this group only |
+| `coordinator_agent` | `str` | `""` | Agent that answers ordinary human messages; required when the mode is enabled |
+| `local_bot_agent` | `str` | `""` | This server's key in `bot_identities`; required when the mode is enabled |
+| `bot_identities` | `dict[str, str]` | `{}` | Unique `agent_name -> bot open_id` map; must contain the coordinator |
+| `broadcast_command` | `str` | `"/all"` | Exact slash command that activates every configured CM |
+| `capture_passive_context` | `bool` | `true` | Saves eligible messages while the local CM remains silent |
+| `bot_loop_guard.enabled` | `bool` | `true` | Enables explicit bot-handoff loop protection |
+| `bot_loop_guard.window_seconds` | `float` | `60` | Sliding-window duration |
+| `bot_loop_guard.max_bot_mentions` | `int` | `5` | Addressed bot messages allowed in one window |
+| `bot_loop_guard.scope` | `"chat" \| "chat+sender"` | `"chat"` | Shares budget across the chat or separates it by bot sender |
 
 ## `CLIParametersConfig`
 

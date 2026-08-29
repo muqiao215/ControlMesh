@@ -513,6 +513,30 @@ class Orchestrator:
         )
         await asyncio.to_thread(self._transcripts.append_turn, turn)
 
+    async def record_frontstage_observation(
+        self,
+        key: SessionKey,
+        text: str,
+        *,
+        source: str,
+    ) -> None:
+        """Persist inbound context observed by a deliberately silent transport node."""
+        visible_content = text.strip()
+        normalized_source = source.strip()
+        if not visible_content or not normalized_source:
+            return
+        turn = TranscriptTurn(
+            session_key=key.storage_key,
+            surface_session_id=key.storage_key,
+            role="user",
+            visible_content=visible_content,
+            source=normalized_source,
+            transport=key.transport,
+            chat_id=key.chat_id,
+            topic_id=key.topic_id,
+        )
+        await asyncio.to_thread(self._transcripts.append_turn, turn)
+
     async def _record_frontstage_assistant_turn(
         self, key: SessionKey, result: OrchestratorResult
     ) -> None:

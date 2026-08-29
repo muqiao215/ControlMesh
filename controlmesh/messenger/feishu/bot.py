@@ -9,7 +9,7 @@ import mimetypes
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -67,6 +67,11 @@ from controlmesh.messenger.feishu.media_meta import parse_mp4_duration, prepare_
 from controlmesh.messenger.feishu.message_context import (
     build_feishu_agent_input,
     extract_feishu_content_from_event,
+)
+from controlmesh.messenger.feishu.group_coordination import (
+    FeishuBotLoopGuard,
+    decide_multi_bot_group_route,
+    strip_broadcast_command,
 )
 from controlmesh.messenger.feishu.runtime_state import (
     FeishuRuntimeState,
@@ -261,7 +266,12 @@ class FeishuIncomingText:
     quote_summary: str | None = None
     post_title: str | None = None
     chat_type: str | None = None
+    sender_type: str | None = None
+    sender_is_bot: bool | None = None
+    mention_open_ids: tuple[str, ...] = ()
+    mention_all: bool = False
     mentions_bot: bool = False
+    reply_sender_id: str | None = None
     replies_to_bot: bool = False
 
 
@@ -310,6 +320,7 @@ class FeishuBot:
         self._paths = ControlMeshPaths(Path(config.controlmesh_home).expanduser())
         self._dedup = DedupeCache()
         self._inflight_content_keys: set[str] = set()
+        self._bot_loop_guard = FeishuBotLoopGuard()
 
         store_path = Path(config.controlmesh_home).expanduser() / "feishu_store"
         store_path.mkdir(parents=True, exist_ok=True)
@@ -542,7 +553,32 @@ class FeishuBot:
             logger.info("Ignoring Feishu message from unauthorized group chat_id=%s", message.chat_id)
             self._persist_runtime_state()
             return False
-        if not self._message_passes_group_trigger(message):
+
+        multi_bot_group = self._multi_bot_group_for_message(message)
+        if multi_bot_group is not None:
+            decision = decide_multi_bot_group_route(
+                message,
+                group=multi_bot_group,
+                local_agent=multi_bot_group.local_bot_agent,
+                loop_guard=self._bot_loop_guard,
+            )
+            logger.info(
+                "Feishu multi-bot route chat_id=%s message_id=%s local_agent=%s "
+                "action=%s reason=%s",
+                message.chat_id,
+                message.message_id,
+                multi_bot_group.local_bot_agent,
+                decision.action,
+                decision.reason,
+            )
+            if decision.action == "observe":
+                await self._record_passive_group_context(message, multi_bot_group)
+                self._persist_runtime_state()
+                return False
+            if decision.action == "drop":
+                self._persist_runtime_state()
+                return False
+        elif not self._message_passes_group_trigger(message):
             logger.info(
                 "Ignoring Feishu group message without explicit trigger chat_id=%s message_id=%s",
                 message.chat_id,
@@ -576,6 +612,44 @@ class FeishuBot:
             message.message_id,
         )
         return content_key
+
+    async def _record_passive_group_context(
+        self,
+        message: FeishuIncomingText,
+        group: FeishuGroupConfig,
+    ) -> None:
+        if not group.capture_passive_context or self._orchestrator is None:
+            return
+        record = getattr(self._orchestrator, "record_frontstage_observation", None)
+        if record is None:
+            logger.warning(
+                "Cannot persist Feishu passive context: orchestrator API unavailable chat_id=%s",
+                message.chat_id,
+            )
+            return
+        await record(
+            self._frontstage_session_key(message),
+            self._format_passive_group_context(message),
+            source="feishu_passive_group",
+        )
+
+    def _frontstage_session_key(self, message: FeishuIncomingText) -> SessionKey:
+        chat_id = self._id_map.chat_to_int(message.chat_id)
+        topic_id = None
+        if self._thread_isolation_for_message(message) and message.thread_id:
+            topic_id = self._id_map.thread_to_int(message.thread_id)
+        return SessionKey.for_transport("fs", chat_id, topic_id)
+
+    @staticmethod
+    def _format_passive_group_context(message: FeishuIncomingText) -> str:
+        return (
+            "[Feishu observed group message]\n"
+            f"sender_id={message.sender_id}\n"
+            f"message_id={message.message_id}\n"
+            f"thread_id={message.thread_id or ''}\n"
+            f"text={message.text.strip()}\n"
+            "[/Feishu observed group message]"
+        )
 
     async def _handle_pre_stream_shortcuts(
         self,
@@ -1093,6 +1167,8 @@ class FeishuBot:
     def _resolve_group_agent_route(self, message: FeishuIncomingText) -> FeishuAgentRoute | None:
         if not self._is_group_message(message):
             return None
+        if self._multi_bot_group_for_message(message) is not None:
+            return None
         overrides = self._group_overrides_for_message(message)
         if overrides is None:
             return None
@@ -1165,7 +1241,12 @@ class FeishuBot:
             quote_summary=message.quote_summary,
             post_title=message.post_title,
             chat_type=message.chat_type,
+            sender_type=message.sender_type,
+            sender_is_bot=message.sender_is_bot,
+            mention_open_ids=message.mention_open_ids,
+            mention_all=message.mention_all,
             mentions_bot=message.mentions_bot,
+            reply_sender_id=message.reply_sender_id,
             replies_to_bot=message.replies_to_bot,
         )
         user_text = build_feishu_agent_input(routed_message)
@@ -1237,11 +1318,23 @@ class FeishuBot:
         topic_id: int | None,
         progress: _FeishuProgressReporter,
     ) -> str:
-        raw_text = message.text.strip()
+        prompt_message = message
+        multi_bot_group = self._multi_bot_group_for_message(message)
+        if multi_bot_group is not None:
+            routed_text = strip_broadcast_command(
+                message.text,
+                multi_bot_group.broadcast_command,
+            )
+            if routed_text != message.text:
+                prompt_message = replace(message, text=routed_text)
+
+        raw_text = prompt_message.text.strip()
         if raw_text.startswith("/"):
             return raw_text
 
-        prompt_text = build_feishu_agent_input(message)
+        prompt_text = build_feishu_agent_input(prompt_message)
+        if multi_bot_group is not None and multi_bot_group.capture_passive_context:
+            prompt_text = await self._prepend_passive_group_context(message, prompt_text)
         if self._config.feishu.runtime_mode != "native" or self._orchestrator is None:
             return prompt_text
 
@@ -1286,6 +1379,40 @@ class FeishuBot:
             tool_name=selection.tool_name,
             arguments=selection.arguments,
             result=tool_result,
+        )
+
+    async def _prepend_passive_group_context(
+        self,
+        message: FeishuIncomingText,
+        prompt_text: str,
+    ) -> str:
+        if self._orchestrator is None:
+            return prompt_text
+        read = getattr(self._orchestrator, "read_frontstage_history", None)
+        if read is None:
+            return prompt_text
+        turns = await read(self._frontstage_session_key(message), limit=30)
+        last_assistant = max(
+            (index for index, turn in enumerate(turns) if getattr(turn, "role", None) == "assistant"),
+            default=-1,
+        )
+        observations = [
+            str(getattr(turn, "visible_content", "") or "").strip()
+            for turn in turns[last_assistant + 1 :]
+            if getattr(turn, "role", None) == "user"
+            and getattr(turn, "source", None) == "feishu_passive_group"
+        ]
+        observations = [item for item in observations if item][-12:]
+        if not observations:
+            return prompt_text
+        block = "\n\n".join(observations)
+        if len(block) > 6000:
+            block = block[-6000:]
+        return (
+            "[Recent Feishu group context observed while this agent was silent]\n"
+            f"{block}\n"
+            "[/Recent Feishu group context observed while this agent was silent]\n\n"
+            f"{prompt_text}"
         )
 
     async def _deliver_stream_result(
@@ -1432,10 +1559,18 @@ class FeishuBot:
         self._persist_runtime_state()
 
     def _is_persisted_outbound_self_echo(self, message: FeishuIncomingText) -> bool:
-        bot_sender_id = self._bot_sender_id()
+        bot_sender_id = self._bot_sender_id_for_chat(message.chat_id)
         if bot_sender_id is None or message.sender_id != bot_sender_id:
             return False
         return self._recent_outbound.consume(f"{message.chat_id}:{message.message_id}")
+
+    def _bot_sender_id_for_chat(self, chat_id: str) -> str | None:
+        group = self._config.feishu.groups.get(chat_id)
+        if group is not None and group.multi_bot_mode:
+            configured = group.bot_identities.get(group.local_bot_agent)
+            if configured:
+                return configured
+        return self._bot_sender_id()
 
     def _bot_sender_id(self) -> str | None:
         app_id = self._config.feishu.app_id
@@ -2113,6 +2248,15 @@ class FeishuBot:
 
     def _sender_allowed_for_message(self, message: FeishuIncomingText) -> bool:
         if self._is_group_message(message):
+            group = self._multi_bot_group_for_message(message)
+            if group is not None:
+                if message.sender_id in group.bot_identities.values():
+                    return True
+                sender_type = (message.sender_type or "").lower()
+                if message.sender_is_bot is True or sender_type in {"app", "bot"}:
+                    # The multi-bot router applies the stricter configured-peer gate and
+                    # emits a message-correlated reason for unknown bot senders.
+                    return True
             allow_from = self._group_user_allowlist_for_message(message)
             return not allow_from or message.sender_id in allow_from
         if self._config.feishu.dm_policy == "disabled":
@@ -2146,6 +2290,17 @@ class FeishuBot:
     @staticmethod
     def _is_group_message(message: FeishuIncomingText) -> bool:
         return (message.chat_type or "").lower() == "group"
+
+    def _multi_bot_group_for_message(
+        self,
+        message: FeishuIncomingText,
+    ) -> FeishuGroupConfig | None:
+        if not self._is_group_message(message):
+            return None
+        group = self._group_overrides_for_message(message)
+        if group is None or not group.multi_bot_mode:
+            return None
+        return group
 
     def _is_group_command_trigger(self, text: str) -> bool:
         command = normalize_command_name(text)
@@ -2201,6 +2356,17 @@ class FeishuBot:
         parent_id = message.get("parent_id")
         create_time_ms = self._extract_create_time_ms(header.get("create_time"))
         chat_type = message.get("chat_type")
+        sender_type_value = sender.get("sender_type")
+        sender_type = (
+            sender_type_value if isinstance(sender_type_value, str) and sender_type_value else None
+        )
+        raw_sender_is_bot = sender.get("sender_is_bot")
+        sender_is_bot = raw_sender_is_bot if isinstance(raw_sender_is_bot, bool) else None
+        if sender_is_bot is None and sender_type is not None:
+            sender_is_bot = sender_type.lower() in {"app", "bot"}
+        mention_open_ids, mention_all = self._extract_message_mentions(message)
+        reply_sender_id = self._message_reply_sender_id(message)
+        bot_sender_id = self._bot_sender_id_for_chat(chat_id)
         return FeishuIncomingText(
             sender_id=sender_id,
             chat_id=chat_id,
@@ -2214,33 +2380,47 @@ class FeishuBot:
             quote_summary=parsed_content.quote_summary if parsed_content else None,
             post_title=parsed_content.post_title if parsed_content else None,
             chat_type=chat_type if isinstance(chat_type, str) and chat_type else None,
-            mentions_bot=self._message_mentions_bot(message),
-            replies_to_bot=self._message_replies_to_bot(message),
+            sender_type=sender_type,
+            sender_is_bot=sender_is_bot,
+            mention_open_ids=mention_open_ids,
+            mention_all=mention_all,
+            mentions_bot=bool(bot_sender_id and bot_sender_id in mention_open_ids),
+            reply_sender_id=reply_sender_id,
+            replies_to_bot=bool(bot_sender_id and reply_sender_id == bot_sender_id),
         )
 
-    def _message_mentions_bot(self, message: dict[str, Any]) -> bool:
+    @staticmethod
+    def _extract_message_mentions(message: dict[str, Any]) -> tuple[tuple[str, ...], bool]:
         mentions = message.get("mentions")
         if not isinstance(mentions, list):
-            return False
-        bot_sender_id = self._bot_sender_id()
+            return (), False
+        open_ids: list[str] = []
+        mention_all = False
         for item in mentions:
             if not isinstance(item, dict):
                 continue
+            key = item.get("key")
+            if isinstance(key, str) and key.lower() in {"@all", "@_all"}:
+                mention_all = True
             mention_id = item.get("id")
             if isinstance(mention_id, dict):
                 open_id = mention_id.get("open_id")
-                if isinstance(open_id, str) and open_id and open_id == bot_sender_id:
-                    return True
-        return False
+            elif isinstance(mention_id, str):
+                open_id = mention_id
+            else:
+                open_id = item.get("open_id")
+            if isinstance(open_id, str) and open_id:
+                if open_id.lower() in {"all", "@all", "@_all"}:
+                    mention_all = True
+                else:
+                    open_ids.append(open_id)
+        return tuple(dict.fromkeys(open_ids)), mention_all
 
-    def _message_replies_to_bot(self, message: dict[str, Any]) -> bool:
+    def _message_reply_sender_id(self, message: dict[str, Any]) -> str | None:
         parent_id = message.get("parent_id")
         root_id = message.get("root_id")
         if not isinstance(parent_id, str) and not isinstance(root_id, str):
-            return False
-        bot_sender_id = self._bot_sender_id()
-        if not bot_sender_id:
-            return False
+            return None
         lineage_candidates = (
             message.get("parent_sender_id"),
             message.get("root_sender_id"),
@@ -2249,9 +2429,9 @@ class FeishuBot:
         )
         for candidate in lineage_candidates:
             sender = self._extract_reply_sender_id(candidate)
-            if sender and sender == bot_sender_id:
-                return True
-        return False
+            if sender:
+                return sender
+        return None
 
     def _group_overrides_for_message(self, message: FeishuIncomingText) -> FeishuGroupConfig | None:
         return self._config.feishu.groups.get(message.chat_id)

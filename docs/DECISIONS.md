@@ -1,5 +1,33 @@
 # Decisions
 
+## 2026-08-29 — Keep real Feishu bot coordination transport-owned and opt-in
+
+Decision:
+
+For allowlisted groups that explicitly enable `multi_bot_mode`, let the Python Feishu
+transport choose one of respond, passive-observe, or drop before orchestration. Ordinary
+human messages activate one configured coordinator, exact bot @ activates only that
+identity, `/all` activates every configured identity, and bot-authored messages require a
+configured sender plus explicit local target and bounded loop budget.
+
+Why:
+
+Changing every bot to accept all unmentioned group messages cannot distinguish an ordinary
+message from one targeting a different bot and creates duplicate replies. Transport events
+contain sender and mention identity, so arbitration belongs at ingress, before commands,
+provider execution, or result writeback. Keeping the mode per-group and disabled by default
+preserves existing deployments and makes the Raspberry Pi coordinator a reversible canary.
+
+Rejected:
+
+Global `require_mention=false`, global `group_reply_all=true`, prompt-only coordination,
+unknown bot-to-bot traffic, and autonomous bot conversation.
+
+Revisit when:
+
+Cross-server diagnostics or distributed loop budgets need durable shared state, or Feishu
+exposes a stronger native group arbitration primitive.
+
 ## 2026-08-08 — Ship the read-only Alpha as one Python install
 
 Decision:

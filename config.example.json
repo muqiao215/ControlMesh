@@ -103,7 +103,19 @@
                 "reply_mode": "thread",
                 "allow_from_users": [
                     "ou_xxxxxxxxxxxx"
-                ]
+                ],
+                "multi_bot_mode": false,
+                "coordinator_agent": "",
+                "local_bot_agent": "",
+                "bot_identities": {},
+                "broadcast_command": "/all",
+                "capture_passive_context": true,
+                "bot_loop_guard": {
+                    "enabled": true,
+                    "window_seconds": 60,
+                    "max_bot_mentions": 5,
+                    "scope": "chat"
+                }
             }
         }
     },

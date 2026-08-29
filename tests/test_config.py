@@ -384,6 +384,79 @@ def test_feishu_group_config_accepts_typed_group_overrides() -> None:
     assert group.max_handoff_depth == 1
 
 
+def test_feishu_group_config_accepts_multi_bot_camel_case_fields() -> None:
+    cfg = AgentConfig(
+        transport="feishu",
+        feishu={
+            "groups": {
+                "oc_group": {
+                    "multiBotMode": True,
+                    "coordinatorAgent": " main ",
+                    "localBotAgent": " main ",
+                    "botIdentities": {
+                        " main ": " ou_bot_main ",
+                        "reviewer": "ou_bot_reviewer",
+                    },
+                    "broadcastCommand": "/all",
+                    "capturePassiveContext": True,
+                    "botLoopGuard": {
+                        "windowSeconds": 30,
+                        "maxBotMentions": 3,
+                        "scope": "chat+sender",
+                    },
+                }
+            }
+        },
+    )
+
+    group = cfg.feishu.groups["oc_group"]
+    assert group.multi_bot_mode is True
+    assert group.coordinator_agent == "main"
+    assert group.local_bot_agent == "main"
+    assert group.bot_identities == {
+        "main": "ou_bot_main",
+        "reviewer": "ou_bot_reviewer",
+    }
+    assert group.broadcast_command == "/all"
+    assert group.capture_passive_context is True
+    assert group.bot_loop_guard.window_seconds == 30
+    assert group.bot_loop_guard.max_bot_mentions == 3
+    assert group.bot_loop_guard.scope == "chat+sender"
+
+
+def test_feishu_multi_bot_config_requires_coordinator_identity() -> None:
+    with pytest.raises(ValidationError, match="coordinator_agent in bot_identities"):
+        AgentConfig(
+            transport="feishu",
+            feishu={
+                "groups": {
+                    "oc_group": {
+                        "multi_bot_mode": True,
+                        "coordinator_agent": "main",
+                        "local_bot_agent": "main",
+                        "bot_identities": {"reviewer": "ou_bot_reviewer"},
+                    }
+                }
+            },
+        )
+
+
+def test_feishu_multi_bot_config_requires_explicit_local_identity() -> None:
+    with pytest.raises(ValidationError, match="requires local_bot_agent"):
+        AgentConfig(
+            transport="feishu",
+            feishu={
+                "groups": {
+                    "oc_group": {
+                        "multi_bot_mode": True,
+                        "coordinator_agent": "main",
+                        "bot_identities": {"main": "ou_bot_main"},
+                    }
+                }
+            },
+        )
+
+
 def test_qqbot_config_accepts_accounts_mapping() -> None:
     cfg = AgentConfig(
         transport="qqbot",

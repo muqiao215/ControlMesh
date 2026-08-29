@@ -205,6 +205,25 @@ async def test_record_frontstage_user_turn_accepts_string_native_chat_refs(
 
 
 @pytest.mark.asyncio
+async def test_record_frontstage_observation_preserves_distinct_source(
+    orch: Orchestrator,
+) -> None:
+    key = SessionKey.for_transport("fs", 88, 9)
+
+    await orch.record_frontstage_observation(
+        key,
+        "observed without replying",
+        source="feishu_passive_group",
+    )
+
+    turns = orch._transcripts.read_recent(key, limit=10)
+    assert len(turns) == 1
+    assert turns[0].role == "user"
+    assert turns[0].visible_content == "observed without replying"
+    assert turns[0].source == "feishu_passive_group"
+
+
+@pytest.mark.asyncio
 async def test_record_frontstage_delivery_records_injected_task_result(
     orch: Orchestrator,
     tmp_path: object,

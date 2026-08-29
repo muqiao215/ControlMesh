@@ -116,16 +116,24 @@ event. Controller promotion requires the current episode's single `completed` re
 rechecks execution, review, and summary freshness immediately before canonical writes. A
 production-Python-generated ten-case golden matrix is a required drift gate.
 
+Feishu groups can opt into multi-bot coordination without changing legacy mention policy:
+ordinary messages select one configured coordinator, exact bot mentions select only that
+bot, `/all` broadcasts explicitly, silent peers retain bounded passive context, and
+bot-authored handoffs require a configured sender, explicit local target, and loop budget.
+
 ## Current Priority
 
 1. Collect operational evidence for the hardened writeback/promotion gate and keep
    `test_execution`, `code_review`, and `patch_candidate` task-local/controller-promoted.
-2. Review the deferred create/tell/resume/cancel API admission choices—operation scopes,
+2. Run the documented two-node Feishu multi-bot canary in
+   `oc_cdf6d69446db7e9e480067de4f309192` after replacing all open-ID placeholders; do not
+   distribute broadly until coordinator, exact-mention, broadcast, loop, and thread checks pass.
+3. Review the deferred create/tell/resume/cancel API admission choices—operation scopes,
    idempotency retention, task revisions, audit access, canary policy, and rollback triggers—
    before proposing any public mutation surface.
-3. Collect read-only Alpha feedback without expanding the localhost/browser security
+4. Collect read-only Alpha feedback without expanding the localhost/browser security
    boundary.
-4. Decide browser credential storage and operator scope before any non-local Web use.
+5. Decide browser credential storage and operator scope before any non-local Web use.
 
 ## Knowledge Map
 
@@ -134,4 +142,4 @@ production-Python-generated ten-case golden matrix is a required drift gate.
 - Full documentation catalog → `docs/README.md`
 - TypeScript migration contracts and status → `docs/typescript-migration/`
 - Historical and active work → `plans/`
-- Current active work → `plans/result-writeback-promotion-golden-gate/`
+- Current active work → `plans/feishu-multi-bot-coordination/`

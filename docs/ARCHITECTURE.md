@@ -105,6 +105,8 @@ Responsibilities:
 
 - authenticate and receive transport messages;
 - map chats, topics, and users to sessions;
+- arbitrate opt-in Feishu multi-bot groups before orchestration so coordinator, exact @,
+  broadcast, passive observation, and bot-loop rules have one Python-owned decision seam;
 - deliver foreground and background results through `MessageBus` envelopes;
 - keep user-visible background output summarized and transport-aware.
 

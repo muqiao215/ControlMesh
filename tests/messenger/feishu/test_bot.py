@@ -56,6 +56,7 @@ class _FakeInterAgentResponse:
 def _make_bot(
     tmp_path: Path,
     *,
+    agent_name: str = "main",
     provider: str = "claude",
     model: str = "sonnet",
     output_mode: str = "full",
@@ -78,7 +79,7 @@ def _make_bot(
         streaming={"output_mode": output_mode, "tool_display": tool_display},
         feishu=feishu_config,
     )
-    bot = FeishuBot(config)
+    bot = FeishuBot(config, agent_name=agent_name)
     bot.send_text = AsyncMock()  # type: ignore[method-assign]
     bot.broadcast_text = AsyncMock()  # type: ignore[method-assign]
     return bot
@@ -1097,6 +1098,216 @@ class TestFeishuBotRouting:
             reply_to_message_id="om_1",
         )
 
+    async def test_multi_bot_ordinary_message_only_activates_coordinator(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(
+            tmp_path,
+            agent_name="main",
+            group_policy="open",
+            groups={
+                "oc_chat_1": {
+                    "multi_bot_mode": True,
+                    "coordinator_agent": "main",
+                    "local_bot_agent": "main",
+                    "bot_identities": {
+                        "main": "ou_bot_main",
+                        "reviewer": "ou_bot_reviewer",
+                    },
+                }
+            },
+        )
+        bot._orchestrator = SimpleNamespace(
+            handle_message_streaming=AsyncMock(return_value=SimpleNamespace(text="pong"))
+        )
+        bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_human",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="ordinary group message",
+                chat_type="group",
+                sender_type="user",
+                sender_is_bot=False,
+            )
+        )
+
+        bot._orchestrator.handle_message_streaming.assert_awaited_once()
+        bot._send_text_to_chat_ref.assert_awaited_once_with(
+            "oc_chat_1",
+            "pong",
+            reply_to_message_id="om_1",
+        )
+
+    async def test_multi_bot_non_coordinator_records_context_without_reply(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        record = AsyncMock()
+        bot = _make_bot(
+            tmp_path,
+            agent_name="reviewer",
+            group_policy="open",
+            groups={
+                "oc_chat_1": {
+                    "multi_bot_mode": True,
+                    "coordinator_agent": "main",
+                    "local_bot_agent": "reviewer",
+                    "bot_identities": {
+                        "main": "ou_bot_main",
+                        "reviewer": "ou_bot_reviewer",
+                    },
+                }
+            },
+        )
+        bot._orchestrator = SimpleNamespace(
+            record_frontstage_observation=record,
+            handle_message_streaming=AsyncMock(return_value=SimpleNamespace(text="unexpected")),
+        )
+        bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_human",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="save this context",
+                chat_type="group",
+                sender_type="user",
+                sender_is_bot=False,
+            )
+        )
+
+        record.assert_awaited_once()
+        session_key, observed = record.await_args.args
+        assert session_key.transport == "fs"
+        assert "save this context" in observed
+        assert record.await_args.kwargs == {"source": "feishu_passive_group"}
+        bot._orchestrator.handle_message_streaming.assert_not_awaited()
+        bot._send_text_to_chat_ref.assert_not_awaited()
+
+    async def test_multi_bot_exact_target_uses_previously_observed_context(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        observed_turns: list[SimpleNamespace] = []
+
+        async def record_observation(
+            _key: object,
+            text: str,
+            *,
+            source: str,
+        ) -> None:
+            observed_turns.append(SimpleNamespace(role="user", source=source, visible_content=text))
+
+        bot = _make_bot(
+            tmp_path,
+            agent_name="reviewer",
+            group_policy="open",
+            groups={
+                "oc_chat_1": {
+                    "multi_bot_mode": True,
+                    "coordinator_agent": "main",
+                    "local_bot_agent": "reviewer",
+                    "bot_identities": {
+                        "main": "ou_bot_main",
+                        "reviewer": "ou_bot_reviewer",
+                    },
+                    "thread_isolation": True,
+                    "reply_mode": "thread",
+                }
+            },
+        )
+        bot._orchestrator = SimpleNamespace(
+            record_frontstage_observation=AsyncMock(side_effect=record_observation),
+            read_frontstage_history=AsyncMock(side_effect=lambda *_args, **_kwargs: observed_turns),
+            handle_message_streaming=AsyncMock(return_value=SimpleNamespace(text="reviewed")),
+        )
+        bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_human",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="the rollout target is raspberry-pi",
+                chat_type="group",
+                thread_id="omt_1",
+                sender_type="user",
+                sender_is_bot=False,
+            )
+        )
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_human",
+                chat_id="oc_chat_1",
+                message_id="om_2",
+                text="review the rollout",
+                chat_type="group",
+                thread_id="omt_1",
+                root_id="om_root",
+                sender_type="user",
+                sender_is_bot=False,
+                mention_open_ids=("ou_bot_reviewer",),
+                mentions_bot=True,
+            )
+        )
+
+        call = bot._orchestrator.handle_message_streaming.await_args
+        prompt = call.args[1]
+        assert "Recent Feishu group context" in prompt
+        assert "the rollout target is raspberry-pi" in prompt
+        assert prompt.endswith("review the rollout")
+        bot._send_text_to_chat_ref.assert_awaited_once_with(
+            "oc_chat_1",
+            "reviewed",
+            reply_to_message_id="om_root",
+        )
+
+    async def test_multi_bot_all_command_activates_non_coordinator_and_strips_prefix(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(
+            tmp_path,
+            agent_name="reviewer",
+            group_policy="open",
+            groups={
+                "oc_chat_1": {
+                    "multi_bot_mode": True,
+                    "coordinator_agent": "main",
+                    "local_bot_agent": "reviewer",
+                    "bot_identities": {
+                        "main": "ou_bot_main",
+                        "reviewer": "ou_bot_reviewer",
+                    },
+                }
+            },
+        )
+        bot._orchestrator = SimpleNamespace(
+            handle_message_streaming=AsyncMock(return_value=SimpleNamespace(text="answer"))
+        )
+        bot._send_text_to_chat_ref = AsyncMock()  # type: ignore[method-assign]
+
+        await bot.handle_incoming_text(
+            FeishuIncomingText(
+                sender_id="ou_human",
+                chat_id="oc_chat_1",
+                message_id="om_1",
+                text="/all compare independently",
+                chat_type="group",
+                sender_type="user",
+                sender_is_bot=False,
+            )
+        )
+
+        call = bot._orchestrator.handle_message_streaming.await_args
+        assert call.args[1] == "compare independently"
+        bot._send_text_to_chat_ref.assert_awaited_once()
+
     async def test_handle_incoming_event_does_not_treat_at_all_as_bot_mention(
         self,
         tmp_path: Path,
@@ -1137,9 +1348,69 @@ class TestFeishuBotRouting:
                 text="ping",
                 create_time_ms=create_time_ms,
                 chat_type="group",
+                mention_all=True,
                 mentions_bot=False,
             )
         )
+
+    async def test_handle_incoming_event_preserves_sender_and_exact_mention_metadata(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        bot = _make_bot(
+            tmp_path,
+            agent_name="reviewer",
+            app_id="cli_legacy_id",
+            group_policy="open",
+            groups={
+                "oc_chat_1": {
+                    "multi_bot_mode": True,
+                    "coordinator_agent": "main",
+                    "local_bot_agent": "reviewer",
+                    "bot_identities": {
+                        "main": "ou_bot_main",
+                        "reviewer": "ou_bot_reviewer",
+                    },
+                }
+            },
+        )
+        bot.handle_incoming_text = AsyncMock()  # type: ignore[method-assign]
+        create_time_ms = int(time.time() * 1000)
+        payload = {
+            "schema": "2.0",
+            "header": {
+                "event_type": "im.message.receive_v1",
+                "create_time": str(create_time_ms),
+            },
+            "event": {
+                "sender": {
+                    "sender_id": {"open_id": "ou_bot_main"},
+                    "sender_type": "app",
+                },
+                "message": {
+                    "message_id": "om_1",
+                    "chat_id": "oc_chat_1",
+                    "chat_type": "group",
+                    "message_type": "text",
+                    "content": '{"text":"please review"}',
+                    "mentions": [
+                        {
+                            "key": "@_user_1",
+                            "id": {"open_id": "ou_bot_reviewer"},
+                        }
+                    ],
+                },
+            },
+        }
+
+        await bot.handle_incoming_event(payload)
+
+        incoming = bot.handle_incoming_text.await_args.args[0]
+        assert incoming.sender_type == "app"
+        assert incoming.sender_is_bot is True
+        assert incoming.mention_open_ids == ("ou_bot_reviewer",)
+        assert incoming.mentions_bot is True
+        assert incoming.mention_all is False
 
     async def test_handle_incoming_text_thread_isolation_routes_distinct_topic_ids(
         self,
@@ -1553,6 +1824,7 @@ class TestFeishuBotRouting:
                 parent_id="om_parent",
                 chat_type="group",
                 mentions_bot=False,
+                reply_sender_id="cli_bot_open_id",
                 replies_to_bot=True,
             )
         )

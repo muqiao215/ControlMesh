@@ -103,6 +103,11 @@ Minimal Feishu-only config shape after successful registration:
 }
 ```
 
+For multiple real CM bot identities in one group, do not disable mention gating globally
+or set `group_reply_all=true` on every instance. Use the opt-in coordinator/exact-target
+policy and canary checklist in
+[`docs/feishu-multi-bot-coordination.md`](feishu-multi-bot-coordination.md).
+
 If you authenticated Codex instead, switch the runtime default to:
 
 ```json
