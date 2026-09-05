@@ -80,6 +80,7 @@ Changelog = "https://github.com/muqiao215/ControlMesh/releases"
 
 [project.scripts]
 controlmesh = "controlmesh.__main__:main"
+cm = "controlmesh.__main__:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["controlmesh", "controlmesh_runtime"]

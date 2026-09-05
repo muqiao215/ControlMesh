@@ -864,8 +864,9 @@ def _render_feishu_app_state(config: AgentConfig) -> None:
 def _render_feishu_setup_guidance(config: AgentConfig) -> None:
     _render_feishu_app_state(config)
     _console.print("Feishu has two explicit runtime tracks:")
-    _console.print("- native: official scan-create/app registration + CardKit/SDK-oriented runtime path.")
-    _console.print("- bridge: reuse an existing app_id/app_secret and treat Feishu mainly as the chat bridge.")
+    _console.print("- native: create a new app OR bind an existing app; SDK/CardKit-oriented runtime path.")
+    _console.print("- bridge: compatibility chat runtime; app creation is independent of runtime mode.")
+    _console.print("Existing bot: run `controlmesh feishu bind` (App ID + hidden App Secret).")
     _console.print("ControlMesh can verify and use an app bot, and it can now delegate official Feishu/Lark")
     _console.print("scan-to-create registration through feishu-auth-kit. It still does not bypass official")
     _console.print("registration, approval, publishing, or tenant policy.")

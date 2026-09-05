@@ -30,7 +30,9 @@ controlmesh
 ```
 
 `controlmesh` opens the enhanced terminal. Use `/cm` for provider-native mode and `/back`
-to return. Start the legacy messaging runtime with:
+to return. Source installs also provide `cm` as a shell-command alias for `controlmesh`
+(including `cm --help` and `cm --version`); older releases may only provide `controlmesh`.
+Start the legacy messaging runtime with:
 
 ```bash
 controlmesh bot

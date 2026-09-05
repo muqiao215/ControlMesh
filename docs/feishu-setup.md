@@ -2,10 +2,39 @@
 
 ControlMesh currently supports two distinct Feishu runtime tracks:
 
-- `native`: the Feishu-first path. Use the official scan-to-create flow, keep
+- `native`: the Feishu-first path. Bind an existing app or use scan-to-create, keep
   SDK/CardKit capabilities available, and prefer true streaming cards.
-- `bridge`: the compatibility path. Reuse an existing `app_id/app_secret` and
+- `bridge`: the compatibility path. Use app credentials and
   treat Feishu mainly as the chat interface.
+
+## Bind an existing robot
+
+For an existing **self-built application with bot capability**, run:
+
+```bash
+cm feishu bind
+# Equivalent: controlmesh feishu native bind
+# From source: uv run cm feishu bind
+```
+
+Enter the App ID and App Secret from the developer console; secret input is hidden.
+The command validates credentials and reads bot identity before saving native configuration.
+It does not create another app or require bridge mode. Existing group policies, allowlists,
+progress mode, and other transports are preserved. Card streaming must be enabled separately
+after its permissions are ready. Binding another app requires `--replace`.
+
+For automation, use `--app-id cli_... --secret-env YOUR_SECRET_VARIABLE`; the variable must
+already be set securely. The secret itself is never a command-line argument.
+This supports domestic Feishu self-built apps, not webhook-only custom bots, marketplace
+apps, or a user OAuth login. A pending scan-create flow must be resolved before binding.
+
+Binding verifies credentials, not full runtime readiness. Check app publication, event
+subscriptions, visibility and permissions, then run `controlmesh feishu native doctor`.
+Start with `controlmesh bot`, or arrange a restart of your existing service. Binding itself
+does not restart services or change event subscription settings. If another program already
+receives this bot's messages, establish which runtime should own the connection first.
+
+Verification uses the official [bot information API](https://open.feishu.cn/document/client-docs/bot-v3/obtain-bot-info).
 
 Product-friendly bootstrap alias:
 

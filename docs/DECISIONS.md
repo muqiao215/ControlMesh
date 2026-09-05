@@ -1,5 +1,20 @@
 # Decisions
 
+## 2026-09-06 — Require terminal interaction acceptance for product readiness
+
+Decision: Treat the current terminal as a basic shell and prioritize Terminal Product v1.
+User-facing readiness requires discoverable commands, editable input, visible execution,
+interruption/recovery, and real-terminal visual and interaction acceptance.
+
+Why: The user explicitly rejected the current terminal experience. Runtime test counts,
+read-only Alpha packaging, and TypeScript parity cannot establish terminal usability.
+
+Rejected: Calling the terminal complete based only on backend gates or cosmetic changes.
+Python retains runtime ownership; no public mutation API is admitted by this UX work.
+
+Revisit when: The acceptance scenarios in `plans/terminal-product-v1/task_plan.md` pass
+on the documented terminal environments. UI framework selection remains a prototype task.
+
 ## 2026-09-05 — Require a trusted source context before unattended provider execution
 
 Decision:

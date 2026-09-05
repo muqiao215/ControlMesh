@@ -14,6 +14,7 @@ _FEISHU_USAGE = """Usage:
   controlmesh feishu native <command>
 
 Commands:
+  bind      Bind an existing app bot to the native runtime.
   native    Product-friendly Feishu native aliases.
 """
 _FEISHU_NATIVE_USAGE = """Usage:
@@ -25,6 +26,7 @@ _FEISHU_NATIVE_USAGE = """Usage:
   controlmesh feishu native complete
 
 Commands:
+  bind            Bind an existing app bot (hidden App Secret input).
   bootstrap       Start the Feishu native bootstrap flow.
   setup           Begin scan-create registration and arm auto-complete.
   doctor          Run Feishu auth/runtime doctor checks.
@@ -70,6 +72,11 @@ def cmd_feishu(args: Sequence[str]) -> None:
     if not action_args or action_args[0] in _HELP_FLAGS:
         _console.print(_FEISHU_USAGE)
         return
+    if action_args[0] == "bind":
+        from controlmesh.cli_commands.feishu_bind import cmd_bind
+
+        cmd_bind(action_args[1:])
+        return
     if len(action_args) >= 2 and action_args[0] == "native":
         _cmd_feishu_native(action_args[1:])
         return
@@ -87,6 +94,11 @@ def _parse_feishu_command(args: Sequence[str]) -> list[str]:
 
 
 def _cmd_feishu_native(args: Sequence[str]) -> None:
+    if args and args[0] == "bind":
+        from controlmesh.cli_commands.feishu_bind import cmd_bind
+
+        cmd_bind(args[1:])
+        return
     if not args:
         cmd_auth(_NATIVE_AUTH_COMMANDS["bootstrap"])
         return

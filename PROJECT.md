@@ -16,12 +16,17 @@ remote platform.
 
 The important user outcomes are:
 
+- `cm` must offer a polished terminal workbench comparable in interaction quality to
+  Codex: discoverable commands, editable input, visible execution, interruption and
+  session recovery; a line-oriented chat shell is not an accepted finished product;
 - official Claude, Codex, Gemini, OpenCode, and configured provider CLIs remain the actual
   execution engines;
 - tasks have stable identities, persistent state, artifacts, interruption, resume, and
   result-delivery behavior;
 - Feishu is the native/runtime-first transport, with Telegram and WeChat as important
   supported paths;
+- existing Feishu application bots can be bound to native mode directly; onboarding must
+  distinguish creating/binding an app from choosing native/bridge runtime behavior;
 - multi-agent work is explicit, bounded, inspectable, and coordinated through shared
   runtime primitives;
 - project and task knowledge survives a new terminal, a new agent, or a long gap without
@@ -69,6 +74,10 @@ without loading the whole repository or asking the user to repeat established co
   build output must remain untracked.
 
 ## Current State
+
+Terminal UX remains a basic line-oriented shell. Runtime and read-only Alpha gates do
+not establish terminal product readiness. The user has prioritized an interactive
+terminal redesign; its implementation and real-terminal acceptance are still pending.
 
 The Python runtime is mature and remains the production core. It provides the enhanced
 terminal, legacy bot runtime, provider adapters, persistent TaskHub, message transports,
@@ -134,6 +143,10 @@ to the owner loop, and repeated start/stop cycles leak no threads, ping tasks, o
 
 ## Current Priority
 
+The immediate user-facing priority is Terminal Product v1
+(`plans/terminal-product-v1/`): deliver a usable terminal workbench with explicit UX
+acceptance. The following runtime and operational work remains queued:
+
 1. Collect operational evidence for the hardened writeback/promotion and source-aware
    sandbox gates; keep `test_execution`, `code_review`, and `patch_candidate` task-local/
    controller-promoted.
@@ -156,4 +169,5 @@ to the owner loop, and repeated start/stop cycles leak no threads, ping tasks, o
 - Full documentation catalog → `docs/README.md`
 - TypeScript migration contracts and status → `docs/typescript-migration/`
 - Historical and active work → `plans/`
+- Current active work → `plans/terminal-product-v1/`
 - Most recent completed work → `plans/feishu-long-connection-generation-safety/`
