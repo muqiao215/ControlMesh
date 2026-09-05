@@ -1,0 +1,200 @@
+{
+  "cases": [
+    {
+      "accepted": true,
+      "decision": {
+        "confirmation_policy": "provider_runtime",
+        "network_policy": "host_inherited",
+        "origin": "user",
+        "outcome": "accepted",
+        "reason_code": "trusted_host_compatibility",
+        "sandbox_available": false,
+        "sandbox_required": false,
+        "schema_version": "controlmesh.execution_policy.v1",
+        "source_ref": "<hashed>",
+        "source_scope": "local_foreground",
+        "tool_policy": "request_bound",
+        "trace_id": "<generated>",
+        "transport": "golden",
+        "writable_roots_policy": "configured_workspace"
+      },
+      "id": "policy.local_foreground_host_compatibility"
+    },
+    {
+      "accepted": true,
+      "decision": {
+        "confirmation_policy": "provider_runtime",
+        "network_policy": "host_inherited",
+        "origin": "user",
+        "outcome": "accepted",
+        "reason_code": "trusted_host_compatibility",
+        "sandbox_available": false,
+        "sandbox_required": false,
+        "schema_version": "controlmesh.execution_policy.v1",
+        "source_ref": "<hashed>",
+        "source_scope": "direct_message",
+        "tool_policy": "request_bound",
+        "trace_id": "<generated>",
+        "transport": "golden",
+        "writable_roots_policy": "configured_workspace"
+      },
+      "id": "policy.direct_message_host_compatibility"
+    },
+    {
+      "accepted": false,
+      "decision": {
+        "confirmation_policy": "controller_required",
+        "network_policy": "host_inherited",
+        "origin": "user",
+        "outcome": "denied",
+        "reason_code": "sandbox_required_unavailable",
+        "sandbox_available": false,
+        "sandbox_required": true,
+        "schema_version": "controlmesh.execution_policy.v1",
+        "source_ref": "<hashed>",
+        "source_scope": "group_message",
+        "tool_policy": "request_bound",
+        "trace_id": "<generated>",
+        "transport": "golden",
+        "writable_roots_policy": "configured_workspace"
+      },
+      "id": "policy.group_message_fail_closed"
+    },
+    {
+      "accepted": false,
+      "decision": {
+        "confirmation_policy": "controller_required",
+        "network_policy": "host_inherited",
+        "origin": "interagent",
+        "outcome": "denied",
+        "reason_code": "sandbox_required_unavailable",
+        "sandbox_available": false,
+        "sandbox_required": true,
+        "schema_version": "controlmesh.execution_policy.v1",
+        "source_ref": "<hashed>",
+        "source_scope": "bot_handoff",
+        "tool_policy": "request_bound",
+        "trace_id": "<generated>",
+        "transport": "golden",
+        "writable_roots_policy": "configured_workspace"
+      },
+      "id": "policy.bot_handoff_fail_closed"
+    },
+    {
+      "accepted": false,
+      "decision": {
+        "confirmation_policy": "controller_required",
+        "network_policy": "host_inherited",
+        "origin": "api",
+        "outcome": "denied",
+        "reason_code": "sandbox_required_unavailable",
+        "sandbox_available": false,
+        "sandbox_required": true,
+        "schema_version": "controlmesh.execution_policy.v1",
+        "source_ref": "<hashed>",
+        "source_scope": "api",
+        "tool_policy": "request_bound",
+        "trace_id": "<generated>",
+        "transport": "golden",
+        "writable_roots_policy": "configured_workspace"
+      },
+      "id": "policy.api_fail_closed"
+    },
+    {
+      "accepted": false,
+      "decision": {
+        "confirmation_policy": "controller_required",
+        "network_policy": "host_inherited",
+        "origin": "cron",
+        "outcome": "denied",
+        "reason_code": "sandbox_required_unavailable",
+        "sandbox_available": false,
+        "sandbox_required": true,
+        "schema_version": "controlmesh.execution_policy.v1",
+        "source_ref": "<hashed>",
+        "source_scope": "cron",
+        "tool_policy": "request_bound",
+        "trace_id": "<generated>",
+        "transport": "golden",
+        "writable_roots_policy": "configured_workspace"
+      },
+      "id": "policy.cron_fail_closed"
+    },
+    {
+      "accepted": false,
+      "decision": {
+        "confirmation_policy": "controller_required",
+        "network_policy": "host_inherited",
+        "origin": "webhook_cron",
+        "outcome": "denied",
+        "reason_code": "sandbox_required_unavailable",
+        "sandbox_available": false,
+        "sandbox_required": true,
+        "schema_version": "controlmesh.execution_policy.v1",
+        "source_ref": "<hashed>",
+        "source_scope": "webhook",
+        "tool_policy": "request_bound",
+        "trace_id": "<generated>",
+        "transport": "golden",
+        "writable_roots_policy": "configured_workspace"
+      },
+      "id": "policy.webhook_fail_closed"
+    },
+    {
+      "accepted": false,
+      "decision": {
+        "confirmation_policy": "controller_required",
+        "network_policy": "host_inherited",
+        "origin": "heartbeat",
+        "outcome": "denied",
+        "reason_code": "sandbox_required_unavailable",
+        "sandbox_available": false,
+        "sandbox_required": true,
+        "schema_version": "controlmesh.execution_policy.v1",
+        "source_ref": "<hashed>",
+        "source_scope": "heartbeat",
+        "tool_policy": "request_bound",
+        "trace_id": "<generated>",
+        "transport": "golden",
+        "writable_roots_policy": "configured_workspace"
+      },
+      "id": "policy.heartbeat_fail_closed"
+    },
+    {
+      "accepted": true,
+      "decision": {
+        "confirmation_policy": "controller_required",
+        "network_policy": "container_default",
+        "origin": "user",
+        "outcome": "accepted",
+        "reason_code": "sandbox_required_ready",
+        "sandbox_available": true,
+        "sandbox_required": true,
+        "schema_version": "controlmesh.execution_policy.v1",
+        "source_ref": "<hashed>",
+        "source_scope": "group_message",
+        "tool_policy": "request_bound",
+        "trace_id": "<generated>",
+        "transport": "golden",
+        "writable_roots_policy": "configured_container_mounts"
+      },
+      "id": "policy.group_message_sandbox_ready"
+    },
+    {
+      "accepted": false,
+      "build_cmd_called": false,
+      "id": "boundary.denial_before_provider_command",
+      "provider_process_started": false,
+      "reason_code": "sandbox_required_unavailable"
+    }
+  ],
+  "identity_fields": [
+    "trace_id",
+    "origin",
+    "source_scope",
+    "transport",
+    "source_ref"
+  ],
+  "production_owner": "python",
+  "schema_version": "controlmesh.execution_provenance_sandbox_golden.v1"
+}

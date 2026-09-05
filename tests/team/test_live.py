@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from controlmesh.bus.envelope import LockMode, Origin
+from controlmesh.bus.envelope import LockMode, Origin, SourceScope
 from controlmesh.session.named import NamedSession, NamedSessionRegistry
 from controlmesh.team.live import (
     TeamLiveDispatcher,
@@ -113,6 +113,9 @@ def test_build_dispatch_envelope_targets_worker_routable_session(store: TeamStat
     assert envelope.transport == "tg"
     assert envelope.lock_mode == LockMode.REQUIRED
     assert envelope.needs_injection is True
+    assert envelope.execution_context is not None
+    assert envelope.execution_context.source_scope is SourceScope.BOT_HANDOFF
+    assert envelope.execution_context.transport == "team"
     assert envelope.metadata["team_name"] == "alpha-team"
     assert envelope.metadata["request_id"] == "dispatch-1"
     assert envelope.metadata["recipient"] == "worker-1"
@@ -152,6 +155,8 @@ def test_build_dispatch_envelope_falls_back_to_leader_when_worker_is_not_routabl
     assert envelope.transport == "tg"
     assert envelope.metadata["live_route"] == "leader_session"
     assert envelope.metadata["live_target_session"] == "tg:7:12"
+    assert envelope.execution_context is not None
+    assert envelope.execution_context.source_scope is SourceScope.BOT_HANDOFF
     assert "worker-2" in envelope.prompt
     assert "worker-1" not in envelope.prompt
 
@@ -178,6 +183,8 @@ def test_build_mailbox_envelope_targets_leader_session_without_injection(
     assert envelope.transport == "tg"
     assert envelope.needs_injection is False
     assert envelope.lock_mode == LockMode.NONE
+    assert envelope.execution_context is not None
+    assert envelope.execution_context.source_scope is SourceScope.BOT_HANDOFF
     assert envelope.metadata["live_route"] == "leader_session"
     assert envelope.metadata["live_target_session"] == "tg:7:12"
     assert "Need verification" in envelope.result_text

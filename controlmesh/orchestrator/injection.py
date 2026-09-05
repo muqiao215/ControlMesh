@@ -13,6 +13,7 @@ import time
 from typing import TYPE_CHECKING
 
 from controlmesh.cli.types import AgentRequest
+from controlmesh.bus.envelope import ExecutionContext, Origin, SourceScope
 from controlmesh.orchestrator.flows import _update_session
 from controlmesh.session.key import SessionKey
 from controlmesh.session.named import NamedSession
@@ -37,6 +38,7 @@ async def _inject_prompt(
     *,
     topic_id: int | None = None,
     transport: str = "tg",
+    execution_context: ExecutionContext | None = None,
 ) -> str:
     """Execute *prompt* in the current active session and update session state.
 
@@ -53,6 +55,7 @@ async def _inject_prompt(
         process_label=process_label,
         resume_session=resume_id,
         timeout_seconds=orch._config.cli_timeout,
+        execution_context=execution_context or orch.execution_context,
     )
 
     response = await orch._cli_service.execute(request)
@@ -187,6 +190,12 @@ async def handle_interagent_message(
         process_label=f"interagent:{sender}",
         resume_session=ns.session_id or None,
         timeout_seconds=orch._config.cli_timeout,
+        execution_context=ExecutionContext.issue(
+            origin=Origin.INTERAGENT,
+            source_scope=SourceScope.BOT_HANDOFF,
+            transport="interagent",
+            source_id=sender,
+        ),
     )
 
     try:

@@ -33,6 +33,11 @@ from controlmesh.cli.stream_events import (
     ToolUseEvent,
 )
 from controlmesh.cli.types import AgentRequest, AgentResponse, CLIResponse
+from controlmesh.execution_policy import (
+    ExecutionPolicyDecision,
+    ExecutionPolicyDenied,
+    enforce_execution_policy,
+)
 from controlmesh.provider_binding import validate_provider_model_binding
 from controlmesh.runtime.registry import RuntimeRegistry
 from controlmesh.workspace.paths import resolve_paths
@@ -161,6 +166,7 @@ class CLIService:
         self._process_registry = process_registry
         self._introspection_cache: dict[tuple[str, str], ProviderIntrospection] = {}
         self._runtime_registry = runtime_registry
+        self._last_execution_policy_decision: ExecutionPolicyDecision | None = None
         if self._runtime_registry is None:
             try:
                 working_dir = Path(config.working_dir)
@@ -187,6 +193,11 @@ class CLIService:
     def update_docker_container(self, container: str) -> None:
         """Switch Docker container (empty string = host execution)."""
         self._config = replace(self._config, docker_container=container)
+
+    @property
+    def last_execution_policy_decision(self) -> ExecutionPolicyDecision | None:
+        """Return the most recent normalized provider-admission decision."""
+        return self._last_execution_policy_decision
 
     def update_runtime_dependencies(
         self,
@@ -515,6 +526,14 @@ class CLIService:
 
     def _make_cli(self, request: AgentRequest) -> BaseCLI:
         """Create a BaseCLI instance for the given request."""
+        try:
+            self._last_execution_policy_decision = enforce_execution_policy(
+                request.execution_context,
+                sandbox_available=bool(self._config.docker_container),
+            )
+        except ExecutionPolicyDenied as exc:
+            self._last_execution_policy_decision = exc.decision
+            raise
         requested_provider = request.assistant_override or request.provider_override or self._config.provider
         requested_model = request.model_override or self._config.default_model
         provider, model = self.resolve_provider(request)

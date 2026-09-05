@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://controlmesh.dev/schemas/execution-provenance-sandbox-golden-v1.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "production_owner", "identity_fields", "cases"],
+  "properties": {
+    "schema_version": {"const": "controlmesh.execution_provenance_sandbox_golden.v1"},
+    "production_owner": {"const": "python"},
+    "identity_fields": {
+      "const": ["trace_id", "origin", "source_scope", "transport", "source_ref"]
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 10,
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["id", "accepted"],
+        "properties": {"id": {"type": "string"}, "accepted": {"type": "boolean"}}
+      }
+    }
+  }
+}

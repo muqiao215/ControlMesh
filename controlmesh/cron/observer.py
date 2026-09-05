@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING
 
 from cronsim import CronSim, CronSimError
 
+from controlmesh.bus.envelope import ExecutionContext, Origin, SourceScope
+from controlmesh.execution_policy import ExecutionPolicyDenied
 from controlmesh.cli.param_resolver import TaskOverrides
 from controlmesh.config import resolve_user_timezone
 from controlmesh.cron.manager import CronManager
@@ -384,17 +386,35 @@ class CronObserver(BaseTaskObserver):
             cli_parameters=job.cli_parameters if job else [],
         )
 
-        result = await execute_in_task_folder(
-            self,
-            cron_tasks_dir=self._paths.cron_tasks_dir,
-            task_folder=task_folder,
-            instruction=instruction,
-            overrides=overrides,
-            dependency=job.dependency if job else None,
-            task_id=job_id,
-            task_label="Cron job",
-            timeout_seconds=self._config.cli_timeout,
-        )
+        try:
+            result = await execute_in_task_folder(
+                self,
+                cron_tasks_dir=self._paths.cron_tasks_dir,
+                task_folder=task_folder,
+                instruction=instruction,
+                overrides=overrides,
+                dependency=job.dependency if job else None,
+                task_id=job_id,
+                task_label="Cron job",
+                timeout_seconds=self._config.cli_timeout,
+                execution_context=self.execution_context_for_run(
+                    ExecutionContext.issue(
+                        origin=Origin.CRON,
+                        source_scope=SourceScope.CRON,
+                        transport="cron",
+                        source_id=job_id,
+                    )
+                ),
+            )
+        except ExecutionPolicyDenied as exc:
+            status = f"error:{exc.decision.reason_code}"
+            await self._deliver_result(job_id, job_title, exc.user_message, status, routing)
+            if manual:
+                self._manager.update_manual_run_status(job_id, status=status)
+            else:
+                self._manager.update_run_status(job_id, status=status)
+            await self._watcher.update_mtime()
+            return
 
         if result.status == "error:folder_missing":
             logger.error("Cron task folder missing: %s", task_folder)
@@ -539,10 +559,27 @@ class CronObserver(BaseTaskObserver):
             thinking_override=job.reasoning_effort or "",
             route="auto",
             workunit_kind=workunit_kind,
+            execution_context=self.execution_context_for_run(
+                ExecutionContext.issue(
+                    origin=Origin.CRON,
+                    source_scope=SourceScope.CRON,
+                    transport=job.transport,
+                    source_id=job.id,
+                )
+            ),
         )
 
         try:
             task_id = self._task_hub.submit(submit)
+        except ExecutionPolicyDenied as exc:
+            status = f"error:{exc.decision.reason_code}"
+            await self._deliver_result(job.id, job_title, exc.user_message, status, routing)
+            if manual:
+                self._manager.update_manual_run_status(job.id, status=status)
+            else:
+                self._manager.update_run_status(job.id, status=status)
+            await self._watcher.update_mtime()
+            return
         except ValueError as exc:
             status = f"error:{exc}"
             await self._deliver_result(job.id, job_title, "", status, routing)

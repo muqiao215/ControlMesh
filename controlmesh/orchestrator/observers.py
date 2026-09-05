@@ -112,6 +112,7 @@ class ObserverManager:
 
     async def start_all(self, *, docker_container: str = "") -> None:
         """Start all observers and background watchers."""
+        self.update_docker_container(docker_container)
         if self.cron:
             await self.cron.start()
         await self.heartbeat.start()
@@ -165,6 +166,15 @@ class ObserverManager:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
+
+    def update_docker_container(self, container: str) -> None:
+        """Propagate confirmed sandbox state to all one-shot observers."""
+        if self.cron:
+            self.cron.set_docker_container(container)
+        if self.webhook:
+            self.webhook.set_docker_container(container)
+        if self.background:
+            self.background.set_docker_container(container)
 
     # -- Bus wiring (single entry point) --------------------------------------
 

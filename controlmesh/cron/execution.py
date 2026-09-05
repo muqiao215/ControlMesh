@@ -275,7 +275,7 @@ def _force_kill(proc: asyncio.subprocess.Process) -> None:
 async def execute_one_shot(
     one_shot: OneShotCommand,
     *,
-    cwd: Path,
+    cwd: Path | None,
     provider: str,
     timeout_seconds: float,
     timeout_label: str,
@@ -287,7 +287,7 @@ async def execute_one_shot(
         env.update(one_shot.env_overrides)
     proc = await asyncio.create_subprocess_exec(
         *one_shot.cmd,
-        cwd=str(cwd),
+        cwd=str(cwd) if cwd is not None else None,
         stdin=asyncio.subprocess.PIPE if stdin_input is not None else asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,

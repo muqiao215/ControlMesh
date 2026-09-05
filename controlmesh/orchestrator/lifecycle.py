@@ -95,7 +95,10 @@ async def create_orchestrator(
         if container:
             docker_container = container
         else:
-            logger.warning("Docker enabled but setup failed; running on host")
+            logger.warning(
+                "Docker enabled but setup failed; trusted foreground may use host, "
+                "sandbox-required sources will be blocked"
+            )
 
     if docker_container:
         await asyncio.to_thread(_docker_skill_resync, paths)
@@ -241,15 +244,20 @@ async def start_api_server(
 
 
 async def ensure_docker(orch: Orchestrator) -> None:
-    """Health-check Docker before CLI calls; auto-recover or fall back."""
+    """Health-check Docker before CLI calls; required sources fail closed on loss."""
     if not orch._docker:
         return
     container = await orch._docker.ensure_running()
     if container:
         orch._cli_service.update_docker_container(container)
+        orch._observers.update_docker_container(container)
     elif orch._cli_service._config.docker_container:
-        logger.warning("Docker recovery failed, falling back to host execution")
+        logger.warning(
+            "Docker recovery failed; trusted foreground may use host, "
+            "sandbox-required sources will be blocked"
+        )
         orch._cli_service.update_docker_container("")
+        orch._observers.update_docker_container("")
 
 
 async def shutdown(orch: Orchestrator) -> None:

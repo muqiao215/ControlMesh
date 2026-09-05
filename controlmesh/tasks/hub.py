@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from controlmesh.infra.json_store import atomic_json_save, load_json
+from controlmesh.bus.envelope import ExecutionContext, current_execution_context
+from controlmesh.execution_policy import enforce_execution_policy
 from controlmesh.memory.runtime_capture import (
     capture_task_question,
     capture_task_result,
@@ -627,6 +629,9 @@ class TaskHub:
         """Create a task, spawn CLI subprocess. Returns task_id."""
         self._check_enabled()
 
+        if submit.execution_context is None:
+            submit.execution_context = current_execution_context() or ExecutionContext.legacy()
+
         # Resolve chat_id: CLI subprocess doesn't know it, look up from agent name
         if not submit.chat_id:
             resolved = self._agent_chat_ids.get(submit.parent_agent, 0)
@@ -757,6 +762,14 @@ class TaskHub:
             workunit_kind=submit.workunit_kind,
             command=submit.command,
         )
+        # HostJobRunner is intentionally a host-only execution boundary.  A
+        # request originating from a group/API/automation scope must never be
+        # silently downgraded to that runner when Docker is unavailable.
+        if self._should_route_to_host_job(preview_entry):
+            enforce_execution_policy(
+                submit.execution_context or ExecutionContext.legacy(),
+                sandbox_available=False,
+            )
         if not self._should_route_to_host_job(preview_entry):
             requested_slot = submit.slot_override or ""
             if requested_slot:
@@ -983,6 +996,14 @@ class TaskHub:
         if runner is None:
             msg = "HostJobRunner not available for test_execution routing"
             raise ValueError(msg)
+
+        # Keep this guard local to the host boundary as well as the submit
+        # preview.  Resume/recovery or a future caller must not bypass the
+        # source-aware isolation decision.
+        enforce_execution_policy(
+            entry.execution_context or ExecutionContext.legacy(),
+            sandbox_available=False,
+        )
 
         decision = classify_host_execution(entry)
         repo_root = entry.repo_root or str(self._paths.framework_root)
@@ -1347,6 +1368,7 @@ class TaskHub:
                 ),
                 liveness_policy=BACKGROUND_POLICY,
                 resume_session=resume_session,
+                execution_context=entry.execution_context or ExecutionContext.legacy(),
             )
 
             eff_provider = ""
@@ -1485,6 +1507,7 @@ class TaskHub:
                 evaluation=evaluation,
                 artifact_protocol_status=artifact_protocol_status,
                 warnings=warnings,
+                execution_context=entry.execution_context,
             )
             if status in _FINISHED:
                 capture_task_result(
@@ -1527,6 +1550,7 @@ class TaskHub:
                     repo_root=entry.repo_root,
                     tool_use_id=entry.tool_use_id,
                     failure_kind="tool_execution_failed",
+                    execution_context=entry.execution_context,
                 )
                 capture_task_result(
                     self._paths,
@@ -1576,6 +1600,7 @@ class TaskHub:
                     thread_id=entry.thread_id,
                     repo_root=entry.repo_root,
                     tool_use_id=entry.tool_use_id,
+                    execution_context=entry.execution_context,
                 )
                 capture_task_result(
                     self._paths,
@@ -1617,6 +1642,7 @@ class TaskHub:
                     thread_id=entry.thread_id,
                     repo_root=entry.repo_root,
                     tool_use_id=entry.tool_use_id,
+                    execution_context=entry.execution_context,
                 )
                 capture_task_result(
                     self._paths,
@@ -1798,6 +1824,7 @@ class TaskHub:
                 thread_id=entry.thread_id,
                 repo_root=entry.repo_root,
                 tool_use_id=entry.tool_use_id,
+                execution_context=entry.execution_context,
             )
             self._ensure_tool_result_artifact(entry, recovered_result)
             self._finalize_reconciled_result(entry, recovered_result)
@@ -1885,6 +1912,7 @@ class TaskHub:
             thread_id=entry.thread_id,
             repo_root=entry.repo_root,
             tool_use_id=entry.tool_use_id,
+            execution_context=entry.execution_context,
         )
         self._ensure_tool_result_artifact(entry, task_result)
         self._finalize_reconciled_result(entry, task_result)
@@ -1966,6 +1994,7 @@ class TaskHub:
             evaluation=evaluation,
             artifact_protocol_status=artifact_protocol_status,
             warnings=warnings,
+            execution_context=entry.execution_context,
         )
         self._ensure_tool_result_artifact(entry, recovered_result)
         tool_result["consumed"] = True

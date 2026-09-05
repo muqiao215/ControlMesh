@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 
+from controlmesh.bus.envelope import ExecutionContext
+
 
 @dataclass(slots=True)
 class BackgroundSubmit:
@@ -18,6 +20,7 @@ class BackgroundSubmit:
     resume_session_id: str = ""
     provider_override: str = ""
     model_override: str = ""
+    execution_context: ExecutionContext | None = None
 
 
 @dataclass(slots=True)
@@ -35,6 +38,7 @@ class BackgroundTask:
     asyncio_task: asyncio.Task[None] | None = field(default=None, repr=False)
     session_name: str = ""
     resume_session_id: str = ""
+    execution_context: ExecutionContext | None = None
 
 
 @dataclass(slots=True)
@@ -53,3 +57,4 @@ class BackgroundResult:
     model: str
     session_name: str = ""
     session_id: str = ""
+    execution_context: ExecutionContext | None = None

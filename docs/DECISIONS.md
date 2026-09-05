@@ -1,5 +1,32 @@
 # Decisions
 
+## 2026-09-05 — Require a trusted source context before unattended provider execution
+
+Decision:
+
+Carry one ControlMesh-issued execution context from each ingress to both provider-launch
+boundaries. Group messages, bot handoffs, API, cron, webhook, and heartbeat execution
+require a confirmed sandbox; setup or recovery failure is fail-closed. Local foreground
+and direct-message compatibility may remain host-compatible. The context is additive on
+task/background persistence and legacy records receive an explicit compatibility scope.
+
+Why:
+
+The previous global Docker fallback let an unattended or group request become a host
+provider process when isolation was unavailable. A policy check only at routing time could
+also be bypassed by one-shot, resume, recovery, or alternate transport paths.
+
+Rejected:
+
+Inferring trust from prompt text, filenames, provider names, process labels, or a generic
+`task_id`; allowing Docker setup failure to fall back for all sources; and adding a second
+identity model parallel to the existing runtime evidence identity.
+
+Revisit when:
+
+The runtime has an equivalent authenticated isolation capability with durable, auditable
+source policy and recovery semantics.
+
 ## 2026-08-29 — Keep real Feishu bot coordination transport-owned and opt-in
 
 Decision:

@@ -13,7 +13,15 @@ from controlmesh.background import (
     BackgroundSubmit,
     BackgroundTask,
 )
-from controlmesh.bus.envelope import Envelope, Origin
+from controlmesh.bus.envelope import (
+    Envelope,
+    ExecutionContext,
+    Origin,
+    SourceScope,
+    bind_execution_context,
+    current_execution_context,
+    reset_execution_context,
+)
 from controlmesh.cli.process_registry import ProcessRegistry
 from controlmesh.cli.service import CLIService, CLIServiceConfig
 from controlmesh.cli.stream_events import ToolResultEvent, ToolUseEvent
@@ -28,6 +36,7 @@ from controlmesh.errors import (
     WebhookError,
     WorkspaceError,
 )
+from controlmesh.execution_policy import ExecutionPolicyDenied
 from controlmesh.files.tags import (
     FILE_PATH_RE,
     classify_mime,
@@ -152,6 +161,7 @@ class _MessageDispatch:
     on_tool_activity: _TextCallback | None = None
     on_tool_event: _ToolEventCallback | None = None
     on_system_status: _SystemStatusCallback | None = None
+    execution_context: ExecutionContext | None = None
 
     def streaming_callbacks(self) -> StreamingCallbacks:
         """Bundle the streaming callbacks into a StreamingCallbacks instance."""
@@ -382,6 +392,7 @@ class Orchestrator:
         text: str,
         *,
         message_id: int = 0,
+        execution_context: ExecutionContext | None = None,
     ) -> OrchestratorResult:
         """Main entry point: route message to appropriate handler."""
         dispatch = _MessageDispatch(
@@ -389,6 +400,9 @@ class Orchestrator:
             text=text,
             cmd=text.strip().lower(),
             message_id=message_id,
+            execution_context=(
+                execution_context or current_execution_context() or self._context_for_session(key)
+            ),
         )
         return await self._handle_message_impl(dispatch)
 
@@ -398,6 +412,7 @@ class Orchestrator:
         text: str,
         *,
         message_id: int = 0,
+        execution_context: ExecutionContext | None = None,
         on_text_delta: _TextCallback | None = None,
         on_tool_activity: _TextCallback | None = None,
         on_tool_event: _ToolEventCallback | None = None,
@@ -409,6 +424,9 @@ class Orchestrator:
             text=text,
             cmd=text.strip().lower(),
             message_id=message_id,
+            execution_context=(
+                execution_context or current_execution_context() or self._context_for_session(key)
+            ),
             streaming=True,
             on_text_delta=on_text_delta,
             on_tool_activity=on_tool_activity,
@@ -417,7 +435,50 @@ class Orchestrator:
         )
         return await self._handle_message_impl(dispatch)
 
+    @staticmethod
+    def _context_for_session(key: SessionKey) -> ExecutionContext:
+        """Issue a trusted default context for legacy callers of the orchestrator."""
+        transport = str(key.transport or "unknown").lower()
+        if transport in {"terminal", "term"}:
+            return ExecutionContext.issue(
+                origin=Origin.USER,
+                source_scope=SourceScope.LOCAL_FOREGROUND,
+                transport=transport,
+                source_id=key.storage_key,
+            )
+        if transport in {"api", "websocket"}:
+            return ExecutionContext.issue(
+                origin=Origin.API,
+                source_scope=SourceScope.API,
+                transport=transport,
+                source_id=key.storage_key,
+            )
+        if transport in {"tg", "telegram", "fs", "feishu", "mx", "matrix", "wx", "weixin", "qqbot"}:
+            return ExecutionContext.issue(
+                origin=Origin.USER,
+                source_scope=SourceScope.DIRECT_MESSAGE,
+                transport=transport,
+                source_id=key.storage_key,
+            )
+        return ExecutionContext.legacy()
+
+    @property
+    def execution_context(self) -> ExecutionContext:
+        """Return the current trusted context for command/task creation seams."""
+        return current_execution_context() or ExecutionContext.legacy()
+
     async def _handle_message_impl(self, dispatch: _MessageDispatch) -> OrchestratorResult:
+        context = dispatch.execution_context or self._context_for_session(dispatch.key)
+        token = bind_execution_context(context)
+        try:
+            # Call the class implementation directly so lightweight test
+            # doubles that use ``Mock`` for attributes retain the historical
+            # dispatch behavior instead of invoking a dynamic mock method.
+            return await Orchestrator._handle_message_bound(self, dispatch)
+        finally:
+            reset_execution_context(token)
+
+    async def _handle_message_bound(self, dispatch: _MessageDispatch) -> OrchestratorResult:
         self._process_registry.clear_abort(dispatch.key.chat_id)
         logger.info("Message received text=%s", dispatch.cmd[:80])
 
@@ -433,6 +494,14 @@ class Orchestrator:
             result = await self._route_message(dispatch)
         except asyncio.CancelledError:
             raise
+        except ExecutionPolicyDenied as exc:
+            logger.warning(
+                "Execution policy denied trace=%s scope=%s reason=%s",
+                exc.decision.trace_id,
+                exc.decision.source_scope,
+                exc.decision.reason_code,
+            )
+            result = OrchestratorResult(text=exc.user_message)
         except (CLIError, StreamError, SessionError, CronError, WebhookError, WorkspaceError):
             logger.exception("Domain error in handle_message")
             result = OrchestratorResult(text="An internal error occurred. Please try again.")
@@ -1555,12 +1624,19 @@ class Orchestrator:
         *,
         topic_id: int | None = None,
         transport: str = "tg",
+        execution_context: ExecutionContext | None = None,
     ) -> str:
         """Execute *prompt* in the active session (fulfils ``SessionInjector`` protocol)."""
         from controlmesh.orchestrator.injection import _inject_prompt
 
         return await _inject_prompt(
-            self, prompt, chat_id, label, topic_id=topic_id, transport=transport
+            self,
+            prompt,
+            chat_id,
+            label,
+            topic_id=topic_id,
+            transport=transport,
+            execution_context=execution_context,
         )
 
     async def shutdown(self) -> None:

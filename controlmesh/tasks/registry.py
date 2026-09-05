@@ -47,7 +47,7 @@ class TaskRegistry:
         for raw in data.get("tasks", []):
             try:
                 entry = TaskEntry.from_dict(raw)
-            except (KeyError, TypeError):
+            except (KeyError, TypeError, ValueError):
                 logger.warning("Skipping corrupt task entry: %s", raw)
                 continue
             if entry.status in {"running", "recovering"}:
@@ -156,6 +156,7 @@ class TaskRegistry:
             idempotency_key=submit.idempotency_key,
             tasks_dir=str(resolved_dir),
             thread_id=submit.thread_id,
+            execution_context=submit.execution_context,
         )
         self._entries[task_id] = entry
 

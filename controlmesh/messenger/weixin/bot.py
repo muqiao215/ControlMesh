@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 import aiohttp
 
 from controlmesh.bus.bus import MessageBus
+from controlmesh.bus.envelope import ExecutionContext, Origin, SourceScope
 from controlmesh.bus.lock_pool import LockPool
 from controlmesh.config import AgentConfig
 from controlmesh.files.allowed_roots import resolve_allowed_roots
@@ -242,9 +243,19 @@ class WeixinBot:
         )
         lock = self._lock_pool.get((chat_id, None))
         async with lock:
+            context = ExecutionContext.issue(
+                origin=Origin.USER,
+                source_scope=SourceScope.DIRECT_MESSAGE,
+                transport="weixin",
+                source_id=message.message_id,
+            )
+            kwargs: dict[str, object] = {}
+            if isinstance(getattr(self._orchestrator, "execution_context", None), ExecutionContext):
+                kwargs["execution_context"] = context
             result = await self._orchestrator.handle_message_streaming(
                 SessionKey.for_transport("wx", chat_id),
                 message.text,
+                **kwargs,
             )
         if result.text:
             logger.info(

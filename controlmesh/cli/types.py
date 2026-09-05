@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
+
+from controlmesh.bus.envelope import ExecutionContext
 
 if TYPE_CHECKING:
     from controlmesh.cli.liveness import RunLivenessPolicy
@@ -65,6 +67,7 @@ class AgentRequest:
     hard_timeout_seconds: float | None = None
     timeout_controller: TimeoutController | None = None
     liveness_policy: RunLivenessPolicy | None = None
+    execution_context: ExecutionContext = field(default_factory=ExecutionContext.legacy)
 
 
 @dataclass(frozen=True, slots=True)

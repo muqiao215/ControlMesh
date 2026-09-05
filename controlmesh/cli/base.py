@@ -159,7 +159,11 @@ def docker_wrap(
         logger.debug("docker_wrap container=%s", config.docker_container)
         stdin_flag: list[str] = ["-i"] if interactive else []
         working_dir = Path(config.working_dir)
-        controlmesh_home = working_dir.parent if working_dir.name == "workspace" else working_dir
+        controlmesh_home = working_dir
+        for ancestor in (working_dir, *working_dir.parents):
+            if ancestor.name == "workspace":
+                controlmesh_home = ancestor.parent
+                break
 
         # Resolve root controlmesh home for host → container path mapping.
         # Sub-agents live at <root>/agents/<name>/; the Docker mount is the root.

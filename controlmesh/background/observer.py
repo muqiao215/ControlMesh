@@ -8,9 +8,12 @@ import logging
 import secrets
 import time
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from controlmesh.background.models import BackgroundResult, BackgroundSubmit, BackgroundTask
+from controlmesh.bus.envelope import ExecutionContext
+from controlmesh.execution_policy import ExecutionPolicyDenied
 from controlmesh.cli.liveness import BACKGROUND_POLICY, timeout_controller_for_policy
 from controlmesh.i18n import t
 from controlmesh.infra.task_runner import run_oneshot_task
@@ -44,6 +47,11 @@ class BackgroundObserver:
         self._cli_service = cli_service
         self._on_result: BgResultCallback | None = None
         self._tasks: dict[str, BackgroundTask] = {}
+        self._docker_container = ""
+
+    def set_docker_container(self, container: str) -> None:
+        """Update the confirmed sandbox container used by stateless tasks."""
+        self._docker_container = container
 
     def set_result_handler(self, handler: BgResultCallback) -> None:
         self._on_result = handler
@@ -76,6 +84,7 @@ class BackgroundObserver:
             submitted_at=time.monotonic(),
             session_name=sub.session_name,
             resume_session_id=sub.resume_session_id,
+            execution_context=sub.execution_context or ExecutionContext.legacy(),
         )
         atask = asyncio.create_task(self._run(bg_task, exec_config))
         bg_task.asyncio_task = atask
@@ -129,7 +138,11 @@ class BackgroundObserver:
         t0 = time.monotonic()
         try:
             result = await run_oneshot_task(
-                exec_config,
+                replace(
+                    exec_config,
+                    docker_container=self._docker_container,
+                    execution_context=bg_task.execution_context,
+                ),
                 bg_task.prompt,
                 cwd=self._paths.workspace,
                 timeout_seconds=self._timeout_seconds,
@@ -149,6 +162,7 @@ class BackgroundObserver:
                     elapsed_seconds=elapsed,
                     provider=bg_task.provider,
                     model=bg_task.model,
+                    execution_context=bg_task.execution_context,
                 )
             )
         except asyncio.CancelledError:
@@ -166,9 +180,29 @@ class BackgroundObserver:
                         elapsed_seconds=elapsed,
                         provider=bg_task.provider,
                         model=bg_task.model,
+                        execution_context=bg_task.execution_context,
                     )
                 )
             raise
+        except ExecutionPolicyDenied as exc:
+            logger.warning("Background task denied by execution policy id=%s", bg_task.task_id)
+            elapsed = time.monotonic() - t0
+            with contextlib.suppress(Exception):
+                await self._deliver(
+                    BackgroundResult(
+                        task_id=bg_task.task_id,
+                        chat_id=bg_task.chat_id,
+                        message_id=bg_task.message_id,
+                        thread_id=bg_task.thread_id,
+                        prompt_preview=bg_task.prompt[:60],
+                        result_text=exc.user_message,
+                        status=f"error:{exc.decision.reason_code}",
+                        elapsed_seconds=elapsed,
+                        provider=bg_task.provider,
+                        model=bg_task.model,
+                        execution_context=bg_task.execution_context,
+                    )
+                )
         except Exception:
             logger.exception("Background task failed id=%s", bg_task.task_id)
             elapsed = time.monotonic() - t0
@@ -185,6 +219,7 @@ class BackgroundObserver:
                         elapsed_seconds=elapsed,
                         provider=bg_task.provider,
                         model=bg_task.model,
+                        execution_context=bg_task.execution_context,
                     )
                 )
 
@@ -216,6 +251,7 @@ class BackgroundObserver:
                 hard_timeout_seconds=max_runtime + 30.0,
                 timeout_controller=timeout_controller,
                 liveness_policy=BACKGROUND_POLICY,
+                execution_context=bg_task.execution_context or ExecutionContext.legacy(),
             )
             response = await self._cli_service.execute(request)
 
@@ -240,6 +276,7 @@ class BackgroundObserver:
                     model=bg_task.model,
                     session_name=bg_task.session_name,
                     session_id=response.session_id or "",
+                    execution_context=bg_task.execution_context,
                 )
             )
         except asyncio.CancelledError:
@@ -258,9 +295,32 @@ class BackgroundObserver:
                         provider=bg_task.provider,
                         model=bg_task.model,
                         session_name=bg_task.session_name,
+                        execution_context=bg_task.execution_context,
                     )
                 )
             raise
+        except ExecutionPolicyDenied as exc:
+            logger.warning(
+                "Named session task denied by execution policy id=%s", bg_task.task_id
+            )
+            elapsed = time.monotonic() - t0
+            with contextlib.suppress(Exception):
+                await self._deliver(
+                    BackgroundResult(
+                        task_id=bg_task.task_id,
+                        chat_id=bg_task.chat_id,
+                        message_id=bg_task.message_id,
+                        thread_id=bg_task.thread_id,
+                        prompt_preview=bg_task.prompt[:60],
+                        result_text=exc.user_message,
+                        status=f"error:{exc.decision.reason_code}",
+                        elapsed_seconds=elapsed,
+                        provider=bg_task.provider,
+                        model=bg_task.model,
+                        session_name=bg_task.session_name,
+                        execution_context=bg_task.execution_context,
+                    )
+                )
         except Exception:
             logger.exception(
                 "Named session task failed id=%s name=%s", bg_task.task_id, bg_task.session_name
@@ -280,6 +340,7 @@ class BackgroundObserver:
                         provider=bg_task.provider,
                         model=bg_task.model,
                         session_name=bg_task.session_name,
+                        execution_context=bg_task.execution_context,
                     )
                 )
 

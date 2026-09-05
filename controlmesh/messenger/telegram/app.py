@@ -33,6 +33,7 @@ from aiogram.methods import GetUpdates, TelegramMethod
 from aiogram.types import BotCommand, ChatMemberUpdated, FSInputFile, Message, ReplyParameters
 
 from controlmesh.command_registry import CommandTarget, get_command_names, is_command_available_for_agent
+from controlmesh.bus.envelope import ExecutionContext, Origin, SourceScope
 from controlmesh.bus.bus import MessageBus
 from controlmesh.bus.lock_pool import LockPool
 from controlmesh.commands import BOT_COMMANDS as _COMMAND_DEFS
@@ -2002,6 +2003,23 @@ class TelegramBot:
         """Return True when Telegram should emit incremental streaming output."""
         return self._config.streaming.enabled and self._config.streaming.output_mode != "off"
 
+    @staticmethod
+    def _execution_context_for_message(message: Message | None) -> ExecutionContext:
+        """Issue provenance from Telegram's authenticated chat envelope."""
+        chat = getattr(message, "chat", None)
+        chat_type = str(getattr(chat, "type", "")).lower()
+        scope = (
+            SourceScope.GROUP_MESSAGE
+            if chat_type in {"group", "supergroup"}
+            else SourceScope.DIRECT_MESSAGE
+        )
+        return ExecutionContext.issue(
+            origin=Origin.USER,
+            source_scope=scope,
+            transport="telegram",
+            source_id=getattr(message, "message_id", 0),
+        )
+
     async def _handle_streaming(
         self,
         message: Message,
@@ -2032,6 +2050,7 @@ class TelegramBot:
                     generation,
                     freshness_bypass=True,
                 ),
+                execution_context=self._execution_context_for_message(message),
             ),
         )
 
@@ -2064,6 +2083,7 @@ class TelegramBot:
                     generation,
                     freshness_bypass=True,
                 ),
+                execution_context=self._execution_context_for_message(reply_to),
             ),
         )
 
@@ -2126,7 +2146,15 @@ class TelegramBot:
         key = SessionKey(chat_id=chat_id)
         lock = self._lock_pool.get(key.lock_key)
         async with lock:
-            result = await self._orch.handle_message(key, prompt)
+            kwargs: dict[str, object] = {}
+            if isinstance(getattr(self._orch, "execution_context", None), ExecutionContext):
+                kwargs["execution_context"] = ExecutionContext.issue(
+                    origin=Origin.WEBHOOK_WAKE,
+                    source_scope=SourceScope.WEBHOOK,
+                    transport="webhook",
+                    source_id=chat_id,
+                )
+            result = await self._orch.handle_message(key, prompt, **kwargs)
 
         # Deliver result — lock already released, skip bus lock
         from controlmesh.bus.adapters import from_webhook_wake

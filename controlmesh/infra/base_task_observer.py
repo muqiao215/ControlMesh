@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from controlmesh.cli.param_resolver import TaskOverrides, resolve_cli_config
+from controlmesh.bus.envelope import ExecutionContext
 
 if TYPE_CHECKING:
     from controlmesh.cli.codex_cache import CodexModelCache
@@ -35,6 +37,23 @@ class BaseTaskObserver:
         self._paths = paths
         self._config = config
         self._codex_cache = codex_cache
+        self._docker_container = ""
+        self._sandbox_state_known = False
+
+    def set_docker_container(self, container: str) -> None:
+        """Update the confirmed sandbox container used by one-shot executions."""
+        self._docker_container = container
+        self._sandbox_state_known = True
+
+    def execution_context_for_run(self, context: ExecutionContext) -> ExecutionContext:
+        """Return source provenance once startup has confirmed sandbox state.
+
+        Direct observer unit calls made without lifecycle startup retain the
+        historical host-compatible behavior. Production startup always calls
+        ``set_docker_container`` (including with an empty value after failed
+        Docker setup), so unattended runs still fail closed.
+        """
+        return context if self._sandbox_state_known else ExecutionContext.legacy()
 
     def resolve_execution_config(
         self,
@@ -45,6 +64,19 @@ class BaseTaskObserver:
             self._config,
             self._codex_cache,
             task_overrides=task_overrides,
+        )
+
+    def execution_config_for(
+        self,
+        task_overrides: TaskOverrides,
+        *,
+        execution_context: ExecutionContext | None = None,
+    ) -> TaskExecutionConfig:
+        """Resolve one-shot config with current sandbox and provenance state."""
+        return replace(
+            self.resolve_execution_config(task_overrides),
+            docker_container=self._docker_container,
+            execution_context=execution_context,
         )
 
     def log_execution_result(

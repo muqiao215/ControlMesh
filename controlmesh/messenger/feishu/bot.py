@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 import aiohttp
 
 from controlmesh.bus.bus import MessageBus
-from controlmesh.bus.envelope import Envelope
+from controlmesh.bus.envelope import Envelope, ExecutionContext, Origin, SourceScope
 from controlmesh.bus.lock_pool import LockPool
 from controlmesh.cli.stream_events import ToolResultEvent, ToolUseEvent
 from controlmesh.cli.types import AgentRequest
@@ -700,6 +700,7 @@ class FeishuBot:
                 result = await self._orchestrator.handle_message(
                     SessionKey.for_transport("fs", chat_id, topic_id),
                     "/cm",
+                    **self._execution_context_kwargs(message),
                 )
                 native_text = getattr(result, "text", None)
                 if native_text is not None and "/" not in native_text:
@@ -719,6 +720,7 @@ class FeishuBot:
                 await self._orchestrator.handle_message(
                     SessionKey.for_transport("fs", chat_id, topic_id),
                     "/back",
+                    **self._execution_context_kwargs(message),
                 )
             await self._send_card_to_chat_ref(
                 message.chat_id,
@@ -1093,7 +1095,12 @@ class FeishuBot:
                 topic_id=topic_id,
                 progress=progress,
             )
-            if self._should_use_bundled_native_runtime():
+            message_context = self._execution_context_for_message(message)
+            bundled_allowed = message_context.source_scope not in {
+                SourceScope.GROUP_MESSAGE,
+                SourceScope.BOT_HANDOFF,
+            }
+            if self._should_use_bundled_native_runtime() and bundled_allowed:
                 turn = await self._run_bundled_native_runtime_turn(
                     message,
                     prompt_text=prompt_text,
@@ -1127,6 +1134,7 @@ class FeishuBot:
                 on_tool_activity=tool_cb,
                 on_tool_event=tool_event_cb,
                 on_system_status=system_cb,
+                **self._execution_context_kwargs(message),
             )
         except FeishuNativeToolAuthRequiredError as exc:
             await self._handle_native_tool_auth_required(message, exc.contract)
@@ -1355,6 +1363,7 @@ class FeishuBot:
                 topic_id=topic_id,
                 process_label="feishu-native-tool-select",
                 timeout_seconds=20.0,
+                execution_context=self._execution_context_for_message(message),
             )
         )
         selection = parse_native_agent_tool_selection(selector_response.result)
@@ -2290,6 +2299,30 @@ class FeishuBot:
     @staticmethod
     def _is_group_message(message: FeishuIncomingText) -> bool:
         return (message.chat_type or "").lower() == "group"
+
+    @staticmethod
+    def _execution_context_for_message(message: FeishuIncomingText) -> ExecutionContext:
+        """Issue provenance from parsed Feishu sender/chat facts."""
+        if FeishuBot._is_group_message(message):
+            sender_scope = (
+                SourceScope.BOT_HANDOFF
+                if message.sender_is_bot or (message.sender_type or "").lower() in {"app", "bot"}
+                else SourceScope.GROUP_MESSAGE
+            )
+        else:
+            sender_scope = SourceScope.DIRECT_MESSAGE
+        return ExecutionContext.issue(
+            origin=Origin.INTERAGENT if sender_scope is SourceScope.BOT_HANDOFF else Origin.USER,
+            source_scope=sender_scope,
+            transport="feishu",
+            source_id=message.message_id,
+        )
+
+    def _execution_context_kwargs(self, message: FeishuIncomingText) -> dict[str, object]:
+        """Keep lightweight test doubles/backward-compatible adapters callable."""
+        if isinstance(getattr(self._orchestrator, "execution_context", None), ExecutionContext):
+            return {"execution_context": self._execution_context_for_message(message)}
+        return {}
 
     def _multi_bot_group_for_message(
         self,

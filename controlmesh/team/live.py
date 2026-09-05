@@ -7,7 +7,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from controlmesh.bus.envelope import DeliveryMode, Envelope, LockMode, Origin
+from controlmesh.bus.envelope import (
+    DeliveryMode,
+    Envelope,
+    ExecutionContext,
+    LockMode,
+    Origin,
+    SourceScope,
+)
 from controlmesh.team.models import (
     TeamDispatchRequest,
     TeamDispatchResult,
@@ -128,6 +135,12 @@ def build_dispatch_envelope(
         lock_mode=LockMode.REQUIRED,
         needs_injection=True,
         metadata=metadata,
+        execution_context=ExecutionContext.issue(
+            origin=Origin.INTERAGENT,
+            source_scope=SourceScope.BOT_HANDOFF,
+            transport="team",
+            source_id=request.request_id,
+        ),
     )
 
 
@@ -152,6 +165,12 @@ def build_mailbox_envelope(manifest: TeamManifest, message: TeamMailboxMessage) 
             "live_route": route.route,
             "live_target_session": route.storage_key,
         },
+        execution_context=ExecutionContext.issue(
+            origin=Origin.INTERAGENT,
+            source_scope=SourceScope.BOT_HANDOFF,
+            transport="team",
+            source_id=message.message_id,
+        ),
     )
 
 

@@ -99,6 +99,21 @@ Responsibilities:
 
 Key location: `controlmesh/cli/`.
 
+Every provider-launch path carries one Python-issued `ExecutionContext` containing a
+trace id, existing `Origin`, bounded `SourceScope`, transport, and a hashed source
+reference.  The context is propagated through the orchestrator, MessageBus injection,
+TaskHub/background persistence, cron/webhook one-shot execution, and recovery/resume.
+`CLIService._make_cli()` and `infra.task_runner.run_oneshot_task()` are the two final
+admission boundaries; both call the same source-aware policy evaluator before provider
+construction or command building.
+
+Group messages, bot handoffs, API requests, cron, webhook, and heartbeat work require a
+confirmed Docker container.  If setup, recovery, image build, daemon access, or container
+start fails, these sources fail closed and never fall back to a host provider process.
+Explicit local foreground and direct-message compatibility remains host-compatible.  The
+policy decision records normalized sandbox, tool, network, writable-root, and confirmation
+posture without storing prompt text, credentials, absolute paths, or raw message IDs.
+
 ### Messaging and Delivery
 
 Responsibilities:
@@ -205,6 +220,8 @@ Python history/task/provider read models
   mutation routes, and keeps the SDK surface read-only.
 - High-risk routing and release/publish behavior stays foreground unless an explicitly
   trusted and approved worker contract allows it.
+- Source-aware execution policy is evaluated immediately before provider admission;
+  provider/model fallback cannot weaken a required sandbox boundary.
 - `director_worker` and `debate_judge` use typed control decisions, bounded rounds, and
   explicit parent-input boundaries rather than transcript parsing.
 
@@ -233,6 +250,11 @@ Python history/task/provider read models
   `tests/golden/runners/result_writeback_promotion.py`. Its ten normalized cases exercise
   production Python store/controller paths, and its committed Schema-validated fixture is
   checked for exact inventory and field drift by `pnpm test:golden`.
+- Source-aware provider admission is frozen by
+  `tests/golden/runners/execution_provenance_sandbox.py`. Its ten normalized cases cover
+  trusted compatibility, every unattended/untrusted required scope, sandbox readiness,
+  and denial before command construction. The fixture deliberately replaces generated
+  trace/source identifiers with placeholders and contains no paths or sensitive input.
 - Artifact download security depends on platform support for descriptor-relative no-follow
   opening and fails closed when unavailable.
 - The dashboard stores a locally entered token in browser storage and must remain

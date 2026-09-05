@@ -10,7 +10,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from controlmesh.bus.envelope import DeliveryMode, Envelope, LockMode, Origin
+from controlmesh.bus.envelope import (
+    DeliveryMode,
+    Envelope,
+    ExecutionContext,
+    LockMode,
+    Origin,
+    SourceScope,
+)
 from controlmesh.messenger.address import ChatRef, TopicRef
 from controlmesh.provider_binding import provider_model_label
 
@@ -43,6 +50,7 @@ def from_background_result(result: BackgroundResult) -> Envelope:
         session_name=result.session_name,
         session_id=result.session_id,
         metadata={"task_id": result.task_id},
+        execution_context=getattr(result, "execution_context", None),
     )
 
 
@@ -63,6 +71,12 @@ def from_cron_result(
     When *chat_id* is non-zero the envelope is unicast to that chat/topic.
     Otherwise it broadcasts to all users (legacy behaviour).
     """
+    context = ExecutionContext.issue(
+        origin=Origin.CRON,
+        source_scope=SourceScope.CRON,
+        transport=transport,
+        source_id=title,
+    )
     if chat_id:
         return Envelope(
             origin=Origin.CRON,
@@ -74,6 +88,7 @@ def from_cron_result(
             delivery=DeliveryMode.UNICAST,
             lock_mode=LockMode.NONE,
             metadata={"title": title},
+            execution_context=context,
         )
     return Envelope(
         origin=Origin.CRON,
@@ -84,6 +99,7 @@ def from_cron_result(
         delivery=DeliveryMode.BROADCAST,
         lock_mode=LockMode.NONE,
         metadata={"title": title},
+        execution_context=context,
     )
 
 
@@ -107,6 +123,12 @@ def from_heartbeat(
         status="success",
         delivery=DeliveryMode.UNICAST,
         lock_mode=LockMode.NONE,
+        execution_context=ExecutionContext.issue(
+            origin=Origin.HEARTBEAT,
+            source_scope=SourceScope.HEARTBEAT,
+            transport=transport,
+            source_id=chat_id,
+        ),
     )
 
 
@@ -126,6 +148,12 @@ def from_webhook_cron_result(result: WebhookResult) -> Envelope:
             "hook_id": result.hook_id,
             "hook_title": result.hook_title,
         },
+        execution_context=ExecutionContext.issue(
+            origin=Origin.WEBHOOK_CRON,
+            source_scope=SourceScope.WEBHOOK,
+            transport="webhook",
+            source_id=result.hook_id,
+        ),
     )
 
 
@@ -137,6 +165,12 @@ def from_webhook_wake(chat_id: ChatRef, prompt: str) -> Envelope:
         prompt=prompt,
         delivery=DeliveryMode.UNICAST,
         lock_mode=LockMode.REQUIRED,
+        execution_context=ExecutionContext.issue(
+            origin=Origin.WEBHOOK_WAKE,
+            source_scope=SourceScope.WEBHOOK,
+            transport="webhook",
+            source_id=chat_id,
+        ),
     )
 
 
@@ -162,6 +196,12 @@ def from_interagent_result(result: AsyncInterAgentResult, chat_id: ChatRef) -> E
         "provider_switch_notice": result.provider_switch_notice,
         "original_message": result.original_message,
     }
+    context = getattr(result, "execution_context", None) or ExecutionContext.issue(
+        origin=Origin.INTERAGENT,
+        source_scope=SourceScope.BOT_HANDOFF,
+        transport="interagent",
+        source_id=result.task_id,
+    )
 
     if not result.success:
         return Envelope(
@@ -177,6 +217,7 @@ def from_interagent_result(result: AsyncInterAgentResult, chat_id: ChatRef) -> E
             elapsed_seconds=result.elapsed_seconds,
             session_name=result.session_name,
             metadata=meta,
+            execution_context=context,
         )
 
     return Envelope(
@@ -193,6 +234,7 @@ def from_interagent_result(result: AsyncInterAgentResult, chat_id: ChatRef) -> E
         elapsed_seconds=result.elapsed_seconds,
         session_name=result.session_name,
         metadata=meta,
+        execution_context=context,
     )
 
 
@@ -262,6 +304,7 @@ def from_task_result(result: TaskResult) -> Envelope:
             "warnings": list(getattr(result, "warnings", ()) or ()),
             "task_folder": result.task_folder,
         },
+        execution_context=getattr(result, "execution_context", None),
     )
 
 

@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from controlmesh.errors import ControlMeshError
+from controlmesh.bus.envelope import ExecutionContext
 
 if TYPE_CHECKING:
     from controlmesh.cli.codex_cache import CodexModelCache
@@ -58,6 +59,8 @@ class TaskExecutionConfig:
     file_access: str
     claude_root_permission_mode: str = "bypassPermissions"
     claude_root_force_bypass_via_is_sandbox: bool = True
+    docker_container: str = ""
+    execution_context: ExecutionContext | None = None
 
 
 def resolve_cli_config(
@@ -145,4 +148,6 @@ def resolve_cli_config(
         claude_root_force_bypass_via_is_sandbox=(
             base_config.claude_root_force_bypass_via_is_sandbox
         ),
+        docker_container="",
+        execution_context=None,
     )

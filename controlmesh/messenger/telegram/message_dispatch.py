@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 from controlmesh.cli.coalescer import CoalesceConfig, StreamCoalescer
 from controlmesh.cli.stream_events import ToolResultEvent, ToolUseEvent
+from controlmesh.bus.envelope import ExecutionContext
 from controlmesh.messenger.telegram.sender import (
     SendRichOpts,
     send_files_from_text,
@@ -89,6 +90,7 @@ class NonStreamingDispatch:
     scene_config: SceneConfig | None = None
     before_send: Callable[[], Awaitable[bool]] | None = None
     before_critical_send: Callable[[], Awaitable[bool]] | None = None
+    execution_context: ExecutionContext | None = None
 
 
 @dataclass(slots=True)
@@ -106,6 +108,7 @@ class StreamingDispatch:
     scene_config: SceneConfig | None = None
     before_send: Callable[[], Awaitable[bool]] | None = None
     before_critical_send: Callable[[], Awaitable[bool]] | None = None
+    execution_context: ExecutionContext | None = None
 
 
 async def run_non_streaming_message(
@@ -113,10 +116,16 @@ async def run_non_streaming_message(
 ) -> str:
     """Execute one non-streaming turn and deliver the result to Telegram."""
     async with TypingContext(dispatch.bot, dispatch.key.chat_id, thread_id=dispatch.thread_id):
+        message_kwargs: dict[str, object] = {
+            "message_id": dispatch.reply_to.message_id if dispatch.reply_to else 0,
+        }
+        context = getattr(dispatch, "execution_context", None)
+        if context is not None:
+            message_kwargs["execution_context"] = context
         result = await dispatch.orchestrator.handle_message(
             dispatch.key,
             dispatch.text,
-            message_id=dispatch.reply_to.message_id if dispatch.reply_to else 0,
+            **message_kwargs,
         )
 
     footer = _build_footer(result, dispatch.scene_config)
@@ -221,14 +230,20 @@ async def run_streaming_message(
     )
 
     async with TypingContext(dispatch.bot, dispatch.key.chat_id, thread_id=dispatch.thread_id):
+        stream_kwargs: dict[str, object] = {
+            "message_id": dispatch.message.message_id,
+            "on_text_delta": text_cb,
+            "on_tool_activity": tool_cb,
+            "on_tool_event": tool_event_cb,
+            "on_system_status": system_cb,
+        }
+        context = getattr(dispatch, "execution_context", None)
+        if context is not None:
+            stream_kwargs["execution_context"] = context
         result = await dispatch.orchestrator.handle_message_streaming(
             dispatch.key,
             dispatch.text,
-            message_id=dispatch.message.message_id,
-            on_text_delta=text_cb,
-            on_tool_activity=tool_cb,
-            on_tool_event=tool_event_cb,
-            on_system_status=system_cb,
+            **stream_kwargs,
         )
 
     await coalescer.flush(force=True)

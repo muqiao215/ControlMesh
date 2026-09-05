@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from controlmesh.messenger.address import ChatRef, TopicRef
+from controlmesh.bus.envelope import ExecutionContext
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,6 +101,7 @@ class TaskSubmit:
     tool_use_id: str = ""
     external_task: bool = False
     idempotency_key: str = ""
+    execution_context: ExecutionContext | None = None
 
 
 @dataclass(slots=True)
@@ -161,6 +163,7 @@ class TaskEntry:
     tool_result_consumed_at: float = 0.0
     tasks_dir: str = ""  # Agent's tasks directory (for per-agent folder resolution)
     thread_id: TopicRef = None  # Forum topic ID (for routing results back to topic)
+    execution_context: ExecutionContext | None = None
 
     def to_dict(self) -> dict[str, object]:
         d: dict[str, object] = {
@@ -217,6 +220,9 @@ class TaskEntry:
             "tool_result_delivered_at": self.tool_result_delivered_at,
             "tool_result_consumed_at": self.tool_result_consumed_at,
             "tasks_dir": self.tasks_dir,
+            "execution_context": (
+                self.execution_context.to_dict() if self.execution_context is not None else None
+            ),
         }
         if self.thread_id is not None:
             d["thread_id"] = self.thread_id
@@ -279,6 +285,11 @@ class TaskEntry:
             tool_result_consumed_at=d.get("tool_result_consumed_at", 0.0),
             tasks_dir=d.get("tasks_dir", ""),
             thread_id=d.get("thread_id"),
+            execution_context=(
+                ExecutionContext.from_dict(d["execution_context"])
+                if isinstance(d.get("execution_context"), dict)
+                else None
+            ),
         )
 
 
@@ -342,3 +353,4 @@ class TaskResult:
     evaluation: EvaluationResult | None = None
     artifact_protocol_status: str = ""
     warnings: tuple[str, ...] = ()
+    execution_context: ExecutionContext | None = None

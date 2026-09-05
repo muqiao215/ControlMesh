@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 import aiohttp
 
 from controlmesh.bus.bus import MessageBus
-from controlmesh.bus.envelope import Envelope
+from controlmesh.bus.envelope import Envelope, ExecutionContext, Origin, SourceScope
 from controlmesh.bus.lock_pool import LockPool
 from controlmesh.config import AgentConfig, QQBotAccountConfig
 from controlmesh.files.allowed_roots import resolve_allowed_roots
@@ -325,9 +325,25 @@ class QQBotBot(BotProtocol):
         lock = self._lock_pool.get((message.chat_id, message.topic_id))
         try:
             async with lock:
+                context = ExecutionContext.issue(
+                    origin=Origin.USER,
+                    source_scope=(
+                        SourceScope.GROUP_MESSAGE
+                        if message.event_type == "GROUP_MESSAGE_CREATE"
+                        else SourceScope.DIRECT_MESSAGE
+                    ),
+                    transport="qqbot",
+                    source_id=message.message_id,
+                )
+                kwargs: dict[str, object] = {}
+                if isinstance(
+                    getattr(self._orchestrator, "execution_context", None), ExecutionContext
+                ):
+                    kwargs["execution_context"] = context
                 result = await self._orchestrator.handle_message_streaming(
                     SessionKey.for_transport("qqbot", message.chat_id, message.topic_id),
                     message.text,
+                    **kwargs,
                 )
         finally:
             if typing_keepalive is not None:
@@ -532,9 +548,22 @@ class QQBotBot(BotProtocol):
                 )
             return
 
+        kwargs: dict[str, object] = {}
+        if isinstance(getattr(self._orchestrator, "execution_context", None), ExecutionContext):
+            kwargs["execution_context"] = ExecutionContext.issue(
+                origin=Origin.USER,
+                source_scope=(
+                    SourceScope.GROUP_MESSAGE
+                    if interaction.chat_id.startswith("qqbot:group:")
+                    else SourceScope.DIRECT_MESSAGE
+                ),
+                transport="qqbot",
+                source_id=interaction.message_id or interaction.interaction_id,
+            )
         fallback = await self._orchestrator.handle_message_streaming(
             SessionKey.for_transport("qqbot", interaction.chat_id, interaction.topic_id),
             interaction.button_data,
+            **kwargs,
         )
         if fallback.text:
             fallback_buttons = getattr(fallback, "buttons", None)

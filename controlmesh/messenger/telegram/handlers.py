@@ -6,6 +6,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
+from controlmesh.bus.envelope import ExecutionContext, Origin, SourceScope
 from controlmesh.i18n import t
 from controlmesh.messenger.telegram.callbacks import button_grid_to_markup
 from controlmesh.messenger.telegram.sender import SendRichOpts, send_rich
@@ -121,7 +122,21 @@ async def handle_command(orchestrator: Orchestrator, bot: Bot, message: Message)
     thread_id = get_thread_id(message)
     logger.info("Command dispatched cmd=%s", message.text.strip()[:40])
     async with TypingContext(bot, chat_id, thread_id=thread_id):
-        result = await orchestrator.handle_message(key, message.text.strip())
+        chat_type = str(getattr(getattr(message, "chat", None), "type", "") or "").lower()
+        context = ExecutionContext.issue(
+            origin=Origin.USER,
+            source_scope=(
+                SourceScope.GROUP_MESSAGE
+                if chat_type in {"group", "supergroup"}
+                else SourceScope.DIRECT_MESSAGE
+            ),
+            transport="telegram",
+            source_id=message.message_id,
+        )
+        kwargs: dict[str, object] = {}
+        if isinstance(getattr(orchestrator, "execution_context", None), ExecutionContext):
+            kwargs["execution_context"] = context
+        result = await orchestrator.handle_message(key, message.text.strip(), **kwargs)
     markup = button_grid_to_markup(result.buttons) if result.buttons else None
     await send_rich(
         bot,

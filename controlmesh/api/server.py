@@ -61,6 +61,7 @@ from controlmesh.files.tags import (
     path_from_file_tag,
 )
 from controlmesh.log_context import set_log_context
+from controlmesh.bus.envelope import ExecutionContext, Origin, SourceScope
 from controlmesh.security.paths import is_path_safe
 from controlmesh.session.key import SessionKey
 from controlmesh.text.response_format import normalize_tool_name
@@ -727,13 +728,20 @@ class ApiServer:
         """Call the orchestrator handler, return result or None on error."""
         assert self._handle_message is not None
         try:
-            return await self._handle_message(
-                key,
-                text,
-                on_text_delta=callbacks.on_text,
-                on_tool_activity=callbacks.on_tool,
-                on_system_status=callbacks.on_system,
-            )
+            stream_kwargs: dict[str, object] = {
+                "on_text_delta": callbacks.on_text,
+                "on_tool_activity": callbacks.on_tool,
+                "on_system_status": callbacks.on_system,
+            }
+            handler_owner = getattr(self._handle_message, "__self__", None)
+            if isinstance(getattr(handler_owner, "execution_context", None), ExecutionContext):
+                stream_kwargs["execution_context"] = ExecutionContext.issue(
+                    origin=Origin.API,
+                    source_scope=SourceScope.API,
+                    transport="api",
+                    source_id=key.storage_key,
+                )
+            return await self._handle_message(key, text, **stream_kwargs)
         except asyncio.CancelledError:
             raise
         except Exception:

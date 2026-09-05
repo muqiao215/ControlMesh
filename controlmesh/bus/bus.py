@@ -7,7 +7,7 @@ import secrets
 from collections.abc import Awaitable, Callable
 from typing import Protocol, runtime_checkable
 
-from controlmesh.bus.envelope import DeliveryMode, Envelope, LockMode, Origin
+from controlmesh.bus.envelope import DeliveryMode, Envelope, ExecutionContext, LockMode, Origin
 from controlmesh.bus.lock_pool import LockPool
 from controlmesh.messenger.address import ChatRef, TopicRef
 
@@ -48,6 +48,7 @@ class SessionInjector(Protocol):
         *,
         topic_id: TopicRef = None,
         transport: str = "tg",
+        execution_context: ExecutionContext | None = None,
     ) -> str:
         """Execute *prompt* in the active session. Returns response text."""
         ...
@@ -130,12 +131,17 @@ class MessageBus:
         if envelope.needs_injection and self._injector and envelope.prompt:
             label = f"{envelope.origin.value}:{envelope.envelope_id}"
             try:
+                inject_kwargs: dict[str, object] = {
+                    "topic_id": envelope.topic_id,
+                    "transport": envelope.transport,
+                }
+                if envelope.execution_context is not None:
+                    inject_kwargs["execution_context"] = envelope.execution_context
                 response = await self._injector.inject_prompt(
                     envelope.prompt,
                     envelope.chat_id,
                     label,
-                    topic_id=envelope.topic_id,
-                    transport=envelope.transport,
+                    **inject_kwargs,
                 )
                 if envelope.origin in {
                     Origin.TASK_RESULT,
@@ -234,6 +240,7 @@ class MessageBus:
                 delivery=DeliveryMode.BROADCAST,
                 lock_mode=envelope.lock_mode,
                 metadata=envelope.metadata,
+                execution_context=envelope.execution_context,
             )
             try:
                 await others[0].deliver_broadcast(fallback_env)

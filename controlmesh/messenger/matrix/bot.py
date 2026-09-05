@@ -15,6 +15,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from controlmesh.bus.bus import MessageBus
+from controlmesh.bus.envelope import (
+    ExecutionContext,
+    Origin,
+    SourceScope,
+    bind_execution_context,
+    reset_execution_context,
+)
 from controlmesh.bus.lock_pool import LockPool
 from controlmesh.command_registry import is_command_available_for_agent
 from controlmesh.commands import get_bot_commands
@@ -313,6 +320,12 @@ class MatrixBot:
             text = self._strip_mention(text)
 
         room_id = room.room_id
+        execution_context = ExecutionContext.issue(
+            origin=Origin.USER,
+            source_scope=SourceScope.GROUP_MESSAGE if is_group_room else SourceScope.DIRECT_MESSAGE,
+            transport="matrix",
+            source_id=event.event_id,
+        )
         self._last_active_room = room_id
         chat_id = self._id_map.room_to_int(room_id)
 
@@ -322,17 +335,21 @@ class MatrixBot:
         # Check button match (text-input fallback for reactions)
         button_match = self._button_tracker.match_input(room_id, text)
         if button_match:
-            await self._handle_button_callback(room_id, "", button_match)
+            token = bind_execution_context(execution_context)
+            try:
+                await self._handle_button_callback(room_id, "", button_match)
+            finally:
+                reset_execution_context(token)
             return
 
         # Handle commands (! prefix for Matrix, / also accepted)
         if text.startswith(("!", "/")):
-            await self._handle_command(text, room_id, chat_id, event)
+            await self._handle_command(text, room_id, chat_id, event, execution_context)
             return
 
         key = SessionKey.matrix(chat_id)
         self._spawn_task(
-            self._dispatch_with_lock(key, text, room_id, event),
+            self._dispatch_with_lock(key, text, room_id, event, execution_context),
             name=f"mx-msg-{room_id[:8]}",
         )
 
@@ -359,6 +376,12 @@ class MatrixBot:
             return
 
         room_id = room.room_id
+        execution_context = ExecutionContext.issue(
+            origin=Origin.USER,
+            source_scope=SourceScope.GROUP_MESSAGE if is_group_room else SourceScope.DIRECT_MESSAGE,
+            transport="matrix",
+            source_id=event.event_id,
+        )
         self._last_active_room = room_id
         chat_id = self._id_map.room_to_int(room_id)
 
@@ -386,11 +409,18 @@ class MatrixBot:
 
         key = SessionKey.matrix(chat_id)
         self._spawn_task(
-            self._dispatch_with_lock(key, text, room_id, event),
+            self._dispatch_with_lock(key, text, room_id, event, execution_context),
             name=f"mx-media-{room_id[:8]}",
         )
 
-    async def _handle_command(self, text: str, room_id: str, chat_id: int, event: object) -> None:
+    async def _handle_command(
+        self,
+        text: str,
+        room_id: str,
+        chat_id: int,
+        event: object,
+        execution_context: ExecutionContext,
+    ) -> None:
         """Handle commands in Matrix. Supports both !cmd and /cmd prefixes."""
         # Normalize: strip prefix, extract command name
         cmd = text.split(maxsplit=1)[0].lower().lstrip("/!")
@@ -410,7 +440,11 @@ class MatrixBot:
             if cmd in self._IMMEDIATE_COMMANDS:
                 # Immediate commands (stop, interrupt, help, …) run without
                 # the lock so they can abort in-flight work instantly.
-                await handler(self, text=text, room_id=room_id, key=key, event=event)
+                token = bind_execution_context(execution_context)
+                try:
+                    await handler(self, text=text, room_id=room_id, key=key, event=event)
+                finally:
+                    reset_execution_context(token)
             else:
                 # Other dispatch-table commands (new, session) may call the
                 # orchestrator — run as a background task with the lock.
@@ -421,19 +455,26 @@ class MatrixBot:
                         room_id=room_id,
                         key=key,
                         event=event,
+                        execution_context=execution_context,
                     ),
                     name=f"mx-cmd-{cmd}",
                 )
         elif classify_command(cmd) in ("orchestrator", "multiagent"):
             # Orchestrator commands may call the CLI — run with lock.
             self._spawn_task(
-                self._cmd_orchestrator_locked(text=text, room_id=room_id, key=key, event=event),
+                self._cmd_orchestrator_locked(
+                    text=text,
+                    room_id=room_id,
+                    key=key,
+                    event=event,
+                    execution_context=execution_context,
+                ),
                 name=f"mx-orch-{cmd}",
             )
         else:
             # Unknown command → treat as regular message
             self._spawn_task(
-                self._dispatch_with_lock(key, text, room_id, event),
+                self._dispatch_with_lock(key, text, room_id, event, execution_context),
                 name=f"mx-cmd-{cmd}",
             )
 
@@ -580,7 +621,12 @@ class MatrixBot:
             await self._send_selector_response(room_id, result.text, result.buttons)
 
     async def _dispatch_with_lock(
-        self, key: SessionKey, text: str, room_id: str, event: object
+        self,
+        key: SessionKey,
+        text: str,
+        room_id: str,
+        event: object,
+        execution_context: ExecutionContext | None = None,
     ) -> None:
         """Acquire the per-chat lock, then dispatch the message.
 
@@ -590,24 +636,54 @@ class MatrixBot:
         """
         lock = self._lock_pool.get(key.lock_key)
         async with lock:
-            await self._dispatch_message(key, text, room_id, event)
+            token = (
+                bind_execution_context(execution_context) if execution_context is not None else None
+            )
+            try:
+                await self._dispatch_message(key, text, room_id, event)
+            finally:
+                if token is not None:
+                    reset_execution_context(token)
 
     async def _run_handler_with_lock(
         self, handler: Callable[..., Awaitable[None]], **kwargs: object
     ) -> None:
         """Run a command handler under the per-chat lock."""
         key: SessionKey = kwargs["key"]  # type: ignore[assignment]
+        execution_context = kwargs.pop("execution_context", None)
         lock = self._lock_pool.get(key.lock_key)
         async with lock:
-            await handler(self, **kwargs)
+            token = (
+                bind_execution_context(execution_context)
+                if isinstance(execution_context, ExecutionContext)
+                else None
+            )
+            try:
+                await handler(self, **kwargs)
+            finally:
+                if token is not None:
+                    reset_execution_context(token)
 
     async def _cmd_orchestrator_locked(
-        self, *, text: str, room_id: str, key: SessionKey, event: object
+        self,
+        *,
+        text: str,
+        room_id: str,
+        key: SessionKey,
+        event: object,
+        execution_context: ExecutionContext | None = None,
     ) -> None:
         """Run an orchestrator command under the per-chat lock."""
         lock = self._lock_pool.get(key.lock_key)
         async with lock:
-            await self._cmd_orchestrator(text=text, room_id=room_id, key=key, event=event)
+            token = (
+                bind_execution_context(execution_context) if execution_context is not None else None
+            )
+            try:
+                await self._cmd_orchestrator(text=text, room_id=room_id, key=key, event=event)
+            finally:
+                if token is not None:
+                    reset_execution_context(token)
 
     async def _dispatch_message(
         self, key: SessionKey, text: str, room_id: str, event: object
@@ -921,7 +997,21 @@ class MatrixBot:
             return
 
         logger.info("Reaction button match: room=%s key=%s cb=%s", room_id, event.key, cb)
-        await self._handle_button_callback(room_id, event.reacts_to, cb)
+        context = ExecutionContext.issue(
+            origin=Origin.USER,
+            source_scope=(
+                SourceScope.GROUP_MESSAGE
+                if not self._is_dm_room(room)
+                else SourceScope.DIRECT_MESSAGE
+            ),
+            transport="matrix",
+            source_id=getattr(event, "event_id", "") or event.reacts_to,
+        )
+        token = bind_execution_context(context)
+        try:
+            await self._handle_button_callback(room_id, event.reacts_to, cb)
+        finally:
+            reset_execution_context(token)
 
     async def _handle_button_callback(
         self, room_id: str, message_event_id: str, callback_data: str

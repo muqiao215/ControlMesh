@@ -5,10 +5,13 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from dataclasses import replace
 from datetime import UTC, datetime
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+from controlmesh.bus.envelope import ExecutionContext
 
 if TYPE_CHECKING:
     from controlmesh.cli.param_resolver import TaskExecutionConfig, TaskOverrides
@@ -42,8 +45,15 @@ async def run_oneshot_task(
     binary is missing.  All other execution details (timeout, stderr, status
     mapping) are delegated to ``execute_one_shot``.
     """
+    from controlmesh.cli.base import CLIConfig, docker_wrap
     from controlmesh.cron.execution import build_cmd, execute_one_shot
+    from controlmesh.execution_policy import enforce_execution_policy
 
+    context = exec_config.execution_context or ExecutionContext.legacy()
+    enforce_execution_policy(
+        context,
+        sandbox_available=bool(exec_config.docker_container),
+    )
     one_shot = build_cmd(exec_config, prompt)
     if one_shot is None:
         return TaskResult(
@@ -52,9 +62,21 @@ async def run_oneshot_task(
             execution=None,
         )
 
+    wrapped_cmd, host_cwd = docker_wrap(
+        one_shot.cmd,
+        CLIConfig(
+            provider=exec_config.provider,
+            model=exec_config.model,
+            working_dir=str(cwd),
+            docker_container=exec_config.docker_container,
+        ),
+        extra_env=one_shot.env_overrides,
+        interactive=one_shot.stdin_input is not None,
+    )
+    wrapped = replace(one_shot, cmd=wrapped_cmd, env_overrides={}) if host_cwd is None else one_shot
     execution = await execute_one_shot(
-        one_shot,
-        cwd=cwd,
+        wrapped,
+        cwd=Path(host_cwd) if host_cwd is not None else None,
         provider=exec_config.provider,
         timeout_seconds=timeout_seconds,
         timeout_label=timeout_label,
@@ -83,6 +105,7 @@ async def execute_in_task_folder(
     task_id: str,
     task_label: str,
     timeout_seconds: float,
+    execution_context: ExecutionContext | None = None,
 ) -> TaskResult:
     """Execute a one-shot CLI task inside a ``cron_tasks`` subfolder.
 
@@ -108,7 +131,10 @@ async def execute_in_task_folder(
                 execution=None,
             )
 
-        exec_config = observer.resolve_execution_config(overrides)
+        exec_config = observer.execution_config_for(
+            overrides,
+            execution_context=execution_context,
+        )
         policy = load_task_policy(folder)
         enriched = enrich_instruction(instruction, task_folder, policy=policy)
 

@@ -15,6 +15,7 @@ from controlmesh.cli.liveness import FOREGROUND_POLICY, timeout_controller_for_p
 from controlmesh.cli.timeout_controller import TimeoutConfig as TCConfig
 from controlmesh.cli.timeout_controller import TimeoutController
 from controlmesh.cli.types import AgentRequest, AgentResponse
+from controlmesh.bus.envelope import ExecutionContext, Origin, SourceScope
 from controlmesh.config import NULLISH_TEXT_VALUES, resolve_timeout
 from controlmesh.i18n import t
 from controlmesh.infra.inflight import InflightTurn
@@ -270,6 +271,7 @@ async def _prepare_normal(
         timeout_seconds=timeout_secs,
         hard_timeout_seconds=_foreground_hard_timeout(orch),
         timeout_controller=None,
+        execution_context=orch.execution_context,
     )
     return request, session
 
@@ -931,6 +933,7 @@ async def named_session_flow(
         timeout_seconds=_foreground_soft_timeout(orch),
         hard_timeout_seconds=_foreground_hard_timeout(orch),
         timeout_controller=None,
+        execution_context=orch.execution_context,
     )
     request = _with_foreground_watchdog(orch, request)
     response = await orch._cli_service.execute(request)
@@ -983,6 +986,7 @@ async def named_session_streaming(
         timeout_seconds=_foreground_soft_timeout(orch),
         hard_timeout_seconds=_foreground_hard_timeout(orch),
         timeout_controller=None,
+        execution_context=orch.execution_context,
     )
     request = _with_foreground_watchdog(orch, request)
 
@@ -1091,6 +1095,12 @@ async def heartbeat_flow(
         resume_session=session.session_id,
         timeout_seconds=resolve_timeout(orch._config, "normal"),
         timeout_controller=_make_timeout_controller(orch, "normal"),
+        execution_context=ExecutionContext.issue(
+            origin=Origin.HEARTBEAT,
+            source_scope=SourceScope.HEARTBEAT,
+            transport=key.transport,
+            source_id=key.storage_key,
+        ),
     )
 
     response = await orch._cli_service.execute(request)

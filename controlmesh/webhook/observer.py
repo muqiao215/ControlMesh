@@ -9,6 +9,8 @@ from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 from controlmesh.cli.param_resolver import TaskOverrides
+from controlmesh.bus.envelope import ExecutionContext, Origin, SourceScope
+from controlmesh.execution_policy import ExecutionPolicyDenied
 from controlmesh.infra.base_task_observer import BaseTaskObserver
 from controlmesh.infra.file_watcher import FileWatcher
 from controlmesh.infra.task_runner import execute_in_task_folder
@@ -296,17 +298,34 @@ class WebhookObserver(BaseTaskObserver):
 
         dependency = hook.dependency if hook else None
 
-        result = await execute_in_task_folder(
-            self,
-            cron_tasks_dir=self._paths.cron_tasks_dir,
-            task_folder=task_folder,
-            instruction=prompt,
-            overrides=overrides,
-            dependency=dependency,
-            task_id=hook_id,
-            task_label="Webhook cron_task",
-            timeout_seconds=self._config.cli_timeout,
-        )
+        try:
+            result = await execute_in_task_folder(
+                self,
+                cron_tasks_dir=self._paths.cron_tasks_dir,
+                task_folder=task_folder,
+                instruction=prompt,
+                overrides=overrides,
+                dependency=dependency,
+                task_id=hook_id,
+                task_label="Webhook cron_task",
+                timeout_seconds=self._config.cli_timeout,
+                execution_context=self.execution_context_for_run(
+                    ExecutionContext.issue(
+                        origin=Origin.WEBHOOK_CRON,
+                        source_scope=SourceScope.WEBHOOK,
+                        transport="webhook",
+                        source_id=hook_id,
+                    )
+                ),
+            )
+        except ExecutionPolicyDenied as exc:
+            return WebhookResult(
+                hook_id=hook_id,
+                hook_title=title,
+                mode="cron_task",
+                result_text=exc.user_message,
+                status=f"error:{exc.decision.reason_code}",
+            )
 
         return WebhookResult(
             hook_id=hook_id,
@@ -367,10 +386,26 @@ class WebhookObserver(BaseTaskObserver):
             route=hook.route or "",
             workunit_kind=hook.workunit_kind or "",
             external_task=True,
+            execution_context=self.execution_context_for_run(
+                ExecutionContext.issue(
+                    origin=Origin.WEBHOOK_WAKE,
+                    source_scope=SourceScope.WEBHOOK,
+                    transport="webhook",
+                    source_id=hook_id,
+                )
+            ),
         )
 
         try:
             task_id = self._task_hub.submit(submit)
+        except ExecutionPolicyDenied as exc:
+            return WebhookResult(
+                hook_id=hook_id,
+                hook_title=hook.title,
+                mode="task",
+                result_text=exc.user_message,
+                status=f"error:{exc.decision.reason_code}",
+            )
         except ValueError as exc:
             return WebhookResult(
                 hook_id=hook_id,

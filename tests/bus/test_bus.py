@@ -6,7 +6,14 @@ from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock
 
 from controlmesh.bus.bus import MessageBus
-from controlmesh.bus.envelope import DeliveryMode, Envelope, LockMode, Origin
+from controlmesh.bus.envelope import (
+    DeliveryMode,
+    Envelope,
+    ExecutionContext,
+    LockMode,
+    Origin,
+    SourceScope,
+)
 from controlmesh.bus.lock_pool import LockPool
 
 if TYPE_CHECKING:
@@ -160,6 +167,35 @@ async def test_injection_updates_result_text() -> None:
     )
     assert env.result_text == "Injected response"
     t.deliver.assert_awaited_once()
+
+
+async def test_injection_and_transport_fallback_preserve_execution_context() -> None:
+    bus = MessageBus()
+    transport = _mock_transport()
+    bus.register_transport(transport)
+    context = ExecutionContext.issue(
+        origin=Origin.INTERAGENT,
+        source_scope=SourceScope.BOT_HANDOFF,
+        transport="team",
+        source_id="dispatch-1",
+    )
+    injector = AsyncMock()
+    injector.inject_prompt = AsyncMock(return_value="Injected response")
+    bus.set_injector(injector)
+
+    env = _env(
+        origin=Origin.INTERAGENT,
+        transport="missing",
+        needs_injection=True,
+        prompt="Injected prompt",
+        execution_context=context,
+    )
+    await bus.submit(env)
+
+    assert injector.inject_prompt.await_args.kwargs["execution_context"] is context
+    transport.deliver_broadcast.assert_awaited_once()
+    fallback = transport.deliver_broadcast.await_args.args[0]
+    assert fallback.execution_context is context
 
 
 async def test_injection_skipped_without_prompt() -> None:
