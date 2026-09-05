@@ -2,8 +2,8 @@
 
 ## Current
 
-Production implementation and verification are complete. The user authorized commit/push;
-release handoff is in progress against unchanged `origin/main@134660e`.
+Production implementation, verification, and release handoff are complete. Commit
+`412a1a2` is on `origin/main`.
 
 ## Done
 
@@ -52,11 +52,13 @@ release handoff is in progress against unchanged `origin/main@134660e`.
   rerun after this correction.
 - Added explicit regression assertions for team `BOT_HANDOFF` envelopes and MessageBus
   context-preserving fallback; focused rerun → 41 passed, Ruff and diff checks passed.
+- Committed the verified 47-file scope as
+  `412a1a2 feat(runtime): gate execution by source provenance` and pushed it to
+  `origin/main` after confirming the remote still matched `134660e`.
 
 ## Remaining
 
-- Commit and push the verified implementation scope.
-- Verify `origin/main` resolves to the new commit.
+None for this work unit. Remote CI observation belongs to the next operational step.
 
 ## Issues
 
@@ -69,6 +71,6 @@ ambient variables restores the expected behavior and all 5574 tests pass.
 
 ## Next
 
-Stage only the intended implementation, tests, docs, and this task-memory directory;
-preserve the pre-existing `plans/operational-proof-v1-assessment/` directory as a separate
-user change.
+Monitor CI for `412a1a2`, then start cross-server trace/diagnose as the next independent
+work unit. The pre-existing `plans/operational-proof-v1-assessment/` directory remains a
+separate untracked user change.

@@ -8,8 +8,8 @@ policy requires a sandbox but no sandbox is ready.
 
 ## Next Step
 
-Commit and push the intended implementation, tests, documentation, and task-memory files
-to `origin/main`, then verify the remote ref.
+Monitor the pushed `origin/main` CI run, then use this provenance spine as the prerequisite
+for the cross-server trace/diagnose work unit.
 
 ## Context
 
@@ -110,9 +110,9 @@ last responsible boundary.
 ### Phase 6: Release handoff
 
 - [x] Re-fetch `origin/main` and verify it still matches the audited baseline.
-- [ ] Commit only the intended implementation, tests, documentation, and task-memory files.
-- [ ] Push to `origin/main` and verify the remote commit.
-- **Status:** in progress
+- [x] Commit only the intended implementation, tests, documentation, and task-memory files.
+- [x] Push to `origin/main` and verify the remote commit.
+- **Status:** complete
 
 ## Minimum Safety Matrix
 
@@ -140,13 +140,14 @@ last responsible boundary.
 
 ## Current Phase
 
-Phase 6 — Release handoff (in progress).
+Phase 6 — Release handoff (complete).
 
 ## Completion
 
 Implementation and gates completed on 2026-09-05. The clean environment full Python suite
 passed 5574 tests; the default systemd-invoked shell has one unrelated restart expectation
-failure (recorded in `progress.md`).
+failure (recorded in `progress.md`). The implementation commit is `412a1a2` on
+`origin/main`.
 
 ## Decisions Made
 
