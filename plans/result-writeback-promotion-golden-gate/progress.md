@@ -2,7 +2,8 @@
 
 ## Current
 
-Local implementation and gates are complete; preparing exact-HEAD push and remote CI.
+Complete. Scope landed as `ee8e2bf` on `origin/main`; remote CI verified green on
+descendant heads (`33237296495` at `main@134660e`, `33971772680` at `main@1c9b6bb`).
 
 ## Done
 
@@ -38,7 +39,7 @@ Local implementation and gates are complete; preparing exact-HEAD push and remot
 
 ## Remaining
 
-- Commit, push, and verify exact-HEAD GitHub Actions.
+None.
 
 ## Issues
 
@@ -51,4 +52,4 @@ Local implementation and gates are complete; preparing exact-HEAD push and remot
 
 ## Next
 
-Commit the closed local scope, push `main`, and verify remote CI for the exact SHA.
+None. This plan is closed as complete.

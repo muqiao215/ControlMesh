@@ -46,7 +46,7 @@ results cannot contaminate canonical state.
 - [x] Add focused tests and CI integration without exposing public mutations.
 - [x] Reassess workunit readiness and update durable architecture/decision/status docs.
 - [x] Run focused and complete local gates; inspect the final diff for safety and scope.
-- [ ] Commit, push, and verify final GitHub Actions on exact HEAD.
+- [x] Commit, push, and verify final GitHub Actions on exact HEAD.
 
 ## Success
 
@@ -58,11 +58,14 @@ are green; the worktree matches `origin/main`.
 
 ## Status
 
-Current phase: local scope complete; commit/push and exact-HEAD CI verification.
+Complete. The verified scope landed as `ee8e2bf` (`feat(runtime): gate result writeback
+promotion`) on `origin/main`. Remote CI is green on descendant heads, including
+`main@134660e` (run `33237296495`) and current `main@1c9b6bb` (run `33971772680`), and the
+golden drift gate is a required CI job.
 
 ## Next Step
 
-Commit the verified scope, push `main`, and confirm the remote workflow on the exact commit.
+None. Follow-on operational evidence collection is tracked by `PROJECT.md` priorities.
 
 ## Decisions Made
 

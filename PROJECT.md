@@ -128,6 +128,10 @@ ordinary messages select one configured coordinator, exact bot mentions select o
 bot, `/all` broadcasts explicitly, silent peers retain bounded passive context, and
 bot-authored handoffs require a configured sender, explicit local target, and loop budget.
 
+Feishu domestic long-connection attempts are generation-isolated: startup timeout, stop,
+and reconnect cancel exactly the in-flight attempt, superseded connections cannot deliver
+to the owner loop, and repeated start/stop cycles leak no threads, ping tasks, or sockets.
+
 ## Current Priority
 
 1. Collect operational evidence for the hardened writeback/promotion and source-aware
@@ -152,4 +156,4 @@ bot-authored handoffs require a configured sender, explicit local target, and lo
 - Full documentation catalog → `docs/README.md`
 - TypeScript migration contracts and status → `docs/typescript-migration/`
 - Historical and active work → `plans/`
-- Most recent completed work → `plans/execution-provenance-sandbox-gate/`
+- Most recent completed work → `plans/feishu-long-connection-generation-safety/`

@@ -41,7 +41,10 @@
   routing, adapter Protocol, `FeishuLongConnectionClient` guard semantics,
   PROJECT/docs (no durable intent or ownership change).
 
-## Next Step
+## Next
 
-Done pending user decision to commit
-(`feat(feishu): make long-connection attempts cancellable and generation-safe`).
+Complete. Follow-up session work (2026-09-05): committed and pushed the implementation
+(`1c9b6bb`, remote CI run `33971772680` green), closed the stale
+`result-writeback-promotion-golden-gate` plan with CI evidence, committed the finished
+`operational-proof-v1-assessment` plan, and promoted durable knowledge to
+`docs/ARCHITECTURE.md` / `PROJECT.md`.

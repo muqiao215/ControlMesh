@@ -1,5 +1,20 @@
 # Findings: Feishu Long-Connection Generation Safety
 
+## Promotion (2026-09-05, post-landing)
+
+- Durable invariant promoted to `docs/ARCHITECTURE.md` (Messaging and Delivery):
+  per-generation attempt lifecycle, generation-gated dispatch, generation-scoped aborts.
+- One-sentence stage note added to `PROJECT.md` Current State; Knowledge Map
+  "most recent completed work" pointer updated to this plan.
+- `docs/DECISIONS.md` deliberately not updated: this is a robustness hardening that
+  adopts the radar-designed approach, with no rejected direction-level alternative a
+  future agent would plausibly re-litigate (matches SpecMesh "no ordinary fixes").
+- While aligning memory, the stale `result-writeback-promotion-golden-gate` plan was
+  closed with CI evidence (scope landed as `ee8e2bf`; remote CI green on `134660e` run
+  `33237296495` and `1c9b6bb` run `33971772680`), and the finished
+  `operational-proof-v1-assessment` plan was committed after a secrets/absolute-path
+  check.
+
 ## Code facts (verified 2026-09-05, pre-change)
 
 - `long_connection.py` `_SdkLongConnectionAdapter` runs `lark_oapi.ws.Client` on a

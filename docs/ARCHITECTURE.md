@@ -131,6 +131,13 @@ Key locations:
 - `controlmesh/bus/`
 - `controlmesh/session/`
 
+The domestic Feishu long connection runs one lifecycle per attempt generation: each
+attempt owns its thread, event loop, SDK client, and ping timer, and startup timeout or
+stop aborts exactly that attempt by cancelling its connect/ping tasks and joining its
+thread. Event dispatch is generation-gated at both the SDK handler and the owner loop, so
+a superseded or cancelled connection can never deliver to the owner loop, and a
+superseded attempt's cleanup can never disconnect the attempt that replaced it.
+
 ### Memory, Workspace, and Artifacts
 
 Responsibilities:
