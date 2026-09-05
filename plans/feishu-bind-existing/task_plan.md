@@ -16,14 +16,14 @@ CM native runtime，无需重新创建机器人或手工改成 bridge。
 ## Plan
 
 - [x] 审计 native aliases、auth-kit probe、配置原子写入与现有测试。
-- [ ] 实现输入、探测、原子配置合并和 CLI 帮助入口。
-- [ ] 验证成功、失败、替换、配置保留、凭据输出与帮助。
-- [ ] 更新用户文档与项目记忆。
+- [x] 实现输入、探测、原子配置合并和 CLI 帮助入口。
+- [x] 验证成功、失败、替换、配置保留、凭据输出与帮助。
+- [x] 更新用户文档与项目记忆。
 
 ## Status
 
-Implementation in progress. Terminal Product v1 remains planned separately.
+Complete. Terminal Product v1 remains planned separately.
 
 ## Next Step
 
-实现独立 bind 模块，复用 auth-kit probe 与原子写入。
+发布后使用真实已有应用完成一次凭据与事件订阅 smoke test；这不阻塞代码 scope 封板。

@@ -12,7 +12,10 @@ def test_pyproject_exposes_controlmesh_public_branding() -> None:
     project = payload["project"]
 
     assert project["name"] == "controlmesh"
-    assert project["scripts"] == {"controlmesh": "controlmesh.__main__:main"}
+    assert project["scripts"] == {
+        "controlmesh": "controlmesh.__main__:main",
+        "cm": "controlmesh.__main__:main",
+    }
     assert project["urls"]["Repository"] == "https://github.com/muqiao215/ControlMesh"
     assert project["urls"]["Issues"] == "https://github.com/muqiao215/ControlMesh/issues"
     assert project["urls"]["Changelog"] == "https://github.com/muqiao215/ControlMesh/releases"

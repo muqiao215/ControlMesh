@@ -18,7 +18,8 @@ cm feishu bind
 ```
 
 Enter the App ID and App Secret from the developer console; secret input is hidden.
-The command validates credentials and reads bot identity before saving native configuration.
+The command validates credentials and reads bot identity before saving native configuration,
+then prints the verified bot name and `open_id` for operator confirmation.
 It does not create another app or require bridge mode. Existing group policies, allowlists,
 progress mode, and other transports are preserved. Card streaming must be enabled separately
 after its permissions are ready. Binding another app requires `--replace`.

@@ -30,7 +30,9 @@ def binding(tmp_path, monkeypatch):
     path.write_text(json.dumps(raw))
     monkeypatch.setattr(auth, "load_config", lambda: config)
     monkeypatch.setenv("CM_TEST_SECRET", "private-test-secret")
-    probe = AsyncMock()
+    probe = AsyncMock(
+        return_value=feishu_bind.VerifiedFeishuBot(open_id="ou_bot", name="Existing Bot")
+    )
     monkeypatch.setattr(feishu_bind, "verify_bot", probe)
     return path, probe
 
@@ -47,7 +49,9 @@ def test_bind_preserves_settings_and_secret_is_not_printed(binding, capsys):
     assert raw["feishu"]["app_secret"] == "private-test-secret"
     assert path.stat().st_mode & 0o777 == 0o600
     probe.assert_awaited_once_with("cli_old", "private-test-secret")
-    assert "private-test-secret" not in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert "Existing Bot (ou_bot)" in output
+    assert "private-test-secret" not in output
 
 
 @pytest.mark.parametrize("failure", ["credentials", "replace", "pending", "concurrent"])
@@ -102,7 +106,7 @@ def test_help_does_not_load_configuration(monkeypatch):
     [
         (
             {"code": 0, "tenant_access_token": "token"},
-            {"code": 0, "bot": {"open_id": "ou_bot"}},
+            {"code": 0, "bot": {"open_id": "ou_bot", "app_name": "Existing Bot"}},
             True,
         ),
         ({"code": 1}, {}, False),
@@ -124,7 +128,8 @@ async def test_bot_verification_contract(monkeypatch, token_data, bot_data, acce
         method.return_value.__aexit__ = AsyncMock(return_value=False)
     monkeypatch.setattr(feishu_bind.aiohttp, "ClientSession", lambda **_: session)
     if accepted:
-        await feishu_bind.verify_bot("cli_test", "secret")
+        verified = await feishu_bind.verify_bot("cli_test", "secret")
+        assert verified == feishu_bind.VerifiedFeishuBot(open_id="ou_bot", name="Existing Bot")
         assert session.get.call_args.args[0].endswith("/bot/v3/info")
         assert session.get.call_args.kwargs["allow_redirects"] is False
     else:

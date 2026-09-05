@@ -10,6 +10,7 @@ import os
 import re
 import sys
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 import aiohttp
 from rich.console import Console
@@ -21,9 +22,19 @@ from controlmesh.workspace.paths import resolve_paths
 _BASE = "https://open.feishu.cn/open-apis"
 
 
-async def verify_bot(app_id: str, secret: str) -> None:
+@dataclass(frozen=True, slots=True)
+class VerifiedFeishuBot:
+    """Non-secret identity returned by Feishu after credential verification."""
+
+    open_id: str
+    name: str | None = None
+
+
+async def verify_bot(app_id: str, secret: str) -> VerifiedFeishuBot:
     """Authenticate the app and verify that it has an accessible bot identity."""
-    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20)) as session:
+    async with aiohttp.ClientSession(
+        timeout=aiohttp.ClientTimeout(total=20), trust_env=True
+    ) as session:
         async with session.post(
             f"{_BASE}/auth/v3/tenant_access_token/internal",
             json={"app_id": app_id, "app_secret": secret},
@@ -54,6 +65,11 @@ async def verify_bot(app_id: str, secret: str) -> None:
             or not bot["open_id"]
         ):
             raise ValueError("bot_identity_missing")
+        name = bot.get("app_name")
+        return VerifiedFeishuBot(
+            open_id=bot["open_id"],
+            name=name if isinstance(name, str) and name else None,
+        )
 
 
 def cmd_bind(args: Sequence[str]) -> None:
@@ -103,7 +119,7 @@ def cmd_bind(args: Sequence[str]) -> None:
     if not secret:
         parser.error("App Secret 不能为空")
     try:
-        asyncio.run(verify_bot(app_id, secret))
+        verified = asyncio.run(verify_bot(app_id, secret))
     except (aiohttp.ClientError, TimeoutError, ValueError, TypeError):
         console.print("验证失败；检查 App ID/Secret、机器人能力和网络。配置未改变。")
         raise SystemExit(1) from None
@@ -127,6 +143,8 @@ def cmd_bind(args: Sequence[str]) -> None:
         raise SystemExit(1)
     atomic_json_save(path, raw)
     console.print("已有机器人凭据已验证，已绑定到 CM native runtime。")
+    identity = f"{verified.name} ({verified.open_id})" if verified.name else verified.open_id
+    console.print(f"已验证机器人：{identity}")
     console.print("群策略与白名单已保留；绑定不代表消息接收或 CardKit 权限已就绪。")
     console.print(
         "下一步：确认应用发布、消息事件订阅和权限，运行 controlmesh feishu native doctor。"
