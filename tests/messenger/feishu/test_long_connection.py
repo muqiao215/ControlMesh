@@ -18,6 +18,7 @@ from controlmesh.config import AgentConfig
 from controlmesh.messenger.feishu.bot import FeishuBot, FeishuIncomingText
 from controlmesh.messenger.feishu.long_connection import (
     FeishuLongConnectionClient,
+    _SdkLongConnectionAdapter,
     build_long_connection_adapter,
 )
 
@@ -162,6 +163,8 @@ class _FakeSdkJson:
 
 class _FakeSdkClient:
     fail_on_connect: BaseException | None = None
+    connect_gate: threading.Event | None = None
+    disconnect_gate: threading.Event | None = None
     instances: list[_FakeSdkClient] = []
 
     def __init__(
@@ -189,11 +192,17 @@ class _FakeSdkClient:
     async def _connect(self) -> None:
         if type(self).fail_on_connect is not None:
             raise type(self).fail_on_connect
+        gate = type(self).connect_gate
+        while gate is not None and not gate.is_set():  # noqa: ASYNC110 -- threading gate set from the test thread; a sleep poll stays cancellable
+            await asyncio.sleep(0.01)
         self._loop = asyncio.get_running_loop()
         self._conn = object()
 
     async def _disconnect(self) -> None:
         self.disconnect_calls += 1
+        gate = type(self).disconnect_gate
+        while gate is not None and not gate.is_set():  # noqa: ASYNC110 -- threading gate set from the test thread; a sleep poll stays cancellable
+            await asyncio.sleep(0.01)
         self._conn = None
 
     async def _ping_loop(self) -> None:
@@ -423,3 +432,193 @@ class TestBuildLongConnectionAdapter:
         await asyncio.sleep(0)
 
         await adapter.stop()
+
+
+def _make_sdk_adapter(monkeypatch: pytest.MonkeyPatch) -> _SdkLongConnectionAdapter:
+    from controlmesh.messenger.feishu import long_connection
+
+    _FakeSdkClient.instances.clear()
+    _FakeSdkClient.fail_on_connect = None
+    monkeypatch.setattr(long_connection.importlib, "import_module", _fake_sdk_import)
+    adapter = build_long_connection_adapter()
+    assert isinstance(adapter, _SdkLongConnectionAdapter)
+    return adapter
+
+
+async def _wait_until(predicate: Callable[[], bool], max_wait: float = 2.0) -> None:
+    deadline = time.monotonic() + max_wait
+    while not predicate():
+        if time.monotonic() >= deadline:
+            msg = "condition was not met before the timeout"
+            raise AssertionError(msg)
+        await asyncio.sleep(0.01)
+
+
+async def _wait_for_worker_threads_exit(max_wait: float = 2.0) -> None:
+    deadline = time.monotonic() + max_wait
+    while True:
+        alive = [
+            thread
+            for thread in threading.enumerate()
+            if thread.name.startswith("feishu-long-connection")
+        ]
+        if not alive:
+            return
+        if time.monotonic() >= deadline:
+            names = [thread.name for thread in alive]
+            msg = f"long-connection worker threads still alive: {names}"
+            raise AssertionError(msg)
+        await asyncio.sleep(0.02)
+
+
+class TestSdkAdapterAttemptLifecycle:
+    async def test_start_timeout_aborts_permanently_blocked_connect(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from controlmesh.messenger.feishu import long_connection
+
+        adapter = _make_sdk_adapter(monkeypatch)
+        monkeypatch.setattr(long_connection, "_START_TIMEOUT_SECONDS", 0.2)
+        monkeypatch.setattr(_FakeSdkClient, "connect_gate", threading.Event())
+        handler = AsyncMock()
+
+        with pytest.raises(RuntimeError, match="Timed out starting"):
+            await adapter.start(app_id="cli_123", app_secret="sec_456", event_handler=handler)
+
+        client = _FakeSdkClient.instances[-1]
+        assert client.disconnect_calls == 1
+        assert adapter._current_attempt() is None
+        assert not adapter._is_current_generation(1)
+        await _wait_for_worker_threads_exit()
+
+        # the adapter stays usable after the wedged attempt was reaped
+        monkeypatch.setattr(_FakeSdkClient, "connect_gate", None)
+        await adapter.start(app_id="cli_123", app_secret="sec_456", event_handler=handler)
+        assert adapter._current_attempt() is not None
+        assert adapter._is_current_generation(2)
+        try:
+            await adapter.stop()
+        finally:
+            assert not adapter._is_current_generation(2)
+            assert adapter._current_attempt() is None
+            await _wait_for_worker_threads_exit()
+
+    async def test_aborted_attempt_does_not_interfere_with_replacement_attempt(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from controlmesh.messenger.feishu import long_connection
+
+        adapter = _make_sdk_adapter(monkeypatch)
+        monkeypatch.setattr(long_connection, "_START_TIMEOUT_SECONDS", 0.2)
+        monkeypatch.setattr(_FakeSdkClient, "connect_gate", threading.Event())
+        handler = AsyncMock()
+
+        with pytest.raises(RuntimeError, match="Timed out starting"):
+            await adapter.start(app_id="cli_123", app_secret="sec_456", event_handler=handler)
+        client_a = _FakeSdkClient.instances[-1]
+        assert client_a.disconnect_calls == 1
+
+        monkeypatch.setattr(_FakeSdkClient, "connect_gate", None)
+        await adapter.start(app_id="cli_123", app_secret="sec_456", event_handler=handler)
+        client_b = _FakeSdkClient.instances[-1]
+        assert client_b is not client_a
+        assert adapter._generation_counter == 2
+        assert adapter._is_current_generation(2)
+
+        try:
+            payload = _text_event()
+            await asyncio.to_thread(client_b.emit, payload)
+            handler.assert_awaited_once_with(payload)
+            assert client_b.disconnect_calls == 0
+        finally:
+            await adapter.stop()
+        assert client_b.disconnect_calls == 1
+        assert adapter._current_attempt() is None
+        await _wait_for_worker_threads_exit()
+
+    async def test_late_event_during_abort_is_dropped(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        adapter = _make_sdk_adapter(monkeypatch)
+        monkeypatch.setattr(_FakeSdkClient, "disconnect_gate", threading.Event())
+        handler = AsyncMock()
+        await adapter.start(app_id="cli_123", app_secret="sec_456", event_handler=handler)
+        client = _FakeSdkClient.instances[-1]
+
+        stop_task = asyncio.create_task(adapter.stop())
+        try:
+            await _wait_until(lambda: client.disconnect_calls == 1)
+            # the SDK still delivers one buffered event while the abort unwinds
+            await asyncio.to_thread(client.emit, _text_event())
+            handler.assert_not_awaited()
+        finally:
+            gate = _FakeSdkClient.disconnect_gate
+            assert gate is not None
+            gate.set()
+            await asyncio.wait_for(stop_task, 2)
+        assert client.disconnect_calls == 1
+        assert adapter._current_attempt() is None
+        await _wait_for_worker_threads_exit()
+
+    async def test_stop_during_connect_does_not_wait_for_start_timeout(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        adapter = _make_sdk_adapter(monkeypatch)
+        monkeypatch.setattr(_FakeSdkClient, "connect_gate", threading.Event())
+        handler = AsyncMock()
+
+        start_task = asyncio.create_task(
+            adapter.start(app_id="cli_123", app_secret="sec_456", event_handler=handler)
+        )
+        await _wait_until(lambda: len(_FakeSdkClient.instances) == 1)
+        client = _FakeSdkClient.instances[-1]
+
+        await asyncio.wait_for(adapter.stop(), 2)
+        await asyncio.wait_for(start_task, 2)
+        assert client.disconnect_calls == 1
+        assert adapter._current_attempt() is None
+        await _wait_for_worker_threads_exit()
+
+    async def test_repeated_start_stop_cycles_are_generation_safe(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        adapter = _make_sdk_adapter(monkeypatch)
+        received: list[dict[str, Any]] = []
+
+        async def _handler(payload: dict[str, Any]) -> None:
+            received.append(payload)
+
+        generations: list[int] = []
+        try:
+            for cycle in range(3):
+                await adapter.start(
+                    app_id="cli_123",
+                    app_secret="sec_456",
+                    event_handler=_handler,
+                )
+                attempt = adapter._current_attempt()
+                assert attempt is not None
+                generations.append(attempt.generation)
+                client = _FakeSdkClient.instances[-1]
+                payload = _text_event() if cycle % 2 == 0 else _card_action_event()
+                await asyncio.to_thread(client.emit, payload)
+                await adapter.stop()
+                assert client.disconnect_calls == 1
+        finally:
+            await adapter.stop()
+
+        assert generations == [1, 2, 3]
+        assert [item["header"]["event_type"] for item in received] == [
+            "im.message.receive_v1",
+            "card.action.trigger",
+            "im.message.receive_v1",
+        ]
+        assert adapter._current_attempt() is None
+        await _wait_for_worker_threads_exit()
+        for client in _FakeSdkClient.instances:
+            assert client.disconnect_calls == 1
