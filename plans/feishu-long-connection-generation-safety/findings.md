@@ -48,6 +48,29 @@
   each attempt already owns a private event loop; cancellation is delivered via
   `loop.call_soon_threadsafe` from the owner loop.
 
+## Issue #25 root cause (2026-09-06)
+
+- The flake is Python-3.13-specific and environment-shaped: it reproduced only in
+  a `uv sync --frozen --extra test` venv (3.13.13), never in the 3.12 dev venv
+  (0 failures in 20 load-stress + 3 combined runs there). CI's 3.13 leg passes
+  because the window is probabilistic (~10% per run).
+- Failure signature from captured logs: `_dispatch_to_owner_loop` drops the event
+  at the owner-side generation re-check (`long_connection.py:315`) because
+  `stop()` already set `cancel_requested` for that generation before the
+  `call_soon_threadsafe` callback was processed. A second test in the same file
+  (`test_aborted_attempt_does_not_interfere_with_replacement_attempt`) carried the
+  identical latent pattern (emit → immediate `assert_awaited_once`).
+- This is intended runtime behavior, not a runtime bug: generation gating exists
+  precisely so a cancelled attempt cannot deliver. The tests were wrong to assert
+  delivery without awaiting it. Fix = tests await delivery before stopping.
+- The closing report of the PR closeout session understated this: its own session
+  DB shows the test failing in isolation (0.63s) in that environment; the issue's
+  "only in combined runs" claim was inaccurate, and no traceback was ever
+  captured (grep patterns too narrow on `-q` output).
+- Verification harness worth reusing: `UV_PROJECT_ENVIRONMENT=/tmp/cm-flake-venv
+  uv sync --frozen --extra test` builds the 3.13 test-extra environment without
+  touching the repo's dev venv.
+
 ## Fake-SDK harness notes
 
 - `_FakeSdkClient._connect` is extended with a class-level `connect_gate`

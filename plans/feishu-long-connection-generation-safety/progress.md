@@ -41,10 +41,23 @@
   routing, adapter Protocol, `FeishuLongConnectionClient` guard semantics,
   PROJECT/docs (no durable intent or ownership change).
 
+## Session 2026-09-06 (Issue #25)
+
+- Closed PR21's residual remote branch `fix/cron-subprocess-group-kill` (the
+  closeout report wrongly claimed it deleted; PR24's `cron-rewrite` was the one
+  actually removed) and fast-forwarded local main to `a8f88a4`.
+- Reproduced Issue #25 deterministically-enough (3/30) only under Python 3.13 in
+  a `--extra test` venv; captured the first real traceback plus the adapter's own
+  drop log. Root cause and fix recorded in `findings.md` / `task_plan.md` Phase 4.
+- Fixed three emit-then-assert sites to await delivery before stopping the
+  attempt (`test_repeated_start_stop_cycles_are_generation_safe`,
+  `test_aborted_attempt_does_not_interfere_with_replacement_attempt`, and the two
+  pre-existing routing tests). No runtime changes.
+- Verification: 3.13 replica single-test 50/50 (pre-fix 3/30), whole file 10/10
+  on 3.13, combined trio green except environment-only nacl failure, ruff clean,
+  full suite on 3.12 green (5620 passed; sole failure the known environment-only
+  `test_restart.py` systemd expectation). Commit `Fixes #25`.
+
 ## Next
 
-Complete. Follow-up session work (2026-09-05): committed and pushed the implementation
-(`1c9b6bb`, remote CI run `33971772680` green), closed the stale
-`result-writeback-promotion-golden-gate` plan with CI evidence, committed the finished
-`operational-proof-v1-assessment` plan, and promoted durable knowledge to
-`docs/ARCHITECTURE.md` / `PROJECT.md`.
+Complete.

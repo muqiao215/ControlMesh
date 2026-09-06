@@ -369,6 +369,7 @@ class TestBuildLongConnectionAdapter:
         client = _FakeSdkClient.instances[-1]
         payload = _text_event()
         await asyncio.to_thread(client.emit, payload)
+        await _wait_until(lambda: handler.await_count == 1)
         handler.assert_awaited_once_with(payload)
 
         await adapter.stop()
@@ -396,6 +397,7 @@ class TestBuildLongConnectionAdapter:
         client = _FakeSdkClient.instances[-1]
         payload = _card_action_event()
         await asyncio.to_thread(client.emit, payload)
+        await _wait_until(lambda: handler.await_count == 1)
         handler.assert_awaited_once_with(payload)
 
         await adapter.stop()
@@ -530,6 +532,7 @@ class TestSdkAdapterAttemptLifecycle:
         try:
             payload = _text_event()
             await asyncio.to_thread(client_b.emit, payload)
+            await _wait_until(lambda: handler.await_count == 1)
             handler.assert_awaited_once_with(payload)
             assert client_b.disconnect_calls == 0
         finally:
@@ -607,6 +610,11 @@ class TestSdkAdapterAttemptLifecycle:
                 client = _FakeSdkClient.instances[-1]
                 payload = _text_event() if cycle % 2 == 0 else _card_action_event()
                 await asyncio.to_thread(client.emit, payload)
+                # emit only proves the attempt loop picked the event up; the
+                # owner-loop handoff is asynchronous, and stopping the attempt
+                # before delivery would legitimately drop it by generation gate.
+                expected_count = cycle + 1
+                await _wait_until(lambda: len(received) == expected_count)  # noqa: B023 -- awaited immediately within the same iteration
                 await adapter.stop()
                 assert client.disconnect_calls == 1
         finally:

@@ -71,6 +71,23 @@ Status: complete
   suite per project convention (runtime warnings promoted to errors).
 - Record exact commands + results in `progress.md`.
 
+### Phase 4: Fix Issue #25 (flaky cycle test, Python 3.13)
+Status: complete
+
+- Reproduced 3/30 in a `uv sync --frozen --extra test` venv (Python 3.13.13); the
+  3.12 dev venv never reproduced it (0 failures across stress + combined runs).
+- Root cause: `emit` returns when the attempt loop dispatches; the owner-loop
+  `call_soon_threadsafe` handoff is asynchronous, so on 3.13 the owner-side
+  generation re-check could run after `stop()` had already cancelled that
+  generation — the event is then legitimately dropped by design. The test
+  asserted delivery without waiting for it.
+- Fix: tests now await actual delivery (`_wait_until`) before stopping the
+  attempt, in the cycle test and three emit-then-assert sites. Runtime behavior
+  unchanged (the drop is the documented contract).
+- Verification: 50/50 single-test on 3.13 replica (was 3/30 failing), whole file
+  10/10 on 3.13 replica, combined trio on 3.13 replica green except the known
+  environment-only nacl failure, ruff clean, full suite on 3.12 green.
+
 ## Decisions Made
 
 | Decision | Rationale |
