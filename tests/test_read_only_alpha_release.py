@@ -1,4 +1,4 @@
-"""Release-contract tests for ControlMesh 0.42.0 Alpha 1."""
+"""Release-contract tests for the ControlMesh 0.42.0 release."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PYTHON_VERSION = "0.42.0a1"
+PYTHON_VERSION = "0.42.0"
 WORKSPACE_VERSION = "0.42.0-alpha.1"
 
 
@@ -23,7 +23,7 @@ def test_alpha_version_is_consistent_across_release_surfaces() -> None:
     assert pyproject["project"]["version"] == PYTHON_VERSION
     assert init_version is not None
     assert init_version.group(1) == PYTHON_VERSION
-    assert "Development Status :: 3 - Alpha" in pyproject["project"]["classifiers"]
+    assert "Development Status :: 4 - Beta" in pyproject["project"]["classifiers"]
 
     manifests = [
         ROOT / "apps" / "controlmesh-web" / "package.json",
