@@ -63,7 +63,10 @@ class OpenCodeCLI(BaseCLI):
     ) -> list[str]:
         # OpenCode 1.14.x dropped `--quiet`; `--format json` is the stable
         # machine-readable surface we rely on across hosts.
+        from controlmesh.execution_grants import map_tool_grant
+
         cmd = [self._cli, "run", "--format", "json"]
+        cmd.extend(map_tool_grant("opencode", self._config.tool_grant).flags)
         cmd.extend(self._permission_flags())
         if self._config.model:
             cmd += ["--model", self._config.model]

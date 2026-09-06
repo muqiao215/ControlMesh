@@ -572,6 +572,7 @@ class CLIService:
                 max_budget_usd=self._config.max_budget_usd,
                 allowed_tools=list(request.allowed_tools),
                 disallowed_tools=list(request.disallowed_tools),
+                tool_grant=request.tool_grant,
                 permission_mode=self._config.permission_mode,
                 claude_root_permission_mode=self._config.claude_root_permission_mode,
                 claude_root_force_bypass_via_is_sandbox=self._config.claude_root_force_bypass_via_is_sandbox,

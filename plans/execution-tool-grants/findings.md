@@ -1,5 +1,22 @@
 # Findings: Execution Tool Grants — Enforceability Review (Unit A pre-work)
 
+## 0. Implementation correction (2026-09-06, discovered while coding)
+
+- Claude's `--allowedTools` is an auto-approval rule, not a closed-world gate —
+  same semantics class as gemini's deprecated flag. Hard restriction on claude
+  comes from `--disallowedTools` deny rules plus permission modes. The matrix
+  row "Map allow/deny directly to flags" is therefore narrowed: allow-only
+  (closed-world) grants are unenforceable via claude flags and are rejected
+  (`allowlist_not_enforceable_flags`); deny-based, network-tool, and read-only
+  floors map. `bypassPermissions` + restrictive grant is rejected on claude and
+  codex (`bypass_conflicts_grant`) because bypass cannot guarantee deny rules.
+- Landed enforcement vocabulary: `restrictive` = any of tool_allow/tool_deny/
+  no_network/writable_roots; floor-only grants (evidence-only) keep legacy
+  behavior on every provider; `None` grant = legacy path exactly.
+- Follow-ups recorded in `progress.md`: opencode per-invocation config overlay,
+  gemini policy-engine config, claw/openai_agents hard-gate proof, one-shot
+  cron/webhook grant wiring, golden coverage growth as surfaces are proven.
+
 ## 1. Current boundary: descriptive, not enforced
 
 - `controlmesh/execution_policy.py:107-112` hardcodes `tool_policy="request_bound"`,

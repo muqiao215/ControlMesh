@@ -157,6 +157,7 @@ class TaskRegistry:
             tasks_dir=str(resolved_dir),
             thread_id=submit.thread_id,
             execution_context=submit.execution_context,
+            tool_grant=submit.tool_grant,
         )
         self._entries[task_id] = entry
 

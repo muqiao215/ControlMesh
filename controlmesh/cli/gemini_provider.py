@@ -93,10 +93,13 @@ class GeminiCLI(BaseCLI):
         continue_session: bool = False,
     ) -> list[str]:
         """Build the CLI command list."""
+        from controlmesh.execution_grants import map_tool_grant
+
         cfg = self._config
         cmd = ["node", self._cli_js] if self._cli_js else [self._cli]
         cmd += ["--output-format", "stream-json" if streaming else "json"]
         cmd += ["--include-directories", "."]
+        cmd.extend(map_tool_grant("gemini", cfg.tool_grant).flags)
 
         if cfg.model:
             cmd += ["--model", cfg.model]

@@ -52,6 +52,9 @@ class OpenAIAgentsCLI(BaseCLI):
         hard_timeout_seconds: float | None = None,
     ) -> CLIResponse:
         """Run one SDK turn and return a normalized CLIResponse."""
+        from controlmesh.execution_grants import map_tool_grant
+
+        map_tool_grant("openai_agents", self._config.tool_grant)
         if resume_session or continue_session:
             logger.debug(
                 "OpenAI Agents backend ignores durable session controls "
@@ -88,6 +91,9 @@ class OpenAIAgentsCLI(BaseCLI):
         hard_timeout_seconds: float | None = None,
     ) -> AsyncGenerator[StreamEvent, None]:
         """Expose a minimal ControlMesh stream envelope for one SDK turn."""
+        from controlmesh.execution_grants import map_tool_grant
+
+        map_tool_grant("openai_agents", self._config.tool_grant)
         yield SystemInitEvent(type="system", subtype="init")
 
         # TimeoutController is awaitable-oriented today. Keep the existing

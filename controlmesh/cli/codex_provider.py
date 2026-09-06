@@ -90,14 +90,22 @@ class CodexCLI(BaseCLI):
 
     def _sandbox_flags(self) -> list[str]:
         """Return sandbox/approval flags based on permission_mode."""
+        from controlmesh.execution_grants import map_tool_grant
+
         cfg = self._config
+        mapping = map_tool_grant(
+            "codex",
+            cfg.tool_grant,
+            config_permission_mode=cfg.permission_mode,
+            config_sandbox_mode=cfg.sandbox_mode,
+        )
         if cfg.permission_mode == "bypassPermissions":
-            return ["--dangerously-bypass-approvals-and-sandbox"]
+            return [*mapping.flags, "--dangerously-bypass-approvals-and-sandbox"]
         if cfg.sandbox_mode == "full-access":
-            return ["--sandbox", "danger-full-access"]
+            return [*mapping.flags, "--sandbox", "danger-full-access"]
         if cfg.sandbox_mode == "workspace-write":
-            return ["--full-auto"]
-        return ["--sandbox", cfg.sandbox_mode]
+            return [*mapping.flags, "--full-auto"]
+        return [*mapping.flags, "--sandbox", cfg.sandbox_mode]
 
     def _common_codex_flags(self, *, json_output: bool) -> list[str]:
         """Return Codex flags for new executions."""

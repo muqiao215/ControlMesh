@@ -11,10 +11,11 @@
     "generate:lifecycle-golden": "uv run python scripts/generate_task_lifecycle_goldens.py",
     "check:lifecycle-golden": "uv run python scripts/generate_task_lifecycle_goldens.py --check",
     "check:result-writeback-golden": "uv run python scripts/generate_result_writeback_promotion_golden.py --check",
+    "check:tool-grant-golden": "uv run python scripts/generate_tool_grant_golden.py --check",
     "check:execution-provenance-golden": "uv run pytest tests/golden/test_execution_provenance_sandbox.py -q",
     "generate:lifecycle-rollback-gate": "bun packages/controlmesh-runtime-facade/scripts/check-lifecycle-parity.ts --write",
     "check:lifecycle-parity": "bun packages/controlmesh-runtime-facade/scripts/check-lifecycle-parity.ts",
-    "test:golden": "pnpm check:lifecycle-golden && pnpm check:result-writeback-golden && pnpm check:execution-provenance-golden && pnpm --filter @controlmesh/runtime-facade typecheck && pnpm --filter @controlmesh/runtime-facade test:parity && pnpm check:lifecycle-parity && uv run python -m pytest tests/protocol tests/golden -q",
+    "test:golden": "pnpm check:lifecycle-golden && pnpm check:result-writeback-golden && pnpm check:tool-grant-golden && pnpm check:execution-provenance-golden && pnpm --filter @controlmesh/runtime-facade typecheck && pnpm --filter @controlmesh/runtime-facade test:parity && pnpm check:lifecycle-parity && uv run python -m pytest tests/protocol tests/golden -q",
     "test:sdk": "pnpm --filter @controlmesh/sdk test:smoke"
   },
   "devDependencies": {

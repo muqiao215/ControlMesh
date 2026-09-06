@@ -2,31 +2,43 @@
 
 ## Current
 
-2026-09-06：Unit A 前置复核完成——provider 强制力矩阵、持久化/恢复通道、契约设计均已记录于
-`findings.md`，待用户批准后进入实现（独立代码单元）。
+2026-09-06：Unit A v1 实现完成——签发、六 adapter 映射/拒绝、任务持久化、恢复重绑、
+golden/drift gate 全部落地；全量验证进行中，通过后提交推送。
 
 ## Done
 
-- 读取 `execution_policy.py`、`bus/envelope.py`、`tasks/models.py`、四个 provider
-  adapter、tasks 恢复链路；确认现有 tool_policy 为描述性字符串、flag 由静态全局配置驱动。
-- 用本机安装的 claude 2.1.263 / codex 0.153.2 / gemini 0.43.0 / opencode 1.18.29 的
-  `--help` 作为权威证据，产出逐 provider 强制力矩阵。
-- 发现并记录两个反直觉事实：gemini `--allowed-tools` 是免确认清单而非硬门禁（已弃用）；
-  codex 无按工具名 allowlist，强制力在沙箱/审批粒度。
-- 确认 ExecutionContext 持久化与恢复链路（submit 绑定、task JSON 往返、recovery 还原）
-  可复用为 grant 载体；契约设计为独立 additive 字段。
-- 撰写最小持久化与恢复契约（签发、enforcement 点、恢复重绑、回滚、验证路径六条）。
+- `controlmesh/execution_grants.py`：`ToolGrantSnapshot`（严格版本解析、token/root 校验、
+  无正文无凭据字段）、`issue_tool_grant`（可信签发入口）、`map_tool_grant`（逐 provider
+  纯映射）、`ToolGrantDenied`（启动前类型化拒绝，复用 ExecutionPolicyDenied 模式）。
+- 映射语义：claude=deny 规则并集 + no_network 映射 WebFetch/WebSearch 拒绝 +
+  allowlist/bypass 拒绝；codex=no_network 在 workspace-write 下注入
+  `sandbox_workspace_write.network_access=false`，bypass/full-access 冲突拒绝，工具粒度
+  不支持即拒绝；gemini/opencode/claw/openai_agents 限制性 grant 一律拒绝（面未验证）；
+  floor-only 与 None grant 保持既有行为，绝不放宽静态配置。
+- 接线：`AgentRequest.tool_grant`、`CLIConfig.tool_grant`、`service._make_cli` 传递；
+  `TaskSubmit`/`TaskEntry.tool_grant` 持久化往返（registry 复制）；hub 恢复路径
+  `AgentRequest(tool_grant=entry.tool_grant)` 原样重绑。
+- 六个 adapter 在命令构造点接入映射（进程创建前拒绝）；既有静态 flag 行为在无 grant
+  或 floor grant 下逐字节保留。
+- 验收测试 `tests/test_execution_tool_grants.py` 26 项覆盖七组：跨 provider 映射、恢复
+  往返、篡改 fail-closed、跨任务重放（严格解析+verbatim 重绑）、越权（allowlist/bypass/
+  full-access 拒绝 + 不放宽静态配置）、无秘密字段集、旧记录兼容。
+- golden：`tests/golden/runners/tool_grant_mapping.py` 14 案例 + fixture + JSON Schema +
+  漂移测试 + `scripts/generate_tool_grant_golden.py --check` + `check:tool-grant-golden`
+  接入 `pnpm test:golden` 链。
+- 修复三个实现缺陷：`_bounded_token` 空串误拒、floor/None 判定反转导致 opencode/claw/
+  openai_agents 既有路径误拒、claude deny 断言切片。
 
 ## Remaining
 
-实现按 findings.md §5 契约执行：grant 对象与签发 → 各 adapter enforcement 映射 →
-拒绝路径 → 恢复重绑 → golden/drift gate。claw/openai_agents 属第二波同程序审计。
+- opencode 配置覆盖、gemini policy-engine 配置、claw/openai_agents 硬门禁证明、
+  one-shot cron/webhook grant 接线（按 findings §5 后续波次）。
+- 请求侧（如何为任务指定限制）属下一波产品化决策。
 
 ## Issues
 
-无。
+- 首版 floor 判定反转使 52 个既有测试失败（None grant 误入 handler）；已修复并全绿。
 
 ## Next
 
-等用户批准契约后，按独立代码单元开始实现；实现前先复核 opencode run 面是否接受
-per-invocation 配置覆盖与 claw_provider 的 allowedTools 是否为硬门禁。
+全量套件确认后提交推送并盯 CI。

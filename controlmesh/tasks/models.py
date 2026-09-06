@@ -9,6 +9,7 @@ from typing import Any
 
 from controlmesh.messenger.address import ChatRef, TopicRef
 from controlmesh.bus.envelope import ExecutionContext
+from controlmesh.execution_grants import ToolGrantSnapshot
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,6 +103,7 @@ class TaskSubmit:
     external_task: bool = False
     idempotency_key: str = ""
     execution_context: ExecutionContext | None = None
+    tool_grant: ToolGrantSnapshot | None = None
 
 
 @dataclass(slots=True)
@@ -164,6 +166,7 @@ class TaskEntry:
     tasks_dir: str = ""  # Agent's tasks directory (for per-agent folder resolution)
     thread_id: TopicRef = None  # Forum topic ID (for routing results back to topic)
     execution_context: ExecutionContext | None = None
+    tool_grant: ToolGrantSnapshot | None = None
 
     def to_dict(self) -> dict[str, object]:
         d: dict[str, object] = {
@@ -223,6 +226,7 @@ class TaskEntry:
             "execution_context": (
                 self.execution_context.to_dict() if self.execution_context is not None else None
             ),
+            "tool_grant": self.tool_grant.to_dict() if self.tool_grant is not None else None,
         }
         if self.thread_id is not None:
             d["thread_id"] = self.thread_id
@@ -288,6 +292,11 @@ class TaskEntry:
             execution_context=(
                 ExecutionContext.from_dict(d["execution_context"])
                 if isinstance(d.get("execution_context"), dict)
+                else None
+            ),
+            tool_grant=(
+                ToolGrantSnapshot.from_dict(d["tool_grant"])
+                if isinstance(d.get("tool_grant"), dict)
                 else None
             ),
         )

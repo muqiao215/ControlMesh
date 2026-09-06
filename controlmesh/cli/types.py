@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel, Field
 
 from controlmesh.bus.envelope import ExecutionContext
+from controlmesh.execution_grants import ToolGrantSnapshot
 
 if TYPE_CHECKING:
     from controlmesh.cli.liveness import RunLivenessPolicy
@@ -61,6 +62,7 @@ class AgentRequest:
     process_label: str = "main"
     allowed_tools: tuple[str, ...] = ()
     disallowed_tools: tuple[str, ...] = ()
+    tool_grant: ToolGrantSnapshot | None = None
     resume_session: str | None = None
     continue_session: bool = False
     timeout_seconds: float | None = None

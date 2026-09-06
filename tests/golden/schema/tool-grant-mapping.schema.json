@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ControlMesh tool-grant mapping golden matrix",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "production_owner", "cases"],
+  "properties": {
+    "schema_version": {"const": "controlmesh.tool_grant_mapping_golden.v1"},
+    "production_owner": {"const": "python"},
+    "cases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "provider", "surface", "flags", "denied_reason"],
+        "properties": {
+          "id": {"type": "string"},
+          "provider": {"type": "string"},
+          "surface": {"type": "string"},
+          "flags": {"type": "array", "items": {"type": "string"}},
+          "denied_reason": {"type": "string"}
+        }
+      }
+    }
+  }
+}

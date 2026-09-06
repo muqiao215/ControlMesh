@@ -64,6 +64,9 @@ class ClawCLI(BaseCLI):
         continue_session: bool = False,
     ) -> list[str]:
         cmd = [self._cli, "--output-format", "json"]
+        from controlmesh.execution_grants import map_tool_grant
+
+        cmd.extend(map_tool_grant("claw", self._config.tool_grant).flags)
         if self._config.model:
             cmd += ["--model", self._config.model]
         cmd += ["--permission-mode", self._permission_mode()]

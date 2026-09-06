@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 from controlmesh.cli.introspection import ProviderIntrospection
 from controlmesh.cli.stream_events import StreamEvent
 from controlmesh.cli.types import CLIResponse
+from controlmesh.execution_grants import ToolGrantSnapshot
 
 if TYPE_CHECKING:
     from controlmesh.cli.process_registry import ProcessRegistry
@@ -84,6 +85,7 @@ class CLIConfig:
     max_budget_usd: float | None = None
     allowed_tools: list[str] = field(default_factory=list)
     disallowed_tools: list[str] = field(default_factory=list)
+    tool_grant: ToolGrantSnapshot | None = None
     permission_mode: str = "bypassPermissions"
     claude_root_permission_mode: str = "bypassPermissions"
     claude_root_force_bypass_via_is_sandbox: bool = True

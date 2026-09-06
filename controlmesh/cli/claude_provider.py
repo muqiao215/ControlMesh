@@ -78,10 +78,22 @@ class ClaudeCodeCLI(BaseCLI):
             str(cfg.max_budget_usd) if cfg.max_budget_usd is not None else None,
         )
 
-        if cfg.allowed_tools:
-            cmd += ["--allowedTools", *cfg.allowed_tools]
-        if cfg.disallowed_tools:
-            cmd += ["--disallowedTools", *cfg.disallowed_tools]
+        if cfg.tool_grant is not None and cfg.tool_grant.restrictive:
+            from controlmesh.execution_grants import map_tool_grant
+
+            mapping = map_tool_grant(
+                "claude",
+                cfg.tool_grant,
+                config_allowed=tuple(cfg.allowed_tools),
+                config_disallowed=tuple(cfg.disallowed_tools),
+                config_permission_mode=cfg.permission_mode,
+            )
+            cmd.extend(mapping.flags)
+        else:
+            if cfg.allowed_tools:
+                cmd += ["--allowedTools", *cfg.allowed_tools]
+            if cfg.disallowed_tools:
+                cmd += ["--disallowedTools", *cfg.disallowed_tools]
 
         if resume_session:
             cmd += ["--resume", resume_session]

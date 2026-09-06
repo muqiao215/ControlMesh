@@ -1369,6 +1369,7 @@ class TaskHub:
                 liveness_policy=BACKGROUND_POLICY,
                 resume_session=resume_session,
                 execution_context=entry.execution_context or ExecutionContext.legacy(),
+                tool_grant=entry.tool_grant,
             )
 
             eff_provider = ""

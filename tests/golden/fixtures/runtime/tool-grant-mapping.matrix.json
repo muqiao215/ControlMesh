@@ -1,0 +1,117 @@
+{
+  "cases": [
+    {
+      "denied_reason": "",
+      "flags": [
+        "--disallowedTools",
+        "mcp__internal__secrets",
+        "Write",
+        "Edit",
+        "Bash"
+      ],
+      "id": "mapping.claude.deny_union",
+      "provider": "claude",
+      "surface": "claude_tool_flags"
+    },
+    {
+      "denied_reason": "",
+      "flags": [
+        "--disallowedTools",
+        "WebFetch",
+        "WebSearch"
+      ],
+      "id": "mapping.claude.no_network_tools",
+      "provider": "claude",
+      "surface": "claude_tool_flags"
+    },
+    {
+      "denied_reason": "allowlist_not_enforceable_flags",
+      "flags": [],
+      "id": "mapping.claude.allowlist_rejected",
+      "provider": "claude",
+      "surface": "rejected"
+    },
+    {
+      "denied_reason": "bypass_conflicts_grant",
+      "flags": [],
+      "id": "mapping.claude.bypass_conflicts",
+      "provider": "claude",
+      "surface": "rejected"
+    },
+    {
+      "denied_reason": "",
+      "flags": [
+        "-c",
+        "sandbox_workspace_write={\"network_access\": false}"
+      ],
+      "id": "mapping.codex.network_toggle",
+      "provider": "codex",
+      "surface": "codex_sandbox"
+    },
+    {
+      "denied_reason": "",
+      "flags": [],
+      "id": "mapping.codex.read_only_network_floor",
+      "provider": "codex",
+      "surface": "codex_sandbox"
+    },
+    {
+      "denied_reason": "tool_granularity_unsupported",
+      "flags": [],
+      "id": "mapping.codex.tool_deny_rejected",
+      "provider": "codex",
+      "surface": "rejected"
+    },
+    {
+      "denied_reason": "bypass_conflicts_grant",
+      "flags": [],
+      "id": "mapping.codex.bypass_conflicts",
+      "provider": "codex",
+      "surface": "rejected"
+    },
+    {
+      "denied_reason": "no_network_conflicts_full_access",
+      "flags": [],
+      "id": "mapping.codex.full_access_conflict",
+      "provider": "codex",
+      "surface": "rejected"
+    },
+    {
+      "denied_reason": "policy_engine_config_unverified",
+      "flags": [],
+      "id": "mapping.gemini.restrictive_rejected",
+      "provider": "gemini",
+      "surface": "rejected"
+    },
+    {
+      "denied_reason": "config_overlay_unverified",
+      "flags": [],
+      "id": "mapping.opencode.restrictive_rejected",
+      "provider": "opencode",
+      "surface": "rejected"
+    },
+    {
+      "denied_reason": "surface_unproven",
+      "flags": [],
+      "id": "mapping.claw.surface_unproven",
+      "provider": "claw",
+      "surface": "rejected"
+    },
+    {
+      "denied_reason": "surface_unproven",
+      "flags": [],
+      "id": "mapping.openai_agents.surface_unproven",
+      "provider": "openai_agents",
+      "surface": "rejected"
+    },
+    {
+      "denied_reason": "",
+      "flags": [],
+      "id": "mapping.floor.no_flags",
+      "provider": "claude",
+      "surface": "claude_floor"
+    }
+  ],
+  "production_owner": "python",
+  "schema_version": "controlmesh.tool_grant_mapping_golden.v1"
+}

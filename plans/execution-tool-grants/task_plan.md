@@ -46,13 +46,13 @@ Status: complete
 
 ## Status
 
-Pre-implementation review complete. Enforceability matrix and the six-part
-persistence/recovery contract are recorded in `findings.md`. Implementation is a
-separate code unit and has not started.
+Pre-implementation review complete AND Unit A v1 implemented: grant model +
+issuance, per-adapter mapping/rejection (claude/codex enforced; gemini/
+opencode/claw/openai_agents fail closed), task-record persistence, recovery
+rebind, golden/drift gate wired into `pnpm test:golden`. See `progress.md`.
 
 ## Next Step
 
-Await approval of the contract, then implement: grant object + issuance,
-per-adapter enforcement mapping, rejection path, recovery rebind, golden/drift
-gate. Before coding: verify opencode's run surface accepts a per-invocation
-config overlay and whether claw_provider's allowedTools is a hard gate.
+Full-suite confirmation, commit, push, CI. Follow-up waves: opencode config
+overlay, gemini policy-engine config, claw/openai_agents hard-gate proof,
+one-shot cron/webhook grant wiring, request-side restriction surface.
