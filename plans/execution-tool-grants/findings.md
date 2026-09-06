@@ -2,6 +2,14 @@
 
 ## 0. Implementation correction (2026-09-06, discovered while coding)
 
+2026-09-07 baseline sync: Unit A v1 landed at `3417ae0`; exact-SHA CI 34041126119
+is verified successful. Sections 1–5 below are the pre-implementation audit unless
+explicitly corrected here; they must not be read as current absence of grant code.
+Current closure work is [Unit A.1](../execution-tool-grants-enforcement-closure/task_plan.md).
+Claude WebFetch/WebSearch denial does not establish workload-wide no_network;
+issuance has no production caller yet, and confirmation-only grants take the floor path.
+Persistence round-trip tests do not prove cross-task/episode replay rejection.
+
 - Claude's `--allowedTools` is an auto-approval rule, not a closed-world gate —
   same semantics class as gemini's deprecated flag. Hard restriction on claude
   comes from `--disallowedTools` deny rules plus permission modes. The matrix
@@ -33,7 +41,7 @@
 
 | Provider (installed) | Native enforcement granularity | Evidence | Grant mapping |
 |---|---|---|---|
-| **claude** 2.1.263 | **Tool-name allow/deny** + permission mode | `--allowedTools/--disallowedTools <tools...>`, `--permission-mode <mode>` in `claude --help`; already plumbed in `cli/claude_provider.py:81-84` | Map allow/deny directly to flags; denylist + permission-mode floor. `--dangerously-skip-permissions` is incompatible with a grant → reject that combination for restricted tasks |
+| **claude** 2.1.263 | Deny rules plus permission mode; allowedTools is auto-approval | Installed help and implementation review | Union deny rules; reject closed-world allow-only grants and bypass conflicts. Web-tool denial alone does not enforce no_network; A.1 must enforce or reject it |
 | **codex** 0.153.2 | **Sandbox-mode + approval** granularity, NOT per-tool | `-s/--sandbox <MODE>`, `-a/--ask-for-approval <POLICY>`, `-c 'sandbox_permissions=[...]'` / workspace-write network toggles; plumbed in `cli/codex_provider.py:91-100` | Tool restrictions must map onto sandbox mode + approval policy (e.g. read-only tool scope → `--sandbox read-only`); restrictions that cannot be expressed are **rejected**, never prompt-only |
 | **gemini** 0.43.0 | **Approval-mode** granularity; `--allowed-tools` is an auto-approval list, not a denial gate (deprecated → Policy Engine) | `--approval-mode` choices `default/auto_edit/yolo/plan` in `gemini --help`; plumbed `cli/gemini_provider.py:103-110` | Hard restriction maps to `--approval-mode plan` (read-only) or a generated policy-engine config; `--allowed-tools` alone must NOT be treated as enforcement |
 | **opencode** 1.18.29 | **Config-file permission rules** (`permission: edit/bash/webfetch ask/allow/deny`) and agents; CLI surface has only `--auto` / `--dangerously-skip-permissions` | `opencode --help` flag dump; `cli/opencode_provider.py:52-55` passes only the skip flag | Per-task grants require a generated per-invocation config overlay (if the run surface accepts one) or **reject**; a whitelist in the prompt is not enforcement |

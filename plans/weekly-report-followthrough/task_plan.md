@@ -25,7 +25,8 @@
 - [x] 读取周报完整分页，核对最新设计与历史建议。
 - [x] 审计当前实现、相关测试、现有计划和未决边界。
 - [x] 建立不重复的实施队列、验收条件和项目索引。
-- [ ] A：execution-tool-grants，绑定工具权限与回复目标。
+- [x] A v1：execution-tool-grants，提供快照、映射/拒绝、持久化和 golden（3417ae0）。
+- [ ] A.1：execution-tool-grants-enforcement-closure，完成真实入口和安全语义闭环。
 - [ ] B：cross-node-trace-diagnose，形成持久化诊断链。
 - [ ] C：process-recovery-fault-matrix，验证强杀与恢复。
 - [ ] D：fleet-readiness-canary，节点一致性与两节点实测。
@@ -104,8 +105,10 @@ typecheck、SDK/Web build 和公开只读门禁。真机条件缺失时不得把
 
 ## Status
 
-审计及计划交付完成；A–E 尚未实施。Terminal Product v1 保持主线，A 是排队的安全候选。
+审计及计划交付完成。A v1 已落地于 `3417ae0`，完整安全验收继续由
+[A.1 enforcement closure](../execution-tool-grants-enforcement-closure/task_plan.md) 收口；
+B–E 尚未实施。Terminal Product v1 保持主线。
 
 ## Next Step
 
-开始 A 前复核 provider 的可强制工具边界和 grant 恢复/签发契约；按独立代码单元执行。
+执行 A.1 Phase 0，确定网络、确认与真实入口签发契约，再推进 B。

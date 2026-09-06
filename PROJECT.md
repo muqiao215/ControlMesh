@@ -143,6 +143,12 @@ to the owner loop, and repeated start/stop cycles leak no threads, ping tasks, o
 
 ## Current Priority
 
+Tool-grant v1 landed at `3417ae0`: provider mapping/rejection, optional task snapshots and
+golden drift checks are present. This does not yet establish end-to-end grant enforcement.
+The next safety unit is A.1 (`plans/execution-tool-grants-enforcement-closure/`), covering
+trusted issuance wiring, network/approval semantics and recovery/delivery identity checks,
+before cross-node diagnosis. CI 34041126119 passed for that exact implementation SHA.
+
 The immediate user-facing priority is Terminal Product v1
 (`plans/terminal-product-v1/`): deliver a usable terminal workbench with explicit UX
 acceptance. The following runtime and operational work remains queued:
@@ -171,4 +177,5 @@ acceptance. The following runtime and operational work remains queued:
 - Historical and active work → `plans/`
 - Current active work → `plans/terminal-product-v1/`
 - Weekly report gaps and queued safety work → `plans/weekly-report-followthrough/`
-- Most recent completed work → `plans/feishu-long-connection-generation-safety/`
+- Tool-grant enforcement closure (Unit A.1) → `plans/execution-tool-grants-enforcement-closure/`
+- Most recent landed safety implementation (Unit A v1) → `plans/execution-tool-grants/`

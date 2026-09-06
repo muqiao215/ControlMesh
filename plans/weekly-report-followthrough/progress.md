@@ -2,7 +2,8 @@
 
 ## Current
 
-2026-09-06：周报差距审计和新 SpecMesh 计划交付完成；后续 A–E 均未实施。
+2026-09-07：本地/远端 main 统一为 `3417ae0`，Unit A v1 已落地且对应 CI 成功。
+A.1 计划就绪、尚未实施；B–E 仍排队。旧日期的基线和测试数仅代表当时核验。
 
 ## Landing
 
@@ -21,7 +22,8 @@
 
 ## Remaining
 
-后续实现按 task_plan.md A–E 执行。终端体验仍由 terminal-product-v1 原计划负责。
+先完成 execution-tool-grants-enforcement-closure（A.1），再按 B–E 执行。
+终端体验仍由 terminal-product-v1 原计划负责。
 
 ## Issues
 
@@ -32,4 +34,4 @@
 
 ## Next
 
-实现下一安全单元时，先核对 A 的 provider 限制能力，再确定最小持久化与恢复契约。
+执行 A.1 Phase 0：真实入口、网络/确认强制契约、恢复与回复归属。

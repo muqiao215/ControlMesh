@@ -2,6 +2,9 @@
 
 ## Source and baseline
 
+- 2026-09-07 更新：本地与 origin/main 已统一为 `3417ae0`，CI 34041126119 exact SHA
+  查询成功。以下 ac830ae/a8f88a4 是历史审计基线，不能代表当前落后状态。
+
 - 来源：[ControlMesh 周报自动任务](chatgpt-conversation://6a74e11c-3330-83ea-abf8-408108975afc)。
   已读完两页到 2026-08-07 的历史及 2026-09-06 最新设计；报告作为待核验数据。
 - 本地 main `ac830ae`，开始时工作区干净。fetch 后 origin/main 为 `a8f88a4`，
@@ -19,7 +22,7 @@
 | 来源沙箱拒绝宿主机 fallback | 已落地 | execution_policy.py、provenance golden；本轮对应测试通过 |
 | 工具、网络、写入、确认完整风险策略 | 部分完成 | tool_policy=request_bound、network_policy=container_default、configured_container_mounts 是当前策略描述，不能证明最小授权；计划 A |
 | 飞书长连接取消与代际隔离 | 已落地 | test_long_connection.py 本轮通过；无需重做 09-05 设计 |
-| ToolGrantContext 跨 provider / recovery | 尚未落地 | 当前 ExecutionContext 和 tasks 序列化存在；生产代码未找到 grant/fingerprint 契约；计划 A |
+| ToolGrantSnapshot 跨 provider / recovery | A v1 已落地，A.1 待收口 | 3417ae0 提供映射、持久化与恢复传递；真实签发、网络/确认及身份/回复校验见 A.1 |
 | 跨服务器 message diagnose | 尚未落地 | orchestrator/commands.py 的 cmd_diagnose 忽略输入文本，展示本地健康与日志；计划 B |
 | kill/restart 持久化与投递故障矩阵 | 尚无该端到端矩阵证据 | 单进程 golden 与 cron process-group 清理不等同于 runtime kill/restart；计划 C |
 | fleet manifest / 漂移 | 部分基础已有 | cli_commands/status.py 已有 provider fleet doctor；扩展而非新造 inventory；计划 D |

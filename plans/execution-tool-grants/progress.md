@@ -2,8 +2,17 @@
 
 ## Current
 
-2026-09-06：Unit A v1 实现完成——签发、六 adapter 映射/拒绝、任务持久化、恢复重绑、
-golden/drift gate 全部落地；全量验证进行中，通过后提交推送。
+2026-09-07：Unit A v1 已提交推送至 `3417ae0`，本地 main 与 origin/main 一致。
+签发函数、adapter 映射/拒绝、任务持久化、恢复传递和 golden 已落地；完整执行约束由
+[A.1](../execution-tool-grants-enforcement-closure/task_plan.md) 继续收口。
+
+## Verification
+
+- 本轮通过 GitHub 查询确认 [CI 34041126119](https://github.com/muqiao215/ControlMesh/actions/runs/34041126119)
+  headSha 为 `3417ae0df5d76afb37cb5b19ea2ff6a800126b8e`，结论 success；Python 3.11/3.12、
+  Ruff、Mypy、构建、Protocol/SDK/Web、安装 smoke 均成功。
+- 用户提供的实现期记录：专项 848 passed；全量 5646 passed、1 项 systemd 环境失败。
+  本次未重新执行该本地全量命令，失败归因仍以原实现记录为准，不计作本轮复现。
 
 ## Done
 
@@ -20,9 +29,9 @@ golden/drift gate 全部落地；全量验证进行中，通过后提交推送�
   `AgentRequest(tool_grant=entry.tool_grant)` 原样重绑。
 - 六个 adapter 在命令构造点接入映射（进程创建前拒绝）；既有静态 flag 行为在无 grant
   或 floor grant 下逐字节保留。
-- 验收测试 `tests/test_execution_tool_grants.py` 26 项覆盖七组：跨 provider 映射、恢复
-  往返、篡改 fail-closed、跨任务重放（严格解析+verbatim 重绑）、越权（allowlist/bypass/
-  full-access 拒绝 + 不放宽静态配置）、无秘密字段集、旧记录兼容。
+- 验收测试 `tests/test_execution_tool_grants.py` 覆盖 provider 映射、持久化往返、非法字段
+  拒绝、越权配置拒绝、无秘密字段集与旧记录兼容。严格解析和 verbatim 往返不等同于
+  跨任务/episode 重放拒绝；后者需 A.1 的真实 owner 路径证据。
 - golden：`tests/golden/runners/tool_grant_mapping.py` 14 案例 + fixture + JSON Schema +
   漂移测试 + `scripts/generate_tool_grant_golden.py --check` + `check:tool-grant-golden`
   接入 `pnpm test:golden` 链。
@@ -31,6 +40,7 @@ golden/drift gate 全部落地；全量验证进行中，通过后提交推送�
 
 ## Remaining
 
+- A.1：可信入口调用签发器、完整网络限制、controller 确认、回复归属和身份恢复证明。
 - opencode 配置覆盖、gemini policy-engine 配置、claw/openai_agents 硬门禁证明、
   one-shot cron/webhook grant 接线（按 findings §5 后续波次）。
 - 请求侧（如何为任务指定限制）属下一波产品化决策。
@@ -41,4 +51,4 @@ golden/drift gate 全部落地；全量验证进行中，通过后提交推送�
 
 ## Next
 
-全量套件确认后提交推送并盯 CI。
+进入 A.1 Phase 0；B 跨节点诊断排在 A.1 收口之后。终端体验保持产品主线。

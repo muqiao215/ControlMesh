@@ -53,6 +53,6 @@ rebind, golden/drift gate wired into `pnpm test:golden`. See `progress.md`.
 
 ## Next Step
 
-Full-suite confirmation, commit, push, CI. Follow-up waves: opencode config
-overlay, gemini policy-engine config, claw/openai_agents hard-gate proof,
-one-shot cron/webhook grant wiring, request-side restriction surface.
+Commit `3417ae0` is on main and CI 34041126119 succeeded. Continue with
+[Unit A.1](../execution-tool-grants-enforcement-closure/task_plan.md) for issuance wiring,
+network/approval enforcement and identity/delivery closure before Unit B.
