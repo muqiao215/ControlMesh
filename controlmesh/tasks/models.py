@@ -104,6 +104,8 @@ class TaskSubmit:
     idempotency_key: str = ""
     execution_context: ExecutionContext | None = None
     tool_grant: ToolGrantSnapshot | None = None
+    requested_tool_deny: tuple[str, ...] = ()
+    requested_no_network: bool = False
 
 
 @dataclass(slots=True)

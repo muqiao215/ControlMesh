@@ -97,9 +97,34 @@ class TestCrossProviderMapping:
         assert mapping.surface == "claude_tool_flags"
         assert mapping.flags == ("--disallowedTools", "mcp__internal__secrets", "Write", "Edit", "Bash")
 
-    def test_claude_no_network_maps_to_network_tools(self) -> None:
-        mapping = map_tool_grant("claude", ToolGrantSnapshot(network_policy="no_network"))
-        assert mapping.flags == ("--disallowedTools", "WebFetch", "WebSearch")
+    def test_claude_no_network_is_rejected_without_isolation(self) -> None:
+        with pytest.raises(ToolGrantDenied, match="no_network_unenforceable"):
+            map_tool_grant("claude", ToolGrantSnapshot(network_policy="no_network"))
+
+    def test_claude_override_conflicts_rejected(self) -> None:
+        with pytest.raises(ToolGrantDenied, match="override_conflicts"):
+            map_tool_grant(
+                "claude",
+                _deny_write(),
+                config_cli_parameters=("--dangerously-skip-permissions",),
+            )
+
+    def test_restrictive_controller_required_is_rejected(self) -> None:
+        grant = ToolGrantSnapshot(
+            tool_deny=("Write",),
+            confirmation_policy="controller_required",
+        )
+        with pytest.raises(ToolGrantDenied, match="controller_approval_unavailable"):
+            map_tool_grant("claude", grant)
+        with pytest.raises(ToolGrantDenied, match="controller_approval_unavailable"):
+            map_tool_grant("codex", grant)
+
+    def test_floor_controller_required_stays_legacy(self) -> None:
+        mapping = map_tool_grant(
+            "claude",
+            ToolGrantSnapshot(confirmation_policy="controller_required"),
+        )
+        assert mapping.flags == ()
 
     def test_claude_allowlist_is_not_enforceable(self) -> None:
         with pytest.raises(ToolGrantDenied, match="allowlist"):
@@ -269,3 +294,48 @@ class TestPersistenceAndRecovery:
         assert restored.tool_grant.restrictive
         assert restored.tool_grant.tool_deny == grant.tool_deny
         assert restored.tool_grant.network_policy == grant.network_policy
+
+
+class TestSubmitIssuanceAndReplyTarget:
+    def test_submit_issuance_narrows_only(self) -> None:
+        from controlmesh.execution_grants import issue_task_grant_for_submit
+
+        grant = issue_task_grant_for_submit(
+            source_scope="cron",
+            requested_tool_deny=("Bash",),
+            requested_no_network=False,
+            transport="feishu",
+            chat_id="oc_1",
+        )
+        assert grant.tool_deny == ("Bash",)
+        assert grant.confirmation_policy == "controller_required"
+        assert grant.reply_chat == "oc_1"
+        assert not grant.tool_allow
+
+    def test_trusted_local_scope_keeps_provider_runtime_floor(self) -> None:
+        from controlmesh.execution_grants import issue_task_grant_for_submit
+
+        grant = issue_task_grant_for_submit(
+            source_scope="local_foreground",
+            transport="feishu",
+            chat_id="oc_1",
+        )
+        assert grant.confirmation_policy == "provider_runtime"
+        assert not grant.restrictive
+
+    def test_reply_target_mismatch_blocks_delivery(self) -> None:
+        from controlmesh.errors import ControlMeshError
+        from controlmesh.execution_grants import validate_reply_target
+
+        grant = ToolGrantSnapshot(reply_transport="feishu", reply_chat="oc_1")
+        validate_reply_target(grant, transport="feishu", chat_id="oc_1")
+        with pytest.raises(ControlMeshError, match="reply_target_mismatch"):
+            validate_reply_target(grant, transport="feishu", chat_id="oc_other")
+
+    def test_legacy_grant_accepts_trusted_target(self) -> None:
+        from controlmesh.execution_grants import validate_reply_target
+
+        validate_reply_target(None, transport="feishu", chat_id="oc_1")
+        validate_reply_target(
+            ToolGrantSnapshot(), transport="feishu", chat_id="oc_1"
+        )

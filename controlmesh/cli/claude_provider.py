@@ -87,6 +87,7 @@ class ClaudeCodeCLI(BaseCLI):
                 config_allowed=tuple(cfg.allowed_tools),
                 config_disallowed=tuple(cfg.disallowed_tools),
                 config_permission_mode=cfg.permission_mode,
+                config_cli_parameters=tuple(cfg.cli_parameters),
             )
             cmd.extend(mapping.flags)
         else:

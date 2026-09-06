@@ -216,6 +216,7 @@ class _GrantInput:
     config_disallowed: tuple[str, ...]
     config_permission_mode: str
     config_sandbox_mode: str
+    config_cli_parameters: tuple[str, ...] = ()
 
 
 def map_tool_grant(
@@ -226,6 +227,7 @@ def map_tool_grant(
     config_disallowed: tuple[str, ...] | list[str] = (),
     config_permission_mode: str = "",
     config_sandbox_mode: str = "",
+    config_cli_parameters: tuple[str, ...] | list[str] = (),
 ) -> ToolGrantMapping:
     """Translate a grant onto *provider*'s natively enforceable surface.
 
@@ -241,13 +243,32 @@ def map_tool_grant(
         config_disallowed=tuple(config_disallowed),
         config_permission_mode=str(config_permission_mode or ""),
         config_sandbox_mode=str(config_sandbox_mode or ""),
+        config_cli_parameters=tuple(config_cli_parameters),
     )
     if grant is None or not grant.restrictive:
         return ToolGrantMapping(provider=provider, surface=f"{provider}_floor")
+    if grant.confirmation_policy == "controller_required":
+        # A restrictive task claiming controller approval requires real
+        # approval evidence, which no reusable mechanism provides yet.
+        raise ToolGrantDenied(provider, "controller_approval_unavailable")
     handler = _MAPPERS.get(provider)
     if handler is None:
         raise ToolGrantDenied(provider, "surface_unproven")
+    _reject_override_conflicts(normalized)
     return handler(normalized)
+
+
+def _reject_override_conflicts(data: _GrantInput) -> None:
+    """Reject CLI parameter overrides that would defeat the grant's limits."""
+    lowered = tuple(item.lower() for item in data.config_cli_parameters)
+    if data.provider == "codex":
+        joined = " ".join(lowered)
+        if "sandbox" in joined or "network_access" in joined:
+            raise ToolGrantDenied("codex", "override_conflicts_grant")
+    if data.provider == "claude":
+        for item in lowered:
+            if item.startswith("--dangerously") or item.startswith("--permission-mode"):
+                raise ToolGrantDenied("claude", "override_conflicts_grant")
 
 
 _FLOOR_GRANT = ToolGrantSnapshot()
@@ -257,6 +278,10 @@ def _map_claude(data: _GrantInput) -> ToolGrantMapping:
     grant = data.grant
     if data.config_permission_mode == "bypassPermissions":
         raise ToolGrantDenied("claude", "bypass_conflicts_grant")
+    if grant.network_policy == "no_network":
+        # Claude flags cannot isolate workload network access; denying two
+        # built-in tools is not network isolation (R3).
+        raise ToolGrantDenied("claude", "no_network_unenforceable")
     if grant.tool_allow:
         raise ToolGrantDenied("claude", "allowlist_not_enforceable_flags")
     if grant.writable_roots:
@@ -265,10 +290,6 @@ def _map_claude(data: _GrantInput) -> ToolGrantMapping:
     for token in (*data.config_disallowed, *grant.tool_deny):
         if token not in denies:
             denies.append(token)
-    if grant.network_policy == "no_network":
-        for token in ("WebFetch", "WebSearch"):
-            if token not in denies:
-                denies.append(token)
     flags: list[str] = []
     if denies:
         flags += ["--disallowedTools", *denies]
@@ -292,6 +313,8 @@ def _map_codex(data: _GrantInput) -> ToolGrantMapping:
                 surface="codex_sandbox",
                 flags=("-c", 'sandbox_workspace_write={"network_access": false}'),
             )
+        if data.config_sandbox_mode != "read-only":
+            raise ToolGrantDenied("codex", "no_network_unproven_sandbox")
     return ToolGrantMapping(provider="codex", surface="codex_sandbox")
 
 
@@ -314,3 +337,80 @@ _MAPPERS = {
     "gemini": _map_gemini,
     "opencode": _map_opencode,
 }
+
+
+class ReplyTargetMismatch(CLIError):  # noqa: N818
+    """Raised before delivery when the target diverges from the granted one."""
+
+    def __init__(self, field: str) -> None:
+        self.field = field
+        super().__init__(f"reply_target_mismatch:{field}")
+
+    @property
+    def user_message(self) -> str:
+        return (
+            "Result delivery was blocked because the delivery target does not "
+            "match the task's trusted reply identity. "
+            f"field={self.field}"
+        )
+
+
+def validate_reply_target(
+    grant: ToolGrantSnapshot | None,
+    *,
+    transport: str,
+    chat_id: object,
+    topic_id: object = "",
+    thread_id: object = "",
+) -> None:
+    """Verify delivery identity matches the grant's trusted reply identity.
+
+    Only fields the grant actually pins are checked; a grant without reply
+    identity (legacy records) accepts the trusted delivery target unchanged.
+    """
+    if grant is None:
+        return
+    checks = (
+        ("reply_transport", transport),
+        ("reply_chat", str(chat_id or "")),
+        ("reply_topic", str(topic_id or "")),
+        ("reply_thread", str(thread_id or "")),
+    )
+    for field_name, granted_value in checks:
+        expected = getattr(grant, field_name)
+        if expected and str(granted_value or "") != expected:
+            raise ReplyTargetMismatch(field_name)
+
+
+def issue_task_grant_for_submit(
+    *,
+    source_scope: str,
+    requested_tool_deny: tuple[str, ...] | list[str] = (),
+    requested_no_network: bool = False,
+    transport: str,
+    chat_id: object = "",
+    topic_id: object = "",
+    thread_id: object = "",
+) -> ToolGrantSnapshot:
+    """Issue the submit-time grant from the source floor plus narrowing requests.
+
+    Trusted ingress only: restriction requests may only narrow (deny list and
+    network isolation); there is no way to request widened permissions through
+    this path, and message content never reaches it.
+    """
+    from controlmesh.execution_policy import SOURCE_SCOPES_REQUIRING_SANDBOX, SourceScope
+
+    try:
+        sandbox_required = SourceScope(str(source_scope)) in SOURCE_SCOPES_REQUIRING_SANDBOX
+    except ValueError:
+        sandbox_required = False
+    floor_confirmation = "controller_required" if sandbox_required else "provider_runtime"
+    return issue_tool_grant(
+        tool_deny=tuple(requested_tool_deny),
+        network_policy="no_network" if requested_no_network else "sandbox_default",
+        confirmation_policy=floor_confirmation,
+        reply_transport=str(transport or ""),
+        reply_chat=str(chat_id or ""),
+        reply_topic=str(topic_id or ""),
+        reply_thread=str(thread_id or ""),
+    )

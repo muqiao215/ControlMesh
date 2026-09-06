@@ -54,12 +54,28 @@ async def run_oneshot_task(
         context,
         sandbox_available=bool(exec_config.docker_container),
     )
+    if exec_config.tool_grant is not None and exec_config.tool_grant.restrictive:
+        from controlmesh.execution_grants import map_tool_grant
+
+        mapping = map_tool_grant(
+            exec_config.provider,
+            exec_config.tool_grant,
+            config_permission_mode=exec_config.permission_mode,
+            config_cli_parameters=tuple(exec_config.cli_parameters),
+        )
+    else:
+        mapping = None
     one_shot = build_cmd(exec_config, prompt)
     if one_shot is None:
         return TaskResult(
             status=f"error:cli_not_found_{exec_config.provider}",
             result_text=f"[{exec_config.provider} CLI not found]",
             execution=None,
+        )
+    if mapping is not None and mapping.flags:
+        one_shot = replace(
+            one_shot,
+            cmd=[one_shot.cmd[0], *mapping.flags, *one_shot.cmd[1:]],
         )
 
     wrapped_cmd, host_cwd = docker_wrap(

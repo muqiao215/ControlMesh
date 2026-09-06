@@ -11,14 +11,18 @@ from controlmesh.execution_grants import (
 SCHEMA_VERSION = "controlmesh.tool_grant_mapping_golden.v1"
 REQUIRED_CASES = (
     "mapping.claude.deny_union",
-    "mapping.claude.no_network_tools",
+    "mapping.claude.no_network_rejected",
     "mapping.claude.allowlist_rejected",
     "mapping.claude.bypass_conflicts",
+    "mapping.claude.override_conflict",
+    "mapping.claude.controller_approval_unavailable",
     "mapping.codex.network_toggle",
     "mapping.codex.read_only_network_floor",
+    "mapping.codex.network_unproven_sandbox",
     "mapping.codex.tool_deny_rejected",
     "mapping.codex.bypass_conflicts",
     "mapping.codex.full_access_conflict",
+    "mapping.codex.override_conflict",
     "mapping.gemini.restrictive_rejected",
     "mapping.opencode.restrictive_rejected",
     "mapping.claw.surface_unproven",
@@ -40,6 +44,7 @@ def _case(
     config_disallowed: tuple[str, ...] = (),
     config_permission_mode: str = "",
     config_sandbox_mode: str = "",
+    config_cli_parameters: tuple[str, ...] = (),
 ) -> dict[str, object]:
     try:
         mapping = map_tool_grant(
@@ -49,6 +54,7 @@ def _case(
             config_disallowed=config_disallowed,
             config_permission_mode=config_permission_mode,
             config_sandbox_mode=config_sandbox_mode,
+            config_cli_parameters=config_cli_parameters,
         )
     except ToolGrantDenied as exc:
         return {
@@ -76,13 +82,27 @@ def generate_matrix() -> dict[str, object]:
             _DENY_WRITE_TOOLS,
             config_disallowed=("mcp__internal__secrets",),
         ),
-        _case("mapping.claude.no_network_tools", "claude", _NO_NETWORK),
+        _case("mapping.claude.no_network_rejected", "claude", _NO_NETWORK),
         _case("mapping.claude.allowlist_rejected", "claude", _ALLOW_ONLY),
         _case(
             "mapping.claude.bypass_conflicts",
             "claude",
             _DENY_WRITE_TOOLS,
             config_permission_mode="bypassPermissions",
+        ),
+        _case(
+            "mapping.claude.override_conflict",
+            "claude",
+            _DENY_WRITE_TOOLS,
+            config_cli_parameters=("--dangerously-skip-permissions",),
+        ),
+        _case(
+            "mapping.claude.controller_approval_unavailable",
+            "claude",
+            ToolGrantSnapshot(
+                tool_deny=("Write",),
+                confirmation_policy="controller_required",
+            ),
         ),
         _case(
             "mapping.codex.network_toggle",
@@ -96,6 +116,7 @@ def generate_matrix() -> dict[str, object]:
             _NO_NETWORK,
             config_sandbox_mode="read-only",
         ),
+        _case("mapping.codex.network_unproven_sandbox", "codex", _NO_NETWORK),
         _case("mapping.codex.tool_deny_rejected", "codex", _DENY_WRITE_TOOLS),
         _case(
             "mapping.codex.bypass_conflicts",
@@ -108,6 +129,13 @@ def generate_matrix() -> dict[str, object]:
             "codex",
             _NO_NETWORK,
             config_sandbox_mode="full-access",
+        ),
+        _case(
+            "mapping.codex.override_conflict",
+            "codex",
+            _NO_NETWORK,
+            config_sandbox_mode="workspace-write",
+            config_cli_parameters=("-c", 'sandbox_workspace_write={"network_access": true}'),
         ),
         _case("mapping.gemini.restrictive_rejected", "gemini", _DENY_WRITE_TOOLS),
         _case("mapping.opencode.restrictive_rejected", "opencode", _DENY_WRITE_TOOLS),

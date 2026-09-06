@@ -14,15 +14,11 @@
       "surface": "claude_tool_flags"
     },
     {
-      "denied_reason": "",
-      "flags": [
-        "--disallowedTools",
-        "WebFetch",
-        "WebSearch"
-      ],
-      "id": "mapping.claude.no_network_tools",
+      "denied_reason": "no_network_unenforceable",
+      "flags": [],
+      "id": "mapping.claude.no_network_rejected",
       "provider": "claude",
-      "surface": "claude_tool_flags"
+      "surface": "rejected"
     },
     {
       "denied_reason": "allowlist_not_enforceable_flags",
@@ -35,6 +31,20 @@
       "denied_reason": "bypass_conflicts_grant",
       "flags": [],
       "id": "mapping.claude.bypass_conflicts",
+      "provider": "claude",
+      "surface": "rejected"
+    },
+    {
+      "denied_reason": "override_conflicts_grant",
+      "flags": [],
+      "id": "mapping.claude.override_conflict",
+      "provider": "claude",
+      "surface": "rejected"
+    },
+    {
+      "denied_reason": "controller_approval_unavailable",
+      "flags": [],
+      "id": "mapping.claude.controller_approval_unavailable",
       "provider": "claude",
       "surface": "rejected"
     },
@@ -56,6 +66,13 @@
       "surface": "codex_sandbox"
     },
     {
+      "denied_reason": "no_network_unproven_sandbox",
+      "flags": [],
+      "id": "mapping.codex.network_unproven_sandbox",
+      "provider": "codex",
+      "surface": "rejected"
+    },
+    {
       "denied_reason": "tool_granularity_unsupported",
       "flags": [],
       "id": "mapping.codex.tool_deny_rejected",
@@ -73,6 +90,13 @@
       "denied_reason": "no_network_conflicts_full_access",
       "flags": [],
       "id": "mapping.codex.full_access_conflict",
+      "provider": "codex",
+      "surface": "rejected"
+    },
+    {
+      "denied_reason": "override_conflicts_grant",
+      "flags": [],
+      "id": "mapping.codex.override_conflict",
       "provider": "codex",
       "surface": "rejected"
     },

@@ -638,6 +638,20 @@ class TaskHub:
             if resolved:
                 submit.chat_id = resolved
 
+        if submit.tool_grant is None and (
+            submit.requested_tool_deny or submit.requested_no_network
+        ):
+            from controlmesh.execution_grants import issue_task_grant_for_submit
+
+            context = submit.execution_context or ExecutionContext.legacy()
+            submit.tool_grant = issue_task_grant_for_submit(
+                source_scope=context.source_scope.value,
+                requested_tool_deny=submit.requested_tool_deny,
+                requested_no_network=submit.requested_no_network,
+                transport=submit.transport,
+                chat_id=submit.chat_id,
+            )
+
         existing = self._registry.find_by_idempotency_key(submit.idempotency_key)
         if existing is not None and existing.status not in _FINISHED:
             self._append_runtime_lifecycle_event(existing, "task.lifecycle.attached")
@@ -1656,6 +1670,15 @@ class TaskHub:
 
     async def _deliver(self, result: TaskResult) -> None:
         """Deliver result to the parent agent's registered callback."""
+        from controlmesh.execution_grants import validate_reply_target
+
+        entry = self._registry.get(result.task_id)
+        if entry is not None and entry.tool_grant is not None:
+            validate_reply_target(
+                entry.tool_grant,
+                transport=entry.transport,
+                chat_id=entry.chat_id,
+            )
         existing = None
         if result.tool_use_id:
             existing = self._agent_inbox.get(

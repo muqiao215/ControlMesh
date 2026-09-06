@@ -98,6 +98,7 @@ class CodexCLI(BaseCLI):
             cfg.tool_grant,
             config_permission_mode=cfg.permission_mode,
             config_sandbox_mode=cfg.sandbox_mode,
+            config_cli_parameters=tuple(cfg.cli_parameters),
         )
         if cfg.permission_mode == "bypassPermissions":
             return [*mapping.flags, "--dangerously-bypass-approvals-and-sandbox"]

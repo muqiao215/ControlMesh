@@ -11,6 +11,7 @@ from controlmesh.bus.envelope import ExecutionContext
 if TYPE_CHECKING:
     from controlmesh.cli.codex_cache import CodexModelCache
     from controlmesh.config import AgentConfig
+    from controlmesh.execution_grants import ToolGrantSnapshot
 
 from controlmesh.config import _GEMINI_ALIASES, CLAUDE_MODELS, get_gemini_models
 
@@ -61,6 +62,7 @@ class TaskExecutionConfig:
     claude_root_force_bypass_via_is_sandbox: bool = True
     docker_container: str = ""
     execution_context: ExecutionContext | None = None
+    tool_grant: ToolGrantSnapshot | None = None
 
 
 def resolve_cli_config(

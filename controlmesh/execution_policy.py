@@ -23,6 +23,9 @@ _SANDBOX_REQUIRED_SCOPES = frozenset(
     }
 )
 
+#: Public alias for grant floor derivation; same membership, stable name.
+SOURCE_SCOPES_REQUIRING_SANDBOX = _SANDBOX_REQUIRED_SCOPES
+
 
 @dataclass(frozen=True, slots=True)
 class ExecutionPolicyDecision:
