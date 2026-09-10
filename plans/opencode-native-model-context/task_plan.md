@@ -9,8 +9,8 @@ Python owns task execution and admission. Viewer supplies evidence and candidate
 ## Phases
 1. Reproduce native config and model behavior: complete.
 2. Fix JSON/JSONC merge, honest preflight and native permission flag: complete.
-3. Run focused regressions and native probes: in_progress.
-4. Record integration contract and submit reviewable PR: pending.
+3. Run focused regressions and native probes: complete (fresh inference passed; external fork not accepted).
+4. Record integration contract and submit reviewable PR: complete (#26).
 
 ## Acceptance
 - Schema-only JSONC preserves JSON model; explicit JSONC wins; nested defaults survive.
@@ -24,4 +24,4 @@ Python owns task execution and admission. Viewer supplies evidence and candidate
 Revert the focused PR commits. No persisted fields, session databases, production configuration or installed runtime are migrated.
 
 ## Next Step
-Finish live verification, then publish the PR and local integration report.
+Await PR review/CI. External-session implementation must first resolve native fork behavior and admission gates.
