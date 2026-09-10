@@ -281,3 +281,7 @@ Python history/task/provider read models
 - API and protocol migration → `docs/modules/api.md`, `docs/typescript-migration/`
 - Configuration and operations → `docs/config.md`, `docs/modules/service_management.md`
 - Why these boundaries exist → `docs/DECISIONS.md`
+
+### OpenCode quota failures
+
+OpenCode enables native error logs on its own stderr. An opt-in one-shot executor observer classifies explicit quota exhaustion and terminates that process tree before native retry loops become generic timeouts. Quota metadata propagates through CLI, stream and agent results while existing task failure/delivery ownership remains unchanged. Provider-reported reset text is not assigned an invented timezone or used to schedule automatic account/model switching. Shared historical log files and assistant/tool output are not quota evidence.

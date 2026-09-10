@@ -4,6 +4,33 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+from controlmesh.infra import restart
+
+if TYPE_CHECKING:
+    import pytest
+
+
+def _isolate_from_host_service_manager(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    delegate: bool,
+) -> None:
+    """Wipe service-manager signals from the host environment and pin the predicate.
+
+    The host where these tests run may itself be a service-managed controlmesh
+    install. Any inherited ``CONTROLMESH_SUPERVISOR`` / ``INVOCATION_ID`` /
+    ``XDG_RUNTIME_DIR`` markers must not leak into the assertions, and the
+    host service facade must never be invoked from unit tests.
+    """
+    for var in ("CONTROLMESH_SUPERVISOR", "INVOCATION_ID", "XDG_RUNTIME_DIR"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setattr(
+        restart,
+        "should_delegate_restart_to_service_manager",
+        lambda: delegate,
+    )
 
 
 class TestRestartSentinel:
@@ -114,26 +141,42 @@ class TestExitRestart:
 
 
 class TestRequestRestart:
-    def test_writes_marker_and_returns_false_without_service_manager(self, tmp_path: Path) -> None:
-        from controlmesh.infra.restart import request_restart
+    def test_writes_marker_and_returns_false_without_service_manager(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _isolate_from_host_service_manager(monkeypatch, delegate=False)
+
+        def _host_service_facade_blocked(*_args: object, **_kwargs: object) -> None:
+            msg = "host service facade must not be touched by this test"
+            raise AssertionError(msg)
+
+        monkeypatch.setattr(
+            "controlmesh.infra.service.is_service_installed",
+            _host_service_facade_blocked,
+        )
+        monkeypatch.setattr(
+            "controlmesh.infra.service.restart_service",
+            _host_service_facade_blocked,
+        )
 
         marker = tmp_path / "restart-requested"
-        assert request_restart(marker_path=marker, source="unit-test") is False
+        assert restart.request_restart(marker_path=marker, source="unit-test") is False
         assert marker.exists()
         data = json.loads(marker.read_text(encoding="utf-8"))
         assert data["source"] == "unit-test"
 
     def test_service_managed_restart_does_not_write_marker(
         self,
-        monkeypatch,
+        monkeypatch: pytest.MonkeyPatch,
         tmp_path: Path,
     ) -> None:
-        from controlmesh.infra import restart
+        _isolate_from_host_service_manager(monkeypatch, delegate=True)
 
         marker = tmp_path / "restart-requested"
         calls: list[str] = []
 
-        monkeypatch.setenv("CONTROLMESH_SUPERVISOR", "1")
         monkeypatch.setattr("controlmesh.infra.service.is_service_installed", lambda: True)
         monkeypatch.setattr(
             "controlmesh.infra.service.restart_service",

@@ -33,6 +33,8 @@ class SystemInitEvent(StreamEvent):
 class ResultEvent(StreamEvent):
     """Final event with usage, cost, and session_id."""
 
+    error_code: str | None = None
+    quota_reset_at: str | None = None
     session_id: str | None = None
     result: str = ""
     is_error: bool = False

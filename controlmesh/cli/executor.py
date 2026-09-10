@@ -97,6 +97,7 @@ class SubprocessSpec:
     timeout_controller: TimeoutController | None = None
     hard_timeout_seconds: float | None = None
     liveness_policy: RunLivenessPolicy | None = None
+    stderr_abort: Callable[[str], CLIResponse | None] | None = None
 
     def policy(self) -> RunLivenessPolicy:
         """Return explicit or mode-derived liveness policy for this run."""
@@ -372,7 +373,7 @@ async def run_oneshot_subprocess(
     oneshot_env = _build_subprocess_env(config) if spec.use_cwd else None
     process = await asyncio.create_subprocess_exec(
         *spec.exec_cmd,
-        stdin=_win_stdin_pipe(),
+        stdin=asyncio.subprocess.DEVNULL if spec.stderr_abort else _win_stdin_pipe(),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         cwd=spec.use_cwd,
@@ -399,18 +400,28 @@ async def run_oneshot_subprocess(
                 mode=spec.timeout_controller.state.mode,
             )
         stdin_data = spec.prompt.encode() if _IS_WINDOWS else None
+        communicate_coro = (
+            _communicate_with_stderr_abort(process, spec.stderr_abort)
+            if spec.stderr_abort else process.communicate(input=stdin_data)
+        )
         if spec.timeout_controller:
-            communicate_coro = process.communicate(input=stdin_data)
             stdout, stderr = await spec.timeout_controller.run_with_timeout(communicate_coro)
         else:
             async with asyncio.timeout(spec.timeout_seconds):
-                stdout, stderr = await process.communicate(input=stdin_data)
+                stdout, stderr = await communicate_coro
         for line in stdout.decode(errors="replace").splitlines():
             if line.rstrip():
                 supervisor.stdout(line.rstrip())
         for line in stderr.decode(errors="replace").splitlines():
             if line.rstrip():
                 supervisor.stderr(line.rstrip())
+    except _ProviderAbortError as exc:
+        await _cleanup_timed_out_process(
+            process, provider_label=provider_label,
+            soft_timeout_seconds=0, hard_timeout_seconds=1,
+        )
+        exc.response.returncode = process.returncode
+        return exc.response
     except TimeoutError:
         supervisor.timed_out(_timeout_reason(spec), process.returncode)
         cleanup = _schedule_timeout_cleanup(process, provider_label=provider_label, spec=spec)
@@ -437,7 +448,7 @@ async def run_oneshot_subprocess(
     response = parse_output(stdout, stderr, process.returncode)
     if response.is_error and not response.result.strip():
         response.result = supervisor.final_error().message
-    elif process.returncode not in (0, None):
+    elif process.returncode not in (0, None) and not response.error_code:
         response.result = supervisor.final_error().message
         response.is_error = True
     if response.is_error and not response.stderr:
@@ -448,6 +459,53 @@ async def run_oneshot_subprocess(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+class _ProviderAbortError(Exception):
+    def __init__(self, response: CLIResponse) -> None:
+        super().__init__(response.error_code)
+        self.response = response
+
+
+async def _communicate_with_stderr_abort(
+    process: asyncio.subprocess.Process,
+    classifier: Callable[[str], CLIResponse | None],
+) -> tuple[bytes, bytes]:
+    """Drain both pipes; reject a known terminal provider error before exit."""
+    assert process.stdout is not None
+    assert process.stderr is not None
+
+    async def read_errors() -> bytes:
+        assert process.stderr is not None
+        chunks: list[bytes] = []
+        pending = b""
+        while chunk := await process.stderr.read(4096):
+            chunks.append(chunk)
+            pending += chunk
+            while b"\n" in pending:
+                line, pending = pending.split(b"\n", 1)
+                response = classifier(line.decode(errors="replace"))
+                if response is not None:
+                    raise _ProviderAbortError(response)
+            # Bound partial records; do not interpret an arbitrary giant log.
+            if len(pending) > 65536:
+                pending = b""
+        if pending:
+            response = classifier(pending.decode(errors="replace"))
+            if response is not None:
+                raise _ProviderAbortError(response)
+        return b"".join(chunks)
+
+    stdout_task = asyncio.create_task(process.stdout.read())
+    stderr_task = asyncio.create_task(read_errors())
+    try:
+        stdout, stderr = await asyncio.gather(stdout_task, stderr_task)
+        await process.wait()
+        return stdout, stderr
+    finally:
+        for task in (stdout_task, stderr_task):
+            task.cancel()
+        await asyncio.gather(stdout_task, stderr_task, return_exceptions=True)
 
 
 def _win_stdin_pipe() -> int | None:
@@ -587,7 +645,7 @@ async def _cleanup_timed_out_process(
 
 async def _wait_process(process: asyncio.subprocess.Process) -> object:
     """Await process.wait() when awaitable; tolerate simple test doubles."""
-    result = process.wait()
+    result: object = process.wait()
     if inspect.isawaitable(result):
         return await result
     return result
