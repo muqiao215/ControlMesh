@@ -5,15 +5,19 @@ from __future__ import annotations
 import logging
 from collections.abc import Awaitable, Callable
 from contextlib import contextmanager
+from typing import TYPE_CHECKING
 
 from controlmesh.config import AgentConfig
 from controlmesh.orchestrator.core import Orchestrator
 from controlmesh.orchestrator.registry import OrchestratorResult
 from controlmesh.provider_binding import normalize_provider_name
 from controlmesh.session import SessionKey
-from controlmesh.terminal.inbox import TerminalInbox
+from controlmesh.terminal.inbox import TerminalInbox, TerminalInboxItem
 from controlmesh.terminal.memory_context import TerminalMemoryContext
 from controlmesh.workspace.paths import resolve_paths
+
+if TYPE_CHECKING:
+    from controlmesh.tasks.models import TaskResult
 
 _TextCallback = Callable[[str], Awaitable[None]]
 logger = logging.getLogger(__name__)
@@ -77,7 +81,30 @@ class TerminalRuntime:
             self.orchestrator.supervisor = supervisor
             self.orchestrator.register_multiagent_commands()
             if supervisor.task_hub is not None:
-                self.orchestrator.set_task_hub(supervisor.task_hub)
+                hub = supervisor.task_hub
+                self.orchestrator.set_task_hub(hub)
+                # The enhanced terminal starts no main transport stack. Wire its
+                # own service and inbox explicitly instead of relying on a bot.
+                hub.set_cli_service("main", self.orchestrator.cli_service)
+                hub.set_agent_paths("main", self.paths)
+                hub.set_result_handler("main", self._on_task_result)
+                hub.set_question_handler("main", self._on_task_question)
+                hub.start_maintenance()
+
+    async def _on_task_result(self, result: TaskResult) -> None:
+        self.inbox.append(TerminalInboxItem(
+            kind="task_update", title=f"Task {result.task_id}: {result.status}",
+            body=result.delivery_text or result.result_text, task_id=result.task_id,
+            agent=result.parent_agent,
+        ))
+
+    async def _on_task_question(
+        self, task_id: str, question: str, prompt_preview: str, chat_id: object, thread_id: object,
+    ) -> None:
+        self.inbox.append(TerminalInboxItem(
+            kind="task_update", title=f"Task {task_id} needs input",
+            body=question, task_id=task_id, agent="main",
+        ))
 
     async def handle_user_message(
         self,

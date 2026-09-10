@@ -364,3 +364,28 @@ async def test_crash_recovery_rechecks_revision_and_live_process(native, tmp_pat
         reset_execution_context(token)
         await recovered.shutdown()
         await hub.shutdown()
+
+
+async def test_enhanced_terminal_wires_execution_and_result_inbox(native, tmp_path, monkeypatch):
+    from controlmesh.config import AgentConfig
+    from controlmesh.terminal.runtime import TerminalRuntime
+
+    ref, _ = native
+    hub, cli = make_hub(tmp_path)
+    hub._cli_service = None  # Mirrors supervisor.start_core: no main transport stack.
+    supervisor = MagicMock(task_hub=hub)
+    supervisor.start_core = AsyncMock()
+    supervisor.start_sub_agents = AsyncMock()
+    monkeypatch.setattr("controlmesh.multiagent.supervisor.AgentSupervisor", lambda _: supervisor)
+    runtime = TerminalRuntime(config=AgentConfig(controlmesh_home=str(tmp_path / "cm")), provider="opencode")
+    runtime.orchestrator = MagicMock(cli_service=cli)
+    await runtime.start_optional_background_runtime()
+    task_id = hub.submit(submission(ref))
+    await drain(hub, task_id)
+    assert hub.registry.get(task_id).status == "done"
+    item = runtime.inbox.list_all()[0]
+    assert item.task_id == task_id
+    assert "historical answer" in item.body
+    await runtime._on_task_question(task_id, "Choose a target", "preview", 1, None)
+    assert runtime.inbox.list_all()[0].title == f"Task {task_id} needs input"
+    await hub.shutdown()

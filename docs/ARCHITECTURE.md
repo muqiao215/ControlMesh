@@ -116,6 +116,9 @@ posture without storing prompt text, credentials, absolute paths, or raw message
 
 ### Native Session Adoption
 
+The enhanced terminal registers its own foreground CLI service with TaskHub and routes
+background results/questions into its file-backed inbox, without a transport bot.
+
 The local terminal `/tasks sessions <query>` reads the Linux/OpenCode source from History
 Viewer on loopback port 8787. Candidate identities are cross-checked against the local
 OpenCode SQLite store opened read-only. `/tasks inspect <id>` also works without Viewer.

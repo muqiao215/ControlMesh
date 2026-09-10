@@ -12,10 +12,14 @@ Implementation complete; regression review and publication in progress.
 - 5,703 full-suite tests passed (Python 3.12). Final recovery and transport changes passed 379 targeted tests, including 21 native-adoption cases. Ruff, CI Mypy smoke and new-module Mypy passed.
 - Real isolated TaskHub acceptance: Viewer found the original SpecMesh session; MiniMax preflight and native continuation completed in 15.86 seconds. Same native ID, old qiao-wechat context correctly recalled. Provider tools denied via native configuration; no application code or WeChat operations.
 
+- Terminal/native suite: 50 tests passed after real terminal wiring; release-contract checks rerun after version expectation update.
+
 ## Remaining
 PR/merge CI, v0.42.2 publication and local installation verification.
 
 ## Issues
+- Terminal startup had no main transport stack, so its TaskHub lacked a main CLI service/result handler. Explicit terminal service/inbox wiring is now covered by a regression.
+- Initial PR CI found the release contract still pinned to 0.42.1 after the version bump. Updated the explicit release expectation to 0.42.2; no runtime failures were reported.
 - Lease applies to CM processes only; independent native clients must be stopped first.
 - Native grants unsupported by OpenCode mapping remain rejected; this feature does not close grant enforcement unit A.1.
 - Initial acceptance harness import collided with an unrelated work/inspect.py; corrected with Python safe-path mode. A harness method name was corrected to set_result_handler before execution.

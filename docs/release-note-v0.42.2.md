@@ -22,7 +22,9 @@ the session again and use:
 ```
 
 Recovery checks the old task/preflight process leases and retains the same task identity.
-No automatic scheduler or public HTTP mutation endpoint is added.
+Terminal TaskHub execution is explicitly wired to the foreground CLI service; results and
+questions appear in the terminal inbox. No automatic scheduler or public HTTP mutation
+endpoint is added.
 
 History Viewer supplies discovery evidence; OpenCode owns native dialogue; SpecMesh owns
 project facts; CM owns execution and lifecycle. Old conversation claims must be reconciled
