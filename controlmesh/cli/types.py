@@ -23,6 +23,8 @@ class CLIResponse(BaseModel):
     is_error: bool = False
     returncode: int | None = None
     stderr: str = ""
+    error_code: str | None = None
+    quota_reset_at: str | None = None
     timed_out: bool = False
     duration_ms: float | None = None
     duration_api_ms: float | None = None
@@ -87,3 +89,6 @@ class AgentResponse:
     timed_out: bool = False
     duration_ms: float | None = None
     stream_fallback: bool = False
+
+    error_code: str | None = None
+    quota_reset_at: str | None = None

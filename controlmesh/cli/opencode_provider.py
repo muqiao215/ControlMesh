@@ -15,6 +15,7 @@ from controlmesh.cli.executor import SubprocessSpec, run_oneshot_subprocess
 from controlmesh.cli.introspection import ProviderIntrospection, auth_status_for_provider, probe_command_output
 from controlmesh.cli.stream_events import ResultEvent, StreamEvent, SystemInitEvent
 from controlmesh.cli.types import CLIResponse
+from controlmesh.cli.opencode_quota import quota_from_stderr, quota_response
 from controlmesh.native_commands import fallback_native_commands
 
 if TYPE_CHECKING:
@@ -78,6 +79,7 @@ class OpenCodeCLI(BaseCLI):
             cmd.append("--continue")
         if self._config.cli_parameters:
             cmd.extend(self._config.cli_parameters)
+        cmd += ["--print-logs", "--log-level", "ERROR"]
         cmd += [self._compose_prompt(prompt)]
         return cmd
 
@@ -101,6 +103,7 @@ class OpenCodeCLI(BaseCLI):
                 timeout_seconds,
                 timeout_controller,
                 hard_timeout_seconds,
+                stderr_abort=quota_from_stderr,
             ),
             parse_output=self._parse_output,
             provider_label="OpenCode",
@@ -131,6 +134,9 @@ class OpenCodeCLI(BaseCLI):
             result=response.result,
             is_error=response.is_error,
             returncode=response.returncode,
+            error_code=response.error_code,
+            quota_reset_at=response.quota_reset_at,
+            subtype=response.error_code,
         )
 
     async def introspect(self) -> ProviderIntrospection:
@@ -176,9 +182,22 @@ class OpenCodeCLI(BaseCLI):
             except json.JSONDecodeError:
                 events.append(line)
 
+        for event in events:
+            if isinstance(event, dict) and event.get("type") == "error":
+                error = event.get("error")
+                if isinstance(error, dict):
+                    data = error.get("data")
+                    message = error.get("message") or (data.get("message") if isinstance(data, dict) else "")
+                    if isinstance(message, str):
+                        quota = quota_response(message, _extract_session_id(event))
+                        if quota is not None:
+                            quota.returncode = returncode
+                            return quota
+
         if len(events) == 1 and isinstance(events[0], dict):
             data = events[0]
-            usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+            raw_usage = data.get("usage")
+            single_usage = raw_usage if isinstance(raw_usage, dict) else {}
             result_text = _extract_text(data)
             is_error = (returncode not in (0, None)) or _has_error(data) or not result_text
             return CLIResponse(
@@ -192,7 +211,7 @@ class OpenCodeCLI(BaseCLI):
                 is_error=is_error or not result_text,
                 returncode=returncode,
                 stderr=stderr_text,
-                usage=usage,
+                usage=single_usage,
             )
 
         usage: dict[str, Any] = {}
@@ -254,8 +273,9 @@ def _extract_session_id(data: Any) -> str | None:
                 nested = _extract_session_id(value)
                 if nested:
                     return nested
-        if isinstance(data.get("id"), str) and data.get("type") in {"session", "session.created"}:
-            return data["id"].strip()
+        identifier = data.get("id")
+        if isinstance(identifier, str) and data.get("type") in {"session", "session.created"}:
+            return identifier.strip()
         for value in data.values():
             nested = _extract_session_id(value)
             if nested:

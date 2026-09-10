@@ -338,6 +338,8 @@ class CLIService:
                 usage=result_event.usage,
                 model_usage=result_event.model_usage,
                 num_turns=result_event.num_turns,
+                error_code=result_event.error_code,
+                quota_reset_at=result_event.quota_reset_at,
             ),
             provider=provider,
         )
@@ -387,6 +389,8 @@ class CLIService:
             timed_out=resp.timed_out,
             duration_ms=resp.duration_ms,
             stream_fallback=True,
+            error_code=resp.error_code,
+            quota_reset_at=resp.quota_reset_at,
         )
 
     def resolve_provider(self, request: AgentRequest) -> tuple[str, str]:
@@ -621,6 +625,8 @@ def _cli_response_to_agent_response(
         timed_out=resp.timed_out,
         duration_ms=resp.duration_ms,
         stream_fallback=stream_fallback,
+        error_code=resp.error_code,
+        quota_reset_at=resp.quota_reset_at,
     )
 
 
