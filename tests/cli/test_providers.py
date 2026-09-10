@@ -232,7 +232,8 @@ def test_opencode_build_command_respects_bypass_permissions(
     cli = OpenCodeCLI(cfg)
     cmd = cli._build_command("hello")
 
-    assert "--dangerously-skip-permissions" in cmd
+    assert "--auto" in cmd
+    assert "--dangerously-skip-permissions" not in cmd
 
 
 def test_opencode_build_command_with_resume_session(monkeypatch: pytest.MonkeyPatch) -> None:

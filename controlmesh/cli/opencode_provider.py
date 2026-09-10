@@ -52,7 +52,9 @@ class OpenCodeCLI(BaseCLI):
     def _permission_flags(self) -> list[str]:
         """Map ControlMesh permission_mode onto OpenCode's CLI surface."""
         if self._config.permission_mode == "bypassPermissions":
-            return ["--dangerously-skip-permissions"]
+            # Native auto-approval respects explicit OpenCode deny rules.
+            # Claude's --dangerously-skip-permissions is not an OpenCode flag.
+            return ["--auto"]
         return []
 
     def _build_command(

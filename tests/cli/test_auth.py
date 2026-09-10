@@ -902,3 +902,67 @@ def test_gemini_uses_api_key_mode_false_for_oauth(
     )
 
     assert gemini_uses_api_key_mode() is False
+
+
+@pytest.mark.parametrize(
+    ("overlay", "expected"),
+    [
+        ('{"$schema": "https://opencode.ai/config.json"}', "vendor/base"),
+        ('{"model": "vendor/override"}', "vendor/override"),
+        ('{"model": null}', ""),
+        ("{broken", ""),
+    ],
+)
+def test_opencode_jsonc_overlays_json_without_hiding_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, overlay: str, expected: str,
+) -> None:
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    runtime = tmp_path / ".config" / "opencode"
+    runtime.mkdir(parents=True)
+    (runtime / "opencode.json").write_text('{"model": "vendor/base"}')
+    (runtime / "opencode.jsonc").write_text(overlay)
+    assert read_opencode_default_model() == expected
+
+
+def test_opencode_overlay_preserves_provider_and_env_defaults(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    runtime = tmp_path / ".config" / "opencode"
+    runtime.mkdir(parents=True)
+    (runtime / "opencode.json").write_text(
+        '{"provider": {"zhipuai": {"name": "Zhipu"}}, '
+        '"env": {"ANTHROPIC_MODEL": "glm-5.1"}}'
+    )
+    (runtime / "opencode.jsonc").write_text(
+        '{"provider": {"zhipuai": {"options": {}}}, "env": {"UNRELATED": "value"}}'
+    )
+    assert read_opencode_default_model() == "zhipuai/glm-5.1"
+    assert read_opencode_primary_provider() == "zhipuai"
+    assert opencode_model_uses_runtime_env_default("zhipuai/glm-5.1")
+
+
+def test_opencode_overlay_does_not_merge_separate_config_roots(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    fallback = tmp_path / ".config" / "opencode"
+    fallback.mkdir(parents=True)
+    (fallback / "opencode.json").write_text('{"model": "vendor/fallback"}')
+    selected = tmp_path / "xdg" / "opencode"
+    selected.mkdir(parents=True)
+    (selected / "opencode.jsonc").write_text('{"$schema": "schema"}')
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(selected.parent))
+    assert read_opencode_default_model() == ""
+
+
+def test_opencode_missing_default_does_not_claim_live_preflight(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from controlmesh.cli.auth import _opencode_runnable_diagnostic
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.delenv("CONTROLMESH_ENABLE_OPENCODE_SYNC_DISCOVERY", raising=False)
+    diagnostic = _opencode_runnable_diagnostic()
+    assert "No live model preflight was run" in diagnostic
+    assert "no runnable runtime model passed preflight" not in diagnostic
