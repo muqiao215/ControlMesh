@@ -114,11 +114,14 @@ class TestExitRestart:
 
 
 class TestRequestRestart:
-    def test_writes_marker_and_returns_false_without_service_manager(self, tmp_path: Path) -> None:
-        from controlmesh.infra.restart import request_restart
+    def test_writes_marker_and_returns_false_without_service_manager(self, tmp_path: Path, monkeypatch) -> None:
+        from controlmesh.infra import restart
 
+        # The host may itself be service-managed. This case must never call
+        # its actual service manager while testing the marker-only path.
+        monkeypatch.setattr(restart, "should_delegate_restart_to_service_manager", lambda: False)
         marker = tmp_path / "restart-requested"
-        assert request_restart(marker_path=marker, source="unit-test") is False
+        assert restart.request_restart(marker_path=marker, source="unit-test") is False
         assert marker.exists()
         data = json.loads(marker.read_text(encoding="utf-8"))
         assert data["source"] == "unit-test"
