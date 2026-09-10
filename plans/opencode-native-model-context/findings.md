@@ -16,3 +16,5 @@ See history-integration.md. This is a bounded design, not an implemented public 
 
 ## Investigation issues
 A native fork did not return within the initial 55-second bound; source metadata and message count were unchanged. A longer tool-disabled retry is recorded in progress. Two cancelled investigatory workers were stopped before root edits. Initial focused mypy exposed pre-existing unchecked JSON returns; parser now validates object shape. An incorrect test-directory argument was corrected before recording test results.
+
+- Native run reads piped stdin before execution. The synchronous preflight now closes stdin with DEVNULL, preventing inherited open input from blocking model invocation. This was also corrected in the local fork harness; it does not by itself establish the cause of all fork timeouts.

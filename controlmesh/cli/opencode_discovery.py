@@ -158,6 +158,7 @@ def probe_opencode_model_sync(model: str, *, deadline: float = PROBE_TIMEOUT) ->
             cmd,
             check=False,
             capture_output=True,
+            stdin=subprocess.DEVNULL,
             text=True,
             timeout=deadline,
             creationflags=_CREATION_FLAGS,

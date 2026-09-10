@@ -167,9 +167,11 @@ def test_probe_opencode_model_sync_returns_true_on_pong() -> None:
     )
     with (
         patch("controlmesh.cli.opencode_discovery.which", return_value="/usr/bin/opencode"),
-        patch("controlmesh.cli.opencode_discovery.subprocess.run", return_value=result),
+        patch("controlmesh.cli.opencode_discovery.subprocess.run", return_value=result) as run_mock,
     ):
         assert probe_opencode_model_sync("zhipuai/glm-5.1") is True
+
+    assert run_mock.call_args.kwargs["stdin"] == subprocess.DEVNULL
 
 
 def test_probe_opencode_model_sync_rejects_success_without_pong() -> None:

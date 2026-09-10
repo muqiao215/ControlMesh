@@ -11,10 +11,12 @@ Fix verified locally; PR preparation. External-history admission remains propose
 - Read-only Viewer/TaskHub boundary investigation and integration acceptance contract.
 
 ## Remaining
-Publish PR; record bounded native fork retry result; deliver local report. Full CI and installed-runtime upgrade are not established by these local checks.
+PR #26 submitted. Record final native probes and deliver local report. Full CI and installed-runtime upgrade are not established by these local checks.
 
 ## Issues
-First 55-second history fork timed out without output; source unchanged. Longer retry pending. Production configuration points at a different default than the successful explicit model, and was not rewritten.
+History fork attempts at 55 and 180 seconds returned no events; source unchanged. Isolated-cwd and explicitly closed-stdin follow-up outcomes remain separately recorded. Production configuration points at a different default than the successful explicit model, and was not rewritten.
 
 ## Next
 Publish focused PR and finish continuation evidence.
+
+After closing probe stdin, all 23 discovery tests and changed-file Ruff passed.
