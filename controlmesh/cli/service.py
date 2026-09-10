@@ -548,6 +548,8 @@ class CLIService:
         except ExecutionPolicyDenied as exc:
             self._last_execution_policy_decision = exc.decision
             raise
+        if request.working_dir and self._config.docker_container:
+            raise ValueError("Native host-directory binding requires a host runtime; container mapping is unsupported")
         requested_provider = request.assistant_override or request.provider_override or self._config.provider
         requested_model = request.model_override or self._config.default_model
         provider, model = self.resolve_provider(request)
@@ -568,7 +570,12 @@ class CLIService:
         return create_cli(
             CLIConfig(
                 provider=provider,
-                working_dir=self._config.working_dir,
+                working_dir=request.working_dir or self._config.working_dir,
+                transport=request.execution_context.transport if request.working_dir else "tg",
+                runtime_home=str(
+                    Path(self._config.working_dir).parent
+                    if Path(self._config.working_dir).name == "workspace" else Path(self._config.working_dir)
+                ),
                 model=model,
                 system_prompt=request.system_prompt,
                 append_system_prompt=request.append_system_prompt,

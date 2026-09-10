@@ -143,6 +143,10 @@ to the owner loop, and repeated start/stop cycles leak no threads, ping tasks, o
 
 ## Current Priority
 
+The user has prioritized native OpenCode continuity across History Viewer, TaskHub and
+SpecMesh. Implement and validate explicit local session adoption before widening the
+integration to other providers or remote admission. See `plans/native-session-adoption/`.
+
 Tool-grant v1 landed at `3417ae0`: provider mapping/rejection, optional task snapshots and
 golden drift checks are present. This does not yet establish end-to-end grant enforcement.
 The next safety unit is A.1 (`plans/execution-tool-grants-enforcement-closure/`), covering

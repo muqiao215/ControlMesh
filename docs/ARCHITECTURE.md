@@ -114,6 +114,34 @@ Explicit local foreground and direct-message compatibility remains host-compatib
 policy decision records normalized sandbox, tool, network, writable-root, and confirmation
 posture without storing prompt text, credentials, absolute paths, or raw message IDs.
 
+### Native Session Adoption
+
+The local terminal `/tasks sessions <query>` reads the Linux/OpenCode source from History
+Viewer on loopback port 8787. Candidate identities are cross-checked against the local
+OpenCode SQLite store opened read-only. `/tasks inspect <id>` also works without Viewer.
+`/tasks adopt` requires an explicit session ID, revision, native directory, target repository,
+and provider/model. Only a runtime-issued local-foreground context may enter this path.
+
+TaskHub persists a versioned `native_session` reference alongside its ordinary task identity,
+execution context and tool grant. It checks identity/revision before admission and dispatch,
+performs a supervised PONG model preflight, and passes the explicit session plus native cwd
+to OpenCode. `AgentRequest.working_dir` changes execution cwd; `CLIConfig.runtime_home`
+keeps CM environment/state ownership at the original runtime home. Host OpenCode commands
+pass `--dir` explicitly so native event subscriptions bind to the execution directory.
+
+Existing cancel/resume paths retain the native session and checkpoint after CM's own turn.
+`/tasks recover --task <id> --revision <revision> -- <instruction>` handles stale tasks after
+an owner crash: it requires a freshly inspected revision, checks both task and preflight
+process leases, retains the original execution grant, and resumes the same TaskHub task.
+Active-task checks and an advisory OS lease exclude concurrent CM runs. Other native clients
+do not honor this lease: users must stop those clients before adoption. Revision checks detect
+intervening changes but do not guarantee exclusion against an unrelated OpenCode process.
+
+Viewer history is discovery evidence, native OpenCode owns conversation continuation,
+SpecMesh owns project facts, and CM owns task lifecycle. Historical instructions do not
+issue execution grants. The public HTTP/SDK surface stays read-only; container directory
+mapping, remote adoption and other native providers are not supported by this first adapter.
+
 ### Messaging and Delivery
 
 Responsibilities:

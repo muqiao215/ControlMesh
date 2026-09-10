@@ -11,13 +11,13 @@ import re
 import shutil
 import time
 from collections.abc import Awaitable, Callable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from controlmesh.infra.json_store import atomic_json_save, load_json
-from controlmesh.bus.envelope import ExecutionContext, current_execution_context
+from controlmesh.bus.envelope import ExecutionContext, SourceScope, current_execution_context
 from controlmesh.execution_policy import enforce_execution_policy
 from controlmesh.memory.runtime_capture import (
     capture_task_question,
@@ -72,6 +72,7 @@ from controlmesh.tasks.evidence import (
     result_path,
 )
 from controlmesh.tasks.host_execution import classify_host_execution
+from controlmesh.tasks.native_sessions import NativeSessionLease, validate_native_session
 from controlmesh.tasks.models import (
     EvaluationFinding,
     EvaluationResult,
@@ -652,6 +653,18 @@ class TaskHub:
                 chat_id=submit.chat_id,
             )
 
+        if submit.native_session is not None:
+            if submit.execution_context.source_scope is not SourceScope.LOCAL_FOREGROUND:
+                raise ValueError("Native session adoption requires the local CM terminal")
+            if submit.topology or submit.route or submit.command or submit.slot_override:
+                raise ValueError("Native adoption requires an explicit single OpenCode worker")
+            if submit.provider_override != "opencode" or not submit.model_override or "/" not in submit.model_override:
+                raise ValueError("Native adoption requires provider opencode and an explicit provider/model")
+            if not submit.repo_root or not Path(submit.repo_root).is_absolute() or not Path(submit.repo_root).is_dir():
+                raise ValueError("Native adoption requires an explicit absolute existing repo_root")
+            validate_native_session(submit.native_session)
+            self._check_native_owner(submit.native_session.session_id)
+
         existing = self._registry.find_by_idempotency_key(submit.idempotency_key)
         if existing is not None and existing.status not in _FINISHED:
             self._append_runtime_lifecycle_event(existing, "task.lifecycle.attached")
@@ -819,6 +832,9 @@ class TaskHub:
                     )
             submit.route_slot = binding.slot
 
+        if submit.native_session and (binding is None or binding.assistant != "opencode"):
+            raise ValueError("Native adoption slot must execute OpenCode")
+
         # Resolve per-agent tasks_dir for folder isolation
         agent_tasks_dir = self._agent_tasks_dirs.get(submit.parent_agent)
         entry = self._registry.create(
@@ -869,7 +885,12 @@ class TaskHub:
             result_path=artifacts.result,
         ) + self._plan_artifact_notice(entry)
 
-        self._spawn(entry, full_prompt, thinking)
+        try:
+            self._spawn(entry, full_prompt, thinking, resume_session=entry.session_id or None)
+        except ValueError as exc:
+            if entry.native_session:
+                self._update_task_status(entry.task_id, status="failed", error=str(exc), completed_at=time.time())
+            raise
 
         logger.info(
             "Task submitted id=%s name='%s' parent=%s provider=%s",
@@ -920,6 +941,38 @@ class TaskHub:
 
         return resolve
 
+    def recover_native(self, task_id: str, revision: str, follow_up: str) -> str:
+        """Explicit local recovery after an interrupted owner; never infer permission from history."""
+        context = current_execution_context()
+        if context is None or context.source_scope is not SourceScope.LOCAL_FOREGROUND:
+            raise ValueError("Native recovery requires the local CM terminal")
+        entry = self._registry.get(task_id)
+        if entry is None or entry.native_session is None or entry.status not in {"stale", "recovering"}:
+            raise ValueError("Native recovery requires a stale/recovering native task")
+        if task_id in self._in_flight or not follow_up.strip():
+            raise ValueError("Native recovery requires an inactive task and explicit follow-up")
+        self._check_native_owner(entry.session_id, task_id=task_id)
+        for label in (f"task:{task_id}", f"task:{task_id}:preflight"):
+            process = self._process_leases.find_by_label(chat_id=entry.chat_id, label=label)
+            if process and isinstance(process.get("pid"), int) and _pid_exists(process["pid"]):
+                raise ValueError("Previous native task process is still alive; stop it before recovery")
+        lease = NativeSessionLease(entry.native_session)
+        try:
+            current = validate_native_session(entry.native_session, check_revision=False)
+            if current.revision != revision:
+                raise ValueError("Native session changed since inspection; inspect again")
+            self._registry.update_status(task_id, "failed", native_session=current,
+                                         error="Explicit local native recovery admitted")
+            self._append_runtime_lifecycle_event(entry, "task.lifecycle.native_recovery_admitted")
+        finally:
+            lease.close()
+        return self.resume(task_id, follow_up)
+
+    def _check_native_owner(self, session_id: str, *, task_id: str = "") -> None:
+        for other in self._registry.list_active():
+            if other.task_id != task_id and other.session_id == session_id:
+                raise ValueError(f"Native session already owned by active task {other.task_id}")
+
     def resume(
         self,
         task_id: str,
@@ -946,6 +999,10 @@ class TaskHub:
         if not entry.provider:
             msg = f"Task '{task_id}' has no provider recorded"
             raise ValueError(msg)
+
+        if entry.native_session:
+            validate_native_session(entry.native_session)
+            self._check_native_owner(entry.session_id, task_id=entry.task_id)
 
         policy_updates: dict[str, object] = {}
         if auto_micro_commit is not None:
@@ -990,7 +1047,12 @@ class TaskHub:
             + _micro_commit_contract(entry)
             + self._plan_artifact_notice(entry)
         )
-        self._spawn(entry, full_prompt, entry.thinking, resume_session=entry.session_id)
+        try:
+            self._spawn(entry, full_prompt, entry.thinking, resume_session=entry.session_id)
+        except ValueError as exc:
+            if entry.native_session:
+                self._update_task_status(entry.task_id, status="failed", error=str(exc), completed_at=time.time())
+            raise
 
         logger.info(
             "Task resumed id=%s name='%s' provider=%s",
@@ -1355,11 +1417,25 @@ class TaskHub:
         assert cli is not None
 
         t0 = time.monotonic()
+        native_lease = None
+        native_dispatched = False
         try:
+            if entry.native_session:
+                if not entry.execution_context or entry.execution_context.source_scope is not SourceScope.LOCAL_FOREGROUND:
+                    raise ValueError("Native session execution requires persisted local foreground provenance")
+                if resume_session != entry.native_session.session_id or entry.session_id != resume_session:
+                    raise ValueError("Native session binding mismatch; refusing new-session fallback")
+                if not entry.model or "/" not in entry.model:
+                    raise ValueError("Native session requires a persisted explicit provider/model")
+                self._check_native_owner(resume_session, task_id=entry.task_id)
+                native_lease = NativeSessionLease(entry.native_session)
+                validate_native_session(entry.native_session)
             timeout = self._config.timeout_seconds
             effective_timeout = max(timeout, BACKGROUND_POLICY.hard_timeout_s)
             self._append_runtime_lifecycle_event(entry, "task.lifecycle.started")
             binding = entry.binding
+            if entry.native_session and (binding is None or binding.assistant != "opencode"):
+                raise ValueError("Native session must remain bound to OpenCode")
             if binding is None or not binding.assistant:
                 raise ValueError(f"Task '{entry.task_id}' has no assistant slot binding recorded")
 
@@ -1382,16 +1458,32 @@ class TaskHub:
                 ),
                 liveness_policy=BACKGROUND_POLICY,
                 resume_session=resume_session,
+                working_dir=entry.native_session.directory if entry.native_session else None,
                 execution_context=entry.execution_context or ExecutionContext.legacy(),
                 tool_grant=entry.tool_grant,
             )
 
             eff_provider = ""
             eff_model = ""
-            if binding.assistant == "opencode":
+            if entry.native_session:
+                from controlmesh.execution_grants import map_tool_grant
+
+                # Gate before any model probe; history must not widen tool authority.
+                map_tool_grant("opencode", entry.tool_grant)
+                preflight = await cli.execute(replace(
+                    request, prompt="Reply with exactly PONG. Do not use tools.", resume_session=None,
+                    timeout_seconds=20, hard_timeout_seconds=20, timeout_controller=None, liveness_policy=None,
+                    process_label=f"task:{entry.task_id}:preflight",
+                ))
+                if preflight.is_error or preflight.result.strip() != "PONG":
+                    code = getattr(preflight, "error_code", None) or "no_valid_model_response"
+                    raise ValueError(f"OpenCode model preflight failed ({code}); inspect provider/quota before retrying")
+                eff_provider, eff_model = "opencode", entry.model
+                validate_native_session(entry.native_session)
+            elif binding.assistant == "opencode":
                 resolver = getattr(cli, "resolve_runtime_provider_target", None)
                 if callable(resolver):
-                    eff_provider, eff_model = resolver("opencode", "")
+                    eff_provider, eff_model = resolver("opencode", entry.model or "")
             if not eff_provider:
                 eff_provider, eff_model = cli.resolve_provider(request)
             if (eff_provider and eff_provider != entry.provider) or (
@@ -1408,7 +1500,14 @@ class TaskHub:
                 if eff_model:
                     entry.model = eff_model
 
+            request = replace(request, model_override=eff_model or request.model_override)
+            native_dispatched = bool(entry.native_session)
             response = await cli.execute(request)
+            if entry.native_session and (
+                (response.session_id and response.session_id != entry.session_id)
+                or (not response.is_error and response.session_id != entry.session_id)
+            ):
+                raise ValueError("Provider returned a different native session; refusing successful adoption")
 
             elapsed = time.monotonic() - t0
             status, error = self._response_status(entry, response, timeout=effective_timeout)
@@ -1419,7 +1518,7 @@ class TaskHub:
             self._update_task_status(
                 entry.task_id,
                 status=status,
-                session_id=response.session_id or "",
+                session_id=response.session_id or (entry.session_id if entry.native_session else ""),
                 completed_at=time.time(),
                 elapsed_seconds=elapsed,
                 error=error,
@@ -1578,7 +1677,7 @@ class TaskHub:
             raise
 
         except ValueError as exc:
-            error_msg = self._runtime_provider_error(exc)
+            error_msg = str(exc) if entry.native_session else self._runtime_provider_error(exc)
             logger.warning(
                 "Task runtime target unresolved id=%s provider=%s model=%s error=%s",
                 entry.task_id,
@@ -1667,6 +1766,18 @@ class TaskHub:
                 )
                 self._write_tool_result_artifact(entry, task_result)
                 await self._deliver(task_result)
+
+        finally:
+            if native_lease is not None:
+                try:
+                    if native_dispatched and entry.native_session:
+                        # Keep the checkpoint after our own completed/cancelled turn so resume
+                        # can detect subsequent external history changes, not our own writes.
+                        with contextlib.suppress(ValueError):
+                            current = validate_native_session(entry.native_session, check_revision=False)
+                            self._registry.update_status(entry.task_id, entry.status, native_session=current)
+                finally:
+                    native_lease.close()
 
     async def _deliver(self, result: TaskResult) -> None:
         """Deliver result to the parent agent's registered callback."""

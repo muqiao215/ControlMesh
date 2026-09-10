@@ -57,7 +57,9 @@ def _build_subprocess_env(config: CLIConfig) -> dict[str, str] | None:
 
     # Merge user secrets (low priority — never override existing vars).
     working_dir = Path(config.working_dir)
-    controlmesh_home = working_dir.parent if working_dir.name == "workspace" else working_dir
+    controlmesh_home = Path(config.runtime_home) if config.runtime_home else (
+        working_dir.parent if working_dir.name == "workspace" else working_dir
+    )
     env_file = controlmesh_home / ".env"
     for key, value in load_env_secrets(env_file).items():
         if key not in env:
@@ -71,8 +73,6 @@ def _build_subprocess_env(config: CLIConfig) -> dict[str, str] | None:
     if config.topic_id:
         env["CONTROLMESH_TOPIC_ID"] = str(config.topic_id)
     env["CONTROLMESH_TRANSPORT"] = config.transport
-    working_dir = Path(config.working_dir)
-    controlmesh_home = working_dir.parent if working_dir.name == "workspace" else working_dir
     env["CONTROLMESH_HOME"] = str(controlmesh_home)
     # Shared knowledge is always at the main agent's home level.
     # For main: controlmesh_home itself. For sub-agents: ../../ from agents/<name>/.

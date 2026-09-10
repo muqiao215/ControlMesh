@@ -69,6 +69,8 @@ class OpenCodeCLI(BaseCLI):
         from controlmesh.execution_grants import map_tool_grant
 
         cmd = [self._cli, "run", "--format", "json"]
+        if not self._config.docker_container:
+            cmd += ["--dir", str(self._working_dir)]
         cmd.extend(map_tool_grant("opencode", self._config.tool_grant).flags)
         cmd.extend(self._permission_flags())
         if self._config.model:
