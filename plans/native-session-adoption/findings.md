@@ -9,3 +9,7 @@
 - Integration uses trusted local `/tasks sessions|inspect|adopt` commands; no public mutation API or automation is added.
 - Native working directory can differ from project target. Runtime home/environment must remain CM-owned when cwd changes.
 - CM advisory leases exclude other CM runs only; native clients do not honor them. Revision checks detect intervening writes but cannot promise cross-client exclusivity.
+
+- Full terminal acceptance exposed an existing command-registry gap: `/tasks` was exact-only; parameterized task commands fell through to provider conversation. Added `/tasks ` prefix registration and a real-orchestrator regression asserting no model call for inspection. The failed isolated attempt was terminated; no application work was authorized by that command.
+- Native MiniMax sometimes replies `PONG.`. Preflight now accepts only PONG or PONG plus one period, still rejecting prompt echoes/errors/explanations; the synchronous probe also binds --dir explicitly.
+- Final real TerminalRuntime startup (no mocked execution or delivery) searched Viewer, adopted the native session, passed preflight, completed, and delivered its historical answer into TerminalInbox in 15.99 seconds.

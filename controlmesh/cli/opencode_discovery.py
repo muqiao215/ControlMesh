@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import subprocess
+from pathlib import Path
 from shutil import which
 
 from controlmesh.cli.auth import read_opencode_default_model, read_opencode_primary_provider
@@ -152,7 +153,8 @@ def probe_opencode_model_sync(model: str, *, deadline: float = PROBE_TIMEOUT) ->
     if not opencode_path or not normalized:
         return False
 
-    cmd = [opencode_path, "run", "--format", "json", "--model", normalized, _PROBE_PROMPT]
+    cmd = [opencode_path, "run", "--format", "json", "--dir", str(Path.cwd().resolve()),
+           "--model", normalized, _PROBE_PROMPT]
     try:
         result = subprocess.run(
             cmd,
@@ -197,7 +199,12 @@ def probe_opencode_model_sync(model: str, *, deadline: float = PROBE_TIMEOUT) ->
             text = part.get("text")
             if isinstance(text, str):
                 texts.append(text)
-    return "".join(texts).strip() == "PONG"
+    return valid_opencode_probe_text("".join(texts))
+
+
+def valid_opencode_probe_text(text: str) -> bool:
+    """Accept the sentinel with the single terminal period observed in native replies."""
+    return text.strip() in {"PONG", "PONG."}
 
 
 def resolve_opencode_runnable_model_sync(*, deadline: float = DISCOVERY_TIMEOUT) -> str:

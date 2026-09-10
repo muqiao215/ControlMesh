@@ -11,7 +11,9 @@ In the enhanced local CM terminal:
 /tasks adopt --session ses_<id> --revision <inspection-revision> --directory <native-cwd> --repo <target-repo> --model <provider/model> -- <new instruction>
 ```
 
-The selected model must return a supervised PONG preflight before native continuation.
+The selected model must return a supervised PONG preflight before native continuation
+(a single terminal period is accepted). Task subcommands are explicitly registered so
+control commands cannot fall through into model prompts.
 The task retains its native session ID, source identity, revision and original permissions.
 Host OpenCode receives an explicit `--dir`; CM runtime state remains in its original home.
 Existing TaskHub cancel/resume continues the same session. After an owner crash, inspect
@@ -39,7 +41,10 @@ Validation: 5,703 full-suite tests passed before the final recovery addition; 37
 tests passed afterward, including 21 native-adoption cases. Ruff and targeted Mypy passed.
 Real isolated TaskHub execution discovered a historical SpecMesh session via Viewer,
 passed the MiniMax preflight, resumed the original native ID, returned historical facts
-and completed normally with native tools denied. No WeChat application operation was run.
+and completed normally with native tools denied. A final real TerminalRuntime run also
+verified Viewer search, adoption and terminal inbox delivery in 15.99 seconds. The final
+routing/probe/native/terminal regression set passed 220 tests. No WeChat application
+operation was run.
 
 Rollback: stop adopted tasks before downgrading. Older builds do not interpret their
 native-session provenance and must not be used to resume them.

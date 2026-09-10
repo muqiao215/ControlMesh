@@ -1,7 +1,7 @@
 # Progress
 
 ## Current
-Implementation complete; regression review and publication in progress.
+Implementation and real terminal acceptance complete; publication gates in progress.
 
 ## Done
 - Isolated branch feat/native-session-adoption from fe1ef45.
@@ -13,6 +13,9 @@ Implementation complete; regression review and publication in progress.
 - Real isolated TaskHub acceptance: Viewer found the original SpecMesh session; MiniMax preflight and native continuation completed in 15.86 seconds. Same native ID, old qiao-wechat context correctly recalled. Provider tools denied via native configuration; no application code or WeChat operations.
 
 - Terminal/native suite: 50 tests passed after real terminal wiring; release-contract checks rerun after version expectation update.
+
+- Final real terminal run: Viewer search, native adoption, model preflight, task completion and terminal inbox delivery all succeeded in 15.99 seconds without mocked runtime components.
+- Final command-routing/probe/native/terminal regression set: 220 tests passed; Ruff passed.
 
 ## Remaining
 PR/merge CI, v0.42.2 publication and local installation verification.

@@ -1467,6 +1467,7 @@ class TaskHub:
             eff_model = ""
             if entry.native_session:
                 from controlmesh.execution_grants import map_tool_grant
+                from controlmesh.cli.opencode_discovery import valid_opencode_probe_text
 
                 # Gate before any model probe; history must not widen tool authority.
                 map_tool_grant("opencode", entry.tool_grant)
@@ -1475,7 +1476,7 @@ class TaskHub:
                     timeout_seconds=20, hard_timeout_seconds=20, timeout_controller=None, liveness_policy=None,
                     process_label=f"task:{entry.task_id}:preflight",
                 ))
-                if preflight.is_error or preflight.result.strip() != "PONG":
+                if preflight.is_error or not valid_opencode_probe_text(preflight.result):
                     code = getattr(preflight, "error_code", None) or "no_valid_model_response"
                     raise ValueError(f"OpenCode model preflight failed ({code}); inspect provider/quota before retrying")
                 eff_provider, eff_model = "opencode", entry.model

@@ -389,3 +389,21 @@ async def test_enhanced_terminal_wires_execution_and_result_inbox(native, tmp_pa
     await runtime._on_task_question(task_id, "Choose a target", "preview", 1, None)
     assert runtime.inbox.list_all()[0].title == f"Task {task_id} needs input"
     await hub.shutdown()
+
+
+async def test_real_orchestrator_routes_task_subcommands_without_calling_model(native, tmp_path):
+    from controlmesh.config import AgentConfig
+    from controlmesh.orchestrator.core import Orchestrator
+
+    ref, _ = native
+    paths = ControlMeshPaths(controlmesh_home=tmp_path / "cm")
+    hub, cli = make_hub(tmp_path)
+    orch = Orchestrator(AgentConfig(controlmesh_home=str(paths.controlmesh_home)), paths)
+    orch.set_task_hub(hub)
+    orch._cli_service = cli
+    key = SessionKey.terminal("native-routing-test")
+    result = await orch.handle_message(key, f"/tasks inspect {SID}")
+    assert json.loads(result.text)["revision"] == ref.revision
+    cli.execute.assert_not_awaited()
+    cli.execute_streaming.assert_not_called()
+    await hub.shutdown()
