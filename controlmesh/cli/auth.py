@@ -312,13 +312,17 @@ def check_opencode_auth() -> AuthResult:
 
 
 def _opencode_runnable_diagnostic() -> str:
-    """Return a diagnostic when OpenCode config exists but no runnable model resolves."""
+    """Describe static model resolution without claiming a live preflight ran."""
     from controlmesh.cli.opencode_discovery import resolve_opencode_runnable_model_sync
 
     model = resolve_opencode_runnable_model_sync()
     if model:
         return ""
-    return "OpenCode is installed/configured, but no runnable runtime model passed preflight."
+    return (
+        "OpenCode credentials/configuration found, but no default model was resolved "
+        "from local config. No live model preflight was run; select an explicit "
+        "provider/model or use OpenCode native model selection."
+    )
 
 
 def _openai_agents_sdk_installed() -> bool:
@@ -375,15 +379,43 @@ def _find_opencode_auth_file() -> Path | None:
     return None
 
 
-def _find_opencode_runtime_config_file() -> Path | None:
+def _read_opencode_runtime_config() -> dict[str, object]:
+    """Read the global JSON + JSONC overlay without starting the native CLI.
+
+    OpenCode loads JSON first, then overlays JSONC. A schema-only JSONC file
+    must not hide the model/providers in JSON. Retain CM's existing XDG-root
+    fallback, but do not merge an explicitly selected root with another home.
+    This is a static global-config reader, not the complete project/remote
+    OpenCode config resolver or proof of model reachability.
+    """
     for root in _iter_opencode_config_roots():
-        for path in (
-            root / "opencode" / "opencode.jsonc",
-            root / "opencode" / "opencode.json",
-        ):
-            if path.is_file():
-                return path
-    return None
+        paths = [root / "opencode" / name for name in ("opencode.json", "opencode.jsonc")]
+        existing = [path for path in paths if path.is_file()]
+        if not existing:
+            continue
+        merged: dict[str, object] = {}
+        for path in existing:
+            data = _load_opencode_json(path)
+            if not isinstance(data, dict):
+                # Do not silently select a lower-precedence model when the
+                # effective configuration cannot be parsed.
+                return {}
+            merged = _merge_opencode_config(merged, data)
+        return merged
+    return {}
+
+
+def _merge_opencode_config(
+    base: dict[str, object], overlay: dict[str, object],
+) -> dict[str, object]:
+    result = dict(base)
+    for key, value in overlay.items():
+        previous = result.get(key)
+        if isinstance(previous, dict) and isinstance(value, dict):
+            result[key] = _merge_opencode_config(previous, value)
+        else:
+            result[key] = value
+    return result
 
 
 def _load_opencode_json(path: Path) -> dict[str, object] | None:
@@ -393,13 +425,15 @@ def _load_opencode_json(path: Path) -> dict[str, object] | None:
         return None
 
     try:
-        return json.loads(raw)
+        data = json.loads(raw)
+        return data if isinstance(data, dict) else None
     except json.JSONDecodeError:
         # Accept simple JSONC config files without adding a new parser dependency.
         stripped = re.sub(r"/\*.*?\*/", "", raw, flags=re.DOTALL)
         stripped = re.sub(r"^\s*//.*$", "", stripped, flags=re.MULTILINE)
         try:
-            return json.loads(stripped)
+            data = json.loads(stripped)
+            return data if isinstance(data, dict) else None
         except json.JSONDecodeError:
             return None
 
@@ -473,33 +507,21 @@ def _read_opencode_model_declaration(data: dict[str, object]) -> tuple[str, bool
 
 def read_opencode_default_model() -> str:
     """Return the configured OpenCode default model, if one is declared locally."""
-    config_file = _find_opencode_runtime_config_file()
-    if config_file is None:
-        return ""
-    data = _load_opencode_json(config_file)
-    if not isinstance(data, dict):
-        return ""
+    data = _read_opencode_runtime_config()
     model, _is_explicit = _read_opencode_model_declaration(data)
     return model
 
 
 def read_opencode_primary_provider() -> str:
     """Return the most likely active OpenCode provider from runtime config/auth."""
-    config_file = _find_opencode_runtime_config_file()
-    data: dict[str, object] | None = None
-    provider_ids: set[str] = set()
-    if config_file is not None:
-        loaded = _load_opencode_json(config_file)
-        if isinstance(loaded, dict):
-            data = loaded
-            provider_ids = _read_opencode_runtime_provider_ids(loaded)
+    data = _read_opencode_runtime_config()
+    provider_ids = _read_opencode_runtime_provider_ids(data)
 
-    if data is not None:
-        configured_model, _is_explicit = _read_opencode_model_declaration(data)
-        if "/" in configured_model:
-            model_provider = configured_model.split("/", 1)[0].strip()
-            if model_provider and (not provider_ids or model_provider in provider_ids):
-                return model_provider
+    configured_model, _is_explicit = _read_opencode_model_declaration(data)
+    if "/" in configured_model:
+        model_provider = configured_model.split("/", 1)[0].strip()
+        if model_provider and (not provider_ids or model_provider in provider_ids):
+            return model_provider
 
     if len(provider_ids) == 1:
         return next(iter(provider_ids))
@@ -519,12 +541,7 @@ def opencode_model_uses_runtime_env_default(model: str) -> bool:
     normalized = _normalize_opencode_model_name(model)
     if not normalized:
         return False
-    config_file = _find_opencode_runtime_config_file()
-    if config_file is None:
-        return False
-    data = _load_opencode_json(config_file)
-    if not isinstance(data, dict):
-        return False
+    data = _read_opencode_runtime_config()
     configured, is_explicit = _read_opencode_model_declaration(data)
     return bool(configured) and not is_explicit and configured == normalized
 

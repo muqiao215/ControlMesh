@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import subprocess
@@ -162,14 +163,7 @@ def probe_opencode_model_sync(model: str, *, deadline: float = PROBE_TIMEOUT) ->
             creationflags=_CREATION_FLAGS,
         )
     except subprocess.TimeoutExpired:
-        discovered = discover_opencode_models_sync(deadline=min(deadline, DISCOVERY_TIMEOUT))
-        if normalized in discovered:
-            logger.info(
-                "OpenCode probe timed out but model is discoverable model=%s",
-                normalized,
-            )
-            return True
-        logger.warning("OpenCode probe timed out and model was not discoverable model=%s", normalized)
+        logger.warning("OpenCode probe timed out model=%s", normalized)
         return False
     except OSError:
         logger.warning("OpenCode probe failed model=%s", normalized, exc_info=True)
@@ -184,14 +178,25 @@ def probe_opencode_model_sync(model: str, *, deadline: float = PROBE_TIMEOUT) ->
         )
         return False
 
-    output = (result.stdout or "").strip()
-    if "PONG" not in output:
-        logger.info(
-            "OpenCode probe completed without echoed sentinel model=%s stdout_prefix=%s",
-            normalized,
-            output[:200],
-        )
-    return True
+    # A successful process exit or catalog listing is not a model response.
+    # Accept only the sentinel in native text events; prompts/error messages
+    # containing PONG must not make a broken model pass preflight.
+    texts: list[str] = []
+    for line in (result.stdout or "").splitlines():
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        if event.get("type") == "error":
+            return False
+        part = event.get("part")
+        if event.get("type") == "text" and isinstance(part, dict):
+            text = part.get("text")
+            if isinstance(text, str):
+                texts.append(text)
+    return "".join(texts).strip() == "PONG"
 
 
 def resolve_opencode_runnable_model_sync(*, deadline: float = DISCOVERY_TIMEOUT) -> str:

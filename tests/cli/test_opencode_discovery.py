@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import os
+
+import pytest
 import subprocess
 from unittest.mock import AsyncMock, patch
 
@@ -160,7 +162,7 @@ def test_probe_opencode_model_sync_returns_true_on_pong() -> None:
     result = subprocess.CompletedProcess(
         args=["opencode", "run"],
         returncode=0,
-        stdout='{"type":"item.completed","item":{"type":"agent_message","text":"PONG"}}\n',
+        stdout='{"type":"text","part":{"type":"text","text":"PONG"}}\n',
         stderr="",
     )
     with (
@@ -170,7 +172,7 @@ def test_probe_opencode_model_sync_returns_true_on_pong() -> None:
         assert probe_opencode_model_sync("zhipuai/glm-5.1") is True
 
 
-def test_probe_opencode_model_sync_returns_true_on_success_without_pong() -> None:
+def test_probe_opencode_model_sync_rejects_success_without_pong() -> None:
     result = subprocess.CompletedProcess(
         args=["opencode", "run"],
         returncode=0,
@@ -181,10 +183,10 @@ def test_probe_opencode_model_sync_returns_true_on_success_without_pong() -> Non
         patch("controlmesh.cli.opencode_discovery.which", return_value="/usr/bin/opencode"),
         patch("controlmesh.cli.opencode_discovery.subprocess.run", return_value=result),
     ):
-        assert probe_opencode_model_sync("zai-coding-plan/glm-5.1") is True
+        assert probe_opencode_model_sync("zai-coding-plan/glm-5.1") is False
 
 
-def test_probe_opencode_model_sync_falls_back_to_discovery_on_timeout() -> None:
+def test_probe_opencode_model_sync_rejects_timeout_even_if_model_is_discoverable() -> None:
     def fake_run(*args, **kwargs):
         raise subprocess.TimeoutExpired(cmd=args[0], timeout=kwargs["timeout"])
 
@@ -196,9 +198,9 @@ def test_probe_opencode_model_sync_falls_back_to_discovery_on_timeout() -> None:
             return_value=("zai-coding-plan/glm-5.1",),
         ) as discover_mock,
     ):
-        assert probe_opencode_model_sync("zai-coding-plan/glm-5.1", deadline=15.0) is True
+        assert probe_opencode_model_sync("zai-coding-plan/glm-5.1", deadline=15.0) is False
 
-    discover_mock.assert_called_once_with(deadline=10.0)
+    discover_mock.assert_not_called()
 
 
 def test_probe_opencode_model_sync_returns_false_when_timeout_model_not_discovered() -> None:
@@ -252,3 +254,18 @@ def test_resolve_opencode_runnable_model_sync_uses_safe_pick_path() -> None:
 
     assert model == "zhipuai/glm-5.1"
     pick_mock.assert_called_once_with(deadline=10.0)
+
+
+@pytest.mark.parametrize("output", [
+    "PONG", "Usage: opencode run PONG", "[]", "null",
+    '{"type":"error","error":{"message":"PONG"}}',
+    '{"type":"text","part":{"text":"PONG"}}\n{"type":"error"}',
+    '{"type":"text","part":{"text":123}}',
+])
+def test_probe_rejects_non_response_or_error_output(output: str) -> None:
+    result = subprocess.CompletedProcess(args=[], returncode=0, stdout=output, stderr="")
+    with (
+        patch("controlmesh.cli.opencode_discovery.which", return_value="/usr/bin/opencode"),
+        patch("controlmesh.cli.opencode_discovery.subprocess.run", return_value=result),
+    ):
+        assert probe_opencode_model_sync("vendor/model") is False
