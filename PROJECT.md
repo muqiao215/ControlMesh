@@ -95,7 +95,7 @@ The approved TypeScript foundation is complete:
 - GitHub CI runs the frozen protocol/golden/SDK/Web gate as a required product-layer job
   and exposes one aggregate `CI success` check for the complete workflow.
 
-The published `0.42.0a1` read-only Alpha is installable as one Python artifact: the
+The read-only Alpha introduced in `0.42.0a1` is installable as one Python artifact: the
 deterministic dashboard build ships in the wheel, `controlmesh api serve` exposes the
 authenticated facade and dashboard only on `127.0.0.1`, and the public Alpha SDK surface
 contains only supported read operations. CI includes a required isolated-wheel smoke that
@@ -143,9 +143,11 @@ to the owner loop, and repeated start/stop cycles leak no threads, ping tasks, o
 
 ## Current Priority
 
-The user has prioritized native OpenCode continuity across History Viewer, TaskHub and
-SpecMesh. Implement and validate explicit local session adoption before widening the
-integration to other providers or remote admission. See `plans/native-session-adoption/`.
+Native OpenCode continuity shipped in v0.42.2: local Viewer discovery, explicit TaskHub
+adoption, model preflight and same-session completion passed real terminal acceptance.
+See `plans/native-session-adoption/`. This does not close A.1 or terminal product readiness.
+History Viewer owns history discovery; CM owns execution; SpecMesh owns reviewed project
+intent and status. Native history is contextual evidence, never automatic project truth.
 
 Tool-grant v1 landed at `3417ae0`: provider mapping/rejection, optional task snapshots and
 golden drift checks are present. This does not yet establish end-to-end grant enforcement.
@@ -180,6 +182,9 @@ acceptance. The following runtime and operational work remains queued:
 - TypeScript migration contracts and status → `docs/typescript-migration/`
 - Historical and active work → `plans/`
 - Current active work → `plans/terminal-product-v1/`
+- Native continuity delivery (complete) → `plans/native-session-adoption/`
 - Weekly report gaps and queued safety work → `plans/weekly-report-followthrough/`
 - Tool-grant enforcement closure (Unit A.1) → `plans/execution-tool-grants-enforcement-closure/`
 - Most recent landed safety implementation (Unit A v1) → `plans/execution-tool-grants/`
+
+- Plan status index → [plans/README.md](plans/README.md)
