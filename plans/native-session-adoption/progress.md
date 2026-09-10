@@ -1,7 +1,7 @@
 # Progress
 
 ## Current
-Implementation and real terminal acceptance complete; publication gates in progress.
+Implementation and real terminal acceptance complete; published as v0.42.2 and installed locally.
 
 ## Done
 - Isolated branch feat/native-session-adoption from fe1ef45.
@@ -18,7 +18,7 @@ Implementation and real terminal acceptance complete; publication gates in progr
 - Final command-routing/probe/native/terminal regression set: 220 tests passed; Ruff passed.
 
 ## Remaining
-PR/merge CI, v0.42.2 publication and local installation verification.
+None for this delivery.
 
 ## Issues
 - Terminal startup had no main transport stack, so its TaskHub lacked a main CLI service/result handler. Explicit terminal service/inbox wiring is now covered by a regression.
@@ -28,4 +28,8 @@ PR/merge CI, v0.42.2 publication and local installation verification.
 - Initial acceptance harness import collided with an unrelated work/inspect.py; corrected with Python safe-path mode. A harness method name was corrected to set_result_handler before execution.
 
 ## Next
-Complete broader regression checks and publish reviewed changes.
+Continue terminal product and A.1 work under their own plans.
+
+## Release verification (2026-09-11)
+
+PR #28 merged as c2c4e3f. Main CI 34505610074 passed (5,707 tests on each Python version); publish 34505704112 passed. GitHub/PyPI v0.42.2 and local `cm --version` agreed; daemon health returned HTTP 200 after restart. Local deployment observations are dated evidence, not a guarantee about future installations.
