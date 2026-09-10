@@ -7,6 +7,7 @@ import os
 
 import pytest
 import subprocess
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from controlmesh.cli.opencode_discovery import (
@@ -172,6 +173,8 @@ def test_probe_opencode_model_sync_returns_true_on_pong() -> None:
         assert probe_opencode_model_sync("zhipuai/glm-5.1") is True
 
     assert run_mock.call_args.kwargs["stdin"] == subprocess.DEVNULL
+    command = run_mock.call_args.args[0]
+    assert command[command.index("--dir") + 1] == str(Path.cwd().resolve())
 
 
 def test_probe_opencode_model_sync_rejects_success_without_pong() -> None:
@@ -271,3 +274,13 @@ def test_probe_rejects_non_response_or_error_output(output: str) -> None:
         patch("controlmesh.cli.opencode_discovery.subprocess.run", return_value=result),
     ):
         assert probe_opencode_model_sync("vendor/model") is False
+
+
+def test_probe_sentinel_accepts_period_but_not_prompt_echo_or_explanation() -> None:
+    from controlmesh.cli.opencode_discovery import valid_opencode_probe_text
+
+    assert valid_opencode_probe_text("PONG.")
+    assert valid_opencode_probe_text(" PONG\n")
+    assert not valid_opencode_probe_text('"Reply with exactly PONG."')
+    assert not valid_opencode_probe_text("Error: PONG")
+    assert not valid_opencode_probe_text("PONG but quota exhausted")

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from controlmesh.tasks.native_sessions import NativeSessionRef
+
 import asyncio
 import time
 from dataclasses import dataclass, field
@@ -103,6 +105,7 @@ class TaskSubmit:
     external_task: bool = False
     idempotency_key: str = ""
     execution_context: ExecutionContext | None = None
+    native_session: NativeSessionRef | None = None
     tool_grant: ToolGrantSnapshot | None = None
     requested_tool_deny: tuple[str, ...] = ()
     requested_no_network: bool = False
@@ -168,6 +171,7 @@ class TaskEntry:
     tasks_dir: str = ""  # Agent's tasks directory (for per-agent folder resolution)
     thread_id: TopicRef = None  # Forum topic ID (for routing results back to topic)
     execution_context: ExecutionContext | None = None
+    native_session: NativeSessionRef | None = None
     tool_grant: ToolGrantSnapshot | None = None
 
     def to_dict(self) -> dict[str, object]:
@@ -184,6 +188,7 @@ class TaskEntry:
             "topology": self.topology,
             "status": self.status,
             "session_id": self.session_id,
+            "native_session": self.native_session.to_dict() if self.native_session else None,
             "created_at": self.created_at,
             "completed_at": self.completed_at,
             "elapsed_seconds": self.elapsed_seconds,
@@ -249,6 +254,7 @@ class TaskEntry:
             topology=d.get("topology", ""),
             status=d.get("status", "running"),
             session_id=d.get("session_id", ""),
+            native_session=NativeSessionRef.from_dict(d["native_session"]) if d.get("native_session") else None,
             created_at=d.get("created_at", 0.0),
             completed_at=d.get("completed_at", 0.0),
             elapsed_seconds=d.get("elapsed_seconds", 0.0),

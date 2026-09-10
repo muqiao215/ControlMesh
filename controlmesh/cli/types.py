@@ -65,6 +65,7 @@ class AgentRequest:
     allowed_tools: tuple[str, ...] = ()
     disallowed_tools: tuple[str, ...] = ()
     tool_grant: ToolGrantSnapshot | None = None
+    working_dir: str | None = None
     resume_session: str | None = None
     continue_session: bool = False
     timeout_seconds: float | None = None

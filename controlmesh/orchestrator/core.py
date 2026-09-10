@@ -1120,6 +1120,7 @@ class Orchestrator:
         reg.register_async("/upgrade", cmd_upgrade)
         reg.register_async("/sessions", cmd_sessions)
         reg.register_async("/tasks", cmd_tasks)
+        reg.register_async("/tasks ", cmd_tasks)
         reg.register_async("/route", cmd_route)
         reg.register_async("/route ", cmd_route)
 

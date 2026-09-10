@@ -158,6 +158,8 @@ class TaskRegistry:
             thread_id=submit.thread_id,
             execution_context=submit.execution_context,
             tool_grant=submit.tool_grant,
+            native_session=submit.native_session,
+            session_id=submit.native_session.session_id if submit.native_session else "",
         )
         self._entries[task_id] = entry
 

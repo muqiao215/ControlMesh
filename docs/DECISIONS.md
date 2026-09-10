@@ -331,3 +331,21 @@ Text-first automatic release routing and provider-name-based trust.
 Revisit when:
 
 Trusted worker contracts and user approval semantics cover the exact side effect.
+
+
+## 2026-09-11 — Adopt native sessions through the local TaskHub ingress
+
+Decision: use Viewer for read-only candidate discovery, validate identity in OpenCode's
+native store, and execute explicit native resume through the existing TaskHub. Persist
+source identity/revision separately from project memory and execution provenance.
+
+Why: copying history into a new prompt cannot establish native continuity. Reusing TaskHub
+preserves supervision and recovery without adding a second scheduler or emitting scheduled
+prompts under a user's identity. A model catalog or successful CLI exit alone is insufficient:
+adoption first requires a supervised, bounded PONG response from the selected model.
+
+Rejected: Viewer writing CM private files, automatic latest-session selection, inferred
+permissions from historical text, and silently switching to a fresh session on failure.
+
+Revisit remote/browser adoption only after authenticated mutation admission and source-aware
+policy are implemented. The current CM lease does not exclude independent native clients.

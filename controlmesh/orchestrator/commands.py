@@ -701,6 +701,12 @@ async def cmd_tasks(orch: Orchestrator, key: SessionKey, _text: str) -> Orchestr
     """Handle /tasks."""
     logger.info("Tasks requested")
     parts = _text.strip().split()
+    if len(parts) >= 2 and parts[1].lower() in {"sessions", "inspect", "adopt", "recover"}:
+        from controlmesh.tasks.native_commands import native_task_command
+
+        if orch.task_hub is None:
+            return OrchestratorResult(text="TaskHub is disabled.")
+        return OrchestratorResult(text=await native_task_command(orch.task_hub, key, _text))
     if len(parts) >= 2 and parts[1].lower() in {"new", "create"}:
         prompt = _text.strip().split(None, 2)[2].strip() if len(parts) >= 3 else ""
         return _cmd_tasks_new(orch, key, prompt)

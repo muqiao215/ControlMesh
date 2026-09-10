@@ -105,6 +105,7 @@ class CLIConfig:
     # Extra CLI parameters (provider-specific):
     cli_parameters: list[str] = field(default_factory=list)
     # Transport identification (for routing results back):
+    runtime_home: str = ""
     transport: str = "tg"
     # Multi-agent identification:
     agent_name: str = "main"

@@ -18,6 +18,15 @@ Core:
 Runtime:
   tasks list           List tasks
   tasks doctor         Check task runtime health
+  tasks sessions <query>
+                       Find OpenCode history through local History Viewer
+  tasks inspect <session_id>
+                       Inspect native identity and revision
+  tasks adopt --session <id> --revision <rev> --directory <cwd>
+              --repo <repo> --model <provider/model> -- <instruction>
+                       Adopt an inspected native session into TaskHub
+  tasks recover --task <id> --revision <rev> -- <instruction>
+                       Recover an interrupted native task after inspection
   agents               List agents
   cron list            List cron jobs
 
