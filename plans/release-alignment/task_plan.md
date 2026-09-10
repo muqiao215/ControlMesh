@@ -10,8 +10,8 @@ release state and runtime installation. No automatic transcript-to-memory promot
 ## Plan
 - [x] Inventory source, remote releases, plans and worktree changes.
 - [x] Correct stale entries and ownership boundaries.
-- [ ] Complete release verification and publish reviewed changes.
-- [ ] Align local checkout/installation and verify.
+- [x] Complete release verification and publish reviewed changes.
+- [x] Align local release source/installation and verify.
 
 ## Success
 Connected entry documents, truthful plan status, verified release provenance and matching local code.
@@ -19,3 +19,6 @@ Connected entry documents, truthful plan status, verified release provenance and
 ## Rollback
 Retain previous tag and local-only files. Stop active work before changing runtime versions. Never
 reset parallel modifications or overwrite native histories.
+
+## Status
+Release/runtime alignment verified on 2026-09-11. This documentation records the dated deployment observation; subsequent edits do not change the released runtime.
