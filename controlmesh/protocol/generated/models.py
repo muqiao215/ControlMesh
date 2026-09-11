@@ -90,8 +90,22 @@ class DeviceCommand(BaseModel):
     model_config = ConfigDict(extra="allow")
     schema_version: Literal["controlmesh.device_command.v1"]
     request_id: str
-    operation: Literal["queue", "inspect", "claim", "start", "renew", "dispatch", "observe", "complete", "unknown", "messages", "send", "ack"]
+    operation: Literal["queue", "inspect", "claim", "start", "renew", "dispatch", "observe", "complete", "unknown", "messages", "send", "ack", "release"]
     arguments: dict[str, Any]
+
+
+class DeviceEvidenceRef(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    schema_version: Literal["controlmesh.device_evidence.v1"]
+    device_id: str
+    task_id: str
+    episode_id: str
+    effect_id: str
+    fence: int
+    assignment_digest: str
+    manifest_digest: str
+    observation_digest: str | None = None
+    result_digest: str | None = None
 
 
 class DeviceLeaseWindow(BaseModel):
@@ -99,6 +113,30 @@ class DeviceLeaseWindow(BaseModel):
     schema_version: Literal["controlmesh.device_lease_window.v1"]
     lease: ExecutionLease
     remaining_ms: int
+
+
+class DeviceNativeResult(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    schema_version: Literal["controlmesh.device_native_result.v1"]
+    text: str
+    output_digest: str
+    read_count: int
+    evidence: DeviceEvidenceRef
+    native_session: DeviceNativeSession
+
+
+class DeviceNativeSession(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    schema_version: Literal["controlmesh.device_native_session.v1"]
+    device_id: str
+    evidence: DeviceEvidenceRef
+
+
+class DeviceObservation(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    schema_version: Literal["controlmesh.device_observation.v1"]
+    evidence: DeviceEvidenceRef
+    terminal: bool
 
 
 class DeviceResponse(BaseModel):

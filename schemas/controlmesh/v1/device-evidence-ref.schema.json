@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.controlmesh.dev/controlmesh/v1/device-evidence-ref.schema.json",
+  "title": "DeviceEvidenceRef",
+  "description": "Bounded reference to immutable evidence kept on the executing device. Contains no native store or workspace paths.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "device_id",
+    "task_id",
+    "episode_id",
+    "effect_id",
+    "fence",
+    "assignment_digest",
+    "manifest_digest"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "controlmesh.device_evidence.v1"
+    },
+    "device_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+    },
+    "task_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+    },
+    "episode_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+    },
+    "effect_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+    },
+    "fence": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "assignment_digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "manifest_digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "observation_digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "result_digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+}

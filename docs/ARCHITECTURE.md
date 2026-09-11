@@ -356,8 +356,22 @@ The worker's `runProcess` supplies a suspend-aware lease deadline to the Linux p
 anchor. Request replay never restores expired execution authority, and completion commits
 the effect/result receipt atomically. Explicit peer assignments allow cross-device
 mailbox exchange without granting execution access to the peer task. This transport has
-real synthetic x64/ARM64 evidence; native provider fleet adapters and production startup
-remain gated by the active plan.
+real synthetic x64/ARM64 evidence and a qualified native read adapter; other provider fleet
+profiles and production startup remain gated by the active plan.
+
+`OpenCodeExecution` shares native preparation and verification between `OpenCodeWorker`
+and `OpenCodeDeviceAdapter`. The latter keeps preflight, native store/locks and full evidence
+on its executing device; a schema-6 `DeviceExecutionJournal` binds the original assignment,
+job/workspace and native manifest. The coordinator receives digest references and a bounded
+result with an opaque native session handle. Cross-task/episode/reference mismatches are
+rejected before completion. The original device resolves that handle after restart; kernel
+resume preserves the task's original source and grant while worker events stay agent-origin.
+
+Unstarted preparation failures can release an effect-free lease and return a typed reason;
+expired unstarted admissions return to waiting. Started/uncertain effects cannot use this
+release path. Original device observations are persisted before transport even if connectivity
+was lost. A coordinator that missed them still needs explicit remote reconciliation; local
+retention is not coordinator acceptance or permission to repeat the provider operation.
 
 Native dispatch and recovery share a persisted evidence boundary. Before execution,
 `OpenCodeWorker` commits a bounded manifest with the effect intent: source/provider/grant

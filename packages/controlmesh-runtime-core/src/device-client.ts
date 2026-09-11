@@ -3,7 +3,7 @@ import { assertProtocolSchema, type DeviceCommand, type DeviceLeaseWindow, type 
 import type { Lease } from "./kernel";
 import type { DeviceJob } from "./device-coordinator";
 import { elapsedMs } from "./elapsed-clock";
-import { canonical, identifier, object, requireThat, RuntimeConflict } from "./value";
+import { canonical, digest, identifier, object, requireThat, RuntimeConflict } from "./value";
 
 export interface DeviceClientOptions {
   endpoint: string;
@@ -79,6 +79,9 @@ export class DeviceClient {
     requireThat(object(value) && value.task_id === taskId && typeof value.status === "string" && Number.isSafeInteger(value.revision) && object(value.input), "invalid_device_job");
     identifier(value.workspace_id); identifier(value.capability);
     requireThat(typeof value.assignment_digest === "string" && /^[a-f0-9]{64}$/.test(value.assignment_digest), "invalid_device_job");
+    if (value.execution !== undefined || value.execution_digest !== undefined) {
+      requireThat(object(value.execution) && digest(value.execution) === value.execution_digest, "device_execution_projection_changed");
+    }
     return value as unknown as DeviceJob;
   }
 

@@ -78,14 +78,48 @@ export interface ControlMeshConfig {
 export interface DeviceCommand {
   "schema_version": "controlmesh.device_command.v1";
   "request_id": string;
-  "operation": "queue" | "inspect" | "claim" | "start" | "renew" | "dispatch" | "observe" | "complete" | "unknown" | "messages" | "send" | "ack";
+  "operation": "queue" | "inspect" | "claim" | "start" | "renew" | "dispatch" | "observe" | "complete" | "unknown" | "messages" | "send" | "ack" | "release";
   "arguments": Record<string, unknown>;
+}
+
+export interface DeviceEvidenceRef {
+  "schema_version": "controlmesh.device_evidence.v1";
+  "device_id": string;
+  "task_id": string;
+  "episode_id": string;
+  "effect_id": string;
+  "fence": number;
+  "assignment_digest": string;
+  "manifest_digest": string;
+  "observation_digest"?: string;
+  "result_digest"?: string;
 }
 
 export interface DeviceLeaseWindow {
   "schema_version": "controlmesh.device_lease_window.v1";
   "lease": ExecutionLease;
   "remaining_ms": number;
+}
+
+export interface DeviceNativeResult {
+  "schema_version": "controlmesh.device_native_result.v1";
+  "text": string;
+  "output_digest": string;
+  "read_count": number;
+  "evidence": DeviceEvidenceRef;
+  "native_session": DeviceNativeSession;
+}
+
+export interface DeviceNativeSession {
+  "schema_version": "controlmesh.device_native_session.v1";
+  "device_id": string;
+  "evidence": DeviceEvidenceRef;
+}
+
+export interface DeviceObservation {
+  "schema_version": "controlmesh.device_observation.v1";
+  "evidence": DeviceEvidenceRef;
+  "terminal": boolean;
 }
 
 export interface DeviceResponse {

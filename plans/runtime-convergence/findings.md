@@ -1,5 +1,40 @@
 # Findings
 
+Native device execution now uses one OpenCodeExecution driver shared with the local worker.
+The execution projection comes from the coordinator's stored task, not assignment input;
+literal file access and native configuration remain locally configured. Source/grant/input
+validation runs before model preflight. Preflight and actual execution inherit device lease
+deadlines and advisory native locks remain device-local.
+
+The full native manifest can be much larger than the device protocol's 256 KiB request
+limit. Schema 6 retains it in a device-local evidence ledger, with immutable job/assignment/
+workspace binding and original observation/verified-result digests. Only bounded references
+cross the wire. Native result handles point to a verified result on the original device and
+are task/workspace-bound. Lost original-observation delivery retains local evidence; lost
+completion acknowledgement can leave the coordinator done while the local record is unknown.
+An explicit next episode can resolve the verified handle without replaying the old model call.
+
+The real dual-device run used Rock 5C for coordination because its installed OpenCode was
+1.14.48 and its native auth file was absent. The x64 worker used qualified 1.18.29/M3 with
+its existing local credentials. Both native turns completed across worker reopen, using
+the same session and one preflight generation. Worker events retained agent origin; original
+task source/grant and current file reads were checked. The remote credential was revoked and
+cleanup independently confirmed no remaining canary coordinator process or artifact directory.
+
+Post-run review added coordinator-side schema/reference consistency checks for native
+manifest, observation, result, output digest and continuation handle. Final deterministic
+HTTP/native fixtures exercise these additional rejection paths. The actual execution path
+was verified before these final guards; this distinction is retained rather than calling
+that real run an exact-final-source test of the new rejection branches.
+
+Still open: explicit remote reconciliation when the coordinator missed the original
+observation. The local NativeReconciler requires local native storage and a synchronous
+trusted decision inside the coordinator transaction; it cannot simply be used over a
+network. A remote verifier must bind the current trusted recovery request, original evidence,
+task revision/fence, device and current authorization without executing the provider again.
+Other providers/write profiles, native History adoption and SpecMesh lifecycle checks remain
+separate required owners. Authenticated device reporting does not defeat a compromised device.
+
 The source/grant owners are `controlmesh/bus/envelope.py`, `execution_policy.py` and
 `execution_grants.py`, not the provider SDK facade. TS now independently ports their valid
 stored formats, source sandbox decisions, native mapping, submit narrowing and reply checks.

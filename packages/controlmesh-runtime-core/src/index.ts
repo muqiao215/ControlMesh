@@ -18,3 +18,5 @@ export { executionOrigins, sourceScopes, decodeSourceScope, decodeExecutionConte
 export { sourceRequiresSandbox, evaluateExecutionPolicy, enforceExecutionPolicy, ExecutionPolicyDenied, type ExecutionPolicyDecision } from "./execution-policy";
 export { decodeToolGrant, issueToolGrant, issueTaskGrantForSubmit, mapToolGrant, enforceProviderConfirmation, validateReplyTarget, ToolGrantDenied, ReplyTargetMismatch, type ToolGrantSnapshot, type ToolGrantMapping, type ProviderGrantConfig } from "./execution-grants";
 export { TaskIngress, type IngressSource, type SubmissionIdentity, type SubmissionRestrictions } from "./task-ingress";
+export { DeviceExecutionJournal, type DeviceExecutionRecord } from "./device-journal";
+export { OpenCodeDeviceAdapter, type OpenCodeDeviceOptions } from "./providers/opencode-device-adapter";

@@ -7184,7 +7184,8 @@ var controlmeshSchemas = {
           "unknown",
           "messages",
           "send",
-          "ack"
+          "ack",
+          "release"
         ]
       },
       arguments: {
@@ -7329,6 +7330,9 @@ var controlmeshSchemas = {
               },
               intent: {
                 type: "object"
+              },
+              manifest: {
+                $ref: "device-evidence-ref.schema.json"
               }
             }
           }
@@ -7520,8 +7524,91 @@ var controlmeshSchemas = {
             }
           }
         }
+      },
+      {
+        properties: {
+          operation: {
+            const: "release"
+          },
+          arguments: {
+            type: "object",
+            additionalProperties: false,
+            required: [
+              "lease"
+            ],
+            properties: {
+              lease: {
+                $ref: "execution-lease.schema.json"
+              },
+              reason: {
+                type: "string",
+                pattern: "^[a-z0-9_]{1,96}$"
+              }
+            }
+          }
+        }
       }
     ]
+  },
+  "device-evidence-ref.schema.json": {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    $id: "https://schemas.controlmesh.dev/controlmesh/v1/device-evidence-ref.schema.json",
+    title: "DeviceEvidenceRef",
+    description: "Bounded reference to immutable evidence kept on the executing device. Contains no native store or workspace paths.",
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "schema_version",
+      "device_id",
+      "task_id",
+      "episode_id",
+      "effect_id",
+      "fence",
+      "assignment_digest",
+      "manifest_digest"
+    ],
+    properties: {
+      schema_version: {
+        const: "controlmesh.device_evidence.v1"
+      },
+      device_id: {
+        type: "string",
+        pattern: "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+      },
+      task_id: {
+        type: "string",
+        pattern: "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+      },
+      episode_id: {
+        type: "string",
+        pattern: "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+      },
+      effect_id: {
+        type: "string",
+        pattern: "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+      },
+      fence: {
+        type: "integer",
+        minimum: 1,
+        maximum: 9007199254740991
+      },
+      assignment_digest: {
+        type: "string",
+        pattern: "^[a-f0-9]{64}$"
+      },
+      manifest_digest: {
+        type: "string",
+        pattern: "^[a-f0-9]{64}$"
+      },
+      observation_digest: {
+        type: "string",
+        pattern: "^[a-f0-9]{64}$"
+      },
+      result_digest: {
+        type: "string",
+        pattern: "^[a-f0-9]{64}$"
+      }
+    }
   },
   "device-lease-window.schema.json": {
     $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -7546,6 +7633,92 @@ var controlmeshSchemas = {
         type: "integer",
         minimum: 1,
         maximum: 30000
+      }
+    }
+  },
+  "device-native-result.schema.json": {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    type: "object",
+    additionalProperties: false,
+    $id: "https://schemas.controlmesh.dev/controlmesh/v1/device-native-result.schema.json",
+    title: "DeviceNativeResult",
+    required: [
+      "schema_version",
+      "text",
+      "output_digest",
+      "read_count",
+      "evidence",
+      "native_session"
+    ],
+    properties: {
+      schema_version: {
+        const: "controlmesh.device_native_result.v1"
+      },
+      text: {
+        type: "string",
+        maxLength: 65536
+      },
+      output_digest: {
+        type: "string",
+        pattern: "^[a-f0-9]{64}$"
+      },
+      read_count: {
+        type: "integer",
+        minimum: 0,
+        maximum: 80
+      },
+      evidence: {
+        $ref: "device-evidence-ref.schema.json"
+      },
+      native_session: {
+        $ref: "device-native-session.schema.json"
+      }
+    }
+  },
+  "device-native-session.schema.json": {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    $id: "https://schemas.controlmesh.dev/controlmesh/v1/device-native-session.schema.json",
+    title: "DeviceNativeSession",
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "schema_version",
+      "device_id",
+      "evidence"
+    ],
+    properties: {
+      schema_version: {
+        const: "controlmesh.device_native_session.v1"
+      },
+      device_id: {
+        type: "string",
+        pattern: "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+      },
+      evidence: {
+        $ref: "device-evidence-ref.schema.json"
+      }
+    }
+  },
+  "device-observation.schema.json": {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    type: "object",
+    additionalProperties: false,
+    $id: "https://schemas.controlmesh.dev/controlmesh/v1/device-observation.schema.json",
+    title: "DeviceObservation",
+    required: [
+      "schema_version",
+      "evidence",
+      "terminal"
+    ],
+    properties: {
+      schema_version: {
+        const: "controlmesh.device_observation.v1"
+      },
+      evidence: {
+        $ref: "device-evidence-ref.schema.json"
+      },
+      terminal: {
+        type: "boolean"
       }
     }
   },

@@ -4,9 +4,40 @@
 
 Full goal active. CM-R0 through CM-R6 are in progress. The private TS kernel executes a concrete local OpenCode read profile with native continuation and headless History integration. An authenticated coordinator/worker port now also has real x64/ARM64 synthetic acceptance. Python remains the released production runtime; no writer cutover or new runtime release is claimed.
 
-Current checkpoint: source/grant policy ports and trusted task issuance now feed the qualified native read worker/reconciler. The new issuance path passed real OpenCode SIGKILL/reopen/reconcile/same-session continuation while preserving provenance, narrowing grant and reply identity. Full production migration remains incomplete.
+Current checkpoint: a shared native driver and prepared device adapter execute the qualified
+OpenCode read profile across an authenticated device link. Real ARM64 coordinator/x64 worker
+continuation passed across worker reopen. Full production migration remains incomplete.
 
 ## Done
+
+Device-native checkpoint: shared OpenCodeExecution; locally configured read profile and
+device-bound preflight/session/credential checks; schema-6 device evidence journal; atomic
+coordinator start/dispatch with bounded manifest references; original local observations
+before transport; verified opaque session handles after reopen; wire manifest/observation/
+result/handle consistency checks. Unstarted failures release effect-free leases and report
+typed reasons; started or lost outcomes stay uncertain. Bad native input is rejected before
+spending a preflight permit. Provider probes also inherit device lease deadlines.
+
+Actual acceptance on 2026-09-11 used an ARM64 Rock 5C coordinator and x64 native worker over
+pinned SSH forwarding. OpenCode 1.18.29/M3 completed a turn, then the worker database was
+closed/reopened and the same native session recalled a marker without reinjection and read
+the changed current file. Source, grant and Agent worker origin remained intact. Preflight
+generation stayed 1; two local evidence records completed and two coordinator effects were
+confirmed. No provider credentials/private native paths were copied to the coordinator.
+The ARM64 host's existing CLI was 1.14.48 without native auth, so this does not claim ARM64
+provider execution. The device credential was revoked; remote artifacts and absence of the
+temporary coordinator process were independently verified after shutdown.
+
+The original live device run preceded the final coordinator reference-consistency guards;
+the final HTTP/native fixture suite also covers those guards, mismatched observation/handle
+references and invalid input refusal. No successful model probe was repeated for that
+additional deterministic validation. Final local verification: strict TS; actual Bun 1.3.11
+core suite 108 tests / 1,376 assertions; Python protocol 9 tests; generated-model Ruff and
+Web build passed. Canonical schemas, generated TS/Python/Web assets and the 512-module /
+57-field ownership inventory are synchronized. No production data or cancelled tasks changed.
+
+Trusted issuance checkpoint 8cdac7a880d5ef31e9bd326bcd826c10a2a3f750 has exact-SHA green CI
+34586165733. Python remains the released runtime and no production writer was transferred.
 
 Source/grant checkpoint: TS execution context validation/issuance and async-local binding;
 source-aware sandbox policy; provider flag mapping; narrowing submit grants; reply identity
@@ -66,8 +97,7 @@ No blocking condition. Legacy TaskRegistry construction performs destructive orp
 
 ## Next
 
-Connect the ported provider/source/grant policy to real launchers and native execution over
-the device transport; its current adapter runs before returning its first observation, so
-native preparation/manifest dispatch and immediate observation durability need explicit
-hooks. Finish other persisted-store/recovery owners and independent SpecMesh checks against
-current checkout state. Keep released Python ownership until every activation gate passes.
+Implement trusted remote reconciliation from device-local evidence and the remaining
+provider/write/sandbox, persisted-store and transport owners. Integrate independent SpecMesh
+current-checkout gates and History adoption into device-local handles. Keep released Python
+ownership until every activation gate passes.

@@ -13,6 +13,8 @@ export interface OpenCodeProbeInput {
   native_configuration: Record<string, unknown>;
   environment: Record<string, string>;
   assertCurrent: () => void;
+  remainingMs?: () => number;
+  signal?: AbortSignal;
   timeout_ms?: number;
 }
 export interface OpenCodeProbeReport {
@@ -62,7 +64,7 @@ export class OpenCodePreflight {
         requireThat(remaining > 0, "probe_deadline_expired");
         return this.runner.run({ command: [input.executable, ...args], cwd: directory, env,
           timeout_ms: Math.min(remaining, abort ? 30_000 : 10_000), max_output_bytes: 512 * 1024 },
-        { assertCurrent: () => {
+        { remainingMs: input.remainingMs, signal: input.signal, assertCurrent: () => {
           requireThat(digest(input.native_configuration) === configurationDigest, "native_configuration_changed");
           return input.assertCurrent();
         }, ...(abort ? { abortOnStderrLine: (line: string) => failureFromNativeStderr(line) !== null } : {}) });

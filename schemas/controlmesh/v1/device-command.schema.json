@@ -32,7 +32,8 @@
         "unknown",
         "messages",
         "send",
-        "ack"
+        "ack",
+        "release"
       ]
     },
     "arguments": {
@@ -177,6 +178,9 @@
             },
             "intent": {
               "type": "object"
+            },
+            "manifest": {
+              "$ref": "device-evidence-ref.schema.json"
             }
           }
         }
@@ -364,6 +368,29 @@
                 "string",
                 "null"
               ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "operation": {
+          "const": "release"
+        },
+        "arguments": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "lease"
+          ],
+          "properties": {
+            "lease": {
+              "$ref": "execution-lease.schema.json"
+            },
+            "reason": {
+              "type": "string",
+              "pattern": "^[a-z0-9_]{1,96}$"
             }
           }
         }

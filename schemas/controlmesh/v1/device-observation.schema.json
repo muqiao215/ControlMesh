@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "$id": "https://schemas.controlmesh.dev/controlmesh/v1/device-observation.schema.json",
+  "title": "DeviceObservation",
+  "required": [
+    "schema_version",
+    "evidence",
+    "terminal"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "controlmesh.device_observation.v1"
+    },
+    "evidence": {
+      "$ref": "device-evidence-ref.schema.json"
+    },
+    "terminal": {
+      "type": "boolean"
+    }
+  }
+}

@@ -268,11 +268,34 @@ export class RuntimeKernel {
     });
   }
 
+  /** A preparation failure can release only an unstarted lease with no external effect. */
+  releaseUnstarted(actor: Principal, requestId: string, proof: Lease, reason = "admission_unavailable"): TaskSnapshot {
+    this.scope(actor, "task:execute");
+    this.owned(actor, this.row(proof.task_id));
+    requireThat(/^[a-z0-9_]{1,96}$/.test(reason), "invalid_admission_reason");
+    return this.request(actor, requestId, "release_unstarted", { proof, reason }, () => {
+      const { task, episode } = this.lease(actor, proof);
+      requireThat(episode.state === "leased" && !this.db.sql.query("SELECT 1 FROM effects WHERE episode_id=?").get(proof.episode_id), "started_episode_cannot_release");
+      this.db.sql.query("UPDATE episodes SET state='released' WHERE episode_id=?").run(proof.episode_id);
+      task.active_episode = null; task.status = "waiting"; task.fence += 1;
+      this.save(task); this.event(actor, task, "episode.admission_released", { episode_id: proof.episode_id, reason });
+      return this.snapshot(task);
+    });
+  }
+
   recoverExpired(actor: Principal): string[] {
     this.scope(actor, "task:reconcile");
     requireThat(actor.scopes.includes("task:admin"), "scope_denied");
     return this.db.transaction(() => {
       const now = this.db.now();
+      const idle = this.db.sql.query("SELECT t.* FROM tasks t JOIN episodes e ON t.active_episode=e.episode_id WHERE e.lease_until<=? AND e.state='leased'").all(now) as TaskRow[];
+      for (const task of idle) {
+        requireThat(!this.db.sql.query("SELECT 1 FROM effects WHERE episode_id=?").get(task.active_episode), "unstarted_episode_has_effects");
+        const episode = task.active_episode;
+        this.db.sql.query("UPDATE episodes SET state='expired' WHERE episode_id=?").run(episode);
+        task.active_episode = null; task.status = "waiting"; task.fence += 1;
+        this.save(task); this.event(actor, task, "episode.admission_expired", { episode_id: episode });
+      }
       const rows = this.db.sql.query("SELECT t.* FROM tasks t JOIN episodes e ON t.active_episode=e.episode_id WHERE e.lease_until<=? AND e.state='running'").all(now) as TaskRow[];
       for (const task of rows) {
         this.db.sql.query("UPDATE episodes SET state='unknown' WHERE episode_id=?").run(task.active_episode);
@@ -283,7 +306,7 @@ export class RuntimeKernel {
         this.save(task);
         this.event(actor, task, "episode.outcome_unknown", { episode_id: task.active_episode });
       }
-      return rows.map(row => row.task_id);
+      return [...idle, ...rows].map(row => row.task_id);
     });
   }
 

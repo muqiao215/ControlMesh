@@ -25,6 +25,26 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
+test("unstarted admission release and expiry clear the lease while a started episode remains uncertain", () => {
+  const { kernel, db, advance } = fixture();
+  kernel.submit(actor, "create", task());
+  const first = kernel.claim(actor, "claim", "task-1", 1, 100);
+  const released = kernel.releaseUnstarted(actor, "release", first, "provider_preflight_not_ready");
+  expect(released.task.status).toBe("waiting"); expect(released.active_episode).toBeNull();
+  expect(kernel.releaseUnstarted(actor, "release", first, "provider_preflight_not_ready")).toEqual(released);
+  expect(() => kernel.start(actor, "stale-start", first)).toThrow("stale_fence");
+  const next = kernel.claim(actor, "claim2", "task-1", released.revision, 100);
+  advance(150); expect(kernel.recoverExpired(actor)).toEqual(["task-1"]);
+  const waiting = kernel.inspect(actor, "task-1"); expect(waiting.task.status).toBe("waiting"); expect(waiting.needs_reconciliation).toBe(false);
+  expect(() => kernel.start(actor, "expired-start", next)).toThrow("stale_fence");
+  const running = kernel.claim(actor, "claim3", "task-1", waiting.revision, 100);
+  kernel.start(actor, "start", running);
+  expect(() => kernel.releaseUnstarted(actor, "unsafe-release", running)).toThrow("started_episode_cannot_release");
+  advance(150); kernel.recoverExpired(actor);
+  expect(kernel.inspect(actor, "task-1").needs_reconciliation).toBe(true);
+  expect(db.sql.query("SELECT COUNT(*) AS n FROM effects").get()).toEqual({ n: 0 });
+});
+
 test("idempotency binds principal, request content and provenance and survives restart", () => {
   const { kernel, db, path } = fixture();
   const first = kernel.submit(actor, "create", task());

@@ -190,9 +190,9 @@ test("coordinator restart preserves assignments/receipts; expired running work s
 
 test("v2 database migrates atomically without losing a task or preflight decision", () => {
   const f = fixture(); f.task();
-  f.db.sql.exec("DROP TABLE device_assignments; DROP TABLE device_revocations; DROP TABLE execution_manifests; DROP TABLE effect_observations; PRAGMA user_version=2");
+  f.db.sql.exec("DROP TABLE device_assignments; DROP TABLE device_revocations; DROP TABLE execution_manifests; DROP TABLE effect_observations; DROP TABLE device_execution_records; PRAGMA user_version=2");
   const reopened = new RuntimeDatabase(f.path); cleanup.push(() => reopened.close());
-  expect(reopened.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 5 });
+  expect(reopened.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 6 });
   expect((reopened.sql.query("SELECT COUNT(*) AS n FROM tasks").get() as { n: number }).n).toBe(1);
   expect(reopened.sql.query("SELECT name FROM sqlite_master WHERE name='provider_checks'").get()).not.toBeNull();
 });

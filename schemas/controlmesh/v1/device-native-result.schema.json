@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "$id": "https://schemas.controlmesh.dev/controlmesh/v1/device-native-result.schema.json",
+  "title": "DeviceNativeResult",
+  "required": [
+    "schema_version",
+    "text",
+    "output_digest",
+    "read_count",
+    "evidence",
+    "native_session"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "controlmesh.device_native_result.v1"
+    },
+    "text": {
+      "type": "string",
+      "maxLength": 65536
+    },
+    "output_digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "read_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 80
+    },
+    "evidence": {
+      "$ref": "device-evidence-ref.schema.json"
+    },
+    "native_session": {
+      "$ref": "device-native-session.schema.json"
+    }
+  }
+}

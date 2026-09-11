@@ -411,3 +411,20 @@ authority. Stable retry identity excludes the random newly generated trace; retr
 the original issued trace. Worker command origin remains distinct from task provenance.
 Do not relabel remote worker traffic as human requests to reuse the local native profile.
 This port does not itself implement the remaining sandbox or transport owners.
+
+## 2026-09-11 — Share native execution while retaining full evidence on its device
+
+Extract one native driver instead of maintaining separate local and network verification
+implementations. A prepared device adapter persists its full manifest before coordinator
+dispatch and its original observation before network delivery. The coordinator atomically
+starts/dispatches and stores a bounded evidence reference; completion binds that reference,
+original observation and native handle. Do not transport native databases, credentials or
+private workspace paths as a continuity mechanism.
+
+Resolve opaque continuation handles through the original device's verified result ledger,
+bound to task and workspace. Reopening a worker must not lose the original provider session
+or repeat a completed native call after a lost acknowledgement. Preserve worker command
+origin separately from original human task provenance. Preparation that has not dispatched
+an effect may release its lease; an unknown external result must remain unknown until an
+explicit evidence-based recovery decision. Remote attestation/reconciliation remains a
+separate required owner, not an implied feature of the local journal.

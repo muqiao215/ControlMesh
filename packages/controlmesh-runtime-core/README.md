@@ -53,6 +53,10 @@ Track completion in [the repository plan](../../plans/runtime-convergence/task_p
   agent/session permissions, passes the prompt through bounded stdin, verifies native
   append lineage and required current-file reads, and atomically confirms the result.
   A real same-session marker-recall/current-file canary passed; see the active plan.
+- `OpenCodeExecution` is the shared native driver for that local adapter and the new
+  `OpenCodeDeviceAdapter`. The device adapter consumes coordinator-issued task provenance
+  and grants, maps locally configured literal read paths, and binds its local preflight,
+  native store and credential revision. Worker events remain agent-origin.
 - Before native dispatch, it atomically stores the task/provider/grant binding, native
   baseline row hashes, permission attestation and bounded file fingerprints. Original
   observations are retained separately from accepted results. `NativeReconciler` performs
@@ -71,6 +75,11 @@ Track completion in [the repository plan](../../plans/runtime-convergence/task_p
   `DeviceWorker` supplies `runProcess` to locally registered adapters with the current
   lease deadline passed directly to the process anchor, even if its controller freezes.
   Cross-device mailbox peers must be explicitly assigned.
+- Prepared device adapters persist full manifests and original observations in a device-local
+  `DeviceExecutionJournal`. The coordinator stores bounded digest references; native session
+  paths and credentials are not transported. Verified session handles resolve on the original
+  device after restart, and explicit kernel resume reuses the same native conversation.
+  Unstarted preparation failures release their lease; started/lost outcomes remain uncertain.
 
 `Principal` is an internal admission object constructed by trusted ingress. Never accept
 its identity, scopes, origin or device from an unauthenticated JSON request. The kernel is
@@ -112,17 +121,17 @@ static tool expressions are retained; portable grant tokens have their own bound
 
 Remaining before activation: reconciliation for the other execution profiles and abandonment policy, tell/ask and general resume integration,
 provider adapter/permission parity and non-Linux supervision, transport delivery, all other Python
-stores, native provider integration with the device transport, the full native
+stores, other provider profiles over the device transport, the full native
 continuation matrix, SpecMesh lifecycle admission, full rollback and production-writer exclusion.
 Mailbox application references are reports until the native adapter independently verifies
 them. A coordinator fence cannot prevent an uncooperative external program's side effect.
 
 The authenticated worker transport and a real x64/ARM64 synthetic two-device canary are
-now implemented. Remaining fleet work includes the actual native provider/grant adapters
-over this transport, durable presence/capability revision and topology/dependency policy,
+now implemented. Remaining fleet work includes other native provider/grant profiles and
+remote reconciliation, durable presence/capability revision and topology/dependency policy,
 credential rotation/re-enrollment, unattended service rollout and activation/rollback.
-The local `OpenCodeWorker` is not yet a remote `DeviceAdapter`; assigning a capability is
-not a provider tool grant. Production adapters must independently enforce current source,
+The qualified OpenCode read profile now has a real remote `DeviceAdapter`; assigning a
+capability is not a provider tool grant. Other adapters must independently enforce current source,
 grant, native-session and workspace rules and verify native evidence before returning a
 result. Remote completion is an authenticated worker report, not protection against a
 compromised device that fabricates evidence.
@@ -130,7 +139,7 @@ compromised device that fabricates evidence.
 ## Device transport contract
 
 `schemas/controlmesh/v1/device-*.schema.json` owns the private command/response/lease-window
-shapes. Operations are queue, inspect, claim, start, renew, dispatch, observe, complete,
+shapes. Operations are queue, inspect, claim, start, renew, release, dispatch, observe, complete,
 unknown and bounded mailbox send/read/ack. Operator task creation, assignment, cancellation
 and revocation remain trusted local methods. `complete` atomically confirms one observed
 effect and finishes the episode; it does not execute an external action on receipt replay.
@@ -172,3 +181,33 @@ issued Agent instructions now describe each required current-turn read, and nati
 inspection checks that the instructions actually reached the selected Agent. Native read
 evidence remains mandatory even if the model ignores that guidance. No old unknown task was
 automatically rerun to obtain the successful trial.
+
+## Device-local native evidence
+
+SQLite schema 6 adds `device_execution_records`. This is an execution device's evidence
+ledger, not a second task authority. It binds device/task/episode/fence/assignment/workspace
+and job digest, retains full manifests (16 MiB maximum), original observations and verified
+results (4 MiB each), and records preparation/dispatch/observation/verification/completion.
+An existing device episode cannot be prepared twice. A failed/lost dispatch acknowledgement
+never permits another native call; local observations survive loss of coordinator connectivity.
+
+Native dispatch atomically starts the coordinator episode and records its manifest reference.
+Observation/result/handle references must all match that dispatch and each other. The original
+observation digest and output digest are checked before accepting a device result. JSON Schema
+owns these wire shapes. Native results carry at most 64 KiB of text and an opaque session
+handle; full native references, file paths and permission evidence remain local. A handle is
+bound to its original device/task/workspace and verified result digest.
+
+A real ARM64 coordinator + x64 native worker run passed OpenCode 1.18.29/M3 continuation
+across worker database reopen: same session, marker recall without reinjection, changed-file
+read and unchanged task grants. Preflight remained generation 1. The reverse topology was
+chosen because that ARM64 device had an older CLI and no native provider authentication;
+credentials were not copied. The temporary coordinator, forwarding and credential were
+removed/revoked after acceptance. This does not establish ARM64 provider execution.
+
+Remaining recovery gap: when the coordinator never received a device's original observation,
+the local journal retains it, but explicit remote verification/attestation and trusted
+reconciliation admission are still needed. Do not automatically retry that operation or
+claim that local `NativeReconciler` already verifies evidence on a different device. General
+provider/write/sandbox profiles, History adoption into a remote handle, production services
+and the full migration/cutover gates remain open.

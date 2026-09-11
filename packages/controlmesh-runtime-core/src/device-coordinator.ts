@@ -28,6 +28,8 @@ export interface DeviceJob {
   capability: string;
   input: Record<string, unknown>;
   assignment_digest: string;
+  execution?: Record<string, unknown>;
+  execution_digest?: string;
 }
 interface AssignmentRow { task_id: string; principal: string; authority_digest: string; specification: string }
 const workerScopes = ["task:read", "task:execute", "message:send", "message:read", "message:ack"];
@@ -124,8 +126,11 @@ export class DeviceCoordinator {
     requireThat(device.capabilities.includes(specification.capability) && device.workspace_ids.includes(specification.workspace_id), "device_capability_unavailable");
     const task = this.kernel.inspect(this.actor(device), taskId);
     requireThat(taskAuthority(task) === row.authority_digest, "assignment_authority_changed");
+    // Execution authority is projected from the stored task, never the assignment's input body.
+    const execution = Object.fromEntries(["provider", "model", "prompt", "execution_context", "tool_grant", "native_session"]
+      .filter(key => Object.hasOwn(task.task, key)).map(key => [key, task.task[key]]));
     return { task_id: taskId, revision: task.revision, status: task.task.status, workspace_id: specification.workspace_id,
-      capability: specification.capability, input: specification.input, assignment_digest: digest(specification) };
+      capability: specification.capability, input: specification.input, assignment_digest: digest(specification), execution, execution_digest: digest(execution) };
   }
 
   private authenticate(request: Request): DeviceRegistration {
@@ -147,6 +152,23 @@ export class DeviceCoordinator {
       requireThat(remaining > 0, "lease_expired");
       return { schema_version: "controlmesh.device_lease_window.v1", lease, remaining_ms: remaining };
     });
+  }
+
+  private nativeManifest(lease: Lease, effectId: string): Record<string, unknown> {
+    const row = this.kernel.db.sql.query("SELECT m.payload,m.digest FROM execution_manifests m JOIN effects e ON e.effect_id=m.effect_id WHERE e.effect_id=? AND e.task_id=? AND e.episode_id=? AND e.fence=?")
+      .get(effectId, lease.task_id, lease.episode_id, lease.fence) as { payload: string; digest: string } | null;
+    requireThat(row, "device_native_manifest_required");
+    const ref: unknown = JSON.parse(row.payload);
+    assertProtocolSchema("device-evidence-ref.schema.json", ref);
+    requireThat(object(ref) && digest(ref) === row.digest, "device_manifest_corrupted");
+    return ref;
+  }
+
+  private evidenceMatches(manifest: Record<string, unknown>, value: unknown): asserts value is Record<string, unknown> {
+    assertProtocolSchema("device-evidence-ref.schema.json", value);
+    requireThat(object(value), "invalid_device_evidence");
+    const { observation_digest: _observation, result_digest: _result, ...base } = value;
+    requireThat(digest(base) === digest(manifest), "device_evidence_reference_mismatch");
   }
 
   private execute(device: DeviceRegistration, input: DeviceCommand): unknown {
@@ -171,11 +193,28 @@ export class DeviceCoordinator {
       return this.window(actor, this.kernel.claim(actor, request, job.task_id, args.revision as number, args.ttl_ms as number));
     }
     const lease = args.lease as Lease;
-    this.assignment(device, lease.task_id);
+    const job = this.assignment(device, lease.task_id);
+    if (input.operation === "release") {
+      const result = this.kernel.releaseUnstarted(actor, request, lease, args.reason as string | undefined);
+      return { task_id: result.task.task_id, status: result.task.status, revision: result.revision };
+    }
     if (input.operation === "complete") {
       // Commit verification receipt and task outcome together. Exact lost-response replay is safe;
       // conflicting/late new results still pass the kernel's fence and lease checks.
       return this.kernel.db.transaction(() => {
+        if (job.execution?.provider === "opencode") {
+          const manifest = this.nativeManifest(lease, args.effect_id as string);
+          assertProtocolSchema("device-native-result.schema.json", args.result);
+          const result = args.result as Record<string, unknown>;
+          this.evidenceMatches(manifest, result.evidence);
+          requireThat(result.evidence.result_digest && result.evidence.observation_digest && digest(result.text) === result.output_digest, "device_result_evidence_missing");
+          const original = this.kernel.db.sql.query("SELECT payload FROM effect_observations WHERE effect_id=?").get(args.effect_id as string) as { payload: string } | null;
+          requireThat(original, "effect_observation_required");
+          const observation = JSON.parse(original.payload);
+          requireThat(observation.terminal === true && observation.evidence?.observation_digest === result.evidence.observation_digest, "device_result_observation_mismatch");
+          const handle = result.native_session as Record<string, unknown>;
+          requireThat(handle.device_id === device.device_id && digest(handle.evidence) === digest(result.evidence), "device_native_handle_mismatch");
+        }
         const observed = this.kernel.db.sql.query("SELECT result FROM effects WHERE effect_id=? AND episode_id=? AND fence=?")
           .get(args.effect_id as string, lease.episode_id, lease.fence) as { result: string | null } | null;
         requireThat(observed && observed.result !== null, "effect_observation_required");
@@ -188,8 +227,27 @@ export class DeviceCoordinator {
       switch (input.operation) {
         case "start": this.kernel.start(actor, request, lease); return this.window(actor, lease);
         case "renew": return this.window(actor, this.kernel.renew(actor, request, lease, args.ttl_ms as number));
-        case "dispatch": return this.kernel.dispatchEffect(actor, request, lease, args.effect_id as string, args.intent);
-        case "observe": return this.kernel.recordEffectObservation(actor, request, lease, args.effect_id as string, args.observation);
+        case "dispatch": {
+          const manifest = args.manifest as Record<string, unknown> | undefined;
+          requireThat(job.execution?.provider !== "opencode" || manifest, "device_native_manifest_required");
+          if (manifest) requireThat(manifest.device_id === device.device_id && manifest.task_id === job.task_id
+            && manifest.episode_id === lease.episode_id && manifest.fence === lease.fence && manifest.effect_id === args.effect_id
+            && manifest.assignment_digest === job.assignment_digest && !manifest.observation_digest && !manifest.result_digest, "device_manifest_binding_mismatch");
+          // Prepared native adapters start and dispatch together after their device-local manifest is durable.
+          const episode = this.kernel.db.sql.query("SELECT state FROM episodes WHERE episode_id=?").get(lease.episode_id) as { state: string };
+          if (episode.state === "leased") this.kernel.start(actor, `${request}:start`, lease);
+          return this.kernel.dispatchEffect(actor, request, lease, args.effect_id as string, args.intent, manifest);
+        }
+        case "observe": {
+          if (job.execution?.provider === "opencode") {
+            const manifest = this.nativeManifest(lease, args.effect_id as string);
+            assertProtocolSchema("device-observation.schema.json", args.observation);
+            const observation = args.observation as Record<string, unknown>;
+            this.evidenceMatches(manifest, observation.evidence);
+            requireThat(observation.evidence.observation_digest && !observation.evidence.result_digest, "device_observation_evidence_missing");
+          }
+          return this.kernel.recordEffectObservation(actor, request, lease, args.effect_id as string, args.observation);
+        }
         case "unknown": {
           const result = this.kernel.markUnknown(actor, request, lease, args.reason as string);
           return { task_id: result.task.task_id, status: result.task.status, revision: result.revision };
