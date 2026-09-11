@@ -73,6 +73,14 @@ Track completion in [the repository plan](../../plans/runtime-convergence/task_p
   `OpenCodeDeviceAdapter`. The device adapter consumes coordinator-issued task provenance
   and grants, maps locally configured literal read paths, and binds its local preflight,
   native store and credential revision. Worker events remain agent-origin.
+- `OpenCodeReadContainerRunner` runs that qualified read driver in distinct containers while
+  preserving original project and native data/cache paths. Only OpenCode subdirectories are
+  mounted; a read-only auth-file overlay protects credentials inside writable session data.
+  HOME/config stay temporary. Preflight and dispatch bind the actual image/profile/resource
+  digest, so host readiness cannot qualify a different container. A real Git-project canary
+  passed same-session recall/current-file reads after coordinator and runner reopen, with
+  headless Viewer revalidation and two confirmed kernel results. General writes and other
+  source/provider profiles still need qualification.
 - Before native dispatch, it atomically stores the task/provider/grant binding, native
   baseline row hashes, permission attestation and bounded file fingerprints. Original
   observations are retained separately from accepted results. `NativeReconciler` performs
@@ -144,7 +152,7 @@ them. A coordinator fence cannot prevent an uncooperative external program's sid
 
 The authenticated worker transport and a real x64/ARM64 synthetic two-device canary are
 now implemented. Remaining fleet work includes other native provider/grant profiles and
-remote reconciliation, durable presence/capability revision and topology/dependency policy,
+their reconciliation, durable presence/capability revision and topology/dependency policy,
 credential rotation/re-enrollment, unattended service rollout and activation/rollback.
 The qualified OpenCode read profile now has a real remote `DeviceAdapter`; assigning a
 capability is not a provider tool grant. Other adapters must independently enforce current source,
@@ -221,9 +229,12 @@ chosen because that ARM64 device had an older CLI and no native provider authent
 credentials were not copied. The temporary coordinator, forwarding and credential were
 removed/revoked after acceptance. This does not establish ARM64 provider execution.
 
-Remaining recovery gap: when the coordinator never received a device's original observation,
-the local journal retains it, but explicit remote verification/attestation and trusted
-reconciliation admission are still needed. Do not automatically retry that operation or
-claim that local `NativeReconciler` already verifies evidence on a different device. General
-provider/write/sandbox profiles, History adoption into a remote handle, production services
-and the full migration/cutover gates remain open.
+SQLite schema 7 now supports the lost-observation gap for the qualified native read adapter.
+A trusted, expiring recovery challenge binds the original dispatch and device evidence.
+`DeviceReconciliation` invokes the configured device-local verifier without acquiring an
+execution lease or calling the model; the coordinator atomically retains the original
+observation, accepted result, terminal task and receipt. A real ARM64 coordinator/x64 OpenCode
+worker acceptance recovered the original result and subsequently resumed the same session.
+Authentication attests the reporting device, not the honesty of a compromised worker.
+General provider/write/source profiles, History adoption into a remote handle, production
+services and the full migration/cutover gates remain open.
