@@ -21,6 +21,8 @@ import { decodeExecutionContext } from "./execution-context";
 import { SpecMeshPort, type SpecMeshConfiguration } from "./specmesh-port";
 import { WorkspaceStage } from "./workspace-stage";
 import { writeRoots } from "./providers/native-workspace";
+import { HistoryClient } from "./providers/history-client";
+import { DeviceNativeAdoptions } from "./providers/device-native-adoption";
 
 export interface DeviceRuntime {
   control: RuntimeControl;
@@ -48,7 +50,7 @@ export function openDeviceRuntime(path: string): DeviceRuntime {
     && ["coordinator", "worker"].includes(String(config.role)), "unsupported_device_runtime_config");
   const common = ["schema_version", "mode", "role", "state_root", "principal_id", "device_id"];
   fields(config, [...common, ...(config.role === "coordinator" ? ["devices", "listen_port"]
-    : ["coordinator", "opencode", "workspaces", "capabilities", "communication", "max_parallel"])], "invalid_device_runtime_config");
+    : ["coordinator", "opencode", "workspaces", "capabilities", "communication", "history", "max_parallel"])], "invalid_device_runtime_config");
   identifier(config.principal_id); identifier(config.device_id);
   requireThat(typeof config.state_root === "string" && isAbsolute(config.state_root), "private_runtime_state_required");
   const root = config.state_root;
@@ -139,8 +141,27 @@ export function openDeviceRuntime(path: string): DeviceRuntime {
         fields(communication, ["node_executable"], "invalid_device_communication_profile");
         requireThat(typeof communication.node_executable === "string" && isAbsolute(communication.node_executable), "invalid_device_communication_profile");
       }
+      const historyConfig = config.history;
+      if (historyConfig !== undefined) {
+        fields(historyConfig, ["python", "directory", "environment"], "invalid_device_history_profile");
+        requireThat(typeof historyConfig.python === "string" && isAbsolute(historyConfig.python)
+          && typeof historyConfig.directory === "string" && isAbsolute(historyConfig.directory)
+          && (historyConfig.environment === undefined || (object(historyConfig.environment)
+            && Object.values(historyConfig.environment).every(value => typeof value === "string"))), "invalid_device_history_profile");
+      }
       const local = database(), cache = new PreflightCache(local), journal = new DeviceExecutionJournal(local, config.device_id);
-      const actor: Principal = { id: config.principal_id, device_id: config.device_id, origin: "agent_message", scopes: ["provider:probe"] };
+      const actor: Principal = { id: config.principal_id, device_id: config.device_id, origin: "agent_message", scopes: ["provider:probe", "history:read", "history:adopt"] };
+      const nativeStore = new NativeSessionStore(join(environment.XDG_DATA_HOME, "opencode/opencode.db"), actor.device_id!);
+      const history = historyConfig ? new DeviceNativeAdoptions(local, actor, nativeStore, new HistoryClient({ python: historyConfig.python as string,
+        viewer_directory: historyConfig.directory as string,
+        environment: { PATH: "/usr/bin:/bin", PYTHONUTF8: "1", PYTHONNOUSERSITE: "1", PYTHONDONTWRITEBYTECODE: "1", ...historyConfig.environment as Record<string, string> | undefined } }, nativeStore),
+        workspaceId => { current(); const selected = profiles.get(workspaceId); requireThat(selected, "local_capability_unavailable"); return selected.directory; },
+        (workspaceId, capability) => {
+          current(); const selected = profiles.get(workspaceId), permission = capabilities.get(capability);
+          requireThat(selected && permission?.workspace_ids.includes(workspaceId), "local_capability_unavailable");
+          return { directory: selected.directory, model: provider.model as string, digest: digest({ principal: actor.id, device: actor.device_id,
+            provider, selected, directory_identity: directoryIdentity(selected.directory), permission, communication: communication ?? null, history: historyConfig }) };
+        }, current) : undefined;
       const abort = new AbortController(), adapters: Record<string, DeviceWorkerOptions["adapters"][string]> = {};
       for (const [capability, selection] of capabilities) adapters[capability] = (job, workspace) => {
         current(); requireThat(selection.workspace_ids.includes(job.workspace_id) && job.execution, "local_capability_unavailable");
@@ -160,15 +181,16 @@ export function openDeviceRuntime(path: string): DeviceRuntime {
         const roots = writes.length ? writeRoots(workspace, { roots: writes.map(item => resolve(workspace, item)) }) : [];
         const runner = roots.length ? new OpenCodeStagedContainerRunner(profile, { directory: workspace, write_roots: roots }) : new OpenCodeReadContainerRunner(profile);
         const specmesh = selected.specmesh ? new SpecMeshPort(selected.specmesh, workspace, current) : undefined;
-        return new OpenCodeDeviceAdapter(actor, cache, journal, new NativeSessionStore(join(profile.data_home, "opencode/opencode.db"), actor.device_id!),
+        return new OpenCodeDeviceAdapter(actor, cache, journal, nativeStore,
           { executable: profile.executable, native_configuration: native, environment, state_home: root, ...(channel ? { communication: channel } : {}) },
           { read_files: selected.read_files, required_reads: selected.required_reads, write_roots: writes, timeout_ms: timeout, assertCurrent: current,
+            ...(history ? { adoptions: history } : {}),
             ...(specmesh ? { specmesh } : {}), binding: () => ({ provider: "opencode", model: provider.model as string, cli_version: "1.18.29", device_id: actor.device_id!,
               config_digest: digest(native), credential_revision: privateFile(join(profile.data_home, "opencode/auth.json")).revision,
               permission_profile: writes.length ? "opencode-native-workspace-v1" : "opencode-native-read-v1", runtime_digest: runner.runtimeDigest() }) }, runner);
       };
       const worker = new DeviceWorker(client, { workspaces, adapters, journal, signal: abort.signal });
-      control = new DeviceWorkerControl(local, actor, client, worker, current, () => abort.abort(), parallel);
+      control = new DeviceWorkerControl(local, actor, client, worker, current, () => abort.abort(), parallel, history);
     }
     let closing: Promise<void> | undefined;
     const stop = () => { stopping = true; return control.stop(); };

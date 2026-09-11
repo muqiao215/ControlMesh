@@ -74,6 +74,18 @@ test("configuration changes, relaxed private permissions and injected control au
   expect(() => openDeviceRuntime(f.path)).toThrow("private_runtime_config_required");
 });
 
+test("coordinator rejects a raw native reference before creating a task and an unconfigured worker never searches history", async () => {
+  const f = fixture(), endpoint = (await f.call("start", "start")).result as { endpoint: string };
+  const response = await f.call("raw-reference", "submit", { task: { task_id: "raw", chat_id: "terminal", status: "waiting", provider: "opencode",
+    native_session: { schema_version: "agent.native_session.v2", session_id: "ses_Private", directory: f.workspace } } });
+  expect(response.ok).toBe(false);
+  const db = new RuntimeDatabase(join(f.state, "runtime.sqlite"));
+  try { expect(db.sql.query("SELECT COUNT(*) AS n FROM tasks").get()).toEqual({ n: 0 }); } finally { db.close(); }
+  const profile = f.workerConfig(endpoint.endpoint), worker = openDeviceRuntime(profile.path); cleanup.push(() => worker.close());
+  expect((await worker.control.handle({ id: "search", op: "history_search", workspace_id: "project", query: "SpecMesh" })).error).toBe("native_history_not_configured");
+  expect(existsSync(join(f.root, "native-data"))).toBe(false);
+});
+
 test("two assigned tasks use separate local factories and durable run IDs never execute a later revision", async () => {
   const f = fixture(), client = await f.start(); await f.submit("one", ["two"], "fixture"); await f.submit("two", ["one"], "fixture");
   const db = new RuntimeDatabase(join(f.workerState, "commands.sqlite")); cleanup.push(() => db.close());

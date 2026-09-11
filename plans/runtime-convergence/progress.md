@@ -3,10 +3,45 @@
 ## Current
 
 Full goal remains active, CM-R7 unactivated, and installed production remains Python 0.43.0.
-Published predecessor `9fa218c94424c28be094a5333bd74e1e39b08a00` has exact-SHA
-[CI success](https://github.com/muqiao215/ControlMesh/actions/runs/34655188758).
-The current increment implements **normal private device startup/control** through
-`scripts/device-runtime.ts`; publication/exact-SHA CI must be verified after its commit.
+Published predecessor `950f8aab5aa259c3edec4868600a5b411c9cafbf`; exact-SHA [CI passed](https://github.com/muqiao215/ControlMesh/actions/runs/34657572203).
+The normal private device startup/control increment is committed and pushed.
+
+Current increment: **device-local History search and explicit native adoption**.
+The worker retains a native reference bound to the original device, principal, task,
+workspace, capability and local profile. The coordinator receives an opaque context-only
+handle; current task ingress issues source/grants independently. No Web process is needed.
+Native model/directory/revision checks precede preflight, including after the asynchronous
+mailbox wait. Completed turns use the existing device-session handle. Recovery retains the
+original reference and verifies its appended turn without a model call. Candidate DB schema
+14 adds only the local adoption registry.
+
+Actual acceptance **2026-09-11 23:46:46–23:47:36 UTC** used the normal device entrypoint,
+independent History CLI and real OpenCode 1.18.29/M3 in the qualified container. A raw native
+CLI created the original session before either CM task database existed. History searched
+and prepared it with zero provider checks or execution records. The adopted task recalled
+a marker present only in the original conversation and read five current SpecMesh files.
+An intentionally dropped observation was recovered after both processes reopened, without
+another native command. A second task turn continued the same session and read changed
+PROJECT facts. This adoption trial uses separate processes on one host; the earlier ARM64/x64
+startup/write/communication trial remains separate evidence, not a new multi-host adoption claim.
+
+Independent readback verified the three native user turns (one seed plus two task turns),
+marker absence from both follow-up inputs, two sets of five native reads, unchanged original
+message/part hashes, two completed worker records and two confirmed coordinator effects.
+All nine owned containers and both exact configured runtime processes are absent. The worker
+preflight cache is generation 1/ready; one model probe, one seed and two task turns were used.
+Billing/API request counts remain unmeasured. No production writer or installation changed.
+Private evidence: `outputs/runtime-convergence/device-adoption-acceptance.{ts,json,log}` and
+`verify_device_adoption.py` / `device-adoption-independent-verification.json` in the shared
+coordinating workspace. Publication and exact-SHA CI must be checked against this increment's commit.
+
+Validation for this increment: pinned CI Bun 1.3.11, actual Docker and independent SpecMesh
+configured: **361 passed, 0 skipped, 0 failed**, 3,911 assertions, 72.69 seconds. The initial
+non-container run was 339 passed/22 environment skips; all skips are covered by the full
+configured run. Typecheck, Python protocol tests (9 passed), regenerated schema/model
+outputs, 512-module/57-field ownership inventory and pinned-Bun packaged Web build passed.
+The repository SpecMesh structural check passed with seven references; expected dirty-fact
+warnings reflect this uncommitted increment, not reviewed semantic closeout.
 
 The coordinator owns task creation, assignment, result/effect inspection, cancellation,
 revocation and reconciliation requests. The worker reads explicit local profiles and creates
@@ -45,7 +80,8 @@ SpecMesh check passed with seven references and only expected uncommitted-fact w
 Private evidence is `outputs/runtime-convergence/device-startup-*` plus
 `verify_device_startup_native.py` in the coordinating workspace.
 
-Next: persistent device work scheduling and recovery control, device-local History adoption,
+Next: publish and verify the accepted device-local History adoption increment, then persistent
+device work scheduling and recovery control,
 then the remaining provider/transport/store/topology/product and release/install owners in
 task_plan.md. An explicit private control entrypoint does not establish the full installed
 multi-device product or authorize marking the full migration complete.

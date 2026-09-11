@@ -534,6 +534,15 @@ and a completed ID cannot execute a later task revision. See the package's
 `DEVICE-RUNTIME.md` for the private contract. Persistent device scheduling, full operator
 product integration and installed production startup remain separate rollout requirements.
 
+The optional worker-local History adapter invokes the independent headless CLI. It prepares
+an immutable native reference in candidate schema 14's `device_native_adoptions` registry,
+bound to principal/device/task/workspace/capability and the local configuration. Only its
+opaque context digest travels to the coordinator, which issues task authority separately.
+Execution checks native model/directory/content before preflight; interrupted-turn recovery
+verifies the original appended turn without replacing its baseline. Completion transitions
+to the existing result-ledger handle. Neither discovery nor selection starts the Web UI or
+spends a model call. Normal runtime setup and operations are documented in `DEVICE-RUNTIME.md`.
+
 Unstarted preparation failures can release an effect-free lease and return a typed reason;
 expired unstarted admissions return to waiting. Started/uncertain effects cannot use this
 release path. Original device observations are persisted before transport even if connectivity

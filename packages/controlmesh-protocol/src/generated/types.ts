@@ -120,6 +120,13 @@ export interface DeviceLeaseWindow {
   "remaining_ms": number;
 }
 
+export interface DeviceNativeAdoption {
+  "schema_version": "controlmesh.device_native_adoption.v1";
+  "device_id": string;
+  "adoption_id": string;
+  "context_digest": string;
+}
+
 export interface DeviceNativeResult {
   "schema_version": "controlmesh.device_native_result.v1";
   "text": string;

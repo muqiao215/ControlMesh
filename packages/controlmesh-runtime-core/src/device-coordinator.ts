@@ -125,6 +125,8 @@ export class DeviceCoordinator {
     // Native databases and credentials stay on their issuing device; no implicit cross-device transcript replay.
     const native = snapshot.task.native_session;
     requireThat(!native || (object(native) && specification.device_ids.every(id => id === native.device_id)), "native_session_device_bound");
+    if (native) assertProtocolSchema(object(native) && native.schema_version === "controlmesh.device_native_adoption.v1"
+      ? "device-native-adoption.schema.json" : "device-native-session.schema.json", native);
     command(this.kernel.db, actor, requestId, "device.assign", { taskId, revision, specification }, () => {
       const current = this.kernel.inspect(actor, taskId);
       requireThat(current.revision === revision && current.task.status === "waiting" && !current.active_episode && !current.needs_reconciliation, "task_not_assignable");

@@ -180,8 +180,8 @@ test("post-publication workflow failure stays unknown; recovery cannot drop or r
 
 test("schema twelve upgrades without starting work or losing task identity", () => {
   const f = setup(), before = f.kernel().inspect(actor, "task");
-  f.db().sql.exec("DROP TABLE command_reservations; PRAGMA user_version = 12;"); f.reopen();
-  expect(f.db().sql.query("PRAGMA user_version").get()).toEqual({ user_version: 13 });
+  f.db().sql.exec("DROP TABLE device_native_adoptions; DROP TABLE command_reservations; PRAGMA user_version = 12;"); f.reopen();
+  expect(f.db().sql.query("PRAGMA user_version").get()).toEqual({ user_version: 14 });
   expect(f.kernel().inspect(actor, "task")).toEqual(before); expect(f.commands()).toBe(0);
   expect(f.db().sql.query("SELECT COUNT(*) AS n FROM command_reservations").get()).toEqual({ n: 0 });
 });

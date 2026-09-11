@@ -136,6 +136,14 @@ class DeviceLeaseWindow(BaseModel):
     remaining_ms: int
 
 
+class DeviceNativeAdoption(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    schema_version: Literal["controlmesh.device_native_adoption.v1"]
+    device_id: str
+    adoption_id: str
+    context_digest: str
+
+
 class DeviceNativeResult(BaseModel):
     model_config = ConfigDict(extra="allow")
     schema_version: Literal["controlmesh.device_native_result.v1"]

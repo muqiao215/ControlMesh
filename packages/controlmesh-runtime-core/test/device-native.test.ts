@@ -4,7 +4,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DeviceClient, DeviceCoordinator, DeviceExecutionJournal, DeviceWorker, NativeSessionStore, OpenCodeDeviceAdapter, PreflightCache,
+import { DeviceClient, DeviceCoordinator, DeviceExecutionJournal, DeviceNativeAdoptions, DeviceWorker, NativeSessionStore, OpenCodeDeviceAdapter, PreflightCache,
   RuntimeDatabase, RuntimeKernel, TaskIngress, type Principal, type ProbeBinding, type ProcessOutcome, type ProcessSpec } from "../src";
 import { digest, canonical } from "../src/value";
 import { AgentMailbox } from "../src/mailbox";
@@ -19,14 +19,22 @@ const owner: Principal = { id: "operator", origin: "human_request", device_id: "
 const device: Principal = { id: owner.id, origin: "agent_message", device_id: "native-worker", scopes: ["provider:probe"] };
 const outcome = (stdout: string): ProcessOutcome => ({ reason: "exited", exit_code: 0, stdout, stderr: "", duration_ms: 1 });
 
-function setup(mode: "normal" | "partition" | "changed-file" | "lost-completion" | "scheduled" | "lost-before-completion" | "lost-dispatch" | "altered-native-tool" | "altered-native-input" = "normal", communicationEnabled = false) {
+function setup(mode: "normal" | "partition" | "changed-file" | "lost-completion" | "scheduled" | "lost-before-completion" | "lost-dispatch" | "altered-native-tool" | "altered-native-input" = "normal", communicationEnabled = false, unmanagedSeed = false) {
   const root = mkdtempSync(join(tmpdir(), "cm-native-device-test-")); cleanup.push(() => rmSync(root, { recursive: true, force: true }));
   const workspace = join(root, "project"), data = join(root, "data"); mkdirSync(workspace); mkdirSync(join(data, "opencode"), { recursive: true });
   writeFileSync(join(workspace, "PROJECT.md"), "revision-one");
   expect(Bun.spawnSync(["/usr/bin/git", "init", workspace], { stdout: "ignore", stderr: "ignore" }).exitCode).toBe(0);
   const nativePath = join(data, "opencode/opencode.db"), native = new Database(nativePath);
   native.exec(fixture.schema); native.exec("CREATE TABLE project (id TEXT PRIMARY KEY, worktree TEXT)");
-  native.query("INSERT INTO project VALUES ('project',?)").run(workspace); native.close();
+  native.query("INSERT INTO project VALUES ('project',?)").run(workspace);
+  if (unmanagedSeed) {
+    native.query("INSERT INTO session VALUES (?,?,?,'unmanaged fixture',NULL,0,NULL)").run("ses_Device", workspace, "project");
+    native.query("INSERT INTO message VALUES (?,?,?,?,?)").run("seed_user", "ses_Device", 1, 1, JSON.stringify({ role: "user" }));
+    native.query("INSERT INTO message VALUES (?,?,?,?,?)").run("seed_assistant", "ses_Device", 2, 2,
+      JSON.stringify({ role: "assistant", parentID: "seed_user", providerID: "fixture", modelID: "model", finish: "stop", time: { completed: 2 } }));
+    native.query("INSERT INTO part VALUES (?,?,?,?,?,?)").run("seed_context", "ses_Device", "seed_user", 1, 1, JSON.stringify({ type: "text", text: "Original unmanaged context" }));
+  }
+  native.close();
   let offset = 0, calls = 0;
   const coordinatorDB = new RuntimeDatabase(join(root, "coordinator.sqlite"), () => Date.now() + offset), workerDB = new RuntimeDatabase(join(root, "worker.sqlite"));
   cleanup.push(() => coordinatorDB.close(), () => workerDB.close());
@@ -52,6 +60,10 @@ function setup(mode: "normal" | "partition" | "changed-file" | "lost-completion"
   const binding: ProbeBinding = { provider: "opencode", model: "fixture/model", device_id: device.device_id!, cli_version: "1.18.29", config_digest: digest({}), credential_revision: "fixture", permission_profile: "native.read",
     ...(communicationEnabled ? { runtime_digest: digest("device-test-runtime") } : {}) };
   const cache = new PreflightCache(workerDB), journal = new DeviceExecutionJournal(workerDB, device.device_id!), store = new NativeSessionStore(nativePath, device.device_id!);
+  const history = { async inspect(id: string) { return store.read(id); }, async search() { return []; } };
+  const makeAdoptions = (db: RuntimeDatabase) => new DeviceNativeAdoptions(db, { ...device, scopes: [...device.scopes, "history:read", "history:adopt"] }, store,
+    history, () => workspace, () => ({ directory: workspace, model: binding.model, digest: digest(binding) }), () => {});
+  const adoptions = unmanagedSeed ? makeAdoptions(workerDB) : undefined;
   const permit = cache.begin(device, "ready", binding).permit!;
   cache.complete(device, binding, permit, { model: binding.model, config_digest: binding.config_digest, cli_version: binding.cli_version, permission_digest: "a".repeat(64), tool_count: 12,
     ...(binding.runtime_digest ? { runtime_digest: binding.runtime_digest } : {}),
@@ -79,7 +91,7 @@ function setup(mode: "normal" | "partition" | "changed-file" | "lost-completion"
     calls++;
     hooks.beforeNative?.();
     const writer = new Database(nativePath), session = "ses_Device";
-    if (calls === 1) writer.query("INSERT INTO session VALUES (?,?,?,'device fixture',NULL,0,NULL)").run(session, workspace, "project");
+    if (calls === 1 && !unmanagedSeed) writer.query("INSERT INTO session VALUES (?,?,?,'device fixture',NULL,0,NULL)").run(session, workspace, "project");
     else expect(spec.command[spec.command.indexOf("--session") + 1]).toBe(session);
     const user = `user_${calls}`, assistant = `assistant_${calls}`, now = Date.now() + calls * 2, answer = readFileSync(join(workspace, "PROJECT.md"), "utf8");
     writer.query("INSERT INTO message VALUES (?,?,?,?,?)").run(user, session, now, now, JSON.stringify({ role: "user" }));
@@ -117,7 +129,8 @@ function setup(mode: "normal" | "partition" | "changed-file" | "lost-completion"
     return outcome([{ type: "text", sessionID: session, part: { text: answer } }, { type: "step_finish", sessionID: session, part: { reason: "stop" } }].map(item => JSON.stringify(item)).join("\n"));
   } };
   const makeAdapter = (ledger = journal) => new OpenCodeDeviceAdapter(device, cache, ledger, store, { executable: "/fixture/opencode", native_configuration: {}, environment: { HOME: root, XDG_DATA_HOME: data }, state_home: root, communication },
-    { read_files: ["PROJECT.md"], required_reads: ["PROJECT.md"], binding: () => binding, assertCurrent() {} }, runner);
+    { read_files: ["PROJECT.md"], required_reads: ["PROJECT.md"], binding: () => binding, assertCurrent() {},
+      ...(unmanagedSeed ? { adoptions: makeAdoptions(ledger.db) } : {}) }, runner);
   const factoryJobs: { task_id: string; revision: number; assignment_digest: string }[] = [];
   const factory = (ledger = journal) => (job: import("../src").DeviceJob, path: string) => {
     expect(path).toBe(workspace);
@@ -143,8 +156,58 @@ function setup(mode: "normal" | "partition" | "changed-file" | "lost-completion"
       { workspaces: { project: workspace }, adapters: { "native.read": factory(localJournal) }, journal: localJournal }) };
   };
   return { root, workspace, workerDB, coordinatorDB, kernel, coordinator, client, journal, worker, commands, binding, store, specification,
-    recover, hooks, completions, factoryJobs, calls: () => calls, advance: (ms: number) => { offset += ms; } };
+    recover, hooks, completions, factoryJobs, adoptions, calls: () => calls, advance: (ms: number) => { offset += ms; } };
 }
+
+async function submitAdoption(f: ReturnType<typeof setup>) {
+  const prepared = await f.adoptions!.prepare("select-existing", { task_id: "adopted", workspace_id: "project", capability: "native.read", session_id: "ses_Device" });
+  const task = new TaskIngress(f.kernel, { command_origin: "human_request", origin: "user", source_scope: "local_foreground", transport: "test" }, () => {})
+    .submit(owner, "create-adopted", { task_id: "adopted", chat_id: "chat", status: "waiting", provider: "opencode", model: f.binding.model,
+      prompt: "Continue selected context and read current project", native_session: prepared.native_session }, { chat_id: "chat" }, { tool_deny: ["bash", "edit", "write"] });
+  f.coordinator.assign(owner, "assign-adopted", "adopted", task.revision, f.specification);
+  return prepared;
+}
+
+test("device adoption continues an unmanaged session, then switches to the normal completion handle", async () => {
+  const f = setup("normal", false, true), original = f.store.baseline(f.store.read("ses_Device"));
+  expect(f.workerDB.sql.query("SELECT COUNT(*) AS n FROM device_execution_records").get()).toEqual({ n: 0 });
+  await submitAdoption(f); expect(f.commands).toHaveLength(0);
+  const first = await f.worker.run("adopted", 5000); expect(first.status).toBe("done");
+  expect(first.result?.native_session).toMatchObject({ schema_version: "controlmesh.device_native_session.v1" });
+  const after = f.store.baseline(f.store.read("ses_Device"));
+  for (const [id, hash] of Object.entries(original.messages)) expect(after.messages[id]).toBe(hash);
+  for (const [id, hash] of Object.entries(original.parts)) expect(after.parts[id]).toBe(hash);
+  const completed = f.kernel.inspect(owner, "adopted"), next = f.kernel.resume(owner, "resume-adopted", "adopted", completed.revision, "Read current project again");
+  f.coordinator.assign(owner, "reassign-adopted", "adopted", next.revision, f.specification);
+  expect((await f.worker.run("adopted", 5000)).status).toBe("done"); expect(f.calls()).toBe(2);
+  expect(f.store.read("ses_Device").session_id).toBe("ses_Device");
+});
+
+test("adopted-session recovery reopens its local reference and verifies the retained turn without another native call", async () => {
+  const f = setup("lost-before-completion", false, true); await submitAdoption(f);
+  expect((await f.worker.run("adopted", 5000)).status).toBe("unknown"); const commands = f.commands.length;
+  const reopened = f.recover(), snapshot = reopened.control.kernel.inspect(owner, "adopted");
+  const row = f.workerDB.sql.query("SELECT effect_id FROM device_execution_records WHERE task_id='adopted'").get() as { effect_id: string };
+  const challenge = reopened.control.reconciliation.request({ ...owner, device_id: device.device_id }, "adopted-recovery", "adopted", snapshot.revision, row.effect_id);
+  expect(await reopened.worker.reconcile(challenge.challenge_id)).toMatchObject({ status: "done" });
+  expect(f.commands).toHaveLength(commands); expect(f.calls()).toBe(1);
+  expect(reopened.control.kernel.inspect(owner, "adopted").task.status).toBe("done");
+});
+
+for (const changed of ["history", "model", "during-mailbox"] as const) test(`changed adopted ${changed} is rejected before an empty-cache provider preflight`, async () => {
+  const f = setup("normal", false, true); await submitAdoption(f);
+  f.workerDB.sql.exec("DELETE FROM provider_checks");
+  if (changed === "model") f.binding.model = "different/model";
+  else {
+    const alter = () => { const writer = new Database(f.store.path); writer.query("UPDATE part SET data=? WHERE id='seed_context'").run(JSON.stringify({ type: "text", text: "External edit" })); writer.close(); };
+    if (changed === "during-mailbox") f.hooks.afterInput = alter;
+    else alter();
+  }
+  expect((await f.worker.run("adopted", 5000)).status).not.toBe("done");
+  expect(f.commands).toHaveLength(0); expect(f.calls()).toBe(0);
+  expect(f.workerDB.sql.query("SELECT COUNT(*) AS n FROM provider_checks").get()).toEqual({ n: 0 });
+  expect(f.workerDB.sql.query("SELECT COUNT(*) AS n FROM device_execution_records").get()).toEqual({ n: 0 });
+});
 
 test("recovery factories receive the original retained job after coordinator and worker reopen", async () => {
   const f = setup("lost-before-completion");
@@ -431,10 +494,10 @@ test("recovery keeps an already delivered matching observation immutable", async
 test("schema six upgrade preserves completed device evidence while adding durable recovery requests", async () => {
   const f = setup(); expect((await f.worker.run("native-task", 5000)).status).toBe("done");
   const original = f.workerDB.sql.query("SELECT * FROM device_execution_records").all();
-  f.workerDB.sql.exec("DROP TABLE command_reservations; DROP TABLE feishu_conversations; DROP TABLE feishu_event_aliases; DROP TABLE feishu_inbox; DROP TABLE transport_receipts; DROP TABLE delivery_outbox; DROP TABLE delivery_routes; DROP TABLE native_agent_deliveries; DROP TABLE native_agent_calls; DROP TABLE native_mailbox_deliveries; DROP TABLE local_runs; DROP TABLE device_reconciliations; PRAGMA user_version=6");
+  f.workerDB.sql.exec("DROP TABLE device_native_adoptions; DROP TABLE command_reservations; DROP TABLE feishu_conversations; DROP TABLE feishu_event_aliases; DROP TABLE feishu_inbox; DROP TABLE transport_receipts; DROP TABLE delivery_outbox; DROP TABLE delivery_routes; DROP TABLE native_agent_deliveries; DROP TABLE native_agent_calls; DROP TABLE native_mailbox_deliveries; DROP TABLE local_runs; DROP TABLE device_reconciliations; PRAGMA user_version=6");
   const upgraded = new RuntimeDatabase(join(f.root, "worker.sqlite"));
   try {
-    expect(upgraded.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 13 });
+    expect(upgraded.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 14 });
     expect(upgraded.sql.query("SELECT * FROM device_execution_records").all()).toEqual(original);
     expect(upgraded.sql.query("SELECT COUNT(*) AS n FROM device_reconciliations").get()).toEqual({ n: 0 });
   } finally { upgraded.close(); }

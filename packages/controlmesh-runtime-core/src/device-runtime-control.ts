@@ -4,8 +4,10 @@ import type { DeviceWorker } from "./device-worker";
 import type { RuntimeDatabase } from "./database";
 import type { RuntimeKernel, Principal } from "./kernel";
 import { TaskIngress } from "./task-ingress";
-import { command, commandReceipt, reserveCommand } from "./commands";
+import { command, commandReceipt, reserveCommand, requireScope } from "./commands";
 import { digest, identifier, object, requireThat, RuntimeConflict, type LegacyTask } from "./value";
+import { assertProtocolSchema } from "@controlmesh/protocol";
+import type { DeviceNativeAdoptions } from "./providers/device-native-adoption";
 
 export interface RuntimeControl { handle(request: unknown): Promise<Record<string, unknown>> }
 
@@ -53,6 +55,8 @@ export class DeviceCoordinatorControl implements RuntimeControl {
           devices: this.devices.map(({ device_id, capabilities, workspace_ids }) => ({ device_id, capabilities, workspace_ids })) }; break;
         case "submit": {
           requireThat(object(value.task) && typeof value.task.chat_id === "string", "invalid_device_task");
+          if (value.task.native_session) assertProtocolSchema(object(value.task.native_session) && value.task.native_session.schema_version === "controlmesh.device_native_adoption.v1"
+            ? "device-native-adoption.schema.json" : "device-native-session.schema.json", value.task.native_session);
           result = this.ingress.submit(this.actor, key, value.task as LegacyTask, { chat_id: value.task.chat_id }); break;
         }
         case "inspect_task": {
@@ -94,11 +98,11 @@ export class DeviceWorkerControl implements RuntimeControl {
   private stopped = false;
   constructor(private readonly db: RuntimeDatabase, private readonly actor: Principal, private readonly client: DeviceClient,
     private readonly worker: DeviceWorker, private readonly assertCurrent: () => void,
-    private readonly interrupt: () => void, private readonly maxParallel = 4) {
+    private readonly interrupt: () => void, private readonly maxParallel = 4, private readonly history?: DeviceNativeAdoptions) {
     requireThat(Number.isSafeInteger(maxParallel) && maxParallel >= 1 && maxParallel <= 8, "invalid_device_concurrency");
   }
   async stop(): Promise<void> {
-    this.stopped = true; this.interrupt(); await Promise.allSettled(this.pending.values());
+    this.stopped = true; this.interrupt(); await Promise.allSettled([...this.pending.values(), this.history?.stop()]);
   }
   private async once(id: string, operation: string, body: Record<string, unknown>, run: () => Promise<unknown>): Promise<unknown> {
     const key = `device-control-${digest(id)}`, op = `device.control.${operation}`;
@@ -111,7 +115,7 @@ export class DeviceWorkerControl implements RuntimeControl {
       const settled = commandReceipt(this.db, this.actor, key, op, body);
       if (settled) return settled;
       const reserved = this.db.sql.query("SELECT 1 FROM command_reservations WHERE principal=? AND request_id=?").get(this.actor.id, key);
-      requireThat(!reserved || operation === "reconcile", "device_run_outcome_unknown");
+      requireThat(!reserved || operation === "reconcile" || operation === "prepare_adoption", "device_run_outcome_unknown");
       reserveCommand(this.db, this.actor, key, op, body);
       return null;
     });
@@ -126,10 +130,22 @@ export class DeviceWorkerControl implements RuntimeControl {
     try {
       this.assertCurrent(); requireThat(!this.stopped, "device_runtime_stopped");
       const value = request(input, { status: [], assignments: [], inspect_task: ["task_id"], inspect_operation: ["operation_id"],
-        run: ["task_id", "expected_revision", "assignment_digest"], reconcile: ["challenge_id"] });
+        run: ["task_id", "expected_revision", "assignment_digest"], reconcile: ["challenge_id"],
+        history_search: ["workspace_id", "query"], prepare_adoption: ["task_id", "workspace_id", "capability", "session_id"] });
       id = value.id;
       let result: unknown;
       switch (value.op) {
+        case "history_search": {
+          requireThat(this.history, "native_history_not_configured"); identifier(value.workspace_id);
+          requireThat(typeof value.query === "string", "invalid_history_query");
+          result = await this.history.search(value.workspace_id, value.query); break;
+        }
+        case "prepare_adoption": {
+          requireScope(this.actor, "history:adopt");
+          requireThat(this.history, "native_history_not_configured"); identifier(value.task_id); identifier(value.workspace_id); identifier(value.capability); identifier(value.session_id);
+          const selection = { task_id: value.task_id, workspace_id: value.workspace_id, capability: value.capability, session_id: value.session_id };
+          result = await this.once(id as string, "prepare_adoption", selection, () => this.history!.prepare(id as string, selection)); break;
+        }
         case "status": result = { role: "worker", device_id: this.client.deviceId, active: this.pending.size, max_parallel: this.maxParallel }; break;
         case "assignments": {
           result = await this.client.command("queue", {});

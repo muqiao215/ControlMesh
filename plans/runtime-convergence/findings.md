@@ -537,3 +537,28 @@ profile can legitimately read more distinct in-scope files. The count is now a s
 a fixture verifies 86 actual native reads while unchanged root/path/tool checks still enforce
 scope. This metadata extension is fixture-qualified after the real six-file canary; no model
 rerun is necessary to validate a numeric field bound.
+
+
+## Device-local native adoption — 2026-09-12
+
+History owns discovery and a content-bound reference; it does not issue runtime authority.
+A worker-local adoption registry permits unmanaged native sessions without transferring
+paths, credentials or native databases to the coordinator. Binding the selection to the
+future task ID and exact local profile prevents another assignment from consuming it.
+Execution and interrupted-turn recovery require different native checks: the former rejects
+a changed baseline before preflight; the latter verifies the originally retained appended
+turn. Re-querying History during recovery would silently replace that original baseline.
+The asynchronous mailbox read is another external-client race window, so baseline validation
+is repeated immediately before preflight; regression proves zero probes after an edit there.
+
+Old-version test fixtures initially retained the new schema-14 table when declaring an older
+PRAGMA version. Their table sets were corrected; production migrations still reject an
+inconsistent existing schema. The independent Docker verifier initially expected capitalized
+"No such object"; this installed CLI emits lowercase. The readback comparison was corrected
+and repeated; the successful native execution was not rerun.
+
+The actual controlled adoption session originated from a raw OpenCode CLI without TaskHub.
+Headless discovery/prepare, normal task adoption, model-free reopen recovery and subsequent
+original-session recall all passed. The current trial is same-host/separate-process; previous
+physical ARM64/x64 tests cover the common device transport and staged publication path.
+No evidence is promoted to installed production rollout or reviewed SpecMesh closeout.

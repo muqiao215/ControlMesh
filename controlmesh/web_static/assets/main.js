@@ -7826,6 +7826,36 @@ var controlmeshSchemas = {
       }
     }
   },
+  "device-native-adoption.schema.json": {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    $id: "https://schemas.controlmesh.dev/controlmesh/v1/device-native-adoption.schema.json",
+    title: "DeviceNativeAdoption",
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "schema_version",
+      "device_id",
+      "adoption_id",
+      "context_digest"
+    ],
+    properties: {
+      schema_version: {
+        const: "controlmesh.device_native_adoption.v1"
+      },
+      device_id: {
+        type: "string",
+        pattern: "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+      },
+      adoption_id: {
+        type: "string",
+        pattern: "^[a-f0-9]{64}$"
+      },
+      context_digest: {
+        type: "string",
+        pattern: "^[a-f0-9]{64}$"
+      }
+    }
+  },
   "device-native-result.schema.json": {
     $schema: "https://json-schema.org/draft/2020-12/schema",
     type: "object",

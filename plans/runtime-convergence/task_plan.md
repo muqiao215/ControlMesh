@@ -37,7 +37,7 @@ Move runtime authority to TypeScript without losing task correctness, provider e
 | CM-R3 | Provider/transport/workspace/grant ports | Actual adapter smoke for each supported provider; grants enforced natively; process tree cleanup and result-delivery reconciliation | in_progress: source/grant/one-shot/container ports; real host/container OpenCode read and local TaskHub and device staged-write/recovery profiles with native auth/state; durable terminal outbox and Feishu text send/readback verified with local HTTP; other provider/write/source profiles, production transport acceptance and remaining transports pending |
 | CM-R4 | Device coordinator and worker execution authority | Two-device lease expiry, fencing, clock skew, network partition and worker restart tests; stale worker cannot write or redeliver | in_progress: real ARM64/x64 native writes, retained-proposal recovery and current SpecMesh reads/writes accepted; normal configured startup/control, two task-bound native sessions and linked handoffs accepted; persistent scheduling, other profiles and rollout pending |
 | CM-R5 | Agent mailbox and task dependency exchange | Duplicate/out-of-order/replayed messages, bounded broadcast, cancellation propagation and backpressure evidence | in_progress: local/device native initial input and actual Agent MCP send/ask/receive/answer accepted with atomic consumption and recovery; real ARM64 coordinator/x64 interrupted completion, reopen and original-session recall passed; topology integration pending |
-| CM-R6 | History headless candidate + native adoption + SpecMesh lifecycle hooks | Real continuation canary binds provider session, current repo and approved task scope; see HV-H3 / SM-P2 | in_progress: real same-session recall/current-file and post-SIGKILL continuation passed; independent SpecMesh start/handoff gate and five-file real native consumption and post-publication continuity recheck accepted locally and on an actual device worker; reviewed closeout and full matrix remain |
+| CM-R6 | History headless candidate + native adoption + SpecMesh lifecycle hooks | Real continuation canary binds provider session, current repo and approved task scope; see HV-H3 / SM-P2 | in_progress: real same-session recall/current-file and post-SIGKILL continuation passed; normal device-local adoption of an unmanaged native session and model-free recovery accepted; independent SpecMesh start/handoff gate and five-file real native consumption and post-publication continuity recheck accepted locally and on an actual device worker; reviewed closeout and full matrix remain |
 | CM-R7 | Staged default switch and Python retirement | Canary -> selected device -> default rollout; telemetry and rollback thresholds met; old writer disabled before new writer activation | planned |
 
 ## Acceptance matrix
@@ -69,8 +69,9 @@ No claim that full TS migration or distributed coordination has completed. A sco
 
 ## Next Step
 
-Publish the accepted normal private **device startup/control** increment, then implement
-persistent device work scheduling and device-local History adoption. The configured entrypoint
+After verifying this **device-local History adoption** commit on remote main, implement
+persistent device work scheduling. Normal private device startup/control is published at
+`950f8aa` with passing exact-SHA CI. The configured entrypoint
 now exposes assignment, cancellation/revocation and original-challenge recovery, with actual
 native task/peer/session acceptance. Preserve the single coordinator task writer and local
 native/session/file authority. Explicit command handling does not yet establish unattended
@@ -80,8 +81,8 @@ Local private startup, History/native adoption, native mailbox/Agent communicati
 authenticated loopback ingress, terminal outbox, independent SpecMesh start/handoff and local
 staged write/completion/recovery have scoped acceptance. See progress.md for exact evidence;
 none is an installed production writer switch. Continue remaining providers and native tool
-profiles, group approval/rich-media/long-connection and other transports, device-local History
-adoption, reviewed SpecMesh closeout, other recovery/abandonment/store owners, topology and
+profiles, group approval/rich-media/long-connection and other transports, additional native
+adoption profiles, reviewed SpecMesh closeout, other recovery/abandonment/store owners, topology and
 terminal product work. Complete the 512-module/57-field ownership parity and release/install
 alignment before activating TS over live data. CM-R0–CM-R7 remain the full goal.
 

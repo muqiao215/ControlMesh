@@ -429,6 +429,14 @@ an effect may release its lease; an unknown external result must remain unknown 
 explicit evidence-based recovery decision. Remote attestation/reconciliation remains a
 separate required owner, not an implied feature of the local journal.
 
+For a session created outside CM, use an explicit local adoption registry before the first
+device task. Do not require an existing CM result record and do not send a full native
+reference to the coordinator. The selection is context, bound to a future task and local
+profile; trusted ingress still issues the new task's grants. Preserve that original reference
+through uncertain-result recovery instead of selecting a newer History revision, which would
+erase the distinction between a retained turn and a repeated execution. Revisit this ownership
+only with a separate, explicit native-session migration protocol.
+
 ## 2026-09-11 — Give each TS execution its own container and expiring inner lease
 
 Use one container per execution rather than porting the Python shared-sidecar `docker exec`

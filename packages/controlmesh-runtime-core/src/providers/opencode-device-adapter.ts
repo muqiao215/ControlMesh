@@ -21,6 +21,8 @@ import { WorkspaceStage } from "../workspace-stage";
 import { registeredReads, writeRoots } from "./native-workspace";
 import { deviceWorkspaceProof } from "./device-workspace-proof";
 import type { SpecMeshPort, SpecMeshObservation } from "../specmesh-port";
+import type { DeviceNativeAdoptions } from "./device-native-adoption";
+import type { NativeSessionRef } from "./native-session";
 
 export interface OpenCodeDeviceOptions {
   read_files: readonly string[];
@@ -30,6 +32,7 @@ export interface OpenCodeDeviceOptions {
   timeout_ms?: number;
   write_roots?: readonly string[];
   specmesh?: SpecMeshPort;
+  adoptions?: DeviceNativeAdoptions;
 }
 
 /** Native credentials, sessions, exact paths and full evidence stay on this executing device. */
@@ -86,8 +89,19 @@ export class OpenCodeDeviceAdapter implements DeviceAdapter {
         && this.config.communication.parent_task === (job.parent_task ?? null), "native_agent_assignment_changed");
     }
     assertReadGrantSnapshot(job.execution.tool_grant, files, this.config.communication ? nativeAgentTools : []);
-    const task: LegacyTask = { ...job.execution, task_id: job.task_id, chat_id: "device-execution", status: "waiting", repo_root: workspace,
-      native_session: job.execution.native_session ? this.journal.resolveNativeSession(job.execution.native_session, job) : null };
+    let native: unknown = null;
+    if (job.execution.native_session) {
+      const input = job.execution.native_session;
+      if (object(input) && input.schema_version === "controlmesh.device_native_adoption.v1") {
+        requireThat(this.options.adoptions, "native_adoption_unavailable"); native = this.options.adoptions.resolve(input, job);
+      } else native = this.journal.resolveNativeSession(input, job);
+      if (!afterWrites) {
+        const reference = this.store.validate(native as NativeSessionRef);
+        requireThat(reference.model === binding.model && reference.directory === workspace, "native_result_binding_mismatch");
+        this.store.baseline(reference); // Before model preflight; recovery instead verifies the retained appended turn.
+      }
+    }
+    const task: LegacyTask = { ...job.execution, task_id: job.task_id, chat_id: "device-execution", status: "waiting", repo_root: workspace, native_session: native };
     return { task, source, binding, files, required, write, registration: this.registrationDigest() };
   }
 
@@ -165,6 +179,9 @@ export class OpenCodeDeviceAdapter implements DeviceAdapter {
     current();
     workflow = await this.checkWorkflow(context.workspace, required, current, context.authority.signal, context.authority.remainingMs);
     const delivery = await context.mailboxInput();
+    // A different native client can append while the workflow/mailbox awaits. Recheck
+    // before spending a probe; OpenCodeExecution checks again before native dispatch.
+    if (task.native_session) this.store.baseline(this.store.validate(task.native_session as NativeSessionRef));
     const check = await this.preflight.ensure(this.actor, `device-probe-${digest([context.authority.lease.episode_id, binding])}`, binding,
       { executable: this.config.executable, model: binding.model, native_configuration: this.config.native_configuration, environment: this.config.environment,
         assertCurrent: current, remainingMs: context.authority.remainingMs, signal: context.authority.signal });

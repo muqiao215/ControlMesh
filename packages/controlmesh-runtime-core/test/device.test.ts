@@ -206,9 +206,9 @@ test("coordinator restart preserves assignments/receipts; expired running work s
 
 test("v2 database migrates atomically without losing a task or preflight decision", () => {
   const f = fixture(); f.task();
-  f.db.sql.exec("DROP TABLE command_reservations; DROP TABLE feishu_conversations; DROP TABLE feishu_event_aliases; DROP TABLE feishu_inbox; DROP TABLE transport_receipts; DROP TABLE delivery_outbox; DROP TABLE delivery_routes; DROP TABLE native_agent_deliveries; DROP TABLE native_agent_calls; DROP TABLE native_mailbox_deliveries; DROP TABLE local_runs; DROP TABLE device_assignments; DROP TABLE device_revocations; DROP TABLE execution_manifests; DROP TABLE effect_observations; DROP TABLE device_execution_records; DROP TABLE device_reconciliations; PRAGMA user_version=2");
+  f.db.sql.exec("DROP TABLE device_native_adoptions; DROP TABLE command_reservations; DROP TABLE feishu_conversations; DROP TABLE feishu_event_aliases; DROP TABLE feishu_inbox; DROP TABLE transport_receipts; DROP TABLE delivery_outbox; DROP TABLE delivery_routes; DROP TABLE native_agent_deliveries; DROP TABLE native_agent_calls; DROP TABLE native_mailbox_deliveries; DROP TABLE local_runs; DROP TABLE device_assignments; DROP TABLE device_revocations; DROP TABLE execution_manifests; DROP TABLE effect_observations; DROP TABLE device_execution_records; DROP TABLE device_reconciliations; PRAGMA user_version=2");
   const reopened = new RuntimeDatabase(f.path); cleanup.push(() => reopened.close());
-  expect(reopened.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 13 });
+  expect(reopened.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 14 });
   expect((reopened.sql.query("SELECT COUNT(*) AS n FROM tasks").get() as { n: number }).n).toBe(1);
   expect(reopened.sql.query("SELECT name FROM sqlite_master WHERE name='provider_checks'").get()).not.toBeNull();
 });

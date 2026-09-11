@@ -266,9 +266,9 @@ test("private runtime control delivers only after explicit route binding and rep
 
 test("schema ten upgrade preserves existing task state and installs the delivery owner", () => {
   const f = setup(); f.create();
-  f.db.sql.exec("DROP TABLE command_reservations; DROP TABLE feishu_conversations; DROP TABLE feishu_event_aliases; DROP TABLE feishu_inbox; DROP TABLE transport_receipts; DROP TABLE delivery_outbox; DROP TABLE delivery_routes; PRAGMA user_version=10");
+  f.db.sql.exec("DROP TABLE device_native_adoptions; DROP TABLE command_reservations; DROP TABLE feishu_conversations; DROP TABLE feishu_event_aliases; DROP TABLE feishu_inbox; DROP TABLE transport_receipts; DROP TABLE delivery_outbox; DROP TABLE delivery_routes; PRAGMA user_version=10");
   const other = f.reopen(); expect(other.kernel.inspect(actor, "task").task.status).toBe("waiting");
-  expect(other.kernel.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 13 });
+  expect(other.kernel.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 14 });
 });
 
 test("summary fallback retains the live Python message bus policy for all terminal states", () => {
