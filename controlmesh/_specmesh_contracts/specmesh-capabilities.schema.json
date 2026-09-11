@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SpecMeshCapabilities",
+  "type": "object",
+  "properties": {
+    "contract_version": {"enum": ["specmesh.port.v1-draft"]},
+    "profile_version": {"enum": ["specmesh.snapshot.v1"]},
+    "read_only": {"enum": [true]},
+    "supported": {"type": "boolean"},
+    "snapshot": {"enum": ["revalidate_content_and_git"]},
+    "closeout": {"enum": ["external_verification_required"]}
+  },
+  "required": ["contract_version", "profile_version", "read_only", "supported", "snapshot", "closeout"],
+  "additionalProperties": false
+}

@@ -138,6 +138,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - name: Checkout independent SpecMesh snapshot contract
+        uses: actions/checkout@v6
+        with:
+          repository: muqiao215/specmesh
+          ref: 5fab9f0f824352ef6d32b72cc8a31050e6499b5f
+          path: .ci-specmesh
+          persist-credentials: false
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
@@ -168,6 +175,8 @@ jobs:
         run: pnpm test:golden
       - name: Check runtime ownership, transactional kernel and process recovery
         run: pnpm test:runtime-core
+        env:
+          CM_SPECMESH_TEST_ROOT: ${{ github.workspace }}/.ci-specmesh
       - name: Run SDK smoke tests
         run: pnpm test:sdk
       - name: Build local Web dashboard

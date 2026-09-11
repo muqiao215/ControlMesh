@@ -37,7 +37,7 @@ Move runtime authority to TypeScript without losing task correctness, provider e
 | CM-R3 | Provider/transport/workspace/grant ports | Actual adapter smoke for each supported provider; grants enforced natively; process tree cleanup and result-delivery reconciliation | in_progress: source/grant/one-shot/container ports; real host and container OpenCode read profiles with native auth/state; durable terminal outbox and Feishu text send/readback verified with local HTTP; other provider/write/source profiles, production transport acceptance and remaining transports pending |
 | CM-R4 | Device coordinator and worker execution authority | Two-device lease expiry, fencing, clock skew, network partition and worker restart tests; stale worker cannot write or redeliver | in_progress: real ARM64 coordinator/x64 OpenCode worker continuation and reopen passed; remote reconciliation implemented, other profiles and rollout pending |
 | CM-R5 | Agent mailbox and task dependency exchange | Duplicate/out-of-order/replayed messages, bounded broadcast, cancellation propagation and backpressure evidence | in_progress: local/device native initial input and actual Agent MCP send/ask/receive/answer accepted with atomic consumption and recovery; real ARM64 coordinator/x64 interrupted completion, reopen and original-session recall passed; topology integration pending |
-| CM-R6 | History headless candidate + native adoption + SpecMesh lifecycle hooks | Real continuation canary binds provider session, current repo and approved task scope; see HV-H3 / SM-P2 | in_progress: real same-session recall/current-file and post-SIGKILL continuation passed; SpecMesh hooks and full matrix remain |
+| CM-R6 | History headless candidate + native adoption + SpecMesh lifecycle hooks | Real continuation canary binds provider session, current repo and approved task scope; see HV-H3 / SM-P2 | in_progress: real same-session recall/current-file and post-SIGKILL continuation passed; independent SpecMesh start/handoff gate and five-file real native consumption accepted locally; reviewed closeout and full matrix remain |
 | CM-R7 | Staged default switch and Python retirement | Canary -> selected device -> default rollout; telemetry and rollback thresholds met; old writer disabled before new writer activation | planned |
 
 ## Acceptance matrix
@@ -76,8 +76,10 @@ at 7ac3da8 with green CI. Selected-app token refresh, verified reply/thread deli
 complete stdio shutdown are now implemented in the startup/control path and pass the full
 255-test core suite. They are published at dc373fb with green CI. Authenticated ingress,
 durable conversation processing and concrete native message-source enforcement now pass
-290 core tests and real two-turn OpenCode continuation across runtime reopen. Publish this
-increment and verify its exact-SHA CI; then complete group controller approval, rich-media,
+290 core tests and real two-turn OpenCode continuation across runtime reopen. It is published
+at c02f6f0 with exact-SHA green CI. The independent SpecMesh snapshot/start/handoff gate now
+passes paired tests and real two-turn native five-file consumption; publish that increment
+and verify exact-SHA CI, then complete reviewed closeout, group controller approval, rich-media,
 long-connection subscription and the remaining authorization profiles.
 These and other provider/write profiles remain required before
 the staged production switch.

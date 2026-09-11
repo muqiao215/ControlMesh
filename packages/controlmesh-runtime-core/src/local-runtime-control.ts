@@ -4,11 +4,13 @@ import type { DeliveryOutbox } from "./delivery-outbox";
 import type { TerminalDelivery } from "@controlmesh/protocol";
 import type { SubmissionIdentity } from "./task-ingress";
 import type { FeishuInboundRuntime } from "./feishu-inbound-runtime";
+import type { SpecMeshPort } from "./specmesh-port";
 
 /** Private local control protocol. It never accepts caller-supplied principals, source contexts or grants. */
 export class LocalRuntimeControl {
   constructor(private readonly runtime: LocalTaskRuntime, private readonly deliveries?: DeliveryOutbox,
-    private readonly submissionIdentity?: (task: LegacyTask) => SubmissionIdentity, private readonly inbound?: FeishuInboundRuntime) {}
+    private readonly submissionIdentity?: (task: LegacyTask) => SubmissionIdentity, private readonly inbound?: FeishuInboundRuntime,
+    private readonly specmesh?: SpecMeshPort) {}
 
   async handle(request: unknown): Promise<Record<string, unknown>> {
     let id: string | null = null;
@@ -21,6 +23,7 @@ export class LocalRuntimeControl {
         bind_delivery: ["task_id", "expected_revision", "adapter_id", "output_policy"], deliveries: ["task_id"],
         drain_deliveries: [], retry_delivery: ["delivery_id"], reconcile_delivery: ["delivery_id", "remote_message_id"], revoke_delivery: ["task_id"],
         start_inbound: [], inbound_status: [], drain_inbound: [], retry_inbound: ["receipt_id"],
+        prepare_handoff: ["task_id"], verify_specmesh: ["task_id"],
       };
       requireThat(typeof request.op === "string" && Object.hasOwn(fields, request.op), "unknown_local_operation");
       requireThat(Object.keys(request).every(key => ["id", "op", ...fields[request.op as string]].includes(key)), "unexpected_local_request_field");
@@ -29,6 +32,18 @@ export class LocalRuntimeControl {
       if (["bind_delivery", "deliveries", "drain_deliveries", "retry_delivery", "reconcile_delivery", "revoke_delivery"].includes(request.op))
         requireThat(this.deliveries, "delivery_not_configured");
       switch (request.op) {
+        case "prepare_handoff": case "verify_specmesh": {
+          requireThat(this.specmesh, "specmesh_not_configured"); identifier(request.task_id);
+          const taskId = request.task_id, task = this.runtime.inspectTask(taskId);
+          this.specmesh.assertWorkspace(task.task.repo_root);
+          const observation = await this.specmesh.inspect(request.op === "prepare_handoff" ? "prepare_handoff" : "verify_closeout", { assertCurrent: () => {
+            const current = this.runtime.inspectTask(taskId);
+            requireThat(current.revision === task.revision && current.fence === task.fence, "specmesh_task_changed");
+          } });
+          observation.assertCurrent();
+          result = { task_id: taskId, task_revision: task.revision, gate_passed: observation.result.status === "pass",
+            snapshot_digest: observation.snapshot_digest, result: observation.result }; break;
+        }
         case "start_inbound": result = this.inbound!.start(); break;
         case "inbound_status": result = this.inbound!.status(); break;
         case "drain_inbound": await this.inbound!.drain(); result = this.inbound!.status(); break;

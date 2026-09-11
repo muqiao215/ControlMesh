@@ -21,9 +21,11 @@ import { FeishuEventAuthenticator } from "./feishu-event-auth";
 import { FeishuInbox } from "./feishu-inbox";
 import { FeishuInboundRuntime } from "./feishu-inbound-runtime";
 import { decodeToolGrant, enforceProviderConfirmation } from "./execution-grants";
+import { SpecMeshPort, type SpecMeshConfiguration } from "./specmesh-port";
 
 /** Explicit isolated candidate configuration. Reading task state does not inspect or probe any provider. */
 export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; deliveries?: DeliveryOutbox; inbound?: FeishuInboundRuntime;
+  specmesh?: SpecMeshPort;
   submissionIdentity: (task: LegacyTask) => SubmissionIdentity; stop: () => Promise<void>; close: () => Promise<void> } {
   const loaded = privateFile(path), config = decodeSnapshot(loaded.bytes).source;
   requireThat(object(config) && config.schema_version === "controlmesh.local_runtime.v1" && config.mode === "candidate", "unsupported_local_runtime_config");
@@ -65,6 +67,8 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
       "delivery:read", "delivery:configure", "delivery:project", "delivery:send", "delivery:reconcile", "feishu:ingest", "feishu:read", "feishu:process"] };
   const db = new RuntimeDatabase(join(root, "runtime.sqlite")), kernel = new RuntimeKernel(db), cache = new PreflightCache(db);
   try {
+    requireThat(config.specmesh === undefined || object(config.specmesh), "invalid_specmesh_profile");
+    const specmesh = config.specmesh === undefined ? undefined : new SpecMeshPort(config.specmesh as unknown as SpecMeshConfiguration, workspace.directory as string, current);
     const runtime = new LocalTaskRuntime(kernel, actor, { command_origin: "human_request", origin: "user", source_scope: "local_foreground", transport: config.source.transport }, task => {
       current();
       enforceProviderConfirmation("opencode", decodeToolGrant(task.task.tool_grant));
@@ -83,8 +87,9 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
           permission_profile: "opencode-native-read-v1", runtime_digest: runner.runtimeDigest() }),
         admission: { source_scope: decodeExecutionContext(task.task.execution_context).source_scope as IssuedReadAdmission["source_scope"],
           read_files: workspace.read_files as string[], required_reads: workspace.required_reads as string[], assertCurrent: current } };
-      return new OpenCodeTaskAdapter(kernel, cache, actor, store, { executable: profile.executable, native_configuration: native,
+      const execution = new OpenCodeTaskAdapter(kernel, cache, actor, store, { executable: profile.executable, native_configuration: native,
         environment, state_home: root, ...(channel ? { communication: channel } : {}) }, runner, registration).prepare(task);
+      return specmesh ? specmesh.bind(execution, registration.admission.required_reads) : execution;
     }, current, object(config.limits) ? config.limits : {});
     let inbox: FeishuInbox | undefined;
     if (config.inbound !== undefined) {
@@ -116,8 +121,8 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
       return delivery ? delivery.adapter.submissionIdentity(task.task_id, String(task.chat_id)) : { chat_id: String(task.chat_id) };
     };
     let stopping: Promise<void> | undefined, closing: Promise<void> | undefined;
-    const stop = () => stopping ??= Promise.all([runtime.stop(), deliveries?.stop(), delivery?.close(), inbound?.stop()]).then(() => {});
+    const stop = () => stopping ??= Promise.all([runtime.stop(), deliveries?.stop(), delivery?.close(), inbound?.stop(), specmesh?.stop()]).then(() => {});
     const close = () => closing ??= stop().then(() => db.close());
-    return { runtime, submissionIdentity, stop, close, ...(deliveries ? { deliveries } : {}), ...(inbound ? { inbound } : {}) };
+    return { runtime, submissionIdentity, stop, close, ...(deliveries ? { deliveries } : {}), ...(inbound ? { inbound } : {}), ...(specmesh ? { specmesh } : {}) };
   } catch (error) { db.close(); throw error; }
 }

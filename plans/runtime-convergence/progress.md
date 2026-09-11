@@ -2,9 +2,9 @@
 
 ## Current
 
-Published baseline is `dc373fb8470a50e41e4d3de25b3174d3528fee80`, including the durable
-outbox, selected-app credential refresh, verified replies and clean shutdown; exact-SHA
-[CI 34634003619](https://github.com/muqiao215/ControlMesh/actions/runs/34634003619) passed.
+Published baseline is `c02f6f08ef801af5447643bf58fba0057b449bc0`, including authenticated
+Feishu ingress, durable conversations, selected-app replies and native continuation;
+exact-SHA [CI 34639025503](https://github.com/muqiao215/ControlMesh/actions/runs/34639025503) passed.
 Earlier a9ec8b4 retains real ARM64-coordinator/x64-worker communication, initial input and
 original-session recall acceptance.
 
@@ -25,9 +25,28 @@ commands; actual provider API/billing counts were not measured. The increment wa
 at `3b8ecf8ef4916eef26f391d42523cb21195aabb1`. Its CI run 34638622658 exposed Bun's default
 five-second test deadline killing the cold Python SDK oracle (exit 143); the explicit
 cross-language test now allows 35 seconds around a bounded 30-second child. Its assertions
-and all runtime deadlines are unchanged. Verify the corrected commit's CI next. No real
+and all runtime deadlines are unchanged. The corrected commit's CI passed. No real
 Feishu account, production writer/service or installation was changed. Group controller
 approval, rich media and long connections remain open.
+
+The optional independent SpecMesh snapshot gate is now locally accepted. Standalone
+SpecMesh `5fab9f0f824352ef6d32b72cc8a31050e6499b5f` is released as v1.2.1 with 54 tests and
+Python 3.11/3.12 CI success. CM pins that independent checkout in CI. Seven paired tests
+pass on Bun 1.3.11; the default core suite passes 283 tests / 3,301 assertions with 14 Docker
+cases separated into the actual-container gate. That gate passes all 20 cases / 79 assertions,
+including SIGSTOP/SIGKILL cleanup. Combined unique core coverage is 297 cases. Generated
+protocol synchronization, Python adapter tests (3), ownership inventory, typecheck and Web
+build pass; bundled Web assets are unchanged. Publication of this CM increment is pending.
+
+A real OpenCode 1.18.29/M3 canary used the optional gate for two signed loopback task turns,
+reopening the runtime between them. Independent native-database inspection confirms the
+same original session, five actual required reads per turn, correct changed PROJECT and
+findings content, and marker recall without second-turn reinjection. One task/two completed
+episodes/two fixture replies remain after duplicate ingress; one preflight generation,
+nine native commands and three model-run commands were observed. Actual provider billing
+counts are not measured. All nine containers are independently confirmed absent. This
+qualifies the local OpenCode read profile; general task writes, other providers/devices,
+reviewed authority and external closeout verification remain open.
 
 Full goal active; CM-R0 through CM-R6 remain in progress and CM-R7 is not activated.
 Python v0.43.0 remains the released/installed production runtime. The private TS kernel now
@@ -41,6 +60,13 @@ auth/state/continuation acceptance; general write, other provider and production
 qualification remain open.
 
 ## Done
+
+- Independent SpecMesh candidate: descriptor/content/Git capability handshake, bounded
+  supervised subprocesses, task-start before native preflight, trusted required-read
+  coverage, content/HEAD/profile revocation, explicit handoff and unknown-closeout control
+  operations. No implicit permission expansion or completion promotion. Native canary
+  artifacts: `outputs/runtime-convergence/specmesh-native-acceptance.{ts,json,log}` and
+  `specmesh-native-independent-verification.json` in the private coordinating workspace.
 
 - Transactional TS kernel: task revisions, fenced episodes, immutable dispatch/observation
   evidence, idempotent receipts, cancellation, deadlines, unknown-outcome recovery and mailbox.

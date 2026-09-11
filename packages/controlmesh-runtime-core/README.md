@@ -405,7 +405,51 @@ static tool expressions are retained; portable grant tokens have their own bound
 Remaining before activation: reconciliation for the other execution profiles and abandonment policy, general resume integration,
 provider adapter/permission parity and non-Linux supervision, remaining transport delivery/ingress, all other Python
 stores, other provider profiles over the device transport, the full native
-continuation matrix, SpecMesh lifecycle admission, full rollback and production-writer exclusion.
+continuation matrix, externally verified SpecMesh closeout, full rollback and production-writer exclusion.
+
+## Optional independent SpecMesh gate
+
+The private candidate config accepts an optional `specmesh` object:
+
+```json
+{"directory":"/absolute/independent/specmesh","python":"/absolute/python3","task_path":"plans/current-task","timeout_ms":15000}
+```
+
+Use the independent SpecMesh v1.2.1 snapshot profile (qualified source
+`5fab9f0f824352ef6d32b72cc8a31050e6499b5f`). `directory` is a canonical checkout root;
+Python 3.11+ and POSIX descriptor support are required by this optional executable profile.
+`task_path` is a relative directory or null, selected by the trusted local configuration.
+It is not chosen from an incoming message. Timeout must be 1000–60000 ms; at most four
+concurrent checks run. Package and Python identity changes require an explicit runtime
+restart. This adapter trusts the configured Python installation and plugin code.
+
+The gate invokes the real standalone capability/check commands, validates their JSON, and
+requires structural pass before native preflight. Add every selected AGENTS/PROJECT,
+architecture/decision and task continuity file as an absolute path to the existing `workspace.read_files` and
+`workspace.required_reads` registration. It never expands those permissions from document
+links. The Agent's normal native-read verifier then checks actual consumption on each turn.
+File content, identity, absence, HEAD and implementation changes revoke the observation.
+This qualified read profile does not permit modifying its continuity files during a turn.
+Git tracking/modified metadata describes the plugin's inspection snapshot; it is not a
+review or a persistent lock on the Git index.
+
+Private control requests accept only the current owned task ID:
+
+```json
+{"id":"handoff-1","op":"prepare_handoff","task_id":"task-1"}
+{"id":"verify-1","op":"verify_specmesh","task_id":"task-1"}
+```
+
+Responses include task revision, snapshot digest, `gate_passed` and the independent result.
+Only `pass` sets the gate flag. A self-reported passed acceptance manifest remains `unknown`;
+these operations do not finish/resume a task, issue authority or launch a model. No service
+or public Web/API default is changed. Markdown-only SpecMesh use remains independent.
+
+Reproduce paired tests with `CM_SPECMESH_TEST_ROOT=/absolute/specmesh bun test
+packages/controlmesh-runtime-core/test/specmesh-port.test.ts`; without that explicit source
+the five paired cases are reported skipped. CI checks out the pinned source and requires
+all seven cases. A real local OpenCode canary also verified five current document reads per
+turn and original-session recall across runtime reopen; full migration remains open.
 Generic mailbox application references remain reports; qualified native OpenCode reservations
 require matching input or tool records. Device tool receipts are checked against the coordinator journal. A coordinator fence cannot prevent an
 uncooperative external program's side effect.

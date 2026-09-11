@@ -356,6 +356,18 @@ is local foreground OpenCode container reads. `tell` persists a pending mailbox 
 `inspect_message` and `mailbox_status` expose delivery state without running a model.
 Other ingress/transport profiles are still separate work.
 
+`specmesh-port.ts` is an optional adapter to an explicitly registered independent SpecMesh
+checkout. It pins package/Python/workspace identity, validates the external snapshot
+capability and draft contracts, and supervises bounded read-only checks before native
+preflight. The registered native required reads must already cover selected continuity
+references; asserted links cannot issue grants. A checked observation is revalidated at
+execution boundaries, never reused after restart as cached authority. The current read
+profile stops if its continuity inputs change during execution. `prepare_handoff` and
+`verify_specmesh` are private, task-scoped control operations with current revision/fence
+checks. Unknown closeout never promotes task completion. Shutdown aborts and reaps pending
+checks. This is a trusted optional command adapter, not a sandbox for arbitrary Python
+plugins or a production writer switch; SpecMesh itself has no CM dependency.
+
 The local `OpenCodeWorker` takes an ordered, bounded mailbox prefix for each native turn.
 Schema 9 reserves those message IDs against the actual effect and immutable dispatch
 manifest in the same transaction as execution dispatch. Sender/origin/sequence and payload

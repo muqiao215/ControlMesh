@@ -38,3 +38,4 @@ export { openFeishuDelivery } from "./feishu-delivery-profile";
 export { FeishuEventAuthenticator, type FeishuEventConfiguration, type FeishuIncomingMessage } from "./feishu-event-auth";
 export { FeishuInbox, type FeishuTaskTemplate } from "./feishu-inbox";
 export { FeishuInboundRuntime } from "./feishu-inbound-runtime";
+export { SpecMeshPort, type SpecMeshConfiguration, type SpecMeshResult, type SpecMeshObservation, type SpecMeshOperation } from "./specmesh-port";

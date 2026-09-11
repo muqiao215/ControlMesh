@@ -366,3 +366,23 @@ without acknowledging; reservation is atomic with dispatch. Prefix consumption m
 before dynamic native-tool delivery consumption, both in completion and reconciliation.
 Queued updates arriving after preparation can remain outside the pinned prefix. Profile
 and input-size validation happens before spending a native preflight permit.
+# Independent SpecMesh integration — 2026-09-12
+
+The original optional port could mix discovery bytes and later hashes while HEAD remained
+unchanged. A fixture also proved `git status` can invoke a configured clean filter. The
+independent SpecMesh v1.2.1 implementation now owns descriptor snapshots and bounded Git
+plumbing; CM validates its explicit snapshot capability and pins the independent source in
+CI. The normative Markdown standard remains 1.1.0.
+
+The TS host gates preparation before provider preflight and checks current file/HEAD/code
+identity at use. It does not treat assertions as permissions: every selected reference must
+already be in the registered native required reads. Handoff/verify inspect a currently owned
+task and recheck revision/fence. `verify_closeout` remains unknown without external evidence.
+The host guards synchronous admission, bounded output/deadline and shutdown cancellation.
+
+Paired tests exercise the actual independent CLI, a real local queue with synthetic task
+execution, startup without native credentials, changed files/profile and owned subprocess
+cleanup. The separate real OpenCode canary verifies native read tools and original-session
+continuation, with five required reads on each of two turns. No production account replies
+or native write permissions were involved. Read-profile acceptance does not close the
+remaining provider/write/device, reviewer/evidence or production-cutover gates.
