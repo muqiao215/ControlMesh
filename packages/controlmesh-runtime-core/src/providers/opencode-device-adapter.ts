@@ -99,6 +99,7 @@ export class OpenCodeDeviceAdapter implements DeviceAdapter {
     requireThat(typeof result.text === "string" && Buffer.byteLength(result.text) <= 64 * 1024 && Array.isArray(result.read_files), "native_device_result_too_large");
     const value = { schema_version: "controlmesh.device_native_result.v1", text: result.text, output_digest: result.output_digest,
       read_count: result.read_files.length, evidence, ...(result.communication ? { communication: result.communication } : {}),
+      ...(result.mailbox_delivery ? { mailbox_delivery: result.mailbox_delivery } : {}),
       native_session: { schema_version: "controlmesh.device_native_session.v1", device_id: this.store.deviceId, evidence } };
     assertProtocolSchema<DeviceNativeResult>("device-native-result.schema.json", value);
     return value;
@@ -113,6 +114,7 @@ export class OpenCodeDeviceAdapter implements DeviceAdapter {
       if (value !== undefined) { void Promise.resolve(value).catch(() => {}); requireThat(false, "admission_must_be_synchronous"); }
     };
     current();
+    const delivery = await context.mailboxInput();
     const check = await this.preflight.ensure(this.actor, `device-probe-${digest([context.authority.lease.episode_id, binding])}`, binding,
       { executable: this.config.executable, model: binding.model, native_configuration: this.config.native_configuration, environment: this.config.environment,
         assertCurrent: current, remainingMs: context.authority.remainingMs, signal: context.authority.signal });
@@ -126,6 +128,7 @@ export class OpenCodeDeviceAdapter implements DeviceAdapter {
     try {
       await channel?.start();
       const result = await this.execution.execute(task, binding, { source_scope: source.source_scope as "local_foreground", read_files: files, required_reads: required, assertCurrent: current }, {
+        mailbox_delivery: delivery,
         ...(channel ? { communication: { scope: channel.scope, command: channel.command, freeze: () => channel.close(),
           verify: tools => nativeAgentProof(context.effect_id, tools) } } : {}),
         assertCurrent: current, remainingMs: context.authority.remainingMs, signal: context.authority.signal,

@@ -2,7 +2,8 @@ import { AgentMailbox } from "../mailbox";
 import type { RuntimeKernel, Principal, Lease, ReconciliationEvidence } from "../kernel";
 import { requireScope } from "../commands";
 import { digest, object, requireThat, RuntimeConflict } from "../value";
-import { decodeNativeMailbox, nativeInput, nativeMailboxEvidence, nativeMessage, type NativeMailboxBatch } from "./native-mailbox-input";
+import { decodeNativeMailbox, nativeInput, nativeMailboxBinding, nativeMailboxEvidence, nativeMessage, type NativeMailboxBatch } from "./native-mailbox-input";
+import { assertProtocolSchema, type NativeMailboxBinding, type NativeMailboxProof } from "@controlmesh/protocol";
 
 /** Coordinator-owned delivery reservations. The native driver/verifier supplies confirmed input evidence. */
 export class NativeMailboxDelivery {
@@ -32,8 +33,25 @@ export class NativeMailboxDelivery {
       decodeNativeMailbox(batch);
       const pending = this.mailbox.pending(actor, lease, batch.messages.length);
       requireThat(digest(pending.map(nativeMessage)) === digest(batch.messages), "native_mailbox_changed");
-      for (const message of batch.messages) requireThat(!this.kernel.db.sql.query("SELECT 1 FROM native_mailbox_deliveries WHERE message_id=?").get(message.message_id), "native_message_already_dispatched");
+      for (const message of batch.messages) requireThat(!this.kernel.db.sql.query("SELECT 1 FROM native_mailbox_deliveries WHERE message_id=? UNION ALL SELECT 1 FROM native_agent_deliveries WHERE message_id=?")
+        .get(message.message_id, message.message_id), "native_message_already_dispatched");
     });
+  }
+
+  /** Reconstruct the exact original batch; content stays in the authoritative coordinator mailbox. */
+  resolveBinding(actor: Principal, taskId: string, binding: unknown): NativeMailboxBatch {
+    assertProtocolSchema<NativeMailboxBinding>("native-mailbox-binding.schema.json", binding);
+    const batch: NativeMailboxBatch = { schema_version: "controlmesh.native_mailbox.v1", task_id: taskId,
+      messages: binding.message_ids.map(id => nativeMessage(this.mailbox.inspect(actor, taskId, id))) };
+    requireThat(digest(nativeMailboxBinding(batch)) === digest(binding), "native_mailbox_binding_changed");
+    return batch;
+  }
+
+  verifyDevice(actor: Principal, taskId: string, binding: unknown, proof: unknown): { batch: NativeMailboxBatch; verified: Record<string, unknown> } {
+    assertProtocolSchema<NativeMailboxProof>("native-mailbox-proof.schema.json", proof);
+    const batch = this.resolveBinding(actor, taskId, binding);
+    requireThat(digest(proof) === digest(nativeMailboxEvidence(batch, proof.native_user_message_id)), "native_mailbox_delivery_unproven");
+    return { batch, verified: { user_message_id: proof.native_user_message_id, mailbox_delivery: proof } };
   }
 
   /** Must run in the same transaction as dispatchEffect, before the native command is issued. */
@@ -55,7 +73,8 @@ export class NativeMailboxDelivery {
       .get(effectId, taskId, episodeId, fence) as { state: string; payload: string; digest: string } | null;
     requireThat(effect && effect.state === state, "native_mailbox_effect_mismatch");
     const manifest = JSON.parse(effect.payload);
-    requireThat(digest(manifest) === effect.digest && digest(manifest.mailbox_delivery) === digest(batch), "native_mailbox_manifest_changed");
+    const bound = manifest.schema_version === "controlmesh.device_evidence.v1" ? nativeMailboxBinding(batch) : batch;
+    requireThat(digest(manifest) === effect.digest && digest(manifest.mailbox_delivery) === digest(bound), "native_mailbox_manifest_changed");
   }
 
   /** Called only after actual native input verification, inside the task completion/reconciliation transaction. */

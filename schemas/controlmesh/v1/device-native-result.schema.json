@@ -37,6 +37,9 @@
     },
     "communication": {
       "$ref": "native-agent-proof.schema.json"
+    },
+    "mailbox_delivery": {
+      "$ref": "native-mailbox-proof.schema.json"
     }
   }
 }

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.controlmesh.dev/controlmesh/v1/native-mailbox-batch.schema.json",
+  "title": "NativeMailboxBatch",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "task_id",
+    "messages"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "controlmesh.native_mailbox.v1"
+    },
+    "task_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+    },
+    "messages": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": {
+        "$ref": "agent-mailbox-message.schema.json"
+      }
+    }
+  }
+}

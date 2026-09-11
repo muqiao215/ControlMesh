@@ -4,6 +4,7 @@ import type { DeviceJob } from "./device-coordinator";
 import type { Lease } from "./kernel";
 import { canonical, digest, identifier, object, requireThat } from "./value";
 import { decodeNativeAgentScope } from "./providers/native-agent-journal";
+import { decodeNativeMailbox, nativeMailboxBinding } from "./providers/native-mailbox-input";
 
 export interface DeviceExecutionRecord {
   effect_id: string; device_id: string; task_id: string; episode_id: string; fence: number;
@@ -36,6 +37,7 @@ export class DeviceExecutionJournal {
     return { schema_version: "controlmesh.device_evidence.v1", device_id: row.device_id, task_id: row.task_id, episode_id: row.episode_id,
       effect_id: row.effect_id, fence: row.fence, assignment_digest: row.assignment_digest, manifest_digest: row.manifest_digest,
       ...(manifest.communication ? { communication: decodeNativeAgentScope(manifest.communication) } : {}),
+      ...(manifest.mailbox_delivery ? { mailbox_delivery: nativeMailboxBinding(decodeNativeMailbox(manifest.mailbox_delivery)) } : {}),
       ...(row.observation_digest ? { observation_digest: row.observation_digest } : {}), ...(row.result_digest ? { result_digest: row.result_digest } : {}) };
   }
   inspect(ref: DeviceEvidenceRef): DeviceExecutionRecord {
@@ -44,6 +46,7 @@ export class DeviceExecutionJournal {
     const row = this.row(ref.effect_id), current = this.reference(row);
     for (const [key, value] of Object.entries(ref)) requireThat(digest((current as unknown as Record<string, unknown>)[key]) === digest(value), "device_evidence_changed");
     requireThat(Boolean(ref.communication) === Boolean(current.communication), "device_evidence_changed");
+    requireThat(Boolean(ref.mailbox_delivery) === Boolean(current.mailbox_delivery), "device_evidence_changed");
     return row;
   }
 
@@ -66,6 +69,14 @@ export class DeviceExecutionJournal {
   dispatching(effectId: string): void { this.transition(effectId, "prepared", "dispatching"); }
   dispatched(effectId: string): void { this.transition(effectId, "dispatching", "dispatched"); }
   completed(effectId: string): void { this.transition(effectId, "verified", "completed"); }
+  /** Called only after the coordinator has fenced and released an effect-free episode. */
+  released(effectId: string): void {
+    this.db.transaction(() => {
+      const row = this.row(effectId);
+      requireThat(["prepared", "dispatching", "unknown"].includes(row.phase) && !row.observation && !row.result, "device_release_not_unstarted");
+      this.db.sql.query("UPDATE device_execution_records SET phase='released' WHERE effect_id=?").run(effectId);
+    });
+  }
   unknown(effectId: string): void {
     this.db.transaction(() => {
       const row = this.row(effectId);

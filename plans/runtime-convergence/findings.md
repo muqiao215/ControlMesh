@@ -286,3 +286,12 @@ its supplied runner and therefore could not qualify a container runtime digest. 
 uses that runner, with a regression fixture carrying a runtime identity. Automatic initial
 mailbox prefix delivery still needs its device manifest/reservation seam; native receive
 already handles queued and late messages.
+
+Device initial mailbox integration (2026-09-12): full native input batches need not be
+repeated inside every remote evidence reference. The reference now carries ordered IDs
+and a batch digest; the coordinator reconstructs its own immutable message snapshot.
+Native input is still verified against the full device-local manifest. Preparation reads
+without acknowledging; reservation is atomic with dispatch. Prefix consumption must run
+before dynamic native-tool delivery consumption, both in completion and reconciliation.
+Queued updates arriving after preparation can remain outside the pinned prefix. Profile
+and input-size validation happens before spending a native preflight permit.

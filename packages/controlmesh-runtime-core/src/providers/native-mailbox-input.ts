@@ -1,4 +1,4 @@
-import { assertProtocolSchema, type AgentMailboxMessage } from "@controlmesh/protocol";
+import { assertProtocolSchema, type AgentMailboxMessage, type NativeMailboxBinding, type NativeMailboxProof } from "@controlmesh/protocol";
 import { canonical, digest, identifier, object, requireThat } from "../value";
 
 export interface NativeMailboxBatch extends Record<string, unknown> {
@@ -13,6 +13,7 @@ export function nativeMessage(message: AgentMailboxMessage): AgentMailboxMessage
 }
 
 export function decodeNativeMailbox(value: unknown): NativeMailboxBatch {
+  assertProtocolSchema("native-mailbox-batch.schema.json", value);
   requireThat(object(value) && value.schema_version === "controlmesh.native_mailbox.v1", "invalid_native_mailbox");
   identifier(value.task_id);
   requireThat(Object.keys(value).length === 3 && Array.isArray(value.messages) && value.messages.length > 0 && value.messages.length <= 32,
@@ -35,7 +36,12 @@ export function nativeInput(prompt: string, batch?: NativeMailboxBatch): string 
   return input;
 }
 
-export function nativeMailboxEvidence(batch: NativeMailboxBatch, userMessageId: string): Record<string, unknown> {
+export function nativeMailboxBinding(batch: NativeMailboxBatch): NativeMailboxBinding {
+  decodeNativeMailbox(batch);
+  return { delivery_digest: digest(batch), message_ids: batch.messages.map(message => message.message_id) };
+}
+
+export function nativeMailboxEvidence(batch: NativeMailboxBatch, userMessageId: string): NativeMailboxProof & Record<string, unknown> {
   identifier(userMessageId); decodeNativeMailbox(batch);
-  return { delivery_digest: digest(batch), message_ids: batch.messages.map(message => message.message_id), native_user_message_id: userMessageId };
+  return { ...nativeMailboxBinding(batch), native_user_message_id: userMessageId };
 }

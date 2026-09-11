@@ -19,7 +19,7 @@ const owner: Principal = { id: "operator", origin: "human_request", device_id: "
 const device: Principal = { id: owner.id, origin: "agent_message", device_id: "native-worker", scopes: ["provider:probe"] };
 const outcome = (stdout: string): ProcessOutcome => ({ reason: "exited", exit_code: 0, stdout, stderr: "", duration_ms: 1 });
 
-function setup(mode: "normal" | "partition" | "changed-file" | "lost-completion" | "scheduled" | "lost-before-completion" | "altered-native-tool" = "normal", communicationEnabled = false) {
+function setup(mode: "normal" | "partition" | "changed-file" | "lost-completion" | "scheduled" | "lost-before-completion" | "lost-dispatch" | "altered-native-tool" | "altered-native-input" = "normal", communicationEnabled = false) {
   const root = mkdtempSync(join(tmpdir(), "cm-native-device-test-")); cleanup.push(() => rmSync(root, { recursive: true, force: true }));
   const workspace = join(root, "project"), data = join(root, "data"); mkdirSync(workspace); mkdirSync(join(data, "opencode"), { recursive: true });
   writeFileSync(join(workspace, "PROJECT.md"), "revision-one");
@@ -35,6 +35,7 @@ function setup(mode: "normal" | "partition" | "changed-file" | "lost-completion"
   const coordinator = new DeviceCoordinator(kernel, registrations);
   const server = coordinator.listen(); cleanup.push(() => server.stop(true));
   let lost = false;
+  const hooks: { afterInput?: () => void; afterDispatch?: () => void; beforeNative?: () => void } = {};
   const completions: { request_id: string; arguments: Record<string, unknown> }[] = [];
   const client = new DeviceClient({ endpoint: server.url.origin, token, device_id: device.device_id!, timeout_ms: 500,
     fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -42,6 +43,9 @@ function setup(mode: "normal" | "partition" | "changed-file" | "lost-completion"
       if (command.operation === "complete") completions.push(command);
       if (mode === "lost-before-completion" && JSON.parse(String(init?.body)).operation === "complete") throw new Error("fixture_completion_not_sent");
       const response = await fetch(input, init);
+      if (command.operation === "native_input") hooks.afterInput?.();
+      if (command.operation === "dispatch") hooks.afterDispatch?.();
+      if (mode === "lost-dispatch" && command.operation === "dispatch") { await response.arrayBuffer(); throw new Error("fixture_lost_dispatch_ack"); }
       if (mode === "lost-completion" && !lost && JSON.parse(String(init?.body)).operation === "complete") { lost = true; await response.arrayBuffer(); throw new Error("fixture_lost_response"); }
       return response;
     }) as typeof fetch });
@@ -73,6 +77,7 @@ function setup(mode: "normal" | "partition" | "changed-file" | "lost-completion"
           ...(communication ? nativeAgentTools.map(permission => ({ permission, pattern: "*", action: "allow" })) : [])] }));
     }
     calls++;
+    hooks.beforeNative?.();
     const writer = new Database(nativePath), session = "ses_Device";
     if (calls === 1) writer.query("INSERT INTO session VALUES (?,?,?,'device fixture',NULL,0,NULL)").run(session, workspace, "project");
     else expect(spec.command[spec.command.indexOf("--session") + 1]).toBe(session);
@@ -80,7 +85,7 @@ function setup(mode: "normal" | "partition" | "changed-file" | "lost-completion"
     writer.query("INSERT INTO message VALUES (?,?,?,?,?)").run(user, session, now, now, JSON.stringify({ role: "user" }));
     writer.query("INSERT INTO message VALUES (?,?,?,?,?)").run(assistant, session, now + 1, now + 1, JSON.stringify({ role: "assistant", parentID: user, providerID: "fixture", modelID: "model", finish: "stop", time: { completed: now + 1 } }));
     const part = (id: string, message: string, data: object) => writer.query("INSERT INTO part VALUES (?,?,?,?,?,?)").run(id, session, message, now, now, JSON.stringify(data));
-    part(`prompt_${calls}`, user, { type: "text", text: spec.stdin_text });
+    part(`prompt_${calls}`, user, { type: "text", text: mode === "altered-native-input" ? "read current project" : spec.stdin_text });
     part(`answer_${calls}`, assistant, { type: "text", text: answer });
     part(`read_${calls}`, assistant, { type: "tool", tool: "read", state: { status: "completed", input: { filePath: join(workspace, "PROJECT.md") } } });
     if (communication) {
@@ -96,7 +101,8 @@ function setup(mode: "normal" | "partition" | "changed-file" | "lost-completion"
           return body;
         };
         const received = await invoke("receive", { request_id: "inbox", wait_ms: 0 });
-        for (const question of received.messages) if (question.kind === "ask_parent") {
+        const prefix = spec.stdin_text?.includes("controlmesh.native_mailbox.v1") ? JSON.parse(spec.stdin_text.slice(spec.stdin_text.lastIndexOf("\n") + 1)).messages : [];
+        for (const question of [...prefix, ...received.messages]) if (question.kind === "ask_parent") {
           expect(new AgentMailbox(kernel).inspect(owner, "native-task", question.message_id).status).toBe("received");
           await invoke("answer", { request_id: "answer", question_id: question.message_id, text: "Verified gate" });
         }
@@ -132,7 +138,7 @@ function setup(mode: "normal" | "partition" | "changed-file" | "lost-completion"
       { workspaces: { project: workspace }, adapters: { "native.read": makeAdapter(localJournal) }, journal: localJournal }) };
   };
   return { root, workspace, workerDB, coordinatorDB, kernel, coordinator, client, journal, worker, commands, binding, store, specification,
-    recover, completions, calls: () => calls, advance: (ms: number) => { offset += ms; } };
+    recover, hooks, completions, calls: () => calls, advance: (ms: number) => { offset += ms; } };
 }
 
 test("native device execution persists local evidence and resumes its original session through an opaque handle", async () => {
@@ -460,5 +466,158 @@ for (const mode of ["normal", "lost-before-completion", "altered-native-tool"] a
       expect(mailbox.pending(owner, peer)).toHaveLength(3);
     }
     expect(f.calls()).toBe(1);
+  }
+});
+
+function tellDevice(f: ReturnType<typeof setup>, id: string, text: string, ttl = 10000) {
+  return new AgentMailbox(f.kernel).send(owner, id, { recipient_task: "native-task", sender_lease: null,
+    kind: "tell", payload: { text }, causation_id: null, ttl_ms: ttl });
+}
+
+function deviceRecord(f: ReturnType<typeof setup>) {
+  return f.workerDB.sql.query("SELECT * FROM device_execution_records ORDER BY rowid DESC LIMIT 1").get() as {
+    effect_id: string; phase: string; manifest: string; result: string | null; observation: string | null;
+  };
+}
+
+function requestDeviceRecovery(f: ReturnType<typeof setup>) {
+  return f.coordinator.reconciliation.request({ ...owner, device_id: device.device_id }, "recover-input", "native-task",
+    f.kernel.inspect(owner, "native-task").revision, deviceRecord(f).effect_id);
+}
+
+test("device input pins only its prepared prefix and reports compact native proof; later arrivals stay pending", async () => {
+  const f = setup(), mailbox = new AgentMailbox(f.kernel), first = tellDevice(f, "first", "initial-context-token");
+  let late = "";
+  f.hooks.afterInput = () => {
+    expect(mailbox.inspect(owner, "native-task", first.message_id).status).toBe("pending");
+    expect(f.coordinatorDB.sql.query("SELECT COUNT(*) AS n FROM native_mailbox_deliveries").get()).toEqual({ n: 0 });
+    late = tellDevice(f, "late", "later-context-token").message_id;
+  };
+  f.hooks.afterDispatch = () => {
+    expect(mailbox.inspect(owner, "native-task", first.message_id).status).toBe("received");
+    expect(mailbox.inspect(owner, "native-task", late).status).toBe("pending");
+  };
+  expect((await f.worker.run("native-task", 5000)).status).toBe("done");
+  const row = deviceRecord(f), manifest = JSON.parse(row.manifest), result = JSON.parse(row.result!);
+  const input = f.commands.find(command => command.command[1] === "run")!.stdin_text!;
+  expect(input).toContain("initial-context-token"); expect(input).not.toContain("later-context-token");
+  expect(manifest.mailbox_delivery.messages.map((message: { message_id: string }) => message.message_id)).toEqual([first.message_id]);
+  expect(result.mailbox_delivery).toMatchObject({ message_ids: [first.message_id], native_user_message_id: result.user_message_id });
+  expect(mailbox.inspect(owner, "native-task", first.message_id).status).toBe("consumed");
+  expect(mailbox.inspect(owner, "native-task", late).status).toBe("pending");
+  const wire = f.completions[0]; expect(JSON.stringify(wire)).not.toContain("initial-context-token");
+  expect(JSON.stringify(wire)).not.toContain("later-context-token");
+  expect(await f.client.command("complete", wire.arguments, wire.request_id)).toMatchObject({ status: "done" });
+  expect(f.calls()).toBe(1);
+});
+
+test("initial input and later native-tool deliveries commit in sequence on a device", async () => {
+  const f = setup("normal", true), mailbox = new AgentMailbox(f.kernel), first = tellDevice(f, "initial", "first");
+  f.kernel.submit(owner, "peer", { task_id: "native-parent", chat_id: "chat", status: "waiting" });
+  let late = ""; f.hooks.afterDispatch = () => { late = tellDevice(f, "later", "second").message_id; };
+  f.hooks.beforeNative = () => {
+    expect(mailbox.inspect(owner, "native-task", first.message_id).status).toBe("received");
+    expect(mailbox.inspect(owner, "native-task", late).status).toBe("pending");
+  };
+  const result = await f.worker.run("native-task", 5000); expect(result.status).toBe("done");
+  expect(f.coordinatorDB.sql.query("SELECT message_id FROM native_mailbox_deliveries").all()).toEqual([{ message_id: first.message_id }]);
+  expect(f.coordinatorDB.sql.query("SELECT message_id FROM native_agent_deliveries").all()).toEqual([{ message_id: late }]);
+  expect(mailbox.inspect(owner, "native-task", first.message_id).status).toBe("consumed");
+  expect(mailbox.inspect(owner, "native-task", late).status).toBe("consumed");
+  expect(f.workerDB.sql.query("SELECT COUNT(*) AS n FROM messages").get()).toEqual({ n: 0 });
+});
+
+test("device completion rollback retains initial receipts for model-free reconciliation after expiry", async () => {
+  const f = setup(), mailbox = new AgentMailbox(f.kernel), message = tellDevice(f, "initial", "retain once", 10000);
+  f.coordinatorDB.sql.exec("CREATE TEMP TRIGGER fail_terminal BEFORE UPDATE OF status ON tasks WHEN NEW.status='done' BEGIN SELECT RAISE(ABORT,'fixture_commit_failure'); END");
+  expect((await f.worker.run("native-task", 5000)).status).toBe("unknown");
+  expect(deviceRecord(f).result).not.toBeNull();
+  expect(mailbox.inspect(owner, "native-task", message.message_id).status).toBe("received");
+  expect(f.coordinatorDB.sql.query("SELECT state FROM effects").get()).toEqual({ state: "unknown" });
+  f.coordinatorDB.sql.exec("DROP TRIGGER fail_terminal");
+  f.advance(20000);
+  expect(mailbox.pendingCount(owner, "native-task")).toBe(1);
+  const challenge = requestDeviceRecovery(f), reopened = f.recover();
+  expect(await reopened.worker.reconcile(challenge.challenge_id)).toMatchObject({ status: "done" });
+  expect(await reopened.worker.reconcile(challenge.challenge_id)).toMatchObject({ status: "done" });
+  expect(mailbox.inspect(owner, "native-task", message.message_id).status).toBe("consumed");
+  expect(f.calls()).toBe(1);
+});
+
+test("a native transcript missing the injected input cannot consume or reconcile the queued message", async () => {
+  const f = setup("altered-native-input"), mailbox = new AgentMailbox(f.kernel), message = tellDevice(f, "initial", "must be in native input");
+  expect((await f.worker.run("native-task", 5000)).status).toBe("unknown");
+  expect(deviceRecord(f).result).toBeNull(); expect(deviceRecord(f).observation).not.toBeNull();
+  const challenge = requestDeviceRecovery(f);
+  await expect(f.recover().worker.reconcile(challenge.challenge_id)).rejects.toThrow();
+  expect(mailbox.inspect(owner, "native-task", message.message_id).status).toBe("received");
+  expect(f.kernel.inspect(owner, "native-task").needs_reconciliation).toBe(true); expect(f.calls()).toBe(1);
+});
+
+for (const alteration of ["proof", "message"] as const) test(`changed device input ${alteration} cannot be accepted during recovery`, async () => {
+  const f = setup("lost-before-completion"), mailbox = new AgentMailbox(f.kernel), message = tellDevice(f, "initial", "original message");
+  expect((await f.worker.run("native-task", 5000)).status).toBe("unknown");
+  const challenge = requestDeviceRecovery(f), recovered = f.recover((command, control) => {
+    if (alteration === "proof") command.arguments.report.result.mailbox_delivery.delivery_digest = "a".repeat(64);
+    else control.kernel.db.sql.query("UPDATE messages SET payload=? WHERE message_id=?").run(canonical({ text: "changed" }), message.message_id);
+  });
+  await expect(recovered.worker.reconcile(challenge.challenge_id)).rejects.toThrow(alteration === "proof" ? "native_mailbox_delivery_unproven" : "native_mailbox_binding_changed");
+  expect(mailbox.inspect(owner, "native-task", message.message_id).status).toBe("received");
+  expect(f.kernel.inspect(owner, "native-task").needs_reconciliation).toBe(true); expect(f.calls()).toBe(1);
+});
+
+test("an initial device reservation failure rolls back all coordinator dispatch state before native execution", async () => {
+  const f = setup(), mailbox = new AgentMailbox(f.kernel), message = tellDevice(f, "initial", "must not dispatch");
+  f.coordinatorDB.sql.exec("CREATE TEMP TRIGGER fail_reserve BEFORE INSERT ON native_mailbox_deliveries BEGIN SELECT RAISE(ABORT,'fixture_reservation_failure'); END");
+  expect((await f.worker.run("native-task", 5000)).status).toBe("unavailable");
+  expect(f.calls()).toBe(0);
+  for (const table of ["native_mailbox_deliveries", "effects", "execution_manifests"])
+    expect(f.coordinatorDB.sql.query(`SELECT COUNT(*) AS n FROM ${table}`).get()).toEqual({ n: 0 });
+  expect(mailbox.inspect(owner, "native-task", message.message_id).status).toBe("pending");
+  expect(f.kernel.inspect(owner, "native-task").task.status).toBe("waiting");
+  expect(deviceRecord(f).phase).toBe("released");
+});
+
+test("input that expires during preparation releases only the unstarted episode", async () => {
+  const f = setup(), message = tellDevice(f, "expiring", "expires before dispatch", 1000);
+  f.hooks.afterInput = () => f.advance(2000);
+  expect((await f.worker.run("native-task", 5000)).status).toBe("unavailable");
+  expect(f.calls()).toBe(0);
+  expect(f.coordinatorDB.sql.query("SELECT COUNT(*) AS n FROM effects").get()).toEqual({ n: 0 });
+  expect(f.coordinatorDB.sql.query("SELECT COUNT(*) AS n FROM native_mailbox_deliveries").get()).toEqual({ n: 0 });
+  expect(f.kernel.inspect(owner, "native-task").task.status).toBe("waiting");
+  expect(deviceRecord(f).phase).toBe("released");
+  expect(new AgentMailbox(f.kernel).inspect(owner, "native-task", message.message_id).status).not.toBe("consumed");
+});
+
+test("lost dispatch acknowledgement cannot release an already committed delivery", async () => {
+  const f = setup("lost-dispatch"), message = tellDevice(f, "initial", "retain uncertain delivery");
+  expect((await f.worker.run("native-task", 5000)).status).toBe("unknown");
+  expect(f.calls()).toBe(0);
+  expect(f.coordinatorDB.sql.query("SELECT state FROM effects").get()).toEqual({ state: "unknown" });
+  expect(new AgentMailbox(f.kernel).inspect(owner, "native-task", message.message_id).status).toBe("received");
+  expect(deviceRecord(f).phase).toBe("unknown");
+  expect(f.kernel.inspect(owner, "native-task").needs_reconciliation).toBe(true);
+  await expect(f.worker.run("native-task", 5000)).rejects.toThrow("task_not_admitted");
+  expect(f.calls()).toBe(0);
+});
+
+for (const oversized of [false, true]) test(`device input capacity keeps a fitting prefix or refuses the first oversized message: ${oversized}`, async () => {
+  const f = setup(), snapshot = f.kernel.inspect(owner, "native-task"), mailbox = new AgentMailbox(f.kernel);
+  f.coordinatorDB.sql.query("UPDATE tasks SET raw=? WHERE task_id=?").run(canonical({ ...snapshot.task, prompt: "p".repeat(32768) }), "native-task");
+  f.coordinator.assign(owner, "long-prompt", "native-task", snapshot.revision, f.specification);
+  const first = tellDevice(f, "first", "a".repeat(oversized ? 32700 : 20000));
+  const second = oversized ? null : tellDevice(f, "second", "b".repeat(20000));
+  if (oversized) f.workerDB.sql.exec("DELETE FROM provider_checks");
+  const result = await f.worker.run("native-task", 5000);
+  expect(result.status).toBe(oversized ? "unavailable" : "done");
+  if (oversized) {
+    expect(f.calls()).toBe(0); expect(f.commands).toHaveLength(0);
+    expect(f.workerDB.sql.query("SELECT COUNT(*) AS n FROM provider_checks").get()).toEqual({ n: 0 });
+    expect(mailbox.inspect(owner, "native-task", first.message_id).status).toBe("pending");
+  } else {
+    expect(JSON.parse(deviceRecord(f).manifest).mailbox_delivery.messages.map((m: { message_id: string }) => m.message_id)).toEqual([first.message_id]);
+    expect(mailbox.inspect(owner, "native-task", first.message_id).status).toBe("consumed");
+    expect(mailbox.inspect(owner, "native-task", second!.message_id).status).toBe("pending");
   }
 });

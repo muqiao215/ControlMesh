@@ -78,7 +78,7 @@ export interface ControlMeshConfig {
 export interface DeviceCommand {
   "schema_version": "controlmesh.device_command.v1";
   "request_id": string;
-  "operation": "queue" | "inspect" | "claim" | "start" | "renew" | "dispatch" | "observe" | "complete" | "unknown" | "messages" | "send" | "ack" | "release" | "reconciliation" | "reconcile" | "native_call";
+  "operation": "queue" | "inspect" | "claim" | "start" | "renew" | "dispatch" | "observe" | "complete" | "unknown" | "messages" | "send" | "ack" | "release" | "reconciliation" | "reconcile" | "native_call" | "native_input";
   "arguments": Record<string, unknown>;
 }
 
@@ -94,6 +94,7 @@ export interface DeviceEvidenceRef {
   "observation_digest"?: string;
   "result_digest"?: string;
   "communication"?: NativeAgentScope;
+  "mailbox_delivery"?: NativeMailboxBinding;
 }
 
 export interface DeviceLeaseWindow {
@@ -110,6 +111,7 @@ export interface DeviceNativeResult {
   "evidence": DeviceEvidenceRef;
   "native_session": DeviceNativeSession;
   "communication"?: NativeAgentProof;
+  "mailbox_delivery"?: NativeMailboxProof;
 }
 
 export interface DeviceNativeSession {
@@ -224,6 +226,23 @@ export interface NativeAgentScope {
   "peer_tasks": string[];
   "parent_task": string | null;
   "client_digest": string;
+}
+
+export interface NativeMailboxBatch {
+  "schema_version": "controlmesh.native_mailbox.v1";
+  "task_id": string;
+  "messages": AgentMailboxMessage[];
+}
+
+export interface NativeMailboxBinding {
+  "delivery_digest": string;
+  "message_ids": string[];
+}
+
+export interface NativeMailboxProof {
+  "delivery_digest": string;
+  "message_ids": string[];
+  "native_user_message_id": string;
 }
 
 export interface ProviderCapability {

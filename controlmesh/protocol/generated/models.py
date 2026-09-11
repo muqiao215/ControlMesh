@@ -90,7 +90,7 @@ class DeviceCommand(BaseModel):
     model_config = ConfigDict(extra="allow")
     schema_version: Literal["controlmesh.device_command.v1"]
     request_id: str
-    operation: Literal["queue", "inspect", "claim", "start", "renew", "dispatch", "observe", "complete", "unknown", "messages", "send", "ack", "release", "reconciliation", "reconcile", "native_call"]
+    operation: Literal["queue", "inspect", "claim", "start", "renew", "dispatch", "observe", "complete", "unknown", "messages", "send", "ack", "release", "reconciliation", "reconcile", "native_call", "native_input"]
     arguments: dict[str, Any]
 
 
@@ -107,6 +107,7 @@ class DeviceEvidenceRef(BaseModel):
     observation_digest: str | None = None
     result_digest: str | None = None
     communication: NativeAgentScope | None = None
+    mailbox_delivery: NativeMailboxBinding | None = None
 
 
 class DeviceLeaseWindow(BaseModel):
@@ -125,6 +126,7 @@ class DeviceNativeResult(BaseModel):
     evidence: DeviceEvidenceRef
     native_session: DeviceNativeSession
     communication: NativeAgentProof | None = None
+    mailbox_delivery: NativeMailboxProof | None = None
 
 
 class DeviceNativeSession(BaseModel):
@@ -248,6 +250,26 @@ class NativeAgentScope(BaseModel):
     peer_tasks: list[str]
     parent_task: str | None
     client_digest: str
+
+
+class NativeMailboxBatch(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    schema_version: Literal["controlmesh.native_mailbox.v1"]
+    task_id: str
+    messages: list[AgentMailboxMessage]
+
+
+class NativeMailboxBinding(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    delivery_digest: str
+    message_ids: list[str]
+
+
+class NativeMailboxProof(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    delivery_digest: str
+    message_ids: list[str]
+    native_user_message_id: str
 
 
 class ProviderCapability(BaseModel):

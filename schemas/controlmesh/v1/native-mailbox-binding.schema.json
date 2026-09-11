@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.controlmesh.dev/controlmesh/v1/native-mailbox-binding.schema.json",
+  "title": "NativeMailboxBinding",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "delivery_digest",
+    "message_ids"
+  ],
+  "properties": {
+    "delivery_digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "message_ids": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+      }
+    }
+  }
+}

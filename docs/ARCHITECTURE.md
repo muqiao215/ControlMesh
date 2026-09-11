@@ -383,7 +383,8 @@ admission before verification; input-batch consumption precedes tool-message con
 effect confirmation and terminal task commit in one transaction. Explicit reconciliation
 uses the original native records without launching a model. Real local OpenCode/M3 acceptance
 covers all four tools between two Agents, existing parent-session recall and controller
-reopen with zero replay calls. Device-native communication and topology integration remain open.
+reopen with zero replay calls. The device extension is described below; topology integration
+remains open.
 
 The private `OpenCodeWorker` now connects kernel leases/effect receipts to actual native
 process supervision and terminal evidence. Its current profile is explicitly issued local
@@ -512,8 +513,15 @@ Its existing native call journal owns messages and reservations. Device results 
 bounded call hashes derived from actual native tool parts; completion and recovery compare
 every receipt to that journal before atomically consuming messages. Full native histories
 stay in the device evidence ledger. Long receives wait outside transactions and recheck
-revocation/assignment/lease authority; completed duplicates never repeat sends. Automatic
-device input-prefix batching and broader provider/fleet profiles remain in the active plan.
+revocation/assignment/lease authority; completed duplicates never repeat sends.
+
+Device initial input uses the existing native mailbox owner: read a bounded ordered prefix
+before preflight, retain the full batch device-locally, and send only IDs/digest with the
+dispatch reference. The coordinator reconstructs and reserves the exact current prefix
+atomically with dispatch. Verified native user-input evidence consumes this batch before
+later MCP deliveries during completion or reconciliation. Lost dispatch acknowledgements
+stay uncertain unless the coordinator proves the episode has no effects and fences it
+before release. Broader provider/fleet profiles and production activation remain open.
 
 Native dispatch and recovery share a persisted evidence boundary. Before execution,
 `OpenCodeWorker` commits a bounded manifest with the effect intent: source/provider/grant

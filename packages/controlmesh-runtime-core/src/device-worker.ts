@@ -9,6 +9,7 @@ import { canonical, digest, identifier, object, requireThat, RuntimeConflict } f
 import { ExecutionPolicyDenied } from "./execution-policy";
 import { ToolGrantDenied } from "./execution-grants";
 import { ProcessSupervisor, type ProcessSpec, type ProcessOutcome } from "./process-supervisor";
+import { decodeNativeMailbox, nativeInput, type NativeMailboxBatch } from "./providers/native-mailbox-input";
 
 export interface DeviceAdapterContext {
   job: DeviceJob;
@@ -16,6 +17,7 @@ export interface DeviceAdapterContext {
   authority: DeviceLeaseAuthority;
   assertCurrent: () => void;
   effect_id: string;
+  mailboxInput: () => Promise<NativeMailboxBatch | undefined>;
   nativeCall: (tool: string, input: Record<string, unknown>, signal: AbortSignal) => Promise<Record<string, unknown>>;
   runProcess: (spec: Omit<ProcessSpec, "cwd">) => Promise<ProcessOutcome>;
   dispatch: (manifest: Record<string, unknown>, intent: Record<string, unknown>) => Promise<DeviceEvidenceRef>;
@@ -138,6 +140,16 @@ export class DeviceWorker {
       assertCurrent();
       if (!preparedMode) await dispatch({ capability: job.capability, workspace_id: job.workspace_id, input_digest: digest(job.input) });
       const output = await adapter.execute({ job, workspace: workspace.path, authority, assertCurrent, effect_id: effect,
+        mailboxInput: async () => {
+          assertCurrent(); requireThat(preparedMode && !prepared && !attempted, "device_native_input_unavailable");
+          const response = await this.client.command("native_input", { lease: authority.lease });
+          assertCurrent();
+          if (response === null) return undefined;
+          const batch = decodeNativeMailbox(response);
+          requireThat(batch.task_id === job.task_id && typeof job.execution?.prompt === "string", "native_mailbox_task_mismatch");
+          nativeInput(job.execution.prompt, batch);
+          return batch;
+        },
         nativeCall: async (tool, input, signal) => {
           assertCurrent(); requireThat(preparedMode && dispatched && !verified, "device_native_channel_unavailable");
           const response = await this.client.command("native_call", { lease: authority.lease, effect_id: effect, tool, input },
@@ -189,6 +201,16 @@ export class DeviceWorker {
       const reason = error instanceof RuntimeConflict ? error.code : error instanceof ExecutionPolicyDenied ? error.decision.reason_code
         : error instanceof ToolGrantDenied ? error.reason_code : "device_preparation_unavailable";
       if (prepared) { try { journal!.unknown(effect); } catch { /* preserve the original durable record if storage is unavailable */ } }
+      if (preparedMode && attempted && !dispatched) {
+        // The coordinator atomically checks no dispatch occurred and advances the fence.
+        // A delayed dispatch request then fails; an already started episode cannot release.
+        try {
+          const released = await this.client.command("release", { lease: authority.lease, reason });
+          requireThat(object(released) && released.task_id === taskId && released.status === "waiting", "device_release_unproven");
+          if (prepared) journal!.released(effect);
+          return { status: "unavailable", reason };
+        } catch { /* unresolved transport/started effect still requires outcome reconciliation below */ }
+      }
       if (attempted) {
         // A lost dispatch or completion response is uncertain. Never repeat a native operation here.
         try { await this.client.command("unknown", { lease: authority.lease, reason: dispatched ? "worker_outcome_unproven" : "worker_admission_unproven" }); } catch { /* coordinator expiry recovery retains uncertainty */ }

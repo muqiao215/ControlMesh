@@ -248,7 +248,7 @@ covering source/sandbox policy, provider mapping, narrowing issuance and reply i
 It keeps the original goldens and separately exercises stricter TS admission rules. Native
 static tool expressions are retained; portable grant tokens have their own bounded format.
 
-Remaining before activation: reconciliation for the other execution profiles and abandonment policy, initial device mailbox input batching and general resume integration,
+Remaining before activation: reconciliation for the other execution profiles and abandonment policy, general resume integration,
 provider adapter/permission parity and non-Linux supervision, transport delivery, all other Python
 stores, other provider profiles over the device transport, the full native
 continuation matrix, SpecMesh lifecycle admission, full rollback and production-writer exclusion.
@@ -357,8 +357,23 @@ logical calls and message reservations in the existing schema-10 journal, while 
 retains full native evidence. A result supplies at most 32 call receipts containing only
 IDs/tool names and input/output hashes. Every recorded call must match; missing, altered
 or unresolved calls prevent completion and recovery. No device-local task/mailbox store
-is created. Messages already queued and messages arriving during a run can be received
-with the native tool; automatic input-prefix delivery for device runs remains open.
+is created. Messages arriving during a run can be received with the native tool.
+
+Before model preflight, device execution reads an ordered mailbox prefix through the
+lease-bound `native_input` command. The full input stays in the local manifest; wire
+references contain only ordered message IDs and a batch digest. Dispatch reserves that
+exact prefix in the same transaction as starting the episode. A changed, expired, skipped
+or already reserved prefix rejects dispatch. Later arrivals stay available to native MCP
+receive or a subsequent episode. Size limits keep a fitting prefix without truncating a
+message; an oversized first message rejects before spending a model probe.
+
+The device verifies the actual native user input and returns its message ID with the batch
+proof. Completion or recovery consumes this initial batch before later MCP deliveries, in
+the same transaction as accepting the result. A lost completion can reconcile retained
+evidence without executing again. A rejected dispatch may release the episode only after
+the coordinator atomically proves it has no effects and advances its fence; the retained
+local record then becomes `released`. Lost acknowledgement of a committed dispatch still
+requires reconciliation and never permits a repeated native call.
 
 Receive waits up to ten seconds outside transactions, with independent lease renewals.
 Identical concurrent calls coalesce, completed logical calls reuse their original response,

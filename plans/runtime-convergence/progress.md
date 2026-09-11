@@ -2,14 +2,20 @@
 
 ## Current
 
-Local native Agent communication is implemented and has real acceptance: two OpenCode
-Agents used scoped MCP send, ask_parent, receive and answer, with native record verification,
-existing parent-session recall and zero execution replay after control-process restart.
-Schema 10 and trusted per-task registration are described below and in runtime-core's
-README. Device-native communication and topology integration remain required next.
-The prior input-delivery baseline `3615a60` has verified green
-CI [34611652301](https://github.com/muqiao215/ControlMesh/actions/runs/34611652301);
-that baseline's CI does not substitute for this increment's verification.
+Published baseline `ae9861152eadb4e0fae1b40054df5191ef2ff752` includes cross-device native
+Agent communication and has verified green CI
+[34622269044](https://github.com/muqiao215/ControlMesh/actions/runs/34622269044).
+Two OpenCode Agents used scoped MCP send/ask_parent/receive/answer with the coordinator
+on ARM64 and execution on x64. Original-session recall and outcome reconciliation after
+coordinator reopen passed without executing another native command.
+
+Current increment: automatic device initial mailbox input, compact dispatch bindings and
+atomic reservation/consumption are implemented. CI-version Bun with the qualified Docker
+image passed 192 core tests / 2,500 assertions; TS, Web build, nine Python protocol tests,
+Ruff and the 512-module/57-field ownership drift check passed. Real ARM64-coordinator/x64
+OpenCode initial-input acceptance and independent readback passed, including lost completion,
+model-free recovery and original-session recall without redelivery. Publication of this
+increment is being completed; earlier CI is not its acceptance.
 
 Full goal active; CM-R0 through CM-R6 remain in progress and CM-R7 is not activated.
 Python v0.43.0 remains the released/installed production runtime. The private TS kernel now
@@ -363,3 +369,43 @@ running. It now waits for observed completion with a bounded deadline. The adjac
 restart fixture now waits for observed startup and drains its detached child, eliminating a
 closed-event-loop warning. Host-job tests: 10 passed; Ruff and TS passed. New exact-SHA CI
 must verify these test corrections; the earlier failed run is not treated as green.
+That follow-up subsequently passed at ae9861152eadb4e0fae1b40054df5191ef2ff752,
+CI 34622269044, as recorded in Current.
+
+## Device initial input increment
+
+The device reads its bounded ordered mailbox prefix before preflight. The full batch stays
+in its local manifest; coordinator references and result proofs carry IDs/digest and the
+actual native user-message ID. Dispatch atomically reserves the exact current prefix.
+Completion/recovery consumes the initial batch before later MCP deliveries. Rejected
+unstarted dispatch can release only through the coordinator's effect-free check and fence
+advance; a committed dispatch with a lost response stays unknown. No storage version bump
+is needed: existing reservation tables and the device ledger's text phase support this.
+
+Verification: 192 core tests / 2,500 assertions / 37.28 seconds on CI Bun 1.3.11 with the
+qualified Docker image. The 34 device tests cover bounded prefixes, later arrivals, combined
+initial/MCP delivery, transaction rollback, changed input/proof/content, expiry during
+preparation, lost dispatch acknowledgement and model-free recovery. A new test initially
+expected an unavailable result for a retry of an uncertain task; the existing admission API
+correctly rejects with task_not_admitted, and the test now asserts that contract.
+
+Real acceptance ran 2026-09-11 16:53:49–16:55:12 UTC (September 12 locally), using an ARM64
+coordinator and x64 OpenCode 1.18.29/M3 in the qualified container. A marker existed only in
+the queued message, outside the task prompts. The first native input and answer verified it.
+The completion request was deliberately withheld; coordinator/local database reopen and
+explicit recovery consumed the original message without any new native command. A second
+turn resumed the same session, recalled the marker, read the changed file and received no
+duplicate batch. Both effects/local records completed; readiness stayed at generation 1.
+One model preflight plus two task turns used nine native commands and three native model-run
+commands; provider API/billing counts were not measured. The device credential was revoked.
+Independent readback verified both actual native inputs/answers, prior-record hashes and
+final coordinator state, and found all nine container IDs and temporary remote artifacts/
+processes absent. No production installation, writer or service was changed.
+
+Private evidence in the shared task workspace: outputs/runtime-convergence/device-mailbox-
+acceptance.{ts,json,log} and device-mailbox-independent-verification.{ts,json}. An earlier
+preparation-only attempt used the wrong send API shape and made zero native/model calls;
+its raw report remains in its unique work directory. The readback script was corrected for
+the marker label and for inspecting an earlier turn after a later turn exists; native
+execution was not repeated for either readback correction. This closes the qualified device
+initial-input acceptance, not the complete runtime migration or production cutover.

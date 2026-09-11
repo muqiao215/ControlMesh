@@ -7,6 +7,8 @@ import { DeviceReconciliation } from "./device-reconciliation";
 import { canonical, digest, identifier, object, requireThat, RuntimeConflict } from "./value";
 import { setTimeout as delay } from "node:timers/promises";
 import { decodeNativeAgentScope, NativeAgentJournal } from "./providers/native-agent-journal";
+import { NativeMailboxDelivery } from "./providers/native-mailbox";
+import { nativeInput } from "./providers/native-mailbox-input";
 
 export interface DeviceRegistration {
   device_id: string;
@@ -55,6 +57,7 @@ export class DeviceCoordinator {
   private readonly pending = new Map<string, number>();
   private readonly rates = new Map<string, { since: number; count: number }>();
   private readonly mailbox: AgentMailbox;
+  private readonly nativeDelivery: NativeMailboxDelivery;
   private readonly nativeCalls = new Map<string, { digest: string; promise: Promise<Record<string, unknown>> }>();
   readonly reconciliation: DeviceReconciliation;
 
@@ -75,6 +78,7 @@ export class DeviceCoordinator {
       this.devices.set(device.device_id, device);
     }
     this.mailbox = new AgentMailbox(kernel);
+    this.nativeDelivery = new NativeMailboxDelivery(kernel);
     this.reconciliation = new DeviceReconciliation(kernel, (id, principal) => {
       const device = this.devices.get(id);
       requireThat(device && device.principal_id === principal && !this.revoked(id), "device_not_authorized");
@@ -236,10 +240,15 @@ export class DeviceCoordinator {
           requireThat(observation.terminal === true && observation.evidence?.observation_digest === result.evidence.observation_digest, "device_result_observation_mismatch");
           const handle = result.native_session as Record<string, unknown>;
           requireThat(handle.device_id === device.device_id && digest(handle.evidence) === digest(result.evidence), "device_native_handle_mismatch");
+          const effect = this.kernel.db.sql.query("SELECT state FROM effects WHERE effect_id=?").get(args.effect_id as string) as { state: string };
+          requireThat(Boolean(manifest.mailbox_delivery) === Boolean(result.mailbox_delivery), "native_mailbox_proof_required");
+          if (manifest.mailbox_delivery) {
+            const delivery = this.nativeDelivery.verifyDevice(actor, lease.task_id, manifest.mailbox_delivery, result.mailbox_delivery);
+            if (effect.state !== "confirmed") this.nativeDelivery.consume(actor, lease, args.effect_id as string, delivery.batch, delivery.verified);
+          }
           requireThat(Boolean(manifest.communication) === Boolean(result.communication), "native_agent_proof_required");
           if (manifest.communication) {
             const scope = decodeNativeAgentScope(manifest.communication), journal = new NativeAgentJournal(this.kernel);
-            const effect = this.kernel.db.sql.query("SELECT state FROM effects WHERE effect_id=?").get(args.effect_id as string) as { state: string };
             // Exact completion replay is checked by the existing kernel command receipts below.
             if (effect.state === "confirmed") journal.verifyDevice(args.effect_id as string, scope, result.communication);
             else journal.consumeDevice(actor, lease, args.effect_id as string, scope, result.communication);
@@ -257,6 +266,11 @@ export class DeviceCoordinator {
       switch (input.operation) {
         case "start": this.kernel.start(actor, request, lease); return this.window(actor, lease);
         case "renew": return this.window(actor, this.kernel.renew(actor, request, lease, args.ttl_ms as number));
+        case "native_input": {
+          requireThat(job.execution?.provider === "opencode" && typeof job.execution.prompt === "string"
+            && job.execution.prompt.length > 0 && Buffer.byteLength(job.execution.prompt) <= 32768, "native_device_input_unavailable");
+          return this.nativeDelivery.prepare(actor, lease, job.execution.prompt) ?? null;
+        }
         case "dispatch": {
           const manifest = args.manifest as Record<string, unknown> | undefined;
           requireThat(job.execution?.provider !== "opencode" || manifest, "device_native_manifest_required");
@@ -268,10 +282,17 @@ export class DeviceCoordinator {
             requireThat(scope.task_id === job.task_id && scope.episode_id === lease.episode_id && scope.fence === lease.fence
               && digest(scope.peer_tasks) === digest(job.peer_tasks ?? []) && scope.parent_task === (job.parent_task ?? null), "native_agent_assignment_changed");
           }
+          const delivery = manifest?.mailbox_delivery ? this.nativeDelivery.resolveBinding(actor, lease.task_id, manifest.mailbox_delivery) : undefined;
+          if (delivery) {
+            requireThat(job.execution?.provider === "opencode" && typeof job.execution.prompt === "string", "native_device_input_unavailable");
+            nativeInput(job.execution.prompt, delivery);
+          }
           // Prepared native adapters start and dispatch together after their device-local manifest is durable.
           const episode = this.kernel.db.sql.query("SELECT state FROM episodes WHERE episode_id=?").get(lease.episode_id) as { state: string };
           if (episode.state === "leased") this.kernel.start(actor, `${request}:start`, lease);
-          return this.kernel.dispatchEffect(actor, request, lease, args.effect_id as string, args.intent, manifest);
+          const permit = this.kernel.dispatchEffect(actor, request, lease, args.effect_id as string, args.intent, manifest);
+          if (permit.dispatch_permitted && delivery) this.nativeDelivery.reserve(actor, lease, args.effect_id as string, delivery);
+          return permit;
         }
         case "observe": {
           if (job.execution?.provider === "opencode") {

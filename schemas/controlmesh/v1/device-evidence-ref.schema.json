@@ -58,6 +58,9 @@
     },
     "communication": {
       "$ref": "native-agent-scope.schema.json"
+    },
+    "mailbox_delivery": {
+      "$ref": "native-mailbox-binding.schema.json"
     }
   }
 }

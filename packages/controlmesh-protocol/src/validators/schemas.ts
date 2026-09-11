@@ -355,7 +355,8 @@ export const controlmeshSchemas = {
         "release",
         "reconciliation",
         "reconcile",
-        "native_call"
+        "native_call",
+        "native_input"
       ]
     },
     "arguments": {
@@ -802,6 +803,25 @@ export const controlmeshSchemas = {
           }
         }
       }
+    },
+    {
+      "properties": {
+        "operation": {
+          "const": "native_input"
+        },
+        "arguments": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "lease"
+          ],
+          "properties": {
+            "lease": {
+              "$ref": "execution-lease.schema.json"
+            }
+          }
+        }
+      }
     }
   ]
 },
@@ -865,6 +885,9 @@ export const controlmeshSchemas = {
     },
     "communication": {
       "$ref": "native-agent-scope.schema.json"
+    },
+    "mailbox_delivery": {
+      "$ref": "native-mailbox-binding.schema.json"
     }
   }
 },
@@ -933,6 +956,9 @@ export const controlmeshSchemas = {
     },
     "communication": {
       "$ref": "native-agent-proof.schema.json"
+    },
+    "mailbox_delivery": {
+      "$ref": "native-mailbox-proof.schema.json"
     }
   }
 },
@@ -1457,6 +1483,94 @@ export const controlmeshSchemas = {
     "client_digest": {
       "type": "string",
       "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+},
+  "native-mailbox-batch.schema.json": {
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.controlmesh.dev/controlmesh/v1/native-mailbox-batch.schema.json",
+  "title": "NativeMailboxBatch",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "task_id",
+    "messages"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "controlmesh.native_mailbox.v1"
+    },
+    "task_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+    },
+    "messages": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": {
+        "$ref": "agent-mailbox-message.schema.json"
+      }
+    }
+  }
+},
+  "native-mailbox-binding.schema.json": {
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.controlmesh.dev/controlmesh/v1/native-mailbox-binding.schema.json",
+  "title": "NativeMailboxBinding",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "delivery_digest",
+    "message_ids"
+  ],
+  "properties": {
+    "delivery_digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "message_ids": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+      }
+    }
+  }
+},
+  "native-mailbox-proof.schema.json": {
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.controlmesh.dev/controlmesh/v1/native-mailbox-proof.schema.json",
+  "title": "NativeMailboxProof",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "delivery_digest",
+    "message_ids",
+    "native_user_message_id"
+  ],
+  "properties": {
+    "delivery_digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "message_ids": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+      }
+    },
+    "native_user_message_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
     }
   }
 },

@@ -5,6 +5,7 @@ import type { DeviceJob, DeviceRegistration } from "./device-coordinator";
 import type { Principal, RuntimeKernel } from "./kernel";
 import { canonical, digest, identifier, requireThat } from "./value";
 import { decodeNativeAgentScope, NativeAgentJournal } from "./providers/native-agent-journal";
+import { NativeMailboxDelivery } from "./providers/native-mailbox";
 
 interface RecoveryRow {
   challenge_id: string; principal: string; device_id: string; registration_digest: string; task_id: string;
@@ -115,6 +116,13 @@ export class DeviceReconciliation {
       this.kernel.admitReconciliationObservation(recovery, row.task_id, challenge.task_revision, binding, { ...observation }, challenge.challenge_id);
       const done = this.kernel.reconcileEffect(recovery, `reconcile-${challenge.challenge_id}`, row.task_id, challenge.task_revision, binding, () => {
         this.current(device, row, challenge);
+        requireThat(Boolean(challenge.manifest.mailbox_delivery) === Boolean(result.mailbox_delivery), "native_mailbox_proof_required");
+        if (challenge.manifest.mailbox_delivery) {
+          const original = this.kernel.inspectReconciliation(recovery, row.task_id, challenge.task_revision, challenge.manifest.effect_id);
+          const mailbox = new NativeMailboxDelivery(this.kernel);
+          const delivery = mailbox.verifyDevice(recovery, row.task_id, challenge.manifest.mailbox_delivery, result.mailbox_delivery);
+          mailbox.reconcile(recovery, original, delivery.batch, delivery.verified);
+        }
         requireThat(Boolean(challenge.manifest.communication) === Boolean(result.communication), "native_agent_proof_required");
         if (challenge.manifest.communication) {
           const original = this.kernel.inspectReconciliation(recovery, row.task_id, challenge.task_revision, challenge.manifest.effect_id);
