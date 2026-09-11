@@ -64,6 +64,12 @@ export class NativeSessionStore {
     return this.inspect(sessionId, (_db, reference) => reference);
   }
 
+  identity(): string {
+    const path = realpathSync(this.path), stat = statSync(path, { bigint: true });
+    requireThat(stat.isFile(), "native_store_not_regular");
+    return digest(["opencode-store-v2", this.deviceId, path, String(stat.dev), String(stat.ino)]);
+  }
+
   private inspect<T>(sessionId: string, collect: (db: Database, reference: NativeSessionRef) => T): T {
     requireThat(/^ses_[A-Za-z0-9]{1,192}$/.test(sessionId), "invalid_native_session_id");
     const path = realpathSync(this.path);

@@ -382,3 +382,17 @@ cannot extend work through a fixed heartbeat grace period. A lost/expired author
 revives from a delayed response. Repeated external dispatch remains denied and uncertain
 completion requires reconciliation. These controls fence coordinator writes and supervise
 cooperating process groups; they do not make an uncooperative external service transactional.
+
+## 2026-09-11 — Recover native results from before/after evidence, without repeating execution
+
+Persist the native dispatch manifest and retain the original observation separately from
+the accepted result. A later native reference alone cannot establish the original task,
+permissions, file state or session baseline. An explicit trusted verifier must independently
+check those bindings before the kernel atomically clears an unknown outcome. Missing evidence
+stays unknown. Never turn an unsuccessful acceptance check into an automatic model rerun.
+
+Required current-file reads are both an Agent instruction and an acceptance condition.
+OpenCode's custom Agent prompt replaces its model's default prompt; a generic instruction
+was insufficient in a real resumed turn, which reused old file contents. The worker now
+issues and inspects an explicit list of required fresh reads. Guidance does not replace
+verification: a terminal answer without the current native read remains unaccepted.

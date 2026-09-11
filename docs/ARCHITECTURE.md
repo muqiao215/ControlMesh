@@ -349,6 +349,16 @@ mailbox exchange without granting execution access to the peer task. This transp
 real synthetic x64/ARM64 evidence; native provider fleet adapters and production startup
 remain gated by the active plan.
 
+Native dispatch and recovery share a persisted evidence boundary. Before execution,
+`OpenCodeWorker` commits a bounded manifest with the effect intent: source/provider/grant
+binding, native session baseline, resolved permission evidence and file fingerprints. Original
+observations remain separate from accepted results. `NativeReconciler` independently checks
+that evidence under the native lock and passes a synchronous verifier to the kernel's
+revision/digest-bound acceptance transaction. It has no model/CLI invocation path. Only the
+qualified local read profile is supported; missing historical manifests and incomplete tool
+evidence remain unknown. Other runtime/store/profile recovery and production cutover remain
+in the convergence plan.
+
 ## Codekit integration (v0.43.0)
 
 See [CODEKIT-INTEGRATION](CODEKIT-INTEGRATION.md) for the new module boundary, public invocation and limits. This local implementation does not establish deployment acceptance.

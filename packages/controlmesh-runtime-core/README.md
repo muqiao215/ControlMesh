@@ -43,6 +43,12 @@ Track completion in [the repository plan](../../plans/runtime-convergence/task_p
   agent/session permissions, passes the prompt through bounded stdin, verifies native
   append lineage and required current-file reads, and atomically confirms the result.
   A real same-session marker-recall/current-file canary passed; see the active plan.
+- Before native dispatch, it atomically stores the task/provider/grant binding, native
+  baseline row hashes, permission attestation and bounded file fingerprints. Original
+  observations are retained separately from accepted results. `NativeReconciler` performs
+  explicit read-only verification after interruption and commits an accepted outcome with
+  a current revision and evidence-bound receipt. It does not call a model or run the CLI.
+  Missing/inconsistent evidence or an unperformed required read stays unknown.
 - `DeviceCoordinator` provides an explicitly started, Bearer-authenticated private worker
   port on loopback. Pinned SSH forwarding carries it to a second device. Trusted local
   registrations bind credential hashes to owners, device IDs, capabilities and logical
@@ -87,7 +93,7 @@ transactional state, cancellation, fencing, clock rollback, concurrent OS-proces
 SIGKILL before commit, lost external receipts, permission revocation and bounded mailboxes.
 All fixtures are synthetic; these tests do not touch provider accounts or operator state.
 
-Remaining before activation: operator/native reconciliation, tell/ask and general resume integration,
+Remaining before activation: reconciliation for the other execution profiles and abandonment policy, tell/ask and general resume integration,
 provider adapter/permission parity and non-Linux supervision, transport delivery, all other Python
 stores, native provider integration with the device transport, the full native
 continuation matrix, SpecMesh lifecycle admission, full rollback and production-writer exclusion.
@@ -123,3 +129,29 @@ owner; large fleet pagination/fairness remains required before production activa
 `scripts/device-canary-worker.ts` is an explicit synthetic acceptance driver, not a service
 entrypoint. It reads an owner-only mode-0600 configuration and runs only its fixed read/
 hold fixture. It never loads a model credential, sends bot traffic or starts a scheduler.
+
+## Native interruption recovery
+
+SQLite schema 5 adds immutable execution manifests and original effect observations. The
+manifest is committed with dispatch, before a provider invocation. A manifest failure
+rolls back episode start/dispatch; observation storage failure cannot leave half a receipt.
+The current native read profile is qualified against OpenCode 1.18.29. File evidence is
+bounded to 80 files, 4 MiB each and 16 MiB total; manifests are bounded to 16 MiB. Fingerprints
+include canonical path, file identity, metadata and SHA256, with descriptor/no-follow reads.
+
+After the current episode becomes unknown, a trusted owner calls `NativeReconciler.inspect`
+and explicitly `accept` with the observed revision and manifest/observation digests. The
+verifier rechecks the original task, current authorization, native-store identity, baseline
+and append lineage, permissions, workspace identity and required reads under the native
+advisory lock. Cancellation, changed evidence and another unresolved effect reject the
+decision. Commit records the accepted result, task outcome and reconciliation event together;
+receipt replay does not execute the provider or manufacture new execution authority.
+
+An actual worker SIGKILL after native observation but before task completion passed this
+flow with OpenCode/M3; a new process verified the original result without another model call,
+then continued the same session and read a changed current project file. The initial trial
+also reproduced a model reusing old file contents without a new read. CM rejected it. The
+issued Agent instructions now describe each required current-turn read, and native debug
+inspection checks that the instructions actually reached the selected Agent. Native read
+evidence remains mandatory even if the model ignores that guidance. No old unknown task was
+automatically rerun to obtain the successful trial.

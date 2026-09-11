@@ -4,7 +4,19 @@
 
 Full goal active. CM-R0 through CM-R6 are in progress. The private TS kernel executes a concrete local OpenCode read profile with native continuation and headless History integration. An authenticated coordinator/worker port now also has real x64/ARM64 synthetic acceptance. Python remains the released production runtime; no writer cutover or new runtime release is claimed.
 
+Current checkpoint: persisted native dispatch manifests, original observations and explicit verified reconciliation are implemented for the qualified OpenCode local read profile. Real SIGKILL/reopen/reconcile/same-session continuation passed. Full production migration remains incomplete.
+
 ## Done
+
+Native reconciliation checkpoint: SQLite schema 5 adds execution manifests and original effect observations. Dispatch and its manifest commit together before model execution; acceptance preserves the original observation and commits the result/task/event/receipt together. Native task/grant/config/session/workspace/file evidence is independently rechecked. Missing manifests, changed files/history/authorization, cancelled work and missing required reads remain unaccepted. Read-profile behavior is qualified against OpenCode 1.18.29.
+
+Verification: strict TypeScript check; actual Bun 1.3.11 ran 84 core tests / 406 assertions. This includes a real OS worker killed after durable observation, transactional manifest failure before model execution, reconstruction without in-memory baselines and rejection of stale evidence. Python ownership inventory is unchanged/current (512 modules, 57 persisted TaskEntry fields).
+
+Real native acceptance on 2026-09-11 used OpenCode 1.18.29 / M3. The harness suspended the worker immediately after its original observation committed and killed that process before task completion. A new process reopened SQLite and reconciled the original native read in 14 ms with zero model calls for reconciliation; repeated acceptance reused its receipt. A subsequent episode continued the same native session, recalled the earlier marker without reinjection and read the changed project file. Two original observations and two manifests remained, with two confirmed effects. No production writer/service cutover.
+
+The first real trial reconciled successfully but its follow-up model reused an old answer without reading the changed file. CM rejected that episode and retained it as unknown. Upstream source confirms a custom Agent prompt replaces the model's default prompt. The worker now explicitly supplies and inspects the current-turn required-read instructions, while retaining mandatory native read evidence. A new controlled trial passed; the old unknown task was not automatically rerun.
+
+Device checkpoint 5d76d8a164e8f0c2dbfe4cbe7619cb2e4dd0e609 has exact-SHA green CI 34581145600.
 
 Pushed checkpoints have exact-SHA green CI: kernel/mailbox f65cc27 (34550244752), process supervision 011510e (34572737074), persisted preflight 62d63ef454d99d246fdb186dd7d37e3ece2c121e (34575403674). The workflows include complete Python 3.11/3.12 suites, protocol/golden/SDK/Web, build and installed-wheel smoke. Commit history retains earlier implementation details.
 
@@ -32,4 +44,4 @@ No blocking condition. Legacy TaskRegistry construction performs destructive orp
 
 ## Next
 
-Implement explicit native outcome reconciliation; connect provider/source/grant enforcement to the device transport; integrate SpecMesh's independent checks against current checkout state. Keep released Python ownership until every activation gate passes.
+Connect provider/source/grant enforcement and native execution to the device transport; finish the other persisted-store/recovery owners and integrate SpecMesh's independent checks against current checkout state. Keep released Python ownership until every activation gate passes.

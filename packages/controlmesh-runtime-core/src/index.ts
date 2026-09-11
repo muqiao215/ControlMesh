@@ -1,6 +1,6 @@
 export { RuntimeDatabase } from "./database";
 export { RuntimeConflict } from "./value";
-export { RuntimeKernel, type Principal, type Lease, type TaskSnapshot } from "./kernel";
+export { RuntimeKernel, type Principal, type Lease, type TaskSnapshot, type ReconciliationBinding, type ReconciliationEvidence } from "./kernel";
 export { LegacyMigration, decodeSnapshot } from "./migration";
 export { AgentMailbox, type AgentMessage, type SendMessage } from "./mailbox";
 export { ProcessSupervisor, type ProcessSpec, type ProcessOutcome, type ProcessAdmission } from "./process-supervisor";
@@ -13,3 +13,4 @@ export { OpenCodeWorker, type OpenCodeWorkerConfig, type IssuedReadAdmission } f
 export { DeviceCoordinator, type DeviceRegistration, type DeviceAssignment, type DeviceJob } from "./device-coordinator";
 export { DeviceClient, DeviceLeaseAuthority, type DeviceClientOptions } from "./device-client";
 export { DeviceWorker, type DeviceAdapter, type DeviceAdapterContext, type DeviceWorkerOptions } from "./device-worker";
+export { NativeReconciler } from "./providers/native-reconciler";

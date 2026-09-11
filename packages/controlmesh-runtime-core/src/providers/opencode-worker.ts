@@ -10,6 +10,7 @@ import { NativeSessionLease } from "./native-lease";
 import { assertReadGrantSnapshot, inspectReadPermissions, readFileGrant, readOnlyEnvironment } from "./opencode-profile";
 import { failureFromNativeStderr, observeOpenCode } from "./opencode-events";
 import { PreflightCache, type ProbeBinding } from "./preflight-cache";
+import { assertWorkspaceManifest, directoryIdentity, nativeReadInstructions, nativeTaskDigest, permissionEvidence, snapshotReads, type NativeManifest } from "./native-manifest";
 
 interface Runner { run(spec: ProcessSpec, admission: ProcessAdmission): Promise<ProcessOutcome> }
 export interface OpenCodeWorkerConfig {
@@ -36,6 +37,7 @@ export class OpenCodeWorker {
 
   async execute(actor: Principal, lease: Lease, binding: ProbeBinding, admission: IssuedReadAdmission, timeoutMs = 60_000): Promise<TaskSnapshot> {
     requireThat(admission.source_scope === "local_foreground" && actor.origin === "human_request", "source_execution_floor_unavailable");
+    requireThat(binding.cli_version === "1.18.29", "native_permission_profile_unverified");
     requireThat(Number.isSafeInteger(timeoutMs) && timeoutMs >= 1000 && timeoutMs <= 300_000, "invalid_native_timeout");
     const snapshot = this.kernel.inspect(actor, lease.task_id);
     const task = snapshot.task;
@@ -54,14 +56,11 @@ export class OpenCodeWorker {
     const readPatterns = files.map(file => relative(worktree, file));
     const configurationDigest = digest(this.config.native_configuration);
     requireThat(configurationDigest === binding.config_digest && binding.provider === "opencode", "worker_provider_binding_mismatch");
-    const stableTask = () => {
-      const value = this.kernel.inspect(actor, lease.task_id).task;
-      return digest({ provider: value.provider, model: value.model, repo_root: value.repo_root, prompt: value.prompt,
-        native_session: value.native_session ?? null, tool_grant: value.tool_grant ?? null, execution_context: value.execution_context ?? null });
-    };
+    const stableTask = () => nativeTaskDigest(this.kernel.inspect(actor, lease.task_id).task);
     const issuedTask = stableTask(), issuedGrant = digest({ source: admission.source_scope, files, required });
     const temp = mkdtempSync(join(tmpdir(), "cm-native-worker-")), agent = `cm-worker-${randomUUID()}`;
     let lock: NativeSessionLease | null = null, baseline: NativeBaseline | null = null, dispatched = false;
+    let manifest: NativeManifest | null = null;
     const request = (operation: string) => `native-${digest([lease.episode_id, operation])}`;
     const effect = `native-${lease.episode_id}`;
     const assertCurrent = () => {
@@ -70,6 +69,7 @@ export class OpenCodeWorker {
       requireThat(digest(this.config.native_configuration) === configurationDigest, "native_configuration_changed");
       requireThat(digest({ source: admission.source_scope, files: readFileGrant(cwd, admission.read_files), required: readFileGrant(cwd, admission.required_reads) }) === issuedGrant, "issued_read_grant_changed");
       lock?.assertCurrent();
+      if (manifest) assertWorkspaceManifest(manifest);
       return admission.assertCurrent();
     };
     try {
@@ -80,23 +80,30 @@ export class OpenCodeWorker {
         this.store.validate(ref);
         baseline = this.store.baseline(ref);
       }
-      const env = readOnlyEnvironment(this.config.native_configuration, binding.model, this.config.environment, temp, agent, readPatterns,
-        "Continue the explicitly requested task. Only the issued read permissions are available. Report observations accurately.");
+      const instructions = nativeReadInstructions(required);
+      const env = readOnlyEnvironment(this.config.native_configuration, binding.model, this.config.environment, temp, agent, readPatterns, instructions);
       requireThat(realpathSync(join(env.XDG_DATA_HOME, "opencode/opencode.db")) === realpathSync(this.store.path), "native_environment_store_mismatch");
       const version = await this.runner.run({ command: [this.config.executable, "--version"], cwd, env, timeout_ms: 10_000, max_output_bytes: 1024 }, { assertCurrent });
       requireThat(version.reason === "exited" && version.exit_code === 0 && version.stdout.trim() === binding.cli_version, "native_cli_version_changed");
       const inspect = await this.runner.run({ command: [this.config.executable, "debug", "agent", agent, "--pure"], cwd, env, timeout_ms: 10_000, max_output_bytes: 512 * 1024 }, { assertCurrent });
       let resolved: unknown;
       try { resolved = JSON.parse(inspect.stdout); } catch { throw new Error("native_permission_inspection_failed"); }
+      requireThat(object(resolved) && resolved.prompt === instructions, "native_execution_instructions_changed");
       const permissions = inspectReadPermissions(resolved, agent, env.XDG_DATA_HOME, readPatterns, baseline?.permissions ?? []);
       requireThat(inspect.reason === "exited" && inspect.exit_code === 0 && permissions, "native_read_grant_unverified");
       assertCurrent();
       if (ref) this.store.validate(ref);
       this.cache.assertReady(actor, binding);
       const preflightGeneration = this.cache.inspect(actor, binding).generation!;
-      this.kernel.start(actor, request("start"), lease);
-      const permit = this.kernel.dispatchEffect(actor, request("dispatch"), lease, effect,
-        { provider: "opencode", model: binding.model, native_revision: ref?.revision ?? null, prompt_digest: digest(task.prompt), grant_digest: issuedGrant, permission_digest: permissions.digest });
+      manifest = { schema_version: "controlmesh.native_dispatch.v1", task_digest: issuedTask, binding: structuredClone(binding), native_store_id: this.store.identity(), baseline,
+        directory: directoryIdentity(cwd), worktree: directoryIdentity(worktree), files: snapshotReads(cwd, files), required_reads: required,
+        permission_evidence: permissionEvidence(resolved, agent, env.XDG_DATA_HOME, worktree, files, baseline) };
+      const permit = this.kernel.db.transaction(() => {
+        assertCurrent();
+        this.kernel.start(actor, request("start"), lease);
+        return this.kernel.dispatchEffect(actor, request("dispatch"), lease, effect,
+          { provider: "opencode", model: binding.model, native_revision: ref?.revision ?? null, prompt_digest: digest(task.prompt), grant_digest: issuedGrant, permission_digest: permissions.digest }, manifest!);
+      });
       requireThat(permit.dispatch_permitted, "native_request_already_dispatched");
       dispatched = true;
       const result = await this.runner.run({ command: [this.config.executable, "run", "--pure", "--format", "json", "--dir", cwd, "--agent", agent, "--model", binding.model,
@@ -108,10 +115,12 @@ export class OpenCodeWorker {
         { native_session_id: observation.session_id, text: observation.text, terminal: observation.terminal, failure: observation.failure, invalid_reason: observation.invalid_reason, process_reason: result.reason, exit_code: result.exit_code });
       requireThat(observation.terminal && observation.session_id, observation.failure?.code ?? observation.invalid_reason ?? "native_completion_unproven");
       assertCurrent();
+      assertWorkspaceManifest(manifest, true);
       const evidence = this.store.verifyTurn(observation.session_id, baseline, task.prompt, observation.text);
       requireThat(evidence.reference.directory === cwd && evidence.reference.model === binding.model, "native_result_binding_mismatch");
       requireThat(this.store.worktree(evidence.reference) === worktree, "native_worktree_changed");
       requireThat(required.every(file => evidence.read_files.some(read => realpathSync(read) === file)), "required_native_read_unproven");
+      requireThat(evidence.read_files.every(file => files.includes(realpathSync(file))), "native_ungranted_read");
       const accepted = { native_session: evidence.reference, user_message_id: evidence.user_message_id, assistant_message_ids: evidence.assistant_message_ids,
         text: observation.text, output_digest: digest(observation.text), permission_digest: permissions.digest, read_files: evidence.read_files };
       // Store result, effect confirmation and terminal transition together; lost acknowledgement is replay-safe.

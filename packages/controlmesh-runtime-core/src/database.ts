@@ -26,7 +26,7 @@ export class RuntimeDatabase {
       this.transaction(() => {
         const version = (this.sql.query("PRAGMA user_version").get() as { user_version: number }).user_version;
         const app = (this.sql.query("PRAGMA application_id").get() as { application_id: number }).application_id;
-        requireThat(version >= 0 && version <= 4, "unsupported_database_version");
+        requireThat(version >= 0 && version <= 5, "unsupported_database_version");
         requireThat(app === 0 || app === APPLICATION_ID, "foreign_database");
         if (version === 0) {
           const tables = this.sql.query("SELECT name FROM sqlite_master WHERE type='table'").all();
@@ -105,6 +105,19 @@ export class RuntimeDatabase {
               device_id TEXT PRIMARY KEY, principal TEXT NOT NULL, revoked_at INTEGER NOT NULL
             );
             PRAGMA user_version = 4;
+          `);
+        }
+        if (version < 5) {
+          this.sql.exec(`
+            CREATE TABLE execution_manifests (
+              effect_id TEXT PRIMARY KEY REFERENCES effects(effect_id),
+              digest TEXT NOT NULL, payload TEXT NOT NULL
+            );
+            CREATE TABLE effect_observations (
+              effect_id TEXT PRIMARY KEY REFERENCES effects(effect_id),
+              digest TEXT NOT NULL, payload TEXT NOT NULL
+            );
+            PRAGMA user_version = 5;
           `);
         }
       });

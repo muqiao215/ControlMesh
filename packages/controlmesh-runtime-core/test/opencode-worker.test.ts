@@ -1,19 +1,19 @@
 import { afterEach, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { OpenCodeWorker, NativeSessionStore, PreflightCache, RuntimeDatabase, RuntimeKernel, type Principal, type ProbeBinding, type ProcessSpec, type ProcessOutcome } from "../src";
+import { OpenCodeWorker, NativeReconciler, NativeSessionStore, PreflightCache, RuntimeDatabase, RuntimeKernel, type Principal, type ProbeBinding, type ProcessSpec, type ProcessOutcome } from "../src";
 import { digest } from "../src/value";
 import fixture from "./fixtures/native-session-v2.json";
 
 const dirs: string[] = [], databases: RuntimeDatabase[] = [];
 afterEach(() => { for (const db of databases.splice(0)) db.close(); for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
-const actor: Principal = { id: "operator", device_id: "device", origin: "human_request", scopes: ["task:create", "task:read", "task:execute", "task:resume", "task:cancel", "provider:probe"] };
+const actor: Principal = { id: "operator", device_id: "device", origin: "human_request", scopes: ["task:create", "task:read", "task:execute", "task:resume", "task:cancel", "provider:probe", "task:reconcile"] };
 const grant = { schema_version: "controlmesh.tool_grant.v1", tool_allow: [], tool_deny: [], writable_roots: [], network_policy: "sandbox_default", confirmation_policy: "provider_runtime" };
 function result(stdout: string): ProcessOutcome { return { reason: "exited", exit_code: 0, stdout, stderr: "", duration_ms: 1 }; }
 
-function setup(mode: "success" | "concurrent" | "old_edit" | "lost" | "cancel" = "success") {
+function setup(mode: "success" | "concurrent" | "old_edit" | "lost" | "cancel" | "commit_lost" = "success") {
   const dir = mkdtempSync(join(tmpdir(), "cm-native-worker-test-")); dirs.push(dir);
   const data = join(dir, "data"); mkdirSync(join(data, "opencode"), { recursive: true });
   const path = join(data, "opencode/opencode.db"), native = new Database(path);
@@ -24,7 +24,7 @@ function setup(mode: "success" | "concurrent" | "old_edit" | "lost" | "cancel" =
   native.query("UPDATE session SET directory=?,permission=NULL").run(dir);
   native.query("UPDATE message SET data=? WHERE id='msg_Z'").run(JSON.stringify({ role: "assistant", parentID: "msg_A", providerID: "fixture", modelID: "model", finish: "stop", time: { completed: 2 } }));
   native.close();
-  const db = new RuntimeDatabase(":memory:"); databases.push(db);
+  const runtimePath = join(dir, "runtime.sqlite"), db = new RuntimeDatabase(runtimePath); databases.push(db);
   const kernel = new RuntimeKernel(db), cache = new PreflightCache(db), store = new NativeSessionStore(path, actor.device_id!);
   const binding: ProbeBinding = { provider: "opencode", model: "fixture/model", device_id: actor.device_id!, cli_version: "1.18.29", config_digest: digest({}), credential_revision: "fixture", permission_profile: "read-v1" };
   const permit = cache.begin(actor, "probe", binding).permit!;
@@ -34,11 +34,16 @@ function setup(mode: "success" | "concurrent" | "old_edit" | "lost" | "cancel" =
   const snapshot = kernel.submit(actor, "create", { task_id: "task", chat_id: "fixture", status: "waiting", provider: "opencode", model: binding.model, repo_root: dir,
     prompt: "Continue the known decision", native_session: ref, tool_grant: grant, execution_context: { origin: "user", source_scope: "local_foreground" } });
   let nativeCalls = 0;
-  const worker = new OpenCodeWorker(kernel, cache, store, { executable: "/fixture/opencode", state_home: dir, native_configuration: {}, environment: { HOME: dir, XDG_DATA_HOME: data } }, {
+  const config = { executable: "/fixture/opencode", state_home: dir, native_configuration: {}, environment: { HOME: dir, XDG_DATA_HOME: data } };
+  const worker = new OpenCodeWorker(kernel, cache, store, config, {
     async run(spec) {
       commands.push(spec);
       if (spec.command[1] === "--version") return result(binding.cli_version);
-      if (spec.command[1] === "debug") return result(JSON.stringify({ name: spec.command[3], mode: "primary", permission: [{ permission: "*", pattern: "*", action: "deny" }], tools: { read: {}, bash: {} } }));
+      if (spec.command[1] === "debug") {
+        const reads = JSON.parse(spec.env.OPENCODE_PERMISSION).read ?? {};
+        return result(JSON.stringify({ name: spec.command[3], mode: "primary", prompt: JSON.parse(spec.env.OPENCODE_CONFIG_CONTENT).agent[spec.command[3]].prompt, permission: [{ permission: "*", pattern: "*", action: "deny" },
+          ...Object.keys(reads).map(pattern => ({ permission: "read", pattern, action: "allow" }))], tools: { read: {}, bash: {} } }));
+      }
       nativeCalls++;
       expect(spec.command[spec.command.indexOf("--session") + 1]).toBe(ref.session_id);
       if (mode === "lost") return { ...result(""), reason: "deadline", exit_code: null };
@@ -56,8 +61,9 @@ function setup(mode: "success" | "concurrent" | "old_edit" | "lost" | "cancel" =
       return result([{ type: "text", sessionID: ref.session_id, part: { text: "recalled" } }, { type: "step_finish", sessionID: ref.session_id, part: { reason: "stop" } }].map(x => JSON.stringify(x)).join("\n"));
     },
   });
-  const admission = { source_scope: "local_foreground" as const, read_files: [], required_reads: [], assertCurrent() {} };
-  return { db, kernel, worker, binding, admission, commands, nativeCalls: () => nativeCalls, lease: () => kernel.claim(actor, `claim-${kernel.inspect(actor, "task").revision}`, "task", kernel.inspect(actor, "task").revision, 60_000), snapshot };
+  const admission = { source_scope: "local_foreground" as const, read_files: [] as string[], required_reads: [] as string[], assertCurrent() {} };
+  if (mode === "commit_lost") db.sql.exec("CREATE TEMP TRIGGER lose_commit BEFORE INSERT ON events WHEN NEW.kind='task.done' BEGIN SELECT RAISE(ABORT,'synthetic_commit_lost'); END");
+  return { dir, path, runtimePath, config, store, db, kernel, worker, binding, admission, commands, nativeCalls: () => nativeCalls, lease: () => kernel.claim(actor, `claim-${kernel.inspect(actor, "task").revision}`, "task", kernel.inspect(actor, "task").revision, 60_000), snapshot };
 }
 
 test("worker confirms actual native append and persists the same session for an explicit resumed episode", async () => {
@@ -97,4 +103,91 @@ test("schedule-origin actor cannot use the local read worker even with identical
   const f = setup();
   await expect(f.worker.execute({ ...actor, origin: "schedule" }, f.lease(), f.binding, f.admission)).rejects.toThrow("source_execution_floor_unavailable");
   expect(f.commands).toHaveLength(0);
+});
+
+test("lost terminal commit reconciles from persisted before/after evidence after coordinator reopen, with no native rerun", async () => {
+  const f = setup("commit_lost"), lease = f.lease();
+  await expect(f.worker.execute(actor, lease, f.binding, f.admission)).rejects.toThrow("synthetic_commit_lost");
+  const revision = f.kernel.inspect(actor, "task").revision;
+  databases.splice(databases.indexOf(f.db), 1); f.db.close();
+  const db = new RuntimeDatabase(f.runtimePath); databases.push(db);
+  const kernel = new RuntimeKernel(db), reconciler = new NativeReconciler(kernel, f.store, f.config);
+  const candidate = reconciler.inspect(actor, "task", revision, `native-${lease.episode_id}`);
+  const result = reconciler.accept(actor, "accept", "task", revision, candidate, f.binding, f.admission);
+  expect(result.task.status).toBe("done"); expect(result.needs_reconciliation).toBe(false);
+  expect(reconciler.accept(actor, "accept", "task", revision, candidate, f.binding, f.admission)).toEqual(result);
+  expect(db.sql.query("SELECT COUNT(*) AS n FROM events WHERE kind='task.done'").get()).toEqual({ n: 1 });
+  expect(db.sql.query("SELECT COUNT(*) AS n FROM effect_observations").get()).toEqual({ n: 1 });
+  const next = kernel.resume(actor, "resume-reconciled", "task", result.revision, "continue reviewed work");
+  expect(next.task.native_session).toMatchObject({ session_id: fixture.session_id });
+  expect(f.nativeCalls()).toBe(1);
+});
+
+test("reconciliation refuses changed files, native history, authorization and corrupted/missing evidence", async () => {
+  for (const mutation of ["file", "native", "grant", "config", "manifest", "observation", "cancel"] as const) {
+    const f = setup("commit_lost"), file = join(f.dir, "PROJECT.md");
+    writeFileSync(file, "original context"); f.admission.read_files.push(file);
+    const lease = f.lease();
+    await expect(f.worker.execute(actor, lease, f.binding, f.admission)).rejects.toThrow("synthetic_commit_lost");
+    f.db.sql.exec("DROP TRIGGER lose_commit");
+    const reconciler = new NativeReconciler(f.kernel, f.store, f.config), revision = f.kernel.inspect(actor, "task").revision;
+    const candidate = reconciler.inspect(actor, "task", revision, `native-${lease.episode_id}`);
+    if (mutation === "file") writeFileSync(file, "changed context");
+    if (mutation === "native") { const native = new Database(f.path); native.query("UPDATE part SET data='{}' WHERE id='part_A'").run(); native.close(); }
+    if (mutation === "grant") f.admission.read_files.length = 0;
+    if (mutation === "config") f.config.native_configuration = { changed: true };
+    if (mutation === "manifest") f.db.sql.query("UPDATE execution_manifests SET payload='{}'").run();
+    if (mutation === "observation") f.db.sql.query("DELETE FROM effect_observations").run();
+    if (mutation === "cancel") f.kernel.cancel(actor, "cancel-before-review", "task", revision);
+    expect(() => reconciler.accept(actor, "reject-stale", "task", revision, candidate, f.binding, f.admission)).toThrow();
+    expect(f.kernel.inspect(actor, "task").task.status).toBe(mutation === "cancel" ? "cancelled" : "stale");
+    expect(f.db.sql.query("SELECT state FROM effects").get()).toEqual({ state: "unknown" });
+    expect(f.nativeCalls()).toBe(1);
+  }
+});
+
+test("nonterminal native observation and old dispatch without a manifest remain unknown", async () => {
+  const f = setup("lost"), lease = f.lease();
+  await expect(f.worker.execute(actor, lease, f.binding, f.admission)).rejects.toThrow();
+  const reconciler = new NativeReconciler(f.kernel, f.store, f.config), revision = f.kernel.inspect(actor, "task").revision;
+  const candidate = reconciler.inspect(actor, "task", revision, `native-${lease.episode_id}`);
+  expect(() => reconciler.accept(actor, "nonterminal", "task", revision, candidate, f.binding, f.admission)).toThrow("native_completion_unproven");
+  f.db.sql.query("DELETE FROM execution_manifests").run();
+  expect(() => reconciler.inspect(actor, "task", revision, `native-${lease.episode_id}`)).toThrow("dispatch_manifest_unavailable");
+  expect(f.kernel.inspect(actor, "task").needs_reconciliation).toBe(true);
+  expect(f.nativeCalls()).toBe(1);
+});
+
+test("agent origins and asynchronous verifiers cannot accept an uncertain native result", async () => {
+  const f = setup("commit_lost"), lease = f.lease();
+  await expect(f.worker.execute(actor, lease, f.binding, f.admission)).rejects.toThrow();
+  const reconciler = new NativeReconciler(f.kernel, f.store, f.config), revision = f.kernel.inspect(actor, "task").revision;
+  const candidate = reconciler.inspect(actor, "task", revision, `native-${lease.episode_id}`);
+  expect(() => reconciler.accept({ ...actor, origin: "agent_message" }, "agent", "task", revision, candidate, f.binding, f.admission)).toThrow("trusted_reconciliation_required");
+  const asyncVerifier = (async () => { throw new Error("async verifier"); }) as unknown as () => Record<string, unknown>;
+  expect(() => f.kernel.reconcileEffect(actor, "async", "task", revision, candidate, asyncVerifier)).toThrow("verifier_must_be_synchronous");
+  expect(f.kernel.inspect(actor, "task").task.status).toBe("stale");
+});
+
+test("manifest persistence failure rolls back dispatch before any native model execution", async () => {
+  const f = setup();
+  f.db.sql.exec("CREATE TEMP TRIGGER reject_manifest BEFORE INSERT ON execution_manifests BEGIN SELECT RAISE(ABORT,'manifest_storage_failure'); END");
+  await expect(f.worker.execute(actor, f.lease(), f.binding, f.admission)).rejects.toThrow("manifest_storage_failure");
+  expect(f.nativeCalls()).toBe(0);
+  expect(f.db.sql.query("SELECT COUNT(*) AS n FROM effects").get()).toEqual({ n: 0 });
+  expect(f.db.sql.query("SELECT COUNT(*) AS n FROM events WHERE kind='episode.started'").get()).toEqual({ n: 0 });
+  expect(f.db.sql.query("SELECT state FROM episodes").get()).toEqual({ state: "leased" });
+});
+
+test("a terminal model answer without the required current read is never accepted or reconciled", async () => {
+  const f = setup(), file = join(f.dir, "PROJECT.md");
+  writeFileSync(file, "current project context");
+  f.admission.read_files.push(file); f.admission.required_reads.push(file);
+  const lease = f.lease();
+  await expect(f.worker.execute(actor, lease, f.binding, f.admission)).rejects.toThrow("required_native_read_unproven");
+  const state = f.kernel.inspect(actor, "task"), reconciler = new NativeReconciler(f.kernel, f.store, f.config);
+  const candidate = reconciler.inspect(actor, "task", state.revision, `native-${lease.episode_id}`);
+  expect(() => reconciler.accept(actor, "no-read", "task", state.revision, candidate, f.binding, f.admission)).toThrow("required_native_read_unproven");
+  expect(f.kernel.inspect(actor, "task").needs_reconciliation).toBe(true);
+  expect(f.nativeCalls()).toBe(1);
 });

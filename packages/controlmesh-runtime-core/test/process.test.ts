@@ -76,6 +76,30 @@ test("actual Python TaskEntry serializer fixture round-trips without dropped fie
   } finally { db.close(); }
 });
 
+test("SIGKILL after observing an effect preserves its dispatch manifest and original result for explicit reconciliation", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "cm-evidence-crash-")), path = join(dir, "runtime.sqlite"), barrier = join(dir, "observed.json");
+  const child = Bun.spawn([process.execPath, worker, "observed", path, barrier], { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
+  try {
+    await waitForFile(barrier);
+    const lease = await Bun.file(barrier).json();
+    child.kill("SIGKILL"); await child.exited;
+    const db = new RuntimeDatabase(path);
+    try {
+      const kernel = new RuntimeKernel(db), owner: Principal = { ...actor, device_id: lease.device_id, scopes: [...actor.scopes, "task:execute", "task:reconcile"] };
+      kernel.markUnknown(owner, "observed-death", lease, "worker_process_exited");
+      const revision = kernel.inspect(owner, "observed").revision;
+      const evidence = kernel.inspectReconciliation(owner, "observed", revision, "effect");
+      expect(evidence.manifest).toEqual({ before: "durable" });
+      expect(evidence.observation).toEqual({ after: "durable" });
+      expect(db.sql.query("PRAGMA integrity_check").get()).toEqual({ integrity_check: "ok" });
+      expect(kernel.inspect(owner, "observed").task.status).toBe("stale");
+    } finally { db.close(); }
+  } finally {
+    if (child.exitCode === null) child.kill("SIGKILL");
+    await child.exited; rmSync(dir, { recursive: true, force: true });
+  }
+}, 10_000);
+
 test("received mailbox items survive closing and reopening the on-disk runtime", () => {
   const dir = mkdtempSync(join(tmpdir(), "cm-mailbox-restart-"));
   const path = join(dir, "runtime.sqlite");
@@ -97,7 +121,7 @@ test("received mailbox items survive closing and reopening the on-disk runtime",
   } finally { db.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("schema v1 upgrades transactionally to v4 without replacing tasks or their metadata", () => {
+test("schema v1 upgrades transactionally to v5 without replacing tasks or their metadata", () => {
   const dir = mkdtempSync(join(tmpdir(), "cm-schema-upgrade-"));
   const path = join(dir, "runtime.sqlite");
   let db = new RuntimeDatabase(path);
@@ -105,10 +129,10 @@ test("schema v1 upgrades transactionally to v4 without replacing tasks or their 
     const kernel = new RuntimeKernel(db);
     const original = kernel.submit(actor, "create", { task_id: "upgrade", chat_id: "synthetic", status: "waiting", future: { preserved: true } });
     // Restore the exact v1 table set before replaying the additive migrations.
-    db.sql.exec("DROP TABLE provider_checks; DROP TABLE device_assignments; DROP TABLE device_revocations; PRAGMA user_version=1");
+    db.sql.exec("DROP TABLE provider_checks; DROP TABLE device_assignments; DROP TABLE device_revocations; DROP TABLE execution_manifests; DROP TABLE effect_observations; PRAGMA user_version=1");
     db.close();
     db = new RuntimeDatabase(path);
-    expect(db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 4 });
+    expect(db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 5 });
     expect(new RuntimeKernel(db).inspect(actor, "upgrade")).toEqual(original);
     expect(db.sql.query("SELECT COUNT(*) AS n FROM provider_checks").get()).toEqual({ n: 0 });
   } finally { db.close(); rmSync(dir, { recursive: true, force: true }); }

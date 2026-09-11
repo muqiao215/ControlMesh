@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { RuntimeDatabase } from "./database";
 import { command, requireScope } from "./commands";
 import { assertProtocolSchema, type ExecutionLease } from "@controlmesh/protocol";
-import { canonical, digest, identifier, legacyTask, requireThat, terminal, type LegacyTask, type TaskStatus } from "./value";
+import { canonical, digest, identifier, legacyTask, object, requireThat, terminal, type LegacyTask, type TaskStatus } from "./value";
 
 /** Constructed by trusted ingress, never deserialized from the request body. */
 export interface Principal {
@@ -25,6 +25,21 @@ export interface TaskSnapshot {
   active_episode: string | null; needs_reconciliation: boolean;
 }
 export type Lease = ExecutionLease;
+export interface ReconciliationEvidence {
+  task: TaskSnapshot;
+  episode: { episode_id: string; device_id: string; fence: number };
+  effect_id: string;
+  manifest_digest: string;
+  manifest: Record<string, unknown>;
+  observation_digest: string;
+  observation: Record<string, unknown>;
+}
+export interface ReconciliationBinding {
+  episode_id: string;
+  effect_id: string;
+  manifest_digest: string;
+  observation_digest: string;
+}
 
 export class RuntimeKernel {
   constructor(readonly db: RuntimeDatabase) {}
@@ -273,16 +288,21 @@ export class RuntimeKernel {
   }
 
   /** Recorded BEFORE handing an operation to an external provider. This is not a distributed exactly-once guarantee. */
-  dispatchEffect(actor: Principal, requestId: string, proof: Lease, effectId: string, intent: unknown): { effect_id: string; dispatch_permitted: boolean } {
+  dispatchEffect(actor: Principal, requestId: string, proof: Lease, effectId: string, intent: unknown, manifest?: Record<string, unknown>): { effect_id: string; dispatch_permitted: boolean } {
     this.scope(actor, "task:execute");
     this.owned(actor, this.row(proof.task_id));
     identifier(effectId);
-    return this.request<{ effect_id: string; dispatch_permitted: boolean }>(actor, requestId, "dispatch_effect", { proof, effectId, intent }, () => {
+    const manifestText = manifest === undefined ? null : canonical(manifest);
+    requireThat(manifestText === null || Buffer.byteLength(manifestText) <= 16 * 1024 * 1024, "execution_manifest_too_large");
+    // Omitted manifests preserve pre-v5 request identity; old receipts are never retrofitted as evidence.
+    return this.request<{ effect_id: string; dispatch_permitted: boolean }>(actor, requestId, "dispatch_effect", { proof, effectId, intent,
+      ...(manifest === undefined ? {} : { manifest_digest: digest(manifest) }) }, () => {
       const { task, episode } = this.lease(actor, proof);
       requireThat(episode.state === "running", "episode_not_started");
       requireThat(!this.db.sql.query("SELECT 1 FROM effects WHERE effect_id=?").get(effectId), "effect_id_conflict");
       this.db.sql.query("INSERT INTO effects (effect_id,task_id,episode_id,fence,digest,state) VALUES (?,?,?,?,?,'dispatched')")
         .run(effectId, proof.task_id, proof.episode_id, proof.fence, digest(intent));
+      if (manifestText !== null) this.db.sql.query("INSERT INTO execution_manifests VALUES (?,?,?)").run(effectId, digest(manifest), manifestText);
       this.event(actor, task, "effect.dispatched", { effect_id: effectId, intent_digest: digest(intent) });
       return { effect_id: effectId, dispatch_permitted: true };
     }, value => ({ ...value, dispatch_permitted: false }));
@@ -310,8 +330,70 @@ export class RuntimeKernel {
       const changed = this.db.sql.query("UPDATE effects SET result=? WHERE effect_id=? AND episode_id=? AND fence=? AND state='dispatched' AND result IS NULL")
         .run(canonical(observation), effectId, proof.episode_id, proof.fence);
       requireThat(changed.changes === 1, "effect_observation_not_pending");
+      this.db.sql.query("INSERT INTO effect_observations VALUES (?,?,?)").run(effectId, digest(observation), canonical(observation));
       this.event(actor, task, "effect.observed", { effect_id: effectId, observation_digest: digest(observation), accepted: false });
       return { effect_id: effectId };
+    });
+  }
+
+  private reconcileScope(actor: Principal, taskId: string): void {
+    this.scope(actor, "task:reconcile");
+    requireThat(["human_request", "recovery", "internal"].includes(actor.origin), "trusted_reconciliation_required");
+    identifier(actor.device_id);
+    this.owned(actor, this.row(taskId));
+  }
+
+  inspectReconciliation(actor: Principal, taskId: string, expectedRevision: number, effectId: string): ReconciliationEvidence {
+    this.reconcileScope(actor, taskId);
+    identifier(effectId);
+    return this.db.transaction(() => {
+      const task = this.row(taskId);
+      this.revision(task, expectedRevision);
+      requireThat(task.status === "stale" && task.needs_reconciliation && task.active_episode, "task_not_reconcilable");
+      const episode = this.db.sql.query("SELECT * FROM episodes WHERE episode_id=?").get(task.active_episode) as EpisodeRow | null;
+      requireThat(episode && episode.state === "unknown" && episode.device_id === actor.device_id && task.fence > episode.fence, "reconciliation_episode_mismatch");
+      const effect = this.db.sql.query("SELECT state FROM effects WHERE effect_id=? AND episode_id=? AND task_id=? AND fence=?").get(effectId, episode.episode_id, taskId, episode.fence) as { state: string } | null;
+      requireThat(effect?.state === "unknown", "effect_not_reconcilable");
+      const row = (table: string, missing: string): { digest: string; payload: Record<string, unknown> } => {
+        const value = this.db.sql.query(`SELECT digest,payload FROM ${table} WHERE effect_id=?`).get(effectId) as { digest: string; payload: string } | null;
+        requireThat(value && Buffer.byteLength(value.payload) <= 16 * 1024 * 1024, missing);
+        const payload = JSON.parse(value.payload) as Record<string, unknown>;
+        requireThat(digest(payload) === value.digest, "reconciliation_evidence_corrupt");
+        return { digest: value.digest, payload };
+      };
+      const manifest = row("execution_manifests", "dispatch_manifest_unavailable");
+      const observation = row("effect_observations", "native_observation_unavailable");
+      return { task: this.snapshot(task), episode: { episode_id: episode.episode_id, device_id: episode.device_id, fence: episode.fence }, effect_id: effectId,
+        manifest_digest: manifest.digest, manifest: manifest.payload, observation_digest: observation.digest, observation: observation.payload };
+    });
+  }
+
+  /** Trusted verifier runs synchronously in the acceptance transaction. No worker/body can submit a done flag here. */
+  reconcileEffect(actor: Principal, requestId: string, taskId: string, expectedRevision: number, binding: ReconciliationBinding,
+    verify: (evidence: ReconciliationEvidence) => Record<string, unknown>): TaskSnapshot {
+    this.reconcileScope(actor, taskId);
+    return this.request(actor, requestId, "reconcile_effect", { taskId, expectedRevision, binding }, () => {
+      const evidence = this.inspectReconciliation(actor, taskId, expectedRevision, binding.effect_id);
+      requireThat(evidence.episode.episode_id === binding.episode_id && evidence.manifest_digest === binding.manifest_digest && evidence.observation_digest === binding.observation_digest, "reconciliation_evidence_changed");
+      requireThat(!this.db.sql.query("SELECT 1 FROM effects WHERE episode_id=? AND effect_id!=? AND state!='confirmed'").get(binding.episode_id, binding.effect_id), "other_effects_unresolved");
+      const accepted = verify(evidence);
+      if (accepted && typeof accepted.then === "function") { void Promise.resolve(accepted).catch(() => {}); requireThat(false, "verifier_must_be_synchronous"); }
+      requireThat(object(accepted), "invalid_reconciled_result");
+      const result = canonical(accepted);
+      requireThat(Buffer.byteLength(result) <= 4 * 1024 * 1024, "reconciled_result_too_large");
+      // A trusted verifier may call other state APIs; it cannot override cancellation or replace the reviewed inputs.
+      const current = this.inspectReconciliation(actor, taskId, expectedRevision, binding.effect_id);
+      requireThat(current.manifest_digest === binding.manifest_digest && current.observation_digest === binding.observation_digest, "reconciliation_evidence_changed");
+      this.db.sql.query("UPDATE effects SET state='confirmed',result=? WHERE effect_id=?").run(result, binding.effect_id);
+      this.db.sql.query("UPDATE episodes SET state='done',lease_until=0,result=? WHERE episode_id=?").run(result, binding.episode_id);
+      const task = this.row(taskId);
+      task.status = "done"; task.needs_reconciliation = 0; task.active_episode = null;
+      const raw = JSON.parse(task.raw) as LegacyTask;
+      raw.completed_at = this.db.now() / 1000; task.raw = canonical(raw);
+      this.save(task);
+      this.event(actor, task, "effect.reconciled", { ...binding, acceptance_digest: digest(accepted) });
+      this.event(actor, task, "task.done", { episode_id: binding.episode_id, reconciled: true, result: accepted });
+      return this.snapshot(task);
     });
   }
 }
