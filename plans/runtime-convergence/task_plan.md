@@ -35,7 +35,7 @@ Move runtime authority to TypeScript without losing task correctness, provider e
 | CM-R1 | TS execution kernel behind existing facade; transitions, events, cancellation, deadlines, process supervision | Python/TS differential traces for success, failure, timeout, cancel, crash/restart; zero duplicate side effects in shadow mode | in_progress: transactional kernel, durable local queue and actual private stdio execution implemented; full process/provider/transport parity pending |
 | CM-R2 | Transactional state migration and startup recovery | Dry-run migration counts/digests, interrupted migration replay, rollback compatibility, corrupt-input refusal | in_progress: snapshot migration plus persisted native manifests/reconciliation; other stores/cutover pending |
 | CM-R3 | Provider/transport/workspace/grant ports | Actual adapter smoke for each supported provider; grants enforced natively; process tree cleanup and result-delivery reconciliation | in_progress: source/grant/one-shot/container ports; real host/container OpenCode read and local TaskHub and device staged-write/recovery profiles with native auth/state; durable terminal outbox and Feishu text send/readback verified with local HTTP; other provider/write/source profiles, production transport acceptance and remaining transports pending |
-| CM-R4 | Device coordinator and worker execution authority | Two-device lease expiry, fencing, clock skew, network partition and worker restart tests; stale worker cannot write or redeliver | in_progress: real ARM64 coordinator/x64 OpenCode worker continuation and reopen passed; device-local writes, retained-proposal recovery and current SpecMesh reads/writes accepted; normal device startup, other profiles and rollout pending |
+| CM-R4 | Device coordinator and worker execution authority | Two-device lease expiry, fencing, clock skew, network partition and worker restart tests; stale worker cannot write or redeliver | in_progress: real ARM64/x64 native writes, retained-proposal recovery and current SpecMesh reads/writes accepted; normal configured startup/control, two task-bound native sessions and linked handoffs accepted; persistent scheduling, other profiles and rollout pending |
 | CM-R5 | Agent mailbox and task dependency exchange | Duplicate/out-of-order/replayed messages, bounded broadcast, cancellation propagation and backpressure evidence | in_progress: local/device native initial input and actual Agent MCP send/ask/receive/answer accepted with atomic consumption and recovery; real ARM64 coordinator/x64 interrupted completion, reopen and original-session recall passed; topology integration pending |
 | CM-R6 | History headless candidate + native adoption + SpecMesh lifecycle hooks | Real continuation canary binds provider session, current repo and approved task scope; see HV-H3 / SM-P2 | in_progress: real same-session recall/current-file and post-SIGKILL continuation passed; independent SpecMesh start/handoff gate and five-file real native consumption and post-publication continuity recheck accepted locally and on an actual device worker; reviewed closeout and full matrix remain |
 | CM-R7 | Staged default switch and Python retirement | Canary -> selected device -> default rollout; telemetry and rollback thresholds met; old writer disabled before new writer activation | planned |
@@ -69,11 +69,12 @@ No claim that full TS migration or distributed coordination has completed. A sco
 
 ## Next Step
 
-Publish the accepted device-local write/recovery increment, then implement normal private
-**device startup/control**. Wire the existing coordinator and native worker to explicit
-configuration, assignment, cancellation/revocation and recovery commands. Preserve the single
-coordinator task writer and device-local native/session/file authority. The current device
-script is a synthetic acceptance driver, not the requested persistent product workflow.
+Publish the accepted normal private **device startup/control** increment, then implement
+persistent device work scheduling and device-local History adoption. The configured entrypoint
+now exposes assignment, cancellation/revocation and original-challenge recovery, with actual
+native task/peer/session acceptance. Preserve the single coordinator task writer and local
+native/session/file authority. Explicit command handling does not yet establish unattended
+queue scheduling, complete operator experience or installed production rollout.
 
 Local private startup, History/native adoption, native mailbox/Agent communication,
 authenticated loopback ingress, terminal outbox, independent SpecMesh start/handoff and local

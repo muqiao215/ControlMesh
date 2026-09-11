@@ -35,19 +35,24 @@ export interface DeviceAdapter {
 }
 export interface DeviceWorkerOptions {
   workspaces: Readonly<Record<string, string>>;
-  adapters: Readonly<Record<string, DeviceAdapter>>;
+  adapters: Readonly<Record<string, DeviceAdapter | DeviceAdapterFactory>>;
   journal?: DeviceExecutionJournal;
+  signal?: AbortSignal;
 }
+/** A factory is registered locally; task text and transport input cannot choose executable code. */
+export type DeviceAdapterFactory = (job: DeviceJob, workspace: string) => DeviceAdapter;
 
 /** No shell strings or paths from the coordinator select executable code. Both maps are local configuration. */
 export class DeviceWorker {
   private readonly workspaces = new Map<string, { path: string; dev: number; ino: number }>();
-  private readonly adapters: Readonly<Record<string, DeviceAdapter>>;
+  private readonly adapters: DeviceWorkerOptions["adapters"];
   private readonly journal?: DeviceExecutionJournal;
+  private readonly signal?: AbortSignal;
 
   constructor(private readonly client: DeviceClient, options: DeviceWorkerOptions) {
     this.adapters = { ...options.adapters };
     this.journal = options.journal;
+    this.signal = options.signal;
     requireThat(!this.journal || this.journal.deviceId === client.deviceId, "device_journal_identity_mismatch");
     for (const [id, path] of Object.entries(options.workspaces)) {
       identifier(id);
@@ -58,8 +63,14 @@ export class DeviceWorker {
     }
   }
 
+  private adapter(job: DeviceJob, workspace: string): DeviceAdapter | undefined {
+    const selected = Object.hasOwn(this.adapters, job.capability) ? this.adapters[job.capability] : undefined;
+    return typeof selected === "function" ? selected(structuredClone(job), workspace) : selected;
+  }
+
   /** Explicit request ID only: no unknown-task scan, new lease, provider probe or automatic execution. */
   async reconcile(challengeId: string): Promise<unknown> {
+    requireThat(!this.signal?.aborted, "device_worker_stopped");
     const receipt = (value: unknown) => {
       requireThat(object(value) && value.challenge_id === challengeId && value.status === "done" && Number.isSafeInteger(value.revision), "invalid_reconciliation_response");
       assertProtocolSchema<DeviceEvidenceRef>("device-evidence-ref.schema.json", value.evidence);
@@ -77,17 +88,24 @@ export class DeviceWorker {
     assertProtocolSchema<DeviceReconciliationChallenge>("device-reconciliation-challenge.schema.json", value.challenge);
     const challenge = value.challenge, issued = digest(challenge);
     requireThat(challenge.challenge_id === challengeId && challenge.manifest.device_id === this.client.deviceId, "reconciliation_device_mismatch");
-    const workspace = this.workspaces.get(challenge.workspace_id), adapter = Object.hasOwn(this.adapters, challenge.capability) ? this.adapters[challenge.capability] : undefined;
-    requireThat(workspace && adapter?.reconcile, "local_reconciliation_unavailable");
+    const workspace = this.workspaces.get(challenge.workspace_id);
+    requireThat(workspace && this.journal, "local_reconciliation_unavailable");
+    const saved = this.journal.inspect(challenge.manifest), job = JSON.parse(saved.job) as DeviceJob;
+    requireThat(job.workspace_id === challenge.workspace_id && job.capability === challenge.capability
+      && job.execution_digest === challenge.execution_digest, "reconciliation_authority_changed");
     const deadline = sent + Number(value.remaining_ms) - 50;
     let last = sent;
     const current = () => {
+      requireThat(!this.signal?.aborted, "device_worker_stopped");
       const now = this.client.clock();
       requireThat(Number.isFinite(now) && now >= last && now < deadline, "reconciliation_expired"); last = now;
       const stat = lstatSync(workspace.path);
       requireThat(stat.isDirectory() && !stat.isSymbolicLink() && realpathSync(workspace.path) === workspace.path && stat.dev === workspace.dev && stat.ino === workspace.ino, "worker_workspace_changed");
       requireThat(digest(challenge) === issued, "reconciliation_challenge_changed");
     };
+    current();
+    const adapter = this.adapter(job, workspace.path);
+    requireThat(adapter?.reconcile, "local_reconciliation_unavailable");
     current();
     return adapter.reconcile(challenge, workspace.path, current, async report => {
       current();
@@ -103,20 +121,28 @@ export class DeviceWorker {
     });
   }
 
-  async run(taskId: string, ttlMs = 10_000): Promise<{ status: "done" | "unknown" | "unavailable"; reason?: string; result?: Record<string, unknown> }> {
+  async run(taskId: string, ttlMs = 10_000, expected?: { revision: number; assignment_digest: string }): Promise<{ status: "done" | "unknown" | "unavailable"; reason?: string; result?: Record<string, unknown> }> {
+    requireThat(!this.signal?.aborted, "device_worker_stopped");
     const job = await this.client.inspect(taskId), issuedJob = digest(job);
+    requireThat(!expected || (job.revision === expected.revision && job.assignment_digest === expected.assignment_digest), "device_assignment_changed");
     const workspace = this.workspaces.get(job.workspace_id);
-    const adapter = Object.hasOwn(this.adapters, job.capability) ? this.adapters[job.capability] : undefined;
-    requireThat(workspace && adapter && typeof adapter.execute === "function", "local_capability_unavailable");
-    const preparedMode = adapter.dispatch_mode === "prepared", journal = this.journal;
-    requireThat(!preparedMode || journal, "durable_device_journal_required");
+    requireThat(workspace, "local_capability_unavailable");
     const assertWorkspace = () => {
+      requireThat(!this.signal?.aborted, "device_worker_stopped");
       const stat = lstatSync(workspace.path);
       requireThat(stat.isDirectory() && !stat.isSymbolicLink() && realpathSync(workspace.path) === workspace.path && stat.dev === workspace.dev && stat.ino === workspace.ino, "worker_workspace_changed");
       requireThat(digest(job) === issuedJob, "device_job_changed");
     };
     assertWorkspace();
+    const adapter = this.adapter(job, workspace.path);
+    requireThat(adapter && typeof adapter.execute === "function", "local_capability_unavailable");
+    const preparedMode = adapter.dispatch_mode === "prepared", journal = this.journal;
+    requireThat(!preparedMode || journal, "durable_device_journal_required");
+    assertWorkspace();
     const authority = await this.client.claim(taskId, job.revision, job.assignment_digest, ttlMs);
+    const abort = () => authority.stop();
+    this.signal?.addEventListener("abort", abort, { once: true });
+    if (this.signal?.aborted) abort();
     const assertCurrent = () => { authority.assertCurrent(); assertWorkspace(); };
     const effect = randomUUID();
     let attempted = false, dispatched = false, prepared = false, verified = false;
@@ -239,6 +265,7 @@ export class DeviceWorker {
       closed = true;
       if (timer) clearTimeout(timer);
       authority.stop();
+      this.signal?.removeEventListener("abort", abort);
       await renewal;
     }
   }

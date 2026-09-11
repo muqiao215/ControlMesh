@@ -72,9 +72,11 @@ coverage until a suitable real-provider acceptance runs. See progress.md for cur
 
 ## Remaining scope and limits
 
-1. Normal coordinator/worker startup, assignment and recovery control must expose the
-   qualified device writer through explicit configuration. The present device script is a
-   synthetic canary entrypoint; library acceptance does not close the product workflow.
+1. Normal private coordinator/worker startup, assignment and recovery control now expose
+   the qualified device writer through explicit configuration. Real two-device acceptance
+   includes two task-bound sessions, linked Agent handoffs and original-session continuation.
+   Persistent scheduling and installed product rollout remain required; see the package's
+   `DEVICE-RUNTIME.md` for the implemented command surface.
 2. Staging is bounded to 64 MiB total, 4 MiB/file, 2,048 entries, 64 roots and a 2 MiB private
    record. Large-project/dependency/cache exclusion and general workspace cleanup are not
    qualified. Scoped roots are supported; do not silently increase limits or copy secrets.

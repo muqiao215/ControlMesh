@@ -118,8 +118,13 @@ function setup(mode: "normal" | "partition" | "changed-file" | "lost-completion"
   } };
   const makeAdapter = (ledger = journal) => new OpenCodeDeviceAdapter(device, cache, ledger, store, { executable: "/fixture/opencode", native_configuration: {}, environment: { HOME: root, XDG_DATA_HOME: data }, state_home: root, communication },
     { read_files: ["PROJECT.md"], required_reads: ["PROJECT.md"], binding: () => binding, assertCurrent() {} }, runner);
-  const adapter = makeAdapter();
-  const worker = new DeviceWorker(client, { workspaces: { project: workspace }, adapters: { "native.read": adapter }, journal });
+  const factoryJobs: { task_id: string; revision: number; assignment_digest: string }[] = [];
+  const factory = (ledger = journal) => (job: import("../src").DeviceJob, path: string) => {
+    expect(path).toBe(workspace);
+    factoryJobs.push({ task_id: job.task_id, revision: job.revision, assignment_digest: job.assignment_digest });
+    return makeAdapter(ledger);
+  };
+  const worker = new DeviceWorker(client, { workspaces: { project: workspace }, adapters: { "native.read": factory() }, journal });
   const recover = (before?: (input: Record<string, any>, control: DeviceCoordinator) => void, loseAck = false) => {
     const db = new RuntimeDatabase(join(root, "coordinator.sqlite"), () => Date.now() + offset), local = new RuntimeDatabase(join(root, "worker.sqlite"));
     cleanup.push(() => db.close(), () => local.close());
@@ -135,11 +140,24 @@ function setup(mode: "normal" | "partition" | "changed-file" | "lost-completion"
       }) as typeof fetch });
     const localJournal = new DeviceExecutionJournal(local, device.device_id!);
     return { control, transport, reports: () => reports, worker: new DeviceWorker(transport,
-      { workspaces: { project: workspace }, adapters: { "native.read": makeAdapter(localJournal) }, journal: localJournal }) };
+      { workspaces: { project: workspace }, adapters: { "native.read": factory(localJournal) }, journal: localJournal }) };
   };
   return { root, workspace, workerDB, coordinatorDB, kernel, coordinator, client, journal, worker, commands, binding, store, specification,
-    recover, hooks, completions, calls: () => calls, advance: (ms: number) => { offset += ms; } };
+    recover, hooks, completions, factoryJobs, calls: () => calls, advance: (ms: number) => { offset += ms; } };
 }
+
+test("recovery factories receive the original retained job after coordinator and worker reopen", async () => {
+  const f = setup("lost-before-completion");
+  expect((await f.worker.run("native-task", 5000)).status).toBe("unknown");
+  const original = { ...f.factoryJobs[0] }, reopened = f.recover();
+  const snapshot = reopened.control.kernel.inspect(owner, "native-task");
+  const row = f.workerDB.sql.query("SELECT effect_id FROM device_execution_records").get() as { effect_id: string };
+  const challenge = reopened.control.reconciliation.request({ ...owner, device_id: device.device_id }, "factory-recovery", "native-task", snapshot.revision, row.effect_id);
+  const result = await reopened.worker.reconcile(challenge.challenge_id) as { status: string };
+  expect(result.status).toBe("done"); expect(f.calls()).toBe(1);
+  expect(f.factoryJobs).toEqual([original, original]);
+  expect(snapshot.revision).toBeGreaterThan(original.revision);
+});
 
 test("native device execution persists local evidence and resumes its original session through an opaque handle", async () => {
   const f = setup();

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DeviceClient, DeviceCoordinator, DeviceLeaseAuthority, DeviceWorker, RuntimeDatabase, RuntimeKernel, type DeviceRegistration, type Principal } from "../src";
 import { AgentMailbox } from "../src/mailbox";
-import { digest } from "../src/value";
+import { digest, requireThat } from "../src/value";
 
 const owner: Principal = { id: "operator", origin: "human_request", scopes: ["task:create", "task:read", "task:cancel", "task:admin", "task:reconcile", "device:assign", "device:revoke"] };
 const cleanup: (() => void | Promise<void>)[] = [];
@@ -83,6 +83,21 @@ test("device revocation survives restart and is rechecked after an in-flight bod
   const client = new DeviceClient({ endpoint: server.url.origin, token: f.tokens[0], device_id: "device-0" });
   await expect(client.command("queue", {})).rejects.toThrow("unauthorized");
   expect(reopened.sql.query("SELECT COUNT(*) AS n FROM receipts WHERE request_id='held-body'").get()).toEqual({ n: 0 });
+});
+
+test("runtime configuration is rechecked after a slow authenticated body before a device claim", async () => {
+  const f = fixture(); const assignment = f.task(); let valid = true, checks = 0;
+  const guarded = new DeviceCoordinator(f.kernel, f.registrations, () => { checks++; requireThat(valid, "runtime_configuration_changed"); });
+  let body!: ReadableStreamDefaultController<Uint8Array>;
+  const stream = new ReadableStream<Uint8Array>({ start(controller) { body = controller; } });
+  const pending = guarded.handle(new Request(`${f.server.url.origin}/worker/v1/command`, { method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${f.tokens[0]}` }, body: stream }));
+  expect(checks).toBe(1); valid = false;
+  body.enqueue(new TextEncoder().encode(JSON.stringify({ schema_version: "controlmesh.device_command.v1", request_id: "held-claim", operation: "claim",
+    arguments: { task_id: "task", revision: 1, assignment_digest: digest(assignment), ttl_ms: 5000 } })));
+  body.close();
+  expect((await (await pending).json() as { error: string }).error).toBe("runtime_configuration_changed");
+  expect(checks).toBe(2); expect(f.db.sql.query("SELECT COUNT(*) AS n FROM episodes").get()).toEqual({ n: 0 });
 });
 
 test("credentials are never forwarded through a coordinator redirect", async () => {

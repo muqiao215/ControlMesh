@@ -526,8 +526,13 @@ reconcile. Neither immediate remote revocation nor atomic multi-file transaction
 
 An actual ARM64 coordinator/x64 OpenCode worker passed two-turn edits/current-document reads,
 coordinator reconstruction and original-proposal recovery without another model invocation.
-See the repository native-write design for limits. Normal device startup/control and the
-installed workflow remain pending; the existing device script is a synthetic test driver.
+See the repository native-write design for limits. The normal private
+[`device-runtime.ts` entrypoint](DEVICE-RUNTIME.md) now constructs the coordinator and native
+worker, supports assignment/current-effect inspection/recovery, and binds each task's local
+native Adapter and communication profile separately. Real ARM64/x64 acceptance through this
+entrypoint covers two native tasks, two linked Agent handoffs, original-proposal recovery,
+reopen and same-session continuation. Persistent device scheduling, the user terminal workflow
+and installed production switch remain pending.
 
 ## Device transport contract
 

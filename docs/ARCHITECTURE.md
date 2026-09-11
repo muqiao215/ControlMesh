@@ -521,7 +521,18 @@ challenge. Local monotonic deadline/scope checks guard each journaled file opera
 optional independent SpecMesh check runs before preflight and after publication. Failures
 remain uncertain and do not rerun the model. Already-applied files can precede later remote
 cancellation; no instantaneous distributed revocation or multi-file atomicity is asserted.
-Normal device startup/control remains a separate uncompleted owner.
+`scripts/device-runtime.ts` now constructs a private coordinator or native worker from
+explicit local configuration. Its shared bounded stdin/stdout transport supports task
+creation/assignment, current task/effect inspection, cancellation/revocation and original
+challenge recovery. `DeviceWorker` resolves a locally registered Adapter factory for the
+authenticated task; recovery uses the integrity-checked retained job. Native task/peer/parent
+profiles stay distinct across assignments. Configuration changes fence incoming admission
+and in-flight native communication; controlled shutdown interrupts owned execution.
+Worker run IDs are reserved transactionally before asynchronous work. Concurrent duplicate
+requests share one result; a reservation left by a previous process cannot restart a model,
+and a completed ID cannot execute a later task revision. See the package's
+`DEVICE-RUNTIME.md` for the private contract. Persistent device scheduling, full operator
+product integration and installed production startup remain separate rollout requirements.
 
 Unstarted preparation failures can release an effect-free lease and return a typed reason;
 expired unstarted admissions return to waiting. Started/uncertain effects cannot use this

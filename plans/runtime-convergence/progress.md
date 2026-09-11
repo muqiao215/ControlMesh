@@ -2,6 +2,56 @@
 
 ## Current
 
+Full goal remains active, CM-R7 unactivated, and installed production remains Python 0.43.0.
+Published predecessor `9fa218c94424c28be094a5333bd74e1e39b08a00` has exact-SHA
+[CI success](https://github.com/muqiao215/ControlMesh/actions/runs/34655188758).
+The current increment implements **normal private device startup/control** through
+`scripts/device-runtime.ts`; publication/exact-SHA CI must be verified after its commit.
+
+The coordinator owns task creation, assignment, result/effect inspection, cancellation,
+revocation and reconciliation requests. The worker reads explicit local profiles and creates
+a separate native Adapter/communication context for each authenticated task. Recovery
+reconstructs the retained original job. Read-only startup/status/assignment inspection needs
+no native credentials or model probe. Durable command reservations prevent cross-process
+duplicate execution and old run IDs from executing a resumed revision. Shared stdio shutdown
+interrupts owned execution before closing state. See `packages/controlmesh-runtime-core/DEVICE-RUNTIME.md`.
+
+Actual acceptance **2026-09-11 23:07:49–23:10:22 UTC** used the normal entrypoint on ARM64
+Rock 5C and the x64 desktop. Writer A edited the project and sent a native MCP handoff to B;
+a deliberately lost observation left canonical files unchanged. Both processes reopened;
+explicit original-proposal recovery published the retained modification with zero model
+turns. B consumed A's actual message, edited current files and sent a causally linked handoff
+back to A. A resumed its original native session and recalled its marker without reinjection.
+Across the three turns the counter advanced 1 -> 2 -> 3 -> 4; each turn performed five
+required continuity reads, two native edits and one write. Two sessions stayed task-bound.
+
+Independent native SQLite, local journal and file-hash inspection confirms the three
+proposals, two actual linked handoffs and current-file inheritance. Eighteen owned containers
+and the exact temporary ARM64 process/directory were independently verified absent. The
+three structural SpecMesh checks passed; reviewed semantic closeout is not claimed. Preflight
+generations were A=2/B=1 (A's earlier readiness expired before its later turn); no expiry was
+extended and provider billing/API request counts were not measured.
+
+Local CI-Bun core tests: **330 passed / 17 Docker skips / 0 failed**, 3,735 assertions,
+347 cases in 35 files, 34.81 seconds. Actual Docker: **25 passed / 0 failed**, 113 assertions,
+37.38 seconds, covering those skips. A final slow-body configuration-revocation regression
+was added afterward; its device suite passed **15/15**, including that new case. Typecheck,
+protocol generation/drift, unchanged packaged dashboard and 512-module/57-field inventory
+checks passed. Final control/device regression passed **22/22**, 135 assertions: the final
+listener delegates to the existing coordinator listener and returns its typed configuration
+error rather than a generic wrapper response. This does not change native execution; the
+real model canary was not repeated for that listener consolidation. Independent repository
+SpecMesh check passed with seven references and only expected uncommitted-fact warnings.
+Private evidence is `outputs/runtime-convergence/device-startup-*` plus
+`verify_device_startup_native.py` in the coordinating workspace.
+
+Next: persistent device work scheduling and recovery control, device-local History adoption,
+then the remaining provider/transport/store/topology/product and release/install owners in
+task_plan.md. An explicit private control entrypoint does not establish the full installed
+multi-device product or authorize marking the full migration complete.
+
+## Previous device-write increment
+
 Full goal active: CM-R0 through CM-R6 remain in progress, CM-R7 is not activated. Python
 v0.43.0 remains released/installed production. Local TaskHub write/recovery baseline
 `e56d95b7f632c133ba380fa5ae91f94986bff784` has exact-SHA
@@ -15,7 +65,7 @@ protocol validators had not been rebuilt into the wheel's JS asset. The follow-u
 that asset using CI Bun 1.3.11 from the Web package directory; its complete diff matches
 the asset generated in CI. Local isolated-wheel smoke passed again, including installed
 CLI/HTTP/SDK reads, artifact downloads and mutation rejection. Its repeated build leaves
-the same asset bytes. Exact-SHA CI for this correction remains to be verified after push.
+the same asset bytes. Correction `9fa218c` subsequently passed exact-SHA CI 34655188758.
 
 `OpenCodeDeviceAdapter` accepts trusted relative write roots and optional independent
 SpecMesh. Actual native writes stay staged; full manifests/native/session/files remain on

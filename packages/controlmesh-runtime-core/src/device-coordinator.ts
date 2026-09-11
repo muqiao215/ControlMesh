@@ -62,7 +62,7 @@ export class DeviceCoordinator {
   private readonly nativeCalls = new Map<string, { digest: string; promise: Promise<Record<string, unknown>> }>();
   readonly reconciliation: DeviceReconciliation;
 
-  constructor(readonly kernel: RuntimeKernel, registrations: readonly DeviceRegistration[]) {
+  constructor(readonly kernel: RuntimeKernel, registrations: readonly DeviceRegistration[], private readonly assertCurrent: () => void = () => {}) {
     requireThat(registrations.length > 0 && registrations.length <= 128, "invalid_device_catalog");
     this.devices = new Map();
     const hashes = new Set<string>();
@@ -141,6 +141,7 @@ export class DeviceCoordinator {
   }
 
   private assignment(device: DeviceRegistration, taskId: string): DeviceJob {
+    this.assertCurrent();
     requireThat(!this.revoked(device.device_id), "device_revoked");
     identifier(taskId);
     const row = this.kernel.db.sql.query("SELECT * FROM device_assignments WHERE task_id=? AND principal=?").get(taskId, device.principal_id) as AssignmentRow | null;
@@ -159,6 +160,7 @@ export class DeviceCoordinator {
   }
 
   private authenticate(request: Request): DeviceRegistration {
+    this.assertCurrent();
     const header = request.headers.get("Authorization") ?? "";
     requireThat(/^Bearer [A-Za-z0-9_-]{43,128}$/.test(header), "unauthorized");
     const hash = createHash("sha256").update(header.slice(7)).digest();

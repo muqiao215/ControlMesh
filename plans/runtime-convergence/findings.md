@@ -1,5 +1,37 @@
 # Findings
 
+## Normal native device startup and control
+
+The old device script registered a synthetic adapter; direct library canaries did not expose
+normal configured native startup. `device-runtime-config.ts` now owns private coordinator/
+worker configuration, persistent role/principal/device identity, local workspace/capability
+selection and task-specific native factories. The coordinator never loads the worker's
+provider profile. The shared stdio transport preserves the existing local TaskHub shutdown
+behavior. Current configuration is rechecked after slow request-body reads and during native
+Agent calls, rather than only at server startup.
+
+Worker control reservations and completion receipts reuse the existing transaction owner.
+Reservation inspection and acquisition must be in one SQLite transaction; otherwise two
+processes can both pass the initial missing-receipt check. Reopening a pending run leaves
+it unknown, while explicit original-challenge recovery remains replayable. Inspection exposes
+effect IDs so an Agent can request recovery without reading private SQLite tables itself.
+
+Two initial synthetic-control tests labeled their fixture provider `opencode`; the existing
+native manifest gate correctly prevented the synthetic adapter from starting. They now use
+an explicit fixture provider. Actual native behavior was separately accepted through the
+normal configured entrypoint, with unmodified real OpenCode execution.
+
+Real ARM64 coordinator/x64 worker acceptance on 2026-09-11 23:07:49–23:10:22 UTC covered
+writer A -> writer B -> original writer A, two native sessions/three task turns. A's first
+lost observation was recovered after both processes reopened without another model turn.
+The outgoing native MCP messages appear in the next task's actual native input, and the
+second handoff retains causation while decreasing its hop budget. A's final native turn
+recalls its marker without reinjection. Eighteen owned containers and the exact temporary
+remote process/directory were independently checked absent. Three preflight generations
+(A 2, B 1) include A's expired readiness before its later turn; no expiry was extended.
+Provider billing/API request counts remain unmeasured. Independent structural SpecMesh
+checks are not reviewed semantic closeout or complete migration acceptance.
+
 ## Device protocol and packaged dashboard synchronization
 
 Commit `80b330c` omitted the regenerated `controlmesh/web_static/assets/main.js` after
