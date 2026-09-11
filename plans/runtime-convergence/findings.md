@@ -27,6 +27,11 @@ timeout. Absence is not conclusive while create is uncertain; original identity 
 recorded before removal, and an execution directory cannot be reused after cleanup. Tests
 distinguish lost acknowledgement of a created container from a still-unconfirmed absence.
 
+CI 34600620577 accepted the actual container job but exposed a stale exact-set assertion in
+`tests/webhook/test_ci_workflow_webhook.py`. Each full Python matrix had that single failure
+and 5,732 passes. Require the complete mandatory set including container execution as a
+subset, preserving protection against omitted gates while allowing new gates to be added.
+
 One-shot owner baseline: `cron/execution.py:build_cmd` and `parse_result` both defaulted to Claude
 for any unregistered provider. Their tables included only Claude/Gemini/Codex, despite
 param_resolver accepting OpenCode/Claw/OpenAI Agents. A pure Python reproduction requested

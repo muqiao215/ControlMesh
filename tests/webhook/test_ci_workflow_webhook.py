@@ -51,14 +51,15 @@ def test_ci_workflow_requires_protocol_sdk_and_web_gates() -> None:
     assert "git diff --exit-code controlmesh/web_static" in run_commands
 
     required_jobs = set(data["jobs"]["ci-success"]["needs"])
-    assert required_jobs == {
+    assert {
         "ruff",
         "mypy",
         "test",
         "build",
         "product-layer",
         "alpha-smoke",
-    }
+        "container-execution",
+    }.issubset(required_jobs)
 
     python_test_uses = [step["uses"] for step in data["jobs"]["test"]["steps"] if "uses" in step]
     assert "pnpm/action-setup@v4" in python_test_uses

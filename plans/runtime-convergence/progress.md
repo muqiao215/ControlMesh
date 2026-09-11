@@ -71,6 +71,12 @@ batch. Previous one-shot Mypy and full Python 3.11/3.12 suites passed at `0b01ea
 No new real account/model calls, production scheduler runs, installation or default switch
 were performed. Final exact-commit CI is verified after publication.
 
+Initial container commit `6b6b221` passed its actual-container and product/build gates in CI
+34600620577. Both Python versions had one failure / 5,732 passes because the workflow test
+still required the old exact job set. The test now requires all mandatory gates, including
+container execution, while permitting future additional gates. Follow-up exact-commit CI
+must pass before publication is recorded as green.
+
 Prior device-recovery verification included Python protocol **9 passed**, generated-model
 Ruff and Web build. Canonical schemas and TS/Python/Web generated assets remain synchronized.
 Tests cover lost original observation,
