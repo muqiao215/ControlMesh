@@ -26,7 +26,7 @@ export class RuntimeDatabase {
       this.transaction(() => {
         const version = (this.sql.query("PRAGMA user_version").get() as { user_version: number }).user_version;
         const app = (this.sql.query("PRAGMA application_id").get() as { application_id: number }).application_id;
-        requireThat(version >= 0 && version <= 9, "unsupported_database_version");
+        requireThat(version >= 0 && version <= 10, "unsupported_database_version");
         requireThat(app === 0 || app === APPLICATION_ID, "foreign_database");
         if (version === 0) {
           const tables = this.sql.query("SELECT name FROM sqlite_master WHERE type='table'").all();
@@ -167,6 +167,23 @@ export class RuntimeDatabase {
             );
             CREATE INDEX native_mailbox_effect ON native_mailbox_deliveries(effect_id);
             PRAGMA user_version = 9;
+          `);
+        }
+        if (version < 10) {
+          this.sql.exec(`
+            CREATE TABLE native_agent_calls (
+              seq INTEGER PRIMARY KEY AUTOINCREMENT,
+              call_id TEXT NOT NULL UNIQUE, effect_id TEXT NOT NULL REFERENCES effects(effect_id),
+              request_id TEXT NOT NULL, tool TEXT NOT NULL, input TEXT NOT NULL,
+              scope_digest TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('pending','done')),
+              response TEXT, UNIQUE(effect_id,request_id)
+            );
+            CREATE TABLE native_agent_deliveries (
+              message_id TEXT PRIMARY KEY REFERENCES messages(message_id),
+              call_id TEXT NOT NULL REFERENCES native_agent_calls(call_id),
+              message_digest TEXT NOT NULL
+            );
+            PRAGMA user_version = 10;
           `);
         }
       });

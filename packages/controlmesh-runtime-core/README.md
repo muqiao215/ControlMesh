@@ -45,6 +45,10 @@ Track completion in [the repository plan](../../plans/runtime-convergence/task_p
   cannot consume them. Verified input/reply, message consumption and task completion commit
   together. Reconciliation verifies that original input after restart without resending it.
   Reserved messages remain bound after expiry; other pending messages keep their normal TTL.
+- Optional local native MCP communication supplies task-scoped send/ask_parent/receive/answer.
+  Schema 10 retains logical call receipts and verifies them against actual OpenCode tool
+  records before consuming messages. Reopening does not replay unresolved calls. The client
+  sees one task/episode capability; peer and sender authority cannot be supplied by the model.
 - JSON Schema defines the versioned lease/message wire shapes. Generated types and actual
   runtime validation use the existing protocol package. This adds no public mutation API.
 - `ProcessSupervisor` runs a provider under a detached Linux anchor. The anchor survives
@@ -168,11 +172,43 @@ The remaining fields bind trusted local registration:
 | `limits` | Optional `parallelism` (1–16), `max_pending` (1–1024), `lease_ms` (1000–300000); controllers in one database must agree |
 | `opencode` | Explicit executable, selected model, CLI version `1.18.29`, private `native_configuration`, string-valued environment with absolute XDG data/cache homes |
 | `opencode.container` | Local Docker executable/socket, available immutable image ID, native-compatible Node executable and resource bounds; native OpenCode and Git must exist in the image |
+| `opencode.timeout_ms` | Optional native turn deadline, 1000–300000 ms; default 60000 |
+| `communication` | Optional native Node executable and trusted task-to-peer/parent registration, described below |
 | `workspace` | Canonical directory, exact `read_files`, and the granted subset `required_reads` |
 
 Keep configuration and native credentials outside Git. The adapter uses the existing
 native store and read-only auth file, not copied transcripts or credentials in an image.
 Status can be inspected even when native credentials or the provider executable are absent.
+
+For native Agent communication, add this registration to the private configuration before
+submitting the named tasks. The model cannot add peers or change parent relationships:
+
+```json
+{
+  "communication": {
+    "node_executable": "/usr/local/bin/node",
+    "tasks": {
+      "parent": { "peer_tasks": ["child"], "parent_task": null },
+      "child": { "peer_tasks": ["parent"], "parent_task": "parent" }
+    }
+  }
+}
+```
+
+OpenCode receives `controlmesh_send`, `controlmesh_ask_parent`, `controlmesh_receive` and
+`controlmesh_answer`. Every call supplies a logical `request_id`. Send takes `recipient_task`
+and `text`; ask_parent takes `text`; answer takes the received question's `message_id` as
+`question_id` plus `text`. Receive may specify `wait_ms` from 0 to 10000 and returns an ordered
+message prefix. Reuse an ID only for the same operation and arguments; a later receive uses
+a new ID. Each execution allows at most 32 calls, each task at most 16 configured peers,
+and message text at most 4096 UTF-8 bytes. Existing queue and causal-loop budgets also apply.
+Operation-level refusals return `ok: false`; they are not successful message delivery.
+
+The runtime prepares a private task channel, starts a per-execution Unix socket broker and
+mounts that channel read-only for the native Node client. Normal shutdown removes socket and capability files; the checked client remains for profile identity. A changed
+client requires a new qualified profile. Preflight never enables communication tools.
+This registration qualifies local foreground OpenCode reads plus scoped messaging;
+device-native tool delivery and production ingress are separate migration work.
 
 Each stdin line is one request with a unique `id` and an `op`. Responses carry that ID,
 `ok`, and either `result` or a safe error code; concurrent responses may arrive out of order.
@@ -211,12 +247,12 @@ covering source/sandbox policy, provider mapping, narrowing issuance and reply i
 It keeps the original goldens and separately exercises stricter TS admission rules. Native
 static tool expressions are retained; portable grant tokens have their own bounded format.
 
-Remaining before activation: reconciliation for the other execution profiles and abandonment policy, native Agent-initiated send/ask/answer and general resume integration,
+Remaining before activation: reconciliation for the other execution profiles and abandonment policy, device-native Agent communication and general resume integration,
 provider adapter/permission parity and non-Linux supervision, transport delivery, all other Python
 stores, other provider profiles over the device transport, the full native
 continuation matrix, SpecMesh lifecycle admission, full rollback and production-writer exclusion.
 Generic and device mailbox application references remain reports; local OpenCode reservations
-require independent native input verification. A coordinator fence cannot prevent an
+require independent native input or tool-record verification. A coordinator fence cannot prevent an
 uncooperative external program's side effect.
 
 The authenticated worker transport and a real x64/ARM64 synthetic two-device canary are

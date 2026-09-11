@@ -11,6 +11,7 @@ import { NativeSessionStore } from "./providers/native-session";
 import { directoryIdentity } from "./providers/native-manifest";
 import { decodeSnapshot } from "./migration";
 import { digest, identifier, object, requireThat } from "./value";
+import { prepareNativeAgentConfiguration } from "./providers/native-agent-profile";
 
 /** Never log the content: configuration and native auth may contain credentials. */
 function privateFile(path: string): { bytes: Buffer; revision: string } {
@@ -46,6 +47,18 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; clo
     && config.workspace.read_files.every(value => typeof value === "string") && Array.isArray(config.workspace.required_reads)
     && config.workspace.required_reads.every(value => typeof value === "string"), "invalid_local_workspace_profile");
   const provider = config.opencode, workspace = config.workspace;
+  const communication = config.communication;
+  if (communication !== undefined) {
+    requireThat(object(communication) && typeof communication.node_executable === "string" && object(communication.tasks)
+      && Object.keys(communication.tasks).length <= 128, "invalid_local_communication_profile");
+    for (const [taskId, item] of Object.entries(communication.tasks)) {
+      identifier(taskId);
+      requireThat(object(item) && Array.isArray(item.peer_tasks) && item.peer_tasks.length <= 16
+        && item.peer_tasks.every(peer => typeof peer === "string") && (item.parent_task === null || typeof item.parent_task === "string"), "invalid_local_communication_profile");
+    }
+  }
+  const timeoutMs = provider.timeout_ms ?? 60_000;
+  requireThat(Number.isSafeInteger(timeoutMs) && Number(timeoutMs) >= 1000 && Number(timeoutMs) <= 300_000, "invalid_native_timeout");
   const environment = provider.environment as Record<string, string>;
   requireThat(typeof environment.XDG_DATA_HOME === "string" && typeof environment.XDG_CACHE_HOME === "string", "explicit_native_state_required");
   const native = provider.native_configuration as Record<string, unknown>;
@@ -60,16 +73,21 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; clo
     const runtime = new LocalTaskRuntime(kernel, actor, { command_origin: "human_request", origin: "user", source_scope: "local_foreground", transport: config.source.transport }, task => {
       current();
       const control = join(root, "containers"); mkdirSync(control, { recursive: true, mode: 0o700 });
+      const taskId = task.task.task_id;
+      const peers = object(communication) && object(communication.tasks) && Object.hasOwn(communication.tasks, taskId) ? communication.tasks[taskId] as Record<string, unknown> : undefined;
+      const channel = peers ? prepareNativeAgentConfiguration(join(root, "task-channels", digest(taskId)),
+        (communication as Record<string, unknown>).node_executable as string, taskId, peers.peer_tasks as string[], peers.parent_task as string | null) : undefined;
       const profile: OpenCodeContainerProfile = { container: { ...provider.container as OpenCodeContainerProfile["container"], state_root: control },
-        executable: provider.executable as string, data_home: environment.XDG_DATA_HOME, cache_home: environment.XDG_CACHE_HOME };
+        executable: provider.executable as string, data_home: environment.XDG_DATA_HOME, cache_home: environment.XDG_CACHE_HOME,
+        ...(channel ? { communication: channel } : {}) };
       const runner = new OpenCodeReadContainerRunner(profile), store = new NativeSessionStore(join(profile.data_home, "opencode/opencode.db"), actor.device_id!);
-      const registration = { workspace: workspace.directory as string,
+      const registration = { workspace: workspace.directory as string, timeout_ms: Number(timeoutMs),
         binding: () => ({ provider: "opencode", model: provider.model as string, cli_version: "1.18.29", device_id: actor.device_id!,
           config_digest: digest(native), credential_revision: privateFile(join(profile.data_home, "opencode/auth.json")).revision,
           permission_profile: "opencode-native-read-v1", runtime_digest: runner.runtimeDigest() }),
         admission: { source_scope: "local_foreground" as const, read_files: workspace.read_files as string[], required_reads: workspace.required_reads as string[], assertCurrent: current } };
       return new OpenCodeTaskAdapter(kernel, cache, actor, store, { executable: profile.executable, native_configuration: native,
-        environment, state_home: root }, runner, registration).prepare(task);
+        environment, state_home: root, ...(channel ? { communication: channel } : {}) }, runner, registration).prepare(task);
     }, current, object(config.limits) ? config.limits : {});
     return { runtime, close: async () => { await runtime.stop(); db.close(); } };
   } catch (error) { db.close(); throw error; }

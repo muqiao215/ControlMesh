@@ -11,6 +11,8 @@ import type { NativeRunner } from "./opencode-execution";
 import { NativeSessionStore, type NativeSessionRef } from "./native-session";
 import { PreflightCache, type ProbeBinding } from "./preflight-cache";
 import { ProviderPreflightService } from "./preflight-service";
+import { nativeAgentTools } from "./native-agent-journal";
+import { assertNativeAgentConfiguration } from "./native-agent-profile";
 
 export interface OpenCodeTaskRegistration {
   workspace: string;
@@ -41,7 +43,11 @@ export class OpenCodeTaskAdapter {
       requireThat(nativeTaskDigest(this.kernel.inspect(this.actor, task.task.task_id).task) === issued, "worker_task_binding_changed");
       enforceLocalReadSource(task.task.execution_context);
       const files = readFileGrant(identity.path, this.registration.admission.read_files);
-      assertReadGrantSnapshot(task.task.tool_grant, files);
+      assertReadGrantSnapshot(task.task.tool_grant, files, this.config.communication ? nativeAgentTools : []);
+      if (this.config.communication) {
+        requireThat(this.config.communication.task_id === task.task.task_id, "native_agent_task_mismatch");
+        assertNativeAgentConfiguration(this.config.communication);
+      }
       requireThat(this.registration.admission.required_reads.every(file => files.includes(realpathSync(file))), "required_read_not_granted");
       const checked: unknown = this.registration.admission.assertCurrent();
       if (checked !== undefined) { void Promise.resolve(checked).catch(() => {}); requireThat(false, "admission_must_be_synchronous"); }

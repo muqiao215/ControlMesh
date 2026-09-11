@@ -6,6 +6,10 @@ import { join } from "node:path";
 import { AgentMailbox, OpenCodeWorker, NativeReconciler, NativeSessionStore, PreflightCache, RuntimeDatabase, RuntimeKernel, TaskIngress, issueExecutionContext, type Principal, type ProbeBinding, type ProcessSpec, type ProcessOutcome } from "../src";
 import { digest } from "../src/value";
 import fixture from "./fixtures/native-session-v2.json";
+import { prepareNativeAgentConfiguration } from "../src/providers/native-agent-profile";
+import type { OpenCodeWorkerConfig } from "../src/providers/opencode-worker";
+import type { NativeAgentToolResult } from "../src/providers/native-agent-journal";
+import { NativeMcpTestClient } from "./helpers/native-mcp-client";
 
 const dirs: string[] = [], databases: RuntimeDatabase[] = [];
 afterEach(() => { for (const db of databases.splice(0)) db.close(); for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
@@ -13,7 +17,7 @@ const actor: Principal = { id: "operator", device_id: "device", origin: "human_r
 const grant = { schema_version: "controlmesh.tool_grant.v1", tool_allow: [], tool_deny: [], writable_roots: [], network_policy: "sandbox_default", confirmation_policy: "provider_runtime" };
 function result(stdout: string): ProcessOutcome { return { reason: "exited", exit_code: 0, stdout, stderr: "", duration_ms: 1 }; }
 
-function setup(mode: "success" | "concurrent" | "old_edit" | "lost" | "cancel" | "commit_lost" = "success", taskOverrides: Record<string, unknown> = {}) {
+function setup(mode: "success" | "concurrent" | "old_edit" | "lost" | "cancel" | "commit_lost" = "success", taskOverrides: Record<string, unknown> = {}, communication = false) {
   const dir = mkdtempSync(join(tmpdir(), "cm-native-worker-test-")); dirs.push(dir);
   const data = join(dir, "data"); mkdirSync(join(data, "opencode"), { recursive: true });
   const path = join(data, "opencode/opencode.db"), native = new Database(path);
@@ -38,19 +42,23 @@ function setup(mode: "success" | "concurrent" | "old_edit" | "lost" | "cancel" |
     execution_context: issueExecutionContext({ origin: "user", source_scope: "local_foreground", transport: "test" }), ...taskOverrides })
     : new TaskIngress(kernel, { command_origin: "human_request", origin: "user", source_scope: "local_foreground", transport: "test" }, () => {}).submit(actor, "create", task, { chat_id: "fixture" });
   let nativeCalls = 0;
-  let onNative: ((spec: ProcessSpec) => void) | undefined;
-  const config = { executable: "/fixture/opencode", state_home: dir, native_configuration: {}, environment: { HOME: dir, XDG_DATA_HOME: data } };
+  let onNative: ((spec: ProcessSpec) => void | Promise<void>) | undefined;
+  let toolParts: NativeAgentToolResult[] = [];
+  const config: OpenCodeWorkerConfig = { executable: "/fixture/opencode", state_home: dir, native_configuration: {}, environment: { HOME: dir, XDG_DATA_HOME: data },
+    ...(communication ? { communication: prepareNativeAgentConfiguration(join(dir, "communication"), Bun.which("node")!, "task", ["peer"], null) } : {}) };
   const worker = new OpenCodeWorker(kernel, cache, store, config, {
     async run(spec) {
       commands.push(spec);
       if (spec.command[1] === "--version") return result(binding.cli_version);
       if (spec.command[1] === "debug") {
         const reads = JSON.parse(spec.env.OPENCODE_PERMISSION).read ?? {};
+        const communications = Object.keys(JSON.parse(spec.env.OPENCODE_PERMISSION)).filter(name => name.startsWith("controlmesh_"));
         return result(JSON.stringify({ name: spec.command[3], mode: "primary", prompt: JSON.parse(spec.env.OPENCODE_CONFIG_CONTENT).agent[spec.command[3]].prompt, permission: [{ permission: "*", pattern: "*", action: "deny" },
-          ...Object.keys(reads).map(pattern => ({ permission: "read", pattern, action: "allow" }))], tools: { read: {}, bash: {} } }));
+          ...Object.keys(reads).map(pattern => ({ permission: "read", pattern, action: "allow" })),
+          ...communications.map(permission => ({ permission, pattern: "*", action: "allow" }))], tools: { read: {}, bash: {} } }));
       }
       nativeCalls++;
-      onNative?.(spec);
+      toolParts = []; await onNative?.(spec);
       expect(spec.command[spec.command.indexOf("--session") + 1]).toBe(ref.session_id);
       if (mode === "lost") return { ...result(""), reason: "deadline", exit_code: null };
       if (mode === "cancel") kernel.cancel(actor, "cancel", "task", kernel.inspect(actor, "task").revision);
@@ -61,6 +69,8 @@ function setup(mode: "success" | "concurrent" | "old_edit" | "lost" | "cancel" |
       writer.query("INSERT INTO message VALUES (?,?,?,?,?)").run(assistant, ref.session_id, now + 1, now + 1, JSON.stringify({ role: "assistant", parentID: user, providerID: "fixture", modelID: "model", finish: "stop", time: { completed: now + 1 } }));
       writer.query("INSERT INTO part VALUES (?,?,?,?,?,?)").run(`part_user_${nativeCalls}`, ref.session_id, user, now, now, JSON.stringify({ type: "text", text: prompt }));
       writer.query("INSERT INTO part VALUES (?,?,?,?,?,?)").run(`part_assistant_${nativeCalls}`, ref.session_id, assistant, now + 1, now + 1, JSON.stringify({ type: "text", text: "recalled" }));
+      toolParts.forEach((tool, index) => writer.query("INSERT INTO part VALUES (?,?,?,?,?,?)").run(`part_tool_${nativeCalls}_${index}`, ref.session_id, assistant, now + 1, now + 1,
+        JSON.stringify({ type: "tool", tool: tool.tool, state: { status: "completed", input: tool.input, output: tool.output } })));
       if (mode === "concurrent") writer.query("INSERT INTO message VALUES (?,?,?,?,?)").run("msg_external", ref.session_id, now, now, '{"role":"user"}');
       if (mode === "old_edit") writer.query("UPDATE part SET data='{}' WHERE id='part_A'").run();
       writer.close();
@@ -70,9 +80,46 @@ function setup(mode: "success" | "concurrent" | "old_edit" | "lost" | "cancel" |
   const admission = { source_scope: "local_foreground" as const, read_files: [] as string[], required_reads: [] as string[], assertCurrent() {} };
   if (mode === "commit_lost") db.sql.exec("CREATE TEMP TRIGGER lose_commit BEFORE INSERT ON events WHEN NEW.kind='task.done' BEGIN SELECT RAISE(ABORT,'synthetic_commit_lost'); END");
   return { dir, path, runtimePath, config, store, db, kernel, worker, binding, admission, commands, nativeCalls: () => nativeCalls,
-    onNative(callback: (spec: ProcessSpec) => void) { onNative = callback; }, advance(ms: number) { clockOffset += ms; },
+    onNative(callback: (spec: ProcessSpec) => void | Promise<void>) { onNative = callback; }, recordTool(tool: NativeAgentToolResult) { toolParts.push(tool); }, advance(ms: number) { clockOffset += ms; },
     lease: () => kernel.claim(actor, `claim-${kernel.inspect(actor, "task").revision}`, "task", kernel.inspect(actor, "task").revision, 60_000), snapshot };
 }
+
+for (const mode of ["success", "commit_lost", "altered_output"] as const) test(`native worker verifies actual MCP receipts alongside input delivery: ${mode}`, async () => {
+  const f = setup(mode === "commit_lost" ? mode : "success", {}, true), mailbox = new AgentMailbox(f.kernel);
+  f.kernel.submit(actor, "peer", { task_id: "peer", chat_id: "fixture", status: "waiting" });
+  const early = mailbox.send(actor, "early", { recipient_task: "task", sender_lease: null, kind: "tell", payload: { text: "Initial context" }, causation_id: null, ttl_ms: 10000 });
+  let late = "";
+  f.onNative(async spec => {
+    const client = new NativeMcpTestClient(JSON.parse(spec.env.OPENCODE_CONFIG_CONTENT).mcp.controlmesh.command);
+    try {
+      await client.initialize();
+      late = mailbox.send(actor, "later", { recipient_task: "task", sender_lease: null, kind: "tell", payload: { text: "Tool context" }, causation_id: null, ttl_ms: 10000 }).message_id;
+      for (const [name, input] of [["receive", { request_id: "receive" }], ["send", { request_id: "send", recipient_task: "peer", text: "Agent handoff" }]] as const) {
+        const response = await client.tool(name, input); expect(response.error).toBeUndefined();
+        const output = response.result!.content![0].text;
+        expect(JSON.parse(output).ok).toBe(true);
+        if (name === "receive") expect(JSON.parse(output).messages.map((message: { message_id: string }) => message.message_id)).toEqual([late]);
+        f.recordTool({ tool: `controlmesh_${name}`, input, output: mode === "altered_output" ? "fabricated output" : output });
+      }
+    } finally { await client.close(); }
+  });
+  const lease = f.lease();
+  if (mode === "success") expect((await f.worker.execute(actor, lease, f.binding, f.admission)).task.status).toBe("done");
+  else {
+    await expect(f.worker.execute(actor, lease, f.binding, f.admission)).rejects.toThrow(mode === "commit_lost" ? "synthetic_commit_lost" : "native_agent_call_unproven");
+    expect(mailbox.inspect(actor, "task", early.message_id).status).toBe("received");
+    expect(mailbox.inspect(actor, "task", late).status).toBe("received");
+    const revision = f.kernel.inspect(actor, "task").revision;
+    if (mode === "commit_lost") f.db.sql.exec("DROP TRIGGER lose_commit");
+    const reconciler = new NativeReconciler(f.kernel, f.store, f.config), binding = reconciler.inspect(actor, "task", revision, `native-${lease.episode_id}`);
+    if (mode === "commit_lost") expect(reconciler.accept(actor, "reconcile-communication", "task", revision, binding, f.binding, f.admission).task.status).toBe("done");
+    else expect(() => reconciler.accept(actor, "reconcile-communication", "task", revision, binding, f.binding, f.admission)).toThrow("native_agent_call_unproven");
+  }
+  expect(f.nativeCalls()).toBe(1);
+  expect(mailbox.inspect(actor, "task", late).status).toBe(mode === "altered_output" ? "received" : "consumed");
+  const peer = f.kernel.claim(actor, "claim-peer", "peer", 1, 10000);
+  expect(mailbox.pending(actor, peer)).toMatchObject([{ origin: "agent_message", sender_task: "task", payload: { text: "Agent handoff" } }]);
+});
 
 test("worker confirms actual native append and persists the same session for an explicit resumed episode", async () => {
   const f = setup(), first = f.lease();

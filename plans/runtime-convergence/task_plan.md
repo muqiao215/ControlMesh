@@ -36,7 +36,7 @@ Move runtime authority to TypeScript without losing task correctness, provider e
 | CM-R2 | Transactional state migration and startup recovery | Dry-run migration counts/digests, interrupted migration replay, rollback compatibility, corrupt-input refusal | in_progress: snapshot migration plus persisted native manifests/reconciliation; other stores/cutover pending |
 | CM-R3 | Provider/transport/workspace/grant ports | Actual adapter smoke for each supported provider; grants enforced natively; process tree cleanup and result-delivery reconciliation | in_progress: source/grant/one-shot/container ports; real host and container OpenCode read profiles with native auth/state; other provider/write/source profiles and transports pending |
 | CM-R4 | Device coordinator and worker execution authority | Two-device lease expiry, fencing, clock skew, network partition and worker restart tests; stale worker cannot write or redeliver | in_progress: real ARM64 coordinator/x64 OpenCode worker continuation and reopen passed; remote reconciliation implemented, other profiles and rollout pending |
-| CM-R5 | Agent mailbox and task dependency exchange | Duplicate/out-of-order/replayed messages, bounded broadcast, cancellation propagation and backpressure evidence | in_progress: local OpenCode input delivery, atomic consumption and recovery implemented; Agent-initiated send/ask/answer, device delivery and topology integration pending |
+| CM-R5 | Agent mailbox and task dependency exchange | Duplicate/out-of-order/replayed messages, bounded broadcast, cancellation propagation and backpressure evidence | in_progress: local native input delivery and actual Agent MCP send/ask/receive/answer accepted with atomic consumption and recovery; device delivery and topology integration pending |
 | CM-R6 | History headless candidate + native adoption + SpecMesh lifecycle hooks | Real continuation canary binds provider session, current repo and approved task scope; see HV-H3 / SM-P2 | in_progress: real same-session recall/current-file and post-SIGKILL continuation passed; SpecMesh hooks and full matrix remain |
 | CM-R7 | Staged default switch and Python retirement | Canary -> selected device -> default rollout; telemetry and rollback thresholds met; old writer disabled before new writer activation | planned |
 
@@ -69,8 +69,11 @@ No claim that full TS migration or distributed coordination has completed. A sco
 
 ## Next Step
 
-Connect native Agent-initiated send/ask/answer and device delivery to the qualified execution
-owners. Local native mailbox input, explicit stdio startup, existing-session adoption and
+Connect the accepted local native Agent communication path to the device execution owner,
+with coordinator-held peer/lease authority and original native tool evidence retained on
+the executing device. Accept real cross-device send/ask/receive/answer and interrupted
+delivery without replay. Local scoped MCP, native mailbox input, explicit stdio startup,
+existing-session adoption and
 control-process restart have real acceptance; installed TaskHub/production writer cutover
 remains open. Continue transport startup, other native write/provider profiles, History
 adoption into device-local handles and independent SpecMesh lifecycle checks. Complete

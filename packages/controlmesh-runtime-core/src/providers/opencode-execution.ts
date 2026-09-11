@@ -14,6 +14,8 @@ import type { ProbeBinding } from "./preflight-cache";
 import type { ProviderFailure } from "./opencode-events";
 import { assertWorkspaceManifest, directoryIdentity, nativeReadInstructions, nativeTaskDigest, permissionEvidence, snapshotReads, type NativeManifest } from "./native-manifest";
 import { nativeInput, nativeMailboxEvidence, type NativeMailboxBatch } from "./native-mailbox-input";
+import { nativeAgentTools, type NativeAgentScope, type NativeAgentToolResult } from "./native-agent-journal";
+import { assertNativeAgentConfiguration, nativeAgentScope, type NativeAgentConfiguration } from "./native-agent-profile";
 
 export interface NativeRunner { run(spec: ProcessSpec, admission: ProcessAdmission): Promise<ProcessOutcome>; runtimeDigest?(): string }
 export interface OpenCodeWorkerConfig {
@@ -21,6 +23,7 @@ export interface OpenCodeWorkerConfig {
   native_configuration: Record<string, unknown>;
   environment: Record<string, string>;
   state_home: string;
+  communication?: NativeAgentConfiguration;
 }
 export interface IssuedReadAdmission {
   // Issued by trusted local ingress. Never derive these values from transcript text or a remote body.
@@ -41,6 +44,7 @@ export interface NativeExecutionHooks<T> {
   remainingMs?: () => number;
   signal?: AbortSignal;
   mailbox_delivery?: NativeMailboxBatch;
+  communication?: { scope: NativeAgentScope; command: string[]; freeze: () => Promise<void>; verify: (tools: NativeAgentToolResult[]) => Record<string, unknown> };
 }
 
 /** One native implementation shared by local and device adapters; hooks own durable authority and state. */
@@ -61,7 +65,14 @@ export class OpenCodeExecution {
     const input = nativeInput(task.prompt, delivery);
     const cwd = realpathSync(task.repo_root);
     const files = readFileGrant(cwd, admission.read_files), required = readFileGrant(cwd, admission.required_reads);
-    assertReadGrantSnapshot(task.tool_grant, files);
+    const communication = hooks.communication;
+    requireThat(Boolean(communication) === Boolean(this.config.communication), "native_agent_profile_required");
+    const communicationIdentity = this.config.communication ? assertNativeAgentConfiguration(this.config.communication) : null;
+    if (communication) {
+      requireThat(communication.scope.task_id === task.task_id && digest(nativeAgentScope(this.config.communication!, communication.scope)) === digest(communication.scope), "native_agent_scope_changed");
+    }
+    const communicationTools = communication ? nativeAgentTools : [];
+    assertReadGrantSnapshot(task.tool_grant, files, communicationTools);
     requireThat(required.every(file => files.includes(file)), "required_read_not_granted");
     const ref = task.native_session === undefined || task.native_session === null ? null : task.native_session as NativeSessionRef;
     if (ref) requireThat(ref.directory === cwd, "native_workspace_mismatch");
@@ -81,6 +92,7 @@ export class OpenCodeExecution {
       requireThat(stableTask() === issuedTask && realpathSync(String(task.repo_root)) === cwd, "worker_task_binding_changed");
       requireThat(digest(this.config.native_configuration) === configurationDigest, "native_configuration_changed");
       requireThat(binding.runtime_digest === this.runner.runtimeDigest?.(), "worker_runtime_binding_mismatch");
+      if (communicationIdentity) requireThat(this.config.communication && assertNativeAgentConfiguration(this.config.communication) === communicationIdentity, "native_agent_profile_changed");
       requireThat(digest({ source: admission.source_scope, files: readFileGrant(cwd, admission.read_files), required: readFileGrant(cwd, admission.required_reads) }) === issuedGrant, "issued_read_grant_changed");
       lock?.assertCurrent();
       if (manifest) assertWorkspaceManifest(manifest);
@@ -95,8 +107,8 @@ export class OpenCodeExecution {
         this.store.validate(ref);
         baseline = this.store.baseline(ref);
       }
-      const instructions = nativeReadInstructions(required);
-      const env = readOnlyEnvironment(this.config.native_configuration, binding.model, this.config.environment, temp, agent, readPatterns, instructions);
+      const instructions = nativeReadInstructions(required, communication?.scope);
+      const env = readOnlyEnvironment(this.config.native_configuration, binding.model, this.config.environment, temp, agent, readPatterns, instructions, communication?.command);
       requireThat(realpathSync(join(env.XDG_DATA_HOME, "opencode/opencode.db")) === realpathSync(this.store.path), "native_environment_store_mismatch");
       const version = await this.runner.run({ command: [this.config.executable, "--version"], cwd, env, timeout_ms: 10_000, max_output_bytes: 1024 }, { assertCurrent, remainingMs: hooks.remainingMs, signal: hooks.signal });
       requireThat(version.reason === "exited" && version.exit_code === 0 && version.stdout.trim() === binding.cli_version, "native_cli_version_changed");
@@ -104,7 +116,7 @@ export class OpenCodeExecution {
       let resolved: unknown;
       try { resolved = JSON.parse(inspect.stdout); } catch { throw new Error("native_permission_inspection_failed"); }
       requireThat(object(resolved) && resolved.prompt === instructions, "native_execution_instructions_changed");
-      const permissions = inspectReadPermissions(resolved, agent, env.XDG_DATA_HOME, readPatterns, baseline?.permissions ?? []);
+      const permissions = inspectReadPermissions(resolved, agent, env.XDG_DATA_HOME, readPatterns, baseline?.permissions ?? [], communicationTools);
       requireThat(inspect.reason === "exited" && inspect.exit_code === 0 && permissions, "native_read_grant_unverified");
       assertCurrent();
       if (ref) this.store.validate(ref);
@@ -112,7 +124,8 @@ export class OpenCodeExecution {
       const preflightGeneration = hooks.preflightGeneration();
       manifest = { schema_version: "controlmesh.native_dispatch.v1", task_digest: issuedTask, binding: structuredClone(binding), native_store_id: this.store.identity(), baseline,
         directory: directoryIdentity(cwd), worktree: directoryIdentity(worktree), files: snapshotReads(cwd, files), required_reads: required,
-        permission_evidence: permissionEvidence(resolved, agent, env.XDG_DATA_HOME, worktree, files, baseline),
+        permission_evidence: permissionEvidence(resolved, agent, env.XDG_DATA_HOME, worktree, files, baseline, communicationTools),
+        ...(communication ? { communication: structuredClone(communication.scope) } : {}),
         ...(delivery ? { mailbox_delivery: delivery } : {}) };
       assertCurrent();
       const permit = await hooks.dispatch({ provider: "opencode", model: binding.model, native_revision: ref?.revision ?? null,
@@ -122,6 +135,7 @@ export class OpenCodeExecution {
       const result = await this.runner.run({ command: [this.config.executable, "run", "--pure", "--format", "json", "--dir", cwd, "--agent", agent, "--model", binding.model,
         ...(ref ? ["--session", ref.session_id] : ["--title", "ControlMesh supervised task"]), "--print-logs", "--log-level", "ERROR"], cwd, env, stdin_text: input,
         timeout_ms: timeoutMs, max_output_bytes: 4 * 1024 * 1024 }, { assertCurrent, remainingMs: hooks.remainingMs, signal: hooks.signal, abortOnStderrLine: line => failureFromNativeStderr(line) !== null });
+      await communication?.freeze();
       const observation = observeOpenCode(result, ref?.session_id ?? null);
       try {
         await hooks.observe(
@@ -137,8 +151,11 @@ export class OpenCodeExecution {
       requireThat(this.store.worktree(evidence.reference) === worktree, "native_worktree_changed");
       requireThat(required.every(file => evidence.read_files.some(read => realpathSync(read) === file)), "required_native_read_unproven");
       requireThat(evidence.read_files.every(file => files.includes(realpathSync(file))), "native_ungranted_read");
+      requireThat(communication || evidence.agent_tools.length === 0, "native_agent_scope_unavailable");
+      const communicationEvidence = communication?.verify(evidence.agent_tools);
       const accepted = { native_session: evidence.reference, user_message_id: evidence.user_message_id, assistant_message_ids: evidence.assistant_message_ids,
         text: observation.text, output_digest: digest(observation.text), permission_digest: permissions.digest, read_files: evidence.read_files,
+        ...(communicationEvidence ? { communication: communicationEvidence } : {}),
         ...(delivery ? { mailbox_delivery: nativeMailboxEvidence(delivery, evidence.user_message_id) } : {}) };
       assertCurrent();
       return await hooks.complete(accepted);

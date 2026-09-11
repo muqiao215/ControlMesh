@@ -113,7 +113,7 @@ export class NativeSessionStore {
   }
 
   /** Confirms an appended native turn, not semantic task acceptance or arbitrary external-client exclusion. */
-  verifyTurn(sessionId: string, before: NativeBaseline | null, prompt: string, output: string): { reference: NativeSessionRef; user_message_id: string; assistant_message_ids: string[]; read_files: string[] } {
+  verifyTurn(sessionId: string, before: NativeBaseline | null, prompt: string, output: string): { reference: NativeSessionRef; user_message_id: string; assistant_message_ids: string[]; read_files: string[]; agent_tools: { tool: string; input: Record<string, unknown>; output: string }[] } {
     return this.inspect(sessionId, (db, reference) => {
       if (before) {
         const old = before.reference;
@@ -140,7 +140,12 @@ export class NativeSessionStore {
       requireThat(text([users[0].id]) === prompt && text(assistantIds) === output, "native_turn_content_mismatch");
       const reads = newParts.filter(row => row.data.type === "tool" && row.data.tool === "read" && object(row.data.state) && row.data.state.status === "completed")
         .map(row => { const state = row.data.state as Record<string, unknown>; return object(state.input) && typeof state.input.filePath === "string" ? state.input.filePath : ""; }).filter(Boolean);
-      return { reference, user_message_id: users[0].id, assistant_message_ids: assistantIds, read_files: [...new Set(reads)] };
+      const agentTools = newParts.filter(row => row.data.type === "tool" && typeof row.data.tool === "string" && row.data.tool.startsWith("controlmesh_")).map(row => {
+        const state = row.data.state;
+        requireThat(assistantIds.includes(row.message) && object(state) && state.status === "completed" && object(state.input) && typeof state.output === "string", "native_agent_tool_incomplete");
+        return { tool: row.data.tool as string, input: state.input, output: state.output };
+      });
+      return { reference, user_message_id: users[0].id, assistant_message_ids: assistantIds, read_files: [...new Set(reads)], agent_tools: agentTools };
     });
   }
 

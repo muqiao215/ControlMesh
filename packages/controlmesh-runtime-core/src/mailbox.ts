@@ -34,7 +34,7 @@ export class AgentMailbox {
   }
 
   private expire(taskId: string) {
-    this.db.sql.query("UPDATE messages SET status='expired' WHERE recipient_task=? AND expires_at<=? AND status IN ('pending','received') AND NOT EXISTS (SELECT 1 FROM native_mailbox_deliveries d WHERE d.message_id=messages.message_id)").run(taskId, this.db.now());
+    this.db.sql.query("UPDATE messages SET status='expired' WHERE recipient_task=? AND expires_at<=? AND status IN ('pending','received') AND NOT EXISTS (SELECT 1 FROM native_mailbox_deliveries d WHERE d.message_id=messages.message_id) AND NOT EXISTS (SELECT 1 FROM native_agent_deliveries d WHERE d.message_id=messages.message_id)").run(taskId, this.db.now());
   }
 
   inspect(actor: Principal, taskId: string, messageId: string): AgentMessage {
@@ -104,12 +104,22 @@ export class AgentMailbox {
   }
 
   pending(actor: Principal, proof: Lease, limit = 32): AgentMessage[] {
+    return this.pendingRows(actor, proof, limit, false);
+  }
+
+  /** Native receive tools may fetch later messages while earlier input is already reserved. */
+  availableForNativeTool(actor: Principal, proof: Lease, limit = 8): AgentMessage[] {
+    return this.pendingRows(actor, proof, limit, true);
+  }
+
+  private pendingRows(actor: Principal, proof: Lease, limit: number, unreserved: boolean): AgentMessage[] {
     requireScope(actor, "message:read");
     requireThat(Number.isSafeInteger(limit) && limit > 0 && limit <= 128, "invalid_message_limit");
     return this.kernel.withLease(actor, proof, () => {
       this.expire(proof.task_id);
       // No client cursor can skip an unconsumed gap. Received items are redelivered after restart.
-      const rows = this.db.sql.query("SELECT * FROM messages WHERE recipient_task=? AND status IN ('pending','received') ORDER BY sequence LIMIT ?").all(proof.task_id, limit) as MessageRow[];
+      const filter = unreserved ? "AND NOT EXISTS (SELECT 1 FROM native_mailbox_deliveries d WHERE d.message_id=messages.message_id) AND NOT EXISTS (SELECT 1 FROM native_agent_deliveries d WHERE d.message_id=messages.message_id)" : "";
+      const rows = this.db.sql.query(`SELECT * FROM messages WHERE recipient_task=? AND status IN ('pending','received') ${filter} ORDER BY sequence LIMIT ?`).all(proof.task_id, limit) as MessageRow[];
       return rows.map(row => this.view(row));
     });
   }
@@ -121,6 +131,7 @@ export class AgentMailbox {
     requireThat(phase !== "consumed" || (typeof evidence === "string" && evidence.trim().length > 0 && evidence.length <= 1024), "application_evidence_required");
     return this.kernel.withLease(actor, proof, () => {
       requireThat(!this.db.sql.query("SELECT 1 FROM native_mailbox_deliveries WHERE message_id=?").get(messageId), "native_delivery_requires_verification");
+      requireThat(!this.db.sql.query("SELECT 1 FROM native_agent_deliveries WHERE message_id=?").get(messageId), "native_delivery_requires_verification");
       return command(this.db, actor, requestId, "message.ack", { proof, messageId, phase, evidence }, () => {
       this.expire(proof.task_id);
       const row = this.db.sql.query("SELECT * FROM messages WHERE message_id=? AND recipient_task=?").get(messageId, proof.task_id) as MessageRow | null;

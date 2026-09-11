@@ -6,13 +6,15 @@ import { NativeSessionStore } from "./native-session";
 import { PreflightCache, type ProbeBinding } from "./preflight-cache";
 import { OpenCodeExecution, type IssuedReadAdmission, type OpenCodeWorkerConfig, type NativeRunner } from "./opencode-execution";
 import { NativeMailboxDelivery } from "./native-mailbox";
+import { NativeAgentBroker } from "./native-agent-broker";
+import { NativeAgentJournal, type NativeAgentToolResult } from "./native-agent-journal";
 export type { IssuedReadAdmission, OpenCodeWorkerConfig } from "./opencode-execution";
 
 /** Coordinator-local adapter. The shared native driver also supports a distinct authenticated device adapter. */
 export class OpenCodeWorker {
   private readonly execution: OpenCodeExecution;
   constructor(private readonly kernel: RuntimeKernel, private readonly cache: PreflightCache,
-    store: NativeSessionStore, config: OpenCodeWorkerConfig, runner: NativeRunner = new ProcessSupervisor()) {
+    store: NativeSessionStore, private readonly config: OpenCodeWorkerConfig, runner: NativeRunner = new ProcessSupervisor()) {
     this.execution = new OpenCodeExecution(store, config, runner);
   }
 
@@ -29,10 +31,24 @@ export class OpenCodeWorker {
       this.kernel.withLease(actor, lease, () => {});
       requireThat(nativeTaskDigest(this.kernel.inspect(actor, lease.task_id).task) === issued, "worker_task_binding_changed");
     };
+    const communication = this.config.communication ? new NativeAgentBroker(this.kernel, actor, lease, effect, this.config.communication,
+      () => {
+        assertCurrent();
+        const checked: unknown = admission.assertCurrent();
+        if (checked !== undefined) { void Promise.resolve(checked).catch(() => {}); requireThat(false, "admission_must_be_synchronous"); }
+        requireThat(!lifecycle.signal?.aborted, "native_agent_execution_cancelled");
+      }) : null;
+    const journal = new NativeAgentJournal(this.kernel);
+    let nativeTools: NativeAgentToolResult[] = [];
     try {
+      await communication?.start();
       return await this.execution.execute(task, binding, admission, {
         ...lifecycle,
         mailbox_delivery: delivery,
+        ...(communication ? { communication: { scope: communication.scope, command: communication.command, freeze: () => communication.close(),
+          verify: (tools: NativeAgentToolResult[]) => {
+            const proof = journal.verify(effect, communication.scope, tools); nativeTools = structuredClone(tools); return proof;
+          } } } : {}),
         assertCurrent,
         assertReady: () => { this.cache.assertReady(actor, binding); },
         preflightGeneration: () => this.cache.inspect(actor, binding).generation!,
@@ -51,6 +67,7 @@ export class OpenCodeWorker {
         observe: observation => { this.kernel.recordEffectObservation(actor, request("observe"), lease, effect, observation); },
         complete: result => this.kernel.db.transaction(() => {
           if (delivery) mailbox.consume(actor, lease, effect, delivery, result);
+          if (communication) journal.consume(actor, lease, effect, communication.scope, nativeTools);
           const accepted = { ...result, mailbox_pending_count: mailbox.pendingCount(actor, lease.task_id) };
           this.kernel.confirmEffect(actor, request("confirm"), lease, effect, accepted);
           return this.kernel.finish(actor, request("finish"), lease, "done", accepted);
@@ -62,6 +79,6 @@ export class OpenCodeWorker {
         try { this.kernel.markUnknown(actor, request("unknown"), lease, reason); } catch { /* the current owner or cancellation remains authoritative */ }
       }
       throw error;
-    }
+    } finally { await communication?.close(); }
   }
 }

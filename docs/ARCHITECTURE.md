@@ -366,7 +366,24 @@ verifier and reservation checks after a lost completion. Generic mailbox acknowl
 cannot consume a reserved native delivery, and expiry cannot make uncertain dispatched
 messages eligible for replay. Updates that arrive later or exceed the fitting prefix remain
 pending; the result records their count. There is no automatic additional model turn.
-Native Agent-initiated send/ask/answer and device-transport delivery are still unimplemented.
+
+An optional trusted per-task communication registration now adds native MCP send, ask_parent,
+receive and answer. `NativeAgentBroker` serves one execution over a private Unix socket;
+the compiled Node stdio client receives an episode-specific capability file. The container
+mounts only that task's channel directory read-only. The native profile and readiness bind
+the client digest and directory identity. Native permission inspection permits only the
+four named tools, and the task's portable grants must also allow them. Source, sender lease,
+parent and peer authority come from trusted registration, never model arguments.
+
+Schema 10 journals logical tool request IDs before application. A completed duplicate
+reuses its response under current authority; a lost in-flight call remains unresolved.
+Bounded receive waits run outside transactions. Tool-delivered messages stay reserved until
+actual native tool names, parameters and outputs match the journal. The broker stops
+admission before verification; input-batch consumption precedes tool-message consumption,
+effect confirmation and terminal task commit in one transaction. Explicit reconciliation
+uses the original native records without launching a model. Real local OpenCode/M3 acceptance
+covers all four tools between two Agents, existing parent-session recall and controller
+reopen with zero replay calls. Device-native communication and topology integration remain open.
 
 The private `OpenCodeWorker` now connects kernel leases/effect receipts to actual native
 process supervision and terminal evidence. Its current profile is explicitly issued local

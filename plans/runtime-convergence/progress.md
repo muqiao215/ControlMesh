@@ -2,6 +2,15 @@
 
 ## Current
 
+Local native Agent communication is implemented and has real acceptance: two OpenCode
+Agents used scoped MCP send, ask_parent, receive and answer, with native record verification,
+existing parent-session recall and zero execution replay after control-process restart.
+Schema 10 and trusted per-task registration are described below and in runtime-core's
+README. Device-native communication and topology integration remain required next.
+The prior input-delivery baseline `3615a60` has verified green
+CI [34611652301](https://github.com/muqiao215/ControlMesh/actions/runs/34611652301);
+that baseline's CI does not substitute for this increment's verification.
+
 Full goal active; CM-R0 through CM-R6 remain in progress and CM-R7 is not activated.
 Python v0.43.0 remains the released/installed production runtime. The private TS kernel now
 supports a qualified OpenCode read profile, native continuation, device coordination and
@@ -138,7 +147,7 @@ Earlier implementation history is in Git; it is not duplicated here.
 
 All original CM-R0–CM-R7 gates remain authoritative: remaining provider/transport/workspace/
 artifact owners, native provider write and other image/auth/state profiles, other persisted runtime stores,
-writer exclusion and rollback, device-local History adoption, native Agent send/ask/answer and device mailbox application,
+writer exclusion and rollback, device-local History adoption, device-native Agent communication and mailbox application,
 independent SpecMesh current-checkout/lifecycle gates, fleet enrollment/rotation/fairness and
 real topology execution, terminal product work, default TS switch, Python retirement and
 release/install/running alignment. A qualified native read profile and isolated process tests do not
@@ -218,7 +227,7 @@ token from native history without redelivery and read the changed current file. 
 completed with one probe/two task turns (three model calls/nine native commands), readiness
 generation 1 and zero extra replay calls. All nine containers were independently absent.
 This real send used the configured human-request ingress; Agent provenance is covered by
-directed tests, not a claim that native Agent-originating exchange is already implemented.
+directed tests; the subsequent native Agent-originating acceptance is recorded below.
 
 Verification: strict TS and the unchanged 512-module/57-field ownership baseline passed.
 CI Bun 1.3.11 full core passed **161 tests / 2144 assertions / 21 files / 32.97 seconds**,
@@ -233,9 +242,53 @@ Private evidence: workspace `outputs/runtime-convergence/native-mailbox-acceptan
 The existing production service, provider account settings and live task writer were not
 changed. The whole migration remains active.
 
+## Native Agent communication — 2026-09-11
+
+The qualified local OpenCode read owner now exposes an optional scoped MCP channel.
+Private configuration binds task peers and parent; model arguments cannot supply an actor,
+source origin, lease or new peer. A generated Node stdio client connects to one per-episode
+Unix socket using a private capability file. Both host and container tests cover paths
+longer than Linux's socket-path limit. The task channel is mounted read-only, and its
+client/profile identity participates in readiness and dispatch binding. Preflight does
+not enable communication tools.
+
+Schema 10 persists logical calls before application and distinguishes unresolved calls
+from completed duplicates. Current scopes and execution authority guard both fresh calls
+and cached responses. Receive waits outside transactions; reserved messages cannot expire
+into replay. The native driver closes admission, then matches actual OpenCode tool names,
+arguments and outputs to all recorded calls. Input-batch and tool-received message
+consumption precede effect/task completion in one transaction. Recovery checks the same
+original records with no model invocation. Tests cover lost terminal commit, fabricated
+native output, revoked scope, cancelled task, changed client, duplicate in-flight receive
+and schema-9 reservation preservation.
+
+Real acceptance **2026-09-11 15:30:48–15:31:29 UTC** used OpenCode 1.18.29/M3 and the
+existing pinned native image. The parent resumed the controlled existing session; the child
+was a distinct native Agent. All four tools appeared in five actual native tool records.
+Three messages (tell, question, answer) retained `agent_message` origin and causal answer
+identity and became consumed. The parent recalled an old marker absent from the new
+prompts, while the child's new token reached the parent through actual tools. Both Agents
+read the current project file and completed. Controller exit/reopen and replay of the
+original enqueue produced no additional model call. Two per-task qualified profiles used
+one preflight each and one task turn each: **four native model-run commands, thirteen native commands total**
+including a separate model-free native MCP discovery. A native task command can make several
+provider requests during its tool loop; these counts are not a provider billing/request audit.
+Independent readback matched all
+five native tool records and confirmed all thirteen immutable container IDs absent and
+all per-episode capability/socket files removed.
+
+Verification: strict TS passes. CI Bun 1.3.11 full core with actual Docker enabled passes
+**175 tests / 2,269 assertions / 23 files / 35.12 seconds**, zero failures or skips. After
+tightening channel-directory admission and synchronous authorization checks, the affected
+broker/worker suites passed again; no extra paid native probe was needed. Raw scripts,
+results and independent verification remain in private workspace
+`outputs/runtime-convergence/native-agent-*`. An auxiliary Docker-absence check initially
+matched a capitalized diagnostic; the real client uses lowercase. Correcting only that
+case normalization confirmed removal without rerunning any provider execution.
+
 ## Next
 
-Connect native Agent send/ask/answer and device mailbox delivery to actual execution;
+Connect device-native Agent communication and mailbox delivery to actual execution;
 extend provider/write profiles with real native permission and outcome verification.
 Then continue stores, History adoption, SpecMesh lifecycle and the production writer switch.
 The current Node-image process profile is not a substitute for native provider qualification.

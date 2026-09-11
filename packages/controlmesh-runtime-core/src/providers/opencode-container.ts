@@ -5,12 +5,14 @@ import { resourceMounts, type ContainerConfiguration } from "../containers/plan"
 import type { ProcessAdmission, ProcessOutcome, ProcessSpec } from "../process-supervisor";
 import { digest, requireThat } from "../value";
 import type { NativeRunner } from "./opencode-execution";
+import { assertNativeAgentConfiguration, type NativeAgentConfiguration } from "./native-agent-profile";
 
 export interface OpenCodeContainerProfile {
   container: Omit<ContainerConfiguration, "resources" | "workspace_layout">;
   executable: string;
   data_home: string;
   cache_home: string;
+  communication?: NativeAgentConfiguration;
 }
 
 /** Device-local OpenCode read execution; native data persists, while auth and project stay read-only. */
@@ -27,6 +29,7 @@ export class OpenCodeReadContainerRunner implements NativeRunner {
       { source: join(profile.data_home, "opencode"), readonly: false },
       { source: join(profile.cache_home, "opencode"), readonly: false },
       { source: join(profile.data_home, "opencode/auth.json"), readonly: true },
+      ...(profile.communication ? [{ source: profile.communication.directory, readonly: true }] : []),
     ] };
     this.initialDigest = this.runtimeDigest();
     this.containers = containers ?? new ContainerProcessSupervisor(this.configuration);
@@ -34,7 +37,8 @@ export class OpenCodeReadContainerRunner implements NativeRunner {
 
   runtimeDigest(): string {
     return digest({ schema_version: "controlmesh.opencode_container_read.v1", profile: this.profile,
-      resources: resourceMounts(this.configuration) });
+      resources: resourceMounts(this.configuration),
+      ...(this.profile.communication ? { communication_identity: assertNativeAgentConfiguration(this.profile.communication) } : {}) });
   }
 
   async run(spec: ProcessSpec, admission: ProcessAdmission): Promise<ProcessOutcome> {

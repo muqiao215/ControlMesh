@@ -6,6 +6,7 @@ import { NativeSessionStore } from "./native-session";
 import { NativeResultVerification } from "./native-result-verification";
 import type { ProbeBinding } from "./preflight-cache";
 import { NativeMailboxDelivery } from "./native-mailbox";
+import { NativeAgentJournal, type NativeAgentToolResult } from "./native-agent-journal";
 
 /** Read-only native verification followed by an explicit transactional outcome decision. No model/probe/CLI invocation. */
 export class NativeReconciler {
@@ -27,7 +28,10 @@ export class NativeReconciler {
     let verification: NativeResultVerification | undefined;
     try {
       return this.kernel.reconcileEffect(actor, requestId, taskId, revision, candidate, evidence => {
-        verification = new NativeResultVerification(this.store, this.config, evidence.task.task, evidence.manifest, evidence.observation, binding, admission);
+        const journal = new NativeAgentJournal(this.kernel);
+        let tools: NativeAgentToolResult[] = [];
+        verification = new NativeResultVerification(this.store, this.config, evidence.task.task, evidence.manifest, evidence.observation, binding, admission,
+          (scope, actual) => { tools = actual; return journal.verify(evidence.effect_id, scope, actual); });
         verification.assertCurrent();
         const delivery = decodeNativeManifest(evidence.manifest).mailbox_delivery;
         let pending: number | undefined;
@@ -35,6 +39,11 @@ export class NativeReconciler {
           const mailbox = new NativeMailboxDelivery(this.kernel);
           mailbox.reconcile(actor, evidence, delivery, verification.result);
           pending = mailbox.pendingCount(actor, taskId);
+        }
+        const communication = decodeNativeManifest(evidence.manifest).communication;
+        if (communication) {
+          journal.reconcile(actor, evidence, communication, tools);
+          pending = new NativeMailboxDelivery(this.kernel).pendingCount(actor, taskId);
         }
         verification.assertCurrent();
         return { ...verification.result, ...(pending !== undefined ? { mailbox_pending_count: pending } : {}),

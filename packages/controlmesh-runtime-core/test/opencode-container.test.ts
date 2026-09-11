@@ -4,6 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { OpenCodeReadContainerRunner, type OpenCodeContainerProfile } from "../src";
 import { planContainer } from "../src/containers/plan";
+import { RuntimeDatabase, RuntimeKernel, AgentMailbox, type Principal } from "../src";
+import { NativeAgentBroker } from "../src/providers/native-agent-broker";
+import { prepareNativeAgentConfiguration, nativeAgentScope } from "../src/providers/native-agent-profile";
 
 const actual = process.env.CM_CONTAINER_TEST_IMAGE ? test : test.skip;
 const roots: string[] = [];
@@ -19,6 +22,37 @@ function fixture() {
   const env = { XDG_DATA_HOME: data, XDG_CACHE_HOME: cache, HOME: "/host/private/home", OPENCODE_CONFIG_DIR: "/host/private/config" };
   return { root, workspace, state, data, cache, auth, profile, env, runner: new OpenCodeReadContainerRunner(profile) };
 }
+
+actual("a native container calls only its scoped MCP broker through a read-only task channel", async () => {
+  const f = fixture(), db = new RuntimeDatabase(":memory:"), kernel = new RuntimeKernel(db);
+  const actor: Principal = { id: "operator", device_id: "local", origin: "human_request", scopes: ["task:create", "task:read", "task:execute", "message:send", "message:read", "message:ack"] };
+  for (const id of ["sender", "peer"]) kernel.submit(actor, `create-${id}`, { task_id: id, status: "waiting", chat_id: "fixture" });
+  const lease = kernel.claim(actor, "claim", "sender", 1, 30000); kernel.start(actor, "start", lease);
+  const profile = prepareNativeAgentConfiguration(join(f.root, "communication"), "/usr/local/bin/node", "sender", ["peer"], null);
+  kernel.dispatchEffect(actor, "dispatch", lease, "effect", {}, { communication: nativeAgentScope(profile, lease) });
+  const broker = new NativeAgentBroker(kernel, actor, lease, "effect", profile, () => {});
+  try {
+    await broker.start();
+    const script = `const fs=require('node:fs'),cp=require('node:child_process');
+      const cmd=${JSON.stringify(broker.command)}; let denied=false;
+      try { fs.writeFileSync(cmd[1],'changed') } catch { denied=true }
+      if(!denied)throw new Error('client_writable');
+      const child=cp.spawn(cmd[0],cmd.slice(1),{stdio:['pipe','pipe','inherit']});let buffer='';
+      const send=(id,method,params)=>child.stdin.write(JSON.stringify({jsonrpc:'2.0',id,method,params})+'\\n');
+      child.stdout.on('data',part=>{buffer+=part;let end;while((end=buffer.indexOf('\\n'))>=0){const row=JSON.parse(buffer.slice(0,end));buffer=buffer.slice(end+1);
+        if(row.id===1)send(2,'tools/call',{name:'send',arguments:{request_id:'inside',recipient_task:'peer',text:'From container'}});
+        if(row.id===2){console.log(JSON.stringify({denied,response:row}));child.stdin.end();}
+      }});send(1,'initialize',{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'container-test',version:'1'}});`;
+    const runner = new OpenCodeReadContainerRunner({ ...f.profile, communication: profile });
+    const output = await runner.run({ command: [f.profile.executable, "-e", script], cwd: f.workspace, env: f.env, timeout_ms: 5000 }, { assertCurrent() {} });
+    expect(output.reason).toBe("exited"); expect(output.exit_code).toBe(0);
+    const response = JSON.parse(output.stdout); expect(response.denied).toBe(true);
+    expect(response.response.error).toBeUndefined();
+    expect(JSON.parse(response.response.result.content[0].text).ok).toBe(true);
+    const peer = kernel.claim(actor, "claim-peer", "peer", 1, 30000);
+    expect(new AgentMailbox(kernel).pending(actor, peer)).toMatchObject([{ origin: "agent_message", sender_task: "sender", payload: { text: "From container" } }]);
+  } finally { await broker.close(); db.close(); }
+}, 15000);
 
 test("resource mounts reject directories overlapping project/control and writable credential files", () => {
   const f = fixture(), configuration = { ...f.profile.container, workspace_layout: "native" as const };

@@ -1,5 +1,42 @@
 # Findings
 
+Native Agent communication: `NativeAgentJournal` records each logical tool request
+before applying it, binds it to the dispatched task/episode manifest, assigns
+`agent_message` provenance internally, and refuses replay of an unresolved request.
+Schema 10 separates tool-delivered reservations from schema-9 input-delivery reservations.
+The first strict TS check found request-ID narrowing lost across a closure; retain a
+validated local value before entering the transaction. Completion/replay also needs the
+current message scopes, not only the scopes checked at request creation. Existing migration
+fixtures must drop new dependent tables before emulating old schemas. The local broker,
+client, permission profile, worker and native verifier are now integrated and accepted.
+
+The task-scoped stdio MCP client reaches a per-execution Unix socket broker. The task's
+channel directory is stable for native profile identity, while socket and capability names
+are fresh per episode. Trusted configuration supplies authorized
+peers and parent; model arguments may not supply a principal, sender lease or origin.
+The client digest and communication scope are retained in the native manifest. The broker
+rechecks execution authority before every operation and cached reply, coalesces live
+duplicates, and refuses pending receipts left by a lost broker. Bounded receive waits run
+outside database transactions. Actual native tool names/inputs/outputs are matched to the
+durable journal before completion. Existing input-batch consumption precedes later
+tool-received messages in the same transaction. Recovery uses original native tool evidence
+and the original manifest without a new native turn. Device wiring remains required.
+
+OpenCode 1.18.29's [MCP catalog](https://raw.githubusercontent.com/anomalyco/opencode/v1.18.29/packages/opencode/src/mcp/catalog.ts)
+combines server and tool names; CM registers `controlmesh` with `send`, `ask_parent`,
+`receive` and `answer`. Its [session tool adapter](https://raw.githubusercontent.com/anomalyco/opencode/v1.18.29/packages/opencode/src/session/tools.ts)
+asks permission using the combined name and stores flattened MCP text as native tool
+output. CM returns one bounded text result and compares it with the journal. The client
+follows [MCP stdio framing](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports),
+with bounded newline-delimited JSON-RPC and no logs on stdout. It negotiates initialization,
+lists only four tools and opens no TCP listener.
+
+Linux Unix-domain socket paths are short, while the real workspace is deeply nested.
+Opening the canonical task directory and addressing its socket through `/proc/self/fd`
+preserves the same mounted inode in host and container without exposing an ancestor mount.
+Actual Node and Docker tests prove the connection and reject writes to the mounted client.
+Real OpenCode MCP discovery then connected successfully without any model call.
+
 The initial native image had OpenCode but no Git. A Git-capable image was required to preserve
 the provider's real repository worktree identity, not just cwd in an unversioned fixture.
 Real container acceptance now uses pinned image identity, original paths and native auth/state:
@@ -231,9 +268,9 @@ other stores and transport delivery still need their own migration and release g
 Native mailbox integration now targets the actual local TaskHub execution path. The Python
 `TaskHub.tell` appends parent updates for running tasks, while `pull_updates(mark_read=True)`
 advances a file cursor. The TS mailbox already retains provenance/sequence/expiry, but its
-generic consumed-evidence string is not independent proof of native delivery. The current
-OpenCode worker sends only `task.prompt`, and native reconciliation verifies exactly that
-text. Delivery therefore needs an immutable batch in the native dispatch manifest, actual
+generic consumed-evidence string is not independent proof of native delivery. Before this
+integration, the OpenCode worker sent only `task.prompt`, and native reconciliation verified
+exactly that text. Delivery therefore required an immutable batch in the dispatch manifest, actual
 input verification, and atomic acknowledgement with task completion/reconciliation.
 An in-flight reserved message must not become eligible for replay merely because its TTL
 expires; expiry controls new delivery, while the original execution outcome controls recovery.
