@@ -413,10 +413,10 @@ test("recovery keeps an already delivered matching observation immutable", async
 test("schema six upgrade preserves completed device evidence while adding durable recovery requests", async () => {
   const f = setup(); expect((await f.worker.run("native-task", 5000)).status).toBe("done");
   const original = f.workerDB.sql.query("SELECT * FROM device_execution_records").all();
-  f.workerDB.sql.exec("DROP TABLE feishu_conversations; DROP TABLE feishu_event_aliases; DROP TABLE feishu_inbox; DROP TABLE transport_receipts; DROP TABLE delivery_outbox; DROP TABLE delivery_routes; DROP TABLE native_agent_deliveries; DROP TABLE native_agent_calls; DROP TABLE native_mailbox_deliveries; DROP TABLE local_runs; DROP TABLE device_reconciliations; PRAGMA user_version=6");
+  f.workerDB.sql.exec("DROP TABLE command_reservations; DROP TABLE feishu_conversations; DROP TABLE feishu_event_aliases; DROP TABLE feishu_inbox; DROP TABLE transport_receipts; DROP TABLE delivery_outbox; DROP TABLE delivery_routes; DROP TABLE native_agent_deliveries; DROP TABLE native_agent_calls; DROP TABLE native_mailbox_deliveries; DROP TABLE local_runs; DROP TABLE device_reconciliations; PRAGMA user_version=6");
   const upgraded = new RuntimeDatabase(join(f.root, "worker.sqlite"));
   try {
-    expect(upgraded.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 12 });
+    expect(upgraded.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 13 });
     expect(upgraded.sql.query("SELECT * FROM device_execution_records").all()).toEqual(original);
     expect(upgraded.sql.query("SELECT COUNT(*) AS n FROM device_reconciliations").get()).toEqual({ n: 0 });
   } finally { upgraded.close(); }

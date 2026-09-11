@@ -422,3 +422,38 @@ Preparation now fsyncs file data and directory entries and binds the initial sta
 A new runner attachment rejects changed bytes, new files and same-content identity changes.
 The active runner intentionally permits its own later staged edits. This guard is a dispatch
 condition, not a general lock against native clients outside the CM ownership protocol.
+
+
+## Normal local TaskHub writes and recovery — 2026-09-12
+
+The earlier explicit-stage canary did not exercise the ordinary task owner. Trusted write
+roots now flow through local startup/queue/adapter/shared execution; v2 manifests retain the
+actual stage and workflow binding while v1 read manifests remain compatible. Execution must
+pin canonical input, but publication must accept its own changed files. Separate authority
+callbacks preserve lease/grant/source/config checks without falsely revoking owned output.
+After publication the independent SpecMesh service checks current documents again.
+
+Native patch results retain metadata.files (filePath/type/movePath). Verify both endpoints
+and require every proposed path to have completed native tool evidence. Container projection
+limits writes; explicit alias denies are also needed because writable mounts do not enforce
+native read permissions. Real M3 acceptance covers edit/write; patch deletion/moves are
+currently fixture evidence. This distinction remains in the design and progress.
+
+An async recovery gap allowed request-ID conflict detection only after filesystem publication.
+Schema 13 reserves the canonical command identity first. Completion consumes the reservation
+atomically with the receipt; a failed workflow check retains it across restart. Cancellation
+under another request ID still revokes task authority. Seven old-schema tests initially left
+the new table present while reducing user_version; reconstructing the old table set fixed
+those fixtures without weakening production migration. Full core regression then passed.
+
+Real TaskHub acceptance retained the original proposal after a deliberately lost completion,
+reopened, reconciled with no new native call, replayed the receipt without rewriting files,
+and continued the same original session against updated PROJECT/code. Post-write checks are
+structural, not independent reviewed completion. Its actual schema-12 database subsequently
+upgraded to 13 and replayed the receipt without changing events/native messages/containers.
+Async reservation behavior is separately fixture-tested; the paid model was not rerun.
+
+The initial container report queried SQLite, but actual container ownership uses private
+per-container record.json files. Independent verification read those records and confirmed
+all nine immutable container IDs absent. The initial report is preserved, and only the
+reporting code/result was corrected. Native acceptance itself was not repeated.

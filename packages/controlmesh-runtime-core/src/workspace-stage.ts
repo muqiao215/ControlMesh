@@ -202,6 +202,29 @@ export class WorkspaceStage {
     return [...this.record.roots.map(path => ({ source: join(this.record.stage.path, path), target: join(this.record.workspace.path, path), readonly: false })),
       ...this.record.before.protected_git.map(entry => ({ source: join(this.record.workspace.path, entry.path), target: join(this.record.workspace.path, entry.path), readonly: true }))];
   }
+  deniedPaths(): string[] {
+    this.assertCurrent();
+    return [...this.record.before.entries.filter(entry => entry.kind === "link"), ...this.record.before.protected_git]
+      .map(entry => join(this.record.workspace.path, entry.path));
+  }
+  assertProposal(expectedDigest: string): void {
+    this.assertCurrent(); const proposal = this.record.proposal;
+    requireThat(proposal && ["sealed", "applying", "applied"].includes(this.record.phase) && proposal.digest === expectedDigest
+      && digest({ before: this.record.before, after: proposal.after, changes: proposal.changes }) === expectedDigest
+      && digest(this.staged()) === digest(proposal.after), "workspace_stage_proposal_changed");
+    for (const change of proposal.changes) if (change.after)
+      requireThat(sha(regular(join(this.path, "blobs", change.after.sha256!)).bytes) === change.after.sha256, "workspace_stage_blob_changed");
+    this.checkMixed();
+  }
+  assertApplied(expectedDigest: string): void {
+    this.assertProposal(expectedDigest);
+    requireThat(this.record.phase === "applied" && this.record.applied === this.record.proposal!.changes.length && this.record.intent === null,
+      "workspace_stage_publication_incomplete");
+  }
+  proposalReceipt(): { proposal_digest: string; changed_paths: string[] } {
+    this.assertCurrent(); requireThat(this.record.proposal, "workspace_stage_not_sealed");
+    return { proposal_digest: this.record.proposal.digest, changed_paths: this.record.proposal.changes.map(change => change.path) };
+  }
   seal(authority: WorkspaceAuthority): { stage_id: string; binding_digest: string; proposal_digest: string; changed_paths: string[] } {
     return this.gated(authority, () => {
       requireThat(this.record.phase === "prepared", "workspace_stage_not_prepared");

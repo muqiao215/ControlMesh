@@ -10,7 +10,7 @@ if (process.argv.length !== 3) {
 let owned: ReturnType<typeof openLocalRuntime> | undefined;
 try {
   owned = openLocalRuntime(process.argv[2]);
-  const control = new LocalRuntimeControl(owned.runtime, owned.deliveries, owned.submissionIdentity, owned.inbound, owned.specmesh), pending = new Set<Promise<void>>();
+  const control = new LocalRuntimeControl(owned.runtime, owned.deliveries, owned.submissionIdentity, owned.inbound, owned.specmesh, owned.recovery), pending = new Set<Promise<void>>();
   const output = (value: unknown) => new Promise<void>((resolve, reject) => {
     process.stdout.write(JSON.stringify(value) + "\n", error => error ? reject(error) : resolve());
   });

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { RuntimeDatabase } from "./database";
-import { command, requireScope } from "./commands";
+import { command, commandReceipt, requireScope, reserveCommand } from "./commands";
 import { assertProtocolSchema, type ExecutionLease } from "@controlmesh/protocol";
 import { canonical, digest, identifier, legacyTask, object, requireThat, terminal, type LegacyTask, type TaskStatus } from "./value";
 
@@ -446,6 +446,18 @@ export class RuntimeKernel {
       this.event(actor, task, "effect.reconciled", { ...binding, acceptance_digest: digest(accepted) });
       this.event(actor, task, "task.done", { episode_id: binding.episode_id, reconciled: true, result: accepted });
       return this.snapshot(task);
+    });
+  }
+  reconciliationReceipt(actor: Principal, requestId: string, taskId: string, expectedRevision: number, binding: ReconciliationBinding): TaskSnapshot | null {
+    this.reconcileScope(actor, taskId);
+    return commandReceipt<TaskSnapshot>(this.db, actor, requestId, "reconcile_effect", { taskId, expectedRevision, binding })?.value ?? null;
+  }
+  reserveReconciliation(actor: Principal, requestId: string, taskId: string, expectedRevision: number, binding: ReconciliationBinding): void {
+    this.db.transaction(() => {
+      const evidence = this.inspectReconciliation(actor, taskId, expectedRevision, binding.effect_id);
+      requireThat(evidence.episode.episode_id === binding.episode_id && evidence.manifest_digest === binding.manifest_digest
+        && evidence.observation_digest === binding.observation_digest, "reconciliation_evidence_changed");
+      reserveCommand(this.db, actor, requestId, "reconcile_effect", { taskId, expectedRevision, binding });
     });
   }
 }

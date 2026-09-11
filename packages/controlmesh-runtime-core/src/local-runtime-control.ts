@@ -5,12 +5,18 @@ import type { TerminalDelivery } from "@controlmesh/protocol";
 import type { SubmissionIdentity } from "./task-ingress";
 import type { FeishuInboundRuntime } from "./feishu-inbound-runtime";
 import type { SpecMeshPort } from "./specmesh-port";
+import type { ReconciliationBinding, TaskSnapshot } from "./kernel";
+
+export interface LocalRuntimeRecovery {
+  inspect(taskId: string, revision: number, effectId: string): ReconciliationBinding;
+  accept(requestId: string, taskId: string, revision: number, candidate: ReconciliationBinding): Promise<TaskSnapshot>;
+}
 
 /** Private local control protocol. It never accepts caller-supplied principals, source contexts or grants. */
 export class LocalRuntimeControl {
   constructor(private readonly runtime: LocalTaskRuntime, private readonly deliveries?: DeliveryOutbox,
     private readonly submissionIdentity?: (task: LegacyTask) => SubmissionIdentity, private readonly inbound?: FeishuInboundRuntime,
-    private readonly specmesh?: SpecMeshPort) {}
+    private readonly specmesh?: SpecMeshPort, private readonly recovery?: LocalRuntimeRecovery) {}
 
   async handle(request: unknown): Promise<Record<string, unknown>> {
     let id: string | null = null;
@@ -24,6 +30,8 @@ export class LocalRuntimeControl {
         drain_deliveries: [], retry_delivery: ["delivery_id"], reconcile_delivery: ["delivery_id", "remote_message_id"], revoke_delivery: ["task_id"],
         start_inbound: [], inbound_status: [], drain_inbound: [], retry_inbound: ["receipt_id"],
         prepare_handoff: ["task_id"], verify_specmesh: ["task_id"],
+        inspect_reconciliation: ["task_id", "expected_revision", "effect_id"],
+        reconcile_task: ["task_id", "expected_revision", "candidate"],
       };
       requireThat(typeof request.op === "string" && Object.hasOwn(fields, request.op), "unknown_local_operation");
       requireThat(Object.keys(request).every(key => ["id", "op", ...fields[request.op as string]].includes(key)), "unexpected_local_request_field");
@@ -32,6 +40,16 @@ export class LocalRuntimeControl {
       if (["bind_delivery", "deliveries", "drain_deliveries", "retry_delivery", "reconcile_delivery", "revoke_delivery"].includes(request.op))
         requireThat(this.deliveries, "delivery_not_configured");
       switch (request.op) {
+        case "inspect_reconciliation":
+          requireThat(this.recovery, "local_recovery_not_configured"); identifier(request.task_id); identifier(request.effect_id);
+          result = this.recovery.inspect(request.task_id, request.expected_revision as number, request.effect_id); break;
+        case "reconcile_task": {
+          requireThat(this.recovery, "local_recovery_not_configured"); identifier(request.task_id);
+          const candidate = request.candidate;
+          requireThat(object(candidate) && Object.keys(candidate).length === 4
+            && ["episode_id", "effect_id", "manifest_digest", "observation_digest"].every(key => typeof candidate[key] === "string"), "invalid_reconciliation_binding");
+          result = await this.recovery.accept(id, request.task_id, request.expected_revision as number, candidate as unknown as ReconciliationBinding); break;
+        }
         case "prepare_handoff": case "verify_specmesh": {
           requireThat(this.specmesh, "specmesh_not_configured"); identifier(request.task_id);
           const taskId = request.task_id, task = this.runtime.inspectTask(taskId);

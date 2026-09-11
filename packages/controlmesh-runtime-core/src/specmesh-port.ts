@@ -136,8 +136,12 @@ export class SpecMeshPort {
   }
   bind(execution: LocalTaskExecution, requiredReads: readonly string[]): LocalTaskExecution {
     let observation: SpecMeshObservation | undefined;
+    const synchronous = (operation: () => void) => { const response: unknown = operation();
+      if (response !== undefined) { void Promise.resolve(response).catch(() => {}); requireThat(false, "admission_must_be_synchronous"); } };
     return { binding_digest: digest({ execution: execution.binding_digest, specmesh: this.binding_digest }),
-      assertCurrent: () => { this.assertCurrent(); execution.assertCurrent(); observation?.assertCurrent(); },
+      assertCurrent: () => { this.assertCurrent(); synchronous(() => execution.assertCurrent()); observation?.assertCurrent(); },
+      assertPublicationAuthority: () => { this.assertCurrent();
+        synchronous(() => execution.assertPublicationAuthority ? execution.assertPublicationAuthority() : execution.assertCurrent()); },
       ensureReady: async (requestId, context) => {
         observation = await this.inspect("check", context);
         requireThat(observation.result.status === "pass", "specmesh_start_gate_blocked");
@@ -149,7 +153,15 @@ export class SpecMeshPort {
         return execution.ensureReady(requestId, context);
       },
       execute: (lease, context) => { requireThat(observation?.result.status === "pass", "specmesh_start_gate_required");
-        observation.assertCurrent(); return execution.execute(lease, context); },
+        observation.assertCurrent(); return execution.execute(lease, { ...context, verifyPublication: async assertPublished => {
+          const assertCurrent = () => { (context.assertPublicationAuthority ?? context.assertCurrent)(); assertPublished(); };
+          const next = await this.inspect("check", { ...context, assertCurrent });
+          requireThat(next.result.status === "pass", "specmesh_publication_gate_blocked");
+          const required = new Set(requiredReads);
+          requireThat(next.result.references.every(item => required.has(join(this.workspace.path, item.path))), "specmesh_context_reads_not_issued");
+          assertCurrent(); next.assertCurrent(); observation = next;
+          return { specmesh: { snapshot_digest: next.snapshot_digest, status: "pass", closeout_verified: false } };
+        } }); },
     };
   }
 }

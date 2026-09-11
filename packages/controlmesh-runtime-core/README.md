@@ -21,7 +21,7 @@ Track completion in [the repository plan](../../plans/runtime-convergence/task_p
   blocked quota does not repeatedly probe. Inspection/submission/enqueue never launch models.
 - `OpenCodeTaskAdapter` selects only a registered workspace/model/container profile and
   uses the same current grant and configuration checks before preflight and native dispatch.
-  The qualified source is local foreground read-only work; unavailable admission never
+  Qualified local profiles include reads and explicitly registered staged workspace writes; unavailable admission never
   silently falls back to another model or host runtime.
 - `execution-context`, `execution-policy` and `execution-grants` port the existing source
   enums, sandbox floors, provider flag mapping, submit grants and pinned reply checks.
@@ -82,7 +82,7 @@ Track completion in [the repository plan](../../plans/runtime-convergence/task_p
   rereads its own configured native store, checks a content-bound v2 reference, and never
   treats candidate text as authorization. The read-only digest includes older messages.
 - `OpenCodeWorker` connects the kernel to real OpenCode execution for an explicitly issued
-  local foreground read profile. It checks current persisted grants and native resolved
+  local foreground read or staged-write profile. It checks current persisted grants and native resolved
   agent/session permissions, passes the prompt through bounded stdin, verifies native
   append lineage and required current-file reads, and atomically confirms the result.
   A real same-session marker-recall/current-file canary passed; see the active plan.
@@ -101,7 +101,7 @@ Track completion in [the repository plan](../../plans/runtime-convergence/task_p
 - Before native dispatch, it atomically stores the task/provider/grant binding, native
   baseline row hashes, permission attestation and bounded file fingerprints. Original
   observations are retained separately from accepted results. `NativeReconciler` performs
-  explicit read-only verification after interruption and commits an accepted outcome with
+  explicit native verification after interruption and commits an accepted outcome with
   a current revision and evidence-bound receipt. It does not call a model or run the CLI.
   Missing/inconsistent evidence or an unperformed required read stays unknown.
 - `DeviceCoordinator` provides an explicitly started, Bearer-authenticated private worker
@@ -328,7 +328,7 @@ The remaining fields bind trusted local registration:
 | `opencode.container` | Local Docker executable/socket, available immutable image ID, native-compatible Node executable and resource bounds; native OpenCode and Git must exist in the image |
 | `opencode.timeout_ms` | Optional native turn deadline, 1000–300000 ms; default 60000 |
 | `communication` | Optional native Node executable and trusted task-to-peer/parent registration, described below |
-| `workspace` | Canonical directory, exact `read_files`, and the granted subset `required_reads` |
+| `workspace` | Canonical directory, exact `read_files`, subset `required_reads`, optional canonical directory list `write_roots` |
 
 Keep configuration and native credentials outside Git. The adapter uses the existing
 native store and read-only auth file, not copied transcripts or credentials in an image.
@@ -391,6 +391,38 @@ to fit. Agent-origin context retains its sender and cannot issue additional perm
 SIGINT/SIGTERM stop owned work; interrupted
 external effects require reconciliation. EOF does not automatically execute pending work.
 
+## Local staged workspace writes and recovery
+
+The optional `workspace.write_roots` private registration grants read/edit inside literal
+canonical directories; it does not come from task input. The portable task grant must permit
+the native edit/write/apply_patch family. Empty or absent roots retain read-only execution.
+Git metadata and existing symlink aliases are denied. The runner overlays private staged
+roots at their original paths; only the current controller publishes canonical files.
+Each file has a recoverable journal; the complete batch is not atomic. Conflicting external
+edits are retained. Limits and unresolved profiles are in
+[the native write design](../../plans/runtime-convergence/native-write-design.md).
+
+A failed completion can leave an interrupted run with an original retained proposal. Inspect
+the current task revision/effect, then obtain the evidence binding through private control:
+
+```json
+{"id":"inspect-recovery-1","op":"inspect_reconciliation","task_id":"example","expected_revision":4,"effect_id":"original-effect"}
+```
+
+For `reconcile_task`, send a new stable `id`, the same `task_id`/`expected_revision`, and
+`candidate` equal to the returned four-field binding (`episode_id`, `effect_id`,
+`manifest_digest`, `observation_digest`). Do not invent these values. Acceptance rereads the
+original native/file evidence and resumes only that sealed proposal. It never invokes a
+model. Schema 13 reserves request identity before publication and workflow verification;
+conflicting reuse rejects, including after restart. A successful receipt is replayable
+without rewriting files. Inspection needs no provider credentials; acceptance requires the
+original current registered profile and native evidence. Unsealed outcomes remain unknown.
+
+The optional SpecMesh gate runs again after publication and can validate owned continuity
+document changes. Current structural pass is recorded separately from independent semantic
+closeout. A real two-turn normal local TaskHub canary exercised edits, completion loss,
+reopen/reconciliation and original-session recall; device writes are still pending.
+
 ## Evidence and remaining work
 
 `pnpm test:runtime-core` checks the Python source/serializer baseline, strict TS types,
@@ -429,7 +461,9 @@ architecture/decision and task continuity file as an absolute path to the existi
 `workspace.required_reads` registration. It never expands those permissions from document
 links. The Agent's normal native-read verifier then checks actual consumption on each turn.
 File content, identity, absence, HEAD and implementation changes revoke the observation.
-This qualified read profile does not permit modifying its continuity files during a turn.
+The read profile does not permit modifying continuity files during a turn. Explicit local
+write roots permit owned changes; the adapter rechecks the current snapshot after publication
+before completion. It does not promote structural pass to independently reviewed closeout.
 Git tracking/modified metadata describes the plugin's inspection snapshot; it is not a
 review or a persistent lock on the Git index.
 

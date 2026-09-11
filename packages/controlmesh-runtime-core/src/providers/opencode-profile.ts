@@ -32,9 +32,16 @@ export function inspectReadPermissions(value: unknown, agent: string, dataHome: 
 }
 
 /** The edit permission covers native edit/write/apply_patch together; filesystem confinement is a separate required gate. */
-export function inspectWorkspacePermissions(value: unknown, agent: string, dataHome: string, reads: readonly string[], edits: readonly string[], sessionRules: unknown = [], communication: readonly string[] = []): { digest: string; tool_count: number } | null {
+export function inspectWorkspacePermissions(value: unknown, agent: string, dataHome: string, reads: readonly string[], edits: readonly string[], sessionRules: unknown = [], communication: readonly string[] = [], denied: readonly string[] = []): { digest: string; tool_count: number } | null {
   if (!edits.length) return null;
-  return inspectPermissions(value, agent, dataHome, reads, sessionRules, communication, edits);
+  const inspected = inspectPermissions(value, agent, dataHome, reads, sessionRules, communication, edits);
+  if (!inspected || !object(value) || !Array.isArray(value.permission) || !Array.isArray(sessionRules)) return null;
+  const matches = (pattern: string, input: string) => new RegExp(`^${pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".")}$`).test(input);
+  for (const deniedPattern of denied) for (const permission of ["read", "edit"]) {
+    const effective = [...value.permission, ...sessionRules].filter(rule => matches(rule.permission, permission) && matches(rule.pattern, deniedPattern)).at(-1);
+    if (effective?.action !== "deny") return null;
+  }
+  return inspected;
 }
 function inspectPermissions(value: unknown, agent: string, dataHome: string, files: readonly string[], sessionRules: unknown, communication: readonly string[], edits: readonly string[]): { digest: string; tool_count: number } | null {
   if (!communication.every(tool => (nativeAgentTools as readonly string[]).includes(tool))) return null;
@@ -89,11 +96,12 @@ export function assertWorkspaceGrantSnapshot(value: unknown, workspace: string, 
 }
 
 export function workspaceEnvironment(configuration: Record<string, unknown>, model: string, base: Record<string, string>, temp: string, agent: string,
-  reads: readonly string[], edits: readonly string[], prompt: string, communicationCommand?: readonly string[]): Record<string, string> {
+  reads: readonly string[], edits: readonly string[], prompt: string, communicationCommand?: readonly string[], denied: readonly string[] = []): Record<string, string> {
   requireThat(edits.length > 0 && edits.every(pattern => pattern === "*" || (pattern.endsWith("/*") && !pattern.startsWith("/") && !pattern.split("/").includes(".."))), "native_edit_patterns_invalid");
   const env = readOnlyEnvironment(configuration, model, base, temp, agent, reads, prompt, communicationCommand);
   const config = JSON.parse(env.OPENCODE_CONFIG_CONTENT), permission = JSON.parse(env.OPENCODE_PERMISSION);
   permission.edit = { ...Object.fromEntries(edits.map(pattern => [pattern, "allow"])), ".git": "deny", ".git/*": "deny", "*/.git": "deny", "*/.git/*": "deny" };
+  for (const name of ["read", "edit"]) permission[name] = { ...permission[name], ...Object.fromEntries(denied.map(pattern => [pattern, "deny"])) };
   config.snapshot = false; config.permission = permission; config.agent[agent].permission = permission;
   config.agent[agent].description = "ControlMesh issued staged workspace profile";
   env.OPENCODE_PERMISSION = JSON.stringify(permission); env.OPENCODE_CONFIG_CONTENT = JSON.stringify(config); return env;

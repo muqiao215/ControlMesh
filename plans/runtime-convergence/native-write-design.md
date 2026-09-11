@@ -1,80 +1,86 @@
 # Native writes with original-session continuity
 
-Status: implementing. The prior independent SpecMesh increment is published at 3073c7f;
-exact-SHA CI 34643193079 passed. Python remains production. An explicit isolated native-write
-profile is accepted; normal TaskHub write admission and result reconciliation remain pending.
+Status: in_progress. Normal local candidate TaskHub write/completion/reconciliation is
+implemented and accepted with real OpenCode 1.18.29/M3. Device write ownership and other
+profiles remain pending. Python v0.43.0 remains production; see progress.md for publication.
 
-## Concrete gap
+## Owner and implementation
 
-OpenCodeReadContainerRunner always supplies empty writable_roots. OpenCodeExecution pins
-read-file identities for the whole turn; native completion and reconciliation assume those
-files did not change. Task preparation and result verification have no owned write handoff.
-Grant mapping alone cannot establish filesystem enforcement.
+- `local-runtime-config.ts` accepts optional trusted `workspace.write_roots` and composes
+  `OpenCodeStagedContainerRunner` with `OpenCodeTaskAdapter`/`OpenCodeWorker`. Empty/absent
+  roots retain the read profile. Task bodies cannot issue roots, grants or workflow bindings.
+- `native-workspace.ts` normalizes bounded canonical roots, requires representable native
+  grants and constructs explicit root read/edit patterns. Git metadata and existing aliases
+  are denied. OpenCode edit/write/apply_patch share native edit permission; a narrower portable
+  grant is rejected. Patch observations must account for source and move destination.
+- `WorkspaceStage` snapshots selected roots into private storage and overlays them at the
+  original paths inside Docker. Canonical files are not native writable mounts. Prepared
+  files/directories are fsynced and bound to the first runner attachment. Native snapshots,
+  formatters and LSP are disabled in the issued profile.
+- `OpenCodeExecution` persists a version-2 dispatch manifest with roots, stage basis,
+  permission evidence and optional independent workflow binding. After the native process
+  stops, it seals a content-addressed proposal and verifies actual completed native file
+  tools against every changed path before retaining the original observation. Native tool
+  activity proves execution evidence, not semantic correctness.
+- Execution-time snapshot checks and publication-time authority are separate. Only the
+  current controller publisher may rename canonical files. The journal records per-file
+  intent, replacement and fsync; a batch can be partially applied and is never claimed atomic.
+  Changed canonical files conflict instead of overwriting unrelated edits.
+- `SpecMeshPort.bind` rechecks the independent current-checkout snapshot after owned changes,
+  allowing the Agent to update continuity documents within its issued roots. Required read
+  registration must still cover the returned references. Structural pass does not establish
+  independent reviewed closeout; results explicitly retain `closeout_verified: false`.
 
-OpenCode 1.18.29 edit/write/apply_patch share the edit permission. Its apply_patch source
-checks source paths for edit permission and separately processes move destinations. A
-literal permission string is therefore insufficient to confine all writes. Preserve actual
-container mount enforcement and verify both source/destination observations. Disable native
-automatic snapshots, formatting and LSP in the issued profile so repository-defined tools
-cannot acquire a new implicit execution path.
+## Recovery and command identity
 
-## Implementation boundary
+The private local control exposes `inspect_reconciliation` and `reconcile_task` using the
+original task revision and exact episode/effect/manifest/observation digests. Inspection
+requires no native credentials or model probe. Acceptance revalidates current configured
+source, grant, runner, native session and retained proposal; it holds the native lease
+through publication and asynchronous workflow checks. Dropping or replacing the original
+workflow binding rejects. No prompt or substitute workspace is accepted from the request.
 
-1. Capture selected write roots into a private stage, including a consistent before snapshot.
-   Keep original repository directory and Git identity. Native container projection overlays
-   only staged write roots at their original absolute paths; Git metadata remains read-only.
-   Existing source files and required continuity reads retain current-source evidence.
-2. Invoke the real native edit/write tools under verified deny-by-default permissions and
-   the issued read/write roots. Preserve native session/store/device identity across turns.
-   Native file tool results are evidence of activity, not semantic acceptance.
-3. Seal a bounded content-addressed proposal after native work stops. Canonical files must
-   still match the before snapshot. Agent processes never receive canonical writable mounts.
-4. Promote through the current controller's lease with a durable write-ahead journal. Check
-   current authority before each canonical change; atomic replacement and fsync protect each
-   file. Track partial multi-file application explicitly. Never describe a multi-file change
-   as atomic. Recovery compares before/after bytes and resumes only the existing proposal,
-   without running the Agent again. Conflicts preserve external edits and remain unresolved.
-5. Wire owned local/device lifecycle and current SpecMesh context. Do not promote new file
-   assertions to permissions or independently verified closeout. Preserve cancellation and
-   unknown outcomes; qualified read behavior and existing persisted manifests stay compatible.
+Schema 13 persists command reservations before any recovery publication or asynchronous
+check. The original operation/body/principal/origin/device identity cannot be reused for
+another operation while acceptance is pending, including after restart. Successful completion
+consumes the reservation and stores the final receipt in one SQLite transaction. Replay
+returns the original receipt and repairs queue bookkeeping without repeating native work.
 
-## Acceptance
+`NativeResultVerification` validates the exact sealed receipt and actual native read/edit/
+write/apply_patch paths. `NativeReconciler.acceptWorkspace` resumes only the retained proposal.
+A crash after rename but before journal acknowledgement compares before/after state and
+acknowledges the already applied file without rewriting it. Cancellation, changed revisions,
+revoked grants, changed files/native history or missing evidence retain an unknown outcome.
+Read manifests and synchronous read recovery remain compatible.
 
-- Real native create/edit/delete plus second-turn current-file read in the original session.
-- Container writes land only in the stage; canonical project and Git metadata stay unchanged
-  until controller promotion. Outside-root, symlink and move targets cannot widen grants.
-- Capture rejects changed/missing/replaced entries and bounds bytes/entries; dirty baselines
-  remain supported. Proposal and stage identity changes revoke promotion.
-- Concurrent canonical edits cause conflict before publication; no overwrite of later work.
-- Crash before first replace, after a replace but before receipt, and during a multi-file
-  change recover from the same journal without another native/model invocation.
-- Cancel, stale fence, expired device lease or revoked profile prevents canonical promotion.
-- Native failure retains a diagnosable staged result without silently accepting or replaying it.
-- Existing read/continuation/device/container/SpecMesh regressions and exact-SHA CI stay green.
+## Verified acceptance
 
-The staging/promotion primitives are necessary owners, not completion of the native-write
-path. General provider/tool execution, production cutover and installed workflow gates remain
-part of the full runtime-convergence goal.
+Real normal-local TaskHub acceptance completed two turns in one native session. Each turn
+read five required continuity files, edited code and PROJECT, and wrote a result; the counter
+advanced 1 -> 2 -> 3 with marker recall and no prompt reinjection. A deliberately failed
+completion after publication recovered after runtime reopen with unchanged inode and no new
+native message. Independent readback confirms two completed runs/effects, one reconciliation
+and nine absent containers. Both current SpecMesh structural checks passed.
 
-## Verified increment and next integration
+The native run used schema 12; current schema-13 code then upgraded that exact isolated state
+and replayed its original receipt without new events, containers or native messages. Focused
+tests cover request reservation/conflict/restart, partial publication, concurrent canonical
+edits, cancellation, missing tool evidence, denied aliases, workflow failure and schema
+migration. The real native model exercised edit/write; apply_patch/delete/move remain fixture
+coverage until a suitable real-provider acceptance runs. See progress.md for current totals.
 
-The actual OpenCode canary completed two turns in the original directory and native session,
-reading all five continuity files each turn and using native edit/write. Independent SQLite
-readback confirms the second turn read the first turn's canonical result and recalled the
-marker without prompt reinjection. Both staged proposals were applied through kernel leases;
-all nine containers are absent. It used a private explicit composition, not the normal
-OpenCodeExecution/TaskHub write route. Native deletion is still untested; controller-side
-create/edit/delete and recovery are covered by stage tests.
+## Remaining scope and limits
 
-Prepared stage files and directory entries are fsynced before returning a reference; the
-immutable basis binds both canonical and prepared snapshots. A fresh staged runner checks
-the prepared tree once before attachment. Active native edits are checked against current
-canonical source authority, not rejected for changing their own staged output. Constructor
-attachment cannot silently resume a partially edited stage as fresh input.
-
-Next extend trusted admission with explicit write roots, retain a versioned write manifest
-and bind the sealed proposal before publication. Complete write-aware local completion and
-reconciliation first, then device ownership. Existing read manifests remain compatible.
-Do not use wildcard native read patterns over existing aliases until the issued read-root
-policy denies aliases that resolve outside its scope. Writable projections protect canonical
-files; they do not independently enforce the native read permission boundary.
+1. Device-local publication must be bound to current coordinator assignment/fence, with
+   disconnect/restart recovery and a real two-device write acceptance. The existing device
+   adapter is qualified for reads; local success does not authorize remote writes.
+2. Staging is bounded to 64 MiB total, 4 MiB/file, 2,048 entries, 64 roots and a 2 MiB private
+   record. Large-project/dependency/cache exclusion and general workspace cleanup are not
+   qualified. Scoped roots are supported; do not silently increase limits or copy secrets.
+3. Failure before an immutable sealed receipt exists is diagnosable but not automatically
+   acceptable. Abandonment/recovery ownership is still required; never retry uncertain Agent
+   execution merely because no final task receipt exists.
+4. General provider/tool/shell/source/approval profiles, reviewed semantic closeout,
+   transport/store/topology/product owners and production release/install cutover remain
+   required by the full runtime-convergence plan. Native clients outside CM do not honor
+   its advisory session locks.

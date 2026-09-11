@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LocalRuntimeControl, openLocalRuntime, RuntimeDatabase, type Principal } from "../src";
 import { event, eventConfig, signed } from "./helpers/feishu-events";
+import { digest } from "../src/value";
+import { directoryIdentity } from "../src/providers/native-manifest";
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -19,6 +21,29 @@ function fixture() {
   const path = join(root, "control.json"); writeFileSync(path, JSON.stringify(config), { mode: 0o600 });
   return { root, state, workspace, data, path, config };
 }
+
+test("recovery status remains readable without provider credentials and cannot accept caller-supplied authority", async () => {
+  const f = fixture(), owned = openLocalRuntime(f.path);
+  const control = new LocalRuntimeControl(owned.runtime, undefined, owned.submissionIdentity, undefined, undefined, owned.recovery);
+  const actor: Principal = { id: "operator", device_id: "local", origin: "human_request", scopes: ["task:read", "task:execute", "task:reconcile"] };
+  try {
+    const created = owned.runtime.submit("create", { task_id: "pending", chat_id: "fixture", status: "waiting", repo_root: f.workspace, provider: "opencode", model: "fixture/model", prompt: "fixture" }, { chat_id: "fixture" });
+    const kernel = owned.runtime.kernel, lease = kernel.claim(actor, "claim", "pending", created.revision, 60000);
+    kernel.start(actor, "start", lease);
+    kernel.dispatchEffect(actor, "dispatch", lease, "effect", {}, { schema_version: "controlmesh.native_dispatch.v1", task_digest: digest("fixture"),
+      binding: { provider: "opencode", cli_version: "1.18.29" }, native_store_id: digest("unavailable"), baseline: null,
+      directory: directoryIdentity(f.workspace), worktree: directoryIdentity(f.workspace), files: [], required_reads: [],
+      permission_evidence: { agent: "fixture", data_home: f.data, resolved: {}, digest: digest("unverified") } });
+    kernel.recordEffectObservation(actor, "observe", lease, "effect", { terminal: false }); kernel.markUnknown(actor, "unknown", lease, "completion_missing");
+    const revision = kernel.inspect(actor, "pending").revision;
+    const response = await control.handle({ id: "inspect", op: "inspect_reconciliation", task_id: "pending", expected_revision: revision, effect_id: "effect" });
+    expect(response).toMatchObject({ ok: true, result: { effect_id: "effect", episode_id: lease.episode_id } });
+    expect(existsSync(f.data)).toBe(false);
+    expect(await control.handle({ id: "forged", op: "reconcile_task", task_id: "pending", expected_revision: revision,
+      candidate: { ...response.result as object, workspace_write: { roots: ["/"] } } })).toMatchObject({ ok: false, error: "invalid_reconciliation_binding" });
+    expect(kernel.inspect(actor, "pending").task.status).toBe("stale"); expect(existsSync(f.data)).toBe(false);
+  } finally { await owned.close(); }
+});
 
 test("private ingress preserves the group approval floor before creating native state or probing a model", async () => {
   const f = fixture(), verification = join(f.root, "verification.json");
@@ -142,10 +167,10 @@ test("schema eight upgrades without losing tasks or queued messages and without 
   const sent = first.runtime.tell("note", "a", "Survive upgrade");
   await first.close();
   const previous = new RuntimeDatabase(join(f.state, "runtime.sqlite"));
-  previous.sql.exec("DROP TABLE feishu_conversations; DROP TABLE feishu_event_aliases; DROP TABLE feishu_inbox; DROP TABLE transport_receipts; DROP TABLE delivery_outbox; DROP TABLE delivery_routes; DROP TABLE native_agent_deliveries; DROP TABLE native_agent_calls; DROP TABLE native_mailbox_deliveries; PRAGMA user_version=8"); previous.close();
+  previous.sql.exec("DROP TABLE command_reservations; DROP TABLE feishu_conversations; DROP TABLE feishu_event_aliases; DROP TABLE feishu_inbox; DROP TABLE transport_receipts; DROP TABLE delivery_outbox; DROP TABLE delivery_routes; DROP TABLE native_agent_deliveries; DROP TABLE native_agent_calls; DROP TABLE native_mailbox_deliveries; PRAGMA user_version=8"); previous.close();
   const restored = openLocalRuntime(f.path);
   try {
-    expect(restored.runtime.kernel.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 12 });
+    expect(restored.runtime.kernel.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 13 });
     expect(restored.runtime.inspectTask("a").task.status).toBe("waiting");
     expect(restored.runtime.inspectMessage("a", sent.message_id).payload).toEqual({ text: "Survive upgrade" });
     expect(restored.runtime.mailboxStatus("a")).toEqual({ pending_count: 1 });

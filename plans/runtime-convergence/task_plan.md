@@ -34,10 +34,10 @@ Move runtime authority to TypeScript without losing task correctness, provider e
 | CM-R0 | Inventory real owners and versioned payloads; extend existing lifecycle/provider/gate goldens | Reproducible baseline plus ledger of every persisted field and side effect | in_progress |
 | CM-R1 | TS execution kernel behind existing facade; transitions, events, cancellation, deadlines, process supervision | Python/TS differential traces for success, failure, timeout, cancel, crash/restart; zero duplicate side effects in shadow mode | in_progress: transactional kernel, durable local queue and actual private stdio execution implemented; full process/provider/transport parity pending |
 | CM-R2 | Transactional state migration and startup recovery | Dry-run migration counts/digests, interrupted migration replay, rollback compatibility, corrupt-input refusal | in_progress: snapshot migration plus persisted native manifests/reconciliation; other stores/cutover pending |
-| CM-R3 | Provider/transport/workspace/grant ports | Actual adapter smoke for each supported provider; grants enforced natively; process tree cleanup and result-delivery reconciliation | in_progress: source/grant/one-shot/container ports; real host and container OpenCode read profiles with native auth/state; durable terminal outbox and Feishu text send/readback verified with local HTTP; other provider/write/source profiles, production transport acceptance and remaining transports pending |
+| CM-R3 | Provider/transport/workspace/grant ports | Actual adapter smoke for each supported provider; grants enforced natively; process tree cleanup and result-delivery reconciliation | in_progress: source/grant/one-shot/container ports; real host/container OpenCode read and local TaskHub staged-write/recovery profiles with native auth/state; durable terminal outbox and Feishu text send/readback verified with local HTTP; other provider/write/source profiles, production transport acceptance and remaining transports pending |
 | CM-R4 | Device coordinator and worker execution authority | Two-device lease expiry, fencing, clock skew, network partition and worker restart tests; stale worker cannot write or redeliver | in_progress: real ARM64 coordinator/x64 OpenCode worker continuation and reopen passed; remote reconciliation implemented, other profiles and rollout pending |
 | CM-R5 | Agent mailbox and task dependency exchange | Duplicate/out-of-order/replayed messages, bounded broadcast, cancellation propagation and backpressure evidence | in_progress: local/device native initial input and actual Agent MCP send/ask/receive/answer accepted with atomic consumption and recovery; real ARM64 coordinator/x64 interrupted completion, reopen and original-session recall passed; topology integration pending |
-| CM-R6 | History headless candidate + native adoption + SpecMesh lifecycle hooks | Real continuation canary binds provider session, current repo and approved task scope; see HV-H3 / SM-P2 | in_progress: real same-session recall/current-file and post-SIGKILL continuation passed; independent SpecMesh start/handoff gate and five-file real native consumption accepted locally; reviewed closeout and full matrix remain |
+| CM-R6 | History headless candidate + native adoption + SpecMesh lifecycle hooks | Real continuation canary binds provider session, current repo and approved task scope; see HV-H3 / SM-P2 | in_progress: real same-session recall/current-file and post-SIGKILL continuation passed; independent SpecMesh start/handoff gate and five-file real native consumption and post-publication continuity recheck accepted locally; reviewed closeout and full matrix remain |
 | CM-R7 | Staged default switch and Python retirement | Canary -> selected device -> default rollout; telemetry and rollback thresholds met; old writer disabled before new writer activation | planned |
 
 ## Acceptance matrix
@@ -69,33 +69,19 @@ No claim that full TS migration or distributed coordination has completed. A sco
 
 ## Next Step
 
-The terminal-result outbox and Feishu text send/readback port are implemented and connected
-to private startup/control. Local HTTP, original-receipt readback, SIGKILL/reopen, bounded
-concurrency and shutdown are tested without real chat notifications. That owner is published
-at 7ac3da8 with green CI. Selected-app token refresh, verified reply/thread delivery and
-complete stdio shutdown are now implemented in the startup/control path and pass the full
-255-test core suite. They are published at dc373fb with green CI. Authenticated ingress,
-durable conversation processing and concrete native message-source enforcement now pass
-290 core tests and real two-turn OpenCode continuation across runtime reopen. It is published
-at c02f6f0 with exact-SHA green CI. The independent SpecMesh snapshot/start/handoff gate is
-published at 3073c7f with exact-SHA CI success and real two-turn native five-file consumption.
-The staged native-write profile has real OpenCode edit/write and original-session acceptance.
-Next connect its retained proposal and current authority to the normal local TaskHub
-execution/completion/reconciliation path, preserving the existing read manifest contract.
-Reviewed closeout, group controller approval, rich-media, long-connection subscription and
-the remaining authorization profiles are still required.
-These and other provider/write profiles remain required before
-the staged production switch.
+Publish and verify the normal local TaskHub write/reconciliation increment. Implement the
+**device write owner** next: device-local roots and retained proposal, coordinator-fenced
+publication, disconnect/restart recovery without repeating native work, and an actual
+two-device canary. Preserve existing read manifests and device result contracts.
 
-Automatic initial device input and device-native MCP send/ask/receive/answer now have real
-ARM64-coordinator/x64-worker acceptance, including original-session recall, coordinator
-reopen and outcome reconciliation without another native command. Local private startup
-and native adoption also have real acceptance. Installed TaskHub/production writer cutover
-remains open. Continue transport startup, other native write/provider profiles, History
-adoption into device-local handles and independent SpecMesh lifecycle checks. Complete
-other recovery/abandonment/store owners and the 512-module/57-field ownership parity. Do
-not activate over live data before writer-exclusion, provider/transport parity, recovery
-and release/install gates pass.
+Local private startup, History/native adoption, native mailbox/Agent communication,
+authenticated loopback ingress, terminal outbox, independent SpecMesh start/handoff and local
+staged write/completion/recovery have scoped acceptance. See progress.md for exact evidence;
+none is an installed production writer switch. Continue remaining providers and native tool
+profiles, group approval/rich-media/long-connection and other transports, device-local History
+adoption, reviewed SpecMesh closeout, other recovery/abandonment/store owners, topology and
+terminal product work. Complete the 512-module/57-field ownership parity and release/install
+alignment before activating TS over live data. CM-R0–CM-R7 remain the full goal.
 
 ## Active native-write owner
 

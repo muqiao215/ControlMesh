@@ -1,13 +1,13 @@
 import { mkdirSync, realpathSync, statSync, existsSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { RuntimeDatabase } from "./database";
-import { RuntimeKernel, type Principal } from "./kernel";
+import { RuntimeKernel, type Principal, type TaskSnapshot } from "./kernel";
 import { LocalTaskRuntime } from "./local-task-runtime";
 import { PreflightCache } from "./providers/preflight-cache";
-import { OpenCodeReadContainerRunner, type OpenCodeContainerProfile } from "./providers/opencode-container";
+import { OpenCodeReadContainerRunner, OpenCodeStagedContainerRunner, type OpenCodeContainerProfile } from "./providers/opencode-container";
 import { OpenCodeTaskAdapter } from "./providers/opencode-task-adapter";
 import { NativeSessionStore } from "./providers/native-session";
-import { directoryIdentity } from "./providers/native-manifest";
+import { decodeNativeManifest, directoryIdentity } from "./providers/native-manifest";
 import { decodeSnapshot } from "./migration";
 import { digest, identifier, object, requireThat, type LegacyTask } from "./value";
 import { prepareNativeAgentConfiguration } from "./providers/native-agent-profile";
@@ -22,10 +22,13 @@ import { FeishuInbox } from "./feishu-inbox";
 import { FeishuInboundRuntime } from "./feishu-inbound-runtime";
 import { decodeToolGrant, enforceProviderConfirmation } from "./execution-grants";
 import { SpecMeshPort, type SpecMeshConfiguration } from "./specmesh-port";
+import { writeRoots } from "./providers/native-workspace";
+import { NativeReconciler } from "./providers/native-reconciler";
+import type { LocalRuntimeRecovery } from "./local-runtime-control";
 
 /** Explicit isolated candidate configuration. Reading task state does not inspect or probe any provider. */
 export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; deliveries?: DeliveryOutbox; inbound?: FeishuInboundRuntime;
-  specmesh?: SpecMeshPort;
+  specmesh?: SpecMeshPort; recovery: LocalRuntimeRecovery;
   submissionIdentity: (task: LegacyTask) => SubmissionIdentity; stop: () => Promise<void>; close: () => Promise<void> } {
   const loaded = privateFile(path), config = decodeSnapshot(loaded.bytes).source;
   requireThat(object(config) && config.schema_version === "controlmesh.local_runtime.v1" && config.mode === "candidate", "unsupported_local_runtime_config");
@@ -43,6 +46,10 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
     && config.workspace.read_files.every(value => typeof value === "string") && Array.isArray(config.workspace.required_reads)
     && config.workspace.required_reads.every(value => typeof value === "string"), "invalid_local_workspace_profile");
   const provider = config.opencode, workspace = config.workspace;
+  requireThat(workspace.write_roots === undefined || (Array.isArray(workspace.write_roots) && workspace.write_roots.length <= 64
+    && workspace.write_roots.every(value => typeof value === "string")), "invalid_local_write_profile");
+  const roots = Array.isArray(workspace.write_roots) && workspace.write_roots.length
+    ? writeRoots(workspace.directory as string, { roots: workspace.write_roots as string[] }) : [];
   const communication = config.communication;
   if (communication !== undefined) {
     requireThat(object(communication) && typeof communication.node_executable === "string" && object(communication.tasks)
@@ -69,7 +76,7 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
   try {
     requireThat(config.specmesh === undefined || object(config.specmesh), "invalid_specmesh_profile");
     const specmesh = config.specmesh === undefined ? undefined : new SpecMeshPort(config.specmesh as unknown as SpecMeshConfiguration, workspace.directory as string, current);
-    const runtime = new LocalTaskRuntime(kernel, actor, { command_origin: "human_request", origin: "user", source_scope: "local_foreground", transport: config.source.transport }, task => {
+    const registered = (task: TaskSnapshot) => {
       current();
       enforceProviderConfirmation("opencode", decodeToolGrant(task.task.tool_grant));
       const control = join(root, "containers"); mkdirSync(control, { recursive: true, mode: 0o700 });
@@ -80,17 +87,45 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
       const profile: OpenCodeContainerProfile = { container: { ...provider.container as OpenCodeContainerProfile["container"], state_root: control },
         executable: provider.executable as string, data_home: environment.XDG_DATA_HOME, cache_home: environment.XDG_CACHE_HOME,
         ...(channel ? { communication: channel } : {}) };
-      const runner = new OpenCodeReadContainerRunner(profile), store = new NativeSessionStore(join(profile.data_home, "opencode/opencode.db"), actor.device_id!);
+      const runner = roots.length ? new OpenCodeStagedContainerRunner(profile, { directory: workspace.directory as string, write_roots: roots }) : new OpenCodeReadContainerRunner(profile);
+      const store = new NativeSessionStore(join(profile.data_home, "opencode/opencode.db"), actor.device_id!);
       const registration = { workspace: workspace.directory as string, timeout_ms: Number(timeoutMs),
         binding: () => ({ provider: "opencode", model: provider.model as string, cli_version: "1.18.29", device_id: actor.device_id!,
           config_digest: digest(native), credential_revision: privateFile(join(profile.data_home, "opencode/auth.json")).revision,
-          permission_profile: "opencode-native-read-v1", runtime_digest: runner.runtimeDigest() }),
+          permission_profile: roots.length ? "opencode-native-workspace-v1" : "opencode-native-read-v1", runtime_digest: runner.runtimeDigest() }),
         admission: { source_scope: decodeExecutionContext(task.task.execution_context).source_scope as IssuedReadAdmission["source_scope"],
-          read_files: workspace.read_files as string[], required_reads: workspace.required_reads as string[], assertCurrent: current } };
-      const execution = new OpenCodeTaskAdapter(kernel, cache, actor, store, { executable: profile.executable, native_configuration: native,
-        environment, state_home: root, ...(channel ? { communication: channel } : {}) }, runner, registration).prepare(task);
+          read_files: workspace.read_files as string[], required_reads: workspace.required_reads as string[], assertCurrent: current,
+          ...(roots.length ? { workspace_write: { roots, ...(specmesh ? { workflow_binding: specmesh.binding_digest } : {}) } } : {}) } };
+      const worker = { executable: profile.executable, native_configuration: native, environment, state_home: root, ...(channel ? { communication: channel } : {}) };
+      return { runner, store, registration, worker };
+    };
+    const runtime = new LocalTaskRuntime(kernel, actor, { command_origin: "human_request", origin: "user", source_scope: "local_foreground", transport: config.source.transport }, task => {
+      const { runner, store, registration, worker } = registered(task);
+      const execution = new OpenCodeTaskAdapter(kernel, cache, actor, store, worker, runner, registration).prepare(task);
       return specmesh ? specmesh.bind(execution, registration.admission.required_reads) : execution;
     }, current, object(config.limits) ? config.limits : {});
+    const recovery: LocalRuntimeRecovery = {
+      inspect: (taskId, revision, effectId) => {
+        current(); runtime.queueStatus(); const saved = kernel.inspectReconciliation(actor, taskId, revision, effectId);
+        decodeNativeManifest(saved.manifest);
+        return { episode_id: saved.episode.episode_id, effect_id: effectId, manifest_digest: saved.manifest_digest, observation_digest: saved.observation_digest };
+      },
+      accept: async (requestId, taskId, revision, candidate) => {
+        runtime.queueStatus(); const selected = registered(kernel.inspect(actor, taskId)), binding = selected.registration.binding();
+        const authorize = () => { current(); runtime.queueStatus();
+          requireThat(digest(selected.registration.binding()) === digest(binding), "native_recovery_profile_changed"); };
+        const result = await new NativeReconciler(kernel, selected.store, selected.worker, selected.runner).acceptWorkspace(actor, requestId, taskId, revision, candidate,
+          binding, { ...selected.registration.admission, assertCurrent: authorize }, specmesh ? async assertPublished => {
+            const assertCurrent = () => { authorize(); assertPublished(); };
+            const checked = await specmesh.inspect("check", { assertCurrent });
+            requireThat(checked.result.status === "pass", "specmesh_publication_gate_blocked");
+            requireThat(checked.result.references.every(item => selected.registration.admission.required_reads.includes(join(workspace.directory as string, item.path))), "specmesh_context_reads_not_issued");
+            assertCurrent(); checked.assertCurrent();
+            return { specmesh: { snapshot_digest: checked.snapshot_digest, status: "pass", closeout_verified: false } };
+          } : undefined);
+        runtime.recover(); return result;
+      },
+    };
     let inbox: FeishuInbox | undefined;
     if (config.inbound !== undefined) {
       const inbound = config.inbound;
@@ -123,6 +158,6 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
     let stopping: Promise<void> | undefined, closing: Promise<void> | undefined;
     const stop = () => stopping ??= Promise.all([runtime.stop(), deliveries?.stop(), delivery?.close(), inbound?.stop(), specmesh?.stop()]).then(() => {});
     const close = () => closing ??= stop().then(() => db.close());
-    return { runtime, submissionIdentity, stop, close, ...(deliveries ? { deliveries } : {}), ...(inbound ? { inbound } : {}), ...(specmesh ? { specmesh } : {}) };
+    return { runtime, recovery, submissionIdentity, stop, close, ...(deliveries ? { deliveries } : {}), ...(inbound ? { inbound } : {}), ...(specmesh ? { specmesh } : {}) };
   } catch (error) { db.close(); throw error; }
 }

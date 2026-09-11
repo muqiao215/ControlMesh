@@ -6,10 +6,16 @@ import type { ProbeDecision } from "./providers/preflight-cache";
 import { TaskIngress, type IngressSource, type SubmissionIdentity, type SubmissionRestrictions } from "./task-ingress";
 import { canonical, digest, identifier, requireThat, RuntimeConflict, type LegacyTask } from "./value";
 
-export interface LocalExecutionContext { signal: AbortSignal; assertCurrent: () => void; remainingMs: () => number }
+export interface LocalExecutionContext {
+  signal: AbortSignal; assertCurrent: () => void; remainingMs: () => number;
+  /** Only the sealed workspace publisher uses this; native execution must retain assertCurrent. */
+  assertPublicationAuthority?: () => void;
+  verifyPublication?: (assertPublished: () => void) => Promise<Record<string, unknown>>;
+}
 export interface LocalTaskExecution {
   binding_digest: string;
   assertCurrent(): void;
+  assertPublicationAuthority?(): void;
   ensureReady(requestId: string, context: LocalExecutionContext): Promise<ProbeDecision>;
   execute(lease: Lease, context: LocalExecutionContext): Promise<TaskSnapshot>;
 }
@@ -64,7 +70,7 @@ export class LocalTaskRuntime {
     const result: unknown = this.authorize();
     if (result !== undefined) { void Promise.resolve(result).catch(() => {}); requireThat(false, "admission_must_be_synchronous"); }
   }
-  private rows(state: "queued" | "running"): RunRow[] {
+  private rows(state: "queued" | "running" | "interrupted"): RunRow[] {
     return this.kernel.db.sql.query("SELECT * FROM local_runs WHERE principal=? AND device_id=? AND state=? ORDER BY created_at,rowid LIMIT ?")
       .all(this.actor.id, this.actor.device_id!, state, this.maxPending + this.parallelism) as RunRow[];
   }
@@ -142,13 +148,14 @@ export class LocalTaskRuntime {
     this.current();
     this.kernel.recoverExpired({ ...this.actor, origin: "recovery" });
     this.kernel.db.transaction(() => {
-      for (const row of this.rows("running")) {
+      for (const row of [...this.rows("running"), ...this.rows("interrupted")]) {
         const lease = row.lease ? JSON.parse(row.lease) as Lease : null;
         const episode = lease ? this.kernel.db.sql.query("SELECT state FROM episodes WHERE episode_id=? AND task_id=? AND fence=?")
           .get(lease.episode_id, row.task_id, lease.fence) as { state: string } | null : null;
         if (episode && ["leased", "running"].includes(episode.state)) continue;
+        if (row.state === "interrupted" && !["done", "failed", "cancelled"].includes(episode?.state ?? "")) continue;
         const state = episode?.state === "done" || episode?.state === "failed" ? "completed" : episode?.state === "cancelled" ? "cancelled" : "interrupted";
-        this.kernel.db.sql.query("UPDATE local_runs SET state=?,outcome=? WHERE run_id=? AND state='running'")
+        this.kernel.db.sql.query("UPDATE local_runs SET state=?,outcome=? WHERE run_id=? AND state IN ('running','interrupted')")
           .run(state, canonical({ reason: episode?.state ?? "missing_execution_episode", retry_after: null }), row.run_id);
       }
     });
@@ -199,6 +206,11 @@ export class LocalTaskRuntime {
     const context: LocalExecutionContext = { signal, remainingMs: () => lease.lease_until - this.kernel.db.now(), assertCurrent: () => {
       this.current(); requireThat(!signal.aborted, "local_execution_interrupted");
       this.kernel.withLease(this.actor, lease, () => {}); this.checkExecution(execution);
+    }, assertPublicationAuthority: () => {
+      this.current(); requireThat(!signal.aborted, "local_execution_interrupted");
+      this.kernel.withLease(this.actor, lease, () => {});
+      const checked: unknown = execution.assertPublicationAuthority ? execution.assertPublicationAuthority() : execution.assertCurrent();
+      if (checked !== undefined) { void Promise.resolve(checked).catch(() => {}); requireThat(false, "admission_must_be_synchronous"); }
     } };
     try {
       context.assertCurrent();

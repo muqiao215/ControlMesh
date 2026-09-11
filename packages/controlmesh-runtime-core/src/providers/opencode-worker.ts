@@ -8,6 +8,7 @@ import { OpenCodeExecution, type IssuedReadAdmission, type OpenCodeWorkerConfig,
 import { NativeMailboxDelivery } from "./native-mailbox";
 import { NativeAgentBroker } from "./native-agent-broker";
 import { NativeAgentJournal, type NativeAgentToolResult } from "./native-agent-journal";
+import type { LocalExecutionContext } from "../local-task-runtime";
 export type { IssuedReadAdmission, OpenCodeWorkerConfig } from "./opencode-execution";
 
 /** Coordinator-local adapter. The shared native driver also supports a distinct authenticated device adapter. */
@@ -19,7 +20,7 @@ export class OpenCodeWorker {
   }
 
   async execute(actor: Principal, lease: Lease, binding: ProbeBinding, admission: IssuedReadAdmission, timeoutMs = 60_000,
-    lifecycle: { signal?: AbortSignal; remainingMs?: () => number } = {}): Promise<TaskSnapshot> {
+    lifecycle: Partial<Omit<LocalExecutionContext, "assertCurrent">> = {}): Promise<TaskSnapshot> {
     requireThat(actor.origin === "human_request", "source_execution_floor_unavailable");
     const task = this.kernel.inspect(actor, lease.task_id).task, issued = nativeTaskDigest(task);
     const request = (operation: string) => `native-${digest([lease.episode_id, operation])}`;
@@ -30,6 +31,11 @@ export class OpenCodeWorker {
     const assertCurrent = () => {
       this.kernel.withLease(actor, lease, () => {});
       requireThat(nativeTaskDigest(this.kernel.inspect(actor, lease.task_id).task) === issued, "worker_task_binding_changed");
+    };
+    const publicationCurrent = () => {
+      assertCurrent(); requireThat(!lifecycle.signal?.aborted, "native_execution_cancelled");
+      const response: unknown = (lifecycle.assertPublicationAuthority ?? admission.assertCurrent)();
+      if (response !== undefined) { void Promise.resolve(response).catch(() => {}); requireThat(false, "admission_must_be_synchronous"); }
     };
     const communication = this.config.communication ? new NativeAgentBroker(this.kernel, actor, lease, effect, this.config.communication,
       () => {
@@ -44,6 +50,10 @@ export class OpenCodeWorker {
       await communication?.start();
       return await this.execution.execute(task, binding, admission, {
         ...lifecycle,
+        ...(admission.workspace_write ? { workspace: { state_home: this.config.state_home,
+          binding_digest: digest({ lease, task: issued, binding }), assertCurrent: publicationCurrent,
+          authority: <R>(operation: () => R): R => this.kernel.withLease(actor, lease, () => { publicationCurrent(); return operation(); }),
+          verifyPublication: lifecycle.verifyPublication } } : {}),
         mailbox_delivery: delivery,
         ...(communication ? { communication: { scope: communication.scope, command: communication.command, freeze: () => communication.close(),
           verify: (tools: NativeAgentToolResult[]) => {

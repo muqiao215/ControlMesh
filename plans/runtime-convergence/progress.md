@@ -2,87 +2,63 @@
 
 ## Current
 
-Published baseline is `3073c7fe0758b79abae7724017b9df40e00d4f73`, including the independent
-SpecMesh gate, authenticated Feishu ingress and native continuation;
-exact-SHA [CI 34643193079](https://github.com/muqiao215/ControlMesh/actions/runs/34643193079) passed.
-Earlier a9ec8b4 retains real ARM64-coordinator/x64-worker communication, initial input and
-original-session recall acceptance.
+Full goal active. CM-R0 through CM-R6 remain in progress; CM-R7 is not activated.
+Python v0.43.0 remains the released/installed production runtime. The current increment
+qualifies normal **local candidate TaskHub writes and recovery**, not full TS migration.
+Published predecessor `c7603a4dcb4a5b76e7f8400b1faee488cc77632f` has exact-SHA
+[CI success](https://github.com/muqiao215/ControlMesh/actions/runs/34647927631).
+This increment's publication and exact-SHA CI must be checked after commit.
 
-The current native-write increment implements bounded workspace snapshots, private native
-mount projections and lease-owned per-file promotion with a durable recovery journal.
-An explicit two-turn OpenCode 1.18.29/M3 profile canary passed: same session, marker recall
-without reinjection, five required SpecMesh reads per turn, actual read/edit/write tools,
-counter 1 -> 2 -> 3 and a newly created result file. Canonical files stayed unchanged until
-promotion. Independent native SQLite, task/effect/journal and Docker readback confirms
-two completed episodes, two confirmed effects, two applied proposals and nine containers
-absent. One preflight generation was used; provider billing counts are not measured.
+Trusted `workspace.write_roots` now selects the staged OpenCode driver through
+`openLocalRuntime`/`LocalTaskRuntime`. Version-2 native manifests retain the original
+snapshot, roots, native permission scope, workflow binding and sealed proposal. Version-1
+read manifests remain supported. Actual file-tool evidence must cover every proposed path;
+Git and existing symlink aliases are denied. Native execution receives staged mounts only.
+Current controller authority publishes each file with a durable journal; the whole batch
+is not atomic. The optional independent SpecMesh check runs again after publication,
+including updated continuity documents, before task completion.
 
-This is explicit-profile acceptance. Normal TaskHub/local/device write admission,
-write-aware native manifests/result reconciliation, read aliases under scoped roots and
-SpecMesh closeout remain pending. The production writer and installed version are unchanged.
-Do not report that the normal write entrypoint or complete TS migration is ready.
+Private `inspect_reconciliation`/`reconcile_task` operations accept the original retained
+result after interruption without another Agent invocation. Schema 13 reserves the command
+identity before publication/asynchronous workflow checks and consumes it with the final
+receipt. Conflicting reuse rejects even after process restart. Current task, grant, native,
+file and workflow identity must still match. Unknown or unsealed outcomes do not replay.
 
-CI Bun 1.3.11 regression passed 297 core tests / 3,374 assertions with 20 environment-gated
-cases skipped; the separate actual-container gate passed 23 tests / 104 assertions. The
-new stage guard fsyncs prepared file/directory state and pins its first native attachment;
-later native edits remain valid. It is covered by adversarial snapshot tests. The additional
-concrete-runner suite passed 8 tests / 34 assertions with real Docker, including two new
-cases for attachment freshness and repeated staged writes. Paired independent SpecMesh
-passed 7 tests / 32 assertions, covering the four optional cases skipped in the core run.
-All 319 unique core cases have now passed across the bounded runs. Typecheck and diff
-checks passed. Publication and exact-SHA CI for this increment are pending.
+Real OpenCode 1.18.29/M3 acceptance used the normal local candidate entrypoint. The same
+native session read five required continuity files on each turn, edited PROJECT and code,
+and created a result: counter 1 -> 2 -> 3, with marker recall and no second-turn reinjection.
+A deliberately failed completion transaction occurred after first-turn publication. After
+runtime reopen, reconciliation accepted that original result; receipt replay preserved file
+inodes and native message count. Independent native/task/journal/Docker inspection confirms
+two completed episodes/runs, two confirmed effects, one reconciled effect and nine containers
+absent. One preflight generation was used; actual provider billing counts are not measured.
+Post-publication structural SpecMesh checks passed; independent semantic closeout is unproven.
 
-The schema-12 authenticated Feishu ingress increment is implemented and locally accepted.
-CI Bun 1.3.11 passed **290 core tests / 3,322 assertions in 58.78 seconds** with the qualified
-Docker image; protocol Python tests passed 9/9, Ruff/typecheck/Web build/ownership checks
-passed. Tests cover real loopback HTTP, transaction rollback, deduplication, restart queues,
-conversation fairness, group approval refusal, actual headless process shutdown and remote
-source execution in Docker. Slow preparation and running-heartbeat expiry are distinct;
-real SIGSTOP/SIGKILL tests continue to stop native work without replay.
+That native run preceded schema 13. Reopening its actual schema-12 state with current code
+upgraded to 13 and replayed the original acceptance receipt without new events, native messages
+or containers. Async reservation/conflict/restart behavior is covered by the focused fixture;
+no paid model rerun was needed for this storage change.
 
-A two-turn real OpenCode 1.18.29/M3 canary passed via signed encrypted loopback ingress,
-including runtime reopen, original-session recall, changed-file reads and duplicate input.
-Independent native-database readback confirmed two actual user messages/answers, no marker
-injection on the second turn, one task/two completed episodes, two fixture replies, and all
-nine containers absent. One model preflight plus two task turns ran three native model-run
-commands; actual provider API/billing counts were not measured. The increment was pushed
-at `3b8ecf8ef4916eef26f391d42523cb21195aabb1`. Its CI run 34638622658 exposed Bun's default
-five-second test deadline killing the cold Python SDK oracle (exit 143); the explicit
-cross-language test now allows 35 seconds around a bounded 30-second child. Its assertions
-and all runtime deadlines are unchanged. The corrected commit's CI passed. No real
-Feishu account, production writer/service or installation was changed. Group controller
-approval, rich media and long connections remain open.
+CI Bun 1.3.11: **310 passed / 17 Docker cases skipped / 0 failed**, 3,456 assertions,
+327 cases across 33 files, 27.55 seconds. Typecheck, 512-module/57-field ownership inventory
+and diff checks passed. The separate actual-Docker gate passed **25 tests / 113 assertions /
+0 failures** in 37.95 seconds, including every skipped case: all 327 unique core cases
+have passed across these bounded runs. Seven initial
+migration-test failures were old-schema fixtures retaining the new table while downgrading
+`user_version`; fixtures now restore the old table set. Production migration was unchanged.
 
-The optional independent SpecMesh snapshot gate is now locally accepted. Standalone
-SpecMesh `5fab9f0f824352ef6d32b72cc8a31050e6499b5f` is released as v1.2.1 with 54 tests and
-Python 3.11/3.12 CI success. CM pins that independent checkout in CI. Seven paired tests
-pass on Bun 1.3.11; the default core suite passes 283 tests / 3,301 assertions with 14 Docker
-cases separated into the actual-container gate. That gate passes all 20 cases / 79 assertions,
-including SIGSTOP/SIGKILL cleanup. Combined unique core coverage is 297 cases. Generated
-protocol synchronization, Python adapter tests (3), ownership inventory, typecheck and Web
-build pass; bundled Web assets are unchanged. The CM increment is published at 3073c7f with
-exact-SHA CI success (above).
+Private acceptance files in the coordinating workspace are
+`outputs/runtime-convergence/taskhub-write-native-acceptance.{ts,json,log}`,
+`verify_taskhub_write_native.py`, `taskhub-write-native-independent-verification.json`,
+`taskhub-write-upgrade-check.{ts,json}` and the `taskhub-write-*-final/fixed.log` test logs.
+The first report's container lookup used the wrong store; independent verification read the
+actual per-container records and confirmed absence. Only reporting changed; native work was
+not rerun. The initial report is retained separately.
 
-A real OpenCode 1.18.29/M3 canary used the optional gate for two signed loopback task turns,
-reopening the runtime between them. Independent native-database inspection confirms the
-same original session, five actual required reads per turn, correct changed PROJECT and
-findings content, and marker recall without second-turn reinjection. One task/two completed
-episodes/two fixture replies remain after duplicate ingress; one preflight generation,
-nine native commands and three model-run commands were observed. Actual provider billing
-counts are not measured. All nine containers are independently confirmed absent. This
-qualifies the local OpenCode read profile; general task writes, other providers/devices,
-reviewed authority and external closeout verification remain open.
-
-Full goal active; CM-R0 through CM-R6 remain in progress and CM-R7 is not activated.
-Python v0.43.0 remains the released/installed production runtime. The private TS kernel now
-supports a qualified OpenCode read profile, native continuation, device coordination and
-explicit recovery of a result lost between the device and coordinator. Other provider,
-write/sandbox, transport, store and product owners remain required for full migration.
-One-shot routing/result handling and host execution shipped at `0b01ea2` with exact-commit
-green CI 34597493500. Per-execution container lifecycle and original-directory mapping shipped
-with exact-SHA green CI at `8fd3f2f`. The OpenCode read profile now has real container/native
-auth/state/continuation acceptance; general write, other provider and production ingress
-qualification remain open.
+Next owner: device-local staged publication under current coordinator authority, followed by
+lost-result recovery and a real two-device write canary. Other providers/tool profiles,
+transports, stores, topology, terminal, writer cutover and release/install gates remain open.
+See [native-write-design.md](native-write-design.md) for current limits and acceptance.
 
 ## Done
 
@@ -357,10 +333,10 @@ case normalization confirmed removal without rerunning any provider execution.
 
 ## Next
 
-Publish the verified native-stage increment, then connect write admission, retained proposal,
-completion and recovery to normal local TaskHub execution. Continue the device write path,
-other providers, transports, remaining stores, topology/product/default/release/install owners
-under the full migration plan. Keep Python as production until those gates pass.
+Publish the accepted local TaskHub write/recovery increment and verify exact-SHA CI. Then
+implement device-local publication authority and retained-proposal recovery, with a real
+two-device write canary. Continue the remaining provider/transport/store/topology/product/
+default/release/install owners in the full plan; Python remains production until cutover.
 
 ## Device-native communication — 2026-09-12
 

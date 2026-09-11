@@ -11,8 +11,18 @@ import { decodeNativeAgentScope, type NativeAgentScope } from "./native-agent-jo
 
 export interface DirectoryIdentity { path: string; device: string; inode: string }
 export interface ReadSnapshot { path: string; device: string; inode: string; size: string; modified_ns: string; changed_ns: string; sha256: string }
+export interface NativeWorkspaceDispatch {
+  schema_version: "controlmesh.native_workspace.v1";
+  roots: DirectoryIdentity[];
+  stage_path: string;
+  stage_reference: { binding_digest: string; basis_digest: string };
+  read_patterns: string[];
+  edit_patterns: string[];
+  denied_patterns: string[];
+  workflow_binding: string | null;
+}
 export interface NativeManifest extends Record<string, unknown> {
-  schema_version: "controlmesh.native_dispatch.v1";
+  schema_version: "controlmesh.native_dispatch.v1" | "controlmesh.native_dispatch.v2";
   task_digest: string;
   binding: ProbeBinding;
   native_store_id: string;
@@ -24,6 +34,7 @@ export interface NativeManifest extends Record<string, unknown> {
   permission_evidence: { agent: string; data_home: string; resolved: Record<string, unknown>; digest: string };
   mailbox_delivery?: NativeMailboxBatch;
   communication?: NativeAgentScope;
+  workspace_write?: NativeWorkspaceDispatch;
 }
 
 export function nativeTaskDigest(task: LegacyTask): string {
@@ -95,14 +106,17 @@ export function snapshotReads(directory: string, paths: readonly string[]): Read
   });
 }
 
-export function assertWorkspaceManifest(manifest: NativeManifest, hashFiles = false): void {
+export function assertWorkspaceManifest(manifest: NativeManifest, hashFiles = false, afterWrites = false): void {
   requireThat(digest(directoryIdentity(manifest.directory.path)) === digest(manifest.directory)
     && digest(directoryIdentity(manifest.worktree.path)) === digest(manifest.worktree), "native_workspace_replaced");
-  for (const file of manifest.files) {
+  const paths = afterWrites && manifest.workspace_write ? manifest.files.filter(file => !manifest.workspace_write!.roots.some(root => {
+    const path = relative(root.path, file.path); return path === "" || (path !== ".." && !path.startsWith("../") && !path.startsWith("/"));
+  })) : manifest.files;
+  for (const file of paths) {
     const { sha256: _hash, ...metadata } = file;
     requireThat(digest(fileMetadata(file.path)) === digest(metadata), "native_read_file_changed");
   }
-  if (hashFiles) requireThat(digest(snapshotReads(manifest.directory.path, manifest.files.map(file => file.path))) === digest(manifest.files), "native_read_content_changed");
+  if (hashFiles) requireThat(digest(snapshotReads(manifest.directory.path, paths.map(file => file.path))) === digest(paths), "native_read_content_changed");
 }
 
 export function permissionEvidence(resolved: unknown, agent: string, dataHome: string, worktree: string, files: readonly string[], baseline: NativeBaseline | null, communication: readonly string[] = []): NativeManifest["permission_evidence"] {
@@ -117,7 +131,21 @@ export function permissionEvidence(resolved: unknown, agent: string, dataHome: s
 }
 
 export function decodeNativeManifest(value: unknown): NativeManifest {
-  requireThat(object(value) && value.schema_version === "controlmesh.native_dispatch.v1", "unsupported_native_manifest");
+  requireThat(object(value) && ["controlmesh.native_dispatch.v1", "controlmesh.native_dispatch.v2"].includes(String(value.schema_version)), "unsupported_native_manifest");
+  requireThat((value.schema_version === "controlmesh.native_dispatch.v2") === (value.workspace_write !== undefined), "invalid_native_write_manifest");
+  if (value.workspace_write !== undefined) {
+    const write = value.workspace_write;
+    requireThat(object(write) && write.schema_version === "controlmesh.native_workspace.v1" && typeof write.stage_path === "string"
+      && object(write.stage_reference), "invalid_native_write_manifest");
+    const reference = write.stage_reference;
+    requireThat(write.workflow_binding === null || (typeof write.workflow_binding === "string" && /^[a-f0-9]{64}$/.test(write.workflow_binding)), "invalid_native_write_manifest");
+    requireThat(["binding_digest", "basis_digest"].every(key => typeof reference[key] === "string"
+      && /^[a-f0-9]{64}$/.test(reference[key] as string)), "invalid_native_write_manifest");
+    requireThat(Array.isArray(write.roots) && write.roots.length > 0 && write.roots.length <= 64 && write.roots.every(root => object(root)
+      && ["path", "device", "inode"].every(key => typeof root[key] === "string")), "invalid_native_write_manifest");
+    for (const key of ["read_patterns", "edit_patterns", "denied_patterns"]) requireThat(Array.isArray(write[key])
+      && write[key].length <= 4200 && write[key].every((pattern: unknown) => typeof pattern === "string" && pattern.length <= 4096), "invalid_native_write_manifest");
+  }
   for (const key of ["task_digest", "native_store_id"]) requireThat(typeof value[key] === "string" && /^[a-f0-9]{64}$/.test(value[key] as string), "invalid_native_manifest");
   requireThat(object(value.binding) && value.binding.provider === "opencode" && value.binding.cli_version === "1.18.29", "native_permission_profile_unverified");
   for (const key of ["directory", "worktree"]) {

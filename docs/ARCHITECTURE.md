@@ -351,10 +351,22 @@ refuses the known legacy state layout, and constructs the OpenCode adapter lazil
 `drain` advances execution; requests can inspect or cancel work while it is active. EOF
 waits for already requested work but does not start queued tasks. This is not the installed
 `cm` command or a production writer lock. Source/grant/principal authority comes from the
-private configuration and issuance owner, never request body fields. The qualified profile
-is local foreground OpenCode container reads. `tell` persists a pending mailbox message;
+private configuration and issuance owner, never request body fields. Qualified local profiles
+include OpenCode container reads and explicitly registered staged workspace writes. `tell` persists a pending mailbox message;
 `inspect_message` and `mailbox_status` expose delivery state without running a model.
 Other ingress/transport profiles are still separate work.
+
+Optional trusted `workspace.write_roots` selects the staged write owner. Native containers
+see private snapshots projected at original paths; the controller alone publishes canonical
+changes. Version-2 native dispatch manifests retain write roots, stage basis and workflow
+binding; original observations bind the sealed proposal and native file-tool evidence.
+Version-1 read manifests remain supported. `WorkspaceStage`
+uses per-file write-ahead journaling and fsync, with explicit partial-batch recovery rather
+than batch atomicity. `inspect_reconciliation`/`reconcile_task` verify and apply the original
+proposal without a new native invocation. Schema 13 reserves request identity before recovery
+publication/asynchronous verification and atomically exchanges it for the completed receipt.
+Current revision/grant/configuration/native/file checks remain mandatory. Device-write and
+unsealed-result recovery ownership are still open; see the active native-write design.
 
 `specmesh-port.ts` is an optional adapter to an explicitly registered independent SpecMesh
 checkout. It pins package/Python/workspace identity, validates the external snapshot
@@ -362,7 +374,10 @@ capability and draft contracts, and supervises bounded read-only checks before n
 preflight. The registered native required reads must already cover selected continuity
 references; asserted links cannot issue grants. A checked observation is revalidated at
 execution boundaries, never reused after restart as cached authority. The current read
-profile stops if its continuity inputs change during execution. `prepare_handoff` and
+profile stops if its continuity inputs change during execution. The local write profile
+rechecks the independent snapshot after owned publication, before task completion. Required
+read registration cannot expand from those changed documents, and structural pass is not
+independently reviewed closeout. `prepare_handoff` and
 `verify_specmesh` are private, task-scoped control operations with current revision/fence
 checks. Unknown closeout never promotes task completion. Shutdown aborts and reaps pending
 checks. This is a trusted optional command adapter, not a sandbox for arbitrary Python
