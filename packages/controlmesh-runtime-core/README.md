@@ -23,6 +23,13 @@ Track completion in [the repository plan](../../plans/runtime-convergence/task_p
   message bytes, live queue, lifetime, initiation, fan-out and causal depth.
 - JSON Schema defines the versioned lease/message wire shapes. Generated types and actual
   runtime validation use the existing protocol package. This adds no public mutation API.
+- `ProcessSupervisor` runs a provider under a detached Linux anchor. The anchor survives
+  provider exit until the supervisor reaps the group; controller disconnection or missed
+  renewals also stop it. Group signals verify the live leader's start time, group and
+  session before issuance. Deadlines, cancellation, authority loss, bounded stdout/stderr
+  and native-error aborts are exercised with real processes, including descendants that
+  ignore SIGTERM. A provider process group is lifecycle containment, not a sandbox against
+  programs deliberately creating a new session or other external side effects.
 
 `Principal` is an internal admission object constructed by trusted ingress. Never accept
 its identity, scopes, origin or device from an unauthenticated JSON request. The kernel is
@@ -56,7 +63,7 @@ SIGKILL before commit, lost external receipts, permission revocation and bounded
 All fixtures are synthetic; these tests do not touch provider accounts or operator state.
 
 Remaining before activation: operator/native reconciliation, tell/ask/resume integration,
-provider process supervision and permission parity, transport delivery, all other Python
+provider adapter/permission parity and non-Linux supervision, transport delivery, all other Python
 stores, authenticated coordinator/worker transport, two actual devices, native session
 continuation, SpecMesh lifecycle admission, full rollback and production-writer exclusion.
 Mailbox application references are reports until the native adapter independently verifies
