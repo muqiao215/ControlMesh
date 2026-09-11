@@ -2,11 +2,35 @@
 
 ## Current
 
-Published baseline is `c02f6f08ef801af5447643bf58fba0057b449bc0`, including authenticated
-Feishu ingress, durable conversations, selected-app replies and native continuation;
-exact-SHA [CI 34639025503](https://github.com/muqiao215/ControlMesh/actions/runs/34639025503) passed.
+Published baseline is `3073c7fe0758b79abae7724017b9df40e00d4f73`, including the independent
+SpecMesh gate, authenticated Feishu ingress and native continuation;
+exact-SHA [CI 34643193079](https://github.com/muqiao215/ControlMesh/actions/runs/34643193079) passed.
 Earlier a9ec8b4 retains real ARM64-coordinator/x64-worker communication, initial input and
 original-session recall acceptance.
+
+The current native-write increment implements bounded workspace snapshots, private native
+mount projections and lease-owned per-file promotion with a durable recovery journal.
+An explicit two-turn OpenCode 1.18.29/M3 profile canary passed: same session, marker recall
+without reinjection, five required SpecMesh reads per turn, actual read/edit/write tools,
+counter 1 -> 2 -> 3 and a newly created result file. Canonical files stayed unchanged until
+promotion. Independent native SQLite, task/effect/journal and Docker readback confirms
+two completed episodes, two confirmed effects, two applied proposals and nine containers
+absent. One preflight generation was used; provider billing counts are not measured.
+
+This is explicit-profile acceptance. Normal TaskHub/local/device write admission,
+write-aware native manifests/result reconciliation, read aliases under scoped roots and
+SpecMesh closeout remain pending. The production writer and installed version are unchanged.
+Do not report that the normal write entrypoint or complete TS migration is ready.
+
+CI Bun 1.3.11 regression passed 297 core tests / 3,374 assertions with 20 environment-gated
+cases skipped; the separate actual-container gate passed 23 tests / 104 assertions. The
+new stage guard fsyncs prepared file/directory state and pins its first native attachment;
+later native edits remain valid. It is covered by adversarial snapshot tests. The additional
+concrete-runner suite passed 8 tests / 34 assertions with real Docker, including two new
+cases for attachment freshness and repeated staged writes. Paired independent SpecMesh
+passed 7 tests / 32 assertions, covering the four optional cases skipped in the core run.
+All 319 unique core cases have now passed across the bounded runs. Typecheck and diff
+checks passed. Publication and exact-SHA CI for this increment are pending.
 
 The schema-12 authenticated Feishu ingress increment is implemented and locally accepted.
 CI Bun 1.3.11 passed **290 core tests / 3,322 assertions in 58.78 seconds** with the qualified
@@ -36,7 +60,8 @@ pass on Bun 1.3.11; the default core suite passes 283 tests / 3,301 assertions w
 cases separated into the actual-container gate. That gate passes all 20 cases / 79 assertions,
 including SIGSTOP/SIGKILL cleanup. Combined unique core coverage is 297 cases. Generated
 protocol synchronization, Python adapter tests (3), ownership inventory, typecheck and Web
-build pass; bundled Web assets are unchanged. Publication of this CM increment is pending.
+build pass; bundled Web assets are unchanged. The CM increment is published at 3073c7f with
+exact-SHA CI success (above).
 
 A real OpenCode 1.18.29/M3 canary used the optional gate for two signed loopback task turns,
 reopening the runtime between them. Independent native-database inspection confirms the
@@ -332,10 +357,10 @@ case normalization confirmed removal without rerunning any provider execution.
 
 ## Next
 
-Close terminal delivery publication, then extend transport ingress and provider/write profiles
-with real source, permission and outcome verification. Continue stores, device-local History
-adoption, independent SpecMesh lifecycle and the production writer switch.
-The current Node-image process profile is not a substitute for native provider qualification.
+Publish the verified native-stage increment, then connect write admission, retained proposal,
+completion and recovery to normal local TaskHub execution. Continue the device write path,
+other providers, transports, remaining stores, topology/product/default/release/install owners
+under the full migration plan. Keep Python as production until those gates pass.
 
 ## Device-native communication — 2026-09-12
 

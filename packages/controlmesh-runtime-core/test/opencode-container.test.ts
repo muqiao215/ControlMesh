@@ -9,6 +9,9 @@ import { NativeAgentBroker } from "../src/providers/native-agent-broker";
 import { prepareNativeAgentConfiguration, nativeAgentScope } from "../src/providers/native-agent-profile";
 import { issueExecutionContext } from "../src/execution-context";
 import { enforceNativeReadSource } from "../src/execution-policy";
+import { OpenCodeStagedContainerRunner } from "../src/providers/opencode-container";
+import { WorkspaceStage } from "../src/workspace-stage";
+import { digest } from "../src/value";
 
 const actual = process.env.CM_CONTAINER_TEST_IMAGE ? test : test.skip;
 const roots: string[] = [];
@@ -24,6 +27,34 @@ function fixture() {
   const env = { XDG_DATA_HOME: data, XDG_CACHE_HOME: cache, HOME: "/host/private/home", OPENCODE_CONFIG_DIR: "/host/private/config" };
   return { root, workspace, state, data, cache, auth, profile, env, runner: new OpenCodeReadContainerRunner(profile) };
 }
+
+test("staged runner retains a stable preflight profile but refuses altered input when attaching a stage", () => {
+  const f = fixture(), state = join(f.root, "stages"); mkdirSync(state, { mode: 0o700 });
+  writeFileSync(join(f.workspace, "source.ts"), "original\n");
+  const runner = new OpenCodeStagedContainerRunner(f.profile, { directory: f.workspace, write_roots: [f.workspace] });
+  const first = WorkspaceStage.create(state, f.workspace, [f.workspace], digest("first"), run => run());
+  const second = WorkspaceStage.create(state, f.workspace, [f.workspace], digest("second"), run => run());
+  expect(runner.forStage(first).runtimeDigest()).toBe(runner.forStage(second).runtimeDigest());
+  writeFileSync(join(second.path, "tree/source.ts"), "changed before attach\n");
+  expect(() => runner.forStage(second)).toThrow("workspace_stage_prepared_changed");
+});
+
+actual("one staged native runner accepts its own later edits while canonical files remain unchanged", async () => {
+  const f = fixture(), state = join(f.root, "stages"); mkdirSync(state, { mode: 0o700 });
+  writeFileSync(join(f.workspace, "counter"), "1");
+  const stage = WorkspaceStage.create(state, f.workspace, [f.workspace], digest("native write"), run => run());
+  const runner = new OpenCodeStagedContainerRunner(f.profile, { directory: f.workspace, write_roots: [f.workspace] }).forStage(stage);
+  for (const before of [1, 2]) {
+    const result = await runner.run({ command: [f.profile.executable, "-e",
+      `const fs=require('node:fs'); const value=Number(fs.readFileSync('counter','utf8')); if(value!==${before})process.exit(1); fs.writeFileSync('counter',String(value+1)); console.log(value+1);`],
+      cwd: f.workspace, env: f.env, timeout_ms: 20_000 }, { assertCurrent() {} });
+    expect(result, JSON.stringify(result)).toMatchObject({ reason: "exited", exit_code: 0 });
+    expect(result.stdout.trim()).toBe(String(before + 1));
+    expect(readFileSync(join(f.workspace, "counter"), "utf8")).toBe("1");
+  }
+  const proposal = stage.seal(run => run()); stage.promote(run => run(), proposal.proposal_digest);
+  expect(readFileSync(join(f.workspace, "counter"), "utf8")).toBe("3");
+}, 50_000);
 
 test("only the concrete container runner admits remote message sources; host runners retain their local floor", () => {
   const f = fixture();

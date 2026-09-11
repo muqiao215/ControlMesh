@@ -16,6 +16,7 @@ export interface ContainerConfiguration {
   cpus?: number;
 }
 export interface ContainerMount { source: string; target: string; readonly: boolean; kind: "file" | "directory"; identity: DirectoryIdentity }
+export interface WorkspaceProjection { source: string; target: string; readonly: boolean }
 export interface ContainerPlan { mounts: ContainerMount[]; working_directory: string; network: "none" | "bridge"; memory: number; pids: number; cpus: number; user: string }
 
 export function contains(root: string, child: string): boolean {
@@ -49,7 +50,8 @@ export function resourceMounts(configuration: ContainerConfiguration): Container
     return { source: path, target: path, readonly: resource.readonly, kind, identity: { path, device: String(stat.dev), inode: String(stat.ino) } };
   }).sort((a, b) => a.source.length - b.source.length);
 }
-export function planContainer(configuration: ContainerConfiguration, workspace: string, roots: readonly string[], noNetwork: boolean): ContainerPlan {
+export function planContainer(configuration: ContainerConfiguration, workspace: string, roots: readonly string[], noNetwork: boolean,
+  projection: readonly WorkspaceProjection[] = []): ContainerPlan {
   requireThat(/^sha256:[0-9a-f]{64}$/.test(configuration.image_id), "container_image_digest_required");
   requireThat(isAbsolute(configuration.node_executable) && !/[\x00\r\n]/.test(configuration.node_executable), "invalid_container_node");
   const state = canonicalDirectory(configuration.state_root), directory = canonicalDirectory(workspace);
@@ -69,7 +71,27 @@ export function planContainer(configuration: ContainerConfiguration, workspace: 
   const allowed = [...new Set(roots)];
   requireThat(allowed.length <= 64, "too_many_container_write_roots");
   for (const root of allowed) requireThat(isAbsolute(root) && contains(workspace, root), "container_write_root_outside_workspace");
-  const mounts = [mount(directory.path, !allowed.includes(workspace)), ...allowed.filter(root => root !== workspace && !allowed.some(parent => parent !== root && contains(parent, root))).map(root => mount(root, false))];
+  let mounts = [mount(directory.path, !allowed.includes(workspace)), ...allowed.filter(root => root !== workspace && !allowed.some(parent => parent !== root && contains(parent, root))).map(root => mount(root, false))];
+  requireThat(Array.isArray(projection) && projection.length <= 128 && (!projection.length || (layout === "native" && allowed.length === 0)), "container_projection_requires_readonly_canonical_workspace");
+  const seen = new Set<string>();
+  for (const entry of [...projection].sort((a, b) => a.target.length - b.target.length)) {
+    const { source, target, readonly } = entry;
+    requireThat(typeof readonly === "boolean" && isAbsolute(source) && isAbsolute(target) && !/[\x00\r\n,]/.test(source + target)
+      && contains(workspace, target) && !seen.has(target), "invalid_container_projection"); seen.add(target);
+    const stat = lstatSync(source, { bigint: true });
+    requireThat(realpathSync(source) === source && (stat.isDirectory() || (stat.isFile() && readonly)), "invalid_container_projection_source");
+    if (readonly) requireThat(source === target && relative(workspace, target).split(sep).includes(".git"), "container_projection_readonly_scope_invalid");
+    else {
+      requireThat(!contains(workspace, source) && !contains(source, workspace) && !contains(state.path, source) && !contains(source, state.path)
+        && !relative(workspace, target).split(sep).includes(".git"), "container_projection_canonical_write_forbidden");
+      requireThat(!projection.some(other => !other.readonly && other !== entry && other.target !== target
+        && (contains(other.target, target) || contains(target, other.target))), "container_projection_overlap");
+      for (const resource of resourceMounts(configuration)) requireThat(!contains(source, resource.source) && !contains(resource.source, source), "container_projection_resource_overlap");
+    }
+    const projected: ContainerMount = { source, target, readonly, kind: stat.isDirectory() ? "directory" : "file",
+      identity: { path: source, device: String(stat.dev), inode: String(stat.ino) } };
+    if (target === workspace) mounts = [projected]; else mounts.push(projected);
+  }
   for (const resource of resourceMounts(configuration)) {
     requireThat(!contains(resource.source, workspace) && !contains(workspace, resource.source)
       && !contains(resource.target, workingDirectory) && !contains(workingDirectory, resource.target), "container_resource_workspace_overlap");

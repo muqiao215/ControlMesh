@@ -386,3 +386,39 @@ cleanup. The separate real OpenCode canary verifies native read tools and origin
 continuation, with five required reads on each of two turns. No production account replies
 or native write permissions were involved. Read-profile acceptance does not close the
 remaining provider/write/device, reviewer/evidence or production-cutover gates.
+
+## Native workspace writes — 2026-09-12
+
+OpenCode 1.18.29's native edit/write/apply_patch share the edit permission. The registry
+selects apply_patch for some GPT models; permission inspection cannot independently allow
+edit while denying write. Reject unrepresentable narrower portable grants. A patch move
+has additional destination handling, so permission strings alone cannot establish write
+confinement. The explicit profile uses original-path staged Docker mounts and disables
+native snapshot, formatter and LSP execution. Official tagged implementation references:
+[edit](https://github.com/anomalyco/opencode/blob/v1.18.29/packages/opencode/src/tool/edit.ts),
+[write](https://github.com/anomalyco/opencode/blob/v1.18.29/packages/opencode/src/tool/write.ts),
+[apply_patch](https://github.com/anomalyco/opencode/blob/v1.18.29/packages/opencode/src/tool/apply_patch.ts),
+[registry](https://github.com/anomalyco/opencode/blob/v1.18.29/packages/opencode/src/tool/registry.ts).
+
+The two-turn real profile canary confirms native edit/write and original-session continuity,
+not the normal TaskHub write entrypoint. It does not qualify native deletion or arbitrary
+symlink-containing read roots. Independent readback uses the original SQLite records and
+does not rerun Agent execution. Evidence lives in the private coordinating workspace under
+outputs/runtime-convergence/workspace-write-native-profile.{ts,json,log} and
+workspace-write-native-independent-verification.json; the verifier is
+verify_workspace_write_native.py. Initial prepared-tree durability was added after this
+native canary and is separately checked with actual Docker runner tests, avoiding another
+model invocation just to test the filesystem guard.
+
+The controller journal handles partial multi-file publication explicitly. A crash after
+rename and before journal acknowledgement compares current content with the retained
+proposal and acknowledges the already applied file without rewriting it. Prefix-checked
+temporary files allow interrupted writes to finish; unrelated edits remain conflicts.
+Descriptor-relative parent traversal stops a swapped parent from redirecting writes to an
+unrelated path. Atomicity applies per file, not to the complete batch. RuntimeKernel lease
+expiry and trusted recovery are tested; normal local/device adapter wiring remains open.
+
+Preparation now fsyncs file data and directory entries and binds the initial staged snapshot.
+A new runner attachment rejects changed bytes, new files and same-content identity changes.
+The active runner intentionally permits its own later staged edits. This guard is a dispatch
+condition, not a general lock against native clients outside the CM ownership protocol.

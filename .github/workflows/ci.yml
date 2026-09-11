@@ -242,7 +242,7 @@ jobs:
           docker pull node@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5
           docker image inspect node@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5 --format 'CM_CONTAINER_TEST_IMAGE={{.Id}}' >> "$GITHUB_ENV"
       - name: Run real container lifecycle and one-shot tests
-        run: bun test packages/controlmesh-runtime-core/test/container.test.ts packages/controlmesh-runtime-core/test/opencode-container.test.ts
+        run: bun test packages/controlmesh-runtime-core/test/container.test.ts packages/controlmesh-runtime-core/test/opencode-container.test.ts packages/controlmesh-runtime-core/test/workspace-stage-container.test.ts
 
   ci-success:
     name: CI success

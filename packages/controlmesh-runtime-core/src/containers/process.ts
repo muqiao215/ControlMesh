@@ -5,12 +5,13 @@ import { elapsedMs } from "../elapsed-clock";
 import { ProcessSupervisor, type ProcessAdmission, type ProcessOutcome, type ProcessSpec } from "../process-supervisor";
 import { canonical, digest, object, requireThat } from "../value";
 import { directoryIdentity } from "../providers/native-manifest";
-import { assertLocalDocker, assertMounts, planContainer, type ContainerConfiguration, type ContainerPlan } from "./plan";
+import { assertLocalDocker, assertMounts, planContainer, type ContainerConfiguration, type ContainerPlan, type WorkspaceProjection } from "./plan";
 
 export interface ContainerProcessSpec extends ProcessSpec {
   execution_id: string;
   writable_roots: readonly string[];
   no_network: boolean;
+  workspace_projection?: readonly WorkspaceProjection[];
 }
 interface RecordState { schema_version: "controlmesh.container_execution.v1"; execution: string; owner: string; input_digest: string; isolation_digest: string; nonce: string; name: string; image: string; socket: string; engine_id: string | null; container_id: string | null; creation_uncertain: boolean; state: "preparing" | "created" | "running" | "removed" | "cleanup_pending"; outcome?: ProcessOutcome }
 export interface ContainerOutcome extends ProcessOutcome { container_id: string | null; cleanup: "removed" | "pending" }
@@ -115,7 +116,7 @@ export class ContainerProcessSupervisor {
   async run(spec: ContainerProcessSpec, admission: ProcessAdmission): Promise<ContainerOutcome> {
     assertLocalDocker(this.configuration);
     requireThat(typeof spec.execution_id === "string" && spec.execution_id.length > 0 && spec.execution_id.length <= 256, "container_execution_identity_required");
-    const plan = planContainer(this.configuration, spec.cwd, spec.writable_roots, spec.no_network);
+    const plan = planContainer(this.configuration, spec.cwd, spec.writable_roots, spec.no_network, spec.workspace_projection);
     requireThat(typeof spec.no_network === "boolean", "invalid_container_network_policy");
     const original = digest([spec, this.configuration]), boot = bootId(), start = elapsedMs(), deadline = start + spec.timeout_ms;
     const stateIdentity = digest(directoryIdentity(this.configuration.state_root));

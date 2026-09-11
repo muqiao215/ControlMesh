@@ -28,10 +28,20 @@ export function readFileGrant(directory: string, files: readonly string[]): stri
 
 /** Inspect native resolved rules, including persisted session permissions which native OpenCode merges last. */
 export function inspectReadPermissions(value: unknown, agent: string, dataHome: string, files: readonly string[], sessionRules: unknown = [], communication: readonly string[] = []): { digest: string; tool_count: number } | null {
+  return inspectPermissions(value, agent, dataHome, files, sessionRules, communication, []);
+}
+
+/** The edit permission covers native edit/write/apply_patch together; filesystem confinement is a separate required gate. */
+export function inspectWorkspacePermissions(value: unknown, agent: string, dataHome: string, reads: readonly string[], edits: readonly string[], sessionRules: unknown = [], communication: readonly string[] = []): { digest: string; tool_count: number } | null {
+  if (!edits.length) return null;
+  return inspectPermissions(value, agent, dataHome, reads, sessionRules, communication, edits);
+}
+function inspectPermissions(value: unknown, agent: string, dataHome: string, files: readonly string[], sessionRules: unknown, communication: readonly string[], edits: readonly string[]): { digest: string; tool_count: number } | null {
   if (!communication.every(tool => (nativeAgentTools as readonly string[]).includes(tool))) return null;
   if (!object(value) || value.name !== agent || value.mode !== "primary" || !Array.isArray(value.permission) || !object(value.tools) || !Array.isArray(sessionRules)) return null;
   const tools = Object.keys(value.tools);
   if (!tools.length || tools.includes("external_directory") || (files.length > 0 && !tools.includes("read"))) return null;
+  if (edits.length && !tools.some(tool => ["edit", "write", "apply_patch"].includes(tool))) return null;
   const rules: unknown[] = [...value.permission, ...sessionRules];
   if (!rules.every(rule => object(rule) && typeof rule.permission === "string" && typeof rule.pattern === "string" && ["allow", "ask", "deny"].includes(String(rule.action)))) return null;
   let lastDeny = -1;
@@ -42,6 +52,7 @@ export function inspectReadPermissions(value: unknown, agent: string, dataHome: 
     if (rule.action === "deny") continue;
     if (rule.action !== "allow") return null;
     if (rule.permission === "read" && files.includes(String(rule.pattern))) continue;
+    if (rule.permission === "edit" && edits.includes(String(rule.pattern))) continue;
     if (communication.includes(String(rule.permission)) && rule.pattern === "*") continue;
     if (rule.permission === "external_directory" && rule.pattern === join(dataHome, "opencode/tool-output/*")) continue;
     return null;
@@ -52,12 +63,40 @@ export function inspectReadPermissions(value: unknown, agent: string, dataHome: 
     const effective = rules.filter(raw => { const rule = raw as Record<string, string>; return matches(rule.permission, "read") && matches(rule.pattern, file); }).at(-1) as Record<string, string> | undefined;
     if (effective?.action !== "allow") return null;
   }
+  for (const file of edits) {
+    const effective = rules.filter(raw => { const rule = raw as Record<string, string>; return matches(rule.permission, "edit") && matches(rule.pattern, file); }).at(-1) as Record<string, string> | undefined;
+    if (effective?.action !== "allow") return null;
+  }
   for (const tool of communication) {
     const effective = rules.filter(raw => { const rule = raw as Record<string, string>; return matches(rule.permission, tool) && matches(rule.pattern, "*"); }).at(-1) as Record<string, string> | undefined;
     if (effective?.action !== "allow") return null;
   }
   return { digest: digest({ permissions: rules, tool_names: tools.sort(), read_files: files,
-    ...(communication.length ? { native_tools: [...communication].sort() } : {}) }), tool_count: tools.length };
+    ...(communication.length ? { native_tools: [...communication].sort() } : {}), ...(edits.length ? { edit_patterns: [...edits] } : {}) }), tool_count: tools.length };
+}
+
+export function assertWorkspaceGrantSnapshot(value: unknown, workspace: string, roots: readonly string[], communication: readonly string[] = []): void {
+  assertReadGrantSnapshot(value, roots, communication);
+  const grant = decodeToolGrant(value), allows = grant.tool_allow.map(tool => tool.toLowerCase()), denies = grant.tool_deny.map(tool => tool.toLowerCase());
+  requireThat(roots.length > 0 && roots.every(root => isAbsolute(root) && realpathSync(root) === root && statSync(root).isDirectory()
+    && !/[?*\x00]/.test(root) && relative(workspace, root) !== ".." && !relative(workspace, root).startsWith("../") && !isAbsolute(relative(workspace, root))
+    && !relative(workspace, root).split("/").includes(".git")), "native_write_root_outside_workspace");
+  requireThat(["edit", "write", "apply_patch"].every(tool => !denies.includes(tool) && (!allows.length || allows.includes(tool))), "native_shared_edit_permission_conflicts_grant");
+  if (grant.writable_roots.length) requireThat(roots.every(root => grant.writable_roots.some(granted => {
+    const resolved = isAbsolute(granted) ? realpathSync(granted) : realpathSync(join(workspace, granted));
+    const path = relative(resolved, root); return path === "" || (path !== ".." && !path.startsWith("../") && !isAbsolute(path));
+  })), "native_write_roots_exceed_grant");
+}
+
+export function workspaceEnvironment(configuration: Record<string, unknown>, model: string, base: Record<string, string>, temp: string, agent: string,
+  reads: readonly string[], edits: readonly string[], prompt: string, communicationCommand?: readonly string[]): Record<string, string> {
+  requireThat(edits.length > 0 && edits.every(pattern => pattern === "*" || (pattern.endsWith("/*") && !pattern.startsWith("/") && !pattern.split("/").includes(".."))), "native_edit_patterns_invalid");
+  const env = readOnlyEnvironment(configuration, model, base, temp, agent, reads, prompt, communicationCommand);
+  const config = JSON.parse(env.OPENCODE_CONFIG_CONTENT), permission = JSON.parse(env.OPENCODE_PERMISSION);
+  permission.edit = { ...Object.fromEntries(edits.map(pattern => [pattern, "allow"])), ".git": "deny", ".git/*": "deny", "*/.git": "deny", "*/.git/*": "deny" };
+  config.snapshot = false; config.permission = permission; config.agent[agent].permission = permission;
+  config.agent[agent].description = "ControlMesh issued staged workspace profile";
+  env.OPENCODE_PERMISSION = JSON.stringify(permission); env.OPENCODE_CONFIG_CONTENT = JSON.stringify(config); return env;
 }
 
 /** Connection settings are reused, but external plugin/agent instructions cannot widen this issued profile. */

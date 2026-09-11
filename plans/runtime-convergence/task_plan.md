@@ -77,10 +77,13 @@ complete stdio shutdown are now implemented in the startup/control path and pass
 255-test core suite. They are published at dc373fb with green CI. Authenticated ingress,
 durable conversation processing and concrete native message-source enforcement now pass
 290 core tests and real two-turn OpenCode continuation across runtime reopen. It is published
-at c02f6f0 with exact-SHA green CI. The independent SpecMesh snapshot/start/handoff gate now
-passes paired tests and real two-turn native five-file consumption; publish that increment
-and verify exact-SHA CI, then complete reviewed closeout, group controller approval, rich-media,
-long-connection subscription and the remaining authorization profiles.
+at c02f6f0 with exact-SHA green CI. The independent SpecMesh snapshot/start/handoff gate is
+published at 3073c7f with exact-SHA CI success and real two-turn native five-file consumption.
+The staged native-write profile has real OpenCode edit/write and original-session acceptance.
+Next connect its retained proposal and current authority to the normal local TaskHub
+execution/completion/reconciliation path, preserving the existing read manifest contract.
+Reviewed closeout, group controller approval, rich-media, long-connection subscription and
+the remaining authorization profiles are still required.
 These and other provider/write profiles remain required before
 the staged production switch.
 
@@ -93,3 +96,11 @@ adoption into device-local handles and independent SpecMesh lifecycle checks. Co
 other recovery/abandonment/store owners and the 512-module/57-field ownership parity. Do
 not activate over live data before writer-exclusion, provider/transport parity, recovery
 and release/install gates pass.
+
+## Active native-write owner
+
+Implement the native workspace-write path, not a read-only substitute. See
+[native-write-design.md](native-write-design.md) for the snapshot/projection/promotion
+boundary and acceptance cases. This work must ultimately wire actual OpenCode edit/write
+execution, local and device ownership, native result retention/reconciliation and SpecMesh
+freshness. A staging helper alone does not close CM-R3 or the full migration.

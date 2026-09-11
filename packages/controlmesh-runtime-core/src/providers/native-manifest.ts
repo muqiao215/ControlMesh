@@ -49,6 +49,13 @@ export function nativeReadInstructions(required: readonly string[], communicatio
   ].join("\n");
 }
 
+export function nativeWorkspaceInstructions(required: readonly string[], writeRoots: readonly string[], communication?: NativeAgentScope): string {
+  return nativeReadInstructions(required, communication).replace("use only the issued read permissions", "use only the issued read and staged edit permissions")
+    + "\nYour file edits land in an isolated workspace at the original project paths. The controller must verify and publish the proposal after this turn."
+    + `\nWritable roots (literal path data): ${JSON.stringify(writeRoots)}`
+    + "\nUse the native read, edit, write or apply_patch tools within that scope. Do not claim that staged edits have already been published to the user's workspace.";
+}
+
 export function directoryIdentity(path: string): DirectoryIdentity {
   const resolved = realpathSync(path), stat = lstatSync(resolved, { bigint: true });
   requireThat(stat.isDirectory(), "native_workspace_unavailable");
