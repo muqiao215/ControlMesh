@@ -15,15 +15,16 @@ try {
   if (process.pid !== 1) process.exit(125);
   current();
   const configuration = JSON.parse(readFileSync(`${root}/launch.json`, "utf8"));
-  const { command, environment } = configuration;
+  const { command, environment, working_directory: workingDirectory } = configuration;
   if (!Array.isArray(command) || !command.length || command.some(item => typeof item !== "string" || item.includes("\0"))) process.exit(125);
+  if (typeof workingDirectory !== "string" || !workingDirectory.startsWith("/") || workingDirectory.includes("\0") || process.cwd() !== workingDirectory) process.exit(125);
   mkdirSync("/tmp/cm-home", { recursive: true, mode: 0o700 });
   const timer = setInterval(() => { try { current(); } catch { process.exit(124); } }, 50);
   process.on("SIGTERM", () => process.exit(143));
   process.on("SIGINT", () => process.exit(130));
   current();
   const child = spawn(command[0], command.slice(1), {
-    cwd: "/workspace", env: { PATH: "/usr/local/bin:/usr/bin:/bin", HOME: "/tmp/cm-home", ...environment },
+    cwd: workingDirectory, env: { PATH: "/usr/local/bin:/usr/bin:/bin", HOME: "/tmp/cm-home", ...environment },
     stdio: ["pipe", "inherit", "inherit"],
   });
   child.stdin.on("error", () => {});

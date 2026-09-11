@@ -74,8 +74,16 @@ were performed. Final exact-commit CI is verified after publication.
 Initial container commit `6b6b221` passed its actual-container and product/build gates in CI
 34600620577. Both Python versions had one failure / 5,732 passes because the workflow test
 still required the old exact job set. The test now requires all mandatory gates, including
-container execution, while permitting future additional gates. Follow-up exact-commit CI
-must pass before publication is recorded as green.
+container execution, while permitting future additional gates. Follow-up `f9337d9` has
+exact-SHA green CI 34601215864, freshly verified completed/success.
+
+Container directory follow-up: an explicit native layout preserves original canonical project
+paths without mounting their ancestors. The container plan, inspected Docker workdir and PID 1
+agree before provider execution. Reserved runtime/control paths cannot be shadowed. Strict TS
+passed; CI-version Bun 1.3.11 container suite passed **12 tests / 52 assertions**, including nine
+real-daemon cases, in 19.21 seconds. The new cases verify a Unicode/space-containing native cwd,
+nested write permissions, adjacent host-file exclusion and rejection of a changed Docker workdir
+before launch. No model/auth probe or production runtime switch occurred in this follow-up.
 
 Prior device-recovery verification included Python protocol **9 passed**, generated-model
 Ruff and Web build. Canonical schemas and TS/Python/Web generated assets remain synchronized.
@@ -125,8 +133,8 @@ and task evidence do not automatically promote history into authoritative projec
 
 ## Next
 
-Verify container publication CI, then qualify actual provider images with scoped credentials
-and persistent native state, preserving native directory identity for real continuation.
+Qualify actual provider images with scoped credentials and persistent native state using the
+verified native directory layout, then validate same-session continuation through that owner.
 Connect the implemented execution owners to task/transport ingress and native mailbox work,
 then continue stores, History adoption, SpecMesh lifecycle and the production writer switch.
 The current Node-image process profile is not a substitute for native provider qualification.

@@ -373,6 +373,11 @@ Only the configured workspace and private control directory are mounted. Writabl
 specific nested bind mounts; the control directory and other project paths remain read-only.
 Recursive submount copying is disabled. `no_network` selects an isolated network namespace
 for the entire process, including its model client; it is not an HTTP allowlist.
+The default `portable` workspace layout mounts at `/workspace`. A configured `native`
+layout mounts only the same project and granted nested roots at their original absolute
+paths, preserving provider directory identity. The plan binds that working directory;
+Docker inspection and PID 1 both verify it before execution. Mounts that shadow the helper,
+control lease, temporary home, kernel filesystems or image runtime paths are rejected.
 
 A compiled TS helper runs as container PID 1 and checks a read-only lease file against the
 Linux boot ID and suspend-aware uptime. Expiry or parent process completion ends that PID
@@ -387,7 +392,8 @@ after container removal is confirmed; records retain the execution's no-replay m
 
 This Node-image execution profile is a tested TS isolation/lifecycle path, not yet the
 complete provider image/auth/native-state migration. It does not mount the legacy shared CM
-home or automatically adopt sessions whose native directory differs from `/workspace`.
+home or automatically adopt sessions. Native layout preserves directory paths, while scoped
+authentication and persistent provider state still need their own qualified integration.
 
 The private `DeviceCoordinator` now exposes a separate loopback worker protocol with
 credentials mapped to trusted device registrations. Tasks have persisted, digest-bound

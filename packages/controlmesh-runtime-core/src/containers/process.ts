@@ -53,7 +53,7 @@ export class ContainerProcessSupervisor {
   private verifyIsolation(value: Record<string, any>, plan: ContainerPlan, directory: string): void {
     const host = value.HostConfig;
     requireThat(value.Config.User === plan.user && value.Config.Entrypoint?.length === 1 && value.Config.Entrypoint[0] === this.configuration.node_executable
-      && value.Config.Cmd?.length === 1 && value.Config.Cmd[0] === "/cm-control/init.cjs" && value.Config.WorkingDir === "/workspace"
+      && value.Config.Cmd?.length === 1 && value.Config.Cmd[0] === "/cm-control/init.cjs" && value.Config.WorkingDir === plan.working_directory
       && host.ReadonlyRootfs === true && host.Privileged === false && host.NetworkMode === plan.network && host.RestartPolicy?.Name === "no"
       && host.PidMode === "" && host.IpcMode === "private" && host.CgroupnsMode === "private" && !host.Devices?.length && !host.CapAdd?.length
       && host.CapDrop?.length === 1 && host.CapDrop[0].toLowerCase() === "all" && host.SecurityOpt?.includes("no-new-privileges")
@@ -154,7 +154,7 @@ export class ContainerProcessSupervisor {
       const build = await Bun.build({ entrypoints: [join(import.meta.dir, "init.ts")], target: "node", format: "cjs" });
       requireThat(build.success && build.outputs.length === 1, "container_init_build_failed");
       writeFileSync(join(directory, "init.cjs"), await build.outputs[0].text(), { mode: 0o600 });
-      atomic(join(directory, "launch.json"), { command: spec.command, environment: spec.env });
+      atomic(join(directory, "launch.json"), { command: spec.command, environment: spec.env, working_directory: plan.working_directory });
       const image = await this.docker(["image", "inspect", this.configuration.image_id], context);
       requireThat(image.reason === "exited" && image.exit_code === 0, "container_image_unavailable");
       const imageConfig = JSON.parse(image.stdout);
@@ -162,7 +162,7 @@ export class ContainerProcessSupervisor {
       const args = ["container", "create", "--pull", "never", "--name", record.name, "--interactive", "--read-only", "--network", plan.network, "--user", plan.user,
         "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--ipc", "private", "--cgroupns", "private", "--restart", "no", "--no-healthcheck", "--log-driver", "none",
         "--memory", `${plan.memory}m`, "--memory-swap", `${plan.memory}m`, "--pids-limit", String(plan.pids), "--cpus", String(plan.cpus), "--shm-size", "16m",
-        "--tmpfs", "/tmp:rw,nosuid,nodev,noexec,size=67108864,mode=1777", "--workdir", "/workspace", "--entrypoint", this.configuration.node_executable];
+        "--tmpfs", "/tmp:rw,nosuid,nodev,noexec,size=67108864,mode=1777", "--workdir", plan.working_directory, "--entrypoint", this.configuration.node_executable];
       for (const [key, value] of Object.entries(labels(record))) args.push("--label", `${key}=${value}`);
       for (const key of ["NODE_OPTIONS", "NODE_PATH", "LD_PRELOAD", "LD_LIBRARY_PATH"]) args.push("--env", `${key}=`);
       for (const mount of plan.mounts) args.push("--mount", `type=bind,source=${mount.source},destination=${mount.target},bind-propagation=rprivate,bind-recursive=disabled${mount.readonly ? ",readonly" : ""}`);

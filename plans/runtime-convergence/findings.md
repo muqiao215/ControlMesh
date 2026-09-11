@@ -1,5 +1,14 @@
 # Findings
 
+Container native continuation needs its original absolute directory: OpenCode session rows,
+native read evidence and the CM manifest all bind that path. The container's previous fixed
+`/workspace` mount changed it. An explicit `native` layout now preserves the canonical project
+path and nested write roots; the default remains `portable`. It does not mount any ancestor
+directory. Actual Docker tests cover a project path with spaces and Unicode, deny writes outside
+its granted root, and confirm an adjacent private host file is absent. A deliberately altered
+Docker working directory is rejected before launch and its owned container is removed.
+This is directory compatibility, not authenticated model/session continuation acceptance.
+
 Container ownership baseline: `infra/docker.py:DockerManager` shares one persistent sidecar
 between Agents, mounts the whole CM home plus selected native auth stores, and reports setup
 failure as `None`. Source policy separately blocks required-sandbox work on that failure;

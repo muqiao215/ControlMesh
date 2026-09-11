@@ -70,7 +70,7 @@ No claim that full TS migration or distributed coordination has completed. A sco
 ## Next Step
 
 Qualify actual provider images, scoped authentication and persistent native state in the
-container execution owner, preserving native directory identity for real continuation.
+container execution owner using the verified native directory layout for real continuation.
 Connect History adoption into device-local handles, mailbox application and independent
 SpecMesh lifecycle checks. Complete other recovery/abandonment/store owners and the
 512-module/57-field ownership parity. Do not activate over live data before writer-exclusion,

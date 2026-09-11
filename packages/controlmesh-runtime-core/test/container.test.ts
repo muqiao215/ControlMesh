@@ -48,6 +48,55 @@ test("old-boot and expired container leases cannot become current after the cloc
   expect(containerLeaseCurrent({ boot_id: "current", expires_ms: 11 }, "current", 10)).toBe(true);
 });
 
+test("native directory layout preserves path identity while refusing runtime and lease shadowing", () => {
+  const f = fixture(), configuration = { ...f.config, workspace_layout: "native" as const };
+  const plan = planContainer(configuration, f.workspace, [join(f.workspace, "allowed")], false);
+  expect(plan.working_directory).toBe(f.workspace);
+  expect(plan.mounts.map(item => [item.source, item.target, item.readonly])).toEqual([
+    [f.workspace, f.workspace, true], [join(f.workspace, "allowed"), join(f.workspace, "allowed"), false],
+  ]);
+  expect(() => planContainer(configuration, realpathSync("/etc"), [], true)).toThrow("container_native_workspace_conflict");
+  expect(() => planContainer({ ...configuration, node_executable: join(f.workspace, "node") }, f.workspace, [], true)).toThrow("container_native_workspace_conflict");
+  expect(() => planContainer({ ...f.config, workspace_layout: "unknown" as "native" }, f.workspace, [], true)).toThrow("invalid_container_workspace_layout");
+});
+
+actual("native container layout uses the original absolute project path without exposing adjacent host files", async () => {
+  const f = fixture(), workspace = join(f.root, "native repo 中文");
+  mkdirSync(workspace); mkdirSync(join(workspace, "allowed"));
+  writeFileSync(join(workspace, "input"), "current project");
+  writeFileSync(join(f.root, "outside-private"), "must remain unmounted");
+  const script = `const fs=require('node:fs'),path=require('node:path'),directory=${JSON.stringify(workspace)};
+    fs.writeFileSync(path.join(directory,'allowed/result'),'ok'); const denied=[];
+    for(const file of [path.join(directory,'blocked'),'/cm-control/lease.json','/etc/fixture']){try{fs.writeFileSync(file,'bad')}catch{denied.push(file)}}
+    console.log(JSON.stringify({cwd:process.cwd(),read:fs.readFileSync(path.join(directory,'input'),'utf8'),denied,
+      outside:fs.existsSync(path.join(directory,'../outside-private'))}));`;
+  const result = await new ContainerProcessSupervisor({ ...f.config, workspace_layout: "native" }).run(spec(workspace, script, "native-directory"), ready);
+  expect(result, JSON.stringify(result)).toMatchObject({ reason: "exited", exit_code: 0, cleanup: "removed" });
+  expect(JSON.parse(result.stdout)).toEqual({ cwd: workspace, read: "current project", denied: [join(workspace, "blocked"), "/cm-control/lease.json", "/etc/fixture"], outside: false });
+  expect(readFileSync(join(workspace, "allowed/result"), "utf8")).toBe("ok");
+  expect(inspection(f.config, result.container_id!).exitCode).not.toBe(0);
+}, 30_000);
+
+actual("native container admission rejects a mismatched Docker working directory before native launch", async () => {
+  const f = fixture(), supervisor = new ProcessSupervisor();
+  let started = false;
+  const runner = new ContainerProcessSupervisor({ ...f.config, workspace_layout: "native" }, { async run(input, admission) {
+    if (input.command.includes("start")) started = true;
+    const result = await supervisor.run(input, admission);
+    if (input.command.includes("container") && input.command.includes("inspect") && result.exit_code === 0) {
+      const inspected = JSON.parse(result.stdout);
+      inspected[0].Config.WorkingDir = "/workspace";
+      return { ...result, stdout: JSON.stringify(inspected) };
+    }
+    return result;
+  } } as ProcessSupervisor);
+  await expect(runner.run(spec(f.workspace, "throw new Error('must not run');", "wrong-directory"), ready)).rejects.toThrow("container_isolation_mismatch");
+  expect(started).toBe(false);
+  const record = JSON.parse(readFileSync(join(f.state, digest("wrong-directory"), "record.json"), "utf8"));
+  expect(record.state).toBe("removed");
+  expect(inspection(f.config, record.container_id).exitCode).not.toBe(0);
+}, 30_000);
+
 actual("an ambiguous create response is reconciled by owned identity without starting or repeating the execution", async () => {
   const f = fixture(), supervisor = new ProcessSupervisor();
   let created: string | undefined;
