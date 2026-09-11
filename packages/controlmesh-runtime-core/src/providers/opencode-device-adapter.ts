@@ -12,6 +12,11 @@ import { assertReadGrantSnapshot, readFileGrant } from "./opencode-profile";
 import { NativeSessionStore } from "./native-session";
 import { PreflightCache, type ProbeBinding } from "./preflight-cache";
 import { ProviderPreflightService } from "./preflight-service";
+import { OpenCodePreflight } from "./opencode-preflight";
+import { nativeAgentTools } from "./native-agent-journal";
+import { NativeAgentChannel } from "./native-agent-broker";
+import { nativeAgentProof } from "./native-agent-proof";
+import { assertNativeAgentConfiguration } from "./native-agent-profile";
 
 export interface OpenCodeDeviceOptions {
   read_files: readonly string[];
@@ -28,7 +33,7 @@ export class OpenCodeDeviceAdapter implements DeviceAdapter {
   constructor(private readonly actor: Principal, private readonly cache: PreflightCache,
     private readonly journal: DeviceExecutionJournal, private readonly store: NativeSessionStore,
     private readonly config: OpenCodeWorkerConfig, private readonly options: OpenCodeDeviceOptions,
-    runner?: NativeRunner, private readonly preflight = new ProviderPreflightService(cache)) {
+    runner?: NativeRunner, private readonly preflight = new ProviderPreflightService(cache, new OpenCodePreflight(runner))) {
     requireThat(actor.origin === "agent_message" && actor.device_id === store.deviceId && actor.device_id === journal.deviceId, "native_device_identity_mismatch");
     this.execution = new OpenCodeExecution(store, config, runner);
   }
@@ -46,7 +51,12 @@ export class OpenCodeDeviceAdapter implements DeviceAdapter {
     });
     const files = readFileGrant(workspace, paths(this.options.read_files)), required = readFileGrant(workspace, paths(this.options.required_reads));
     requireThat(required.every(file => files.includes(file)), "required_read_not_granted");
-    assertReadGrantSnapshot(job.execution.tool_grant, files);
+    if (this.config.communication) {
+      assertNativeAgentConfiguration(this.config.communication);
+      requireThat(this.config.communication.task_id === job.task_id && digest(this.config.communication.peer_tasks) === digest(job.peer_tasks ?? [])
+        && this.config.communication.parent_task === (job.parent_task ?? null), "native_agent_assignment_changed");
+    }
+    assertReadGrantSnapshot(job.execution.tool_grant, files, this.config.communication ? nativeAgentTools : []);
     const task: LegacyTask = { ...job.execution, task_id: job.task_id, chat_id: "device-execution", status: "waiting", repo_root: workspace,
       native_session: job.execution.native_session ? this.journal.resolveNativeSession(job.execution.native_session, job) : null };
     return { task, source, binding, files, required };
@@ -70,7 +80,8 @@ export class OpenCodeDeviceAdapter implements DeviceAdapter {
     };
     current();
     const verification = new NativeResultVerification(this.store, this.config, task, JSON.parse(row.manifest), JSON.parse(row.observation), binding,
-      { source_scope: source.source_scope as "local_foreground", read_files: files, required_reads: required, assertCurrent: current });
+      { source_scope: source.source_scope as "local_foreground", read_files: files, required_reads: required, assertCurrent: current },
+      this.config.communication ? (_scope, tools) => nativeAgentProof(challenge.manifest.effect_id, tools) : undefined);
     try {
       verification.assertCurrent();
       const ref = this.journal.retainReconciledResult(challenge.manifest, verification.result);
@@ -87,7 +98,7 @@ export class OpenCodeDeviceAdapter implements DeviceAdapter {
   private networkResult(result: Record<string, unknown>, evidence: DeviceEvidenceRef): DeviceNativeResult {
     requireThat(typeof result.text === "string" && Buffer.byteLength(result.text) <= 64 * 1024 && Array.isArray(result.read_files), "native_device_result_too_large");
     const value = { schema_version: "controlmesh.device_native_result.v1", text: result.text, output_digest: result.output_digest,
-      read_count: result.read_files.length, evidence,
+      read_count: result.read_files.length, evidence, ...(result.communication ? { communication: result.communication } : {}),
       native_session: { schema_version: "controlmesh.device_native_session.v1", device_id: this.store.deviceId, evidence } };
     assertProtocolSchema<DeviceNativeResult>("device-native-result.schema.json", value);
     return value;
@@ -107,19 +118,29 @@ export class OpenCodeDeviceAdapter implements DeviceAdapter {
         assertCurrent: current, remainingMs: context.authority.remainingMs, signal: context.authority.signal });
     requireThat(check.decision === "cached", "provider_preflight_not_ready");
     let original: Record<string, unknown> | undefined;
-    const result = await this.execution.execute(task, binding, { source_scope: source.source_scope as "local_foreground", read_files: files, required_reads: required, assertCurrent: current }, {
-      assertCurrent: current, remainingMs: context.authority.remainingMs, signal: context.authority.signal,
-      assertReady: () => { this.cache.assertReady(this.actor, binding); },
-      preflightGeneration: () => this.cache.inspect(this.actor, binding).generation!,
-      executionFailure: (generation, failure) => { this.cache.recordExecutionFailure(this.actor, binding, generation, failure); },
-      dispatch: async (intent, manifest) => { await context.dispatch(manifest, intent); return true; },
-      observe: async observation => { original = observation; await context.observe(observation); },
-      complete: result => {
-        const evidence = context.retainVerifiedResult(result);
-        return { ...this.networkResult(result, evidence) };
-      },
-    }, this.options.timeout_ms ?? 60_000);
-    requireThat(original, "native_device_observation_missing");
-    return { observation: original, result };
+    let dispatched = false;
+    const channel = this.config.communication ? new NativeAgentChannel(context.authority.lease, this.config.communication, current, {
+      assertDispatched: () => { current(); requireThat(dispatched, "device_native_channel_unavailable"); },
+      call: (tool, input, signal) => context.nativeCall(tool, input, signal),
+    }) : undefined;
+    try {
+      await channel?.start();
+      const result = await this.execution.execute(task, binding, { source_scope: source.source_scope as "local_foreground", read_files: files, required_reads: required, assertCurrent: current }, {
+        ...(channel ? { communication: { scope: channel.scope, command: channel.command, freeze: () => channel.close(),
+          verify: tools => nativeAgentProof(context.effect_id, tools) } } : {}),
+        assertCurrent: current, remainingMs: context.authority.remainingMs, signal: context.authority.signal,
+        assertReady: () => { this.cache.assertReady(this.actor, binding); },
+        preflightGeneration: () => this.cache.inspect(this.actor, binding).generation!,
+        executionFailure: (generation, failure) => { this.cache.recordExecutionFailure(this.actor, binding, generation, failure); },
+        dispatch: async (intent, manifest) => { await context.dispatch(manifest, intent); dispatched = true; return true; },
+        observe: async observation => { original = observation; await context.observe(observation); },
+        complete: result => {
+          const evidence = context.retainVerifiedResult(result);
+          return { ...this.networkResult(result, evidence) };
+        },
+      }, this.options.timeout_ms ?? 60_000);
+      requireThat(original, "native_device_observation_missing");
+      return { observation: original, result };
+    } finally { await channel?.close(); }
   }
 }

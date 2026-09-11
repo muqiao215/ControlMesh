@@ -78,7 +78,7 @@ export interface ControlMeshConfig {
 export interface DeviceCommand {
   "schema_version": "controlmesh.device_command.v1";
   "request_id": string;
-  "operation": "queue" | "inspect" | "claim" | "start" | "renew" | "dispatch" | "observe" | "complete" | "unknown" | "messages" | "send" | "ack" | "release" | "reconciliation" | "reconcile";
+  "operation": "queue" | "inspect" | "claim" | "start" | "renew" | "dispatch" | "observe" | "complete" | "unknown" | "messages" | "send" | "ack" | "release" | "reconciliation" | "reconcile" | "native_call";
   "arguments": Record<string, unknown>;
 }
 
@@ -93,6 +93,7 @@ export interface DeviceEvidenceRef {
   "manifest_digest": string;
   "observation_digest"?: string;
   "result_digest"?: string;
+  "communication"?: NativeAgentScope;
 }
 
 export interface DeviceLeaseWindow {
@@ -108,6 +109,7 @@ export interface DeviceNativeResult {
   "read_count": number;
   "evidence": DeviceEvidenceRef;
   "native_session": DeviceNativeSession;
+  "communication"?: NativeAgentProof;
 }
 
 export interface DeviceNativeSession {
@@ -201,6 +203,27 @@ export interface MemoryRecord {
   "promotion_state"?: string;
   "created_at": string;
   "metadata"?: Record<string, unknown>;
+}
+
+export interface NativeAgentCallReceipt {
+  "call_id": string;
+  "tool": "controlmesh_send" | "controlmesh_ask_parent" | "controlmesh_receive" | "controlmesh_answer";
+  "input_digest": string;
+  "output_digest": string;
+}
+
+export interface NativeAgentProof {
+  "call_receipts": NativeAgentCallReceipt[];
+}
+
+export interface NativeAgentScope {
+  "schema_version": "controlmesh.native_agent_scope.v1";
+  "task_id": string;
+  "episode_id": string;
+  "fence": number;
+  "peer_tasks": string[];
+  "parent_task": string | null;
+  "client_digest": string;
 }
 
 export interface ProviderCapability {

@@ -207,8 +207,9 @@ Operation-level refusals return `ok: false`; they are not successful message del
 The runtime prepares a private task channel, starts a per-execution Unix socket broker and
 mounts that channel read-only for the native Node client. Normal shutdown removes socket and capability files; the checked client remains for profile identity. A changed
 client requires a new qualified profile. Preflight never enables communication tools.
-This registration qualifies local foreground OpenCode reads plus scoped messaging;
-device-native tool delivery and production ingress are separate migration work.
+This registration qualifies local foreground OpenCode reads plus scoped messaging.
+The device adapter uses the same private channel over the authenticated worker port;
+production ingress and the full fleet rollout remain separate migration work.
 
 Each stdin line is one request with a unique `id` and an `op`. Responses carry that ID,
 `ok`, and either `result` or a safe error code; concurrent responses may arrive out of order.
@@ -247,12 +248,12 @@ covering source/sandbox policy, provider mapping, narrowing issuance and reply i
 It keeps the original goldens and separately exercises stricter TS admission rules. Native
 static tool expressions are retained; portable grant tokens have their own bounded format.
 
-Remaining before activation: reconciliation for the other execution profiles and abandonment policy, device-native Agent communication and general resume integration,
+Remaining before activation: reconciliation for the other execution profiles and abandonment policy, initial device mailbox input batching and general resume integration,
 provider adapter/permission parity and non-Linux supervision, transport delivery, all other Python
 stores, other provider profiles over the device transport, the full native
 continuation matrix, SpecMesh lifecycle admission, full rollback and production-writer exclusion.
-Generic and device mailbox application references remain reports; local OpenCode reservations
-require independent native input or tool-record verification. A coordinator fence cannot prevent an
+Generic mailbox application references remain reports; qualified native OpenCode reservations
+require matching input or tool records. Device tool receipts are checked against the coordinator journal. A coordinator fence cannot prevent an
 uncooperative external program's side effect.
 
 The authenticated worker transport and a real x64/ARM64 synthetic two-device canary are
@@ -269,7 +270,7 @@ compromised device that fabricates evidence.
 
 `schemas/controlmesh/v1/device-*.schema.json` owns the private command/response/lease-window
 shapes. Operations are queue, inspect, claim, start, renew, release, dispatch, observe, complete,
-unknown and bounded mailbox send/read/ack. Operator task creation, assignment, cancellation
+unknown, native_call and bounded mailbox send/read/ack. Operator task creation, assignment, cancellation
 and revocation remain trusted local methods. `complete` atomically confirms one observed
 effect and finishes the episode; it does not execute an external action on receipt replay.
 
@@ -343,3 +344,32 @@ worker acceptance recovered the original result and subsequently resumed the sam
 Authentication attests the reporting device, not the honesty of a compromised worker.
 General provider/write/source profiles, History adoption into a remote handle, production
 services and the full migration/cutover gates remain open.
+
+Device-native communication uses an optional `communication` profile in
+`OpenCodeDeviceAdapter`. Its task, peers and parent must exactly match the coordinator's
+trusted assignment (`peer_tasks`, `parent_task`); job input cannot override that policy.
+The profile participates in native/container readiness and grants. The default preflight
+uses the same runner as execution, including its container runtime identity.
+
+The device broker carries no coordinator credential into the native MCP client. Its
+worker forwards calls with the current lease and fixed effect ID. The coordinator retains
+logical calls and message reservations in the existing schema-10 journal, while the device
+retains full native evidence. A result supplies at most 32 call receipts containing only
+IDs/tool names and input/output hashes. Every recorded call must match; missing, altered
+or unresolved calls prevent completion and recovery. No device-local task/mailbox store
+is created. Messages already queued and messages arriving during a run can be received
+with the native tool; automatic input-prefix delivery for device runs remains open.
+
+Receive waits up to ten seconds outside transactions, with independent lease renewals.
+Identical concurrent calls coalesce, completed logical calls reuse their original response,
+and unresolved calls after restart cannot execute again. Revocation, changed assignment,
+cancellation and stale authority also reject cached responses. Verification consumes
+reservations atomically with completion or explicit recovery; recovery invokes no model.
+
+Real ARM64 coordinator/x64 container acceptance covers two OpenCode 1.18.29/M3 Agents:
+original parent-session recall, fresh child context over all four tools, coordinator reopen
+and reconciliation after a deliberately interrupted completion. Six native calls and three
+messages were verified; recovery issued no native command. The private statistics script
+failed after acceptance on a wrong column name; independent readback verified the native
+records, final coordinator state and removal of all temporary containers/remote processes
+without repeating execution. Detailed results and remaining scope are in the active plan.

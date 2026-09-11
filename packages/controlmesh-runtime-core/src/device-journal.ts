@@ -3,6 +3,7 @@ import type { RuntimeDatabase } from "./database";
 import type { DeviceJob } from "./device-coordinator";
 import type { Lease } from "./kernel";
 import { canonical, digest, identifier, object, requireThat } from "./value";
+import { decodeNativeAgentScope } from "./providers/native-agent-journal";
 
 export interface DeviceExecutionRecord {
   effect_id: string; device_id: string; task_id: string; episode_id: string; fence: number;
@@ -31,15 +32,18 @@ export class DeviceExecutionJournal {
     return row;
   }
   private reference(row: DeviceExecutionRecord): DeviceEvidenceRef {
+    const manifest = JSON.parse(row.manifest);
     return { schema_version: "controlmesh.device_evidence.v1", device_id: row.device_id, task_id: row.task_id, episode_id: row.episode_id,
       effect_id: row.effect_id, fence: row.fence, assignment_digest: row.assignment_digest, manifest_digest: row.manifest_digest,
+      ...(manifest.communication ? { communication: decodeNativeAgentScope(manifest.communication) } : {}),
       ...(row.observation_digest ? { observation_digest: row.observation_digest } : {}), ...(row.result_digest ? { result_digest: row.result_digest } : {}) };
   }
   inspect(ref: DeviceEvidenceRef): DeviceExecutionRecord {
     assertProtocolSchema<DeviceEvidenceRef>("device-evidence-ref.schema.json", ref);
     requireThat(ref.device_id === this.deviceId, "device_evidence_wrong_device");
     const row = this.row(ref.effect_id), current = this.reference(row);
-    for (const [key, value] of Object.entries(ref)) requireThat((current as unknown as Record<string, unknown>)[key] === value, "device_evidence_changed");
+    for (const [key, value] of Object.entries(ref)) requireThat(digest((current as unknown as Record<string, unknown>)[key]) === digest(value), "device_evidence_changed");
+    requireThat(Boolean(ref.communication) === Boolean(current.communication), "device_evidence_changed");
     return row;
   }
 

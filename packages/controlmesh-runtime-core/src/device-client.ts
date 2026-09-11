@@ -37,11 +37,15 @@ export class DeviceClient {
   }
 
   /** Never retries mutations automatically. Callers retain an ID only to inspect/replay that exact operation. */
-  async command(operation: DeviceCommand["operation"], args: Record<string, unknown>, requestId: string = randomUUID()): Promise<unknown> {
+  async command(operation: DeviceCommand["operation"], args: Record<string, unknown>, requestId: string = randomUUID(), signal?: AbortSignal): Promise<unknown> {
     const input: DeviceCommand = { schema_version: "controlmesh.device_command.v1", request_id: requestId, operation, arguments: args };
     assertProtocolSchema("device-command.schema.json", input);
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.timeout);
+    // Native receive can wait ten seconds; authority renewals keep their independent short timeout.
+    const timeout = setTimeout(() => controller.abort(), operation === "native_call" ? 15000 : this.timeout);
+    const abort = () => controller.abort();
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
     try {
       const response = await this.fetcher(this.endpoint, { method: "POST", redirect: "error", credentials: "omit", cache: "no-store",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${this.token}` }, body: canonical(input), signal: controller.signal });
@@ -71,7 +75,7 @@ export class DeviceClient {
     } catch (error) {
       if (error instanceof RuntimeConflict) throw error;
       throw new RuntimeConflict("coordinator_transport_unknown");
-    } finally { clearTimeout(timeout); }
+    } finally { clearTimeout(timeout); signal?.removeEventListener("abort", abort); }
   }
 
   async inspect(taskId: string): Promise<DeviceJob> {
@@ -81,6 +85,12 @@ export class DeviceClient {
     requireThat(typeof value.assignment_digest === "string" && /^[a-f0-9]{64}$/.test(value.assignment_digest), "invalid_device_job");
     if (value.execution !== undefined || value.execution_digest !== undefined) {
       requireThat(object(value.execution) && digest(value.execution) === value.execution_digest, "device_execution_projection_changed");
+    }
+    requireThat(value.peer_tasks === undefined || (Array.isArray(value.peer_tasks) && value.peer_tasks.length <= 128
+      && new Set(value.peer_tasks).size === value.peer_tasks.length && !value.peer_tasks.includes(taskId)), "invalid_device_job");
+    if (Array.isArray(value.peer_tasks)) value.peer_tasks.forEach(identifier);
+    if (value.parent_task !== undefined && value.parent_task !== null) {
+      identifier(value.parent_task); requireThat(Array.isArray(value.peer_tasks) && value.peer_tasks.includes(value.parent_task), "invalid_device_job");
     }
     return value as unknown as DeviceJob;
   }

@@ -4,6 +4,7 @@ import { command, requireScope } from "./commands";
 import type { DeviceJob, DeviceRegistration } from "./device-coordinator";
 import type { Principal, RuntimeKernel } from "./kernel";
 import { canonical, digest, identifier, requireThat } from "./value";
+import { decodeNativeAgentScope, NativeAgentJournal } from "./providers/native-agent-journal";
 
 interface RecoveryRow {
   challenge_id: string; principal: string; device_id: string; registration_digest: string; task_id: string;
@@ -66,7 +67,7 @@ export class DeviceReconciliation {
 
   private recoveryActor(row: RecoveryRow): Principal {
     // Derived from a persisted, scope-checked local request. The reporting device remains agent-origin.
-    return { id: row.principal, device_id: row.device_id, origin: "recovery", scopes: ["task:read", "task:reconcile"] };
+    return { id: row.principal, device_id: row.device_id, origin: "recovery", scopes: ["task:read", "task:reconcile", "message:read", "message:ack"] };
   }
 
   private current(device: DeviceRegistration, row: RecoveryRow, challenge: DeviceReconciliationChallenge): void {
@@ -114,6 +115,11 @@ export class DeviceReconciliation {
       this.kernel.admitReconciliationObservation(recovery, row.task_id, challenge.task_revision, binding, { ...observation }, challenge.challenge_id);
       const done = this.kernel.reconcileEffect(recovery, `reconcile-${challenge.challenge_id}`, row.task_id, challenge.task_revision, binding, () => {
         this.current(device, row, challenge);
+        requireThat(Boolean(challenge.manifest.communication) === Boolean(result.communication), "native_agent_proof_required");
+        if (challenge.manifest.communication) {
+          const original = this.kernel.inspectReconciliation(recovery, row.task_id, challenge.task_revision, challenge.manifest.effect_id);
+          new NativeAgentJournal(this.kernel).reconcileDevice(recovery, original, decodeNativeAgentScope(challenge.manifest.communication), result.communication);
+        }
         return { ...result, reconciliation: { schema_version: "controlmesh.device_reconciliation.v1", challenge_id: challenge.challenge_id,
           challenge_digest: row.challenge_digest, report_digest: digest(report) } };
       });

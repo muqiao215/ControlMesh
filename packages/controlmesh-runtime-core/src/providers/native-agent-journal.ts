@@ -3,6 +3,8 @@ import type { RuntimeKernel, Principal, Lease, ReconciliationEvidence } from "..
 import { requireScope } from "../commands";
 import { canonical, digest, identifier, object, requireThat, RuntimeConflict } from "../value";
 import { nativeMessage } from "./native-mailbox-input";
+import { nativeAgentProof } from "./native-agent-proof";
+import { assertProtocolSchema } from "@controlmesh/protocol";
 
 export const nativeAgentTools = ["controlmesh_send", "controlmesh_ask_parent", "controlmesh_receive", "controlmesh_answer"] as const;
 export interface NativeAgentScope extends Record<string, unknown> {
@@ -141,6 +143,31 @@ export class NativeAgentJournal {
     return { calls_digest: digest(calls.map(call => ({ call_id: call.call_id, tool: call.tool, input: JSON.parse(call.input), response: JSON.parse(call.response!) }))), call_ids: calls.map(call => call.call_id) };
   }
 
+  /** Receipts are derived from verified native parts on the authenticated executing device. */
+  verifyDevice(effectId: string, scope: NativeAgentScope, proof: unknown): void {
+    assertProtocolSchema("native-agent-proof.schema.json", proof);
+    const calls = this.kernel.db.sql.query("SELECT * FROM native_agent_calls WHERE effect_id=? ORDER BY seq").all(effectId) as CallRow[];
+    requireThat(calls.length <= 32 && calls.every(call => call.state === "done" && call.response && call.scope_digest === digest(scope)), "native_agent_calls_unresolved");
+    const expected = nativeAgentProof(effectId, calls.map(call => ({ tool: call.tool, input: JSON.parse(call.input), output: call.response! })));
+    requireThat(digest(proof) === digest(expected), "native_agent_device_calls_unproven");
+  }
+
+  consumeDevice(actor: Principal, lease: Lease, effectId: string, scope: NativeAgentScope, proof: unknown): void {
+    requireThat(this.kernel.db.sql.inTransaction, "native_agent_transaction_required");
+    this.kernel.withLease(actor, lease, () => {
+      this.assertExecution(actor, lease, effectId, scope); this.verifyDevice(effectId, scope, proof);
+      this.consumeVerifiedRows(actor, effectId, scope, proof);
+    });
+  }
+
+  reconcileDevice(actor: Principal, original: ReconciliationEvidence, scope: NativeAgentScope, proof: unknown): void {
+    requireThat(this.kernel.db.sql.inTransaction, "native_agent_transaction_required");
+    const current = this.kernel.inspectReconciliation(actor, original.task.task.task_id, original.task.revision, original.effect_id);
+    requireThat(current.manifest_digest === original.manifest_digest && current.observation_digest === original.observation_digest, "reconciliation_evidence_changed");
+    this.assertManifest(current.effect_id, scope, "unknown"); this.verifyDevice(current.effect_id, scope, proof);
+    this.consumeVerifiedRows(actor, current.effect_id, scope, proof);
+  }
+
   consume(actor: Principal, lease: Lease, effectId: string, scope: NativeAgentScope, native: readonly NativeAgentToolResult[]): void {
     requireThat(this.kernel.db.sql.inTransaction, "native_agent_transaction_required");
     this.kernel.withLease(actor, lease, () => { this.assertExecution(actor, lease, effectId, scope); this.consumeRows(actor, effectId, scope, native); });
@@ -152,7 +179,11 @@ export class NativeAgentJournal {
     this.assertManifest(current.effect_id, scope, "unknown"); this.consumeRows(actor, current.effect_id, scope, native);
   }
   private consumeRows(actor: Principal, effectId: string, scope: NativeAgentScope, native: readonly NativeAgentToolResult[]): void {
-    requireScope(actor, "message:ack"); const proof = this.verify(effectId, scope, native);
+    const proof = this.verify(effectId, scope, native);
+    this.consumeVerifiedRows(actor, effectId, scope, proof);
+  }
+  private consumeVerifiedRows(actor: Principal, effectId: string, scope: NativeAgentScope, proof: unknown): void {
+    requireScope(actor, "message:ack");
     const rows = this.kernel.db.sql.query("SELECT d.*,m.receipt_episode,m.receipt_fence FROM native_agent_deliveries d JOIN native_agent_calls c ON c.call_id=d.call_id JOIN messages m ON m.message_id=d.message_id WHERE c.effect_id=? ORDER BY m.sequence")
       .all(effectId) as { message_id: string; message_digest: string; receipt_episode: string; receipt_fence: number }[];
     for (const row of rows) {

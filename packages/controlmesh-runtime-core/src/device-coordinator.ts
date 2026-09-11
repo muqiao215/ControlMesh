@@ -5,6 +5,8 @@ import { RuntimeKernel, type Lease, type Principal, type TaskSnapshot } from "./
 import { AgentMailbox, type SendMessage } from "./mailbox";
 import { DeviceReconciliation } from "./device-reconciliation";
 import { canonical, digest, identifier, object, requireThat, RuntimeConflict } from "./value";
+import { setTimeout as delay } from "node:timers/promises";
+import { decodeNativeAgentScope, NativeAgentJournal } from "./providers/native-agent-journal";
 
 export interface DeviceRegistration {
   device_id: string;
@@ -20,6 +22,7 @@ export interface DeviceAssignment {
   /** Issued by local trusted ingress; never interpreted as a command line by the transport. */
   input: Record<string, unknown>;
   peer_tasks?: readonly string[];
+  parent_task?: string | null;
 }
 export interface DeviceJob {
   task_id: string;
@@ -31,6 +34,8 @@ export interface DeviceJob {
   assignment_digest: string;
   execution?: Record<string, unknown>;
   execution_digest?: string;
+  peer_tasks?: readonly string[];
+  parent_task?: string | null;
 }
 interface AssignmentRow { task_id: string; principal: string; authority_digest: string; specification: string }
 const workerScopes = ["task:read", "task:execute", "message:send", "message:read", "message:ack"];
@@ -50,6 +55,7 @@ export class DeviceCoordinator {
   private readonly pending = new Map<string, number>();
   private readonly rates = new Map<string, { since: number; count: number }>();
   private readonly mailbox: AgentMailbox;
+  private readonly nativeCalls = new Map<string, { digest: string; promise: Promise<Record<string, unknown>> }>();
   readonly reconciliation: DeviceReconciliation;
 
   constructor(readonly kernel: RuntimeKernel, registrations: readonly DeviceRegistration[]) {
@@ -100,6 +106,12 @@ export class DeviceCoordinator {
     requireThat(specification.device_ids.length > 0 && specification.device_ids.length <= 128 && new Set(specification.device_ids).size === specification.device_ids.length, "invalid_assignment_devices");
     requireThat((specification.peer_tasks?.length ?? 0) <= 128, "invalid_assignment_peers");
     specification.peer_tasks?.forEach(identifier);
+    requireThat(new Set(specification.peer_tasks ?? []).size === (specification.peer_tasks?.length ?? 0)
+      && !specification.peer_tasks?.includes(taskId), "invalid_assignment_peers");
+    if (specification.parent_task !== undefined && specification.parent_task !== null) {
+      identifier(specification.parent_task);
+      requireThat(specification.peer_tasks?.includes(specification.parent_task), "native_parent_not_authorized");
+    }
     for (const id of specification.device_ids) {
       const device = this.devices.get(id);
       requireThat(device && device.principal_id === actor.id && !this.revoked(id), "device_not_authorized");
@@ -137,7 +149,8 @@ export class DeviceCoordinator {
     const execution = Object.fromEntries(["provider", "model", "prompt", "execution_context", "tool_grant", "native_session"]
       .filter(key => Object.hasOwn(task.task, key)).map(key => [key, task.task[key]]));
     return { task_id: taskId, revision: task.revision, status: task.task.status, workspace_id: specification.workspace_id,
-      capability: specification.capability, input: specification.input, assignment_digest: digest(specification), execution, execution_digest: digest(execution) };
+      capability: specification.capability, input: specification.input, assignment_digest: digest(specification), execution, execution_digest: digest(execution),
+      peer_tasks: specification.peer_tasks ?? [], parent_task: specification.parent_task ?? null };
   }
 
   private authenticate(request: Request): DeviceRegistration {
@@ -223,6 +236,14 @@ export class DeviceCoordinator {
           requireThat(observation.terminal === true && observation.evidence?.observation_digest === result.evidence.observation_digest, "device_result_observation_mismatch");
           const handle = result.native_session as Record<string, unknown>;
           requireThat(handle.device_id === device.device_id && digest(handle.evidence) === digest(result.evidence), "device_native_handle_mismatch");
+          requireThat(Boolean(manifest.communication) === Boolean(result.communication), "native_agent_proof_required");
+          if (manifest.communication) {
+            const scope = decodeNativeAgentScope(manifest.communication), journal = new NativeAgentJournal(this.kernel);
+            const effect = this.kernel.db.sql.query("SELECT state FROM effects WHERE effect_id=?").get(args.effect_id as string) as { state: string };
+            // Exact completion replay is checked by the existing kernel command receipts below.
+            if (effect.state === "confirmed") journal.verifyDevice(args.effect_id as string, scope, result.communication);
+            else journal.consumeDevice(actor, lease, args.effect_id as string, scope, result.communication);
+          }
         }
         const observed = this.kernel.db.sql.query("SELECT result FROM effects WHERE effect_id=? AND episode_id=? AND fence=?")
           .get(args.effect_id as string, lease.episode_id, lease.fence) as { result: string | null } | null;
@@ -242,6 +263,11 @@ export class DeviceCoordinator {
           if (manifest) requireThat(manifest.device_id === device.device_id && manifest.task_id === job.task_id
             && manifest.episode_id === lease.episode_id && manifest.fence === lease.fence && manifest.effect_id === args.effect_id
             && manifest.assignment_digest === job.assignment_digest && !manifest.observation_digest && !manifest.result_digest, "device_manifest_binding_mismatch");
+          if (manifest?.communication) {
+            const scope = decodeNativeAgentScope(manifest.communication);
+            requireThat(scope.task_id === job.task_id && scope.episode_id === lease.episode_id && scope.fence === lease.fence
+              && digest(scope.peer_tasks) === digest(job.peer_tasks ?? []) && scope.parent_task === (job.parent_task ?? null), "native_agent_assignment_changed");
+          }
           // Prepared native adapters start and dispatch together after their device-local manifest is durable.
           const episode = this.kernel.db.sql.query("SELECT state FROM episodes WHERE episode_id=?").get(lease.episode_id) as { state: string };
           if (episode.state === "leased") this.kernel.start(actor, `${request}:start`, lease);
@@ -271,6 +297,39 @@ export class DeviceCoordinator {
         case "ack": return this.mailbox.acknowledge(actor, request, lease, args.message_id as string, args.phase as "received" | "consumed", args.evidence as string | null);
       }
     });
+  }
+
+  /** Long receive waits hold no SQLite transaction. Calls remain tied to the original dispatch. */
+  private async nativeCall(device: DeviceRegistration, input: DeviceCommand, signal: AbortSignal): Promise<Record<string, unknown>> {
+    const args = input.arguments, lease = args.lease as Lease, effect = args.effect_id as string;
+    const tool = args.tool as string, value = args.input as Record<string, unknown>;
+    const actor = this.actor(device), journal = new NativeAgentJournal(this.kernel);
+    const scope = decodeNativeAgentScope(this.nativeManifest(lease, effect).communication);
+    const current = () => {
+      signal.throwIfAborted();
+      const job = this.assignment(device, lease.task_id);
+      requireThat(digest(job.peer_tasks ?? []) === digest(scope.peer_tasks) && (job.parent_task ?? null) === scope.parent_task, "native_agent_assignment_changed");
+      journal.assertExecution(actor, lease, effect, scope);
+    };
+    current(); identifier(value.request_id);
+    const key = digest([device.device_id, effect, value.request_id]), hash = digest({ tool, value }), previous = this.nativeCalls.get(key);
+    if (previous) {
+      requireThat(hash === previous.digest, "idempotency_conflict");
+      const response = await previous.promise; current(); return response;
+    }
+    const begun = journal.begin(actor, lease, effect, scope, tool, value);
+    if (begun.response) { current(); return begun.response; }
+    const execute = async () => {
+      const wait = tool === "controlmesh_receive" && Number.isSafeInteger(value.wait_ms) && Number(value.wait_ms) <= 10000 ? Number(value.wait_ms) : 0;
+      const deadline = performance.now() + Math.max(0, wait);
+      while (performance.now() < deadline && !journal.available(actor, lease)) {
+        current(); await delay(Math.min(100, Math.max(1, deadline - performance.now())), undefined, { signal });
+      }
+      current(); return journal.finish(actor, lease, effect, scope, begun.call_id);
+    };
+    const promise = execute(); this.nativeCalls.set(key, { digest: hash, promise });
+    try { const response = await promise; current(); return response; }
+    finally { this.nativeCalls.delete(key); }
   }
 
   async handle(request: Request): Promise<Response> {
@@ -314,7 +373,8 @@ export class DeviceCoordinator {
       canonical(input);
       requestId = input.request_id;
       this.authenticate(request); // Credentials may have been revoked while reading a slow body.
-      const data = this.kernel.db.transaction(() => this.execute(device!, input));
+      const data = input.operation === "native_call" ? await this.nativeCall(device, input, request.signal)
+        : this.kernel.db.transaction(() => this.execute(device!, input));
       return json({ schema_version: "controlmesh.device_response.v1", request_id: requestId, ok: true, data });
     } catch (error) {
       const code = error instanceof RuntimeConflict ? error.code : error instanceof ProtocolValidationError || error instanceof SyntaxError || error instanceof TypeError ? "invalid_command" : "internal_error";
@@ -327,6 +387,6 @@ export class DeviceCoordinator {
 
   /** Explicit start only; loopback transport is carried to other devices by a pinned SSH tunnel. */
   listen(port = 0): Bun.Server<undefined> {
-    return Bun.serve({ hostname: "127.0.0.1", port, maxRequestBodySize: MAX_BODY, idleTimeout: 5, fetch: request => this.handle(request) });
+    return Bun.serve({ hostname: "127.0.0.1", port, maxRequestBodySize: MAX_BODY, idleTimeout: 15, fetch: request => this.handle(request) });
   }
 }

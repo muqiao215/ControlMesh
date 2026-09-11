@@ -292,3 +292,61 @@ Connect device-native Agent communication and mailbox delivery to actual executi
 extend provider/write profiles with real native permission and outcome verification.
 Then continue stores, History adoption, SpecMesh lifecycle and the production writer switch.
 The current Node-image process profile is not a substitute for native provider qualification.
+
+## Device-native communication — 2026-09-12
+
+Implemented scoped native device calls, coordinator peer/parent projection, shared private
+IPC with a remote backend, bounded native call receipts, and atomic completion/recovery
+consumption using the original coordinator journal. Long receives permit independent
+renewals and recheck revoked/stale authority. The device adapter qualifies preflight through
+its actual runner. Initial device input-prefix batches and general fleet/provider rollout
+remain open; this is not production cutover.
+
+Checks so far: strict TS; 512-module/57-field ownership regeneration/check; Python protocol
+9 passed; generated Python Ruff and Web build passed. CI Bun 1.3.11 full runtime with real
+Docker passed 181 tests / 2393 assertions / 23 files / 36.38 seconds. A final focused pass
+will include the default-preflight runner regression. New device/native tests use real HTTP
+and Node stdio IPC with synthetic native records; they cover actual tool-parts matching,
+lost completion/reopen, changed tool output, original session continuation, duplicate/lost
+send receipts, receive/renewal concurrency, revocation and stale or forged authority.
+
+Development corrections: the schema-writing helper initially had a Python brace typo
+(no schema writes occurred); two commands used the wrong working directory and were
+corrected. A Bun test assertion was attached before asynchronous revocation could run;
+settling the promise into a value allowed the intended concurrent operation, and the test
+passed. Generated model hashes required the expected ownership refresh. Real acceptance and its independent verification are recorded below.
+
+
+Real OpenCode 1.18.29/M3 acceptance ran 2026-09-11 16:15:25–16:17:22 UTC
+(2026-09-12 local time): ARM64 Rock 5C coordinator, x64 PC running two native Agents in
+the pinned qualified container. The parent warmed an original session, then resumed it
+while the child sent a fresh token and question. All four native tools occurred in six
+verified calls. Both Agents read the changed project file; the parent recalled its marker
+without prompt reinjection. The parent completion request was deliberately interrupted;
+coordinator and local DB reopened, and explicit reconciliation consumed original received
+messages without a new native command. Three effects and local records completed; all
+three Agent-origin messages were consumed with question/answer causation intact.
+
+Two model preflight commands plus three task commands produced fifteen native commands
+and five native model-run commands. Each task can contain multiple provider requests;
+provider billing/request counts were not measured. Both readiness generations remained 1.
+The final statistics query mistakenly selected `provider_checks.status` instead of `state`.
+That reporting failure occurred after completion/recovery; the raw failed result is retained.
+A separate, model-free verifier reproduced the query error, reread actual native parts,
+checked result/manifest hashes, session recall and coordinator outcomes, and passed.
+It independently confirmed all fifteen container IDs absent, per-episode channels removed,
+and the temporary remote directory/process absent. The explicit revoke step was not reached
+because of that reporting error; the ephemeral coordinator, registration database and
+endpoint were removed instead. The private script was corrected without rerunning Agents.
+
+Private evidence: `outputs/runtime-convergence/device-agent-acceptance.{ts,json,log}` and
+`device-agent-independent-verification.{ts,json}` in the shared task workspace. A final
+fixture update initially omitted the report's runtime digest; adding the same explicit
+fixture runtime identity corrected it, and focused verification passed. Production Python
+0.43.0, live task ownership, services and installation remain unchanged. No release tag
+or full-migration completion is claimed.
+
+Final focused device-native verification (including runtime identity and exact completion
+receipt replay): 23 passed / 319 assertions / 3.04 seconds. Strict TS, ownership drift and
+whitespace checks passed after all source changes. Exact-SHA remote CI remains a separate
+publication check.

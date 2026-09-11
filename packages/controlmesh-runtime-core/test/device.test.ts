@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DeviceClient, DeviceCoordinator, DeviceLeaseAuthority, DeviceWorker, RuntimeDatabase, RuntimeKernel, type DeviceRegistration, type Principal } from "../src";
+import { AgentMailbox } from "../src/mailbox";
 import { digest } from "../src/value";
 
 const owner: Principal = { id: "operator", origin: "human_request", scopes: ["task:create", "task:read", "task:cancel", "task:admin", "task:reconcile", "device:assign", "device:revoke"] };
@@ -221,3 +222,67 @@ test("real worker stops its owned process on network loss and never retries the 
   expect(f.kernel.inspect(owner, "task").needs_reconciliation).toBe(true);
   expect(f.db.sql.query("SELECT state FROM effects").get()).toEqual({ state: "unknown" });
 }, 10_000);
+
+async function nativeChannels() {
+  const f = fixture();
+  f.task("parent", ["device-0"], ["child"]); f.task("child", ["device-1"], ["parent"]);
+  const sides = await Promise.all(["parent", "child"].map(async (id, i) => {
+    const client = f.clients[i], job = await client.inspect(id), authority = await f.claim(client, id, 30000);
+    const scope = { schema_version: "controlmesh.native_agent_scope.v1", task_id: id, episode_id: authority.lease.episode_id,
+      fence: authority.lease.fence, peer_tasks: id === "parent" ? ["child"] : ["parent"], parent_task: null, client_digest: "a".repeat(64) };
+    const effect = `native-${id}`, ref = { schema_version: "controlmesh.device_evidence.v1", device_id: client.deviceId,
+      task_id: id, episode_id: authority.lease.episode_id, effect_id: effect, fence: authority.lease.fence,
+      assignment_digest: job.assignment_digest, manifest_digest: digest({ fixture: id }), communication: scope };
+    await client.command("dispatch", { lease: authority.lease, effect_id: effect, intent: {}, manifest: ref });
+    cleanup.push(() => authority.stop());
+    const args = (tool: string, input: Record<string, unknown>) => ({ lease: authority.lease, effect_id: effect, tool, input });
+    const call = (tool: string, input: Record<string, unknown>) => client.command("native_call", args(tool, input));
+    return { id, authority, effect, ref, args, call };
+  }));
+  return { ...f, parent: sides[0], child: sides[1] };
+}
+
+test("native device send replays a lost response after coordinator reconstruction without another message", async () => {
+  const f = await nativeChannels(), args = f.parent.args("controlmesh_send", { request_id: "send", recipient_task: "child", text: "only once" });
+  const broken = new DeviceClient({ endpoint: f.server.url.origin, token: f.tokens[0], device_id: "device-0", fetch: (async (url: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const response = await fetch(url, init); await response.arrayBuffer(); throw new Error("lost reply");
+  }) as typeof fetch });
+  await expect(broken.command("native_call", args, "send-request")).rejects.toThrow("coordinator_transport_unknown");
+  const db = new RuntimeDatabase(f.path); cleanup.push(() => db.close());
+  const reopened = new DeviceCoordinator(new RuntimeKernel(db), f.registrations), server = reopened.listen(); cleanup.push(() => server.stop(true));
+  const client = new DeviceClient({ endpoint: server.url.origin, token: f.tokens[0], device_id: "device-0" });
+  const result = await client.command("native_call", args, "send-request");
+  expect(result).toMatchObject({ ok: true });
+  expect(await client.command("native_call", args, "new-transport-id")).toEqual(result);
+  expect(db.sql.query("SELECT COUNT(*) AS n FROM messages").get()).toEqual({ n: 1 });
+  await expect(client.command("native_call", { ...args, input: { ...args.input, text: "changed" } })).rejects.toThrow("idempotency_conflict");
+});
+
+test("native receive waits outside transactions, coalesces requests, renews and rejects revocation", async () => {
+  const f = await nativeChannels(), input = { request_id: "wait", wait_ms: 1000 };
+  const pending = f.parent.call("controlmesh_receive", input), duplicate = f.parent.call("controlmesh_receive", input);
+  await Bun.sleep(100); await f.parent.authority.renew();
+  const mailbox = new AgentMailbox(f.kernel);
+  mailbox.send({ ...owner, scopes: [...owner.scopes, "message:send"] }, "late", { recipient_task: "parent", sender_lease: null,
+    kind: "tell", payload: { text: "late" }, causation_id: null, ttl_ms: 1000 });
+  expect(await pending).toEqual(await duplicate);
+  expect(f.db.sql.query("SELECT COUNT(*) AS n FROM native_agent_calls").get()).toEqual({ n: 1 });
+  const revoked = f.parent.call("controlmesh_receive", { request_id: "revoked", wait_ms: 1000 }).then(() => "unexpected success", error => error.message);
+  await Bun.sleep(100); f.coordinator.revoke(owner, "device-0");
+  expect(await revoked).toBe("device_revoked");
+  expect(f.db.sql.query("SELECT state FROM native_agent_calls WHERE request_id='revoked'").get()).toEqual({ state: "pending" });
+  await expect(f.parent.call("controlmesh_receive", input)).rejects.toThrow("unauthorized");
+});
+
+test("native device calls cannot forge peers, origin, another lease or revive stale cached authority", async () => {
+  const f = await nativeChannels();
+  expect(await f.parent.call("controlmesh_send", { request_id: "peer", recipient_task: "unassigned", text: "no" }))
+    .toMatchObject({ ok: false, error: "peer_not_authorized" });
+  expect(await f.parent.call("controlmesh_send", { request_id: "origin", recipient_task: "child", text: "no", origin: "human_request" }))
+    .toMatchObject({ ok: false, error: "unexpected_native_agent_argument" });
+  await expect(f.clients[1].command("native_call", f.parent.args("controlmesh_receive", { request_id: "foreign" }))).rejects.toThrow();
+  const args = { request_id: "r" }; expect(await f.parent.call("controlmesh_receive", args)).toMatchObject({ ok: true });
+  f.advance(31000);
+  await expect(f.parent.call("controlmesh_receive", args)).rejects.toThrow();
+  expect(f.db.sql.query("SELECT COUNT(*) AS n FROM messages").get()).toEqual({ n: 0 });
+});

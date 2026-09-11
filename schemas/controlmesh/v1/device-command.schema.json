@@ -35,7 +35,8 @@
         "ack",
         "release",
         "reconciliation",
-        "reconcile"
+        "reconcile",
+        "native_call"
       ]
     },
     "arguments": {
@@ -432,6 +433,52 @@
           "properties": {
             "report": {
               "$ref": "device-reconciliation-report.schema.json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "operation": {
+          "const": "native_call"
+        },
+        "arguments": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "lease",
+            "effect_id",
+            "tool",
+            "input"
+          ],
+          "properties": {
+            "lease": {
+              "$ref": "execution-lease.schema.json"
+            },
+            "effect_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+            },
+            "tool": {
+              "enum": [
+                "controlmesh_send",
+                "controlmesh_ask_parent",
+                "controlmesh_receive",
+                "controlmesh_answer"
+              ]
+            },
+            "input": {
+              "type": "object",
+              "required": [
+                "request_id"
+              ],
+              "properties": {
+                "request_id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+                }
+              }
             }
           }
         }

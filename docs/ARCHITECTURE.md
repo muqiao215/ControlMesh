@@ -504,6 +504,17 @@ This verifies device attestations at their reporting boundary; independently mod
 stores/workspaces or a compromised authenticated device are not made trustworthy by transport
 authentication. Native evidence and credentials remain on the original device.
 
+Device-native MCP uses the same private `NativeAgentChannel` as the local broker. Its
+backend forwards only fixed-effect, current-lease calls through the authenticated worker
+client; the native client never receives device credentials. The coordinator binds the
+communication scope to trusted assignment peers/parent and the original manifest reference.
+Its existing native call journal owns messages and reservations. Device results carry
+bounded call hashes derived from actual native tool parts; completion and recovery compare
+every receipt to that journal before atomically consuming messages. Full native histories
+stay in the device evidence ledger. Long receives wait outside transactions and recheck
+revocation/assignment/lease authority; completed duplicates never repeat sends. Automatic
+device input-prefix batching and broader provider/fleet profiles remain in the active plan.
+
 Native dispatch and recovery share a persisted evidence boundary. Before execution,
 `OpenCodeWorker` commits a bounded manifest with the effect intent: source/provider/grant
 binding, native session baseline, resolved permission evidence and file fingerprints. Original

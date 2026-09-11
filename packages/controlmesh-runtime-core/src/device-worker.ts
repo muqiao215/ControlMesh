@@ -15,6 +15,8 @@ export interface DeviceAdapterContext {
   workspace: string;
   authority: DeviceLeaseAuthority;
   assertCurrent: () => void;
+  effect_id: string;
+  nativeCall: (tool: string, input: Record<string, unknown>, signal: AbortSignal) => Promise<Record<string, unknown>>;
   runProcess: (spec: Omit<ProcessSpec, "cwd">) => Promise<ProcessOutcome>;
   dispatch: (manifest: Record<string, unknown>, intent: Record<string, unknown>) => Promise<DeviceEvidenceRef>;
   observe: (observation: Record<string, unknown>) => Promise<DeviceEvidenceRef>;
@@ -135,7 +137,16 @@ export class DeviceWorker {
       arm();
       assertCurrent();
       if (!preparedMode) await dispatch({ capability: job.capability, workspace_id: job.workspace_id, input_digest: digest(job.input) });
-      const output = await adapter.execute({ job, workspace: workspace.path, authority, assertCurrent,
+      const output = await adapter.execute({ job, workspace: workspace.path, authority, assertCurrent, effect_id: effect,
+        nativeCall: async (tool, input, signal) => {
+          assertCurrent(); requireThat(preparedMode && dispatched && !verified, "device_native_channel_unavailable");
+          const response = await this.client.command("native_call", { lease: authority.lease, effect_id: effect, tool, input },
+            `device-call-${digest([effect, input.request_id])}`, AbortSignal.any([signal, authority.signal]));
+          assertCurrent();
+          requireThat(object(response) && typeof response.ok === "boolean" && response.call_id === digest([effect, input.request_id])
+            && Buffer.byteLength(canonical(response)) <= 16384, "invalid_native_agent_response");
+          return response;
+        },
         runProcess: spec => new ProcessSupervisor().run({ ...spec, cwd: workspace.path }, { assertCurrent, remainingMs: authority.remainingMs, signal: authority.signal }),
         dispatch: async (manifest, intent) => {
           requireThat(preparedMode && !prepared && !attempted, "device_preparation_not_available");

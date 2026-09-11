@@ -55,6 +55,9 @@
     "result_digest": {
       "type": "string",
       "pattern": "^[a-f0-9]{64}$"
+    },
+    "communication": {
+      "$ref": "native-agent-scope.schema.json"
     }
   }
 }

@@ -90,7 +90,7 @@ class DeviceCommand(BaseModel):
     model_config = ConfigDict(extra="allow")
     schema_version: Literal["controlmesh.device_command.v1"]
     request_id: str
-    operation: Literal["queue", "inspect", "claim", "start", "renew", "dispatch", "observe", "complete", "unknown", "messages", "send", "ack", "release", "reconciliation", "reconcile"]
+    operation: Literal["queue", "inspect", "claim", "start", "renew", "dispatch", "observe", "complete", "unknown", "messages", "send", "ack", "release", "reconciliation", "reconcile", "native_call"]
     arguments: dict[str, Any]
 
 
@@ -106,6 +106,7 @@ class DeviceEvidenceRef(BaseModel):
     manifest_digest: str
     observation_digest: str | None = None
     result_digest: str | None = None
+    communication: NativeAgentScope | None = None
 
 
 class DeviceLeaseWindow(BaseModel):
@@ -123,6 +124,7 @@ class DeviceNativeResult(BaseModel):
     read_count: int
     evidence: DeviceEvidenceRef
     native_session: DeviceNativeSession
+    communication: NativeAgentProof | None = None
 
 
 class DeviceNativeSession(BaseModel):
@@ -222,6 +224,30 @@ class MemoryRecord(BaseModel):
     promotion_state: str | None = None
     created_at: str
     metadata: dict[str, Any] | None = None
+
+
+class NativeAgentCallReceipt(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    call_id: str
+    tool: Literal["controlmesh_send", "controlmesh_ask_parent", "controlmesh_receive", "controlmesh_answer"]
+    input_digest: str
+    output_digest: str
+
+
+class NativeAgentProof(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    call_receipts: list[NativeAgentCallReceipt]
+
+
+class NativeAgentScope(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    schema_version: Literal["controlmesh.native_agent_scope.v1"]
+    task_id: str
+    episode_id: str
+    fence: int
+    peer_tasks: list[str]
+    parent_task: str | None
+    client_digest: str
 
 
 class ProviderCapability(BaseModel):

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.controlmesh.dev/controlmesh/v1/native-agent-call-receipt.schema.json",
+  "title": "NativeAgentCallReceipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "call_id",
+    "tool",
+    "input_digest",
+    "output_digest"
+  ],
+  "properties": {
+    "call_id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "tool": {
+      "enum": [
+        "controlmesh_send",
+        "controlmesh_ask_parent",
+        "controlmesh_receive",
+        "controlmesh_answer"
+      ]
+    },
+    "input_digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "output_digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+}

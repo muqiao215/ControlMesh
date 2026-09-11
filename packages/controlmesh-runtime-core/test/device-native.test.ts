@@ -6,16 +6,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DeviceClient, DeviceCoordinator, DeviceExecutionJournal, DeviceWorker, NativeSessionStore, OpenCodeDeviceAdapter, PreflightCache,
   RuntimeDatabase, RuntimeKernel, TaskIngress, type Principal, type ProbeBinding, type ProcessOutcome, type ProcessSpec } from "../src";
-import { digest } from "../src/value";
+import { digest, canonical } from "../src/value";
+import { AgentMailbox } from "../src/mailbox";
+import { prepareNativeAgentConfiguration } from "../src/providers/native-agent-profile";
+import { nativeAgentTools } from "../src/providers/native-agent-journal";
+import { NativeMcpTestClient } from "./helpers/native-mcp-client";
 import fixture from "./fixtures/native-session-v2.json";
 
 const cleanup: (() => void)[] = [];
 afterEach(() => cleanup.splice(0).reverse().forEach(done => done()));
-const owner: Principal = { id: "operator", origin: "human_request", device_id: "coordinator", scopes: ["task:create", "task:read", "task:execute", "task:resume", "task:reconcile", "task:cancel", "device:assign"] };
+const owner: Principal = { id: "operator", origin: "human_request", device_id: "coordinator", scopes: ["task:create", "task:read", "task:execute", "task:resume", "task:reconcile", "task:cancel", "device:assign", "message:send", "message:read", "message:ack"] };
 const device: Principal = { id: owner.id, origin: "agent_message", device_id: "native-worker", scopes: ["provider:probe"] };
 const outcome = (stdout: string): ProcessOutcome => ({ reason: "exited", exit_code: 0, stdout, stderr: "", duration_ms: 1 });
 
-function setup(mode: "normal" | "partition" | "changed-file" | "lost-completion" | "scheduled" = "normal") {
+function setup(mode: "normal" | "partition" | "changed-file" | "lost-completion" | "scheduled" | "lost-before-completion" | "altered-native-tool" = "normal", communicationEnabled = false) {
   const root = mkdtempSync(join(tmpdir(), "cm-native-device-test-")); cleanup.push(() => rmSync(root, { recursive: true, force: true }));
   const workspace = join(root, "project"), data = join(root, "data"); mkdirSync(workspace); mkdirSync(join(data, "opencode"), { recursive: true });
   writeFileSync(join(workspace, "PROJECT.md"), "revision-one");
@@ -31,32 +35,42 @@ function setup(mode: "normal" | "partition" | "changed-file" | "lost-completion"
   const coordinator = new DeviceCoordinator(kernel, registrations);
   const server = coordinator.listen(); cleanup.push(() => server.stop(true));
   let lost = false;
+  const completions: { request_id: string; arguments: Record<string, unknown> }[] = [];
   const client = new DeviceClient({ endpoint: server.url.origin, token, device_id: device.device_id!, timeout_ms: 500,
     fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const command = JSON.parse(String(init?.body));
+      if (command.operation === "complete") completions.push(command);
+      if (mode === "lost-before-completion" && JSON.parse(String(init?.body)).operation === "complete") throw new Error("fixture_completion_not_sent");
       const response = await fetch(input, init);
       if (mode === "lost-completion" && !lost && JSON.parse(String(init?.body)).operation === "complete") { lost = true; await response.arrayBuffer(); throw new Error("fixture_lost_response"); }
       return response;
     }) as typeof fetch });
-  const binding: ProbeBinding = { provider: "opencode", model: "fixture/model", device_id: device.device_id!, cli_version: "1.18.29", config_digest: digest({}), credential_revision: "fixture", permission_profile: "native.read" };
+  const binding: ProbeBinding = { provider: "opencode", model: "fixture/model", device_id: device.device_id!, cli_version: "1.18.29", config_digest: digest({}), credential_revision: "fixture", permission_profile: "native.read",
+    ...(communicationEnabled ? { runtime_digest: digest("device-test-runtime") } : {}) };
   const cache = new PreflightCache(workerDB), journal = new DeviceExecutionJournal(workerDB, device.device_id!), store = new NativeSessionStore(nativePath, device.device_id!);
   const permit = cache.begin(device, "ready", binding).permit!;
   cache.complete(device, binding, permit, { model: binding.model, config_digest: binding.config_digest, cli_version: binding.cli_version, permission_digest: "a".repeat(64), tool_count: 12,
+    ...(binding.runtime_digest ? { runtime_digest: binding.runtime_digest } : {}),
     model_invoked: true, duration_ms: 1, observation: { status: "ready", reason: "native_sentinel_verified", session_id: "ses_Probe", failure: null } });
   const source = mode === "scheduled" ? { command_origin: "schedule" as const, origin: "cron" as const, source_scope: "cron" as const, transport: "scheduler" }
     : { command_origin: "human_request" as const, origin: "user" as const, source_scope: "local_foreground" as const, transport: "test" };
   const task = new TaskIngress(kernel, source, () => {}).submit({ ...owner, origin: source.command_origin }, "create", {
     task_id: "native-task", chat_id: "chat", status: "waiting", provider: "opencode", model: binding.model, prompt: "read current project", repo_root: "/coordinator/private/path",
   }, { chat_id: "chat" }, { tool_deny: ["bash", "edit", "write"] });
-  const specification = { capability: "native.read", workspace_id: "project", device_ids: [device.device_id!], input: { execution_context: { origin: "user", source_scope: "local_foreground" } } };
+  const communication = communicationEnabled ? prepareNativeAgentConfiguration(join(root, "task-channel"), Bun.which("node")!, "native-task", ["native-parent"], "native-parent") : undefined;
+  const specification = { capability: "native.read", workspace_id: "project", device_ids: [device.device_id!], input: { execution_context: { origin: "user", source_scope: "local_foreground" } },
+    ...(communication ? { peer_tasks: ["native-parent"], parent_task: "native-parent" } : {}) };
   coordinator.assign(owner, "assign", task.task.task_id, task.revision, specification);
   const commands: ProcessSpec[] = [];
-  const runner = { async run(spec: ProcessSpec) {
+  const runner = { ...(communicationEnabled ? { runtimeDigest: () => digest("device-test-runtime") } : {}), async run(spec: ProcessSpec) {
     commands.push(spec);
     if (spec.command[1] === "--version") return outcome(binding.cli_version);
     if (spec.command[1] === "debug") {
       const config = JSON.parse(spec.env.OPENCODE_CONFIG_CONTENT), reads = JSON.parse(spec.env.OPENCODE_PERMISSION).read;
       return outcome(JSON.stringify({ name: spec.command[3], mode: "primary", prompt: config.agent[spec.command[3]].prompt,
-        tools: { read: {}, bash: {} }, permission: [{ permission: "*", pattern: "*", action: "deny" }, ...Object.keys(reads).map(pattern => ({ permission: "read", pattern, action: "allow" }))] }));
+        tools: { read: {}, bash: {}, ...Object.fromEntries((communication ? nativeAgentTools : []).map(tool => [tool, {}])) },
+        permission: [{ permission: "*", pattern: "*", action: "deny" }, ...Object.keys(reads).map(pattern => ({ permission: "read", pattern, action: "allow" })),
+          ...(communication ? nativeAgentTools.map(permission => ({ permission, pattern: "*", action: "allow" })) : [])] }));
     }
     calls++;
     const writer = new Database(nativePath), session = "ses_Device";
@@ -69,12 +83,34 @@ function setup(mode: "normal" | "partition" | "changed-file" | "lost-completion"
     part(`prompt_${calls}`, user, { type: "text", text: spec.stdin_text });
     part(`answer_${calls}`, assistant, { type: "text", text: answer });
     part(`read_${calls}`, assistant, { type: "tool", tool: "read", state: { status: "completed", input: { filePath: join(workspace, "PROJECT.md") } } });
+    if (communication) {
+      const client = new NativeMcpTestClient(JSON.parse(spec.env.OPENCODE_CONFIG_CONTENT).mcp.controlmesh.command);
+      try {
+        await client.initialize(); let index = 0;
+        const invoke = async (name: string, input: Record<string, unknown>) => {
+          const response = await client.tool(name, input);
+          expect(response.error).toBeUndefined(); expect(response.result?.content).toHaveLength(1);
+          const output = response.result!.content![0].text, body = JSON.parse(output); expect(body.ok).toBe(true);
+          part(`native_${calls}_${index++}`, assistant, { type: "tool", tool: `controlmesh_${name}`,
+            state: { status: "completed", input, output: mode === "altered-native-tool" ? canonical({ ...body, forged: true }) : output } });
+          return body;
+        };
+        const received = await invoke("receive", { request_id: "inbox", wait_ms: 0 });
+        for (const question of received.messages) if (question.kind === "ask_parent") {
+          expect(new AgentMailbox(kernel).inspect(owner, "native-task", question.message_id).status).toBe("received");
+          await invoke("answer", { request_id: "answer", question_id: question.message_id, text: "Verified gate" });
+        }
+        const input = { request_id: "send", recipient_task: "native-parent", text: "Current project read" };
+        expect(await invoke("send", input)).toEqual(await invoke("send", input));
+        await invoke("ask_parent", { request_id: "ask", text: "Next acceptance?" });
+      } finally { await client.close(); }
+    }
     writer.close();
     if (mode === "partition") server.stop(true);
     if (mode === "changed-file") writeFileSync(join(workspace, "PROJECT.md"), "changed after native read");
     return outcome([{ type: "text", sessionID: session, part: { text: answer } }, { type: "step_finish", sessionID: session, part: { reason: "stop" } }].map(item => JSON.stringify(item)).join("\n"));
   } };
-  const makeAdapter = (ledger = journal) => new OpenCodeDeviceAdapter(device, cache, ledger, store, { executable: "/fixture/opencode", native_configuration: {}, environment: { HOME: root, XDG_DATA_HOME: data }, state_home: root },
+  const makeAdapter = (ledger = journal) => new OpenCodeDeviceAdapter(device, cache, ledger, store, { executable: "/fixture/opencode", native_configuration: {}, environment: { HOME: root, XDG_DATA_HOME: data }, state_home: root, communication },
     { read_files: ["PROJECT.md"], required_reads: ["PROJECT.md"], binding: () => binding, assertCurrent() {} }, runner);
   const adapter = makeAdapter();
   const worker = new DeviceWorker(client, { workspaces: { project: workspace }, adapters: { "native.read": adapter }, journal });
@@ -96,7 +132,7 @@ function setup(mode: "normal" | "partition" | "changed-file" | "lost-completion"
       { workspaces: { project: workspace }, adapters: { "native.read": makeAdapter(localJournal) }, journal: localJournal }) };
   };
   return { root, workspace, workerDB, coordinatorDB, kernel, coordinator, client, journal, worker, commands, binding, store, specification,
-    recover, calls: () => calls, advance: (ms: number) => { offset += ms; } };
+    recover, completions, calls: () => calls, advance: (ms: number) => { offset += ms; } };
 }
 
 test("native device execution persists local evidence and resumes its original session through an opaque handle", async () => {
@@ -378,4 +414,51 @@ test("schema six upgrade preserves completed device evidence while adding durabl
     expect(upgraded.sql.query("SELECT * FROM device_execution_records").all()).toEqual(original);
     expect(upgraded.sql.query("SELECT COUNT(*) AS n FROM device_reconciliations").get()).toEqual({ n: 0 });
   } finally { upgraded.close(); }
+});
+
+for (const mode of ["normal", "lost-before-completion", "altered-native-tool"] as const) test(`device native MCP binds actual tool parts to coordinator receipts and recovery: ${mode}`, async () => {
+  const f = setup(mode, true), mailbox = new AgentMailbox(f.kernel);
+  f.kernel.submit(owner, "create-parent", { task_id: "native-parent", chat_id: "chat", status: "waiting" });
+  const peer = f.kernel.claim(owner, "claim-parent", "native-parent", 1, 30000);
+  f.kernel.start(owner, "start-parent", peer);
+  const question = mailbox.send({ ...owner, origin: "agent_message" }, "question", { recipient_task: "native-task", sender_lease: peer,
+    kind: "ask_parent", payload: { text: "Which gate?" }, causation_id: null, ttl_ms: 10000 });
+  const output = await f.worker.run("native-task", 5000);
+  expect(output.status).toBe(mode === "normal" ? "done" : "unknown");
+  expect(f.calls()).toBe(1);
+  expect(f.workerDB.sql.query("SELECT COUNT(*) AS n FROM tasks").get()).toEqual({ n: 0 });
+  expect(f.workerDB.sql.query("SELECT COUNT(*) AS n FROM native_agent_calls").get()).toEqual({ n: 0 });
+  expect(f.coordinatorDB.sql.query("SELECT COUNT(*) AS n FROM native_agent_calls").get()).toEqual({ n: 4 });
+  expect(mailbox.pending(owner, peer)).toHaveLength(3);
+  expect(mailbox.pending(owner, peer).map(message => message.kind)).toEqual(["answer", "tell", "ask_parent"]);
+  expect(mailbox.pending(owner, peer)[0]).toMatchObject({ causation_id: question.message_id, origin: "agent_message" });
+  expect(mailbox.inspect(owner, "native-task", question.message_id).status).toBe(mode === "normal" ? "consumed" : "received");
+  if (mode === "normal") {
+    expect(output.result?.communication).toBeDefined(); expect(JSON.stringify(output)).not.toContain(f.workspace);
+    const completion = f.completions[0], before = f.coordinatorDB.sql.query("SELECT COUNT(*) AS n FROM events").get();
+    expect(await f.client.command("complete", completion.arguments, completion.request_id)).toMatchObject({ status: "done" });
+    expect(f.coordinatorDB.sql.query("SELECT COUNT(*) AS n FROM events").get()).toEqual(before);
+    expect(mailbox.inspect(owner, "native-task", question.message_id).status).toBe("consumed");
+    const done = f.kernel.inspect(owner, "native-task"), next = f.kernel.resume(owner, "next", "native-task", done.revision, "Read again");
+    f.coordinator.assign(owner, "reassign", "native-task", next.revision, f.specification);
+    writeFileSync(join(f.workspace, "PROJECT.md"), "revision-two");
+    expect((await f.worker.run("native-task", 5000)).result?.text).toBe("revision-two");
+    expect(f.calls()).toBe(2);
+  } else {
+    const state = f.kernel.inspect(owner, "native-task"), effect = f.coordinatorDB.sql.query("SELECT effect_id FROM effects").get() as { effect_id: string };
+    const challenge = f.coordinator.reconciliation.request({ ...owner, device_id: device.device_id }, "recover-tools", "native-task", state.revision, effect.effect_id);
+    const reopened = f.recover();
+    if (mode === "altered-native-tool") {
+      await expect(reopened.worker.reconcile(challenge.challenge_id)).rejects.toThrow("native_agent_device_calls_unproven");
+      expect(mailbox.inspect(owner, "native-task", question.message_id).status).toBe("received");
+      expect(f.kernel.inspect(owner, "native-task").needs_reconciliation).toBe(true);
+    } else {
+      const result = await reopened.worker.reconcile(challenge.challenge_id);
+      expect(result).toMatchObject({ status: "done", task_id: "native-task" });
+      expect(await reopened.worker.reconcile(challenge.challenge_id)).toEqual(result);
+      expect(mailbox.inspect(owner, "native-task", question.message_id).status).toBe("consumed");
+      expect(mailbox.pending(owner, peer)).toHaveLength(3);
+    }
+    expect(f.calls()).toBe(1);
+  }
 });

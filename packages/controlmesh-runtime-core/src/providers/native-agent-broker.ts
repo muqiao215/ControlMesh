@@ -9,10 +9,9 @@ import { NativeAgentJournal, type NativeAgentScope } from "./native-agent-journa
 import { assertNativeAgentConfiguration, nativeAgentScope, type NativeAgentConfiguration } from "./native-agent-profile";
 
 /** Per-execution local capability. The model cannot choose the sender, principal or lease. */
-export class NativeAgentBroker {
+export class NativeAgentChannel {
   readonly scope: NativeAgentScope;
   readonly command: string[];
-  private readonly journal: NativeAgentJournal;
   private readonly token = randomBytes(32).toString("hex");
   private readonly identity: string;
   private readonly socketName = `${randomBytes(16).toString("hex")}.sock`;
@@ -26,11 +25,11 @@ export class NativeAgentBroker {
   private socketIdentity?: { dev: number; ino: number };
   private configurationIdentity?: { dev: number; ino: number };
 
-  constructor(private readonly kernel: RuntimeKernel, private readonly actor: Principal, private readonly lease: Lease,
-    private readonly effect: string, private readonly config: NativeAgentConfiguration, private readonly assertCurrent: () => void) {
+  constructor(lease: Pick<Lease, "task_id" | "episode_id" | "fence">,
+    private readonly config: NativeAgentConfiguration, private readonly assertCurrent: () => void,
+    private readonly backend: { assertDispatched: () => void; call: (tool: string, input: Record<string, unknown>, signal: AbortSignal) => Promise<Record<string, unknown>> }) {
     this.identity = assertNativeAgentConfiguration(config);
     this.scope = nativeAgentScope(config, lease);
-    this.journal = new NativeAgentJournal(kernel);
     this.directoryFd = openSync(config.directory, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
     this.configurationPath = join(config.directory, `${this.socketName}.json`);
     this.command = [config.node_executable, join(config.directory, "client.mjs"), this.configurationPath];
@@ -60,7 +59,7 @@ export class NativeAgentBroker {
     requireThat(!this.closed, "native_agent_broker_closed");
     this.assertCurrent();
     requireThat(assertNativeAgentConfiguration(this.config) === this.identity, "native_agent_profile_changed");
-    if (dispatched) this.journal.assertExecution(this.actor, this.lease, this.effect, this.scope);
+    if (dispatched) this.backend.assertDispatched();
   }
 
   private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -86,28 +85,13 @@ export class NativeAgentBroker {
         const response = await prior.promise; this.check(); respond(200, response); return;
       }
       requireThat(this.active.size < 4, "native_agent_concurrency_exhausted");
-      const begun = this.journal.begin(this.actor, this.lease, this.effect, this.scope, tool, input);
-      if (begun.response) { this.check(); respond(200, begun.response); return; }
-      const promise = this.apply(tool, input, begun.call_id);
+      const promise = this.backend.call(tool, input, this.abort.signal);
       this.active.set(key, { digest: hash, promise });
       try { const response = await promise; this.check(); respond(200, response); }
       finally { this.active.delete(key); }
     } catch (error) {
       respond(409, { ok: false, error: error instanceof RuntimeConflict ? error.code : "native_agent_request_failed" });
     }
-  }
-
-  private async apply(tool: string, input: Record<string, unknown>, callId: string): Promise<Record<string, unknown>> {
-    const wait = input.wait_ms;
-    if (tool === "controlmesh_receive" && Number.isSafeInteger(wait) && Number(wait) > 0 && Number(wait) <= 10000) {
-      const deadline = performance.now() + Number(wait);
-      while (!this.journal.available(this.actor, this.lease) && performance.now() < deadline) {
-        this.check();
-        await delay(Math.min(100, Math.max(1, deadline - performance.now())), undefined, { signal: this.abort.signal });
-      }
-    }
-    this.check();
-    return this.journal.finish(this.actor, this.lease, this.effect, this.scope, callId);
   }
 
   /** Stop admission before comparing native tool evidence; no late call can follow acceptance. */
@@ -123,5 +107,31 @@ export class NativeAgentBroker {
     };
     try { removeOwned(join(this.config.directory, this.socketName), this.socketIdentity); removeOwned(this.configurationPath, this.configurationIdentity); }
     finally { closeSync(this.directoryFd); }
+  }
+}
+
+/** The same private native IPC serves a local kernel or an authenticated remote owner. */
+export class NativeAgentBroker extends NativeAgentChannel {
+  constructor(kernel: RuntimeKernel, actor: Principal, lease: Lease, effect: string,
+    config: NativeAgentConfiguration, assertCurrent: () => void) {
+    const journal = new NativeAgentJournal(kernel), scope = nativeAgentScope(config, lease);
+    const identity = assertNativeAgentConfiguration(config);
+    const current = () => {
+      assertCurrent(); requireThat(assertNativeAgentConfiguration(config) === identity, "native_agent_profile_changed");
+      journal.assertExecution(actor, lease, effect, scope);
+    };
+    super(lease, config, assertCurrent, { assertDispatched: current, call: async (tool, input, signal) => {
+      current();
+      const begun = journal.begin(actor, lease, effect, scope, tool, input);
+      if (begun.response) return begun.response;
+      const wait = tool === "controlmesh_receive" && Number.isSafeInteger(input.wait_ms) && Number(input.wait_ms) <= 10000 ? Number(input.wait_ms) : 0;
+      const deadline = performance.now() + Math.max(0, wait);
+      while (performance.now() < deadline && !journal.available(actor, lease)) {
+        current(); signal.throwIfAborted();
+        await delay(Math.min(100, Math.max(1, deadline - performance.now())), undefined, { signal });
+      }
+      current(); signal.throwIfAborted();
+      return journal.finish(actor, lease, effect, scope, begun.call_id);
+    } });
   }
 }

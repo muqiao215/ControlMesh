@@ -7187,7 +7187,8 @@ var controlmeshSchemas = {
           "ack",
           "release",
           "reconciliation",
-          "reconcile"
+          "reconcile",
+          "native_call"
         ]
       },
       arguments: {
@@ -7588,6 +7589,52 @@ var controlmeshSchemas = {
             }
           }
         }
+      },
+      {
+        properties: {
+          operation: {
+            const: "native_call"
+          },
+          arguments: {
+            type: "object",
+            additionalProperties: false,
+            required: [
+              "lease",
+              "effect_id",
+              "tool",
+              "input"
+            ],
+            properties: {
+              lease: {
+                $ref: "execution-lease.schema.json"
+              },
+              effect_id: {
+                type: "string",
+                pattern: "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+              },
+              tool: {
+                enum: [
+                  "controlmesh_send",
+                  "controlmesh_ask_parent",
+                  "controlmesh_receive",
+                  "controlmesh_answer"
+                ]
+              },
+              input: {
+                type: "object",
+                required: [
+                  "request_id"
+                ],
+                properties: {
+                  request_id: {
+                    type: "string",
+                    pattern: "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     ]
   },
@@ -7648,6 +7695,9 @@ var controlmeshSchemas = {
       result_digest: {
         type: "string",
         pattern: "^[a-f0-9]{64}$"
+      },
+      communication: {
+        $ref: "native-agent-scope.schema.json"
       }
     }
   },
@@ -7713,6 +7763,9 @@ var controlmeshSchemas = {
       },
       native_session: {
         $ref: "device-native-session.schema.json"
+      },
+      communication: {
+        $ref: "native-agent-proof.schema.json"
       }
     }
   },
@@ -8129,6 +8182,114 @@ var controlmeshSchemas = {
       metadata: {
         type: "object",
         additionalProperties: true
+      }
+    }
+  },
+  "native-agent-call-receipt.schema.json": {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    $id: "https://schemas.controlmesh.dev/controlmesh/v1/native-agent-call-receipt.schema.json",
+    title: "NativeAgentCallReceipt",
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "call_id",
+      "tool",
+      "input_digest",
+      "output_digest"
+    ],
+    properties: {
+      call_id: {
+        type: "string",
+        pattern: "^[a-f0-9]{64}$"
+      },
+      tool: {
+        enum: [
+          "controlmesh_send",
+          "controlmesh_ask_parent",
+          "controlmesh_receive",
+          "controlmesh_answer"
+        ]
+      },
+      input_digest: {
+        type: "string",
+        pattern: "^[a-f0-9]{64}$"
+      },
+      output_digest: {
+        type: "string",
+        pattern: "^[a-f0-9]{64}$"
+      }
+    }
+  },
+  "native-agent-proof.schema.json": {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    $id: "https://schemas.controlmesh.dev/controlmesh/v1/native-agent-proof.schema.json",
+    title: "NativeAgentProof",
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "call_receipts"
+    ],
+    properties: {
+      call_receipts: {
+        type: "array",
+        maxItems: 32,
+        items: {
+          $ref: "native-agent-call-receipt.schema.json"
+        }
+      }
+    }
+  },
+  "native-agent-scope.schema.json": {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    $id: "https://schemas.controlmesh.dev/controlmesh/v1/native-agent-scope.schema.json",
+    title: "NativeAgentScope",
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "schema_version",
+      "task_id",
+      "episode_id",
+      "fence",
+      "peer_tasks",
+      "parent_task",
+      "client_digest"
+    ],
+    properties: {
+      schema_version: {
+        const: "controlmesh.native_agent_scope.v1"
+      },
+      task_id: {
+        type: "string",
+        pattern: "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+      },
+      episode_id: {
+        type: "string",
+        pattern: "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+      },
+      fence: {
+        type: "integer",
+        minimum: 1,
+        maximum: 9007199254740991
+      },
+      peer_tasks: {
+        type: "array",
+        maxItems: 16,
+        uniqueItems: true,
+        items: {
+          type: "string",
+          pattern: "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+        }
+      },
+      parent_task: {
+        type: [
+          "string",
+          "null"
+        ],
+        pattern: "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+      },
+      client_digest: {
+        type: "string",
+        pattern: "^[a-f0-9]{64}$"
       }
     }
   },

@@ -34,6 +34,9 @@
     },
     "native_session": {
       "$ref": "device-native-session.schema.json"
+    },
+    "communication": {
+      "$ref": "native-agent-proof.schema.json"
     }
   }
 }

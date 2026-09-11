@@ -274,3 +274,15 @@ exactly that text. Delivery therefore required an immutable batch in the dispatc
 input verification, and atomic acknowledgement with task completion/reconciliation.
 An in-flight reserved message must not become eligible for replay merely because its TTL
 expires; expiry controls new delivery, while the original execution outcome controls recovery.
+
+Device communication integration (2026-09-12): the coordinator's immutable device
+manifest reference can carry the native scope without transferring native histories.
+The same schema-10 journal then binds both local and remote calls. Device verification
+reports bounded hashes derived from native parts, and coordinator completion/recovery
+matches every call before consuming receipts. Device jobs now project trusted peer/parent
+policy independently of arbitrary assignment input. No device task kernel is synthesized.
+An additional execution seam was found: OpenCodeDeviceAdapter's default preflight ignored
+its supplied runner and therefore could not qualify a container runtime digest. It now
+uses that runner, with a regression fixture carrying a runtime identity. Automatic initial
+mailbox prefix delivery still needs its device manifest/reservation seam; native receive
+already handles queued and late messages.
