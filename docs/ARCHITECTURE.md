@@ -338,6 +338,16 @@ before verification; only verified native lineage, output and required reads can
 an effect. Interrupted or inconsistent work remains unknown and cannot be auto-resumed.
 This implemented private path does not switch any released transport/runtime owner.
 
+New private TS submissions use `TaskIngress`: configured channel provenance is separate
+from `Principal.origin`, task bodies cannot issue grants, and task creation/source/grant/
+authorization event/receipts share one transaction. Replays retain the original trace;
+resume retains source/grant/reply identity. Async-local execution context isolates concurrent
+tasks. The TS source-policy, provider-mapping and reply-identity ports are checked against
+live Python owners. Provider mapping is not admission: source sandbox requirements and
+controller confirmation must be enforced independently. The current OpenCode worker and
+native reconciler validate the full persisted context and grant before using native state.
+General sandbox/provider launchers and transport delivery are still Python-owned.
+
 The private `DeviceCoordinator` now exposes a separate loopback worker protocol with
 credentials mapped to trusted device registrations. Tasks have persisted, digest-bound
 assignments to capabilities and logical workspaces; physical paths and executable

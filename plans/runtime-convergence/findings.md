@@ -1,5 +1,35 @@
 # Findings
 
+The source/grant owners are `controlmesh/bus/envelope.py`, `execution_policy.py` and
+`execution_grants.py`, not the provider SDK facade. TS now independently ports their valid
+stored formats, source sandbox decisions, native mapping, submit narrowing and reply checks.
+A live 689-case Python oracle covers all origin/scope/readiness combinations plus provider/
+grant/config combinations, source issuance and pinned delivery identity. This proves these
+policy computations, not all Python provider/transport execution behavior.
+
+Two legacy shortcuts require stricter admission: Python submit-grant issuance treats an
+unknown source string as not requiring a sandbox; mapping returns a floor for an otherwise
+empty controller-required grant. New TS issuance rejects unknown scopes, and actual native
+admission checks controller confirmation separately from flag mapping. Static native tool
+expressions such as `Bash(rm *)` are distinct from the portable grant token grammar and must
+remain intact during deny union. Persisted valid v1 fields keep their names; new decoders
+reject coercions and bound token arrays, while snapshot migration retains original data.
+
+`TaskIngress` binds a trusted configured channel to command origin. It overwrites no body
+authority: a supplied context/grant is rejected, and new grants can only narrow the source
+floor. Creation and authorization events/receipts are atomic. Raw source IDs are hashed
+before persistence; retry identity excludes the generated trace so restart reuses the
+original issuance. Native success/reconciliation fixtures now use this real ingress.
+
+The actual OpenCode/M3 canary for this path preserved issued context, denied bash/edit/write
+and pinned reply identity across a worker SIGKILL, native reconciliation and same-session
+continuation. It generated one authorization event and independently proved marker recall
+and the changed current file read. No production TaskHub writer, bot, scheduler or account
+browser operation was involved. Remote DeviceWorker is still not the native adapter: it
+currently dispatches before adapter preparation and stores an observation only after the
+adapter returns. That interface must carry pre-execution manifests and immediate original
+observations before native fleet execution can claim the local worker's recovery guarantees.
+
 The roadmap is grounded in repository code, existing contracts and prior recorded acceptance, not the prototype archive alone. Implementation status and remaining gates are in task_plan.md. No new runtime migration or fleet rollout is claimed complete by this plan.
 
 2026-09-11 implementation: TaskRegistry.__init__ calls orphan cleanup and may delete folders; its cached JSON writes are not a cross-device store. InterAgentBus is explicitly in-memory and trims message history. Existing TS lifecycle parity switches on fixture case IDs and is not a callable production lifecycle. These are source observations, not completion evidence.

@@ -396,3 +396,18 @@ OpenCode's custom Agent prompt replaces its model's default prompt; a generic in
 was insufficient in a real resumed turn, which reused old file contents. The worker now
 issues and inspects an explicit list of required fresh reads. Guidance does not replace
 verification: a terminal answer without the current native read remains unaccepted.
+
+## 2026-09-11 — Preserve provenance at issuance and separate mapping from execution admission
+
+Port current Python policy and grant semantics with a live differential oracle. Keep the
+historical mapping result for an otherwise empty controller-required grant for parity,
+but never interpret it as approval to execute. Real admission checks source and confirmation
+independently. Unknown new sources must be rejected rather than becoming host-compatible;
+malformed persisted context requires explicit reviewed reissue, not invented trace fields.
+
+Use a configured trusted `TaskIngress` to issue source/grant/reply identity and atomically
+persist them with the task and event. Task bodies and Agent messages cannot choose this
+authority. Stable retry identity excludes the random newly generated trace; retries return
+the original issued trace. Worker command origin remains distinct from task provenance.
+Do not relabel remote worker traffic as human requests to reuse the local native profile.
+This port does not itself implement the remaining sandbox or transport owners.

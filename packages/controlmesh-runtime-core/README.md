@@ -11,6 +11,16 @@ Track completion in [the repository plan](../../plans/runtime-convergence/task_p
 - `RuntimeKernel` creates waiting tasks, claims execution episodes, starts/renews/finishes
   them, explicitly resumes completed work, cancels tasks, and records uncertain outcomes
   after a running lease expires or the native observation cannot be accepted.
+- `TaskIngress` issues provenance and a narrowing task grant from a configured trusted
+  channel. It rejects task-body authority and mismatched command origins, commits task/
+  grant/source/event/receipts together and retains the original trace on replay/restart.
+  It is an internal coordinator entrypoint, not a remote task creation endpoint.
+- `execution-context`, `execution-policy` and `execution-grants` port the existing source
+  enums, sandbox floors, provider flag mapping, submit grants and pinned reply checks.
+  An async-local scope keeps concurrent task provenance separate. New TS ingress denies
+  unknown sources and malformed persisted identities instead of implicitly issuing legacy
+  host compatibility. Tool mapping alone is not process admission; an approval-only grant
+  still needs controller confirmation and is refused by the current native launcher.
 - Every command receipt binds principal, origin, device and canonical request content.
   Task revisions and fencing tokens are checked in the transaction; revoked scopes are
   rechecked before returning cached private results.
@@ -64,7 +74,10 @@ Track completion in [the repository plan](../../plans/runtime-convergence/task_p
 
 `Principal` is an internal admission object constructed by trusted ingress. Never accept
 its identity, scopes, origin or device from an unauthenticated JSON request. The kernel is
-not itself an authentication service. Its state methods do not issue provider grants.
+not itself an authentication service. Its low-level state methods do not issue provider
+grants. New trusted task submissions use `TaskIngress`; migration uses its separate strict
+snapshot path. Valid legacy contexts remain readable, but incomplete context cannot reach
+the native worker and new ingress cannot choose `legacy_compat` as a fallback.
 
 ## Snapshot migration
 
@@ -92,6 +105,10 @@ The target directory must exist. No automatic live-home path or writer cutover i
 transactional state, cancellation, fencing, clock rollback, concurrent OS-process claims,
 SIGKILL before commit, lost external receipts, permission revocation and bounded mailboxes.
 All fixtures are synthetic; these tests do not touch provider accounts or operator state.
+The authorization suite also invokes the live Python owners for 689 input/output pairs
+covering source/sandbox policy, provider mapping, narrowing issuance and reply identity.
+It keeps the original goldens and separately exercises stricter TS admission rules. Native
+static tool expressions are retained; portable grant tokens have their own bounded format.
 
 Remaining before activation: reconciliation for the other execution profiles and abandonment policy, tell/ask and general resume integration,
 provider adapter/permission parity and non-Linux supervision, transport delivery, all other Python

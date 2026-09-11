@@ -2,14 +2,13 @@ import { mkdirSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
 import { homedir } from "node:os";
 import { digest, object, requireThat } from "../value";
+import { decodeToolGrant, enforceProviderConfirmation } from "../execution-grants";
 
 export function assertReadGrantSnapshot(value: unknown, files: readonly string[]): void {
-  requireThat(object(value) && value.schema_version === "controlmesh.tool_grant.v1", "issued_tool_grant_required");
-  const lists = [value.tool_allow, value.tool_deny, value.writable_roots];
-  requireThat(lists.every(list => Array.isArray(list) && list.every(item => typeof item === "string")), "invalid_tool_grant");
-  requireThat(value.confirmation_policy === "provider_runtime", "controller_approval_unavailable");
-  requireThat(value.network_policy === "sandbox_default", "no_network_unenforceable");
-  const allows = (value.tool_allow as string[]).map(tool => tool.toLowerCase()), denies = (value.tool_deny as string[]).map(tool => tool.toLowerCase());
+  const grant = decodeToolGrant(value);
+  enforceProviderConfirmation("opencode", grant);
+  requireThat(grant.network_policy === "sandbox_default", "no_network_unenforceable");
+  const allows = grant.tool_allow.map(tool => tool.toLowerCase()), denies = grant.tool_deny.map(tool => tool.toLowerCase());
   requireThat(!files.length || (!denies.includes("read") && (!allows.length || allows.includes("read"))), "read_conflicts_task_grant");
 }
 

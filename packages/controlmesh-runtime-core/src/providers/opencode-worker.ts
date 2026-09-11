@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import type { Lease, Principal, RuntimeKernel, TaskSnapshot } from "../kernel";
 import { ProcessSupervisor, type ProcessSpec, type ProcessOutcome, type ProcessAdmission } from "../process-supervisor";
 import { digest, object, requireThat } from "../value";
+import { enforceLocalReadSource } from "../execution-policy";
 import { NativeSessionStore, type NativeSessionRef, type NativeBaseline } from "./native-session";
 import { NativeSessionLease } from "./native-lease";
 import { assertReadGrantSnapshot, inspectReadPermissions, readFileGrant, readOnlyEnvironment } from "./opencode-profile";
@@ -41,7 +42,7 @@ export class OpenCodeWorker {
     requireThat(Number.isSafeInteger(timeoutMs) && timeoutMs >= 1000 && timeoutMs <= 300_000, "invalid_native_timeout");
     const snapshot = this.kernel.inspect(actor, lease.task_id);
     const task = snapshot.task;
-    requireThat(object(task.execution_context) && task.execution_context.source_scope === admission.source_scope && task.execution_context.origin === "user", "task_source_context_mismatch");
+    enforceLocalReadSource(task.execution_context);
     requireThat(task.provider === "opencode" && task.model === binding.model && binding.device_id === this.store.deviceId, "worker_task_binding_mismatch");
     requireThat(typeof task.repo_root === "string" && typeof task.prompt === "string" && task.prompt.length > 0 && Buffer.byteLength(task.prompt) <= 32768, "invalid_native_task");
     const cwd = realpathSync(task.repo_root);

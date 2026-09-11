@@ -4,9 +4,31 @@
 
 Full goal active. CM-R0 through CM-R6 are in progress. The private TS kernel executes a concrete local OpenCode read profile with native continuation and headless History integration. An authenticated coordinator/worker port now also has real x64/ARM64 synthetic acceptance. Python remains the released production runtime; no writer cutover or new runtime release is claimed.
 
-Current checkpoint: persisted native dispatch manifests, original observations and explicit verified reconciliation are implemented for the qualified OpenCode local read profile. Real SIGKILL/reopen/reconcile/same-session continuation passed. Full production migration remains incomplete.
+Current checkpoint: source/grant policy ports and trusted task issuance now feed the qualified native read worker/reconciler. The new issuance path passed real OpenCode SIGKILL/reopen/reconcile/same-session continuation while preserving provenance, narrowing grant and reply identity. Full production migration remains incomplete.
 
 ## Done
+
+Source/grant checkpoint: TS execution context validation/issuance and async-local binding;
+source-aware sandbox policy; provider flag mapping; narrowing submit grants; reply identity
+checks; trusted TaskIngress with immutable channel binding, atomic task/grant/source/event
+creation and original-trace idempotent replay. Unknown sources, forged body authority,
+malformed persisted context and unsupported controller confirmation are denied before
+native commands. The low-level kernel and legacy import preserve their separate ownership.
+
+Verification: live Python oracle agrees on 689 policy/mapping/issuance/reply cases, including
+native static tool expressions. Original Python grant/provenance golden tests passed (4).
+Strict TS and the full core suite passed (96 tests / 1,291 assertions), including the
+expanded authorization cases. Ruff/format and 512-module/57-field ownership baseline are current.
+
+Actual OpenCode 1.18.29 / M3 acceptance on 2026-09-11 exercised TaskIngress, native dispatch,
+SIGKILL after original observation, independent reconciliation (16 ms, no additional model
+calls) and same-session continuation with marker recall and a changed current file read.
+One issuance event, two manifests, two original observations and two confirmed effects;
+source, narrowing grant and pinned reply identity were preserved. This is a controlled local
+profile, not fleet-native or production default-switch evidence.
+
+Native reconciliation checkpoint 6255eef5d8622e7647ddbaa3eed1a0e52300a6ce has exact-SHA
+green CI 34584034790.
 
 Native reconciliation checkpoint: SQLite schema 5 adds execution manifests and original effect observations. Dispatch and its manifest commit together before model execution; acceptance preserves the original observation and commits the result/task/event/receipt together. Native task/grant/config/session/workspace/file evidence is independently rechecked. Missing manifests, changed files/history/authorization, cancelled work and missing required reads remain unaccepted. Read-profile behavior is qualified against OpenCode 1.18.29.
 
@@ -44,4 +66,8 @@ No blocking condition. Legacy TaskRegistry construction performs destructive orp
 
 ## Next
 
-Connect provider/source/grant enforcement and native execution to the device transport; finish the other persisted-store/recovery owners and integrate SpecMesh's independent checks against current checkout state. Keep released Python ownership until every activation gate passes.
+Connect the ported provider/source/grant policy to real launchers and native execution over
+the device transport; its current adapter runs before returning its first observation, so
+native preparation/manifest dispatch and immediate observation durability need explicit
+hooks. Finish other persisted-store/recovery owners and independent SpecMesh checks against
+current checkout state. Keep released Python ownership until every activation gate passes.

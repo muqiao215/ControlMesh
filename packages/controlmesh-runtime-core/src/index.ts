@@ -14,3 +14,7 @@ export { DeviceCoordinator, type DeviceRegistration, type DeviceAssignment, type
 export { DeviceClient, DeviceLeaseAuthority, type DeviceClientOptions } from "./device-client";
 export { DeviceWorker, type DeviceAdapter, type DeviceAdapterContext, type DeviceWorkerOptions } from "./device-worker";
 export { NativeReconciler } from "./providers/native-reconciler";
+export { executionOrigins, sourceScopes, decodeSourceScope, decodeExecutionContext, issueExecutionContext, currentExecutionContext, withExecutionContext, type ExecutionContext, type ExecutionOrigin, type SourceScope } from "./execution-context";
+export { sourceRequiresSandbox, evaluateExecutionPolicy, enforceExecutionPolicy, ExecutionPolicyDenied, type ExecutionPolicyDecision } from "./execution-policy";
+export { decodeToolGrant, issueToolGrant, issueTaskGrantForSubmit, mapToolGrant, enforceProviderConfirmation, validateReplyTarget, ToolGrantDenied, ReplyTargetMismatch, type ToolGrantSnapshot, type ToolGrantMapping, type ProviderGrantConfig } from "./execution-grants";
+export { TaskIngress, type IngressSource, type SubmissionIdentity, type SubmissionRestrictions } from "./task-ingress";

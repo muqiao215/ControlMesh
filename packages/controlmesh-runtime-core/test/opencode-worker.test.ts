@@ -3,7 +3,7 @@ import { Database } from "bun:sqlite";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { OpenCodeWorker, NativeReconciler, NativeSessionStore, PreflightCache, RuntimeDatabase, RuntimeKernel, type Principal, type ProbeBinding, type ProcessSpec, type ProcessOutcome } from "../src";
+import { OpenCodeWorker, NativeReconciler, NativeSessionStore, PreflightCache, RuntimeDatabase, RuntimeKernel, TaskIngress, issueExecutionContext, type Principal, type ProbeBinding, type ProcessSpec, type ProcessOutcome } from "../src";
 import { digest } from "../src/value";
 import fixture from "./fixtures/native-session-v2.json";
 
@@ -13,7 +13,7 @@ const actor: Principal = { id: "operator", device_id: "device", origin: "human_r
 const grant = { schema_version: "controlmesh.tool_grant.v1", tool_allow: [], tool_deny: [], writable_roots: [], network_policy: "sandbox_default", confirmation_policy: "provider_runtime" };
 function result(stdout: string): ProcessOutcome { return { reason: "exited", exit_code: 0, stdout, stderr: "", duration_ms: 1 }; }
 
-function setup(mode: "success" | "concurrent" | "old_edit" | "lost" | "cancel" | "commit_lost" = "success") {
+function setup(mode: "success" | "concurrent" | "old_edit" | "lost" | "cancel" | "commit_lost" = "success", taskOverrides: Record<string, unknown> = {}) {
   const dir = mkdtempSync(join(tmpdir(), "cm-native-worker-test-")); dirs.push(dir);
   const data = join(dir, "data"); mkdirSync(join(data, "opencode"), { recursive: true });
   const path = join(data, "opencode/opencode.db"), native = new Database(path);
@@ -31,8 +31,11 @@ function setup(mode: "success" | "concurrent" | "old_edit" | "lost" | "cancel" |
   cache.complete(actor, binding, permit, { model: binding.model, config_digest: binding.config_digest, cli_version: binding.cli_version, permission_digest: "a".repeat(64), tool_count: 12, model_invoked: true, duration_ms: 1,
     observation: { status: "ready", reason: "native_sentinel_verified", session_id: "ses_Probe", failure: null } });
   const ref = store.read(fixture.session_id), commands: ProcessSpec[] = [];
-  const snapshot = kernel.submit(actor, "create", { task_id: "task", chat_id: "fixture", status: "waiting", provider: "opencode", model: binding.model, repo_root: dir,
-    prompt: "Continue the known decision", native_session: ref, tool_grant: grant, execution_context: { origin: "user", source_scope: "local_foreground" } });
+  const task = { task_id: "task", chat_id: "fixture", status: "waiting" as const, provider: "opencode", model: binding.model, repo_root: dir, prompt: "Continue the known decision", native_session: ref };
+  // The happy path exercises trusted issuance; overrides represent legacy/corrupted stored authority at execution admission.
+  const snapshot = Object.keys(taskOverrides).length ? kernel.submit(actor, "create", { ...task, tool_grant: grant,
+    execution_context: issueExecutionContext({ origin: "user", source_scope: "local_foreground", transport: "test" }), ...taskOverrides })
+    : new TaskIngress(kernel, { command_origin: "human_request", origin: "user", source_scope: "local_foreground", transport: "test" }, () => {}).submit(actor, "create", task, { chat_id: "fixture" });
   let nativeCalls = 0;
   const config = { executable: "/fixture/opencode", state_home: dir, native_configuration: {}, environment: { HOME: dir, XDG_DATA_HOME: data } };
   const worker = new OpenCodeWorker(kernel, cache, store, config, {
@@ -103,6 +106,25 @@ test("schedule-origin actor cannot use the local read worker even with identical
   const f = setup();
   await expect(f.worker.execute({ ...actor, origin: "schedule" }, f.lease(), f.binding, f.admission)).rejects.toThrow("source_execution_floor_unavailable");
   expect(f.commands).toHaveLength(0);
+});
+
+test("invalid persisted provenance and approval-only grants are rejected before any native command", async () => {
+  const context = issueExecutionContext({ origin: "user", source_scope: "local_foreground", transport: "test" });
+  const cases = [
+    { execution_context: { origin: "user", source_scope: "local_foreground" } },
+    { execution_context: { ...context, source_scope: "unknown" } },
+    { execution_context: { ...context, origin: "cron", source_scope: "cron" } },
+    { execution_context: { ...context, origin: "interagent", source_scope: "local_foreground" } },
+    { tool_grant: { ...grant, confirmation_policy: "controller_required" } },
+    { tool_grant: { ...grant, tool_deny: ["Read\nBash"] } },
+  ];
+  for (const overrides of cases) {
+    const f = setup("success", overrides);
+    await expect(f.worker.execute(actor, f.lease(), f.binding, f.admission)).rejects.toThrow();
+    expect(f.commands).toHaveLength(0);
+    expect(f.db.sql.query("SELECT COUNT(*) AS n FROM effects").get()).toEqual({ n: 0 });
+    expect(f.kernel.inspect(actor, "task").needs_reconciliation).toBe(false);
+  }
 });
 
 test("lost terminal commit reconciles from persisted before/after evidence after coordinator reopen, with no native rerun", async () => {

@@ -2,6 +2,7 @@ import { realpathSync } from "node:fs";
 import { join, relative } from "node:path";
 import type { Principal, ReconciliationBinding, RuntimeKernel, TaskSnapshot } from "../kernel";
 import { digest, object, requireThat } from "../value";
+import { enforceLocalReadSource } from "../execution-policy";
 import type { IssuedReadAdmission, OpenCodeWorkerConfig } from "./opencode-worker";
 import { assertWorkspaceManifest, decodeNativeManifest, nativeTaskDigest } from "./native-manifest";
 import { NativeSessionLease } from "./native-lease";
@@ -36,7 +37,7 @@ export class NativeReconciler {
         requireThat(nativeTaskDigest(task) === manifest.task_digest, "reconciliation_task_changed");
         requireThat(digest(manifest.binding) === digest(binding) && digest(this.config.native_configuration) === binding.config_digest, "reconciliation_provider_changed");
         requireThat(actor.device_id === this.store.deviceId && binding.device_id === this.store.deviceId && this.store.identity() === manifest.native_store_id, "reconciliation_store_changed");
-        requireThat(object(task.execution_context) && task.execution_context.origin === "user" && task.execution_context.source_scope === "local_foreground", "task_source_context_mismatch");
+        enforceLocalReadSource(task.execution_context);
         requireThat(typeof task.repo_root === "string" && typeof task.prompt === "string" && realpathSync(task.repo_root) === manifest.directory.path, "native_workspace_mismatch");
         const files = readFileGrant(manifest.directory.path, admission.read_files), required = readFileGrant(manifest.directory.path, admission.required_reads);
         requireThat(digest(files) === digest(manifest.files.map(file => file.path)) && digest(required) === digest(manifest.required_reads), "reconciliation_grant_changed");
