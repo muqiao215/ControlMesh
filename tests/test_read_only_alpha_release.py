@@ -1,4 +1,4 @@
-"""Release-contract tests for the ControlMesh 0.42.2 release."""
+"""Release-contract tests for the current ControlMesh release."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PYTHON_VERSION = "0.42.2"
+PYTHON_VERSION = "0.43.0"
 WORKSPACE_VERSION = "0.42.0-alpha.1"
 
 
