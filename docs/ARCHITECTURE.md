@@ -354,16 +354,40 @@ tasks. The TS source-policy, provider-mapping and reply-identity ports are check
 live Python owners. Provider mapping is not admission: source sandbox requirements and
 controller confirmation must be enforced independently. The current OpenCode worker and
 native reconciler validate the full persisted context and grant before using native state.
-General sandbox/provider launchers and transport delivery are still Python-owned.
+Released sandbox/provider launchers and transport delivery are still Python-owned.
 
 `OneShotProviderProcess` is a private TS host-process owner for these five command shapes.
 It independently builds commands and observes native JSON against the live Python oracle,
 then uses the existing process supervisor with source/grant checks, workspace identity and
 synchronous current-authority/readiness callbacks. Its caller must own provider readiness;
-the class neither probes a model nor schedules work. It does not accept a container name as
-sandbox evidence. Production scheduler/TaskHub admission, native session adoption, container
-process ownership, SDK engines and result delivery remain separate migration work. Fixture
+the class neither probes a model nor schedules work. Its optional `ContainerProcessSupervisor`
+owns an actual per-execution container and verifies isolation before native launch; it does
+not accept a container name as sandbox evidence. Production scheduler/TaskHub admission,
+native session adoption, SDK engines and result delivery remain separate migration work. Fixture
 process acceptance is not real model qualification for every listed provider.
+
+The private container owner creates from an already available image digest on a local Linux
+Docker engine with seccomp. A nonroot execution has a read-only root filesystem, no added
+capabilities, no-new-privileges, private PID/IPC/cgroup namespaces and memory/CPU/PID limits.
+Only the configured workspace and private control directory are mounted. Writable roots use
+specific nested bind mounts; the control directory and other project paths remain read-only.
+Recursive submount copying is disabled. `no_network` selects an isolated network namespace
+for the entire process, including its model client; it is not an HTTP allowlist.
+
+A compiled TS helper runs as container PID 1 and checks a read-only lease file against the
+Linux boot ID and suspend-aware uptime. Expiry or parent process completion ends that PID
+namespace, including detached descendants. The host controller renews only while current
+authority, grant, workspace and deadline checks hold. Per-execution records are versioned,
+persisted before create and never reused for another invocation. Labels, nonce, image,
+immutable container ID, socket and engine ID bind cleanup. An ambiguous create is reconciled
+by observed identity; an absence check alone cannot close a create that may still be pending.
+Cleanup cannot start an old execution. Unknown cleanup stays explicit, and expired recovery
+is independently callable after the controller dies. Private launch material is removed only
+after container removal is confirmed; records retain the execution's no-replay marker.
+
+This Node-image execution profile is a tested TS isolation/lifecycle path, not yet the
+complete provider image/auth/native-state migration. It does not mount the legacy shared CM
+home or automatically adopt sessions whose native directory differs from `/workspace`.
 
 The private `DeviceCoordinator` now exposes a separate loopback worker protocol with
 credentials mapped to trusted device registrations. Tasks have persisted, digest-bound

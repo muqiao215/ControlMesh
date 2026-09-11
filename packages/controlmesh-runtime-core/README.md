@@ -50,8 +50,17 @@ Track completion in [the repository plan](../../plans/runtime-convergence/task_p
   with the live Python one-shot owner; real fixture processes cover stdin, quota abort,
   incomplete/error output and cancellation. A trusted caller must synchronously recheck
   its current provider readiness and task authority. It has no scheduler/TaskHub startup
-  route or native adoption semantics, and does not claim an actual container sandbox or
-  five-provider model qualification. Unsupported SDK engines cannot fall back to Claude.
+  route or native adoption semantics. It can use the independently verified container owner
+  for network/write-root restrictions; this is not five-provider model qualification.
+  Unsupported SDK engines cannot fall back to Claude.
+- `ContainerProcessSupervisor` owns one labelled, digest-pinned Docker container per execution.
+  It verifies actual mounts, user, namespaces, capabilities, network and resource limits before
+  starting a compiled TS PID 1 helper. The helper expires work independently of the host using
+  a read-only, boot-bound lease. Cancellation and controller death do not leave detached native
+  descendants running or interrupt peer containers. Durable intent/identity records prevent
+  replay; explicit `cleanupExpired` removes the original container without running it again.
+  Unconfirmed creation or unavailable cleanup remains uncertain. This local Linux/Node image
+  profile still requires real provider image, auth, native-directory and startup qualification.
 - `HistoryClient` uses Viewer's explicit headless native-reference command. CM independently
   rereads its own configured native store, checks a content-bound v2 reference, and never
   treats candidate text as authorization. The read-only digest includes older messages.

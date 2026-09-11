@@ -24,3 +24,5 @@ export { DeviceReconciliation, type ReconciliationReceipt } from "./device-recon
 export { buildOneShotCommand, oneShotProviders, type OneShotCommand, type OneShotConfiguration } from "./providers/oneshot-command";
 export { observeOneShot, type OneShotObservation } from "./providers/oneshot-observation";
 export { OneShotProviderProcess, type OneShotLaunch, type OneShotAdmission, type OneShotRun } from "./providers/oneshot-process";
+export { ContainerProcessSupervisor, type ContainerProcessSpec, type ContainerOutcome } from "./containers/process";
+export { type ContainerConfiguration } from "./containers/plan";

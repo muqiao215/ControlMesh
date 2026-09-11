@@ -7,8 +7,9 @@ Python v0.43.0 remains the released/installed production runtime. The private TS
 supports a qualified OpenCode read profile, native continuation, device coordination and
 explicit recovery of a result lost between the device and coordinator. Other provider,
 write/sandbox, transport, store and product owners remain required for full migration.
-The next implemented unit is explicit one-shot routing/result handling in Python and a TS
-host-process port. It has local regression evidence; exact-commit CI is checked after push.
+One-shot routing/result handling and host execution shipped at `0b01ea2` with exact-commit
+green CI 34597493500. The next implemented unit is actual per-execution container lifecycle
+and its one-shot integration; native provider image/auth/state qualification remains open.
 
 ## Done
 
@@ -45,16 +46,30 @@ host-process port. It has local regression evidence; exact-commit CI is checked 
   quota record aborts retries with reset metadata preserved. Original exit/cancel causes hold.
   The TS host port uses actual process supervision and current source/grant/readiness/workspace
   checks; scheduler/native-adoption/container/delivery ownership is not implied.
+- Container execution: a pinned image, nonroot process, read-only root, specific writable
+  project mounts, explicit network, namespace/capability/resource restrictions and inspected
+  identity precede launch. An inner PID 1 watcher expires a boot-bound lease independently of
+  the host. Actual tests cover write/network boundaries, quota abort, detached descendants,
+  concurrent cancellation, controller SIGKILL/SIGSTOP, lost create acknowledgement and cleanup.
+  Versioned, durable intent/identity records prevent replay. Unconfirmed creation with no
+  observed immutable ID remains unknown; absence cannot close a still-pending daemon request.
+  Cleanup resolves only the original owned container and never starts it. The one-shot caller
+  retains source/confirmation/native tool checks while outer isolation enforces network/roots.
 
-Latest one-shot local verification: strict TS passed; actual CI-version Bun 1.3.11 ran
-**123 core tests / 1,948 assertions**, all passed, including **410 live Python/TS command and
-observation comparisons**. Actual fixture processes cover stdin, immediate quota abort,
-native errors, incomplete output, exit cause and cancellation; workspace replacement blocks.
-Ruff, CI Mypy smoke, targeted execution Mypy, ownership regeneration/check and whitespace
-checks passed. Python full-suite run found three failures with 5,730 passing; all three were
-corrected and the final affected execution/cron/webhook/provenance suite passed **120 tests**.
-Final full-suite checks for the pushed commit remain a CI gate. No new account/model calls,
-production scheduler runs, service installation or runtime default switch were performed.
+Container local verification: strict TS and CI-version Bun 1.3.11 passed **132 core tests /
+1,987 assertions**, including real Docker execution and the existing **410 live Python/TS
+one-shot comparisons**. The container file has two planning/lease unit cases and seven cases
+using the actual daemon; the native CLI in its quota case is a controlled fixture. Docker
+29.1.3 on x64 Linux used the pinned Node 22 image recorded in findings. All actual containers
+created by acceptance are removed. Unknown-create fixtures intentionally retain uncertainty
+in their isolated test records and issue no provider call. Reboot protection is a boot-ID
+fault/unit check, not a physical machine reboot acceptance. A new required CI container job
+will run the actual daemon tests independently of optional local image availability.
+
+Ruff, ownership check and whitespace checks passed. No Python source changed in the container
+batch. Previous one-shot Mypy and full Python 3.11/3.12 suites passed at `0b01ea2` in CI.
+No new real account/model calls, production scheduler runs, installation or default switch
+were performed. Final exact-commit CI is verified after publication.
 
 Prior device-recovery verification included Python protocol **9 passed**, generated-model
 Ruff and Web build. Canonical schemas and TS/Python/Web generated assets remain synchronized.
@@ -87,11 +102,11 @@ Earlier implementation history is in Git; it is not duplicated here.
 ## Remaining
 
 All original CM-R0–CM-R7 gates remain authoritative: remaining provider/transport/workspace/
-artifact owners, native write and actual sandbox execution, other persisted runtime stores,
+artifact owners, native provider write and container image/auth/state qualification, other persisted runtime stores,
 writer exclusion and rollback, existing History session adoption, native mailbox application,
 independent SpecMesh current-checkout/lifecycle gates, fleet enrollment/rotation/fairness and
 real topology execution, terminal product work, default TS switch, Python retirement and
-release/install/running alignment. A read-only native profile and 117 passing tests do not
+release/install/running alignment. A qualified native read profile and isolated process tests do not
 establish complete production migration.
 
 ## Issues
@@ -104,7 +119,8 @@ and task evidence do not automatically promote history into authoritative projec
 
 ## Next
 
-After checking the one-shot publication CI, port actual container process lifecycle and
-sandbox/native grant enforcement. Continue remaining provider/transport/store owners, History
-adoption, SpecMesh lifecycle integration and the production writer switch under the full plan's
-gates. Generic host one-shot parity is not a substitute for those owners or actual model smoke.
+Verify container publication CI, then qualify actual provider images with scoped credentials
+and persistent native state, preserving native directory identity for real continuation.
+Connect the implemented execution owners to task/transport ingress and native mailbox work,
+then continue stores, History adoption, SpecMesh lifecycle and the production writer switch.
+The current Node-image process profile is not a substitute for native provider qualification.

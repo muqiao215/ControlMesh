@@ -1,5 +1,32 @@
 # Findings
 
+Container ownership baseline: `infra/docker.py:DockerManager` shares one persistent sidecar
+between Agents, mounts the whole CM home plus selected native auth stores, and reports setup
+failure as `None`. Source policy separately blocks required-sandbox work on that failure;
+the log's host fallback wording alone does not prove cron bypass. `cli/base.py:docker_wrap`
+only wraps an exec client, with no per-execution immutable container/process identity.
+
+The TS path now uses a separate nonroot container per execution and an inner PID 1 lease
+watcher. Image, actual isolation settings, specific project mounts, boot ID, engine ID and
+original container identity are checked. This is a deliberate owner change, not a claim of
+full shared-home/auth compatibility. No native credentials or production workspaces were
+mounted for this batch. `no_network` blocks model-client networking too; provider profiles
+must not silently waive that grant. Existing native histories need a compatible directory
+mapping and scoped persistent state before container adoption can be accepted.
+
+The new helper is compiled from TS for the image's Node runtime. The current local fixture
+image is pinned at `node@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5`.
+Docker 29.1.3 was available with seccomp/AppArmor/cgroup namespace support and no cached
+images before setup. Pulling this fixture image did not start any production service.
+Actual tests cover nested writable mounts, network isolation, exact stdin, quota abort,
+concurrent cancellation, detached descendants, host SIGKILL/SIGSTOP and explicit cleanup.
+
+A monotonic expiry alone is insufficient across reboot: the init watcher and cleanup now
+bind to Linux boot ID. A second gap is delayed container creation after an observation
+timeout. Absence is not conclusive while create is uncertain; original identity is durably
+recorded before removal, and an execution directory cannot be reused after cleanup. Tests
+distinguish lost acknowledgement of a created container from a still-unconfirmed absence.
+
 One-shot owner baseline: `cron/execution.py:build_cmd` and `parse_result` both defaulted to Claude
 for any unregistered provider. Their tables included only Claude/Gemini/Codex, despite
 param_resolver accepting OpenCode/Claw/OpenAI Agents. A pure Python reproduction requested

@@ -428,3 +428,24 @@ origin separately from original human task provenance. Preparation that has not 
 an effect may release its lease; an unknown external result must remain unknown until an
 explicit evidence-based recovery decision. Remote attestation/reconciliation remains a
 separate required owner, not an implied feature of the local journal.
+
+## 2026-09-11 — Give each TS execution its own container and expiring inner lease
+
+Use one container per execution rather than porting the Python shared-sidecar `docker exec`
+wrapper unchanged. Stopping an exec client does not establish that its inner descendants
+stopped, and stopping the shared sidecar would interrupt peer tasks. A per-execution PID
+namespace provides an attributable cleanup boundary; an inner PID 1 lease watcher also stops
+work when the host controller or Docker client disappears. Bind monotonic deadlines to a boot
+ID so a reboot cannot make an old lease current again.
+
+Provision from an explicit, available image digest with narrow workspace mounts and verified
+engine configuration. Preserve the original grant; discharge network and host writable-root
+restrictions through the outer container while retaining native tool/confirmation checks.
+An isolated network blocks the model client too; required provider connectivity needs an
+explicit compatible profile, not a silent grant change. Native auth/state mounts, directory
+identity, compatibility layout and actual provider image qualification remain migration gates.
+Keep the released Python owner until those gates and writer cutover are verified.
+
+Record creation intent before the daemon call. A lost create response may arrive after a
+negative inspect, so retain uncertainty until the originally labelled immutable ID has been
+observed and removed. Never retry that execution or manufacture completion from absence.

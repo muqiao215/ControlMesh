@@ -12,7 +12,7 @@ export interface ProcessSpec {
   max_output_bytes?: number;
 }
 export interface ProcessOutcome {
-  reason: "exited" | "deadline" | "cancelled" | "authority_lost" | "output_limit" | "provider_abort" | "spawn_failed" | "anchor_failed";
+  reason: "exited" | "deadline" | "cancelled" | "authority_lost" | "output_limit" | "provider_abort" | "spawn_failed" | "anchor_failed" | "cleanup_failed";
   exit_code: number | null;
   stdout: string;
   stderr: string;
