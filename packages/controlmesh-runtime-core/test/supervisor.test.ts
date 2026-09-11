@@ -43,6 +43,15 @@ test("real command result is collected and the anchor group is reaped", async ()
   expect(output.stdout.trim()).toBe("synthetic provider result");
 });
 
+test("bounded stdin preserves quotes, newlines and shell metacharacters as data", async () => {
+  const text = '中文 "quotes"\n$(literal) `literal` \\ end';
+  const { input } = spec("unused", { command: [process.execPath, "-e", "process.stdout.write(await Bun.stdin.text())"], stdin_text: text });
+  const output = await new ProcessSupervisor().run(input, { assertCurrent() {} });
+  expect(output.reason).toBe("exited");
+  expect(output.stdout).toBe(text);
+  await expect(new ProcessSupervisor().run({ ...input, stdin_text: "x".repeat(65_537) }, { assertCurrent() {} })).rejects.toThrow("invalid_process_input");
+});
+
 test("cancel terminates the owned family even when both processes ignore SIGTERM", async () => {
   const { input, path } = spec("family");
   const controller = new AbortController();

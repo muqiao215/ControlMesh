@@ -9,7 +9,8 @@ Track completion in [the repository plan](../../plans/runtime-convergence/task_p
 ## Current behavior
 
 - `RuntimeKernel` creates waiting tasks, claims execution episodes, starts/renews/finishes
-  them, cancels tasks, and records uncertain outcomes after running leases expire.
+  them, explicitly resumes completed work, cancels tasks, and records uncertain outcomes
+  after a running lease expires or the native observation cannot be accepted.
 - Every command receipt binds principal, origin, device and canonical request content.
   Task revisions and fencing tokens are checked in the transaction; revoked scopes are
   rechecked before returning cached private results.
@@ -30,6 +31,18 @@ Track completion in [the repository plan](../../plans/runtime-convergence/task_p
   and native-error aborts are exercised with real processes, including descendants that
   ignore SIGTERM. A provider process group is lifecycle containment, not a sandbox against
   programs deliberately creating a new session or other external side effects.
+- `ProviderPreflightService` invokes a bounded, tool-denied native OpenCode probe and
+  persists device/model/config/credential-bound readiness. Quota/auth/unknown outcomes
+  pause; transient retries are bounded. Actual execution failures revoke matching cached
+  readiness. A cached observation is never a tool grant.
+- `HistoryClient` uses Viewer's explicit headless native-reference command. CM independently
+  rereads its own configured native store, checks a content-bound v2 reference, and never
+  treats candidate text as authorization. The read-only digest includes older messages.
+- `OpenCodeWorker` connects the kernel to real OpenCode execution for an explicitly issued
+  local foreground read profile. It checks current persisted grants and native resolved
+  agent/session permissions, passes the prompt through bounded stdin, verifies native
+  append lineage and required current-file reads, and atomically confirms the result.
+  A real same-session marker-recall/current-file canary passed; see the active plan.
 
 `Principal` is an internal admission object constructed by trusted ingress. Never accept
 its identity, scopes, origin or device from an unauthenticated JSON request. The kernel is
@@ -62,9 +75,9 @@ transactional state, cancellation, fencing, clock rollback, concurrent OS-proces
 SIGKILL before commit, lost external receipts, permission revocation and bounded mailboxes.
 All fixtures are synthetic; these tests do not touch provider accounts or operator state.
 
-Remaining before activation: operator/native reconciliation, tell/ask/resume integration,
+Remaining before activation: operator/native reconciliation, tell/ask and general resume integration,
 provider adapter/permission parity and non-Linux supervision, transport delivery, all other Python
-stores, authenticated coordinator/worker transport, two actual devices, native session
-continuation, SpecMesh lifecycle admission, full rollback and production-writer exclusion.
+stores, authenticated coordinator/worker transport, two actual devices, the full native
+continuation matrix, SpecMesh lifecycle admission, full rollback and production-writer exclusion.
 Mailbox application references are reports until the native adapter independently verifies
 them. A coordinator fence cannot prevent an uncooperative external program's side effect.

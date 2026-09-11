@@ -108,3 +108,18 @@ test("an idempotent cached receipt cannot extend readiness after expiry", () => 
   expect(cache.begin(actor, "cached", binding).reason).toBe("cached_probe_expired");
   expect(() => cache.assertReady(actor, binding)).toThrow("provider_preflight_not_current");
 });
+
+test("native execution quota revokes matching readiness; old results do not overwrite a new probe", () => {
+  const { cache } = fixture();
+  const permit = cache.begin(actor, "first", binding).permit!;
+  cache.complete(actor, binding, permit, report("ready"));
+  expect(cache.recordExecutionFailure(actor, binding, permit.generation, report("quota_exhausted").observation.failure!)).toBe(true);
+  expect(() => cache.assertReady(actor, binding)).toThrow("provider_preflight_not_current");
+  expect(cache.begin(actor, "scheduled", binding).reason).toBe("quota_exhausted");
+  cache.retry(actor, "manual", binding, permit.generation);
+  const next = cache.begin(actor, "next", binding).permit!;
+  expect(cache.recordExecutionFailure(actor, binding, permit.generation, report("quota_exhausted").observation.failure!)).toBe(false);
+  cache.complete(actor, binding, next, report("ready"));
+  expect(cache.recordExecutionFailure(actor, binding, permit.generation, report("quota_exhausted").observation.failure!)).toBe(false);
+  expect(cache.assertReady(actor, binding).observation.status).toBe("ready");
+});

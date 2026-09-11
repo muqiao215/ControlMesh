@@ -7,3 +7,6 @@ export { ProcessSupervisor, type ProcessSpec, type ProcessOutcome, type ProcessA
 export { OpenCodePreflight, type OpenCodeProbeInput, type OpenCodeProbeReport } from "./providers/opencode-preflight";
 export { PreflightCache, type ProbeBinding, type ProbeDecision } from "./providers/preflight-cache";
 export { ProviderPreflightService } from "./providers/preflight-service";
+export { NativeSessionStore, type NativeSessionRef } from "./providers/native-session";
+export { HistoryClient, type HistoryConfig } from "./providers/history-client";
+export { OpenCodeWorker, type OpenCodeWorkerConfig, type IssuedReadAdmission } from "./providers/opencode-worker";

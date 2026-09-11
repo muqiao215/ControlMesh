@@ -6,6 +6,7 @@ export interface ProcessSpec {
   command: string[];
   cwd: string;
   env: Record<string, string>;
+  stdin_text?: string;
   timeout_ms: number;
   max_output_bytes?: number;
 }
@@ -28,6 +29,7 @@ export class ProcessSupervisor {
     requireThat(process.platform === "linux", "process_supervision_platform_unverified");
     requireThat(spec.command.length > 0 && isAbsolute(spec.command[0]) && isAbsolute(spec.cwd), "absolute_process_paths_required");
     requireThat(Number.isSafeInteger(spec.timeout_ms) && spec.timeout_ms > 0 && spec.timeout_ms <= 86_400_000, "invalid_process_deadline");
+    requireThat(spec.stdin_text === undefined || (typeof spec.stdin_text === "string" && Buffer.byteLength(spec.stdin_text) <= 65_536), "invalid_process_input");
     const cap = spec.max_output_bytes ?? 4 * 1024 * 1024;
     requireThat(Number.isSafeInteger(cap) && cap > 0 && cap <= 16 * 1024 * 1024, "invalid_output_limit");
     const authorize = () => {

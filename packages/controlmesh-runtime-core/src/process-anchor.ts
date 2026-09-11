@@ -25,14 +25,17 @@ process.on("message", (input: unknown) => {
   const cwd = message.cwd as string;
   const env = message.env as Record<string, string>;
   const timeout = message.timeout_ms as number;
-  if (!Array.isArray(command) || !command.length || !command.every(x => typeof x === "string" && !x.includes("\0")) || !isAbsolute(command[0]) || !isAbsolute(cwd) || !Number.isSafeInteger(timeout) || timeout < 1 || timeout > 86_400_000) {
+  const stdin = message.stdin_text;
+  if (!Array.isArray(command) || !command.length || !command.every(x => typeof x === "string" && !x.includes("\0")) || !isAbsolute(command[0]) || !isAbsolute(cwd) || !Number.isSafeInteger(timeout) || timeout < 1 || timeout > 86_400_000 || (stdin !== undefined && (typeof stdin !== "string" || Buffer.byteLength(stdin) > 65_536))) {
     process.send!({ type: "spawn_failed" });
     return;
   }
   authorizedUntil = performance.now() + 1_000;
   deadline = performance.now() + timeout;
   try {
-    const child = Bun.spawn(command, { cwd, env, stdin: "ignore", stdout: "inherit", stderr: "inherit" });
+    const child = Bun.spawn(command, { cwd, env, stdin: "pipe", stdout: "inherit", stderr: "inherit" });
+    if (typeof stdin === "string") child.stdin.write(stdin);
+    child.stdin.end();
     process.send!({ type: "started", pid: child.pid });
     child.exited.then(code => { process.send?.({ type: "exited", code }); });
   } catch {

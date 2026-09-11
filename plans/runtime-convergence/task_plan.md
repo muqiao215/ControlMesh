@@ -34,10 +34,10 @@ Move runtime authority to TypeScript without losing task correctness, provider e
 | CM-R0 | Inventory real owners and versioned payloads; extend existing lifecycle/provider/gate goldens | Reproducible baseline plus ledger of every persisted field and side effect | in_progress |
 | CM-R1 | TS execution kernel behind existing facade; transitions, events, cancellation, deadlines, process supervision | Python/TS differential traces for success, failure, timeout, cancel, crash/restart; zero duplicate side effects in shadow mode | in_progress: transactional kernel implemented; process/provider parity pending |
 | CM-R2 | Transactional state migration and startup recovery | Dry-run migration counts/digests, interrupted migration replay, rollback compatibility, corrupt-input refusal | in_progress: TaskHub snapshot import/export and rollback tests; other stores/cutover pending |
-| CM-R3 | Provider/transport/workspace/grant ports | Actual adapter smoke for each supported provider; grants enforced natively; process tree cleanup and result-delivery reconciliation | planned |
+| CM-R3 | Provider/transport/workspace/grant ports | Actual adapter smoke for each supported provider; grants enforced natively; process tree cleanup and result-delivery reconciliation | in_progress: real OpenCode local read profile; remaining adapters, grants and transport ports pending |
 | CM-R4 | Device coordinator and worker execution authority | Two-device lease expiry, fencing, clock skew, network partition and worker restart tests; stale worker cannot write or redeliver | planned |
 | CM-R5 | Agent mailbox and task dependency exchange | Duplicate/out-of-order/replayed messages, bounded broadcast, cancellation propagation and backpressure evidence | in_progress: durable core mailbox tested; native/transport integration pending |
-| CM-R6 | History headless candidate + native adoption + SpecMesh lifecycle hooks | Real continuation canary binds provider session, current repo and approved task scope; see HV-H3 / SM-P2 | planned |
+| CM-R6 | History headless candidate + native adoption + SpecMesh lifecycle hooks | Real continuation canary binds provider session, current repo and approved task scope; see HV-H3 / SM-P2 | in_progress: actual TS same-session recall/current-file canary passed; SpecMesh hooks and full matrix remain |
 | CM-R7 | Staged default switch and Python retirement | Canary -> selected device -> default rollout; telemetry and rollback thresholds met; old writer disabled before new writer activation | planned |
 
 ## Acceptance matrix
@@ -65,8 +65,8 @@ Before migrating live data, snapshot format/version/digests and rehearse rollbac
 
 ## Non-goals for the current release
 
-No claim that TS ports, distributed coordination or the new cross-project continuation canary have completed. No production browser-account execution from writing this plan. Prior verified native OpenCode adoption remains completed historical evidence, with its documented cross-client locking limit.
+No claim that full TS migration or distributed coordination has completed. A scoped real TS OpenCode continuation canary has passed; it does not close all provider/device/SpecMesh gates. No production browser-account execution from writing this plan. Prior verified Python native OpenCode adoption remains completed historical evidence, with its documented cross-client locking limit.
 
 ## Next Step
 
-Continue from the real kernel in `packages/controlmesh-runtime-core/`: port process supervision, current grant/source admission and provider preflight, then wire native execution and explicit reconciliation. Complete the remaining ownership/side-effect audit against `python-ownership.json` (512 Python modules, 57 serialized TaskEntry fields); the inventory itself does not establish parity. Do not activate over live data before writer-exclusion and recovery gates.
+Continue from the concrete `OpenCodeWorker` kernel/process/store path: add explicit unknown-result reconciliation, remaining provider/grant/source profiles and the authenticated device coordinator. Integrate independent SpecMesh gates with current checkout snapshots. Complete the remaining ownership/side-effect audit against `python-ownership.json` (512 Python modules, 57 serialized TaskEntry fields); the inventory itself does not establish parity. Do not activate over live data before writer-exclusion and recovery gates.

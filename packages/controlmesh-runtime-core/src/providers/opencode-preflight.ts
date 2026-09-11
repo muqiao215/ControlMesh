@@ -1,10 +1,11 @@
-import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { ProcessSupervisor, type ProcessSpec, type ProcessAdmission, type ProcessOutcome } from "../process-supervisor";
-import { canonical, digest, object, requireThat } from "../value";
+import { canonical, digest, requireThat } from "../value";
 import { failureFromNativeStderr, judgeOpenCodePreflight, type PreflightObservation } from "./opencode-events";
+import { inspectReadPermissions, readOnlyEnvironment } from "./opencode-profile";
 
 export interface OpenCodeProbeInput {
   executable: string;
@@ -28,19 +29,7 @@ interface Runner { run(spec: ProcessSpec, admission: ProcessAdmission): Promise<
 
 /** Only the native tool-output directory exception may follow the last deny-all rule. */
 export function inspectProbePermissions(value: unknown, expectedAgent: string, dataHome: string): { digest: string; tool_count: number } | null {
-  if (!object(value) || value.name !== expectedAgent || value.mode !== "primary" || !Array.isArray(value.permission) || !object(value.tools)) return null;
-  const toolNames = Object.keys(value.tools);
-  if (!toolNames.length || toolNames.includes("external_directory")) return null;
-  const rules = value.permission;
-  if (!rules.every(rule => object(rule) && typeof rule.permission === "string" && typeof rule.pattern === "string" && ["allow", "ask", "deny"].includes(String(rule.action)))) return null;
-  let lastDeny = -1;
-  rules.forEach((rule, index) => { if (rule.permission === "*" && rule.pattern === "*" && rule.action === "deny") lastDeny = index; });
-  if (lastDeny < 0) return null;
-  for (const rule of rules.slice(lastDeny + 1)) {
-    if (rule.action === "deny") continue;
-    if (rule.permission !== "external_directory" || rule.action !== "allow" || rule.pattern !== join(dataHome, "opencode/tool-output/*")) return null;
-  }
-  return { digest: digest({ permissions: rules, tool_names: toolNames.sort() }), tool_count: toolNames.length };
+  return inspectReadPermissions(value, expectedAgent, dataHome, []);
 }
 
 /** Bounded, tool-denied native probe; model/config selection remains the caller's explicit decision. */
@@ -67,19 +56,7 @@ export class OpenCodePreflight {
       permission_digest: attestation?.digest ?? null, tool_count: attestation?.tool_count ?? 0, model_invoked: invoked, duration_ms: Math.round(performance.now() - started) });
     const unavailable = (reason: string) => report({ status: "unavailable", reason, session_id: null, failure: null });
     try {
-      const env = { ...input.environment };
-      delete env.OPENCODE_CONFIG;
-      env.XDG_CONFIG_HOME = join(directory, "config");
-      env.OPENCODE_CONFIG_DIR = join(directory, "config/opencode");
-      mkdirSync(env.OPENCODE_CONFIG_DIR, { recursive: true });
-      const providers = object(configuration.provider) ? configuration.provider : {};
-      env.OPENCODE_CONFIG_CONTENT = JSON.stringify({
-        permission: { "*": "deny" }, share: "disabled", autoupdate: false, formatter: false, lsp: false,
-        ...(object(providers[provider]) ? { provider: { [provider]: providers[provider] } } : {}),
-        agent: { [agent]: { description: "ControlMesh model preflight", mode: "primary", permission: { "*": "deny" }, prompt: "Reply with exactly PONG." } },
-      });
-      env.OPENCODE_PERMISSION = JSON.stringify({ "*": "deny" });
-      for (const key of ["OPENCODE_DISABLE_CLAUDE_CODE", "OPENCODE_DISABLE_AUTOUPDATE", "OPENCODE_DISABLE_LSP_DOWNLOAD", "OPENCODE_DISABLE_MODELS_FETCH"]) env[key] = "true";
+      const env = readOnlyEnvironment(configuration, input.model, input.environment, directory, agent, [], "Reply with exactly PONG.");
       const run = (args: string[], abort = false) => {
         const remaining = Math.floor(timeout - (performance.now() - started));
         requireThat(remaining > 0, "probe_deadline_expired");

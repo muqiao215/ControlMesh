@@ -209,6 +209,50 @@ export class RuntimeKernel {
     });
   }
 
+  resume(actor: Principal, requestId: string, taskId: string, expectedRevision: number, prompt: string): TaskSnapshot {
+    this.scope(actor, "task:resume");
+    this.owned(actor, this.row(taskId));
+    requireThat(typeof prompt === "string" && prompt.length > 0 && Buffer.byteLength(prompt) <= 32_768, "invalid_resume_prompt");
+    return this.request(actor, requestId, "resume", { taskId, expectedRevision, prompt }, () => {
+      const task = this.row(taskId);
+      this.owned(actor, task);
+      this.revision(task, expectedRevision);
+      requireThat((task.status === "done" || task.status === "failed") && !task.needs_reconciliation, "task_not_resumable");
+      requireThat(!this.db.sql.query("SELECT 1 FROM effects WHERE task_id=? AND state!='confirmed'").get(taskId), "unresolved_effects");
+      const episode = this.db.sql.query("SELECT episode_id,result FROM episodes WHERE task_id=? ORDER BY fence DESC LIMIT 1").get(taskId) as { episode_id: string; result: string | null } | null;
+      const raw = JSON.parse(task.raw) as LegacyTask;
+      const result = episode?.result ? JSON.parse(episode.result) : {};
+      // Native evidence is issued by the trusted worker; its current revision is revalidated at the next dispatch.
+      if (result.native_session) raw.native_session = result.native_session;
+      raw.prompt = prompt;
+      raw.completed_at = null;
+      task.raw = canonical(raw);
+      task.status = "waiting";
+      task.active_episode = null;
+      this.save(task);
+      this.event(actor, task, "task.resumed", { previous_episode: episode?.episode_id ?? null, prompt_digest: digest(prompt) });
+      return this.snapshot(task);
+    });
+  }
+
+  markUnknown(actor: Principal, requestId: string, proof: Lease, reason: string): TaskSnapshot {
+    this.scope(actor, "task:execute");
+    this.owned(actor, this.row(proof.task_id));
+    requireThat(/^[a-z0-9_]{1,96}$/.test(reason), "invalid_unknown_reason");
+    return this.request(actor, requestId, "outcome_unknown", { proof, reason }, () => {
+      const { task, episode } = this.lease(actor, proof);
+      requireThat(episode.state === "running", "episode_not_started");
+      this.db.sql.query("UPDATE episodes SET state='unknown',lease_until=0 WHERE episode_id=?").run(proof.episode_id);
+      this.db.sql.query("UPDATE effects SET state='unknown' WHERE episode_id=? AND state='dispatched'").run(proof.episode_id);
+      task.status = "stale";
+      task.needs_reconciliation = 1;
+      task.fence += 1;
+      this.save(task);
+      this.event(actor, task, "episode.outcome_unknown", { episode_id: proof.episode_id, reason });
+      return this.snapshot(task);
+    });
+  }
+
   recoverExpired(actor: Principal): string[] {
     this.scope(actor, "task:reconcile");
     requireThat(actor.scopes.includes("task:admin"), "scope_denied");
@@ -253,6 +297,20 @@ export class RuntimeKernel {
         .run(canonical(result), effectId, proof.episode_id, proof.fence);
       requireThat(changed.changes === 1, "effect_not_pending");
       this.event(actor, task, "effect.confirmed", { effect_id: effectId, result });
+      return { effect_id: effectId };
+    });
+  }
+
+  recordEffectObservation(actor: Principal, requestId: string, proof: Lease, effectId: string, observation: unknown): { effect_id: string } {
+    this.scope(actor, "task:execute");
+    this.owned(actor, this.row(proof.task_id));
+    requireThat(Buffer.byteLength(canonical(observation)) <= 4 * 1024 * 1024, "effect_observation_too_large");
+    return this.request(actor, requestId, "observe_effect", { proof, effectId, observation }, () => {
+      const { task } = this.lease(actor, proof);
+      const changed = this.db.sql.query("UPDATE effects SET result=? WHERE effect_id=? AND episode_id=? AND fence=? AND state='dispatched' AND result IS NULL")
+        .run(canonical(observation), effectId, proof.episode_id, proof.fence);
+      requireThat(changed.changes === 1, "effect_observation_not_pending");
+      this.event(actor, task, "effect.observed", { effect_id: effectId, observation_digest: digest(observation), accepted: false });
       return { effect_id: effectId };
     });
   }

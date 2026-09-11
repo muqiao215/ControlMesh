@@ -1,0 +1,52 @@
+{
+  "format": "agent.native_session.content_fixture.v2",
+  "store_id": "synthetic-store",
+  "session_id": "ses_Fixture",
+  "schema": "CREATE TABLE session (id TEXT PRIMARY KEY,directory TEXT,project_id TEXT,title TEXT,time_archived INTEGER,cost REAL,permission TEXT); CREATE TABLE message (id TEXT PRIMARY KEY,session_id TEXT,time_created INTEGER,time_updated INTEGER,data TEXT); CREATE TABLE part (id TEXT PRIMARY KEY,session_id TEXT,message_id TEXT,time_created INTEGER,time_updated INTEGER,data TEXT);",
+  "rows": [
+    [
+      "session",
+      [
+        "ses_Fixture",
+        "/synthetic/project",
+        "project",
+        "记忆 🧠",
+        null,
+        0.125,
+        "{\"*\":\"deny\"}"
+      ]
+    ],
+    [
+      "message",
+      [
+        "msg_A",
+        "ses_Fixture",
+        1,
+        1,
+        "{\"role\":\"user\",\"content\":\"earlier decision\"}"
+      ]
+    ],
+    [
+      "message",
+      [
+        "msg_Z",
+        "ses_Fixture",
+        2,
+        2,
+        "{\"role\":\"assistant\",\"providerID\":\"fixture\",\"modelID\":\"model\"}"
+      ]
+    ],
+    [
+      "part",
+      [
+        "part_A",
+        "ses_Fixture",
+        "msg_A",
+        1,
+        1,
+        "{\"type\":\"text\",\"text\":\"中文 \\n quote \\\"\"}"
+      ]
+    ]
+  ],
+  "revision": "3fb7956fccca05c2018069ebc65948207fa08f90138ba909e9b732b192a60f82"
+}

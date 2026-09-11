@@ -4,6 +4,7 @@ import type { RuntimeDatabase } from "../database";
 import type { Principal } from "../kernel";
 import { canonical, digest, identifier, requireThat } from "../value";
 import type { OpenCodeProbeReport } from "./opencode-preflight";
+import type { ProviderFailure } from "./opencode-events";
 
 /** All bindings come from trusted config/credential discovery, not caller-supplied request JSON. */
 export interface ProbeBinding {
@@ -140,6 +141,24 @@ export class PreflightCache {
       requireThat(row && row.generation === expectedGeneration && (row.state !== "probing" || row.lease_until <= this.db.now()), "probe_retry_revision_conflict");
       this.db.sql.query("UPDATE provider_checks SET state='unknown',reason='explicit_retry',retry_after=0,attempts=0,valid_until=0,lease_until=0,probe_token=NULL WHERE cache_key=?").run(key);
       return { reset: true };
+    });
+  }
+
+  /** Native worker evidence can revoke a matching ready generation; never overwrite a newer probe. */
+  recordExecutionFailure(actor: Principal, binding: ProbeBinding, generation: number, failure: ProviderFailure): boolean {
+    requireScope(actor, "provider:probe");
+    const key = this.key(actor, binding);
+    return this.db.transaction(() => {
+      const row = this.db.sql.query("SELECT * FROM provider_checks WHERE cache_key=?").get(key) as CheckRow | null;
+      if (!row || row.state !== "ready" || row.generation !== generation) return false;
+      const now = this.db.now(), transient = failure.code === "rate_limited" || failure.code === "provider_error";
+      const retry = failure.code === "quota_exhausted" && failure.reset_at !== null && failure.reset_at > now ? failure.reset_at
+        : transient ? now + Math.max(failure.retry_after_ms ?? 0, 30_000) : null;
+      const report = JSON.parse(row.report!) as OpenCodeProbeReport;
+      report.observation = { status: transient ? "degraded" : "unavailable", reason: failure.code, session_id: null, failure };
+      this.db.sql.query("UPDATE provider_checks SET state=?,reason=?,valid_until=0,retry_after=?,attempts=1,report=? WHERE cache_key=?")
+        .run(report.observation.status, failure.code, retry, canonical(report), key);
+      return true;
     });
   }
 }

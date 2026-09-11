@@ -328,6 +328,16 @@ production startup route; provider/transport ownership and `controlmesh_runtime`
 promotion storage still belong to Python. Its database must not be shared over a network
 filesystem. See the package README for implemented behavior and activation gates.
 
+The private `OpenCodeWorker` now connects kernel leases/effect receipts to actual native
+process supervision and terminal evidence. Its current profile is explicitly issued local
+foreground work with literal read permissions; unknown source, unsupported network or
+controller-approval restrictions are denied. History discovery uses an independent
+headless Viewer CLI, followed by a local native-store v2 revalidation. Linux session
+flocks interoperate with the old Python lock namespace. Result observations are persisted
+before verification; only verified native lineage, output and required reads can confirm
+an effect. Interrupted or inconsistent work remains unknown and cannot be auto-resumed.
+This implemented private path does not switch any released transport/runtime owner.
+
 ## Codekit integration (v0.43.0)
 
 See [CODEKIT-INTEGRATION](CODEKIT-INTEGRATION.md) for the new module boundary, public invocation and limits. This local implementation does not establish deployment acceptance.

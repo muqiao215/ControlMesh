@@ -52,6 +52,29 @@ test("only one connection can claim a revision; no old-fence write after safe re
   expect(() => kernel.claim(actor, "claim3", "task-1", 2, 100)).toThrow("revision_conflict");
 });
 
+test("resume preserves authority/native lineage but never revives cancelled or uncertain work", () => {
+  const { kernel } = fixture();
+  const owner: Principal = { ...actor, scopes: [...actor.scopes, "task:resume"] };
+  kernel.submit(owner, "create", task());
+  const lease = kernel.claim(owner, "claim", "task-1", 1, 30_000);
+  kernel.start(owner, "start", lease);
+  const done = kernel.finish(owner, "finish", lease, "done", { native_session: { session_id: "ses_Synthetic" } });
+  const next = kernel.resume(owner, "resume", "task-1", done.revision, "next instruction");
+  expect(next.task.status).toBe("waiting");
+  expect(next.task.prompt).toBe("next instruction");
+  expect(next.task.tool_grant).toEqual(task().tool_grant);
+  expect(next.task.native_session).toEqual({ session_id: "ses_Synthetic" });
+  const cancelled = kernel.cancel(owner, "cancel", "task-1", next.revision);
+  expect(() => kernel.resume(owner, "revive", "task-1", cancelled.revision, "again")).toThrow("task_not_resumable");
+  kernel.submit(owner, "create2", task("uncertain"));
+  const unknown = kernel.claim(owner, "claim2", "uncertain", 1, 30_000);
+  kernel.start(owner, "start2", unknown);
+  kernel.dispatchEffect(owner, "dispatch", unknown, "unknown-effect", {});
+  const stale = kernel.markUnknown(owner, "unknown", unknown, "native_completion_unproven");
+  expect(stale.needs_reconciliation).toBe(true);
+  expect(() => kernel.resume(owner, "repeat", "uncertain", stale.revision, "again")).toThrow("task_not_resumable");
+});
+
 test("cancel invalidates execution, preserves authority fields, and rejects late completion", () => {
   const { kernel } = fixture();
   kernel.submit(actor, "create", task());
