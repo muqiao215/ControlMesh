@@ -7185,7 +7185,9 @@ var controlmeshSchemas = {
           "messages",
           "send",
           "ack",
-          "release"
+          "release",
+          "reconciliation",
+          "reconcile"
         ]
       },
       arguments: {
@@ -7547,6 +7549,45 @@ var controlmeshSchemas = {
             }
           }
         }
+      },
+      {
+        properties: {
+          operation: {
+            const: "reconciliation"
+          },
+          arguments: {
+            type: "object",
+            additionalProperties: false,
+            required: [
+              "challenge_id"
+            ],
+            properties: {
+              challenge_id: {
+                type: "string",
+                pattern: "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+              }
+            }
+          }
+        }
+      },
+      {
+        properties: {
+          operation: {
+            const: "reconcile"
+          },
+          arguments: {
+            type: "object",
+            additionalProperties: false,
+            required: [
+              "report"
+            ],
+            properties: {
+              report: {
+                $ref: "device-reconciliation-report.schema.json"
+              }
+            }
+          }
+        }
       }
     ]
   },
@@ -7719,6 +7760,96 @@ var controlmeshSchemas = {
       },
       terminal: {
         type: "boolean"
+      }
+    }
+  },
+  "device-reconciliation-challenge.schema.json": {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    $id: "https://schemas.controlmesh.dev/controlmesh/v1/device-reconciliation-challenge.schema.json",
+    title: "DeviceReconciliationChallenge",
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "schema_version",
+      "challenge_id",
+      "task_revision",
+      "task_fence",
+      "manifest",
+      "execution_digest",
+      "workspace_id",
+      "capability",
+      "expires_at"
+    ],
+    properties: {
+      schema_version: {
+        const: "controlmesh.device_reconciliation_challenge.v1"
+      },
+      challenge_id: {
+        type: "string",
+        pattern: "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+      },
+      task_revision: {
+        type: "integer",
+        minimum: 0,
+        maximum: 9007199254740991
+      },
+      task_fence: {
+        type: "integer",
+        minimum: 0,
+        maximum: 9007199254740991
+      },
+      manifest: {
+        $ref: "device-evidence-ref.schema.json"
+      },
+      execution_digest: {
+        type: "string",
+        pattern: "^[a-f0-9]{64}$"
+      },
+      workspace_id: {
+        type: "string",
+        pattern: "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+      },
+      capability: {
+        type: "string",
+        pattern: "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+      },
+      expires_at: {
+        type: "integer",
+        minimum: 0,
+        maximum: 9007199254740991
+      }
+    }
+  },
+  "device-reconciliation-report.schema.json": {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    $id: "https://schemas.controlmesh.dev/controlmesh/v1/device-reconciliation-report.schema.json",
+    title: "DeviceReconciliationReport",
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "schema_version",
+      "challenge_id",
+      "challenge_digest",
+      "observation",
+      "result"
+    ],
+    properties: {
+      schema_version: {
+        const: "controlmesh.device_reconciliation_report.v1"
+      },
+      challenge_id: {
+        type: "string",
+        pattern: "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+      },
+      challenge_digest: {
+        type: "string",
+        pattern: "^[a-f0-9]{64}$"
+      },
+      observation: {
+        $ref: "device-observation.schema.json"
+      },
+      result: {
+        $ref: "device-native-result.schema.json"
       }
     }
   },

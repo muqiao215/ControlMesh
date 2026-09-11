@@ -90,7 +90,7 @@ class DeviceCommand(BaseModel):
     model_config = ConfigDict(extra="allow")
     schema_version: Literal["controlmesh.device_command.v1"]
     request_id: str
-    operation: Literal["queue", "inspect", "claim", "start", "renew", "dispatch", "observe", "complete", "unknown", "messages", "send", "ack", "release"]
+    operation: Literal["queue", "inspect", "claim", "start", "renew", "dispatch", "observe", "complete", "unknown", "messages", "send", "ack", "release", "reconciliation", "reconcile"]
     arguments: dict[str, Any]
 
 
@@ -137,6 +137,28 @@ class DeviceObservation(BaseModel):
     schema_version: Literal["controlmesh.device_observation.v1"]
     evidence: DeviceEvidenceRef
     terminal: bool
+
+
+class DeviceReconciliationChallenge(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    schema_version: Literal["controlmesh.device_reconciliation_challenge.v1"]
+    challenge_id: str
+    task_revision: int
+    task_fence: int
+    manifest: DeviceEvidenceRef
+    execution_digest: str
+    workspace_id: str
+    capability: str
+    expires_at: int
+
+
+class DeviceReconciliationReport(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    schema_version: Literal["controlmesh.device_reconciliation_report.v1"]
+    challenge_id: str
+    challenge_digest: str
+    observation: DeviceObservation
+    result: DeviceNativeResult
 
 
 class DeviceResponse(BaseModel):

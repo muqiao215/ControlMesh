@@ -33,7 +33,9 @@
         "messages",
         "send",
         "ack",
-        "release"
+        "release",
+        "reconciliation",
+        "reconcile"
       ]
     },
     "arguments": {
@@ -391,6 +393,45 @@
             "reason": {
               "type": "string",
               "pattern": "^[a-z0-9_]{1,96}$"
+            }
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "operation": {
+          "const": "reconciliation"
+        },
+        "arguments": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "challenge_id"
+          ],
+          "properties": {
+            "challenge_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+            }
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "operation": {
+          "const": "reconcile"
+        },
+        "arguments": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "report"
+          ],
+          "properties": {
+            "report": {
+              "$ref": "device-reconciliation-report.schema.json"
             }
           }
         }

@@ -181,7 +181,8 @@ acceptance. The following runtime and operational work remains queued:
 - Full documentation catalog → `docs/README.md`
 - TypeScript migration contracts and status → `docs/typescript-migration/`
 - Historical and active work → `plans/`
-- Current active work → `plans/terminal-product-v1/`
+- Current active runtime work → `plans/runtime-convergence/`
+- Terminal product backlog → `plans/terminal-product-v1/`
 - Native continuity delivery (complete) → `plans/native-session-adoption/`
 - Weekly report gaps and queued safety work → `plans/weekly-report-followthrough/`
 - Tool-grant enforcement closure (Unit A.1) → `plans/execution-tool-grants-enforcement-closure/`

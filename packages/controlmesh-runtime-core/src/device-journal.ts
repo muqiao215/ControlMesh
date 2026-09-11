@@ -80,6 +80,28 @@ export class DeviceExecutionJournal {
   verify(effectId: string, result: Record<string, unknown>): DeviceEvidenceRef {
     return this.store(effectId, "observed", "verified", "result", result);
   }
+  /** Recovery rereads native evidence first. Original manifest/observation/result are never overwritten. */
+  retainReconciledResult(ref: DeviceEvidenceRef, result: Record<string, unknown>): DeviceEvidenceRef {
+    return this.db.transaction(() => {
+      const row = this.inspect(ref);
+      requireThat(row.observation && row.phase !== "prepared" && row.phase !== "dispatching", "device_observation_not_available");
+      if (row.result) requireThat(row.result_digest === digest(result), "device_reconciled_result_changed");
+      else {
+        const encoded = canonical(result);
+        requireThat(Buffer.byteLength(encoded) <= 4 * 1024 * 1024, "device_evidence_too_large");
+        this.db.sql.query("UPDATE device_execution_records SET result=?,result_digest=? WHERE effect_id=?")
+          .run(encoded, digest(result), row.effect_id);
+      }
+      return this.reference(this.row(row.effect_id));
+    });
+  }
+  acknowledgeReconciliation(ref: DeviceEvidenceRef): void {
+    this.db.transaction(() => {
+      const row = this.inspect(ref);
+      requireThat(ref.observation_digest && ref.result_digest && row.observation && row.result, "device_reconciliation_not_verified");
+      this.db.sql.query("UPDATE device_execution_records SET phase='completed' WHERE effect_id=?").run(row.effect_id);
+    });
+  }
   private store(effectId: string, from: string, to: string, field: "observation" | "result", value: Record<string, unknown>): DeviceEvidenceRef {
     const encoded = canonical(value);
     requireThat(Buffer.byteLength(encoded) <= 4 * 1024 * 1024, "device_evidence_too_large");

@@ -1,8 +1,9 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { assertProtocolSchema, ProtocolValidationError, type DeviceCommand, type DeviceLeaseWindow } from "@controlmesh/protocol";
+import { assertProtocolSchema, ProtocolValidationError, type DeviceCommand, type DeviceLeaseWindow, type DeviceReconciliationReport } from "@controlmesh/protocol";
 import { command, requireScope } from "./commands";
 import { RuntimeKernel, type Lease, type Principal, type TaskSnapshot } from "./kernel";
 import { AgentMailbox, type SendMessage } from "./mailbox";
+import { DeviceReconciliation } from "./device-reconciliation";
 import { canonical, digest, identifier, object, requireThat, RuntimeConflict } from "./value";
 
 export interface DeviceRegistration {
@@ -49,6 +50,7 @@ export class DeviceCoordinator {
   private readonly pending = new Map<string, number>();
   private readonly rates = new Map<string, { since: number; count: number }>();
   private readonly mailbox: AgentMailbox;
+  readonly reconciliation: DeviceReconciliation;
 
   constructor(readonly kernel: RuntimeKernel, registrations: readonly DeviceRegistration[]) {
     requireThat(registrations.length > 0 && registrations.length <= 128, "invalid_device_catalog");
@@ -67,6 +69,11 @@ export class DeviceCoordinator {
       this.devices.set(device.device_id, device);
     }
     this.mailbox = new AgentMailbox(kernel);
+    this.reconciliation = new DeviceReconciliation(kernel, (id, principal) => {
+      const device = this.devices.get(id);
+      requireThat(device && device.principal_id === principal && !this.revoked(id), "device_not_authorized");
+      return device;
+    }, (device, taskId) => this.assignment(device, taskId));
   }
 
   /** Trusted operator control; no remote device can enable itself or change its grants. */
@@ -176,6 +183,8 @@ export class DeviceCoordinator {
     const actor = this.actor(device);
     const args = input.arguments;
     const request = input.request_id;
+    if (input.operation === "reconciliation") return this.reconciliation.inspect(device, args.challenge_id as string);
+    if (input.operation === "reconcile") return this.reconciliation.report(device, request, args.report as DeviceReconciliationReport);
     // JSON Schema validates the discriminated arguments before these casts.
     if (input.operation === "queue") {
       const rows = this.kernel.db.sql.query("SELECT a.task_id FROM device_assignments a JOIN tasks t ON a.task_id=t.task_id WHERE a.principal=? AND t.status='waiting' AND t.needs_reconciliation=0 ORDER BY a.task_id LIMIT 1024").all(actor.id) as { task_id: string }[];

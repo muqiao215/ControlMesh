@@ -35,7 +35,7 @@ Move runtime authority to TypeScript without losing task correctness, provider e
 | CM-R1 | TS execution kernel behind existing facade; transitions, events, cancellation, deadlines, process supervision | Python/TS differential traces for success, failure, timeout, cancel, crash/restart; zero duplicate side effects in shadow mode | in_progress: transactional kernel implemented; process/provider parity pending |
 | CM-R2 | Transactional state migration and startup recovery | Dry-run migration counts/digests, interrupted migration replay, rollback compatibility, corrupt-input refusal | in_progress: snapshot migration plus persisted native manifests/reconciliation; other stores/cutover pending |
 | CM-R3 | Provider/transport/workspace/grant ports | Actual adapter smoke for each supported provider; grants enforced natively; process tree cleanup and result-delivery reconciliation | in_progress: source/grant/reply-policy ports and trusted issuance; real local OpenCode profile; remaining launchers/transports pending |
-| CM-R4 | Device coordinator and worker execution authority | Two-device lease expiry, fencing, clock skew, network partition and worker restart tests; stale worker cannot write or redeliver | in_progress: real ARM64 coordinator/x64 OpenCode worker continuation and reopen passed; remote reconciliation, other profiles and rollout pending |
+| CM-R4 | Device coordinator and worker execution authority | Two-device lease expiry, fencing, clock skew, network partition and worker restart tests; stale worker cannot write or redeliver | in_progress: real ARM64 coordinator/x64 OpenCode worker continuation and reopen passed; remote reconciliation implemented, other profiles and rollout pending |
 | CM-R5 | Agent mailbox and task dependency exchange | Duplicate/out-of-order/replayed messages, bounded broadcast, cancellation propagation and backpressure evidence | in_progress: durable core mailbox tested; native/transport integration pending |
 | CM-R6 | History headless candidate + native adoption + SpecMesh lifecycle hooks | Real continuation canary binds provider session, current repo and approved task scope; see HV-H3 / SM-P2 | in_progress: real same-session recall/current-file and post-SIGKILL continuation passed; SpecMesh hooks and full matrix remain |
 | CM-R7 | Staged default switch and Python retirement | Canary -> selected device -> default rollout; telemetry and rollback thresholds met; old writer disabled before new writer activation | planned |
@@ -69,4 +69,9 @@ No claim that full TS migration or distributed coordination has completed. A sco
 
 ## Next Step
 
-Continue from `OpenCodeDeviceAdapter`, `DeviceExecutionJournal` and `DeviceCoordinator`: add explicit trusted remote reconciliation using the original device's retained manifest/observation, without another model call or invented human authorization. The local `NativeReconciler` does not yet supply that remote authority protocol. Then connect remaining source/grant policies to actual sandbox/provider launchers, History adoption into device-local handles, mailbox application and independent SpecMesh lifecycle checks. Complete other recovery/abandonment/store owners and the 512-module/57-field ownership parity. Do not activate over live data before writer-exclusion and recovery gates.
+Publish the verified native device recovery path, then port the actual sandbox/provider
+launchers and transport execution paths beyond the qualified read-only OpenCode profile.
+Connect History adoption into device-local handles, mailbox application and independent
+SpecMesh lifecycle checks. Complete other recovery/abandonment/store owners and the
+512-module/57-field ownership parity. Do not activate over live data before writer-exclusion,
+provider/transport parity, recovery and release/install gates pass.

@@ -1,5 +1,30 @@
 # Findings
 
+Remote recovery now separates a trusted acceptance request from its device evidence report.
+Schema 7 retains the challenge across reconstruction; its registration digest prevents a
+changed credential/capability catalog from inheriting earlier authority. The report can
+complete only the exact original unknown operation and expires within 30 seconds. Worker
+report events stay agent-origin, terminal reconciliation events are recovery-origin, and
+request issuance retains the original trusted origin. It never creates a fresh human prompt.
+
+The shared NativeResultVerification rereads original native rows, permissions, source/grant,
+file identities and content while holding the device-local lock. It has no provider runner,
+model or preflight dependency. The coordinator receives bounded references and result text;
+late observation admission and task completion occur atomically. Recovery receipts also let
+the device acknowledge its retained evidence after an ambiguous network response. This does
+not prove a compromised worker honest, and standalone native clients ignore CM advisory locks.
+
+The initial strict TS check exposed three generated-interface/index-signature mismatches;
+validated values and object spreads fixed them. The original 37 affected tests passed, then
+new HTTP/native fixtures covered missing/delivered observations, process reconstruction,
+expiry/revocation/cancellation, stale native/files/configuration, tampered reports, receipt loss
+and transactional rollback. The final 117-test core suite passed. Actual ARM64 coordinator /
+x64 OpenCode recovery passed: coordinator stopped before original-observation delivery, both
+sides reopened, explicit reconciliation took 130 ms with zero OpenCode commands, then the
+same native conversation recalled its earlier marker and read the changed file. Original
+evidence hashes and preflight generation were preserved. Temporary remote resources were
+independently verified absent after credential revocation and cleanup.
+
 Native device execution now uses one OpenCodeExecution driver shared with the local worker.
 The execution projection comes from the coordinator's stored task, not assignment input;
 literal file access and native configuration remain locally configured. Source/grant/input
@@ -27,13 +52,9 @@ HTTP/native fixtures exercise these additional rejection paths. The actual execu
 was verified before these final guards; this distinction is retained rather than calling
 that real run an exact-final-source test of the new rejection branches.
 
-Still open: explicit remote reconciliation when the coordinator missed the original
-observation. The local NativeReconciler requires local native storage and a synchronous
-trusted decision inside the coordinator transaction; it cannot simply be used over a
-network. A remote verifier must bind the current trusted recovery request, original evidence,
-task revision/fence, device and current authorization without executing the provider again.
-Other providers/write profiles, native History adoption and SpecMesh lifecycle checks remain
-separate required owners. Authenticated device reporting does not defeat a compromised device.
+Still open: other providers/write profiles, native History adoption and independent SpecMesh
+lifecycle hooks; the real sandbox/transport launchers and remaining stores still need ports.
+The source/grant parity below establishes policy calculations, not those launchers.
 
 The source/grant owners are `controlmesh/bus/envelope.py`, `execution_policy.py` and
 `execution_grants.py`, not the provider SDK facade. TS now independently ports their valid
@@ -60,10 +81,9 @@ The actual OpenCode/M3 canary for this path preserved issued context, denied bas
 and pinned reply identity across a worker SIGKILL, native reconciliation and same-session
 continuation. It generated one authorization event and independently proved marker recall
 and the changed current file read. No production TaskHub writer, bot, scheduler or account
-browser operation was involved. Remote DeviceWorker is still not the native adapter: it
-currently dispatches before adapter preparation and stores an observation only after the
-adapter returns. That interface must carry pre-execution manifests and immediate original
-observations before native fleet execution can claim the local worker's recovery guarantees.
+browser operation was involved. The prepared device adapter now retains manifests before dispatch and original observations
+before transport; device recovery consumes these originals rather than reconstructing them
+from transcript summaries.
 
 The roadmap is grounded in repository code, existing contracts and prior recorded acceptance, not the prototype archive alone. Implementation status and remaining gates are in task_plan.md. No new runtime migration or fleet rollout is claimed complete by this plan.
 
@@ -99,7 +119,7 @@ Two timing gaps required code changes: Linux performance.now does not count susp
 
 The actual two-device synthetic run on 2026-09-11 used x64 and ARM64 Linux, distinct local workspace contents and authenticated SSH forwarding. Concurrent claim produced one owner; post-expiry ownership moved to the other device and the old fence failed. Both local-file read results were independently checked. A cross-device handoff preserved agent provenance and was explicitly received and consumed. Disconnecting the coordinator stopped the remote process; reopening preserved its unknown result and rejected automatic redispatch. Runtime credentials, private paths and raw acceptance artifacts remain outside the repository. No model calls, browser accounts, bot binding or production service startup were needed.
 
-Full distributed Agent operation is still open: the concrete local OpenCode adapter has not been adapted to remote source/grant enforcement; the synthetic adapter proves transport/process integration only. Device presence/capability revisions, re-enrollment/rotation, large-queue fairness, actual topology/dependency execution and unattended deployment remain. Revocation is already durable so restart cannot silently restore a denied device. Authentication proves a report's source, not the honesty of a compromised worker's claimed native result.
+Full distributed Agent operation is still open. The qualified OpenCode read adapter now enforces source/grant checks locally over the device port; other providers and write/sandbox profiles remain unported. Device presence/capability revisions, re-enrollment/rotation, large-queue fairness, actual topology/dependency execution and unattended deployment remain. Revocation is already durable so restart cannot silently restore a denied device. Authentication proves a report's source, not the honesty of a compromised worker's claimed native result.
 
 Native recovery initially lacked pre-execution evidence: the baseline row hashes and resolved permission profile were in worker memory, while effects stored only the intent digest and later output. Schema 5 now retains a bounded immutable manifest and original observation separately from accepted results. The manifest binds task/source/provider/grant, native-store/session baseline, resolved rules and canonical file identities/content digests. Reconciliation is explicit, revision/digest-bound and independently checks the native source under its advisory lock without model/CLI invocation. An older unknown operation with no manifest cannot be retroactively supplied invented evidence.
 

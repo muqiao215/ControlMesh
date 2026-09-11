@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { lstatSync, realpathSync } from "node:fs";
 import { isAbsolute } from "node:path";
-import type { DeviceEvidenceRef } from "@controlmesh/protocol";
+import { assertProtocolSchema, type DeviceEvidenceRef, type DeviceReconciliationChallenge, type DeviceReconciliationReport } from "@controlmesh/protocol";
 import type { DeviceJob } from "./device-coordinator";
 import { DeviceClient, type DeviceLeaseAuthority } from "./device-client";
 import { DeviceExecutionJournal } from "./device-journal";
@@ -25,6 +25,8 @@ export interface DeviceAdapter {
   dispatch_mode?: "prepared";
   /** Must verify its native result; returning only an exit code is not semantic acceptance. */
   execute(context: DeviceAdapterContext): Promise<{ observation: Record<string, unknown>; result: Record<string, unknown> }>;
+  reconcile?(challenge: DeviceReconciliationChallenge, workspace: string, assertCurrent: () => void,
+    report: (value: DeviceReconciliationReport) => Promise<unknown>): Promise<unknown>;
 }
 export interface DeviceWorkerOptions {
   workspaces: Readonly<Record<string, string>>;
@@ -49,6 +51,45 @@ export class DeviceWorker {
       requireThat(stat.isDirectory(), "invalid_worker_workspace");
       this.workspaces.set(id, { path, dev: stat.dev, ino: stat.ino });
     }
+  }
+
+  /** Explicit request ID only: no unknown-task scan, new lease, provider probe or automatic execution. */
+  async reconcile(challengeId: string): Promise<unknown> {
+    const receipt = (value: unknown) => {
+      requireThat(object(value) && value.challenge_id === challengeId && value.status === "done" && Number.isSafeInteger(value.revision), "invalid_reconciliation_response");
+      assertProtocolSchema<DeviceEvidenceRef>("device-evidence-ref.schema.json", value.evidence);
+      requireThat(value.evidence.device_id === this.client.deviceId && value.evidence.task_id === value.task_id && this.journal, "reconciliation_device_mismatch");
+      this.journal.acknowledgeReconciliation(value.evidence);
+      return value;
+    };
+    const sent = this.client.clock();
+    const value = await this.client.command("reconciliation", { challenge_id: challengeId });
+    requireThat(object(value), "invalid_reconciliation_response");
+    if (value.state === "accepted") {
+      return receipt(value.receipt);
+    }
+    requireThat(value.state === "pending" && Number.isSafeInteger(value.remaining_ms) && Number(value.remaining_ms) > 0 && Number(value.remaining_ms) <= 30_000, "invalid_reconciliation_response");
+    assertProtocolSchema<DeviceReconciliationChallenge>("device-reconciliation-challenge.schema.json", value.challenge);
+    const challenge = value.challenge, issued = digest(challenge);
+    requireThat(challenge.challenge_id === challengeId && challenge.manifest.device_id === this.client.deviceId, "reconciliation_device_mismatch");
+    const workspace = this.workspaces.get(challenge.workspace_id), adapter = Object.hasOwn(this.adapters, challenge.capability) ? this.adapters[challenge.capability] : undefined;
+    requireThat(workspace && adapter?.reconcile, "local_reconciliation_unavailable");
+    const deadline = sent + Number(value.remaining_ms) - 50;
+    let last = sent;
+    const current = () => {
+      const now = this.client.clock();
+      requireThat(Number.isFinite(now) && now >= last && now < deadline, "reconciliation_expired"); last = now;
+      const stat = lstatSync(workspace.path);
+      requireThat(stat.isDirectory() && !stat.isSymbolicLink() && realpathSync(workspace.path) === workspace.path && stat.dev === workspace.dev && stat.ino === workspace.ino, "worker_workspace_changed");
+      requireThat(digest(challenge) === issued, "reconciliation_challenge_changed");
+    };
+    current();
+    return adapter.reconcile(challenge, workspace.path, current, async report => {
+      current();
+      const result = await this.client.command("reconcile", { report }, `device-reconcile-${challengeId}`);
+      requireThat(object(result) && result.task_id === challenge.manifest.task_id && digest(result.evidence) === digest(report.result.evidence), "invalid_reconciliation_response");
+      return receipt(result);
+    });
   }
 
   async run(taskId: string, ttlMs = 10_000): Promise<{ status: "done" | "unknown" | "unavailable"; reason?: string; result?: Record<string, unknown> }> {

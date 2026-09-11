@@ -129,10 +129,10 @@ test("schema v1 upgrades transactionally to v5 without replacing tasks or their 
     const kernel = new RuntimeKernel(db);
     const original = kernel.submit(actor, "create", { task_id: "upgrade", chat_id: "synthetic", status: "waiting", future: { preserved: true } });
     // Restore the exact v1 table set before replaying the additive migrations.
-    db.sql.exec("DROP TABLE provider_checks; DROP TABLE device_assignments; DROP TABLE device_revocations; DROP TABLE execution_manifests; DROP TABLE effect_observations; DROP TABLE device_execution_records; PRAGMA user_version=1");
+    db.sql.exec("DROP TABLE provider_checks; DROP TABLE device_assignments; DROP TABLE device_revocations; DROP TABLE execution_manifests; DROP TABLE effect_observations; DROP TABLE device_execution_records; DROP TABLE device_reconciliations; PRAGMA user_version=1");
     db.close();
     db = new RuntimeDatabase(path);
-    expect(db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 6 });
+    expect(db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 7 });
     expect(new RuntimeKernel(db).inspect(actor, "upgrade")).toEqual(original);
     expect(db.sql.query("SELECT COUNT(*) AS n FROM provider_checks").get()).toEqual({ n: 0 });
   } finally { db.close(); rmSync(dir, { recursive: true, force: true }); }

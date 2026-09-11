@@ -27,7 +27,8 @@ function setup(mode: "normal" | "partition" | "changed-file" | "lost-completion"
   const coordinatorDB = new RuntimeDatabase(join(root, "coordinator.sqlite"), () => Date.now() + offset), workerDB = new RuntimeDatabase(join(root, "worker.sqlite"));
   cleanup.push(() => coordinatorDB.close(), () => workerDB.close());
   const kernel = new RuntimeKernel(coordinatorDB), token = randomBytes(32).toString("base64url");
-  const coordinator = new DeviceCoordinator(kernel, [{ device_id: device.device_id!, principal_id: owner.id, token_sha256: createHash("sha256").update(token).digest("hex"), capabilities: ["native.read"], workspace_ids: ["project"] }]);
+  const registrations = [{ device_id: device.device_id!, principal_id: owner.id, token_sha256: createHash("sha256").update(token).digest("hex"), capabilities: ["native.read"], workspace_ids: ["project"] }];
+  const coordinator = new DeviceCoordinator(kernel, registrations);
   const server = coordinator.listen(); cleanup.push(() => server.stop(true));
   let lost = false;
   const client = new DeviceClient({ endpoint: server.url.origin, token, device_id: device.device_id!, timeout_ms: 500,
@@ -73,10 +74,29 @@ function setup(mode: "normal" | "partition" | "changed-file" | "lost-completion"
     if (mode === "changed-file") writeFileSync(join(workspace, "PROJECT.md"), "changed after native read");
     return outcome([{ type: "text", sessionID: session, part: { text: answer } }, { type: "step_finish", sessionID: session, part: { reason: "stop" } }].map(item => JSON.stringify(item)).join("\n"));
   } };
-  const adapter = new OpenCodeDeviceAdapter(device, cache, journal, store, { executable: "/fixture/opencode", native_configuration: {}, environment: { HOME: root, XDG_DATA_HOME: data }, state_home: root },
+  const makeAdapter = (ledger = journal) => new OpenCodeDeviceAdapter(device, cache, ledger, store, { executable: "/fixture/opencode", native_configuration: {}, environment: { HOME: root, XDG_DATA_HOME: data }, state_home: root },
     { read_files: ["PROJECT.md"], required_reads: ["PROJECT.md"], binding: () => binding, assertCurrent() {} }, runner);
+  const adapter = makeAdapter();
   const worker = new DeviceWorker(client, { workspaces: { project: workspace }, adapters: { "native.read": adapter }, journal });
-  return { root, workspace, workerDB, coordinatorDB, kernel, coordinator, client, journal, worker, commands, binding, store, specification, calls: () => calls, advance: (ms: number) => { offset += ms; } };
+  const recover = (before?: (input: Record<string, any>, control: DeviceCoordinator) => void, loseAck = false) => {
+    const db = new RuntimeDatabase(join(root, "coordinator.sqlite"), () => Date.now() + offset), local = new RuntimeDatabase(join(root, "worker.sqlite"));
+    cleanup.push(() => db.close(), () => local.close());
+    const control = new DeviceCoordinator(new RuntimeKernel(db), registrations), endpoint = control.listen(); cleanup.push(() => endpoint.stop(true));
+    let reports = 0;
+    const transport = new DeviceClient({ endpoint: endpoint.url.origin, token, device_id: device.device_id!, timeout_ms: 1000,
+      fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const command = JSON.parse(String(init?.body));
+        if (command.operation === "reconcile") { reports++; before?.(command, control); }
+        const response = await fetch(input, { ...init, body: JSON.stringify(command) });
+        if (loseAck && command.operation === "reconcile") { await response.arrayBuffer(); throw new Error("fixture_lost_recovery_ack"); }
+        return response;
+      }) as typeof fetch });
+    const localJournal = new DeviceExecutionJournal(local, device.device_id!);
+    return { control, transport, reports: () => reports, worker: new DeviceWorker(transport,
+      { workspaces: { project: workspace }, adapters: { "native.read": makeAdapter(localJournal) }, journal: localJournal }) };
+  };
+  return { root, workspace, workerDB, coordinatorDB, kernel, coordinator, client, journal, worker, commands, binding, store, specification,
+    recover, calls: () => calls, advance: (ms: number) => { offset += ms; } };
 }
 
 test("native device execution persists local evidence and resumes its original session through an opaque handle", async () => {
@@ -209,4 +229,153 @@ test("native coordinator completion binds the manifest, original observation and
   expect(f.coordinatorDB.sql.query("SELECT state FROM effects").get()).toEqual({ state: "dispatched" });
   expect(f.kernel.inspect(owner, "native-task").task.status).toBe("running");
   authority.stop();
+});
+
+
+async function interrupted() {
+  const f = setup("partition");
+  expect((await f.worker.run("native-task", 5000)).status).toBe("unknown");
+  f.advance(10_000);
+  f.kernel.recoverExpired({ ...owner, origin: "recovery", scopes: [...owner.scopes, "task:admin"] });
+  const state = f.kernel.inspect(owner, "native-task");
+  const effect = f.coordinatorDB.sql.query("SELECT effect_id FROM effects").get() as { effect_id: string };
+  const actor = { ...owner, device_id: device.device_id };
+  const challenge = f.coordinator.reconciliation.request(actor, "recover-original", "native-task", state.revision, effect.effect_id);
+  return { ...f, state, actor, challenge, effect: effect.effect_id };
+}
+
+test("explicit remote recovery survives reconstruction, admits missing evidence once and preserves native continuation without a model call", async () => {
+  const f = await interrupted();
+  expect(f.coordinatorDB.sql.query("SELECT COUNT(*) AS n FROM effect_observations").get()).toEqual({ n: 0 });
+  const recovery = f.recover(), commands = f.commands.length;
+  const before = f.workerDB.sql.query("SELECT observation_digest FROM device_execution_records").get();
+  f.workerDB.sql.exec("DELETE FROM provider_checks"); // Recovery does not probe or require quota readiness.
+  const receipt = await recovery.worker.reconcile(f.challenge.challenge_id);
+  expect(receipt).toMatchObject({ status: "done", task_id: "native-task" });
+  expect(f.commands.length).toBe(commands); expect(f.calls()).toBe(1);
+  expect(f.workerDB.sql.query("SELECT observation_digest FROM device_execution_records").get()).toEqual(before);
+  expect(f.workerDB.sql.query("SELECT COUNT(*) AS n FROM provider_checks").get()).toEqual({ n: 0 });
+  expect(f.kernel.inspect(owner, "native-task").needs_reconciliation).toBe(false);
+  expect(f.coordinatorDB.sql.query("SELECT origin,kind FROM events WHERE kind IN ('device.reconciliation_requested','device.reconciliation_reported','effect.reconciled') ORDER BY seq").all()).toEqual([
+    { origin: "human_request", kind: "device.reconciliation_requested" }, { origin: "agent_message", kind: "device.reconciliation_reported" }, { origin: "recovery", kind: "effect.reconciled" },
+  ]);
+  expect(JSON.stringify(f.coordinatorDB.sql.query("SELECT challenge FROM device_reconciliations").get())).not.toContain(f.workspace);
+  expect(await recovery.worker.reconcile(f.challenge.challenge_id)).toEqual(receipt); expect(recovery.reports()).toBe(1);
+  expect(f.coordinator.reconciliation.request(f.actor, "recover-original", "native-task", f.state.revision, f.effect)).toEqual(f.challenge);
+  expect(f.coordinatorDB.sql.query("SELECT COUNT(*) AS n FROM events WHERE kind='effect.observation_recovered'").get()).toEqual({ n: 1 });
+  const done = f.kernel.inspect(owner, "native-task"), next = f.kernel.resume(owner, "resume-recovered", "native-task", done.revision, "continue original native session");
+  f.coordinator.assign(owner, "assign-recovered", "native-task", next.revision, f.specification);
+  // No new turn in this recovery test: the original native handle is resolved from retained verification.
+  const job = await recovery.transport.inspect("native-task");
+  expect(f.journal.resolveNativeSession(job.execution!.native_session, job).session_id).toBe("ses_Device");
+  expect(f.calls()).toBe(1);
+});
+
+test("lost recovery acknowledgement returns the durable receipt after restart without another report or provider command", async () => {
+  const f = await interrupted(), first = f.recover(undefined, true);
+  await expect(first.worker.reconcile(f.challenge.challenge_id)).rejects.toThrow("coordinator_transport_unknown");
+  expect(f.kernel.inspect(owner, "native-task").task.status).toBe("done");
+  const next = f.recover(); expect(await next.worker.reconcile(f.challenge.challenge_id)).toMatchObject({ status: "done" });
+  expect(next.reports()).toBe(0); expect(f.calls()).toBe(1);
+  expect(f.workerDB.sql.query("SELECT phase FROM device_execution_records").get()).toEqual({ phase: "completed" });
+});
+
+test("agent-origin requests cannot grant themselves recovery authority and request replay never extends expiry", async () => {
+  const f = await interrupted();
+  expect(() => f.coordinator.reconciliation.request({ ...f.actor, origin: "agent_message" }, "self-authorize", "native-task", f.state.revision, f.effect)).toThrow("trusted_reconciliation_required");
+  expect(() => f.coordinator.reconciliation.request({ ...f.actor, scopes: ["task:read"] }, "missing-scope", "native-task", f.state.revision, f.effect)).toThrow("scope_denied");
+  f.advance(31_000);
+  expect(f.coordinator.reconciliation.request(f.actor, "recover-original", "native-task", f.state.revision, f.effect)).toEqual(f.challenge);
+  const recovery = f.recover();
+  await expect(recovery.worker.reconcile(f.challenge.challenge_id)).rejects.toThrow("reconciliation_expired");
+  expect(f.calls()).toBe(1); expect(recovery.reports()).toBe(0);
+});
+
+test("current file, native history, missing original observation and provider binding changes refuse remote recovery without calls", async () => {
+  for (const change of ["file", "native", "observation", "binding"] as const) {
+    const f = await interrupted(), count = f.commands.length;
+    if (change === "file") writeFileSync(join(f.workspace, "PROJECT.md"), "new content");
+    if (change === "native") {
+      const native = new Database(f.store.path); native.exec("UPDATE part SET data='{}' WHERE id='answer_1'"); native.close();
+    }
+    if (change === "observation") f.workerDB.sql.exec("UPDATE device_execution_records SET observation=NULL,observation_digest=NULL");
+    if (change === "binding") f.binding.credential_revision = "rotated";
+    const recovery = f.recover();
+    await expect(recovery.worker.reconcile(f.challenge.challenge_id)).rejects.toThrow();
+    expect(f.commands.length).toBe(count); expect(recovery.reports()).toBe(0);
+    expect(f.kernel.inspect(owner, "native-task").needs_reconciliation).toBe(true);
+  }
+});
+
+test("cancellation, expiry, task-authority change and device revocation during verification block recovered completion", async () => {
+  for (const change of ["cancel", "expire", "authority", "revoke"] as const) {
+    const f = await interrupted();
+    const recovery = f.recover((_command, control) => {
+      if (change === "cancel") f.kernel.cancel(owner, "cancel-recovery", "native-task", f.state.revision);
+      if (change === "expire") f.advance(31_000);
+      if (change === "authority") f.coordinatorDB.sql.query("UPDATE tasks SET raw=? WHERE task_id='native-task'").run(JSON.stringify({ ...f.state.task, tool_grant: { changed: true } }));
+      if (change === "revoke") control.revoke({ ...owner, scopes: [...owner.scopes, "device:revoke"] }, device.device_id!);
+    });
+    await expect(recovery.worker.reconcile(f.challenge.challenge_id)).rejects.toThrow();
+    expect(f.kernel.inspect(owner, "native-task").task.status).not.toBe("done");
+    expect(f.coordinatorDB.sql.query("SELECT COUNT(*) AS n FROM effect_observations").get()).toEqual({ n: 0 });
+    expect(f.calls()).toBe(1);
+  }
+});
+
+test("report tampering and conflicting retained coordinator observations cannot replace the original evidence", async () => {
+  for (const change of ["challenge", "manifest", "output", "handle", "observation", "saved-observation"] as const) {
+    const f = await interrupted();
+    if (change === "saved-observation") {
+      const other = { schema_version: "controlmesh.device_observation.v1", terminal: true, evidence: { ...f.challenge.manifest, observation_digest: "f".repeat(64) } };
+      f.coordinatorDB.sql.query("INSERT INTO effect_observations VALUES (?,?,?)").run(f.effect, digest(other), JSON.stringify(other));
+    }
+    const recovery = f.recover(command => {
+      const report = command.arguments.report;
+      if (change === "challenge") report.challenge_digest = "f".repeat(64);
+      if (change === "manifest") report.result.evidence.manifest_digest = "f".repeat(64);
+      if (change === "output") report.result.output_digest = "f".repeat(64);
+      if (change === "handle") report.result.native_session.device_id = "other-device";
+      if (change === "observation") report.observation.terminal = false;
+    });
+    await expect(recovery.worker.reconcile(f.challenge.challenge_id)).rejects.toThrow();
+    expect(f.kernel.inspect(owner, "native-task").needs_reconciliation).toBe(true);
+    expect(f.coordinatorDB.sql.query("SELECT COUNT(*) AS n FROM events WHERE kind='device.reconciliation_reported'").get()).toEqual({ n: 0 });
+    expect(f.calls()).toBe(1);
+  }
+});
+
+test("failed recovered completion rolls back the late observation and can safely retry the retained result", async () => {
+  const f = await interrupted(), recovery = f.recover();
+  f.coordinatorDB.sql.exec("CREATE TRIGGER fail_recovered_commit BEFORE INSERT ON events WHEN NEW.kind='effect.reconciled' BEGIN SELECT RAISE(ABORT,'fixture_disk_failure'); END");
+  await expect(recovery.worker.reconcile(f.challenge.challenge_id)).rejects.toThrow();
+  expect(f.coordinatorDB.sql.query("SELECT COUNT(*) AS n FROM effect_observations").get()).toEqual({ n: 0 });
+  expect(f.kernel.inspect(owner, "native-task").needs_reconciliation).toBe(true);
+  f.coordinatorDB.sql.exec("DROP TRIGGER fail_recovered_commit");
+  expect(await recovery.worker.reconcile(f.challenge.challenge_id)).toMatchObject({ status: "done" });
+  expect(f.calls()).toBe(1);
+});
+
+
+test("recovery keeps an already delivered matching observation immutable", async () => {
+  const f = await interrupted();
+  const retained = f.workerDB.sql.query("SELECT observation_digest FROM device_execution_records").get() as { observation_digest: string };
+  const original = { schema_version: "controlmesh.device_observation.v1", terminal: true, evidence: { ...f.challenge.manifest, observation_digest: retained.observation_digest } };
+  const encoded = JSON.stringify(original);
+  f.coordinatorDB.sql.query("INSERT INTO effect_observations VALUES (?,?,?)").run(f.effect, digest(original), encoded);
+  expect(await f.recover().worker.reconcile(f.challenge.challenge_id)).toMatchObject({ status: "done" });
+  expect(f.coordinatorDB.sql.query("SELECT payload FROM effect_observations").get()).toEqual({ payload: encoded });
+  expect(f.coordinatorDB.sql.query("SELECT COUNT(*) AS n FROM events WHERE kind='effect.observation_recovered'").get()).toEqual({ n: 0 });
+});
+
+test("schema six upgrade preserves completed device evidence while adding durable recovery requests", async () => {
+  const f = setup(); expect((await f.worker.run("native-task", 5000)).status).toBe("done");
+  const original = f.workerDB.sql.query("SELECT * FROM device_execution_records").all();
+  f.workerDB.sql.exec("DROP TABLE device_reconciliations; PRAGMA user_version=6");
+  const upgraded = new RuntimeDatabase(join(f.root, "worker.sqlite"));
+  try {
+    expect(upgraded.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 7 });
+    expect(upgraded.sql.query("SELECT * FROM device_execution_records").all()).toEqual(original);
+    expect(upgraded.sql.query("SELECT COUNT(*) AS n FROM device_reconciliations").get()).toEqual({ n: 0 });
+  } finally { upgraded.close(); }
 });

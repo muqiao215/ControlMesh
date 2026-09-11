@@ -26,7 +26,7 @@ export class RuntimeDatabase {
       this.transaction(() => {
         const version = (this.sql.query("PRAGMA user_version").get() as { user_version: number }).user_version;
         const app = (this.sql.query("PRAGMA application_id").get() as { application_id: number }).application_id;
-        requireThat(version >= 0 && version <= 6, "unsupported_database_version");
+        requireThat(version >= 0 && version <= 7, "unsupported_database_version");
         requireThat(app === 0 || app === APPLICATION_ID, "foreign_database");
         if (version === 0) {
           const tables = this.sql.query("SELECT name FROM sqlite_master WHERE type='table'").all();
@@ -131,6 +131,17 @@ export class RuntimeDatabase {
               UNIQUE(device_id, episode_id)
             );
             PRAGMA user_version = 6;
+          `);
+        }
+        if (version < 7) {
+          this.sql.exec(`
+            CREATE TABLE device_reconciliations (
+              challenge_id TEXT PRIMARY KEY, principal TEXT NOT NULL, device_id TEXT NOT NULL,
+              registration_digest TEXT NOT NULL, task_id TEXT NOT NULL REFERENCES tasks(task_id),
+              challenge_digest TEXT NOT NULL, challenge TEXT NOT NULL,
+              report_digest TEXT, response TEXT
+            );
+            PRAGMA user_version = 7;
           `);
         }
       });

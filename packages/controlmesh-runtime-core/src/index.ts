@@ -20,3 +20,4 @@ export { decodeToolGrant, issueToolGrant, issueTaskGrantForSubmit, mapToolGrant,
 export { TaskIngress, type IngressSource, type SubmissionIdentity, type SubmissionRestrictions } from "./task-ingress";
 export { DeviceExecutionJournal, type DeviceExecutionRecord } from "./device-journal";
 export { OpenCodeDeviceAdapter, type OpenCodeDeviceOptions } from "./providers/opencode-device-adapter";
+export { DeviceReconciliation, type ReconciliationReceipt } from "./device-reconciliation";

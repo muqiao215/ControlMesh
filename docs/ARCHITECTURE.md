@@ -361,7 +361,7 @@ profiles and production startup remain gated by the active plan.
 
 `OpenCodeExecution` shares native preparation and verification between `OpenCodeWorker`
 and `OpenCodeDeviceAdapter`. The latter keeps preflight, native store/locks and full evidence
-on its executing device; a schema-6 `DeviceExecutionJournal` binds the original assignment,
+on its executing device; `DeviceExecutionJournal` binds the original assignment,
 job/workspace and native manifest. The coordinator receives digest references and a bounded
 result with an opaque native session handle. Cross-task/episode/reference mismatches are
 rejected before completion. The original device resolves that handle after restart; kernel
@@ -370,8 +370,23 @@ resume preserves the task's original source and grant while worker events stay a
 Unstarted preparation failures can release an effect-free lease and return a typed reason;
 expired unstarted admissions return to waiting. Started/uncertain effects cannot use this
 release path. Original device observations are persisted before transport even if connectivity
-was lost. A coordinator that missed them still needs explicit remote reconciliation; local
-retention is not coordinator acceptance or permission to repeat the provider operation.
+was lost. `DeviceReconciliation` handles the missing acknowledgement through a persisted,
+short-lived trusted request. Its challenge binds the unknown episode, fence, task revision,
+assignment, original manifest, execution projection and registered device. The worker's
+`reconcile(challengeId)` only invokes the configured adapter's native evidence verifier;
+it acquires no execution lease and cannot launch a model. The same native/file/grant verifier
+serves local and device recovery, holding the local session lock through report delivery.
+
+Schema 7 adds coordinator recovery requests and durable acceptance receipts. An authenticated
+device report retains agent provenance; a recovery-origin acceptance consumes the earlier
+trusted request. The original observation, confirmed result, terminal task and receipt commit
+atomically, including when the original observation never reached the coordinator. Existing
+observations cannot be replaced. Cancellation, expiry, changed task/assignment/configuration,
+registration changes and revocation reject acceptance. An exact lost-acknowledgement replay
+returns a receipt and completes the matching local evidence record without executing again.
+This verifies device attestations at their reporting boundary; independently modified native
+stores/workspaces or a compromised authenticated device are not made trustworthy by transport
+authentication. Native evidence and credentials remain on the original device.
 
 Native dispatch and recovery share a persisted evidence boundary. Before execution,
 `OpenCodeWorker` commits a bounded manifest with the effect intent: source/provider/grant

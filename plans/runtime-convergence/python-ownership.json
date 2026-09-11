@@ -278,7 +278,7 @@
       "controlmesh/planning_files.py": "c74de7a541b0d0b5ed6256ef302728ea46aa7590087717bbc78465f6fb405365",
       "controlmesh/protocol/__init__.py": "9de66f2f0435baf2ac2f7cd1576031b95ce39382d5dc9e62ad83f4eea7f9e50b",
       "controlmesh/protocol/generated/__init__.py": "2aed7f6b2059b8ad358a6c10e5d42474b7ddae9a10094bc40861ea1ff26f8ee8",
-      "controlmesh/protocol/generated/models.py": "680d8054c8972bfd22c90ad5b861672c6c1497d4718bb3dcf88ea6cd93eefada",
+      "controlmesh/protocol/generated/models.py": "18e0362dfce4c274c22d678d177f56fd11e70e165fbbdad2f8bb46539fbcbbfb",
       "controlmesh/provider_binding.py": "9fee59f8e2f6e5b0a892c0984856bb190bb46f32421b35072227b42f9e43a8bd",
       "controlmesh/provider_health.py": "9e5730253cb0056a49b7337012958eb8a396ea2af4df84133bf7782ffb76857b",
       "controlmesh/routing/__init__.py": "b956d11e96afd47f4b7e1baf30ed8f7dab8ff6e0b73bdb6fd782767547be65f3",

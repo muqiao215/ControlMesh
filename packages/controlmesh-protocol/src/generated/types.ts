@@ -78,7 +78,7 @@ export interface ControlMeshConfig {
 export interface DeviceCommand {
   "schema_version": "controlmesh.device_command.v1";
   "request_id": string;
-  "operation": "queue" | "inspect" | "claim" | "start" | "renew" | "dispatch" | "observe" | "complete" | "unknown" | "messages" | "send" | "ack" | "release";
+  "operation": "queue" | "inspect" | "claim" | "start" | "renew" | "dispatch" | "observe" | "complete" | "unknown" | "messages" | "send" | "ack" | "release" | "reconciliation" | "reconcile";
   "arguments": Record<string, unknown>;
 }
 
@@ -120,6 +120,26 @@ export interface DeviceObservation {
   "schema_version": "controlmesh.device_observation.v1";
   "evidence": DeviceEvidenceRef;
   "terminal": boolean;
+}
+
+export interface DeviceReconciliationChallenge {
+  "schema_version": "controlmesh.device_reconciliation_challenge.v1";
+  "challenge_id": string;
+  "task_revision": number;
+  "task_fence": number;
+  "manifest": DeviceEvidenceRef;
+  "execution_digest": string;
+  "workspace_id": string;
+  "capability": string;
+  "expires_at": number;
+}
+
+export interface DeviceReconciliationReport {
+  "schema_version": "controlmesh.device_reconciliation_report.v1";
+  "challenge_id": string;
+  "challenge_digest": string;
+  "observation": DeviceObservation;
+  "result": DeviceNativeResult;
 }
 
 export interface DeviceResponse {

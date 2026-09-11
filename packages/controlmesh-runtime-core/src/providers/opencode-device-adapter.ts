@@ -1,3 +1,6 @@
+import { assertProtocolSchema, type DeviceReconciliationChallenge, type DeviceReconciliationReport, type DeviceEvidenceRef, type DeviceNativeResult } from "@controlmesh/protocol";
+import type { DeviceJob } from "../device-coordinator";
+import { NativeResultVerification } from "./native-result-verification";
 import { isAbsolute, resolve } from "node:path";
 import type { DeviceAdapter, DeviceAdapterContext } from "../device-worker";
 import { DeviceExecutionJournal } from "../device-journal";
@@ -30,8 +33,7 @@ export class OpenCodeDeviceAdapter implements DeviceAdapter {
     this.execution = new OpenCodeExecution(store, config, runner);
   }
 
-  async execute(context: DeviceAdapterContext): Promise<{ observation: Record<string, unknown>; result: Record<string, unknown> }> {
-    const job = context.job;
+  private prepare(job: DeviceJob, workspace: string) {
     requireThat(object(job.execution) && digest(job.execution) === job.execution_digest, "device_execution_projection_changed");
     const source = enforceLocalReadSource(job.execution.execution_context);
     requireThat(typeof job.execution.prompt === "string" && job.execution.prompt.length > 0 && Buffer.byteLength(job.execution.prompt) <= 32_768, "invalid_native_task");
@@ -40,13 +42,59 @@ export class OpenCodeDeviceAdapter implements DeviceAdapter {
       && job.execution.provider === "opencode" && job.execution.model === binding.model && digest(this.config.native_configuration) === binding.config_digest, "native_device_provider_mismatch");
     const paths = (input: readonly string[]) => input.map(path => {
       requireThat(typeof path === "string" && path.length > 0 && !isAbsolute(path) && !path.split("/").includes(".."), "device_read_requires_relative_path");
-      return resolve(context.workspace, path);
+      return resolve(workspace, path);
     });
-    const files = readFileGrant(context.workspace, paths(this.options.read_files)), required = readFileGrant(context.workspace, paths(this.options.required_reads));
+    const files = readFileGrant(workspace, paths(this.options.read_files)), required = readFileGrant(workspace, paths(this.options.required_reads));
     requireThat(required.every(file => files.includes(file)), "required_read_not_granted");
     assertReadGrantSnapshot(job.execution.tool_grant, files);
-    const task: LegacyTask = { ...job.execution, task_id: job.task_id, chat_id: "device-execution", status: "waiting", repo_root: context.workspace,
+    const task: LegacyTask = { ...job.execution, task_id: job.task_id, chat_id: "device-execution", status: "waiting", repo_root: workspace,
       native_session: job.execution.native_session ? this.journal.resolveNativeSession(job.execution.native_session, job) : null };
+    return { task, source, binding, files, required };
+  }
+
+  async reconcile(challenge: DeviceReconciliationChallenge, workspace: string, assertCurrent: () => void,
+    report: (value: DeviceReconciliationReport) => Promise<unknown>): Promise<unknown> {
+    assertProtocolSchema("device-reconciliation-challenge.schema.json", challenge);
+    const row = this.journal.inspect(challenge.manifest), job = JSON.parse(row.job) as DeviceJob;
+    requireThat(row.observation && row.observation_digest, "native_observation_unavailable");
+    requireThat(job.execution_digest === challenge.execution_digest && job.workspace_id === challenge.workspace_id
+      && job.capability === challenge.capability, "reconciliation_authority_changed");
+    const { task, source, binding, files, required } = this.prepare(job, workspace);
+    const current = () => {
+      assertCurrent();
+      requireThat(digest(this.options.binding()) === digest(binding), "native_device_binding_changed");
+      const value: unknown = this.options.assertCurrent();
+      if (value !== undefined) { void Promise.resolve(value).catch(() => {}); requireThat(false, "admission_must_be_synchronous"); }
+      const saved = this.journal.inspect(challenge.manifest);
+      requireThat(saved.observation_digest === row.observation_digest, "device_evidence_changed");
+    };
+    current();
+    const verification = new NativeResultVerification(this.store, this.config, task, JSON.parse(row.manifest), JSON.parse(row.observation), binding,
+      { source_scope: source.source_scope as "local_foreground", read_files: files, required_reads: required, assertCurrent: current });
+    try {
+      verification.assertCurrent();
+      const ref = this.journal.retainReconciledResult(challenge.manifest, verification.result);
+      const { result_digest: _result, ...observationRef } = ref;
+      const result = this.networkResult(verification.result, ref);
+      const message: DeviceReconciliationReport = { schema_version: "controlmesh.device_reconciliation_report.v1",
+        challenge_id: challenge.challenge_id, challenge_digest: digest(challenge),
+        observation: { schema_version: "controlmesh.device_observation.v1", evidence: observationRef, terminal: true }, result };
+      verification.assertCurrent();
+      return await report(message);
+    } finally { verification.close(); }
+  }
+
+  private networkResult(result: Record<string, unknown>, evidence: DeviceEvidenceRef): DeviceNativeResult {
+    requireThat(typeof result.text === "string" && Buffer.byteLength(result.text) <= 64 * 1024 && Array.isArray(result.read_files), "native_device_result_too_large");
+    const value = { schema_version: "controlmesh.device_native_result.v1", text: result.text, output_digest: result.output_digest,
+      read_count: result.read_files.length, evidence,
+      native_session: { schema_version: "controlmesh.device_native_session.v1", device_id: this.store.deviceId, evidence } };
+    assertProtocolSchema<DeviceNativeResult>("device-native-result.schema.json", value);
+    return value;
+  }
+
+  async execute(context: DeviceAdapterContext): Promise<{ observation: Record<string, unknown>; result: Record<string, unknown> }> {
+    const { task, source, binding, files, required } = this.prepare(context.job, context.workspace);
     const current = () => {
       context.assertCurrent();
       requireThat(digest(this.options.binding()) === digest(binding), "native_device_binding_changed");
@@ -68,10 +116,7 @@ export class OpenCodeDeviceAdapter implements DeviceAdapter {
       observe: async observation => { original = observation; await context.observe(observation); },
       complete: result => {
         const evidence = context.retainVerifiedResult(result);
-        requireThat(typeof result.text === "string" && Buffer.byteLength(result.text) <= 64 * 1024 && Array.isArray(result.read_files), "native_device_result_too_large");
-        return { schema_version: "controlmesh.device_native_result.v1", text: result.text, output_digest: result.output_digest,
-          read_count: result.read_files.length, evidence,
-          native_session: { schema_version: "controlmesh.device_native_session.v1", device_id: this.store.deviceId, evidence } };
+        return { ...this.networkResult(result, evidence) };
       },
     }, this.options.timeout_ms ?? 60_000);
     requireThat(original, "native_device_observation_missing");

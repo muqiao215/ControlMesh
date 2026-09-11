@@ -40,6 +40,9 @@ export interface ReconciliationBinding {
   manifest_digest: string;
   observation_digest: string;
 }
+export type ReconciliationTarget = Omit<ReconciliationEvidence, "observation" | "observation_digest"> & {
+  observation: Record<string, unknown> | null; observation_digest: string | null;
+};
 
 export class RuntimeKernel {
   constructor(readonly db: RuntimeDatabase) {}
@@ -366,7 +369,7 @@ export class RuntimeKernel {
     this.owned(actor, this.row(taskId));
   }
 
-  inspectReconciliation(actor: Principal, taskId: string, expectedRevision: number, effectId: string): ReconciliationEvidence {
+  inspectReconciliationTarget(actor: Principal, taskId: string, expectedRevision: number, effectId: string): ReconciliationTarget {
     this.reconcileScope(actor, taskId);
     identifier(effectId);
     return this.db.transaction(() => {
@@ -385,9 +388,35 @@ export class RuntimeKernel {
         return { digest: value.digest, payload };
       };
       const manifest = row("execution_manifests", "dispatch_manifest_unavailable");
-      const observation = row("effect_observations", "native_observation_unavailable");
+      const observation = this.db.sql.query("SELECT 1 FROM effect_observations WHERE effect_id=?").get(effectId)
+        ? row("effect_observations", "native_observation_unavailable") : null;
       return { task: this.snapshot(task), episode: { episode_id: episode.episode_id, device_id: episode.device_id, fence: episode.fence }, effect_id: effectId,
-        manifest_digest: manifest.digest, manifest: manifest.payload, observation_digest: observation.digest, observation: observation.payload };
+        manifest_digest: manifest.digest, manifest: manifest.payload, observation_digest: observation?.digest ?? null, observation: observation?.payload ?? null };
+    });
+  }
+
+  inspectReconciliation(actor: Principal, taskId: string, expectedRevision: number, effectId: string): ReconciliationEvidence {
+    const target = this.inspectReconciliationTarget(actor, taskId, expectedRevision, effectId);
+    requireThat(target.observation && target.observation_digest, "native_observation_unavailable");
+    return { ...target, observation: target.observation, observation_digest: target.observation_digest };
+  }
+
+  /** Trusted recovery admission only; a device's expired execution lease cannot call this path. */
+  admitReconciliationObservation(actor: Principal, taskId: string, expectedRevision: number,
+    binding: Omit<ReconciliationBinding, "observation_digest">, observation: Record<string, unknown>, authorizationId: string): void {
+    identifier(authorizationId);
+    this.db.transaction(() => {
+      const target = this.inspectReconciliationTarget(actor, taskId, expectedRevision, binding.effect_id);
+      requireThat(target.episode.episode_id === binding.episode_id && target.manifest_digest === binding.manifest_digest, "reconciliation_evidence_changed");
+      const encoded = canonical(observation), hash = digest(observation);
+      requireThat(Buffer.byteLength(encoded) <= 4 * 1024 * 1024, "effect_observation_too_large");
+      if (target.observation) {
+        requireThat(target.observation_digest === hash, "reconciliation_evidence_changed");
+        return;
+      }
+      this.db.sql.query("INSERT INTO effect_observations VALUES (?,?,?)").run(binding.effect_id, hash, encoded);
+      this.event(actor, this.row(taskId), "effect.observation_recovered", { effect_id: binding.effect_id,
+        observation_digest: hash, authorization_id: authorizationId, reporter_device: target.episode.device_id });
     });
   }
 
