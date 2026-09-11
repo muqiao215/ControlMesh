@@ -457,3 +457,40 @@ The initial container report queried SQLite, but actual container ownership uses
 per-container record.json files. Independent verification read those records and confirmed
 all nine immutable container IDs absent. The initial report is preserved, and only the
 reporting code/result was corrected. Native acceptance itself was not repeated.
+
+
+## Device workspace integration — 2026-09-12
+
+Device publication can reuse current coordinator lease renewal after retained observation;
+it must serialize that explicit refresh with the heartbeat, then enforce the conservative
+local monotonic deadline before each file operation. Recovery re-fetches the same current
+challenge before touching files. An observed outcome may still precede cancellation or loss
+of its completion response; no instantaneous remote-revocation guarantee is asserted.
+
+DeviceEvidenceRef now distinguishes a write profile using digests only. The coordinator
+requires matching published-proposal proof on normal completion and reconciliation. Native
+store, stage, root paths and complete receipts remain device-local. Optional SpecMesh uses
+its independent start and post-publication checks; source/profile changes revoke admission.
+The original read-only adapter and manifests remain compatible.
+
+Initial read regressions exposed optional undefined configuration members being fed to the
+canonical digest; top-level absent options now normalize consistently. The existing 34-case
+device read suite passes. The new SpecMesh fixture initially had an unborn Git HEAD and then
+looked for results in the task row instead of the episode owner. Fixes create its isolated
+committed baseline and inspect the actual episode; these did not weaken runtime checks.
+
+
+The real device trial first put state_home above the project and was rejected before native
+task dispatch, after one successful model preflight. The isolated device journal contained
+zero task records and canonical files were unchanged. Correcting the fixture to sibling
+state/project directories succeeded. WorkspaceStage now exposes the same location check to
+both adapters before preflight, with cache-empty regression tests. The earlier preflight had
+expired; current code performed one fresh probe rather than extending its timestamp. The
+successful attempt used one probe/two task turns, and recovery used zero native commands.
+Both attempts and cleanup remain recorded separately.
+
+The wire read_count limit of 80 described the original fixed read registration. A write-root
+profile can legitimately read more distinct in-scope files. The count is now a safe integer;
+a fixture verifies 86 actual native reads while unchanged root/path/tool checks still enforce
+scope. This metadata extension is fixture-qualified after the real six-file canary; no model
+rerun is necessary to validate a numeric field bound.

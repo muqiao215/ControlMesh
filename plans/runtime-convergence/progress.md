@@ -2,63 +2,66 @@
 
 ## Current
 
-Full goal active. CM-R0 through CM-R6 remain in progress; CM-R7 is not activated.
-Python v0.43.0 remains the released/installed production runtime. The current increment
-qualifies normal **local candidate TaskHub writes and recovery**, not full TS migration.
-Published predecessor `c7603a4dcb4a5b76e7f8400b1faee488cc77632f` has exact-SHA
-[CI success](https://github.com/muqiao215/ControlMesh/actions/runs/34647927631).
-This increment's publication and exact-SHA CI must be checked after commit.
+Full goal active: CM-R0 through CM-R6 remain in progress, CM-R7 is not activated. Python
+v0.43.0 remains released/installed production. Local TaskHub write/recovery baseline
+`e56d95b7f632c133ba380fa5ae91f94986bff784` has exact-SHA
+[CI success](https://github.com/muqiao215/ControlMesh/actions/runs/34651878404).
+The current increment adds **device-local staged writes and original-proposal recovery**;
+publication and exact-SHA CI must be verified after commit.
 
-Trusted `workspace.write_roots` now selects the staged OpenCode driver through
-`openLocalRuntime`/`LocalTaskRuntime`. Version-2 native manifests retain the original
-snapshot, roots, native permission scope, workflow binding and sealed proposal. Version-1
-read manifests remain supported. Actual file-tool evidence must cover every proposed path;
-Git and existing symlink aliases are denied. Native execution receives staged mounts only.
-Current controller authority publishes each file with a durable journal; the whole batch
-is not atomic. The optional independent SpecMesh check runs again after publication,
-including updated continuity documents, before task completion.
+`OpenCodeDeviceAdapter` accepts trusted relative write roots and optional independent
+SpecMesh. Actual native writes stay staged; full manifests/native/session/files remain on
+the worker. Bounded wire references bind the write profile and workflow; completion and
+reconciliation require a matching published-proposal proof. Before normal publication the
+worker serializes a live coordinator renewal with its heartbeat. Before recovered publication
+it re-fetches the same current challenge. Each local file operation also checks its monotonic
+lease/challenge deadline and original local authority. Cancellation/revocation/partition at
+refresh prevents publication. Changes already applied before later cancellation or lost
+completion remain explicitly recoverable uncertainty; there is no distributed batch atomicity
+or instantaneous remote revocation guarantee.
 
-Private `inspect_reconciliation`/`reconcile_task` operations accept the original retained
-result after interruption without another Agent invocation. Schema 13 reserves the command
-identity before publication/asynchronous workflow checks and consumes it with the final
-receipt. Conflicting reuse rejects even after process restart. Current task, grant, native,
-file and workflow identity must still match. Unknown or unsealed outcomes do not replay.
+Real acceptance on **2026-09-11 22:24:41–22:26:21 UTC**: ARM64 Rock 5C coordinator and x64
+OpenCode 1.18.29/M3 worker. The first task edited PROJECT/code and wrote a result in its stage;
+an intentionally dropped observation left canonical counter 1 unchanged. After both runtime
+and coordinator reconstruction, explicit recovery published that original proposal as counter
+2, with zero native commands and an idempotent receipt. A second turn in the same native
+session recalled the marker without reinjection, read current documents/code and changed
+counter 2 -> 3. Every turn made five required continuity reads, two native edits and one write.
+Independent native/device/file/Docker readback confirms two applied proposals, two completed
+local records, two confirmed coordinator effects, one reconciliation and twelve containers
+absent. Independent SSH inspection confirms the temporary ARM64 coordinator and directory gone.
+Both post-publication SpecMesh checks passed structurally; semantic closeout is not claimed.
 
-Real OpenCode 1.18.29/M3 acceptance used the normal local candidate entrypoint. The same
-native session read five required continuity files on each turn, edited PROJECT and code,
-and created a result: counter 1 -> 2 -> 3, with marker recall and no second-turn reinjection.
-A deliberately failed completion transaction occurred after first-turn publication. After
-runtime reopen, reconciliation accepted that original result; receipt replay preserved file
-inodes and native message count. Independent native/task/journal/Docker inspection confirms
-two completed episodes/runs, two confirmed effects, one reconciled effect and nine containers
-absent. One preflight generation was used; actual provider billing counts are not measured.
-Post-publication structural SpecMesh checks passed; independent semantic closeout is unproven.
+The successful attempt used one model preflight plus two task turns (nine native commands,
+three model-run commands). An earlier fixture-layout failure used one additional preflight,
+created zero native task records and changed no project files. Its staging location was an
+ancestor of the project and correctly rejected. The location check is now also performed
+before preflight in both local/device adapters. Its already-expired probe was not extended;
+the successful attempt reused only unstarted local state. Both attempts remain recorded.
+Provider API/billing request counts are not measured.
 
-That native run preceded schema 13. Reopening its actual schema-12 state with current code
-upgraded to 13 and replayed the original acceptance receipt without new events, native messages
-or containers. Async reservation/conflict/restart behavior is covered by the focused fixture;
-no paid model rerun was needed for this storage change.
+Final CI Bun 1.3.11 core regression: **322 passed / 17 Docker cases skipped / 0 failed**,
+3,592 assertions, 339 cases in 34 files, 34.26 seconds. Focused layout/local/device tests
+passed 18/18. Protocol Python tests passed 9/9; strict TS, generated-model Ruff and ownership
+checks passed. The 512-module/57-field inventory changed only the generated protocol-model
+hash. Final actual-Docker verification passed **25 tests / 113 assertions / 0 failures**
+in 37.85 seconds and covered all 17 skipped cases; all 339 unique cases passed across
+the bounded runs. A wire read-count extension
+allows actual in-scope reads beyond the old 80-file fixed list; a test verifies 86 reads.
+This numeric-bound extension followed the six-file real canary and did not rerun the model.
 
-CI Bun 1.3.11: **310 passed / 17 Docker cases skipped / 0 failed**, 3,456 assertions,
-327 cases across 33 files, 27.55 seconds. Typecheck, 512-module/57-field ownership inventory
-and diff checks passed. The separate actual-Docker gate passed **25 tests / 113 assertions /
-0 failures** in 37.95 seconds, including every skipped case: all 327 unique core cases
-have passed across these bounded runs. Seven initial
-migration-test failures were old-schema fixtures retaining the new table while downgrading
-`user_version`; fixtures now restore the old table set. Production migration was unchanged.
+Private coordinating-workspace evidence:
+`outputs/runtime-convergence/device-write-acceptance.{ts,json,log}`,
+`device-write-coordinator.{ts,js}`, `verify_device_write_native.py`,
+`device-write-independent-verification.json`, the preserved `.initial.{json,log}` attempt,
+and `device-write-core-final.log` / `device-write-containers-final.log`.
+No production writer/service/installation, real chat delivery, browser account or automation
+was changed. Full remaining owners are still required by task_plan.md.
 
-Private acceptance files in the coordinating workspace are
-`outputs/runtime-convergence/taskhub-write-native-acceptance.{ts,json,log}`,
-`verify_taskhub_write_native.py`, `taskhub-write-native-independent-verification.json`,
-`taskhub-write-upgrade-check.{ts,json}` and the `taskhub-write-*-final/fixed.log` test logs.
-The first report's container lookup used the wrong store; independent verification read the
-actual per-container records and confirmed absence. Only reporting changed; native work was
-not rerun. The initial report is retained separately.
-
-Next owner: device-local staged publication under current coordinator authority, followed by
-lost-result recovery and a real two-device write canary. Other providers/tool profiles,
-transports, stores, topology, terminal, writer cutover and release/install gates remain open.
-See [native-write-design.md](native-write-design.md) for current limits and acceptance.
+Next: expose device coordinator/worker execution, assignment and recovery through normal
+private startup/control. Existing device scripts are synthetic canary entrypoints; a library
+canary does not establish the installed multi-device workflow. Continue other provider/tool
+profiles, transports, stores, topology, terminal, writer cutover and release/install gates.
 
 ## Done
 
@@ -333,10 +336,10 @@ case normalization confirmed removal without rerunning any provider execution.
 
 ## Next
 
-Publish the accepted local TaskHub write/recovery increment and verify exact-SHA CI. Then
-implement device-local publication authority and retained-proposal recovery, with a real
-two-device write canary. Continue the remaining provider/transport/store/topology/product/
-default/release/install owners in the full plan; Python remains production until cutover.
+Publish and verify the accepted device-write increment, then implement normal private
+coordinator/worker startup and task assignment/recovery controls. Continue the remaining
+provider/transport/store/topology/product/default/release/install owners; Python remains
+production until the full cutover gates pass.
 
 ## Device-native communication — 2026-09-12
 

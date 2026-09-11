@@ -61,6 +61,9 @@
     },
     "mailbox_delivery": {
       "$ref": "native-mailbox-binding.schema.json"
+    },
+    "workspace_write": {
+      "$ref": "device-workspace-binding.schema.json"
     }
   }
 }

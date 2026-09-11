@@ -13,6 +13,7 @@ import { PreflightCache, type ProbeBinding } from "./preflight-cache";
 import { ProviderPreflightService } from "./preflight-service";
 import { nativeAgentTools } from "./native-agent-journal";
 import { assertNativeAgentConfiguration } from "./native-agent-profile";
+import { WorkspaceStage } from "../workspace-stage";
 import { registeredReads, writeRoots } from "./native-workspace";
 import { assertWorkspaceGrantSnapshot } from "./opencode-profile";
 
@@ -50,6 +51,7 @@ export class OpenCodeTaskAdapter {
         : readFileGrant(identity.path, this.registration.admission.read_files);
       assertReadGrantSnapshot(task.task.tool_grant, files, this.config.communication ? nativeAgentTools : []);
       if (roots.length) {
+        WorkspaceStage.assertLocation(this.config.state_home, identity.path);
         requireThat(this.runner.forStage && this.registration.admission.workspace_write
           && digest(writeRoots(identity.path, this.registration.admission.workspace_write)) === digest(roots), "native_write_owner_required");
         assertWorkspaceGrantSnapshot(task.task.tool_grant, identity.path, roots, this.config.communication ? nativeAgentTools : []);

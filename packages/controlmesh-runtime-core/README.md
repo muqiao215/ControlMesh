@@ -421,7 +421,8 @@ original current registered profile and native evidence. Unsealed outcomes remai
 The optional SpecMesh gate runs again after publication and can validate owned continuity
 document changes. Current structural pass is recorded separately from independent semantic
 closeout. A real two-turn normal local TaskHub canary exercised edits, completion loss,
-reopen/reconciliation and original-session recall; device writes are still pending.
+reopen/reconciliation and original-session recall. The device write owner also has real
+acceptance; see Device-local workspace writes below for its separate integration boundary.
 
 ## Evidence and remaining work
 
@@ -492,11 +493,41 @@ The authenticated worker transport and a real x64/ARM64 synthetic two-device can
 now implemented. Remaining fleet work includes other native provider/grant profiles and
 their reconciliation, durable presence/capability revision and topology/dependency policy,
 credential rotation/re-enrollment, unattended service rollout and activation/rollback.
-The qualified OpenCode read profile now has a real remote `DeviceAdapter`; assigning a
+Qualified OpenCode read and staged-write profiles now have a real remote `DeviceAdapter`; assigning a
 capability is not a provider tool grant. Other adapters must independently enforce current source,
 grant, native-session and workspace rules and verify native evidence before returning a
 result. Remote completion is an authenticated worker report, not protection against a
 compromised device that fabricates evidence.
+
+## Device-local workspace writes
+
+`OpenCodeDeviceOptions.write_roots` registers literal relative directories under the worker's
+trusted logical workspace mapping. Absent/empty roots retain reads. Use the matching
+`OpenCodeStagedContainerRunner` and an owner-only `state_home` outside the project and its
+ancestors; both adapters now validate that layout before spending a preflight. The task's
+portable grant must permit the shared edit/write/apply_patch permission and selected roots.
+The optional `specmesh: SpecMeshPort` runs independent checks before preflight and after owned
+publication; every selected continuity reference must already be in `required_reads`.
+
+The worker retains actual native files, store identity, v2 manifest, sealed proposal and
+write journal locally. `DeviceEvidenceRef.workspace_write` sends only the profile digest
+and workflow binding. `DeviceNativeResult.workspace_write` carries the matching profile,
+proposal digest, changed count and optional structural SpecMesh result. A missing/substituted
+proof cannot complete or reconcile a write task. Read-count metadata reflects actual reads,
+including authorized files beyond the fixed required-read registration; it issues no grants.
+
+Publication drains concurrent renewal and obtains current coordinator authorization before
+any canonical file replacement. Synchronous file steps also check the local conservative
+lease deadline and scope. Recovery re-fetches its original current challenge, validates the
+retained native/proposal evidence, and resumes only the original journal. Native execution is
+unavailable during recovery. A partition/revocation/cancellation at confirmation rejects;
+files applied before later cancellation or completion loss remain an unknown outcome to
+reconcile. Neither immediate remote revocation nor atomic multi-file transactions is claimed.
+
+An actual ARM64 coordinator/x64 OpenCode worker passed two-turn edits/current-document reads,
+coordinator reconstruction and original-proposal recovery without another model invocation.
+See the repository native-write design for limits. Normal device startup/control and the
+installed workflow remain pending; the existing device script is a synthetic test driver.
 
 ## Device transport contract
 

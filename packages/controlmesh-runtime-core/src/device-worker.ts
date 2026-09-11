@@ -17,6 +17,7 @@ export interface DeviceAdapterContext {
   authority: DeviceLeaseAuthority;
   assertCurrent: () => void;
   effect_id: string;
+  preparePublication: () => Promise<void>;
   mailboxInput: () => Promise<NativeMailboxBatch | undefined>;
   nativeCall: (tool: string, input: Record<string, unknown>, signal: AbortSignal) => Promise<Record<string, unknown>>;
   runProcess: (spec: Omit<ProcessSpec, "cwd">) => Promise<ProcessOutcome>;
@@ -30,7 +31,7 @@ export interface DeviceAdapter {
   /** Must verify its native result; returning only an exit code is not semantic acceptance. */
   execute(context: DeviceAdapterContext): Promise<{ observation: Record<string, unknown>; result: Record<string, unknown> }>;
   reconcile?(challenge: DeviceReconciliationChallenge, workspace: string, assertCurrent: () => void,
-    report: (value: DeviceReconciliationReport) => Promise<unknown>): Promise<unknown>;
+    report: (value: DeviceReconciliationReport) => Promise<unknown>, preparePublication?: () => Promise<void>): Promise<unknown>;
 }
 export interface DeviceWorkerOptions {
   workspaces: Readonly<Record<string, string>>;
@@ -93,6 +94,12 @@ export class DeviceWorker {
       const result = await this.client.command("reconcile", { report }, `device-reconcile-${challengeId}`);
       requireThat(object(result) && result.task_id === challenge.manifest.task_id && digest(result.evidence) === digest(report.result.evidence), "invalid_reconciliation_response");
       return receipt(result);
+    }, async () => {
+      current();
+      const refreshed = await this.client.command("reconciliation", { challenge_id: challengeId });
+      current();
+      requireThat(object(refreshed) && refreshed.state === "pending" && digest(refreshed.challenge) === issued
+        && Number.isSafeInteger(refreshed.remaining_ms) && Number(refreshed.remaining_ms) > 0, "reconciliation_authority_changed");
     });
   }
 
@@ -140,6 +147,16 @@ export class DeviceWorker {
       assertCurrent();
       if (!preparedMode) await dispatch({ capability: job.capability, workspace_id: job.workspace_id, input_digest: digest(job.input) });
       const output = await adapter.execute({ job, workspace: workspace.path, authority, assertCurrent, effect_id: effect,
+        preparePublication: async () => {
+          assertCurrent(); requireThat(preparedMode && dispatched && observedDigest && !verified && !closed, "device_publication_unavailable");
+          // Serialize the explicit publication refresh with the normal heartbeat.
+          if (timer) clearTimeout(timer);
+          await renewal;
+          if (timer) clearTimeout(timer);
+          assertCurrent();
+          await authority.renew();
+          assertCurrent(); arm();
+        },
         mailboxInput: async () => {
           assertCurrent(); requireThat(preparedMode && !prepared && !attempted, "device_native_input_unavailable");
           const response = await this.client.command("native_input", { lease: authority.lease });

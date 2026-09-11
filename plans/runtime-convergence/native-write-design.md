@@ -1,7 +1,8 @@
 # Native writes with original-session continuity
 
 Status: in_progress. Normal local candidate TaskHub write/completion/reconciliation is
-implemented and accepted with real OpenCode 1.18.29/M3. Device write ownership and other
+implemented and accepted with real OpenCode 1.18.29/M3. Device-local writes and recovery
+also have actual ARM64-coordinator/x64-worker acceptance; normal device startup and other
 profiles remain pending. Python v0.43.0 remains production; see progress.md for publication.
 
 ## Owner and implementation
@@ -71,9 +72,9 @@ coverage until a suitable real-provider acceptance runs. See progress.md for cur
 
 ## Remaining scope and limits
 
-1. Device-local publication must be bound to current coordinator assignment/fence, with
-   disconnect/restart recovery and a real two-device write acceptance. The existing device
-   adapter is qualified for reads; local success does not authorize remote writes.
+1. Normal coordinator/worker startup, assignment and recovery control must expose the
+   qualified device writer through explicit configuration. The present device script is a
+   synthetic canary entrypoint; library acceptance does not close the product workflow.
 2. Staging is bounded to 64 MiB total, 4 MiB/file, 2,048 entries, 64 roots and a 2 MiB private
    record. Large-project/dependency/cache exclusion and general workspace cleanup are not
    qualified. Scoped roots are supported; do not silently increase limits or copy secrets.
@@ -84,3 +85,35 @@ coverage until a suitable real-provider acceptance runs. See progress.md for cur
    transport/store/topology/product owners and production release/install cutover remain
    required by the full runtime-convergence plan. Native clients outside CM do not honor
    its advisory session locks.
+
+
+## Accepted device integration
+
+Trusted device options select relative write roots and optional independent SpecMesh. The
+shared native runner stages and seals; the device journal retains full evidence. Wire
+references carry only a write-profile digest and workflow binding. Completion/reconciliation
+must include the matching published-proposal proof; read results cannot silently substitute.
+
+Before normal publication, DeviceWorker drains an in-flight heartbeat and renews the actual
+coordinator lease. Before recovered publication it fetches the same current challenge again.
+Every local file operation still checks the conservative monotonic deadline, original local
+workspace/profile and journal. Network failure, coordinator cancellation/revocation or stale
+assignment before confirmation prevents publication. A leased operation can have applied
+files before later cancellation/result loss; this remains explicitly recoverable uncertainty,
+not an impossible claim of instantaneous remote revocation or distributed batch atomicity.
+
+Tests cover normal writes and native continuation, lost observation before publication,
+partial publication, lost completion/recovery acknowledgement, repeated recovery without
+another native call, changed registration/files/workflow, cancellation/revocation/partition,
+expired challenge/lease, proof omission/substitution and existing read-only behavior. Local
+and device invalid-layout tests clear readiness first and verify zero provider commands.
+A separate fixture verifies 86 in-scope reads; read_count is an aggregate safe integer, not
+the old required-read list limit or a new authority grant.
+
+The actual ARM64 coordinator/x64 native worker canary passed two turns, observation loss,
+coordinator/local reconstruction, original-proposal recovery and original-session recall.
+Five required continuity reads and two edits/one write were observed per turn. Independent
+readback verifies stage lineage 1 -> 2 -> 3 and cleanup; exact counts and initial fixture
+failure are recorded in progress.md. General native apply_patch/delete/move are still fixture
+coverage, and the device report authenticates the worker rather than proving a compromised
+worker honest. SpecMesh remains independent and does not claim reviewed semantic closeout.

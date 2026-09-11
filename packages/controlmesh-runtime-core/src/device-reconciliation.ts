@@ -1,3 +1,4 @@
+import { verifyDeviceWorkspaceProof } from "./providers/device-workspace-proof";
 import { randomUUID } from "node:crypto";
 import { assertProtocolSchema, type DeviceEvidenceRef, type DeviceReconciliationChallenge, type DeviceReconciliationReport } from "@controlmesh/protocol";
 import { command, requireScope } from "./commands";
@@ -102,6 +103,7 @@ export class DeviceReconciliation {
       }
       this.current(device, row, challenge);
       const { observation, result } = report;
+      verifyDeviceWorkspaceProof(challenge.manifest.workspace_write, result.workspace_write);
       for (const ref of [observation.evidence, result.evidence]) {
         const { observation_digest: _observation, result_digest: _result, ...base } = ref;
         requireThat(digest(base) === digest(challenge.manifest), "device_evidence_reference_mismatch");

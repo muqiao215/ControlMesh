@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.controlmesh.dev/controlmesh/v1/device-workspace-binding.schema.json",
+  "title": "DeviceWorkspaceBinding",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile_digest",
+    "workflow_binding"
+  ],
+  "properties": {
+    "profile_digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "workflow_binding": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+}

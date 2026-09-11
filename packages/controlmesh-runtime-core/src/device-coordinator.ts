@@ -1,3 +1,4 @@
+import { assertDeviceWorkspaceGrant, verifyDeviceWorkspaceProof } from "./providers/device-workspace-proof";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { assertProtocolSchema, ProtocolValidationError, type DeviceCommand, type DeviceLeaseWindow, type DeviceReconciliationReport } from "@controlmesh/protocol";
 import { command, requireScope } from "./commands";
@@ -232,6 +233,7 @@ export class DeviceCoordinator {
           const manifest = this.nativeManifest(lease, args.effect_id as string);
           assertProtocolSchema("device-native-result.schema.json", args.result);
           const result = args.result as Record<string, unknown>;
+          verifyDeviceWorkspaceProof(manifest.workspace_write, result.workspace_write);
           this.evidenceMatches(manifest, result.evidence);
           requireThat(result.evidence.result_digest && result.evidence.observation_digest && digest(result.text) === result.output_digest, "device_result_evidence_missing");
           const original = this.kernel.db.sql.query("SELECT payload FROM effect_observations WHERE effect_id=?").get(args.effect_id as string) as { payload: string } | null;
@@ -277,6 +279,7 @@ export class DeviceCoordinator {
           if (manifest) requireThat(manifest.device_id === device.device_id && manifest.task_id === job.task_id
             && manifest.episode_id === lease.episode_id && manifest.fence === lease.fence && manifest.effect_id === args.effect_id
             && manifest.assignment_digest === job.assignment_digest && !manifest.observation_digest && !manifest.result_digest, "device_manifest_binding_mismatch");
+          assertDeviceWorkspaceGrant(manifest?.workspace_write, job.execution?.tool_grant);
           if (manifest?.communication) {
             const scope = decodeNativeAgentScope(manifest.communication);
             requireThat(scope.task_id === job.task_id && scope.episode_id === lease.episode_id && scope.fence === lease.fence

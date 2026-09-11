@@ -82,13 +82,19 @@ function inspectPermissions(value: unknown, agent: string, dataHome: string, fil
     ...(communication.length ? { native_tools: [...communication].sort() } : {}), ...(edits.length ? { edit_patterns: [...edits] } : {}) }), tool_count: tools.length };
 }
 
+/** OpenCode exposes one edit permission for all three native file-write tools. */
+export function assertSharedEditGrant(value: unknown): void {
+  const grant = decodeToolGrant(value), allows = grant.tool_allow.map(tool => tool.toLowerCase()), denies = grant.tool_deny.map(tool => tool.toLowerCase());
+  requireThat(["edit", "write", "apply_patch"].every(tool => !denies.includes(tool) && (!allows.length || allows.includes(tool))), "native_shared_edit_permission_conflicts_grant");
+}
+
 export function assertWorkspaceGrantSnapshot(value: unknown, workspace: string, roots: readonly string[], communication: readonly string[] = []): void {
   assertReadGrantSnapshot(value, roots, communication);
-  const grant = decodeToolGrant(value), allows = grant.tool_allow.map(tool => tool.toLowerCase()), denies = grant.tool_deny.map(tool => tool.toLowerCase());
+  const grant = decodeToolGrant(value);
   requireThat(roots.length > 0 && roots.every(root => isAbsolute(root) && realpathSync(root) === root && statSync(root).isDirectory()
     && !/[?*\x00]/.test(root) && relative(workspace, root) !== ".." && !relative(workspace, root).startsWith("../") && !isAbsolute(relative(workspace, root))
     && !relative(workspace, root).split("/").includes(".git")), "native_write_root_outside_workspace");
-  requireThat(["edit", "write", "apply_patch"].every(tool => !denies.includes(tool) && (!allows.length || allows.includes(tool))), "native_shared_edit_permission_conflicts_grant");
+  assertSharedEditGrant(value);
   if (grant.writable_roots.length) requireThat(roots.every(root => grant.writable_roots.some(granted => {
     const resolved = isAbsolute(granted) ? realpathSync(granted) : realpathSync(join(workspace, granted));
     const path = relative(resolved, root); return path === "" || (path !== ".." && !path.startsWith("../") && !isAbsolute(path));

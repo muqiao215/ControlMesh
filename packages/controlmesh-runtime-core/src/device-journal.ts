@@ -3,6 +3,7 @@ import type { RuntimeDatabase } from "./database";
 import type { DeviceJob } from "./device-coordinator";
 import type { Lease } from "./kernel";
 import { canonical, digest, identifier, object, requireThat } from "./value";
+import { deviceWorkspaceBinding } from "./providers/device-workspace-proof";
 import { decodeNativeAgentScope } from "./providers/native-agent-journal";
 import { decodeNativeMailbox, nativeMailboxBinding } from "./providers/native-mailbox-input";
 
@@ -33,9 +34,10 @@ export class DeviceExecutionJournal {
     return row;
   }
   private reference(row: DeviceExecutionRecord): DeviceEvidenceRef {
-    const manifest = JSON.parse(row.manifest);
+    const manifest = JSON.parse(row.manifest), workspace = deviceWorkspaceBinding(manifest);
     return { schema_version: "controlmesh.device_evidence.v1", device_id: row.device_id, task_id: row.task_id, episode_id: row.episode_id,
       effect_id: row.effect_id, fence: row.fence, assignment_digest: row.assignment_digest, manifest_digest: row.manifest_digest,
+      ...(workspace ? { workspace_write: workspace } : {}),
       ...(manifest.communication ? { communication: decodeNativeAgentScope(manifest.communication) } : {}),
       ...(manifest.mailbox_delivery ? { mailbox_delivery: nativeMailboxBinding(decodeNativeMailbox(manifest.mailbox_delivery)) } : {}),
       ...(row.observation_digest ? { observation_digest: row.observation_digest } : {}), ...(row.result_digest ? { result_digest: row.result_digest } : {}) };
@@ -45,6 +47,7 @@ export class DeviceExecutionJournal {
     requireThat(ref.device_id === this.deviceId, "device_evidence_wrong_device");
     const row = this.row(ref.effect_id), current = this.reference(row);
     for (const [key, value] of Object.entries(ref)) requireThat(digest((current as unknown as Record<string, unknown>)[key]) === digest(value), "device_evidence_changed");
+    requireThat(Boolean(ref.workspace_write) === Boolean(current.workspace_write), "device_evidence_changed");
     requireThat(Boolean(ref.communication) === Boolean(current.communication), "device_evidence_changed");
     requireThat(Boolean(ref.mailbox_delivery) === Boolean(current.mailbox_delivery), "device_evidence_changed");
     return row;

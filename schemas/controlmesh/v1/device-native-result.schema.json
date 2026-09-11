@@ -27,7 +27,7 @@
     "read_count": {
       "type": "integer",
       "minimum": 0,
-      "maximum": 80
+      "maximum": 9007199254740991
     },
     "evidence": {
       "$ref": "device-evidence-ref.schema.json"
@@ -40,6 +40,9 @@
     },
     "mailbox_delivery": {
       "$ref": "native-mailbox-proof.schema.json"
+    },
+    "workspace_write": {
+      "$ref": "device-workspace-proof.schema.json"
     }
   }
 }

@@ -111,6 +111,7 @@ export interface DeviceEvidenceRef {
   "result_digest"?: string;
   "communication"?: NativeAgentScope;
   "mailbox_delivery"?: NativeMailboxBinding;
+  "workspace_write"?: DeviceWorkspaceBinding;
 }
 
 export interface DeviceLeaseWindow {
@@ -128,6 +129,7 @@ export interface DeviceNativeResult {
   "native_session": DeviceNativeSession;
   "communication"?: NativeAgentProof;
   "mailbox_delivery"?: NativeMailboxProof;
+  "workspace_write"?: DeviceWorkspaceProof;
 }
 
 export interface DeviceNativeSession {
@@ -168,6 +170,18 @@ export interface DeviceResponse {
   "ok": boolean;
   "data"?: unknown;
   "error"?: string;
+}
+
+export interface DeviceWorkspaceBinding {
+  "profile_digest": string;
+  "workflow_binding": string | null;
+}
+
+export interface DeviceWorkspaceProof {
+  "profile_digest": string;
+  "proposal_digest": string;
+  "changed_count": number;
+  "specmesh"?: Record<string, unknown>;
 }
 
 export interface DoctorResult {

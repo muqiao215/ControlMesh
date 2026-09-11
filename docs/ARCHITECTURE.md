@@ -365,8 +365,8 @@ uses per-file write-ahead journaling and fsync, with explicit partial-batch reco
 than batch atomicity. `inspect_reconciliation`/`reconcile_task` verify and apply the original
 proposal without a new native invocation. Schema 13 reserves request identity before recovery
 publication/asynchronous verification and atomically exchanges it for the completed receipt.
-Current revision/grant/configuration/native/file checks remain mandatory. Device-write and
-unsealed-result recovery ownership are still open; see the active native-write design.
+Current revision/grant/configuration/native/file checks remain mandatory. Normal device
+startup and unsealed-result recovery ownership are still open; see the active native-write design.
 
 `specmesh-port.ts` is an optional adapter to an explicitly registered independent SpecMesh
 checkout. It pins package/Python/workspace identity, validates the external snapshot
@@ -500,7 +500,7 @@ The worker's `runProcess` supplies a suspend-aware lease deadline to the Linux p
 anchor. Request replay never restores expired execution authority, and completion commits
 the effect/result receipt atomically. Explicit peer assignments allow cross-device
 mailbox exchange without granting execution access to the peer task. This transport has
-real synthetic x64/ARM64 evidence and a qualified native read adapter; other provider fleet
+real x64/ARM64 native read/write/recovery evidence; other provider fleet
 profiles and production startup remain gated by the active plan.
 
 `OpenCodeExecution` shares native preparation and verification between `OpenCodeWorker`
@@ -510,6 +510,18 @@ job/workspace and native manifest. The coordinator receives digest references an
 result with an opaque native session handle. Cross-task/episode/reference mismatches are
 rejected before completion. The original device resolves that handle after restart; kernel
 resume preserves the task's original source and grant while worker events stay agent-origin.
+
+Optional device `write_roots` are resolved only through the trusted local workspace map.
+The staged runner keeps canonical project files non-writable to the native process. Full
+write manifests and retained proposals stay in the device journal; wire references carry
+only a profile digest/workflow binding and a matching bounded publication proof. Normal
+completion and recovery both reject missing/substituted proofs. Publication serializes an
+explicit coordinator renewal with heartbeat updates; recovery re-fetches its existing
+challenge. Local monotonic deadline/scope checks guard each journaled file operation. The
+optional independent SpecMesh check runs before preflight and after publication. Failures
+remain uncertain and do not rerun the model. Already-applied files can precede later remote
+cancellation; no instantaneous distributed revocation or multi-file atomicity is asserted.
+Normal device startup/control remains a separate uncompleted owner.
 
 Unstarted preparation failures can release an effect-free lease and return a typed reason;
 expired unstarted admissions return to waiting. Started/uncertain effects cannot use this

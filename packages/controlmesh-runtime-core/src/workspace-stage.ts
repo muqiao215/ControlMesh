@@ -109,12 +109,17 @@ export class WorkspaceStage {
     let called = false; const result = authority(() => { requireThat(!called, "workspace_authority_repeated"); called = true; this.assertCurrent(); return run(); });
     requireThat(called && !(result instanceof Promise), "workspace_authority_must_be_synchronous"); return result;
   }
-  static create(stateRoot: string, workspace: string, writeRoots: readonly string[], binding: string, authority: WorkspaceAuthority): WorkspaceStage {
-    requireThat(authority.constructor.name !== "AsyncFunction", "workspace_authority_must_be_synchronous");
-    requireThat(isAbsolute(stateRoot) && /^[a-f0-9]{64}$/.test(binding), "workspace_stage_binding_mismatch");
+  /** Reject invalid local staging layout before spending a provider preflight. */
+  static assertLocation(stateRoot: string, workspace: string): DirectoryIdentity {
     const root = directoryIdentity(workspace), state = directoryIdentity(stateRoot), stat = fs.lstatSync(state.path);
     requireThat(workspace === root.path && stateRoot === state.path && stat.uid === process.getuid?.() && (stat.mode & 0o077) === 0
       && !contains(workspace, stateRoot) && !contains(stateRoot, workspace), "workspace_stage_private_state_required");
+    return root;
+  }
+  static create(stateRoot: string, workspace: string, writeRoots: readonly string[], binding: string, authority: WorkspaceAuthority): WorkspaceStage {
+    requireThat(authority.constructor.name !== "AsyncFunction", "workspace_authority_must_be_synchronous");
+    requireThat(isAbsolute(stateRoot) && /^[a-f0-9]{64}$/.test(binding), "workspace_stage_binding_mismatch");
+    const root = WorkspaceStage.assertLocation(stateRoot, workspace);
     const selected = [...new Set(writeRoots)].sort();
     requireThat(selected.length > 0 && selected.length <= 64, "workspace_stage_roots_required");
     for (const path of selected) {

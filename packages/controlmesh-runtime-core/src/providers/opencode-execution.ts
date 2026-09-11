@@ -54,6 +54,7 @@ export interface NativeExecutionHooks<T> {
   mailbox_delivery?: NativeMailboxBatch;
   communication?: { scope: NativeAgentScope; command: string[]; freeze: () => Promise<void>; verify: (tools: NativeAgentToolResult[]) => Record<string, unknown> };
   workspace?: { state_home: string; binding_digest: string; authority: WorkspaceAuthority; assertCurrent: () => void;
+    preparePublication?: () => Promise<void>;
     verifyPublication?: (assertPublished: () => void) => Promise<Record<string, unknown>> };
 }
 
@@ -206,6 +207,8 @@ export class OpenCodeExecution {
       assertCurrent();
       let publicationEvidence: Record<string, unknown> = {};
       if (stage) {
+        await hooks.workspace!.preparePublication?.();
+        assertCurrent();
         publishing = true;
         published = stage.promote(hooks.workspace!.authority, proposal!.proposal_digest);
         assertCurrent();

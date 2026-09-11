@@ -185,3 +185,10 @@ test("schema twelve upgrades without starting work or losing task identity", () 
   expect(f.kernel().inspect(actor, "task")).toEqual(before); expect(f.commands()).toBe(0);
   expect(f.db().sql.query("SELECT COUNT(*) AS n FROM command_reservations").get()).toEqual({ n: 0 });
 });
+
+
+test("invalid local staging layout is refused before spending a native preflight", async () => {
+  const f = setup(); f.config.state_home = f.root; f.db().sql.exec("DELETE FROM provider_checks");
+  expect(() => f.run()).toThrow("workspace_stage_private_state_required");
+  expect(f.commands()).toBe(0); expect(f.calls()).toBe(0);
+});

@@ -126,6 +126,7 @@ class DeviceEvidenceRef(BaseModel):
     result_digest: str | None = None
     communication: NativeAgentScope | None = None
     mailbox_delivery: NativeMailboxBinding | None = None
+    workspace_write: DeviceWorkspaceBinding | None = None
 
 
 class DeviceLeaseWindow(BaseModel):
@@ -145,6 +146,7 @@ class DeviceNativeResult(BaseModel):
     native_session: DeviceNativeSession
     communication: NativeAgentProof | None = None
     mailbox_delivery: NativeMailboxProof | None = None
+    workspace_write: DeviceWorkspaceProof | None = None
 
 
 class DeviceNativeSession(BaseModel):
@@ -190,6 +192,20 @@ class DeviceResponse(BaseModel):
     ok: bool
     data: Any | None = None
     error: str | None = None
+
+
+class DeviceWorkspaceBinding(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    profile_digest: str
+    workflow_binding: str | None
+
+
+class DeviceWorkspaceProof(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    profile_digest: str
+    proposal_digest: str
+    changed_count: int
+    specmesh: dict[str, Any] | None = None
 
 
 class DoctorResult(BaseModel):
