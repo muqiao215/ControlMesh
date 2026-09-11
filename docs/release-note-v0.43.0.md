@@ -16,7 +16,7 @@ The optional tool is provided by SpecMesh distribution v1.2.0, using the draft m
 
 ## Forward plans
 
-See [runtime convergence](plans/runtime-convergence/task_plan.md) for full TS ownership transfer, multi-device coordination and renewed native continuation acceptance. Existing native OpenCode adoption remains available; future cross-device gates remain planned.
+See [runtime convergence](https://github.com/muqiao215/ControlMesh/blob/main/plans/runtime-convergence/task_plan.md) for full TS ownership transfer, multi-device coordination and renewed native continuation acceptance. Existing native OpenCode adoption remains available; future cross-device gates remain planned.
 
 ## Rollback
 
