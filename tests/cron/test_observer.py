@@ -611,7 +611,8 @@ class TestCronObserverExecution:
         mock_proc.returncode = 0
         mock_proc.communicate = AsyncMock(
             return_value=(
-                b'{"type":"item.completed","item":{"type":"agent_message","text":"Done."}}',
+                b'{"type":"item.completed","item":{"type":"agent_message","text":"Done."}}\n'
+                b'{"type":"turn.completed"}',
                 b"",
             )
         )

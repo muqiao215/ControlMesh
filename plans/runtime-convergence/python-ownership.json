@@ -265,7 +265,7 @@
       "controlmesh/infra/service_macos.py": "77ca23e3b23a13cd2cace00de70dd3f09bb92dd2bd131ba0c9c85449d50992ad",
       "controlmesh/infra/service_windows.py": "9864c5c5a96a7afcbe7829679b961646394098b7e3c89ca5a1aa8c392020c38f",
       "controlmesh/infra/startup_state.py": "2c848e7c06f974ddb467e7f18bf0388fee2eae63fddda43622393e1defeb6cfa",
-      "controlmesh/infra/task_runner.py": "65657d2c842a1d1dde06073e6ebc6f6ab22a9c4718b05f5c34ba187041cc3f62",
+      "controlmesh/infra/task_runner.py": "b92adfaceba7b3734d3eeda5bc3f63a7630ff852fc1256f8aa6191604367ec70",
       "controlmesh/infra/updater.py": "e947c00defd45de3601c2c052570c1b660f432ab1418eea074537b523f5f35ec",
       "controlmesh/infra/version.py": "350975b568482c3fccd929caf33503eea55fa151fe22d7c45bc7525acfcea721",
       "controlmesh/integrations/__init__.py": "a95e44cb56a38709907990071dfbe172ea230f0fdcd29b5a0a3f79cb96907af8",
@@ -364,7 +364,7 @@
     "schedules": {
       "controlmesh/cron/__init__.py": "359dd54b02a52abed3dfe644e6ef9e5560a40e91f88a28375afe97dd580831d4",
       "controlmesh/cron/dependency_queue.py": "9bdef7634278365e4d872431203b76416c54b29d96b7f85de40a0ead03fa7332",
-      "controlmesh/cron/execution.py": "685ed86386229907f65a30bd8b918bf2755369c8014584ef1dacc7ff55e8e9cd",
+      "controlmesh/cron/execution.py": "2272d830f322c30e7298f0c2db633f7a8326f1c60edd416f1e46dd92c5abffc6",
       "controlmesh/cron/guarded_store.py": "881522526df8b8d917875f02480864dafeb8ebaeb7f4456a3c9573f19e9d0d2c",
       "controlmesh/cron/manager.py": "869c40876735c3d48f3d019412b5becd7404d03e7cb4c04da9ecfba9d0bdc9a6",
       "controlmesh/cron/observer.py": "423d36b7f309b4cca06878a8d69d444f3b1f22a72a128b65de3c66ee33005753",

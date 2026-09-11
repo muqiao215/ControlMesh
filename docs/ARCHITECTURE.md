@@ -317,6 +317,14 @@ Python history/task/provider read models
 
 OpenCode enables native error logs on its own stderr. An opt-in one-shot executor observer classifies explicit quota exhaustion and terminates that process tree before native retry loops become generic timeouts. Quota metadata propagates through CLI, stream and agent results while existing task failure/delivery ownership remains unchanged. Provider-reported reset text is not assigned an invented timezone or used to schedule automatic account/model switching. Shared historical log files and assistant/tool output are not quota evidence.
 
+Cron/webhook/background command construction now explicitly selects Claude, Codex, Gemini,
+OpenCode or Claw; an unsupported SDK engine returns a typed error instead of running Claude.
+The command owner applies grants after the provider's subcommand, preserves OpenCode prompts
+over stdin, and classifies native completion independently of exit status. OpenCode one-shot
+stderr quota records stop retries while preserving the reported reset and partial output.
+Nonzero exits and cancellation retain their original cause; assistant/tool prose cannot be
+used as quota evidence or as a substitute for a native completion event.
+
 ## Runtime migration (in progress)
 
 Full runtime migration is now active in `plans/runtime-convergence/`. The private
@@ -347,6 +355,15 @@ live Python owners. Provider mapping is not admission: source sandbox requiremen
 controller confirmation must be enforced independently. The current OpenCode worker and
 native reconciler validate the full persisted context and grant before using native state.
 General sandbox/provider launchers and transport delivery are still Python-owned.
+
+`OneShotProviderProcess` is a private TS host-process owner for these five command shapes.
+It independently builds commands and observes native JSON against the live Python oracle,
+then uses the existing process supervisor with source/grant checks, workspace identity and
+synchronous current-authority/readiness callbacks. Its caller must own provider readiness;
+the class neither probes a model nor schedules work. It does not accept a container name as
+sandbox evidence. Production scheduler/TaskHub admission, native session adoption, container
+process ownership, SDK engines and result delivery remain separate migration work. Fixture
+process acceptance is not real model qualification for every listed provider.
 
 The private `DeviceCoordinator` now exposes a separate loopback worker protocol with
 credentials mapped to trusted device registrations. Tasks have persisted, digest-bound

@@ -45,6 +45,13 @@ Track completion in [the repository plan](../../plans/runtime-convergence/task_p
   persists device/model/config/credential-bound readiness. Quota/auth/unknown outcomes
   pause; transient retries are bounded. Actual execution failures revoke matching cached
   readiness. A cached observation is never a tool grant.
+- `OneShotProviderProcess` ports stateless host execution for explicit Claude, Codex,
+  Gemini, OpenCode and Claw command shapes. Commands and native output semantics agree
+  with the live Python one-shot owner; real fixture processes cover stdin, quota abort,
+  incomplete/error output and cancellation. A trusted caller must synchronously recheck
+  its current provider readiness and task authority. It has no scheduler/TaskHub startup
+  route or native adoption semantics, and does not claim an actual container sandbox or
+  five-provider model qualification. Unsupported SDK engines cannot fall back to Claude.
 - `HistoryClient` uses Viewer's explicit headless native-reference command. CM independently
   rereads its own configured native store, checks a content-bound v2 reference, and never
   treats candidate text as authorization. The read-only digest includes older messages.

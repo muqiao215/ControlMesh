@@ -21,3 +21,6 @@ export { TaskIngress, type IngressSource, type SubmissionIdentity, type Submissi
 export { DeviceExecutionJournal, type DeviceExecutionRecord } from "./device-journal";
 export { OpenCodeDeviceAdapter, type OpenCodeDeviceOptions } from "./providers/opencode-device-adapter";
 export { DeviceReconciliation, type ReconciliationReceipt } from "./device-reconciliation";
+export { buildOneShotCommand, oneShotProviders, type OneShotCommand, type OneShotConfiguration } from "./providers/oneshot-command";
+export { observeOneShot, type OneShotObservation } from "./providers/oneshot-observation";
+export { OneShotProviderProcess, type OneShotLaunch, type OneShotAdmission, type OneShotRun } from "./providers/oneshot-process";

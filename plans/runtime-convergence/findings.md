@@ -1,5 +1,33 @@
 # Findings
 
+One-shot owner baseline: `cron/execution.py:build_cmd` and `parse_result` both defaulted to Claude
+for any unregistered provider. Their tables included only Claude/Gemini/Codex, despite
+param_resolver accepting OpenCode/Claw/OpenAI Agents. A pure Python reproduction requested
+OpenCode and observed a Claude binary lookup with zero subprocesses. Existing tests even
+asserted this fallback. The one-shot runner also marked any zero exit code successful
+without consulting native error/terminal result semantics. Both behaviors are now corrected
+in the Python owner and independently ported to TS. The live oracle covers 410 command/output
+cases; these compare actual code paths but are not native model acceptance for five providers.
+OpenAI Agents is an optional SDK backend, not a CLI; it needs its own owner, not a fabricated
+binary or a switch to another provider. Generic Docker exec client termination does not
+prove termination of the process inside the container; its actual lifecycle port is separate.
+
+One-shot grants now live in command construction, preserving the position after `exec`/`run`
+and refusing controller approval even when the other grant fields are unrestricted. The TS
+host owner requires current source/grant/readiness checks and a stable workspace inode.
+It reports cancellation, timeout, authority loss and nonzero exits without replacing their
+cause with missing-output errors. Zero-exit incomplete/native-error responses cannot succeed.
+OpenCode uses exact stdin and trusted live stderr for early quota abort; assistant/tool prose
+remains data. The installed OpenCode 1.18.29 help confirms the emitted run/format/log/auto flags.
+
+The first Python real-child quota test took 10 seconds because the global safety fixture
+intentionally mocks all group signals. This was a test isolation conflict, not evidence of a
+production cleanup failure. Its local fixture now tracks and terminates only its own exact
+child and always reaps it; global signal protection remains. Regression also found old Codex
+success fixtures missing `turn.completed` and an exit-code precedence change; the fixture and
+status handling were corrected. Generic one-shot output does not establish durable native
+session identity, native tool enforcement or successful side-effect reconciliation.
+
 Remote recovery now separates a trusted acceptance request from its device evidence report.
 Schema 7 retains the challenge across reconstruction; its registration digest prevents a
 changed credential/capability catalog from inheriting earlier authority. The report can

@@ -46,7 +46,7 @@ async def run_oneshot_task(
     mapping) are delegated to ``execute_one_shot``.
     """
     from controlmesh.cli.base import CLIConfig, docker_wrap
-    from controlmesh.cron.execution import build_cmd, execute_one_shot
+    from controlmesh.cron.execution import UnsupportedOneShotProviderError, build_cmd, execute_one_shot
     from controlmesh.execution_policy import enforce_execution_policy
 
     context = exec_config.execution_context or ExecutionContext.legacy()
@@ -54,30 +54,20 @@ async def run_oneshot_task(
         context,
         sandbox_available=bool(exec_config.docker_container),
     )
-    if exec_config.tool_grant is not None and exec_config.tool_grant.restrictive:
-        from controlmesh.execution_grants import map_tool_grant
-
-        mapping = map_tool_grant(
-            exec_config.provider,
-            exec_config.tool_grant,
-            config_permission_mode=exec_config.permission_mode,
-            config_cli_parameters=tuple(exec_config.cli_parameters),
+    try:
+        one_shot = build_cmd(exec_config, prompt)
+    except UnsupportedOneShotProviderError:
+        return TaskResult(
+            status=f"error:unsupported_oneshot_provider_{exec_config.provider}",
+            result_text=f"[{exec_config.provider} has no one-shot CLI execution adapter]",
+            execution=None,
         )
-    else:
-        mapping = None
-    one_shot = build_cmd(exec_config, prompt)
     if one_shot is None:
         return TaskResult(
             status=f"error:cli_not_found_{exec_config.provider}",
             result_text=f"[{exec_config.provider} CLI not found]",
             execution=None,
         )
-    if mapping is not None and mapping.flags:
-        one_shot = replace(
-            one_shot,
-            cmd=[one_shot.cmd[0], *mapping.flags, *one_shot.cmd[1:]],
-        )
-
     wrapped_cmd, host_cwd = docker_wrap(
         one_shot.cmd,
         CLIConfig(

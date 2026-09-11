@@ -7,6 +7,8 @@ Python v0.43.0 remains the released/installed production runtime. The private TS
 supports a qualified OpenCode read profile, native continuation, device coordination and
 explicit recovery of a result lost between the device and coordinator. Other provider,
 write/sandbox, transport, store and product owners remain required for full migration.
+The next implemented unit is explicit one-shot routing/result handling in Python and a TS
+host-process port. It has local regression evidence; exact-commit CI is checked after push.
 
 ## Done
 
@@ -36,11 +38,27 @@ write/sandbox, transport, store and product owners remain required for full migr
   observations cannot be replaced. Receipt replay also updates the matching local record.
   Current cancellation, task/assignment/grant/configuration changes, device revocation,
   challenge expiry and invalid evidence prevent acceptance.
+- One-shot execution: OpenCode/Claw use their own command builders; unsupported SDK engines
+  return a typed error instead of silently running Claude. Grants are applied inside command
+  construction after the provider verb. Native errors and missing completion cannot become
+  success merely because a CLI exits zero. OpenCode stdin is literal and its trusted stderr
+  quota record aborts retries with reset metadata preserved. Original exit/cancel causes hold.
+  The TS host port uses actual process supervision and current source/grant/readiness/workspace
+  checks; scheduler/native-adoption/container/delivery ownership is not implied.
 
-Latest local verification: strict TS passed; actual CI-version Bun 1.3.11 ran **117 core tests /
-1,510 assertions**, all passed. Python protocol **9 passed**; generated-model Ruff, Web build,
-source ownership regeneration/check and diff whitespace check passed. Canonical schemas and
-TS/Python/Web generated assets are synchronized. Tests cover lost original observation,
+Latest one-shot local verification: strict TS passed; actual CI-version Bun 1.3.11 ran
+**123 core tests / 1,948 assertions**, all passed, including **410 live Python/TS command and
+observation comparisons**. Actual fixture processes cover stdin, immediate quota abort,
+native errors, incomplete output, exit cause and cancellation; workspace replacement blocks.
+Ruff, CI Mypy smoke, targeted execution Mypy, ownership regeneration/check and whitespace
+checks passed. Python full-suite run found three failures with 5,730 passing; all three were
+corrected and the final affected execution/cron/webhook/provenance suite passed **120 tests**.
+Final full-suite checks for the pushed commit remain a CI gate. No new account/model calls,
+production scheduler runs, service installation or runtime default switch were performed.
+
+Prior device-recovery verification included Python protocol **9 passed**, generated-model
+Ruff and Web build. Canonical schemas and TS/Python/Web generated assets remain synchronized.
+Tests cover lost original observation,
 already delivered observation, recovery acknowledgement loss, reconstruction, cancellation,
 expiry, revoked devices, changed files/native rows/configuration, conflicting evidence,
 atomic rollback and additive schema-6-to-7 migration preserving device records.
@@ -62,8 +80,8 @@ bundled-source hash are retained outside Git under the workspace's
 `outputs/runtime-convergence/device-recovery-*`; the accepted implementation is the final
 source used by that canary. History Viewer, SpecMesh and Ops repositories were unchanged.
 
-Previous device-native commit `10e96df8f3b2516c5671bf85121a133fa5f91024` has exact-SHA green CI
-34589616324. This recovery change still needs its own commit/push and exact-SHA CI conclusion.
+Device recovery commit `e86604a543216be53424b74e2dfcf48f9881a53c` has exact-SHA green CI
+34593893922. Local HEAD and origin/main matched after publication.
 Earlier implementation history is in Git; it is not duplicated here.
 
 ## Remaining
@@ -86,6 +104,7 @@ and task evidence do not automatically promote history into authoritative projec
 
 ## Next
 
-Commit/push the verified recovery path and inspect its exact-SHA CI. Continue with actual
-sandbox/provider launchers and remaining transport/store owners, then History adoption,
-SpecMesh lifecycle integration and the production writer switch under the full plan's gates.
+After checking the one-shot publication CI, port actual container process lifecycle and
+sandbox/native grant enforcement. Continue remaining provider/transport/store owners, History
+adoption, SpecMesh lifecycle integration and the production writer switch under the full plan's
+gates. Generic host one-shot parity is not a substitute for those owners or actual model smoke.

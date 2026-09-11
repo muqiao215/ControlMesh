@@ -12,6 +12,8 @@ import pytest
 from controlmesh.cli.param_resolver import TaskExecutionConfig
 from controlmesh.cron.execution import (
     OneShotCommand,
+    UnsupportedOneShotProviderError,
+    observe_one_shot,
     build_cmd,
     enrich_instruction,
     execute_one_shot,
@@ -202,7 +204,7 @@ class TestBuildCmd:
         ):
             assert build_cmd(exec_config, "hello") is None
 
-    def test_unknown_provider_falls_back_to_claude(self) -> None:
+    def test_unknown_provider_is_rejected_without_fallback(self) -> None:
         exec_config = TaskExecutionConfig(
             provider="unknown",
             model="model",
@@ -212,11 +214,9 @@ class TestBuildCmd:
             working_dir="/tmp",
             file_access="all",
         )
-        with patch("controlmesh.cron.execution.which", return_value="/usr/bin/claude"):
-            result = build_cmd(exec_config, "hello")
-        assert result is not None
-        assert result.cmd[0] == "/usr/bin/claude"
-        assert result.stdin_input is None
+        with patch("controlmesh.cron.execution.which") as lookup, pytest.raises(UnsupportedOneShotProviderError):
+            build_cmd(exec_config, "hello")
+        lookup.assert_not_called()
 
 
 class TestExecuteOneShotStdin:
@@ -344,8 +344,9 @@ class TestParseResult:
     def test_dispatches_to_gemini_parser(self) -> None:
         assert parse_result("gemini", b'{"result":"ok"}') == "ok"
 
-    def test_unknown_provider_falls_back_to_claude(self) -> None:
-        assert parse_result("unknown", b'{"result":"fallback"}') == "fallback"
+    def test_unknown_provider_cannot_use_another_parser(self) -> None:
+        with pytest.raises(UnsupportedOneShotProviderError):
+            parse_result("unknown", b'{"result":"fallback"}')
 
 
 class TestIndent:
@@ -495,3 +496,93 @@ class TestKillSubprocessGroupSafety:
             _kill_subprocess_group(proc)
         killpg.assert_not_called()
         tree.assert_called_once_with(424242)
+
+
+@pytest.mark.parametrize("provider", ["opencode", "claw"])
+def test_explicit_provider_uses_its_own_binary_and_preserves_prompt(provider: str) -> None:
+    config = TaskExecutionConfig(provider=provider, model="fixture/model", reasoning_effort="", cli_parameters=[], permission_mode="dontAsk", working_dir="/tmp", file_access="all")
+    prompt = '中文 "quotes"\n$(literal)'
+    with patch("controlmesh.cron.execution.which", return_value=f"/fixture/{provider}") as lookup:
+        command = build_cmd(config, prompt)
+    lookup.assert_called_once_with(provider)
+    assert command is not None
+    assert command.cmd[0] == f"/fixture/{provider}"
+    if provider == "opencode":
+        assert command.stdin_input == prompt.encode()
+        assert prompt not in command.cmd
+        assert "--format" in command.cmd
+    else:
+        assert command.cmd[-2:] == ["prompt", prompt]
+
+
+@pytest.mark.parametrize("provider", ["claude", "codex", "gemini", "opencode", "claw"])
+def test_container_provider_does_not_require_a_host_binary(provider: str) -> None:
+    config = TaskExecutionConfig(provider=provider, model="fixture/model", reasoning_effort="", cli_parameters=[], permission_mode="dontAsk", working_dir="/tmp", file_access="all", docker_container="configured")
+    with patch("controlmesh.cron.execution.which") as lookup, patch("controlmesh.cron.execution.find_gemini_cli") as gemini:
+        command = build_cmd(config, "fixture")
+    assert command is not None
+    assert command.cmd[0] == provider
+    lookup.assert_not_called()
+    gemini.assert_not_called()
+
+
+def test_native_error_and_tool_data_cannot_become_a_successful_assistant_result() -> None:
+    assert observe_one_shot("claude", b'{"result":"partial","is_error":true}', b"").error_code == "provider_error"
+    assert observe_one_shot("gemini", b'{"type":"tool_result","content":"secret tool output"}', b"").text == ""
+    assert observe_one_shot("opencode", b'{"type":"text","sessionID":"ses_Test","part":{"text":"partial"}}', b"").terminal is False
+    assert observe_one_shot("codex", b'{"type":"turn.completed"}', b"").error_code == "empty_native_output"
+    assert observe_one_shot("claude", b"null", b"").error_code == "invalid_native_output"
+    assert observe_one_shot("claude", b'{"result":"insufficient_quota is quoted prose"}', b"").terminal is True
+
+
+async def test_native_stderr_quota_kills_real_process_before_retry(tmp_path: Path) -> None:
+    import time
+
+    retry = tmp_path / "retried"
+    line = 'timestamp=2026-09-11 level=ERROR message="stream error" error.error="insufficient_quota; resets at 2026-09-12 01:00:00+08:00" session.id=ses_Test'
+    script = f"import sys,time,pathlib; print({line!r},file=sys.stderr,flush=True); time.sleep(30); pathlib.Path({str(retry)!r}).write_text('bad retry')"
+    spawn = asyncio.create_subprocess_exec
+    owned: list[asyncio.subprocess.Process] = []
+
+    async def create_owned(*args: object, **kwargs: object) -> asyncio.subprocess.Process:
+        proc = await spawn(*args, **kwargs)
+        owned.append(proc)
+        return proc
+
+    def kill_owned(proc: asyncio.subprocess.Process) -> None:
+        # Global fixtures disable group signals. This fixture has no descendants;
+        # terminate only the exact child created above, retaining that protection.
+        assert len(owned) == 1
+        assert proc is owned[0]
+        proc.kill()
+
+    started = time.monotonic()
+    try:
+        with patch("asyncio.create_subprocess_exec", side_effect=create_owned), patch("controlmesh.cron.execution._kill_subprocess_group", side_effect=kill_owned):
+            result = await execute_one_shot(OneShotCommand(cmd=[sys.executable, "-c", script], stdin_input=b"fixture"), cwd=tmp_path, provider="opencode", timeout_seconds=10, timeout_label="fixture")
+    finally:
+        for proc in owned:
+            if proc.returncode is None:
+                proc.kill()
+            await proc.wait()
+    assert result.status == "error:quota_exhausted"
+    assert result.error_code == "quota_exhausted"
+    assert result.quota_reset_at == "2026-09-12 01:00:00+08:00"
+    assert time.monotonic() - started < 5
+    assert not retry.exists()
+
+
+async def test_opencode_native_events_and_exact_stdin_are_collected_from_a_real_process(tmp_path: Path) -> None:
+    prompt = 'exact "quoted"\n中文 prompt'
+    script = "import sys,json; print(json.dumps({'type':'text','sessionID':'ses_Test','part':{'text':sys.stdin.read()}})); print(json.dumps({'type':'step_finish','sessionID':'ses_Test','part':{'reason':'stop'}}))"
+    result = await execute_one_shot(OneShotCommand(cmd=[sys.executable, "-c", script], stdin_input=prompt.encode()), cwd=tmp_path, provider="opencode", timeout_seconds=5, timeout_label="fixture")
+    assert result.status == "success"
+    assert result.session_id == "ses_Test"
+    assert result.result_text == prompt
+
+
+async def test_native_error_with_zero_exit_code_is_not_success(tmp_path: Path) -> None:
+    script = "print('" + '{"result":"partial","is_error":true}' + "')"
+    result = await execute_one_shot(OneShotCommand(cmd=[sys.executable, "-c", script]), cwd=tmp_path, provider="claude", timeout_seconds=5, timeout_label="fixture")
+    assert result.returncode == 0
+    assert result.status == "error:provider_error"
