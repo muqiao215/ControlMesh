@@ -6882,6 +6882,117 @@ var controlmeshSchemas = {
       }
     }
   },
+  "agent-mailbox-message.schema.json": {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    $id: "https://schemas.controlmesh.dev/controlmesh/v1/agent-mailbox-message.schema.json",
+    title: "AgentMailboxMessage",
+    description: "A durable context message; received and consumed do not establish task completion or grant execution permission.",
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "schema_version",
+      "message_id",
+      "recipient_task",
+      "sender_task",
+      "sender_principal",
+      "sequence",
+      "correlation_id",
+      "causation_id",
+      "origin",
+      "kind",
+      "remaining_hops",
+      "created_at",
+      "expires_at",
+      "payload",
+      "status"
+    ],
+    properties: {
+      schema_version: {
+        const: "controlmesh.agent_mailbox_message.v1"
+      },
+      message_id: {
+        type: "string",
+        minLength: 1,
+        maxLength: 192
+      },
+      recipient_task: {
+        type: "string",
+        minLength: 1,
+        maxLength: 192
+      },
+      sender_task: {
+        type: [
+          "string",
+          "null"
+        ]
+      },
+      sender_principal: {
+        type: "string",
+        minLength: 1,
+        maxLength: 192
+      },
+      sequence: {
+        type: "integer",
+        minimum: 1,
+        maximum: 9007199254740991
+      },
+      correlation_id: {
+        type: "string",
+        minLength: 1,
+        maxLength: 256
+      },
+      causation_id: {
+        type: [
+          "string",
+          "null"
+        ]
+      },
+      origin: {
+        enum: [
+          "human_request",
+          "agent_message",
+          "schedule",
+          "recovery",
+          "internal"
+        ]
+      },
+      kind: {
+        enum: [
+          "tell",
+          "ask_parent",
+          "answer",
+          "handoff"
+        ]
+      },
+      remaining_hops: {
+        type: "integer",
+        minimum: 0,
+        maximum: 4
+      },
+      created_at: {
+        type: "integer",
+        minimum: 0,
+        maximum: 9007199254740991
+      },
+      expires_at: {
+        type: "integer",
+        minimum: 0,
+        maximum: 9007199254740991
+      },
+      payload: {
+        type: "object",
+        additionalProperties: true
+      },
+      status: {
+        enum: [
+          "pending",
+          "received",
+          "consumed",
+          "expired"
+        ]
+      }
+    }
+  },
   "artifact.schema.json": {
     $schema: "https://json-schema.org/draft/2020-12/schema",
     $id: "https://schemas.controlmesh.dev/controlmesh/v1/artifact.schema.json",
@@ -7113,6 +7224,52 @@ var controlmeshSchemas = {
       details: {
         type: "object",
         additionalProperties: true
+      }
+    }
+  },
+  "execution-lease.schema.json": {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    $id: "https://schemas.controlmesh.dev/controlmesh/v1/execution-lease.schema.json",
+    title: "ExecutionLease",
+    description: "Coordinator-issued lease. Worker clocks and request-body identities are not authority.",
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "schema_version",
+      "task_id",
+      "episode_id",
+      "device_id",
+      "fence",
+      "lease_until"
+    ],
+    properties: {
+      schema_version: {
+        const: "controlmesh.execution_lease.v1"
+      },
+      task_id: {
+        type: "string",
+        minLength: 1,
+        maxLength: 192
+      },
+      episode_id: {
+        type: "string",
+        minLength: 1,
+        maxLength: 192
+      },
+      device_id: {
+        type: "string",
+        minLength: 1,
+        maxLength: 192
+      },
+      fence: {
+        type: "integer",
+        minimum: 1,
+        maximum: 9007199254740991
+      },
+      lease_until: {
+        type: "integer",
+        minimum: 0,
+        maximum: 9007199254740991
       }
     }
   },

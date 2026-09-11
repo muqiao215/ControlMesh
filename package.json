@@ -16,7 +16,8 @@
     "generate:lifecycle-rollback-gate": "bun packages/controlmesh-runtime-facade/scripts/check-lifecycle-parity.ts --write",
     "check:lifecycle-parity": "bun packages/controlmesh-runtime-facade/scripts/check-lifecycle-parity.ts",
     "test:golden": "pnpm check:lifecycle-golden && pnpm check:result-writeback-golden && pnpm check:tool-grant-golden && pnpm check:execution-provenance-golden && pnpm --filter @controlmesh/runtime-facade typecheck && pnpm --filter @controlmesh/runtime-facade test:parity && pnpm check:lifecycle-parity && uv run python -m pytest tests/protocol tests/golden -q",
-    "test:sdk": "pnpm --filter @controlmesh/sdk test:smoke"
+    "test:sdk": "pnpm --filter @controlmesh/sdk test:smoke",
+    "test:runtime-core": "uv run python scripts/generate_runtime_ownership.py --check && pnpm --filter @controlmesh/runtime-core typecheck && pnpm --filter @controlmesh/runtime-core test"
   },
   "devDependencies": {
     "@types/bun": "^1.3.14",

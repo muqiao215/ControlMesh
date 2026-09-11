@@ -166,6 +166,8 @@ jobs:
         run: pnpm check:protocol
       - name: Run protocol and provider golden tests
         run: pnpm test:golden
+      - name: Check runtime ownership, transactional kernel and process recovery
+        run: pnpm test:runtime-core
       - name: Run SDK smoke tests
         run: pnpm test:sdk
       - name: Build local Web dashboard

@@ -37,7 +37,7 @@ The important user outcomes are:
 ## Non-goals
 
 - Do not replace official provider CLIs with a proprietary model runtime.
-- Do not move Python runtime ownership into TypeScript merely to unify languages.
+- Do not treat a TypeScript facade or a wrapper around Python as a completed runtime migration.
 - Do not let the Web UI or SDK read or write private ControlMesh files directly.
 - Do not expose a remote-first dashboard, arbitrary shell endpoint, or arbitrary file read.
 - Do not infer orchestration topology from prose; topology selection remains explicit.
@@ -195,4 +195,4 @@ Local cron transaction/ownership fixes and an opt-in independent SpecMesh CLI ad
 
 ## Approved next direction
 
-The primary coordinating Agent owns cross-project delivery. Repository-owned execution details and current status: [runtime-convergence](plans/runtime-convergence/task_plan.md). These future milestones remain planned; current released behavior retains its existing authority.
+The primary coordinating Agent personally owns cross-project delivery. Full TypeScript runtime migration, multi-device coordination and real Agent continuation are explicitly authorized and in progress in the original local workspace, with direct main pushes after verification. Repository-owned details and current status: [runtime-convergence](plans/runtime-convergence/task_plan.md). The private transactional TS kernel is under implementation; current released behavior retains its existing authority until cutover gates pass.

@@ -24,6 +24,25 @@ class AgentEvent(BaseModel):
     payload: dict[str, Any] | None = None
 
 
+class AgentMailboxMessage(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    schema_version: Literal["controlmesh.agent_mailbox_message.v1"]
+    message_id: str
+    recipient_task: str
+    sender_task: str | None
+    sender_principal: str
+    sequence: int
+    correlation_id: str
+    causation_id: str | None
+    origin: Literal["human_request", "agent_message", "schedule", "recovery", "internal"]
+    kind: Literal["tell", "ask_parent", "answer", "handoff"]
+    remaining_hops: int
+    created_at: int
+    expires_at: int
+    payload: dict[str, Any]
+    status: Literal["pending", "received", "consumed", "expired"]
+
+
 class Artifact(BaseModel):
     model_config = ConfigDict(extra="allow")
     schema_version: Literal["controlmesh.artifact.v1"]
@@ -86,6 +105,16 @@ class ControlMeshError(BaseModel):
     correlation_id: str | None = None
     python_trace_id: str | None = None
     details: dict[str, Any] | None = None
+
+
+class ExecutionLease(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    schema_version: Literal["controlmesh.execution_lease.v1"]
+    task_id: str
+    episode_id: str
+    device_id: str
+    fence: int
+    lease_until: int
 
 
 class LogEvent(BaseModel):

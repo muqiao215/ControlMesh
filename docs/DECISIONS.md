@@ -353,3 +353,16 @@ policy are implemented. The current CM lease does not exclude independent native
 ## 2026-09-11 — Integrate against existing repository authority
 
 Reuse the existing storage/parsers and keep SpecMesh independently callable. Do not install a second TaskHub from a proposal or equate historical handoff with live completion. The human overview and headless retrieval have separate entry points. See [scope and remaining limits](CODEKIT-INTEGRATION.md). Status: implemented for v0.43.0; broader roadmap gates remain planned.
+
+## 2026-09-11 — Migrate actual runtime owners, with transactional episodes
+
+The user explicitly authorized full TS runtime migration, multi-device coordination and
+native Agent continuity, and chose original local repositories with verified direct main
+pushes. The former read-only-first policy is a rollout gate, not a permanent language ban.
+Keep Python active until replacement owners pass parity and rollback checks. Start with
+a real private coordinator kernel, not the fixture-specific facade: separate stable tasks,
+execution episodes and monotonic fencing; commit transitions, events and receipts together.
+Persist uncertain external effects and reconcile before another execution. Use SQLite on
+one coordinator host, never as a shared network file. Native clients outside CM still need
+revision reinspection and cannot be made safe by an advisory CM-only lease. This decision
+does not claim production cutover or complete provider parity.

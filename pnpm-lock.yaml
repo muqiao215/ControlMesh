@@ -39,6 +39,12 @@ importers:
         specifier: ^8.20.0
         version: 8.20.0
 
+  packages/controlmesh-runtime-core:
+    dependencies:
+      '@controlmesh/protocol':
+        specifier: workspace:*
+        version: link:../controlmesh-protocol
+
   packages/controlmesh-runtime-facade: {}
 
   packages/controlmesh-sdk:

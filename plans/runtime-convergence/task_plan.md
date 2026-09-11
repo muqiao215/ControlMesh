@@ -2,7 +2,7 @@
 
 ## Status and ownership
 
-Status: planned; preparation only in this release. Owner: CM maintainers/primary coordinating Agent. User authorizes this direction; existing Python ownership remains factual until each migration gate passes. Do not interpret the old read-only-first roadmap as a permanent ban on the approved runtime port.
+Status: in_progress; full implementation explicitly authorized on 2026-09-11. Owner: CM maintainers/primary coordinating Agent. User authorizes this direction; existing Python ownership remains factual until each migration gate passes. Do not interpret the old read-only-first roadmap as a permanent ban on the approved runtime port.
 
 ## Goal
 
@@ -31,12 +31,12 @@ Move runtime authority to TypeScript without losing task correctness, provider e
 
 | ID | Deliverable / implementation seam | Exit evidence | State |
 |---|---|---|---|
-| CM-R0 | Inventory real owners and versioned payloads; extend existing lifecycle/provider/gate goldens | Reproducible baseline plus ledger of every persisted field and side effect | planned |
-| CM-R1 | TS execution kernel behind existing facade; transitions, events, cancellation, deadlines, process supervision | Python/TS differential traces for success, failure, timeout, cancel, crash/restart; zero duplicate side effects in shadow mode | planned |
-| CM-R2 | Transactional state migration and startup recovery | Dry-run migration counts/digests, interrupted migration replay, rollback compatibility, corrupt-input refusal | planned |
+| CM-R0 | Inventory real owners and versioned payloads; extend existing lifecycle/provider/gate goldens | Reproducible baseline plus ledger of every persisted field and side effect | in_progress |
+| CM-R1 | TS execution kernel behind existing facade; transitions, events, cancellation, deadlines, process supervision | Python/TS differential traces for success, failure, timeout, cancel, crash/restart; zero duplicate side effects in shadow mode | in_progress: transactional kernel implemented; process/provider parity pending |
+| CM-R2 | Transactional state migration and startup recovery | Dry-run migration counts/digests, interrupted migration replay, rollback compatibility, corrupt-input refusal | in_progress: TaskHub snapshot import/export and rollback tests; other stores/cutover pending |
 | CM-R3 | Provider/transport/workspace/grant ports | Actual adapter smoke for each supported provider; grants enforced natively; process tree cleanup and result-delivery reconciliation | planned |
 | CM-R4 | Device coordinator and worker execution authority | Two-device lease expiry, fencing, clock skew, network partition and worker restart tests; stale worker cannot write or redeliver | planned |
-| CM-R5 | Agent mailbox and task dependency exchange | Duplicate/out-of-order/replayed messages, bounded broadcast, cancellation propagation and backpressure evidence | planned |
+| CM-R5 | Agent mailbox and task dependency exchange | Duplicate/out-of-order/replayed messages, bounded broadcast, cancellation propagation and backpressure evidence | in_progress: durable core mailbox tested; native/transport integration pending |
 | CM-R6 | History headless candidate + native adoption + SpecMesh lifecycle hooks | Real continuation canary binds provider session, current repo and approved task scope; see HV-H3 / SM-P2 | planned |
 | CM-R7 | Staged default switch and Python retirement | Canary -> selected device -> default rollout; telemetry and rollback thresholds met; old writer disabled before new writer activation | planned |
 
@@ -69,4 +69,4 @@ No claim that TS ports, distributed coordination or the new cross-project contin
 
 ## Next Step
 
-Expand the existing module/persisted-format matrix with actual side-effect owners and define CM-R0 golden coverage before creating another runtime store.
+Continue from the real kernel in `packages/controlmesh-runtime-core/`: port process supervision, current grant/source admission and provider preflight, then wire native execution and explicit reconciliation. Complete the remaining ownership/side-effect audit against `python-ownership.json` (512 Python modules, 57 serialized TaskEntry fields); the inventory itself does not establish parity. Do not activate over live data before writer-exclusion and recovery gates.

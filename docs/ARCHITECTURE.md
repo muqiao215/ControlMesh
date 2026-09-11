@@ -317,6 +317,17 @@ Python history/task/provider read models
 
 OpenCode enables native error logs on its own stderr. An opt-in one-shot executor observer classifies explicit quota exhaustion and terminates that process tree before native retry loops become generic timeouts. Quota metadata propagates through CLI, stream and agent results while existing task failure/delivery ownership remains unchanged. Provider-reported reset text is not assigned an invented timezone or used to schedule automatic account/model switching. Shared historical log files and assistant/tool output are not quota evidence.
 
+## Runtime migration (in progress)
+
+Full runtime migration is now active in `plans/runtime-convergence/`. The private
+`packages/controlmesh-runtime-core/` uses one coordinator-local SQLite transaction domain
+for tasks, execution episodes, fencing leases, events, external-effect records, durable
+mailboxes and command receipts. It imports strict offline TaskHub snapshots without
+constructing the legacy registry or touching task folders. This kernel currently has no
+production startup route; provider/transport ownership and `controlmesh_runtime` review/
+promotion storage still belong to Python. Its database must not be shared over a network
+filesystem. See the package README for implemented behavior and activation gates.
+
 ## Codekit integration (v0.43.0)
 
 See [CODEKIT-INTEGRATION](CODEKIT-INTEGRATION.md) for the new module boundary, public invocation and limits. This local implementation does not establish deployment acceptance.

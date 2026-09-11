@@ -14,6 +14,24 @@ export interface AgentEvent {
   "payload"?: Record<string, unknown>;
 }
 
+export interface AgentMailboxMessage {
+  "schema_version": "controlmesh.agent_mailbox_message.v1";
+  "message_id": string;
+  "recipient_task": string;
+  "sender_task": string | null;
+  "sender_principal": string;
+  "sequence": number;
+  "correlation_id": string;
+  "causation_id": string | null;
+  "origin": "human_request" | "agent_message" | "schedule" | "recovery" | "internal";
+  "kind": "tell" | "ask_parent" | "answer" | "handoff";
+  "remaining_hops": number;
+  "created_at": number;
+  "expires_at": number;
+  "payload": Record<string, unknown>;
+  "status": "pending" | "received" | "consumed" | "expired";
+}
+
 export interface Artifact {
   [key: string]: unknown;
   "schema_version": "controlmesh.artifact.v1";
@@ -76,6 +94,15 @@ export interface ControlMeshError {
   "correlation_id"?: string;
   "python_trace_id"?: string;
   "details"?: Record<string, unknown>;
+}
+
+export interface ExecutionLease {
+  "schema_version": "controlmesh.execution_lease.v1";
+  "task_id": string;
+  "episode_id": string;
+  "device_id": string;
+  "fence": number;
+  "lease_until": number;
 }
 
 export interface LogEvent {
