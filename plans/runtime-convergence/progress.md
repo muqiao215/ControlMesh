@@ -350,3 +350,16 @@ Final focused device-native verification (including runtime identity and exact c
 receipt replay): 23 passed / 319 assertions / 3.04 seconds. Strict TS, ownership drift and
 whitespace checks passed after all source changes. Exact-SHA remote CI remains a separate
 publication check.
+
+Publication follow-up: 0645f9d was pushed, but exact-SHA CI 34621617071 failed two timing
+checks while protocol/SDK/Web, package/install, Ruff, Mypy and Python 3.12 passed. The MCP
+container fixture had a five-second total budget including Docker setup and both Node
+processes, unlike the adjacent twenty-second container fixture. CI reported anchor_failed
+without detailed outcome fields. Its test budget now matches the adjacent fixture and
+failure assertions print the full outcome; runtime lease/enforcement deadlines are unchanged.
+Using CI's pinned Node image locally: 16 tests / 69 assertions / 24.47 seconds passed.
+The failed Python 3.11 test asserted completion after a fixed 200 ms, but the job was still
+running. It now waits for observed completion with a bounded deadline. The adjacent running
+restart fixture now waits for observed startup and drains its detached child, eliminating a
+closed-event-loop warning. Host-job tests: 10 passed; Ruff and TS passed. New exact-SHA CI
+must verify these test corrections; the earlier failed run is not treated as green.

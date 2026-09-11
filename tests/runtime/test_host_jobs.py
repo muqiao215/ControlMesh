@@ -244,14 +244,18 @@ async def test_reconcile_running_job_after_supervisor_restart(tmp_path: Path) ->
     )
     first.store.put(job)
     first.start(job.job_id)
-    await asyncio.sleep(0.05)
+    await _wait_for_job_state(first, job.job_id, "running", max_wait=5.0)
     await first.shutdown()
 
     second = HostJobRunner(paths)
-    persisted = second.get(job.job_id)
-    assert persisted is not None
-    assert persisted.current_step_id == "test_execution"
-    assert persisted.steps[0].state == "running"
+    try:
+        persisted = second.get(job.job_id)
+        assert persisted is not None
+        assert persisted.current_step_id == "test_execution"
+        assert persisted.steps[0].state == "running"
+    finally:
+        # shutdown detaches rather than cancels the job; drain its real child before closing the event loop.
+        await _wait_for_job_state(second, job.job_id, "completed", max_wait=5.0)
 
 
 @pytest.mark.asyncio
@@ -272,7 +276,11 @@ async def test_reconcile_completed_job_after_supervisor_restart(tmp_path: Path) 
     )
     first.store.put(job)
     first.start(job.job_id)
-    await asyncio.sleep(0.2)
+    try:
+        # Reopening a completed job requires observed completion, not a scheduling delay.
+        await _wait_for_job_state(first, job.job_id, "completed", max_wait=5.0)
+    finally:
+        await first.shutdown(cancel_running=True)
 
     second = HostJobRunner(paths)
     persisted = second.get(job.job_id)

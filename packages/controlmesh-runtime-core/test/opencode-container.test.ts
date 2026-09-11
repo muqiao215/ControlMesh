@@ -44,15 +44,16 @@ actual("a native container calls only its scoped MCP broker through a read-only 
         if(row.id===2){console.log(JSON.stringify({denied,response:row}));child.stdin.end();}
       }});send(1,'initialize',{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'container-test',version:'1'}});`;
     const runner = new OpenCodeReadContainerRunner({ ...f.profile, communication: profile });
-    const output = await runner.run({ command: [f.profile.executable, "-e", script], cwd: f.workspace, env: f.env, timeout_ms: 5000 }, { assertCurrent() {} });
-    expect(output.reason).toBe("exited"); expect(output.exit_code).toBe(0);
+    // This includes Docker setup and two Node processes; allow the same cold-start budget as the state-sharing test.
+    const output = await runner.run({ command: [f.profile.executable, "-e", script], cwd: f.workspace, env: f.env, timeout_ms: 20_000 }, { assertCurrent() {} });
+    expect(output, JSON.stringify(output)).toMatchObject({ reason: "exited", exit_code: 0 });
     const response = JSON.parse(output.stdout); expect(response.denied).toBe(true);
     expect(response.response.error).toBeUndefined();
     expect(JSON.parse(response.response.result.content[0].text).ok).toBe(true);
     const peer = kernel.claim(actor, "claim-peer", "peer", 1, 30000);
     expect(new AgentMailbox(kernel).pending(actor, peer)).toMatchObject([{ origin: "agent_message", sender_task: "sender", payload: { text: "From container" } }]);
   } finally { await broker.close(); db.close(); }
-}, 15000);
+}, 40_000);
 
 test("resource mounts reject directories overlapping project/control and writable credential files", () => {
   const f = fixture(), configuration = { ...f.profile.container, workspace_layout: "native" as const };
