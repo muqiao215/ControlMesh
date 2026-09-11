@@ -5,6 +5,7 @@ import { decodeNativeManifest } from "./native-manifest";
 import { NativeSessionStore } from "./native-session";
 import { NativeResultVerification } from "./native-result-verification";
 import type { ProbeBinding } from "./preflight-cache";
+import { NativeMailboxDelivery } from "./native-mailbox";
 
 /** Read-only native verification followed by an explicit transactional outcome decision. No model/probe/CLI invocation. */
 export class NativeReconciler {
@@ -28,7 +29,16 @@ export class NativeReconciler {
       return this.kernel.reconcileEffect(actor, requestId, taskId, revision, candidate, evidence => {
         verification = new NativeResultVerification(this.store, this.config, evidence.task.task, evidence.manifest, evidence.observation, binding, admission);
         verification.assertCurrent();
-        return { ...verification.result, reconciliation: { schema_version: "controlmesh.native_reconciliation.v1", ...candidate } };
+        const delivery = decodeNativeManifest(evidence.manifest).mailbox_delivery;
+        let pending: number | undefined;
+        if (delivery) {
+          const mailbox = new NativeMailboxDelivery(this.kernel);
+          mailbox.reconcile(actor, evidence, delivery, verification.result);
+          pending = mailbox.pendingCount(actor, taskId);
+        }
+        verification.assertCurrent();
+        return { ...verification.result, ...(pending !== undefined ? { mailbox_pending_count: pending } : {}),
+          reconciliation: { schema_version: "controlmesh.native_reconciliation.v1", ...candidate } };
       });
     } finally { verification?.close(); }
   }

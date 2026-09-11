@@ -227,3 +227,13 @@ only a private configured local foreground read profile, requires an explicit dr
 retains pending mail independently of native consumption. Filesystem marker checks avoid
 accidental legacy-home use but are not production writer exclusion. Device fleet admission,
 other stores and transport delivery still need their own migration and release gates.
+
+Native mailbox integration now targets the actual local TaskHub execution path. The Python
+`TaskHub.tell` appends parent updates for running tasks, while `pull_updates(mark_read=True)`
+advances a file cursor. The TS mailbox already retains provenance/sequence/expiry, but its
+generic consumed-evidence string is not independent proof of native delivery. The current
+OpenCode worker sends only `task.prompt`, and native reconciliation verifies exactly that
+text. Delivery therefore needs an immutable batch in the native dispatch manifest, actual
+input verification, and atomic acknowledgement with task completion/reconciliation.
+An in-flight reserved message must not become eligible for replay merely because its TTL
+expires; expiry controls new delivery, while the original execution outcome controls recovery.

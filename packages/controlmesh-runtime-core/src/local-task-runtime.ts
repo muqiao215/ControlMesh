@@ -101,6 +101,12 @@ export class LocalTaskRuntime {
     return new AgentMailbox(this.kernel).send(this.actor, requestId, { recipient_task: taskId, sender_lease: null,
       kind: "tell", payload: { text }, causation_id: null, ttl_ms: ttlMs });
   }
+  inspectMessage(taskId: string, messageId: string): AgentMessage {
+    this.current(); return new AgentMailbox(this.kernel).inspect(this.actor, taskId, messageId);
+  }
+  mailboxStatus(taskId: string): { pending_count: number } {
+    this.current(); return { pending_count: new AgentMailbox(this.kernel).pendingCount(this.actor, taskId) };
+  }
   cancel(requestId: string, taskId: string, expectedRevision: number): TaskSnapshot {
     this.current();
     const task = this.kernel.db.transaction(() => {

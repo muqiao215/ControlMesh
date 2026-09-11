@@ -13,6 +13,7 @@ import { failureFromNativeStderr, observeOpenCode } from "./opencode-events";
 import type { ProbeBinding } from "./preflight-cache";
 import type { ProviderFailure } from "./opencode-events";
 import { assertWorkspaceManifest, directoryIdentity, nativeReadInstructions, nativeTaskDigest, permissionEvidence, snapshotReads, type NativeManifest } from "./native-manifest";
+import { nativeInput, nativeMailboxEvidence, type NativeMailboxBatch } from "./native-mailbox-input";
 
 export interface NativeRunner { run(spec: ProcessSpec, admission: ProcessAdmission): Promise<ProcessOutcome>; runtimeDigest?(): string }
 export interface OpenCodeWorkerConfig {
@@ -39,6 +40,7 @@ export interface NativeExecutionHooks<T> {
   complete: (result: Record<string, unknown>) => T | Promise<T>;
   remainingMs?: () => number;
   signal?: AbortSignal;
+  mailbox_delivery?: NativeMailboxBatch;
 }
 
 /** One native implementation shared by local and device adapters; hooks own durable authority and state. */
@@ -54,6 +56,9 @@ export class OpenCodeExecution {
     enforceLocalReadSource(task.execution_context);
     requireThat(task.provider === "opencode" && task.model === binding.model && binding.device_id === this.store.deviceId, "worker_task_binding_mismatch");
     requireThat(typeof task.repo_root === "string" && typeof task.prompt === "string" && task.prompt.length > 0 && Buffer.byteLength(task.prompt) <= 32768, "invalid_native_task");
+    const delivery = hooks.mailbox_delivery ? structuredClone(hooks.mailbox_delivery) : undefined;
+    requireThat(!delivery || delivery.task_id === task.task_id, "native_mailbox_task_mismatch");
+    const input = nativeInput(task.prompt, delivery);
     const cwd = realpathSync(task.repo_root);
     const files = readFileGrant(cwd, admission.read_files), required = readFileGrant(cwd, admission.required_reads);
     assertReadGrantSnapshot(task.tool_grant, files);
@@ -107,14 +112,15 @@ export class OpenCodeExecution {
       const preflightGeneration = hooks.preflightGeneration();
       manifest = { schema_version: "controlmesh.native_dispatch.v1", task_digest: issuedTask, binding: structuredClone(binding), native_store_id: this.store.identity(), baseline,
         directory: directoryIdentity(cwd), worktree: directoryIdentity(worktree), files: snapshotReads(cwd, files), required_reads: required,
-        permission_evidence: permissionEvidence(resolved, agent, env.XDG_DATA_HOME, worktree, files, baseline) };
+        permission_evidence: permissionEvidence(resolved, agent, env.XDG_DATA_HOME, worktree, files, baseline),
+        ...(delivery ? { mailbox_delivery: delivery } : {}) };
       assertCurrent();
       const permit = await hooks.dispatch({ provider: "opencode", model: binding.model, native_revision: ref?.revision ?? null,
-        prompt_digest: digest(task.prompt), grant_digest: issuedGrant, permission_digest: permissions.digest }, manifest);
+        prompt_digest: digest(input), grant_digest: issuedGrant, permission_digest: permissions.digest }, manifest);
       requireThat(permit, "native_request_already_dispatched");
       assertCurrent();
       const result = await this.runner.run({ command: [this.config.executable, "run", "--pure", "--format", "json", "--dir", cwd, "--agent", agent, "--model", binding.model,
-        ...(ref ? ["--session", ref.session_id] : ["--title", "ControlMesh supervised task"]), "--print-logs", "--log-level", "ERROR"], cwd, env, stdin_text: task.prompt,
+        ...(ref ? ["--session", ref.session_id] : ["--title", "ControlMesh supervised task"]), "--print-logs", "--log-level", "ERROR"], cwd, env, stdin_text: input,
         timeout_ms: timeoutMs, max_output_bytes: 4 * 1024 * 1024 }, { assertCurrent, remainingMs: hooks.remainingMs, signal: hooks.signal, abortOnStderrLine: line => failureFromNativeStderr(line) !== null });
       const observation = observeOpenCode(result, ref?.session_id ?? null);
       try {
@@ -126,13 +132,14 @@ export class OpenCodeExecution {
       requireThat(observation.terminal && observation.session_id, observation.failure?.code ?? observation.invalid_reason ?? "native_completion_unproven");
       assertCurrent();
       assertWorkspaceManifest(manifest, true);
-      const evidence = this.store.verifyTurn(observation.session_id, baseline, task.prompt, observation.text);
+      const evidence = this.store.verifyTurn(observation.session_id, baseline, input, observation.text);
       requireThat(evidence.reference.directory === cwd && evidence.reference.model === binding.model, "native_result_binding_mismatch");
       requireThat(this.store.worktree(evidence.reference) === worktree, "native_worktree_changed");
       requireThat(required.every(file => evidence.read_files.some(read => realpathSync(read) === file)), "required_native_read_unproven");
       requireThat(evidence.read_files.every(file => files.includes(realpathSync(file))), "native_ungranted_read");
       const accepted = { native_session: evidence.reference, user_message_id: evidence.user_message_id, assistant_message_ids: evidence.assistant_message_ids,
-        text: observation.text, output_digest: digest(observation.text), permission_digest: permissions.digest, read_files: evidence.read_files };
+        text: observation.text, output_digest: digest(observation.text), permission_digest: permissions.digest, read_files: evidence.read_files,
+        ...(delivery ? { mailbox_delivery: nativeMailboxEvidence(delivery, evidence.user_message_id) } : {}) };
       assertCurrent();
       return await hooks.complete(accepted);
     } finally { lock?.close(); rmSync(temp, { recursive: true, force: true }); }

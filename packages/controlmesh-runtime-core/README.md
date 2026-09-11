@@ -40,6 +40,11 @@ Track completion in [the repository plan](../../plans/runtime-convergence/task_p
 - `AgentMailbox` separates pending, received and consumed. It preserves ordered gaps,
   attributes ingress provenance, binds acknowledgement to the current episode, and bounds
   message bytes, live queue, lifetime, initiation, fan-out and causal depth.
+- Local OpenCode execution includes an ordered mailbox prefix in the actual native input.
+  Schema 9 reserves messages against the dispatch effect and manifest; generic acknowledgements
+  cannot consume them. Verified input/reply, message consumption and task completion commit
+  together. Reconciliation verifies that original input after restart without resending it.
+  Reserved messages remain bound after expiry; other pending messages keep their normal TTL.
 - JSON Schema defines the versioned lease/message wire shapes. Generated types and actual
   runtime validation use the existing protocol package. This adds no public mutation API.
 - `ProcessSupervisor` runs a provider under a detached Linux anchor. The anchor survives
@@ -172,7 +177,7 @@ Status can be inspected even when native credentials or the provider executable 
 Each stdin line is one request with a unique `id` and an `op`. Responses carry that ID,
 `ok`, and either `result` or a safe error code; concurrent responses may arrive out of order.
 Supported operations are `submit`, `inspect_task`, `enqueue`, `inspect_run`, `resume`,
-`cancel`, `tell`, and `drain`. For example, after submitting a registered waiting task:
+`cancel`, `tell`, `inspect_message`, `mailbox_status`, and `drain`. For example, after submitting a registered waiting task:
 
 ```json
 {"id":"inspect-1","op":"inspect_task","task_id":"example"}
@@ -184,8 +189,15 @@ Supported operations are `submit`, `inspect_task`, `enqueue`, `inspect_run`, `re
 and reports queued/running counts; it does not wait for another controller's active work.
 Repeating `execute-1` with its original body returns the original run's current state,
 including after restart. A changed body with the same ID is rejected. Blocked runs are
-not automatically retried. `tell` only means a pending message was persisted; it does not
-yet mean a native Agent read or applied it. SIGINT/SIGTERM stop owned work; interrupted
+not automatically retried. `tell` first returns a pending receipt. The next qualified local
+OpenCode turn includes an ordered prefix of those messages in its native input. Inspect a
+message using `task_id` and `message_id`, or query `mailbox_status` for `pending_count`.
+`consumed` means CM verified the native input and terminal reply; it does not prove semantic
+compliance with every instruction. `mailbox_pending_count` in the execution result makes
+later or overflow messages visible for a subsequent explicit resume. A batch has at most
+32 messages and the full input is at most 65,536 bytes; content is never truncated or skipped
+to fit. Agent-origin context retains its sender and cannot issue additional permissions.
+SIGINT/SIGTERM stop owned work; interrupted
 external effects require reconciliation. EOF does not automatically execute pending work.
 
 ## Evidence and remaining work
@@ -199,12 +211,13 @@ covering source/sandbox policy, provider mapping, narrowing issuance and reply i
 It keeps the original goldens and separately exercises stricter TS admission rules. Native
 static tool expressions are retained; portable grant tokens have their own bounded format.
 
-Remaining before activation: reconciliation for the other execution profiles and abandonment policy, tell/ask and general resume integration,
+Remaining before activation: reconciliation for the other execution profiles and abandonment policy, native Agent-initiated send/ask/answer and general resume integration,
 provider adapter/permission parity and non-Linux supervision, transport delivery, all other Python
 stores, other provider profiles over the device transport, the full native
 continuation matrix, SpecMesh lifecycle admission, full rollback and production-writer exclusion.
-Mailbox application references are reports until the native adapter independently verifies
-them. A coordinator fence cannot prevent an uncooperative external program's side effect.
+Generic and device mailbox application references remain reports; local OpenCode reservations
+require independent native input verification. A coordinator fence cannot prevent an
+uncooperative external program's side effect.
 
 The authenticated worker transport and a real x64/ARM64 synthetic two-device canary are
 now implemented. Remaining fleet work includes other native provider/grant profiles and

@@ -6,6 +6,7 @@ import type { LegacyTask } from "../value";
 import type { ProbeBinding } from "./preflight-cache";
 import type { NativeBaseline } from "./native-session";
 import { inspectReadPermissions, readFileGrant } from "./opencode-profile";
+import { decodeNativeMailbox, type NativeMailboxBatch } from "./native-mailbox-input";
 
 export interface DirectoryIdentity { path: string; device: string; inode: string }
 export interface ReadSnapshot { path: string; device: string; inode: string; size: string; modified_ns: string; changed_ns: string; sha256: string }
@@ -20,6 +21,7 @@ export interface NativeManifest extends Record<string, unknown> {
   files: ReadSnapshot[];
   required_reads: string[];
   permission_evidence: { agent: string; data_home: string; resolved: Record<string, unknown>; digest: string };
+  mailbox_delivery?: NativeMailboxBatch;
 }
 
 export function nativeTaskDigest(task: LegacyTask): string {
@@ -113,5 +115,6 @@ export function decodeNativeManifest(value: unknown): NativeManifest {
   const permission = value.permission_evidence;
   requireThat(object(permission) && typeof permission.agent === "string" && typeof permission.data_home === "string" && typeof permission.digest === "string" && object(permission.resolved), "invalid_native_manifest");
   requireThat(value.baseline === null || (object(value.baseline) && object(value.baseline.reference) && object(value.baseline.messages) && object(value.baseline.parts) && Array.isArray(value.baseline.permissions)), "invalid_native_manifest");
+  if (value.mailbox_delivery !== undefined) decodeNativeMailbox(value.mailbox_delivery);
   return value as NativeManifest;
 }

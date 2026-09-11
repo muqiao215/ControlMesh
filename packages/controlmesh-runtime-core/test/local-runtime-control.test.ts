@@ -27,6 +27,11 @@ test("local status and task submission work without native credentials and canno
     expect(await control.handle({ id: "inspect", op: "inspect_task", task_id: "a" })).toMatchObject({ ok: true, result: { task: { status: "waiting" } } });
     expect(await control.handle({ id: "bad-source", op: "inspect_task", task_id: "a", origin: "human_request" })).toMatchObject({ ok: false, error: "unexpected_local_request_field" });
     expect(await control.handle({ id: "bad-grant", op: "submit", task: { ...task, task_id: "b", tool_grant: {} } })).toMatchObject({ ok: false, error: "task_body_cannot_issue_authority" });
+    const sent = await control.handle({ id: "tell", op: "tell", task_id: "a", text: "Queued handoff" });
+    const messageId = (sent.result as { message_id: string }).message_id;
+    expect(await control.handle({ id: "inspect-mail", op: "inspect_message", task_id: "a", message_id: messageId }))
+      .toMatchObject({ ok: true, result: { status: "pending", origin: "human_request" } });
+    expect(await control.handle({ id: "mail-status", op: "mailbox_status", task_id: "a" })).toMatchObject({ ok: true, result: { pending_count: 1 } });
     expect(existsSync(f.data)).toBe(false);
     expect(owned.runtime.kernel.db.sql.query("SELECT COUNT(*) AS n FROM provider_checks").get()).toEqual({ n: 0 });
     expect(owned.runtime.kernel.db.sql.query("SELECT COUNT(*) AS n FROM local_runs").get()).toEqual({ n: 0 });
@@ -62,6 +67,23 @@ test("actual stdio entrypoint handles bounded commands and preserves request IDs
   const db = new RuntimeDatabase(join(f.state, "runtime.sqlite"));
   try { expect(db.sql.query("SELECT COUNT(*) AS n FROM provider_checks").get()).toEqual({ n: 0 }); } finally { db.close(); }
 }, 10_000);
+
+test("schema eight upgrades without losing tasks or queued messages and without executing them", async () => {
+  const f = fixture(), first = openLocalRuntime(f.path);
+  first.runtime.submit("create", { task_id: "a", status: "waiting", chat_id: "local" }, { chat_id: "local" });
+  const sent = first.runtime.tell("note", "a", "Survive upgrade");
+  await first.close();
+  const previous = new RuntimeDatabase(join(f.state, "runtime.sqlite"));
+  previous.sql.exec("DROP TABLE native_mailbox_deliveries; PRAGMA user_version=8"); previous.close();
+  const restored = openLocalRuntime(f.path);
+  try {
+    expect(restored.runtime.kernel.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 9 });
+    expect(restored.runtime.inspectTask("a").task.status).toBe("waiting");
+    expect(restored.runtime.inspectMessage("a", sent.message_id).payload).toEqual({ text: "Survive upgrade" });
+    expect(restored.runtime.mailboxStatus("a")).toEqual({ pending_count: 1 });
+    expect(existsSync(f.data)).toBe(false);
+  } finally { await restored.close(); }
+});
 
 test("stdio rejects oversized commands and never treats their tail as another request", async () => {
   const f = fixture();

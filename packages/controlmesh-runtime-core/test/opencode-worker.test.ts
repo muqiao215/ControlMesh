@@ -3,13 +3,13 @@ import { Database } from "bun:sqlite";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { OpenCodeWorker, NativeReconciler, NativeSessionStore, PreflightCache, RuntimeDatabase, RuntimeKernel, TaskIngress, issueExecutionContext, type Principal, type ProbeBinding, type ProcessSpec, type ProcessOutcome } from "../src";
+import { AgentMailbox, OpenCodeWorker, NativeReconciler, NativeSessionStore, PreflightCache, RuntimeDatabase, RuntimeKernel, TaskIngress, issueExecutionContext, type Principal, type ProbeBinding, type ProcessSpec, type ProcessOutcome } from "../src";
 import { digest } from "../src/value";
 import fixture from "./fixtures/native-session-v2.json";
 
 const dirs: string[] = [], databases: RuntimeDatabase[] = [];
 afterEach(() => { for (const db of databases.splice(0)) db.close(); for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
-const actor: Principal = { id: "operator", device_id: "device", origin: "human_request", scopes: ["task:create", "task:read", "task:execute", "task:resume", "task:cancel", "provider:probe", "task:reconcile"] };
+const actor: Principal = { id: "operator", device_id: "device", origin: "human_request", scopes: ["task:create", "task:read", "task:execute", "task:resume", "task:cancel", "provider:probe", "task:reconcile", "message:send", "message:read", "message:ack"] };
 const grant = { schema_version: "controlmesh.tool_grant.v1", tool_allow: [], tool_deny: [], writable_roots: [], network_policy: "sandbox_default", confirmation_policy: "provider_runtime" };
 function result(stdout: string): ProcessOutcome { return { reason: "exited", exit_code: 0, stdout, stderr: "", duration_ms: 1 }; }
 
@@ -24,7 +24,8 @@ function setup(mode: "success" | "concurrent" | "old_edit" | "lost" | "cancel" |
   native.query("UPDATE session SET directory=?,permission=NULL").run(dir);
   native.query("UPDATE message SET data=? WHERE id='msg_Z'").run(JSON.stringify({ role: "assistant", parentID: "msg_A", providerID: "fixture", modelID: "model", finish: "stop", time: { completed: 2 } }));
   native.close();
-  const runtimePath = join(dir, "runtime.sqlite"), db = new RuntimeDatabase(runtimePath); databases.push(db);
+  let clockOffset = 0;
+  const runtimePath = join(dir, "runtime.sqlite"), db = new RuntimeDatabase(runtimePath, () => Date.now() + clockOffset); databases.push(db);
   const kernel = new RuntimeKernel(db), cache = new PreflightCache(db), store = new NativeSessionStore(path, actor.device_id!);
   const binding: ProbeBinding = { provider: "opencode", model: "fixture/model", device_id: actor.device_id!, cli_version: "1.18.29", config_digest: digest({}), credential_revision: "fixture", permission_profile: "read-v1" };
   const permit = cache.begin(actor, "probe", binding).permit!;
@@ -37,6 +38,7 @@ function setup(mode: "success" | "concurrent" | "old_edit" | "lost" | "cancel" |
     execution_context: issueExecutionContext({ origin: "user", source_scope: "local_foreground", transport: "test" }), ...taskOverrides })
     : new TaskIngress(kernel, { command_origin: "human_request", origin: "user", source_scope: "local_foreground", transport: "test" }, () => {}).submit(actor, "create", task, { chat_id: "fixture" });
   let nativeCalls = 0;
+  let onNative: ((spec: ProcessSpec) => void) | undefined;
   const config = { executable: "/fixture/opencode", state_home: dir, native_configuration: {}, environment: { HOME: dir, XDG_DATA_HOME: data } };
   const worker = new OpenCodeWorker(kernel, cache, store, config, {
     async run(spec) {
@@ -48,6 +50,7 @@ function setup(mode: "success" | "concurrent" | "old_edit" | "lost" | "cancel" |
           ...Object.keys(reads).map(pattern => ({ permission: "read", pattern, action: "allow" }))], tools: { read: {}, bash: {} } }));
       }
       nativeCalls++;
+      onNative?.(spec);
       expect(spec.command[spec.command.indexOf("--session") + 1]).toBe(ref.session_id);
       if (mode === "lost") return { ...result(""), reason: "deadline", exit_code: null };
       if (mode === "cancel") kernel.cancel(actor, "cancel", "task", kernel.inspect(actor, "task").revision);
@@ -66,7 +69,9 @@ function setup(mode: "success" | "concurrent" | "old_edit" | "lost" | "cancel" |
   });
   const admission = { source_scope: "local_foreground" as const, read_files: [] as string[], required_reads: [] as string[], assertCurrent() {} };
   if (mode === "commit_lost") db.sql.exec("CREATE TEMP TRIGGER lose_commit BEFORE INSERT ON events WHEN NEW.kind='task.done' BEGIN SELECT RAISE(ABORT,'synthetic_commit_lost'); END");
-  return { dir, path, runtimePath, config, store, db, kernel, worker, binding, admission, commands, nativeCalls: () => nativeCalls, lease: () => kernel.claim(actor, `claim-${kernel.inspect(actor, "task").revision}`, "task", kernel.inspect(actor, "task").revision, 60_000), snapshot };
+  return { dir, path, runtimePath, config, store, db, kernel, worker, binding, admission, commands, nativeCalls: () => nativeCalls,
+    onNative(callback: (spec: ProcessSpec) => void) { onNative = callback; }, advance(ms: number) { clockOffset += ms; },
+    lease: () => kernel.claim(actor, `claim-${kernel.inspect(actor, "task").revision}`, "task", kernel.inspect(actor, "task").revision, 60_000), snapshot };
 }
 
 test("worker confirms actual native append and persists the same session for an explicit resumed episode", async () => {
@@ -80,6 +85,96 @@ test("worker confirms actual native append and persists the same session for an 
   expect(next.task.native_session).toMatchObject({ session_id: fixture.session_id });
   expect((await f.worker.execute(actor, f.lease(), f.binding, f.admission)).task.status).toBe("done");
   expect(f.nativeCalls()).toBe(2);
+});
+
+test("native input includes attributed mailbox messages once; late updates remain visible for the next turn", async () => {
+  const f = setup(), mailbox = new AgentMailbox(f.kernel);
+  f.kernel.submit(actor, "create-sender", { task_id: "sender", status: "waiting", chat_id: "fixture" });
+  const sender = f.kernel.claim(actor, "claim-sender", "sender", 1, 60_000);
+  const message = mailbox.send({ ...actor, origin: "agent_message" }, "agent-note", { recipient_task: "task", sender_lease: sender,
+    kind: "handoff", payload: { text: "Agent decision: retain the migration gate" }, causation_id: null, ttl_ms: 10_000 });
+  const lease = f.lease(); let lateId = "";
+  f.onNative(spec => {
+    expect(spec.stdin_text).toContain(message.message_id); expect(spec.stdin_text).toContain('"origin":"agent_message"');
+    expect(spec.stdin_text).toContain("Agent decision: retain the migration gate");
+    expect(mailbox.inspect(actor, "task", message.message_id).status).toBe("received");
+    expect(() => mailbox.acknowledge(actor, "forged-consume", lease, message.message_id, "consumed", "unverified")).toThrow("native_delivery_requires_verification");
+    lateId = mailbox.send(actor, "late-note", { recipient_task: "task", sender_lease: null, kind: "tell", payload: { text: "Arrived after dispatch" }, causation_id: null, ttl_ms: 10_000 }).message_id;
+  });
+  const done = await f.worker.execute(actor, lease, f.binding, f.admission);
+  expect(done.task.status).toBe("done"); expect(mailbox.inspect(actor, "task", message.message_id).status).toBe("consumed");
+  expect(mailbox.inspect(actor, "task", lateId).status).toBe("pending");
+  const result = JSON.parse((f.db.sql.query("SELECT result FROM episodes WHERE episode_id=?").get(lease.episode_id) as { result: string }).result);
+  expect(result.mailbox_pending_count).toBe(1); expect(result.mailbox_delivery.message_ids).toEqual([message.message_id]);
+  f.kernel.resume(actor, "resume-mail", "task", done.revision, "Continue with queued updates");
+  f.onNative(spec => { expect(spec.stdin_text).toContain(lateId); expect(spec.stdin_text).not.toContain(message.message_id); });
+  expect((await f.worker.execute(actor, f.lease(), f.binding, f.admission)).task.status).toBe("done");
+  expect(mailbox.inspect(actor, "task", lateId).status).toBe("consumed"); expect(f.nativeCalls()).toBe(2);
+});
+
+test("lost task commit keeps native messages reserved after expiry; reopen reconciles them without a second append", async () => {
+  const f = setup("commit_lost"), mailbox = new AgentMailbox(f.kernel);
+  const message = mailbox.send(actor, "note", { recipient_task: "task", sender_lease: null, kind: "tell", payload: { text: "Persist this handoff" }, causation_id: null, ttl_ms: 1000 });
+  const lease = f.lease(); f.onNative(() => f.advance(2000));
+  await expect(f.worker.execute(actor, lease, f.binding, f.admission)).rejects.toThrow("synthetic_commit_lost");
+  expect(mailbox.inspect(actor, "task", message.message_id).status).toBe("received");
+  const revision = f.kernel.inspect(actor, "task").revision;
+  databases.splice(databases.indexOf(f.db), 1); f.db.close();
+  const db = new RuntimeDatabase(f.runtimePath); databases.push(db);
+  const kernel = new RuntimeKernel(db), reconciler = new NativeReconciler(kernel, f.store, f.config);
+  const candidate = reconciler.inspect(actor, "task", revision, `native-${lease.episode_id}`);
+  const done = reconciler.accept(actor, "accept-mail", "task", revision, candidate, f.binding, f.admission);
+  expect(done.task.status).toBe("done");
+  expect(new AgentMailbox(kernel).inspect(actor, "task", message.message_id).status).toBe("consumed");
+  expect(reconciler.accept(actor, "accept-mail", "task", revision, candidate, f.binding, f.admission)).toEqual(done);
+  expect(f.nativeCalls()).toBe(1); expect(db.sql.query("SELECT COUNT(*) AS n FROM events WHERE kind='task.done'").get()).toEqual({ n: 1 });
+});
+
+test("message reservation failure rolls back dispatch and receipt before any model call", async () => {
+  const f = setup(), mailbox = new AgentMailbox(f.kernel);
+  const message = mailbox.send(actor, "note", { recipient_task: "task", sender_lease: null, kind: "tell", payload: { text: "Never lose this" }, causation_id: null, ttl_ms: 10_000 });
+  f.db.sql.exec("CREATE TEMP TRIGGER refuse_delivery BEFORE INSERT ON native_mailbox_deliveries BEGIN SELECT RAISE(ABORT,'synthetic_delivery_failure'); END");
+  await expect(f.worker.execute(actor, f.lease(), f.binding, f.admission)).rejects.toThrow("synthetic_delivery_failure");
+  expect(f.nativeCalls()).toBe(0); expect(mailbox.inspect(actor, "task", message.message_id).status).toBe("pending");
+  expect(f.db.sql.query("SELECT COUNT(*) AS n FROM effects").get()).toEqual({ n: 0 });
+});
+
+test("mailbox delivery retains an ordered fitting prefix and rejects missing delivery scope before native commands", async () => {
+  const f = setup(), mailbox = new AgentMailbox(f.kernel);
+  for (let i = 0; i < 2; i++) mailbox.send(actor, `large-${i}`, { recipient_task: "task", sender_lease: null, kind: "tell",
+    payload: { text: "x".repeat(32750) }, causation_id: null, ttl_ms: 10_000 });
+  const lease = f.lease();
+  await expect(f.worker.execute({ ...actor, scopes: actor.scopes.filter(scope => scope !== "message:ack") }, lease, f.binding, f.admission)).rejects.toThrow("scope_denied");
+  expect(f.commands).toHaveLength(0);
+  expect((await f.worker.execute(actor, lease, f.binding, f.admission)).task.status).toBe("done");
+  expect(mailbox.pendingCount(actor, "task")).toBe(1);
+  expect(f.db.sql.query("SELECT sequence,status FROM messages ORDER BY sequence").all()).toEqual([{ sequence: 1, status: "consumed" }, { sequence: 2, status: "pending" }]);
+});
+
+test("a first message that cannot fit the native input is not truncated, acknowledged or dispatched", async () => {
+  const f = setup("success", { prompt: "P".repeat(32768) }), mailbox = new AgentMailbox(f.kernel);
+  mailbox.send(actor, "large", { recipient_task: "task", sender_lease: null, kind: "tell", payload: { text: "x".repeat(32750) }, causation_id: null, ttl_ms: 10_000 });
+  await expect(f.worker.execute(actor, f.lease(), f.binding, f.admission)).rejects.toThrow("native_mailbox_input_too_large");
+  expect(f.commands).toHaveLength(0); expect(mailbox.pendingCount(actor, "task")).toBe(1);
+});
+
+test("altered receipt or message content cannot manufacture native consumption during recovery", async () => {
+  for (const changed of ["receipt", "payload", "native-input"] as const) {
+    const f = setup("commit_lost"), mailbox = new AgentMailbox(f.kernel);
+    const message = mailbox.send(actor, "note", { recipient_task: "task", sender_lease: null, kind: "tell", payload: { text: "Original handoff" }, causation_id: null, ttl_ms: 10_000 });
+    const lease = f.lease(); await expect(f.worker.execute(actor, lease, f.binding, f.admission)).rejects.toThrow("synthetic_commit_lost");
+    f.db.sql.exec("DROP TRIGGER lose_commit");
+    if (changed === "receipt") f.db.sql.query("UPDATE messages SET receipt_fence=receipt_fence+1 WHERE message_id=?").run(message.message_id);
+    if (changed === "payload") f.db.sql.query("UPDATE messages SET payload=? WHERE message_id=?").run(JSON.stringify({ text: "Rewritten handoff" }), message.message_id);
+    if (changed === "native-input") {
+      const native = new Database(f.path); native.query("UPDATE part SET data=? WHERE id='part_user_1'").run(JSON.stringify({ type: "text", text: "Original prompt without the mailbox" })); native.close();
+    }
+    const revision = f.kernel.inspect(actor, "task").revision, reconciler = new NativeReconciler(f.kernel, f.store, f.config);
+    const candidate = reconciler.inspect(actor, "task", revision, `native-${lease.episode_id}`);
+    expect(() => reconciler.accept(actor, "reject-changed", "task", revision, candidate, f.binding, f.admission)).toThrow();
+    expect(mailbox.inspect(actor, "task", message.message_id).status).toBe("received");
+    expect(f.kernel.inspect(actor, "task").task.status).toBe("stale"); expect(f.nativeCalls()).toBe(1);
+  }
 });
 
 test("old edits, concurrent native input and missing completion become unknown and cannot be retried", async () => {

@@ -353,7 +353,20 @@ waits for already requested work but does not start queued tasks. This is not th
 `cm` command or a production writer lock. Source/grant/principal authority comes from the
 private configuration and issuance owner, never request body fields. The qualified profile
 is local foreground OpenCode container reads. `tell` persists a pending mailbox message;
-native consumption and other ingress/transport profiles are still separate work.
+`inspect_message` and `mailbox_status` expose delivery state without running a model.
+Other ingress/transport profiles are still separate work.
+
+The local `OpenCodeWorker` takes an ordered, bounded mailbox prefix for each native turn.
+Schema 9 reserves those message IDs against the actual effect and immutable dispatch
+manifest in the same transaction as execution dispatch. Sender/origin/sequence and payload
+are encoded into attributed native input; they cannot change task source or grants. Only
+verified native input plus a terminal reply permits consumption, atomically with effect
+confirmation and task completion. Explicit native reconciliation applies the same input
+verifier and reservation checks after a lost completion. Generic mailbox acknowledgements
+cannot consume a reserved native delivery, and expiry cannot make uncertain dispatched
+messages eligible for replay. Updates that arrive later or exceed the fitting prefix remain
+pending; the result records their count. There is no automatic additional model turn.
+Native Agent-initiated send/ask/answer and device-transport delivery are still unimplemented.
 
 The private `OpenCodeWorker` now connects kernel leases/effect receipts to actual native
 process supervision and terminal evidence. Its current profile is explicitly issued local

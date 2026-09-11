@@ -138,7 +138,7 @@ Earlier implementation history is in Git; it is not duplicated here.
 
 All original CM-R0–CM-R7 gates remain authoritative: remaining provider/transport/workspace/
 artifact owners, native provider write and other image/auth/state profiles, other persisted runtime stores,
-writer exclusion and rollback, existing History session adoption, native mailbox application,
+writer exclusion and rollback, device-local History adoption, native Agent send/ask/answer and device mailbox application,
 independent SpecMesh current-checkout/lifecycle gates, fleet enrollment/rotation/fairness and
 real topology execution, terminal product work, default TS switch, Python retirement and
 release/install/running alignment. A qualified native read profile and isolated process tests do not
@@ -161,7 +161,8 @@ OpenCode adapter uses one durable preflight and the qualified native container d
 The private stdio entrypoint accepts bounded requests with explicit request IDs; metadata
 does not call models and duplicate execution requests never redispatch. Cancellation,
 controller stop and uncertain results retain the existing kernel reconciliation rules.
-`tell` persists a pending message only; native application is not completed by this entrypoint.
+At this entrypoint milestone `tell` persisted a pending message only; the subsequent native
+mailbox integration below adds verified delivery and recovery.
 
 The first real adoption attempt passed preflight but was refused with
 `native_worktree_changed`. OpenCode rewrites the shared `global` project row when its
@@ -196,9 +197,45 @@ workspace, not this repository. Production Python, live tasks, service installat
 default writer and release version are unchanged. The failed attempt is retained separately
 as `local-runtime-acceptance-before-worktree-fix.*`; successful acceptance does not erase it.
 
+## Native mailbox delivery — 2026-09-11
+
+Local OpenCode execution now includes an attributed, ordered mailbox prefix in its actual
+native input. Schema 9 adds effect-bound message reservations. The worker records receipt
+with the original dispatch manifest, then consumes only after independently verifying the
+native user input and terminal reply. Consumption, effect confirmation and task completion
+share one transaction. Native reconciliation uses the original batch after interruption;
+generic acknowledgement cannot bypass it, and TTL expiry cannot cause uncertain delivery
+to be replayed. A fitting prefix keeps message bytes/order intact; later and overflow
+messages remain pending and their count appears in the result. Stdio has message/status
+inspection. Native Agent-originating send/ask/answer and device delivery remain open.
+
+Real acceptance **2026-09-11 14:33:59–14:34:50 UTC** used the actual stdio entrypoint,
+headless History revalidation and existing OpenCode 1.18.29/M3 session. A message sent
+after enqueue supplied a new token absent from the task prompt. CM verified its presence
+in native input, the reply contained it, and the message became consumed. Duplicate send
+returned the same ID. After actual controller exit/restart, the next turn recalled the
+token from native history without redelivery and read the changed current file. Two runs
+completed with one probe/two task turns (three model calls/nine native commands), readiness
+generation 1 and zero extra replay calls. All nine containers were independently absent.
+This real send used the configured human-request ingress; Agent provenance is covered by
+directed tests, not a claim that native Agent-originating exchange is already implemented.
+
+Verification: strict TS and the unchanged 512-module/57-field ownership baseline passed.
+CI Bun 1.3.11 full core passed **161 tests / 2144 assertions / 21 files / 32.97 seconds**,
+including real containers, process ownership and schema upgrades. After strengthening the
+delivery helper's live-lease and trusted-reconciliation guards, the three affected native/
+mailbox/local-control suites passed **29 tests / 246 assertions / 2.32 seconds**. Coverage
+includes ordered Agent-origin context, late messages, fitting prefixes, oversized first
+message refusal, scope loss, atomic reservation rollback, lost completion/reopen after TTL,
+receipt/payload/native-input alteration, idempotent recovery and schema-8 preservation.
+
+Private evidence: workspace `outputs/runtime-convergence/native-mailbox-acceptance.*`.
+The existing production service, provider account settings and live task writer were not
+changed. The whole migration remains active.
+
 ## Next
 
-Connect the local task entrypoint to actual native mailbox application and transport startup;
+Connect native Agent send/ask/answer and device mailbox delivery to actual execution;
 extend provider/write profiles with real native permission and outcome verification.
 Then continue stores, History adoption, SpecMesh lifecycle and the production writer switch.
 The current Node-image process profile is not a substitute for native provider qualification.

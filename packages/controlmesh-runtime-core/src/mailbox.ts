@@ -34,7 +34,24 @@ export class AgentMailbox {
   }
 
   private expire(taskId: string) {
-    this.db.sql.query("UPDATE messages SET status='expired' WHERE recipient_task=? AND expires_at<=? AND status IN ('pending','received')").run(taskId, this.db.now());
+    this.db.sql.query("UPDATE messages SET status='expired' WHERE recipient_task=? AND expires_at<=? AND status IN ('pending','received') AND NOT EXISTS (SELECT 1 FROM native_mailbox_deliveries d WHERE d.message_id=messages.message_id)").run(taskId, this.db.now());
+  }
+
+  inspect(actor: Principal, taskId: string, messageId: string): AgentMessage {
+    requireScope(actor, "message:read"); identifier(messageId); this.kernel.inspect(actor, taskId);
+    return this.db.transaction(() => {
+      this.expire(taskId);
+      const row = this.db.sql.query("SELECT * FROM messages WHERE recipient_task=? AND message_id=?").get(taskId, messageId) as MessageRow | null;
+      requireThat(row, "message_unavailable"); return this.view(row);
+    });
+  }
+
+  pendingCount(actor: Principal, taskId: string): number {
+    requireScope(actor, "message:read"); this.kernel.inspect(actor, taskId);
+    return this.db.transaction(() => {
+      this.expire(taskId);
+      return (this.db.sql.query("SELECT COUNT(*) AS n FROM messages WHERE recipient_task=? AND status IN ('pending','received')").get(taskId) as { n: number }).n;
+    });
   }
 
   send(actor: Principal, requestId: string, message: SendMessage): AgentMessage {
@@ -102,7 +119,9 @@ export class AgentMailbox {
     identifier(messageId);
     requireThat(phase === "received" || phase === "consumed", "invalid_ack_phase");
     requireThat(phase !== "consumed" || (typeof evidence === "string" && evidence.trim().length > 0 && evidence.length <= 1024), "application_evidence_required");
-    return this.kernel.withLease(actor, proof, () => command(this.db, actor, requestId, "message.ack", { proof, messageId, phase, evidence }, () => {
+    return this.kernel.withLease(actor, proof, () => {
+      requireThat(!this.db.sql.query("SELECT 1 FROM native_mailbox_deliveries WHERE message_id=?").get(messageId), "native_delivery_requires_verification");
+      return command(this.db, actor, requestId, "message.ack", { proof, messageId, phase, evidence }, () => {
       this.expire(proof.task_id);
       const row = this.db.sql.query("SELECT * FROM messages WHERE message_id=? AND recipient_task=?").get(messageId, proof.task_id) as MessageRow | null;
       requireThat(row && row.status !== "expired", "message_unavailable");
@@ -116,6 +135,7 @@ export class AgentMailbox {
       this.db.sql.query("UPDATE messages SET status=?,receipt_episode=?,receipt_fence=?,consumed_evidence=? WHERE message_id=?")
         .run(phase, proof.episode_id, proof.fence, phase === "consumed" ? evidence : null, messageId);
       return this.view(this.db.sql.query("SELECT * FROM messages WHERE message_id=?").get(messageId) as MessageRow);
-    }));
+      });
+    });
   }
 }

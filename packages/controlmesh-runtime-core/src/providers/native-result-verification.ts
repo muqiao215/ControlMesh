@@ -8,6 +8,7 @@ import { NativeSessionLease } from "./native-lease";
 import { NativeSessionStore } from "./native-session";
 import { assertReadGrantSnapshot, inspectReadPermissions, readFileGrant } from "./opencode-profile";
 import type { ProbeBinding } from "./preflight-cache";
+import { nativeInput, nativeMailboxEvidence } from "./native-mailbox-input";
 
 /** Keeps the native lock while callers retain/report the verified result. No provider command is available here. */
 export class NativeResultVerification {
@@ -32,6 +33,8 @@ export class NativeResultVerification {
       requireThat(binding.device_id === this.store.deviceId && this.store.identity() === manifest.native_store_id, "reconciliation_store_changed");
       enforceLocalReadSource(task.execution_context);
       requireThat(typeof task.repo_root === "string" && typeof task.prompt === "string" && realpathSync(task.repo_root) === manifest.directory.path, "native_workspace_mismatch");
+      requireThat(!manifest.mailbox_delivery || manifest.mailbox_delivery.task_id === task.task_id, "native_mailbox_task_mismatch");
+      const input = nativeInput(task.prompt, manifest.mailbox_delivery);
       const files = readFileGrant(manifest.directory.path, admission.read_files), required = readFileGrant(manifest.directory.path, admission.required_reads);
       requireThat(digest(files) === digest(manifest.files.map(file => file.path)) && digest(required) === digest(manifest.required_reads), "reconciliation_grant_changed");
       assertReadGrantSnapshot(task.tool_grant, files);
@@ -46,7 +49,7 @@ export class NativeResultVerification {
       this.lock = new NativeSessionLease(this.config.state_home, this.store.path, current);
       requireThat(current.store_id === manifest.native_store_id, "reconciliation_store_changed");
       assertWorkspaceManifest(manifest, true);
-      const verified = this.store.verifyTurn(observation.native_session_id, manifest.baseline, task.prompt, observation.text);
+      const verified = this.store.verifyTurn(observation.native_session_id, manifest.baseline, input, observation.text);
       requireThat(verified.reference.directory === manifest.directory.path && verified.reference.model === binding.model
         && this.store.worktree(verified.reference) === manifest.worktree.path, "native_result_binding_mismatch");
       const reads = verified.read_files.map(file => realpathSync(file));
@@ -56,7 +59,8 @@ export class NativeResultVerification {
       this.store.validate(verified.reference);
       this.recheck = () => { authorize(); this.lock!.assertCurrent(); assertWorkspaceManifest(manifest, true); this.store.validate(verified.reference); };
       this.result = { native_session: verified.reference, user_message_id: verified.user_message_id, assistant_message_ids: verified.assistant_message_ids,
-        text: observation.text, output_digest: digest(observation.text), permission_digest: saved.digest, read_files: verified.read_files };
+        text: observation.text, output_digest: digest(observation.text), permission_digest: saved.digest, read_files: verified.read_files,
+        ...(manifest.mailbox_delivery ? { mailbox_delivery: nativeMailboxEvidence(manifest.mailbox_delivery, verified.user_message_id) } : {}) };
     } catch (error) { this.close(); throw error; }
   }
   assertCurrent = (): void => { requireThat(!this.closed, "native_verification_closed"); this.recheck(); };
