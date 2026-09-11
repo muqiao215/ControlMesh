@@ -39,6 +39,7 @@ from controlmesh.cli_commands.lifecycle import (
     upgrade as _upgrade,
 )
 from controlmesh.cli_commands.service import cmd_service as _cmd_service
+from controlmesh.cli_commands.specmesh import cmd_specmesh as _cmd_specmesh
 from controlmesh.cli_commands.status import (
     cmd_doctor as _cmd_doctor,
     print_status as _print_status,
@@ -617,6 +618,7 @@ _COMMANDS: dict[str, str] = {
     "service": "service",
     "docker": "docker",
     "cron": "cron",
+    "specmesh": "specmesh",
     "api": "api",
     "agents": "agents",
     "install": "install",
@@ -664,6 +666,7 @@ def main() -> None:
         "service": lambda: _cmd_service(args),
         "docker": lambda: _cmd_docker(args),
         "cron": lambda: _cmd_cron(args),
+        "specmesh": lambda: _cmd_specmesh(args),
         "api": lambda: _cmd_api(args),
         "agents": lambda: _cmd_agents(args),
         "install": lambda: _cmd_install(args),

@@ -89,3 +89,7 @@ blocked until Python golden parity and rollback gates exist.
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## Workflow integration (v0.43.0)
+
+See [implementation boundaries and commands](docs/CODEKIT-INTEGRATION.md).

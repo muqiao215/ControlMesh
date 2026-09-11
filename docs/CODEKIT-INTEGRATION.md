@@ -1,0 +1,22 @@
+# Codekit integration in v0.43.0
+
+## Ownership and implemented boundaries
+CM remains the task execution authority. This batch does not install the kit's second SQLite TaskHub or replace the Python runtime with its TypeScript prototype.
+
+`controlmesh/cron/guarded_store.py` provides atomic JSON transactions under a shared sidecar lock. Manager CRUD, scheduled/manual status updates, and bundled cron tools now cooperate on this store. Tool snapshots use field-level three-way comparison: unrelated pause/status changes survive; concurrent edits to the same field fail explicitly. Unknown metadata survives. Corrupt registries are rejected rather than overwritten. All writers must participate; external legacy scripts that overwrite JSON remain a deployment concern. Folder changes and registry commits are not one filesystem transaction.
+
+`controlmesh/cron/observer.py` retains the active task handle during rescheduling, verifies ownership and freshly loaded enabled state at wakeup, prevents duplicate execution within this observer, and schedules the successor using current configuration. This is not a distributed lease: multiple running CM processes can still dispatch the same job. No production schedule was changed.
+
+## Independent SpecMesh adapter
+From an environment with CM dependencies installed:
+
+```sh
+python -m controlmesh specmesh check --repo /absolute/project --expected-head FULL_GIT_SHA --specmesh-root /absolute/trusted/SpecMesh
+```
+
+`--task plans/task-name` additionally requires that task's continuity files. Other operations: inspect, prepare_handoff, verify_closeout. The adapter calls the independent `specmesh_port` subprocess with bounded timeout and validates request/result schemas. Error findings, stale HEAD, malformed output, or unknown closeout cannot be promoted to success. Schemas are bundled for installed packages and mirrored in `schemas/controlmesh/specmesh/`.
+
+This explicit command does not initialize TaskHub, automatically gate task submission, run arbitrary untrusted plugins, or resume an Agent. The caller selects a trusted code root. Byte output checks happen after capture and are not a hostile-plugin resource sandbox. Cross-device coordination, provider quota lifecycle and general plugin admission remain separate work.
+
+## Validation and continuation
+Affected cron, adapter and main CLI regressions are recorded in the workspace implementation report. Linux locking is exercised; the Windows locking branch needs platform acceptance. Next: review the local diff and reconcile any newer source HEAD before integration. Add dispatch hooks only with explicit gate semantics and tests through real TaskHub submission paths.

@@ -298,6 +298,7 @@ def print_usage() -> None:
         "controlmesh doctor providers fleet",
         "Run the same provider doctor over explicit SSH hosts.",
     )
+    table.add_row("controlmesh specmesh --help", "Inspect project continuity through a trusted independent SpecMesh checkout.")
     table.add_row("controlmesh version", t_rich("help.version"))
     table.add_row("controlmesh onboarding", t_rich("help.onboarding"))
     table.add_row("controlmesh upgrade [version]", t_rich("help.upgrade"))

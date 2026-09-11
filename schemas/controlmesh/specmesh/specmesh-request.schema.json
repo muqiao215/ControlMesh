@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SpecMeshRequest",
+  "type": "object",
+  "properties": {
+    "contract_version": {
+      "enum": [
+        "specmesh.port.v1-draft"
+      ]
+    },
+    "operation": {
+      "enum": [
+        "inspect",
+        "check",
+        "prepare_handoff",
+        "verify_closeout"
+      ]
+    },
+    "repo_root": {
+      "type": "string",
+      "maxLength": 4096,
+      "minLength": 1
+    },
+    "expected_head": {
+      "type": "string",
+      "maxLength": 64,
+      "minLength": 40,
+      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+    },
+    "task_path": {
+      "anyOf": [
+        {
+          "type": "string",
+          "maxLength": 4096
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "mode": {
+      "enum": [
+        "read_only"
+      ]
+    }
+  },
+  "required": [
+    "contract_version",
+    "operation",
+    "repo_root",
+    "expected_head",
+    "task_path",
+    "mode"
+  ],
+  "additionalProperties": false
+}

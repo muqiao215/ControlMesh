@@ -153,6 +153,9 @@ class CronObserver(BaseTaskObserver):
         """Schedule asyncio tasks for all enabled jobs."""
         await self._watcher.update_mtime()
         for job in self._manager.list_jobs():
+            tracked = self._scheduled.get(job.id)
+            if job.id in self._executing or (tracked is not None and not tracked.done()):
+                continue
             if job.enabled:
                 self._schedule_job(
                     job.id,
@@ -247,25 +250,35 @@ class CronObserver(BaseTaskObserver):
         """Wait for delay, execute the job, then reschedule for next occurrence."""
         try:
             await asyncio.sleep(delay)
+            if (
+                not self._running
+                or self._scheduled.get(scheduled_job.id) is not asyncio.current_task()
+            ):
+                return
+            self._manager.reload()
+            current = self._manager.get_job(scheduled_job.id)
+            if current is None or not current.enabled:
+                return
             await self._execute_job(
-                scheduled_job.id,
-                scheduled_job.instruction,
-                scheduled_job.task_folder,
+                current.id,
+                current.agent_instruction,
+                current.task_folder,
             )
         except asyncio.CancelledError:
             logger.warning("Cron job %s cancelled during execution", scheduled_job.id)
             raise
         except Exception:
             logger.exception("Cron job %s failed unexpectedly", scheduled_job.id)
-        if self._running:
+        if self._running and self._scheduled.get(scheduled_job.id) is asyncio.current_task():
+            self._manager.reload()
             job = self._manager.get_job(scheduled_job.id)
             if job and job.enabled:
                 self._schedule_job(
                     scheduled_job.id,
-                    scheduled_job.schedule,
-                    scheduled_job.instruction,
-                    scheduled_job.task_folder,
-                    scheduled_job.timezone,
+                    job.schedule,
+                    job.agent_instruction,
+                    job.task_folder,
+                    job.timezone,
                 )
 
     # -- Execution --
@@ -298,6 +311,9 @@ class CronObserver(BaseTaskObserver):
         task_folder: str,
     ) -> None:
         """Spawn a fresh CLI session in the cron_task folder."""
+        if job_id in self._executing:
+            logger.info("Cron job %s is already executing, skipping duplicate trigger", job_id)
+            return
         self._executing.add(job_id)
         try:
             await self._execute_job_inner(job_id, instruction, task_folder)
@@ -331,6 +347,8 @@ class CronObserver(BaseTaskObserver):
             lines.extend(["", "Instruction preview:", job.agent_instruction])
             return ("dry_run", "\n".join(lines))
 
+        if job_id in self._executing:
+            return ("busy", f"Cron job `{job_id}` is already executing.")
         self._executing.add(job_id)
         try:
             await self._execute_job_inner(
@@ -341,8 +359,11 @@ class CronObserver(BaseTaskObserver):
             )
         finally:
             self._executing.discard(job_id)
+            self.request_reschedule()
 
         refreshed = self._manager.get_job(job_id)
+        if refreshed is None:
+            return ("removed", f"Cron job `{job_id}` was removed while running.")
         status = refreshed.manual_run_status or refreshed.last_run_status or "unknown"
         return (status, f"Cron job `{job_id}` finished with status `{status}`.")
 

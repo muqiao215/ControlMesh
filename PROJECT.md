@@ -188,3 +188,11 @@ acceptance. The following runtime and operational work remains queued:
 - Most recent landed safety implementation (Unit A v1) → `plans/execution-tool-grants/`
 
 - Plan status index → [plans/README.md](plans/README.md)
+
+## Workflow integration (v0.43.0)
+
+Local cron transaction/ownership fixes and an opt-in independent SpecMesh CLI adapter are described in [CODEKIT-INTEGRATION](docs/CODEKIT-INTEGRATION.md). This batch complements the queued terminal/runtime work; it does not complete TypeScript migration, distributed dispatch or operational rollout.
+
+## Approved next direction
+
+The primary coordinating Agent owns cross-project delivery. Repository-owned execution details and current status: [runtime-convergence](plans/runtime-convergence/task_plan.md). These future milestones remain planned; current released behavior retains its existing authority.

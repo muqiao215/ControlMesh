@@ -93,3 +93,7 @@ explicit migration and API-admission decision:
 - Memory writes and promotion.
 - Workspace path mutation.
 - Transport adapters and message delivery semantics.
+
+## Approved full runtime migration direction (2026-09-11)
+
+The user has approved planning the complete TS runtime port and multi-device coordination. Current Python ownership stays in force until per-area gates pass. [Runtime convergence](../../plans/runtime-convergence/task_plan.md) is the active forward plan; this historical phase ledger does not by itself authorize dual writers or mark pending ports complete.

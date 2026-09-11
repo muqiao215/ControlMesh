@@ -349,3 +349,7 @@ permissions from historical text, and silently switching to a fresh session on f
 
 Revisit remote/browser adoption only after authenticated mutation admission and source-aware
 policy are implemented. The current CM lease does not exclude independent native clients.
+
+## 2026-09-11 — Integrate against existing repository authority
+
+Reuse the existing storage/parsers and keep SpecMesh independently callable. Do not install a second TaskHub from a proposal or equate historical handoff with live completion. The human overview and headless retrieval have separate entry points. See [scope and remaining limits](CODEKIT-INTEGRATION.md). Status: implemented for v0.43.0; broader roadmap gates remain planned.

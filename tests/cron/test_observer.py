@@ -985,9 +985,17 @@ class TestCronResultDelivery:
             timezone="",
         )
 
-        with patch.object(observer, "_execute_job", side_effect=RuntimeError("boom")):
-            # Must not raise — the exception is logged and the job is rescheduled
-            await observer._run_at(0, job)
+        mgr.add_job(_make_job("crash"))
+        with (
+            patch.object(observer, "_execute_job", side_effect=RuntimeError("boom")) as execute,
+            patch.object(observer, "_schedule_job") as schedule,
+        ):
+            task = asyncio.create_task(observer._run_at(0, job))
+            observer._scheduled["crash"] = task
+            await task
+            execute.assert_awaited_once()
+            schedule.assert_called_once()
+        await observer.stop()
 
 
 class TestEnrichInstruction:

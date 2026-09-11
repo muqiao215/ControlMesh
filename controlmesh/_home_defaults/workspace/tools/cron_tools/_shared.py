@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 from pathlib import Path
 from typing import Any
 
+from controlmesh.cron.guarded_store import LockedJsonJobs
 from controlmesh.cron.policy import default_task_policy, load_task_policy, task_policy_path
 from controlmesh.orchestrator.providers import normalize_provider_name
 from controlmesh._home_defaults.workspace.tools._tool_shared import (
@@ -90,14 +92,22 @@ and well-formatted manner.
 """
 
 
+class _JobSnapshot(dict):
+    """Carry an immutable read baseline without serializing it into jobs.json."""
+
+    def __init__(self, payload):
+        super().__init__(payload)
+        self.baseline = copy.deepcopy(payload)
+
+
 def load_jobs_or_default(jobs_path: Path) -> dict[str, Any]:
-    """Load cron jobs JSON or return an empty payload if missing/corrupt."""
-    return load_collection_or_default(jobs_path, "jobs")
+    return _JobSnapshot(LockedJsonJobs(jobs_path)._read())
 
 
 def load_jobs_strict(jobs_path: Path) -> dict[str, Any]:
-    """Load cron jobs JSON and raise on malformed structure."""
-    return load_collection_strict(jobs_path, "jobs")
+    if not jobs_path.exists():
+        raise FileNotFoundError(jobs_path)
+    return load_jobs_or_default(jobs_path)
 
 
 def find_job_by_id_or_task_folder(jobs: list[dict[str, Any]], job_id: str) -> dict[str, Any] | None:
@@ -123,8 +133,59 @@ def safe_task_dir(task_folder: str) -> Path:
 
 
 def save_jobs(jobs_path: Path, data: dict[str, Any]) -> None:
-    """Persist cron jobs JSON with stable formatting."""
-    save_collection(jobs_path, data)
+    """Merge only this tool's edits under the same lock as CronManager.
+
+    Conflicting configuration edits fail instead of overriding another writer.
+    Runtime status changes to untouched fields survive a concurrent tool edit.
+    """
+    if not isinstance(data, _JobSnapshot):
+        raise ValueError("cron write requires a load_jobs snapshot")
+    before = {row["id"]: row for row in data.baseline["jobs"]}
+    wanted = {row["id"]: row for row in data["jobs"]}
+    if len(wanted) != len(data["jobs"]):
+        raise ValueError("duplicate cron identity")
+    missing = object()
+
+    def mutate(current):
+        actual = {row["id"]: row for row in current["jobs"]}
+        for identity in before.keys() - wanted.keys():
+            if identity in actual and actual[identity] != before[identity]:
+                raise ValueError("cron job changed before deletion; reload and retry")
+            current["jobs"] = [row for row in current["jobs"] if row["id"] != identity]
+        for identity, desired in wanted.items():
+            if identity not in before:
+                if identity in actual:
+                    raise ValueError("cron identity already exists")
+                current["jobs"].append(copy.deepcopy(desired))
+                continue
+            original = before[identity]
+            fields = {
+                key
+                for key in original.keys() | desired.keys()
+                if original.get(key, missing) != desired.get(key, missing)
+            }
+            if not fields:
+                continue
+            if identity not in actual:
+                raise ValueError("cron job was removed; reload and retry")
+            row = actual[identity]
+            for key in fields:
+                old, new, now = (
+                    original.get(key, missing),
+                    desired.get(key, missing),
+                    row.get(key, missing),
+                )
+                if now != old and now != new:
+                    raise ValueError("cron field changed concurrently: " + key)
+                if new is missing:
+                    row.pop(key, None)
+                else:
+                    row[key] = copy.deepcopy(new)
+
+    _, saved = LockedJsonJobs(jobs_path).mutate(mutate)
+    data.clear()
+    data.update(saved)
+    data.baseline = copy.deepcopy(saved)
 
 
 def update_task_policy(

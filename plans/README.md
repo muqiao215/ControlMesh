@@ -102,3 +102,5 @@ If the line is valid but should not continue now:
 - Runtime/event surface: task lifecycle, retries, heartbeats, worker activity, recovery, diagnostics
 
 Do not mix them.
+
+- Planned next direction: [runtime-convergence](runtime-convergence/task_plan.md).

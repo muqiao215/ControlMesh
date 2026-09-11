@@ -11,8 +11,10 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from threading import RLock
 
-from controlmesh.infra.json_store import atomic_json_save, load_json
+from controlmesh.infra.json_store import load_json
+from controlmesh.cron.guarded_store import LockedJsonJobs
 
 logger = logging.getLogger(__name__)
 
@@ -143,28 +145,26 @@ class CronManager:
 
     def __init__(self, *, jobs_path: Path) -> None:
         self._jobs_path = jobs_path
+        self._cache_lock = RLock()
         self._jobs: list[CronJob] = self._load()
 
     # -- CRUD --
 
     def add_job(self, job: CronJob) -> None:
-        """Add a new job. Raises ValueError if ID already exists."""
-        if any(j.id == job.id for j in self._jobs):
-            msg = f"Job '{job.id}' already exists"
-            raise ValueError(msg)
-        self._jobs.append(job)
-        self._save()
-        logger.info("Cron job added: %s (%s)", job.id, job.schedule)
+        def mutate(data):
+            if any(row["id"] == job.id for row in data["jobs"]):
+                raise ValueError(f"Job '{job.id}' already exists")
+            data["jobs"].append(job.to_dict())
+
+        self._mutate_jobs(mutate)
 
     def remove_job(self, job_id: str) -> bool:
-        """Remove a job by ID. Returns False if not found."""
-        before = len(self._jobs)
-        self._jobs = [j for j in self._jobs if j.id != job_id]
-        if len(self._jobs) == before:
-            return False
-        self._save()
-        logger.info("Cron job removed: %s", job_id)
-        return True
+        def mutate(data):
+            previous = len(data["jobs"])
+            data["jobs"] = [row for row in data["jobs"] if row["id"] != job_id]
+            return len(data["jobs"]) != previous
+
+        return self._mutate_jobs(mutate)
 
     def list_jobs(self) -> list[CronJob]:
         """Return all jobs."""
@@ -175,50 +175,54 @@ class CronManager:
         return next((j for j in self._jobs if j.id == job_id), None)
 
     def set_enabled(self, job_id: str, *, enabled: bool) -> bool:
-        """Set ``enabled`` for one job. Returns True if state changed."""
-        job = self.get_job(job_id)
-        if job is None:
+        def mutate(data):
+            for row in data["jobs"]:
+                if row["id"] == job_id:
+                    if row.get("enabled", True) == enabled:
+                        return False
+                    row["enabled"] = enabled
+                    return True
             return False
-        if job.enabled == enabled:
-            return False
-        job.enabled = enabled
-        self._save()
-        logger.info("Cron job %s: enabled=%s", job_id, enabled)
-        return True
+
+        return self._mutate_jobs(mutate)
 
     def set_all_enabled(self, *, enabled: bool) -> int:
-        """Set ``enabled`` for all jobs. Returns number of changed jobs."""
-        changed = 0
-        for job in self._jobs:
-            if job.enabled != enabled:
-                job.enabled = enabled
-                changed += 1
-        if changed:
-            self._save()
-            logger.info("Cron jobs bulk update: enabled=%s changed=%d", enabled, changed)
-        return changed
+        def mutate(data):
+            changed = 0
+            for row in data["jobs"]:
+                if row.get("enabled", True) != enabled:
+                    row["enabled"] = enabled
+                    changed += 1
+            return changed
+
+        return self._mutate_jobs(mutate)
 
     def update_run_status(self, job_id: str, *, status: str) -> None:
-        """Update last_run_at and last_run_status for a job."""
-        job = self.get_job(job_id)
-        if job is None:
-            return
-        job.last_run_at = datetime.now(UTC).isoformat()
-        job.last_run_status = status
-        self._save()
+        def mutate(data):
+            for row in data["jobs"]:
+                if row["id"] == job_id:
+                    row["last_run_at"] = datetime.now(UTC).isoformat()
+                    row["last_run_status"] = status
+                    return
+
+        self._mutate_jobs(mutate)
 
     def update_manual_run_status(self, job_id: str, *, status: str) -> None:
-        """Update manual_run_at and manual_run_status for a job."""
-        job = self.get_job(job_id)
-        if job is None:
-            return
-        job.manual_run_at = datetime.now(UTC).isoformat()
-        job.manual_run_status = status
-        self._save()
+        """Record manual execution without overwriting concurrent configuration edits."""
+
+        def mutate(data):
+            for row in data["jobs"]:
+                if row["id"] == job_id:
+                    row["manual_run_at"] = datetime.now(UTC).isoformat()
+                    row["manual_run_status"] = status
+                    return
+
+        self._mutate_jobs(mutate)
 
     def reload(self) -> None:
         """Re-read jobs from disk (called by CronObserver on file change)."""
-        self._jobs = self._load()
+        with self._cache_lock:
+            self._jobs = self._load()
 
     # -- Persistence --
 
@@ -237,5 +241,23 @@ class CronManager:
         return jobs
 
     def _save(self) -> None:
-        """Save jobs to JSON file atomically (temp write + rename)."""
-        atomic_json_save(self._jobs_path, {"jobs": [j.to_dict() for j in self._jobs]})
+        raise RuntimeError(
+            "Unsafe cached whole-registry save disabled; use transactional field mutations"
+        )
+
+    def _mutate_jobs(self, mutation):
+        """Serialize cooperating writers and refresh this manager's cache atomically."""
+
+        def checked_mutation(data):
+            # Reject an invalid existing registry before committing any change.
+            for row in data["jobs"]:
+                CronJob.from_dict(row)
+            result = mutation(data)
+            for row in data["jobs"]:
+                CronJob.from_dict(row)
+            return result
+
+        with self._cache_lock:
+            result, data = LockedJsonJobs(self._jobs_path).mutate(checked_mutation)
+            self._jobs = [CronJob.from_dict(row) for row in data["jobs"]]
+            return result
