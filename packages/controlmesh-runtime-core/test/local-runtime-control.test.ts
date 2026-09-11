@@ -104,6 +104,64 @@ test("schema eight upgrades without losing tasks or queued messages and without 
   } finally { await restored.close(); }
 });
 
+test("private startup binds the configured reply thread without reading credentials or launching a provider", async () => {
+  const f = fixture();
+  writeFileSync(f.path, JSON.stringify({ ...f.config, source: { ...f.config.source, transport: "fs" },
+    delivery: { kind: "feishu_text", adapter_id: "selected-app", app_id: "cli_fixture", app_credentials_file: join(f.root, "not-created.json"),
+      replies: { a: { chat_id: "oc_fixture", message_id: "om_trigger", thread_id: "th_fixture", reply_in_thread: true } } } }));
+  const owned = openLocalRuntime(f.path), control = new LocalRuntimeControl(owned.runtime, owned.deliveries, owned.submissionIdentity);
+  try {
+    expect(await control.handle({ id: "create", op: "submit", task: { task_id: "a", status: "waiting", chat_id: "oc_fixture" } })).toMatchObject({ ok: true });
+    expect(owned.runtime.inspectTask("a").task).toMatchObject({ thread_id: "th_fixture", tool_grant: { reply_thread: "th_fixture" } });
+    expect(await control.handle({ id: "bind", op: "bind_delivery", task_id: "a", expected_revision: 1, adapter_id: "selected-app" })).toMatchObject({ ok: true });
+    expect(existsSync(f.data)).toBe(false); expect(owned.deliveries!.status().pending).toBe(0);
+  } finally { await owned.close(); }
+});
+
+test("SIGTERM in the real stdio entrypoint aborts delivery before the HTTP timeout and preserves its unknown outcome", async () => {
+  const f = fixture(), tokenPath = join(f.root, "token.json"), preload = join(f.root, "loopback-preload.ts");
+  writeFileSync(tokenPath, JSON.stringify({ app_id: "cli_fixture", tenant_access_token: "fixture_token", expires_at: Date.now() + 60_000 }), { mode: 0o600 });
+  writeFileSync(f.path, JSON.stringify({ ...f.config, source: { ...f.config.source, transport: "fs" },
+    delivery: { kind: "feishu_text", adapter_id: "selected-app", app_id: "cli_fixture", token_file: tokenPath } }));
+  const owned = openLocalRuntime(f.path);
+  owned.runtime.submit("create", { task_id: "a", chat_id: "oc_fixture", status: "waiting" }, { chat_id: "oc_fixture" });
+  owned.deliveries!.bindTask("bind", "a", 1, "selected-app");
+  const principal: Principal = { id: "operator", device_id: "local", origin: "internal", scopes: ["task:read", "task:execute"] };
+  const lease = owned.runtime.kernel.claim(principal, "claim", "a", 1, 5000);
+  owned.runtime.kernel.start(principal, "start", lease); owned.runtime.kernel.finish(principal, "finish", lease, "done", { delivery_text: "fixture" });
+  await owned.close();
+  let observed!: () => void, release!: () => void;
+  const received = new Promise<void>(resolve => { observed = resolve; }), held = new Promise<void>(resolve => { release = resolve; });
+  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
+    expect(request.method).toBe("POST"); expect(request.headers.get("authorization")).toBe("Bearer fixture_token");
+    await request.json(); observed(); await held; return Response.json({ code: 0 });
+  } });
+  writeFileSync(preload, `const real = globalThis.fetch; globalThis.fetch = ((input, init) => {
+    const url = new URL(String(input)); if (url.origin !== "https://open.feishu.cn") throw new Error("unexpected_test_origin");
+    return real(${JSON.stringify(server.url.origin)} + url.pathname + url.search, init);
+  }) as typeof fetch;`);
+  const child = Bun.spawn([process.execPath, "--preload", preload, join(import.meta.dir, "../scripts/local-runtime.ts"), f.path],
+    { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
+  const output = Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text()]);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    child.stdin.write(JSON.stringify({ id: "drain", op: "drain_deliveries" }) + "\n");
+    await Promise.race([received, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("fixture_start_timeout")), 3000); })]);
+    clearTimeout(timer); expect(child.pid).toBeGreaterThan(1); expect(child.pid).not.toBe(process.pid); child.kill("SIGTERM");
+    await Promise.race([child.exited, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("shutdown_did_not_abort_delivery")), 3000); })]);
+    clearTimeout(timer); const [stdout, stderr] = await output;
+    expect(await child.exited).toBe(0); expect(stderr).toBe("");
+    expect(JSON.parse(stdout.trim())).toMatchObject({ id: "drain", ok: false, error: "delivery_stopping" });
+    const db = new RuntimeDatabase(join(f.state, "runtime.sqlite"));
+    try { expect(db.sql.query("SELECT state FROM delivery_outbox").get()).toEqual({ state: "unknown" }); }
+    finally { db.close(); }
+  } finally {
+    clearTimeout(timer); release(); server.stop(true);
+    if (child.exitCode === null) { expect(child.pid).toBeGreaterThan(1); expect(child.pid).not.toBe(process.pid); child.kill("SIGKILL"); }
+    await child.exited; await output;
+  }
+}, 10_000);
+
 test("stdio rejects oversized commands and never treats their tail as another request", async () => {
   const f = fixture();
   const child = Bun.spawn([process.execPath, join(import.meta.dir, "../scripts/local-runtime.ts"), f.path], { stdin: "pipe", stdout: "pipe", stderr: "pipe" });

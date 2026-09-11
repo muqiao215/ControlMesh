@@ -1,5 +1,31 @@
 # Findings
 
+## Feishu credentials, replies and stdio shutdown
+
+Python `messenger/feishu/bot.py:_get_tenant_access_token` has no refresh lock and computes
+`now + max(expire - 60, 60)`, which can retain an actually short-lived token for too long.
+It also raises with the provider response body. The TS owner shares concurrent refresh,
+validates HTTP/API response and real TTL, sanitizes errors, binds selected app/file revision,
+and leaves credentials device-local. This is an intentional correction, not literal parity
+with that TTL floor. The official installed SDK's `core/token/access_token_response.py`
+defines `tenant_access_token` and `expire` for this endpoint.
+
+Python's ordinary message POST accepts `reply_to_message_id` in its payload; the official
+installed SDK models a separate message `reply` endpoint with `content`, `msg_type`,
+`reply_in_thread`, and `uuid`. The TS port uses that endpoint, verifies the parent before
+sending, and retains root/parent/topic checks during readback. It does not reinterpret
+arbitrary task text or legacy topic metadata as a reply grant.
+
+Actual SIGTERM testing found that stopping only Agent execution left an HTTP delivery
+pending, and destroying stdin was reported as a startup failure (exit 2). All owned work
+now stops together; only expected stream-closure errors caused by our own signal handler
+are suppressed. The test requires exit 0, empty stderr, a correlated interrupted control
+reply and an `unknown` durable delivery. Other errors remain visible.
+
+During implementation, `python` was absent (used `python3`); the first compile consequently
+found the not-yet-written startup accessor. Test scaffolding initially used an async resolver
+and omitted local-runtime scopes; these fixture errors were corrected without changing gates.
+
 ## Terminal delivery owner under migration
 
 Python bus/bus.py owns injection, locking and output routing. Its unicast path falls back

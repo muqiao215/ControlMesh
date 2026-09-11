@@ -548,9 +548,22 @@ still require explicit route binding. Execution completion and delivery completi
 distinct. Readback can accept a retained original acknowledgement only after matching current
 authority and the actual remote message; an unobserved send stays unknown. A 128-record
 unresolved queue, four shared dispatch slots and per-task ordering bound work. Shutdown
-drains HTTP before storage closes. HTTP/SIGKILL tests use loopback and fixture
-credentials. Thread/media, other adapters, token refresh and production ingress/cutover
-remain in the convergence plan.
+drains HTTP before storage closes. HTTP/SIGKILL tests use loopback and fixture credentials.
+
+`feishu-credentials.ts` owns selected self-built-app tenant-token refresh. The profile loader
+uses descriptor-checked private files, never credential discovery. Tokens are memory-only,
+refresh is shared within one instance, expiry is monotonic, and credential rotation invalidates
+cached/prepared credentials. Authentication failures latch; transient failures cool down.
+Explicit blocked-delivery retry may reset the auth latch but never replay an uncertain send.
+Private startup can retain an externally supplied token file or opt into app-secret refresh.
+
+Reply targets are trusted per-task startup configuration and part of adapter identity.
+Control derives the task's reply thread/grant from this profile; the adapter reads the
+original message before a dedicated reply POST and checks chat/parent/root/topic in the
+acknowledgement and later recovery. Existing-topic and quoted replies are covered by local
+HTTP tests. The stdio owner stops runtime, transport and credential operations together;
+expected signal-induced input closure is not a startup failure. Media/new-topic creation,
+user/marketplace auth, other adapters and production ingress/cutover remain in the plan.
 
 ## Codekit integration (v0.43.0)
 

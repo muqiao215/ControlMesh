@@ -1,5 +1,4 @@
-import { closeSync, constants, fstatSync, mkdirSync, openSync, readSync, realpathSync, statSync, existsSync } from "node:fs";
-import { createHash } from "node:crypto";
+import { mkdirSync, realpathSync, statSync, existsSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { RuntimeDatabase } from "./database";
 import { RuntimeKernel, type Principal } from "./kernel";
@@ -10,29 +9,16 @@ import { OpenCodeTaskAdapter } from "./providers/opencode-task-adapter";
 import { NativeSessionStore } from "./providers/native-session";
 import { directoryIdentity } from "./providers/native-manifest";
 import { decodeSnapshot } from "./migration";
-import { digest, identifier, object, requireThat } from "./value";
+import { digest, identifier, object, requireThat, type LegacyTask } from "./value";
 import { prepareNativeAgentConfiguration } from "./providers/native-agent-profile";
 import { DeliveryOutbox } from "./delivery-outbox";
-import { FeishuTextDelivery } from "./feishu-delivery";
-
-/** Never log the content: configuration and native auth may contain credentials. */
-function privateFile(path: string): { bytes: Buffer; revision: string } {
-  requireThat(isAbsolute(path) && realpathSync(path) === path, "private_config_path_required");
-  const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-  try {
-    const before = fstatSync(fd);
-    requireThat(before.isFile() && before.uid === process.getuid?.() && (before.mode & 0o077) === 0 && before.size <= 2 * 1024 * 1024, "private_runtime_config_required");
-    const bounded = Buffer.alloc(before.size + 1);
-    let count = 0;
-    while (count < bounded.length) { const read = readSync(fd, bounded, count, bounded.length - count, null); if (!read) break; count += read; }
-    const bytes = bounded.subarray(0, count), after = fstatSync(fd);
-    requireThat(bytes.byteLength === before.size && before.size === after.size && before.mtimeMs === after.mtimeMs && before.ctimeMs === after.ctimeMs, "runtime_config_changed");
-    return { bytes, revision: digest({ device: before.dev, inode: before.ino, content: createHash("sha256").update(bytes).digest("hex") }) };
-  } finally { closeSync(fd); }
-}
+import { openFeishuDelivery } from "./feishu-delivery-profile";
+import { privateFile } from "./private-runtime-file";
+import type { SubmissionIdentity } from "./task-ingress";
 
 /** Explicit isolated candidate configuration. Reading task state does not inspect or probe any provider. */
-export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; deliveries?: DeliveryOutbox; close: () => Promise<void> } {
+export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; deliveries?: DeliveryOutbox;
+  submissionIdentity: (task: LegacyTask) => SubmissionIdentity; stop: () => Promise<void>; close: () => Promise<void> } {
   const loaded = privateFile(path), config = decodeSnapshot(loaded.bytes).source;
   requireThat(object(config) && config.schema_version === "controlmesh.local_runtime.v1" && config.mode === "candidate", "unsupported_local_runtime_config");
   requireThat(typeof config.state_root === "string" && isAbsolute(config.state_root) && realpathSync(config.state_root) === config.state_root, "private_runtime_state_required");
@@ -92,25 +78,15 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
       return new OpenCodeTaskAdapter(kernel, cache, actor, store, { executable: profile.executable, native_configuration: native,
         environment, state_home: root, ...(channel ? { communication: channel } : {}) }, runner, registration).prepare(task);
     }, current, object(config.limits) ? config.limits : {});
-    let deliveries: DeliveryOutbox | undefined;
-    if (config.delivery !== undefined) {
-      const delivery = config.delivery;
-      requireThat(object(delivery) && delivery.kind === "feishu_text" && typeof delivery.adapter_id === "string"
-        && typeof delivery.app_id === "string" && typeof delivery.token_file === "string"
-        && [undefined, "https://open.feishu.cn", "https://open.larksuite.com"].includes(delivery.domain as string | undefined), "invalid_local_delivery_profile");
-      const transport = new FeishuTextDelivery({ adapter_id: delivery.adapter_id, app_id: delivery.app_id, transport: config.source.transport,
-        domain: delivery.domain as "https://open.feishu.cn" | "https://open.larksuite.com" | undefined, assertCurrent: current,
-        async tenantAccessToken(context) {
-          context.assertCurrent(); current();
-          const credential = decodeSnapshot(privateFile(delivery.token_file as string).bytes).source;
-          requireThat(object(credential) && credential.app_id === delivery.app_id && typeof credential.tenant_access_token === "string"
-            && Number.isSafeInteger(credential.expires_at) && Number(credential.expires_at) > Date.now(), "feishu_token_unavailable");
-          return credential.tenant_access_token;
-        } });
-      deliveries = new DeliveryOutbox(kernel, actor, [transport], current);
-    }
-    return { runtime, ...(deliveries ? { deliveries } : {}), close: async () => {
-      await Promise.all([runtime.stop(), deliveries?.stop()]); db.close();
-    } };
+    const delivery = config.delivery === undefined ? undefined : openFeishuDelivery(config.delivery, config.source.transport, current);
+    const deliveries = delivery ? new DeliveryOutbox(kernel, actor, [delivery.adapter], current) : undefined;
+    const submissionIdentity = (task: LegacyTask): SubmissionIdentity => {
+      current();
+      return delivery ? delivery.adapter.submissionIdentity(task.task_id, String(task.chat_id)) : { chat_id: String(task.chat_id) };
+    };
+    let stopping: Promise<void> | undefined, closing: Promise<void> | undefined;
+    const stop = () => stopping ??= Promise.all([runtime.stop(), deliveries?.stop(), delivery?.close()]).then(() => {});
+    const close = () => closing ??= stop().then(() => db.close());
+    return { runtime, submissionIdentity, stop, close, ...(deliveries ? { deliveries } : {}) };
   } catch (error) { db.close(); throw error; }
 }

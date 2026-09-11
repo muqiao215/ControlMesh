@@ -149,14 +149,15 @@ message can reconcile without POST/model execution. No original acknowledgement 
 automatic reconciliation; a similar message is insufficient. A remote receipt is assigned
 once per adapter. Credential/preparation failure blocks before send and requires explicit retry.
 
-`FeishuTextDelivery` is the first concrete adapter, for chat-addressed plain text. It checks
+`FeishuTextDelivery` supports chat-addressed text, quoted replies and replies in an explicitly
+identified existing Feishu topic. It checks
 HTTP/API success, message ID, selected app sender, chat, text and creation time. Readback also
 rejects deleted/updated messages. Shapes follow the installed official Lark SDK and the
 [send](https://open.feishu.cn/document/server-docs/im-v1/message/create) and
 [get](https://open.feishu.cn/document/server-docs/im-v1/message/get) contracts. Responses are
 bounded, redirects denied and errors omit provider bodies/tokens. Tests use real loopback
-HTTP and fixture credentials; no real Feishu chat was contacted. Thread/reply, cards/files,
-other transports, token refresh and production ingress remain required ports. API
+HTTP and fixture credentials; no real Feishu chat was contacted. Cards/files, creation of
+new topics, other transports and production ingress remain required ports. API
 acknowledgement is not end-user read status.
 
 The private local entrypoint accepts optional delivery configuration. Its `source.transport`
@@ -175,8 +176,44 @@ credentials are not discovered or bound automatically.
 ```
 
 The owner-only token file contains `app_id`, `tenant_access_token` and `expires_at` (Unix
-milliseconds); expiry or app mismatch blocks before HTTP. Startup/inspection do not read
-the token and control replies never contain it. Token issuance/refresh remains external.
+milliseconds); expiry or app mismatch blocks before HTTP. Alternatively, replace `token_file`
+with `app_credentials_file`, pointing to an owner-only file with `app_id` and `app_secret`.
+Both fields together are rejected. `FeishuTenantCredentials` then uses the selected app's
+[tenant-token endpoint](https://open.feishu.cn/document/server-docs/authentication-management/access-token/tenant_access_token_internal).
+Tokens stay in this runtime instance's memory; concurrent callers share one refresh.
+Expiry uses a monotonic clock from request start, with early refresh but no artificial
+minimum lifetime. Credential-file rotation invalidates the old cache and in-flight refresh;
+prepared HTTP operations also recheck their token before sending. One canceled waiter
+does not cancel other callers. Stop aborts and drains all refreshes, including superseded ones.
+Authentication rejection waits for explicit `retry_delivery` or credential rotation;
+transient/timeout failures have a 30-second cooldown and no background retry loop.
+Startup/inspection do not read credentials or contact an auth endpoint. Errors/control
+replies never contain tokens, secrets or provider response bodies. This supports self-built
+app tenant credentials; user OAuth and marketplace-app authorization remain separate owners.
+
+Optional `delivery.replies` pins reply targets by task ID, for example:
+
+```json
+{
+  "task-id": {
+    "chat_id": "oc_selected_chat",
+    "message_id": "om_original_message",
+    "thread_id": "th_existing_topic",
+    "reply_in_thread": true
+  }
+}
+```
+
+For a quoted reply outside a topic, use `thread_id: ""` and `reply_in_thread: false`.
+The private control entrypoint derives the reply grant and stored task thread from this
+trusted configuration; conflicting task-body chat/thread metadata is rejected. `topic_id`
+stays empty for this port; the native Feishu topic ID occupies `thread_id`. Before dispatch,
+GET verifies the original message's chat/topic and deletion state. POST then uses the
+[reply endpoint](https://open.feishu.cn/document/server-docs/im-v1/message/reply), with no
+fallback to ordinary chat delivery. Both send acknowledgement and recovery readback must
+match the parent, root and topic. The reply profile is included in the adapter binding
+digest, so changing it cannot silently reuse an existing task route.
+
 Before enqueueing, `bind_delivery` takes `task_id`, `expected_revision`, `adapter_id` and
 optional `output_policy` (`summarized_only` by default; `full` only when explicit). Enabling
 an adapter creates no task routes. `drain` runs queued work and drains bound results, reporting
@@ -185,6 +222,11 @@ states and distinguishes observed from accepted receipts. `retry_delivery` admit
 unstarted blocked record; `reconcile_delivery` requires the original `remote_message_id`;
 `revoke_delivery` disables that task's route. These are private control operations, not new
 public Web/SDK mutations.
+
+SIGTERM/SIGINT stop execution, delivery and credential refresh before closing storage or
+awaiting control replies. Intentional input-stream closure is a clean exit; unrelated stream
+and persistence failures remain errors. A real stdio process test holds an HTTP request,
+signals the child and verifies a prompt clean exit with the uncertain delivery preserved.
 
 ## Snapshot migration
 

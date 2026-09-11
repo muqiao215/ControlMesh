@@ -15,6 +15,8 @@ export interface PreparedDelivery {
 export interface DeliveryAdapter {
   readonly adapter_id: string; readonly transport: string; readonly binding_digest: string;
   assertCurrent(): void;
+  /** Explicit operator retry may clear a credential failure latch; never invoked by drain. */
+  retryPreparation?(): void;
   prepare(envelope: TerminalDelivery, context: DeliveryContext): Promise<PreparedDelivery>;
 }
 export interface DeliveryView {
@@ -262,8 +264,10 @@ export class DeliveryOutbox {
     this.current("delivery:send");
     requireThat(this.actor.origin === "human_request" || this.actor.origin === "internal", "delivery_retry_origin_denied");
     command(this.kernel.db, this.actor, requestId, "delivery.retry_blocked", { id }, () => {
-      const row = this.row(id); this.evidence(row);
+      const row = this.row(id), { adapter } = this.evidence(row);
       requireThat(row.state === "blocked" && row.attempt_id === null, "delivery_retry_not_safe");
+      const retried: unknown = adapter.retryPreparation?.();
+      if (retried !== undefined) { void Promise.resolve(retried).catch(() => {}); requireThat(false, "admission_must_be_synchronous"); }
       this.kernel.db.sql.query("UPDATE delivery_outbox SET state='pending',reason=NULL WHERE delivery_id=?").run(id);
       return { reset: true };
     }, value => { this.evidence(this.row(id)); return value; });

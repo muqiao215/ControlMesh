@@ -2,10 +2,12 @@ import { identifier, object, requireThat, RuntimeConflict, type LegacyTask } fro
 import type { LocalTaskRuntime } from "./local-task-runtime";
 import type { DeliveryOutbox } from "./delivery-outbox";
 import type { TerminalDelivery } from "@controlmesh/protocol";
+import type { SubmissionIdentity } from "./task-ingress";
 
 /** Private local control protocol. It never accepts caller-supplied principals, source contexts or grants. */
 export class LocalRuntimeControl {
-  constructor(private readonly runtime: LocalTaskRuntime, private readonly deliveries?: DeliveryOutbox) {}
+  constructor(private readonly runtime: LocalTaskRuntime, private readonly deliveries?: DeliveryOutbox,
+    private readonly submissionIdentity?: (task: LegacyTask) => SubmissionIdentity) {}
 
   async handle(request: unknown): Promise<Record<string, unknown>> {
     let id: string | null = null;
@@ -26,7 +28,10 @@ export class LocalRuntimeControl {
       switch (request.op) {
         case "submit": {
           requireThat(object(request.task) && typeof request.task.chat_id === "string", "invalid_local_task");
-          result = this.runtime.submit(id, request.task as LegacyTask, { chat_id: request.task.chat_id }); break;
+          const task = request.task as LegacyTask;
+          const identity = this.submissionIdentity?.(task) ?? { chat_id: request.task.chat_id };
+          requireThat(identity.thread_id === undefined || task.thread_id == null || String(task.thread_id) === identity.thread_id, "task_reply_identity_mismatch");
+          result = this.runtime.submit(id, identity.thread_id ? { ...task, thread_id: identity.thread_id } : task, identity); break;
         }
         case "inspect_task": identifier(request.task_id); result = this.runtime.inspectTask(request.task_id); break;
         case "enqueue": identifier(request.task_id); result = this.runtime.enqueue(id, request.task_id, request.expected_revision as number); break;

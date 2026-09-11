@@ -71,9 +71,11 @@ No claim that full TS migration or distributed coordination has completed. A sco
 
 The terminal-result outbox and Feishu text send/readback port are implemented and connected
 to private startup/control. Local HTTP, original-receipt readback, SIGKILL/reopen, bounded
-concurrency and shutdown are tested without real chat notifications. Complete publication
-of that owner, then continue transport ingress, remaining thread/rich-media delivery and
-account-token ownership. These and other provider/write profiles remain required before
+concurrency and shutdown are tested without real chat notifications. That owner is published
+at 7ac3da8 with green CI. Selected-app token refresh, verified reply/thread delivery and
+complete stdio shutdown are now implemented in the startup/control path and pass the full
+255-test core suite. Complete their publication, then implement ingress and rich-media ownership.
+These and other provider/write profiles remain required before
 the staged production switch.
 
 Automatic initial device input and device-native MCP send/ask/receive/answer now have real

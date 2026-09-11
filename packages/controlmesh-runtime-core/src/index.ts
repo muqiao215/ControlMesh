@@ -32,4 +32,6 @@ export { OpenCodeTaskAdapter, type OpenCodeTaskRegistration } from "./providers/
 export { openLocalRuntime } from "./local-runtime-config";
 export { LocalRuntimeControl } from "./local-runtime-control";
 export { DeliveryOutbox, type DeliveryAdapter, type DeliveryContext, type PreparedDelivery, type DeliveryView } from "./delivery-outbox";
-export { FeishuTextDelivery, type FeishuDeliveryConfiguration } from "./feishu-delivery";
+export { FeishuTextDelivery, type FeishuDeliveryConfiguration, type FeishuReplyTarget } from "./feishu-delivery";
+export { FeishuTenantCredentials, type FeishuAppCredential, type FeishuCredentialConfiguration } from "./feishu-credentials";
+export { openFeishuDelivery } from "./feishu-delivery-profile";

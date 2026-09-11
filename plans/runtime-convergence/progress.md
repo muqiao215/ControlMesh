@@ -2,21 +2,21 @@
 
 ## Current
 
-Published baseline `a9ec8b4f396ab1cbc850ba814d15a50dd3740e69` includes cross-device native
-Agent communication and automatic initial mailbox input, with verified green CI
-[34625005898](https://github.com/muqiao215/ControlMesh/actions/runs/34625005898).
-Two OpenCode Agents used scoped MCP send/ask_parent/receive/answer with the coordinator
-on ARM64 and execution on x64. Original-session recall and outcome reconciliation after
-coordinator reopen passed without executing another native command.
+Published baseline `7ac3da837a3b78f2a9e8a31ee1a115e89ba81dd3` includes the schema-11
+terminal outbox and chat-text Feishu port, with exact-SHA green CI
+[34629868112](https://github.com/muqiao215/ControlMesh/actions/runs/34629868112).
+The installed Alpha job initially failed fetching uv metadata before application tests;
+one failed-job rerun passed. Earlier a9ec8b4 retains real ARM64-coordinator/x64-worker native
+Agent communication, original-session recall and initial mailbox acceptance.
 
-Current increment: schema-11 terminal delivery outbox, Feishu text send/readback and private
-startup/control integration are implemented. Full CI-version Bun with the qualified Docker
-image passed 220 tests / 2,767 assertions in 39.61 seconds. Final focused checks, including
-the live Python fallback, expired-token startup, shared concurrency budget and shutdown,
-passed 41 tests / 327 assertions in 2.31 seconds.
-Real loopback HTTP plus sender SIGKILL/reopen verifies no repeated POST or Agent execution.
-TS, Web build, nine Python protocol tests, Ruff and ownership checks passed. Publication and
-exact-SHA CI remain to verify; earlier CI is not this increment's acceptance.
+Current increment: selected-app tenant credential refresh, quoted/existing-topic replies,
+trusted startup reply-grant issuance and complete stdio shutdown are implemented.
+CI-version Bun with the qualified Docker image passed **255 tests / 3,168 assertions in
+39.48 seconds**, including real process, Docker and loopback HTTP recovery. The combined
+focused suite before the final stdio extension passed 67 tests / 686 assertions; the
+final full suite includes that extension. TS, ownership and diff checks passed.
+Publication and exact-SHA CI for this increment remain to verify. No real account/chat or
+model call was used. Production routing is not activated.
 
 Full goal active; CM-R0 through CM-R6 remain in progress and CM-R7 is not activated.
 Python v0.43.0 remains the released/installed production runtime. The private TS kernel now
@@ -439,3 +439,23 @@ Upgrade fixtures now construct genuine pre-11 databases before reopening; retain
 while changing user_version initially failed as expected. Core and focused logs are private
 outputs/runtime-convergence/delivery-{core-final,focused}.log in the shared task workspace. Production
 Python v0.43.0, live services and task writers remain unchanged.
+
+
+## Selected-app credentials and verified replies
+
+Private startup supports either an external tenant-token file or an explicit self-built app
+credential file. The TS credential owner shares refresh within the runtime, validates TTL,
+invalidates old credentials on rotation, latches auth rejection and bounds transient retries.
+Its responses never enter task text or state. The delivery owner still requires explicit
+binding and never replays an uncertain send. Startup-configured reply targets issue the
+native thread grant; conflicting task metadata is rejected. Parent GET and reply POST use
+the official API model, with parent/root/topic checks retained after restart.
+
+Validation includes 20 concurrent token callers, isolated cancellation, credential rotation,
+short/invalid expiry, auth rejection/backoff, existing-topic receipt reconciliation, file
+permission/symlink/app mismatch, and the actual stdio child interrupted during HTTP. The
+child exits 0, has empty stderr, returns a correlated interrupted command result, and leaves
+one unknown delivery. All child handles and HTTP servers are closed. Local evidence:
+outputs/runtime-convergence/feishu-auth-replies-core.log, feishu-auth-replies-focused.log,
+feishu-stdio-focused.log. Full ingress, rich media, user/marketplace auth and production
+transport qualification remain open, alongside the other migration owners.
