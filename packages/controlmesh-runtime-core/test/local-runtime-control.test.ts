@@ -3,6 +3,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LocalRuntimeControl, openLocalRuntime, RuntimeDatabase, type Principal } from "../src";
+import { event, eventConfig, signed } from "./helpers/feishu-events";
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -18,6 +19,54 @@ function fixture() {
   const path = join(root, "control.json"); writeFileSync(path, JSON.stringify(config), { mode: 0o600 });
   return { root, state, workspace, data, path, config };
 }
+
+test("private ingress preserves the group approval floor before creating native state or probing a model", async () => {
+  const f = fixture(), verification = join(f.root, "verification.json");
+  writeFileSync(verification, JSON.stringify({ app_id: eventConfig.app_id, verification_token: eventConfig.verification_token, encrypt_key: eventConfig.encrypt_key }), { mode: 0o600 });
+  writeFileSync(f.path, JSON.stringify({ ...f.config, source: { ...f.config.source, transport: "fs" },
+    delivery: { kind: "feishu_text", adapter_id: "selected-app", app_id: eventConfig.app_id, token_file: join(f.root, "unused-token.json") },
+    inbound: { credentials_file: verification, allowed_senders: eventConfig.allowed_senders, allowed_chats: eventConfig.allowed_chats, bot_open_id: eventConfig.bot_open_id } }));
+  const owned = openLocalRuntime(f.path), control = new LocalRuntimeControl(owned.runtime, owned.deliveries, owned.submissionIdentity, owned.inbound);
+  try {
+    const body = event("@_user_1 work", "group", true); body.event.message.mentions = [{ id: { open_id: "ou_bot" }, key: "@_user_1" }];
+    const packet = signed(body), receipt = owned.inbound!.inbox.receive(packet.headers, packet.bytes);
+    expect(receipt).toMatchObject({ accepted: true });
+    expect(await control.handle({ id: "drain", op: "drain_inbound" })).toMatchObject({ ok: true,
+      result: { blocked: 1, applied: 0, blocked_items: [{ reason: "controller_approval_unavailable" }] } });
+    for (const table of ["tasks", "provider_checks", "local_runs"]) expect(owned.runtime.kernel.db.sql.query(`SELECT COUNT(*) AS n FROM ${table}`).get()).toEqual({ n: 0 });
+    expect(existsSync(f.data)).toBe(false);
+    expect(await control.handle({ id: "override", op: "start_inbound", port: 9000 })).toMatchObject({ ok: false, error: "unexpected_local_request_field" });
+    writeFileSync(verification, JSON.stringify({ app_id: "cli_other", verification_token: "changed", encrypt_key: "changed" }));
+    expect(() => owned.inbound!.inbox.receive(packet.headers, packet.bytes)).toThrow("feishu_event_configuration_changed");
+  } finally { await owned.close(); }
+});
+
+test("the standalone headless Feishu process accepts verification, stops cleanly and never starts an Agent", async () => {
+  const f = fixture(), verification = join(f.root, "verification.json");
+  writeFileSync(verification, JSON.stringify({ app_id: eventConfig.app_id, verification_token: eventConfig.verification_token, encrypt_key: eventConfig.encrypt_key }), { mode: 0o600 });
+  writeFileSync(f.path, JSON.stringify({ ...f.config, source: { ...f.config.source, transport: "fs" },
+    delivery: { kind: "feishu_text", adapter_id: "selected-app", app_id: eventConfig.app_id, token_file: join(f.root, "unused-token.json") },
+    inbound: { credentials_file: verification, allowed_senders: eventConfig.allowed_senders, allowed_chats: eventConfig.allowed_chats } }));
+  const child = Bun.spawn([process.execPath, join(import.meta.dir, "../scripts/serve-feishu.ts"), f.path], { stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+  const deadline = setTimeout(() => { if (child.exitCode === null) child.kill("SIGTERM"); }, 10_000);
+  const reader = child.stdout.getReader(), stderr = new Response(child.stderr).text();
+  try {
+    let line = "";
+    while (!line.includes("\n")) { const part = await reader.read(); if (part.done) break; line += new TextDecoder().decode(part.value); }
+    const listener = JSON.parse(line.trim()); expect(listener).toMatchObject({ status: "listening", hostname: "127.0.0.1", path: "/feishu/events" });
+    const response = await fetch(`http://${listener.hostname}:${listener.port}${listener.path}`, { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ type: "url_verification", token: eventConfig.verification_token, challenge: "headless" }) });
+    expect(await response.json()).toEqual({ challenge: "headless" });
+    child.kill("SIGTERM"); expect(await child.exited).toBe(0); expect(await stderr).toBe("");
+    expect(existsSync(f.data)).toBe(false);
+    const db = new RuntimeDatabase(join(f.state, "runtime.sqlite"));
+    try { for (const table of ["tasks", "provider_checks", "feishu_inbox"]) expect(db.sql.query(`SELECT COUNT(*) AS n FROM ${table}`).get()).toEqual({ n: 0 }); } finally { db.close(); }
+  } finally {
+    clearTimeout(deadline);
+    if (child.exitCode === null) child.kill("SIGTERM");
+    await child.exited; await reader.cancel(); await stderr;
+  }
+}, 15_000);
 
 test("local status and task submission work without native credentials and cannot issue task-body authority", async () => {
   const f = fixture(), owned = openLocalRuntime(f.path), control = new LocalRuntimeControl(owned.runtime);
@@ -93,10 +142,10 @@ test("schema eight upgrades without losing tasks or queued messages and without 
   const sent = first.runtime.tell("note", "a", "Survive upgrade");
   await first.close();
   const previous = new RuntimeDatabase(join(f.state, "runtime.sqlite"));
-  previous.sql.exec("DROP TABLE transport_receipts; DROP TABLE delivery_outbox; DROP TABLE delivery_routes; DROP TABLE native_agent_deliveries; DROP TABLE native_agent_calls; DROP TABLE native_mailbox_deliveries; PRAGMA user_version=8"); previous.close();
+  previous.sql.exec("DROP TABLE feishu_conversations; DROP TABLE feishu_event_aliases; DROP TABLE feishu_inbox; DROP TABLE transport_receipts; DROP TABLE delivery_outbox; DROP TABLE delivery_routes; DROP TABLE native_agent_deliveries; DROP TABLE native_agent_calls; DROP TABLE native_mailbox_deliveries; PRAGMA user_version=8"); previous.close();
   const restored = openLocalRuntime(f.path);
   try {
-    expect(restored.runtime.kernel.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 11 });
+    expect(restored.runtime.kernel.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 12 });
     expect(restored.runtime.inspectTask("a").task.status).toBe("waiting");
     expect(restored.runtime.inspectMessage("a", sent.message_id).payload).toEqual({ text: "Survive upgrade" });
     expect(restored.runtime.mailboxStatus("a")).toEqual({ pending_count: 1 });

@@ -1,5 +1,37 @@
 # Findings
 
+## Authenticated ingress and conversation recovery
+
+The Python HTTP listener in messenger/feishu/inbound.py passes decoded events onward;
+its challenge branch precedes downstream message handling. The TS receiver instead owns
+raw-byte signature verification, token/app checks, encryption and bounded allowlists.
+The installed official SDK uses SHA256(timestamp + nonce + encrypt_key + original bytes)
+and AES-CBC with a SHA256-derived key. A cross-language SDK decryption test verifies the
+fixture. Native group grants require controller approval; no amount of signature validity
+can supply that approval, so the current private startup blocks before native state/probe.
+
+Integration tests exposed two queue defects during this port: deferred messages filled the
+first 16-row selection and starved unrelated conversations; after restart, draining an old
+queued task did not trigger application of its already-received follow-up. The bounded
+128-row scan now skips deferred conversations, caps applied work, and the pump retries only
+after actual queue progress or new input. Events, task creation, route binding and enqueue
+compose in one SQLite transaction. Admission failure rolls the task side back and keeps
+the verified input blocked for explicit operator retry. Provider duplicates cannot trigger
+quota retries or duplicate execution/delivery.
+
+Real Docker testing twice exposed heartbeat expiry during preparation (before Agent launch).
+The supervisor now separates preparation's current task/deadline checks from the execution
+heartbeat, armed after the durable launch marker. Tests deliberately delay image preparation
+beyond one heartbeat, revoke authority during preparation, and suspend/kill a running
+controller. Slow authorized preparation succeeds; revocation and expired running authority
+still prevent execution or stop the existing process. No host-runner fallback was added.
+
+Earlier test failures were a URL-encoded Chinese cwd in the Python SDK subprocess and a
+cold HTTP integration fixture exceeding Bun's default five-second test deadline. fileURLToPath
+fixes the former; the real HTTP test has a bounded 15-second deadline. Full CI-version core
+validation then passed 290 tests / 3,322 assertions. The two-turn real native ingress canary
+is tracked separately from fixture tests and must be inspected before claiming continuity.
+
 ## Feishu credentials, replies and stdio shutdown
 
 Python `messenger/feishu/bot.py:_get_tenant_access_token` has no refresh lock and computes

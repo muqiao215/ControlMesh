@@ -26,7 +26,7 @@ export class RuntimeDatabase {
       this.transaction(() => {
         const version = (this.sql.query("PRAGMA user_version").get() as { user_version: number }).user_version;
         const app = (this.sql.query("PRAGMA application_id").get() as { application_id: number }).application_id;
-        requireThat(version >= 0 && version <= 11, "unsupported_database_version");
+        requireThat(version >= 0 && version <= 12, "unsupported_database_version");
         requireThat(app === 0 || app === APPLICATION_ID, "foreign_database");
         if (version === 0) {
           const tables = this.sql.query("SELECT name FROM sqlite_master WHERE type='table'").all();
@@ -208,6 +208,29 @@ export class RuntimeDatabase {
               PRIMARY KEY(adapter_digest,remote_message_id)
             );
             PRAGMA user_version = 11;
+          `);
+        }
+        if (version < 12) {
+          this.sql.exec(`
+            CREATE TABLE feishu_inbox (
+              id TEXT PRIMARY KEY, app_id TEXT NOT NULL, principal TEXT NOT NULL,
+              event_id TEXT NOT NULL, message_id TEXT NOT NULL, conversation_id TEXT NOT NULL,
+              payload TEXT NOT NULL, payload_digest TEXT NOT NULL,
+              state TEXT NOT NULL CHECK(state IN ('pending','applied','blocked')),
+              task_id TEXT, reason TEXT, received_at INTEGER NOT NULL,
+              UNIQUE(app_id,event_id), UNIQUE(app_id,message_id)
+            );
+            CREATE INDEX feishu_inbox_pending ON feishu_inbox(principal,app_id,state,received_at);
+            CREATE TABLE feishu_event_aliases (
+              app_id TEXT NOT NULL, event_id TEXT NOT NULL,
+              receipt_id TEXT NOT NULL REFERENCES feishu_inbox(id), PRIMARY KEY(app_id,event_id)
+            );
+            CREATE TABLE feishu_conversations (
+              id TEXT PRIMARY KEY, app_id TEXT NOT NULL, principal TEXT NOT NULL,
+              task_id TEXT NOT NULL UNIQUE REFERENCES tasks(task_id),
+              first_event TEXT NOT NULL REFERENCES feishu_inbox(id)
+            );
+            PRAGMA user_version = 12;
           `);
         }
       });

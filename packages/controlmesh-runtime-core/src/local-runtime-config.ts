@@ -15,9 +15,15 @@ import { DeliveryOutbox } from "./delivery-outbox";
 import { openFeishuDelivery } from "./feishu-delivery-profile";
 import { privateFile } from "./private-runtime-file";
 import type { SubmissionIdentity } from "./task-ingress";
+import { decodeExecutionContext } from "./execution-context";
+import type { IssuedReadAdmission } from "./providers/opencode-execution";
+import { FeishuEventAuthenticator } from "./feishu-event-auth";
+import { FeishuInbox } from "./feishu-inbox";
+import { FeishuInboundRuntime } from "./feishu-inbound-runtime";
+import { decodeToolGrant, enforceProviderConfirmation } from "./execution-grants";
 
 /** Explicit isolated candidate configuration. Reading task state does not inspect or probe any provider. */
-export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; deliveries?: DeliveryOutbox;
+export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; deliveries?: DeliveryOutbox; inbound?: FeishuInboundRuntime;
   submissionIdentity: (task: LegacyTask) => SubmissionIdentity; stop: () => Promise<void>; close: () => Promise<void> } {
   const loaded = privateFile(path), config = decodeSnapshot(loaded.bytes).source;
   requireThat(object(config) && config.schema_version === "controlmesh.local_runtime.v1" && config.mode === "candidate", "unsupported_local_runtime_config");
@@ -56,11 +62,12 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
   };
   const actor: Principal = { id: config.principal_id, device_id: config.device_id, origin: "human_request",
     scopes: ["task:create", "task:read", "task:execute", "task:resume", "task:cancel", "task:reconcile", "task:admin", "message:send", "message:read", "message:ack", "provider:probe",
-      "delivery:read", "delivery:configure", "delivery:project", "delivery:send", "delivery:reconcile"] };
+      "delivery:read", "delivery:configure", "delivery:project", "delivery:send", "delivery:reconcile", "feishu:ingest", "feishu:read", "feishu:process"] };
   const db = new RuntimeDatabase(join(root, "runtime.sqlite")), kernel = new RuntimeKernel(db), cache = new PreflightCache(db);
   try {
     const runtime = new LocalTaskRuntime(kernel, actor, { command_origin: "human_request", origin: "user", source_scope: "local_foreground", transport: config.source.transport }, task => {
       current();
+      enforceProviderConfirmation("opencode", decodeToolGrant(task.task.tool_grant));
       const control = join(root, "containers"); mkdirSync(control, { recursive: true, mode: 0o700 });
       const taskId = task.task.task_id;
       const peers = object(communication) && object(communication.tasks) && Object.hasOwn(communication.tasks, taskId) ? communication.tasks[taskId] as Record<string, unknown> : undefined;
@@ -74,19 +81,43 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
         binding: () => ({ provider: "opencode", model: provider.model as string, cli_version: "1.18.29", device_id: actor.device_id!,
           config_digest: digest(native), credential_revision: privateFile(join(profile.data_home, "opencode/auth.json")).revision,
           permission_profile: "opencode-native-read-v1", runtime_digest: runner.runtimeDigest() }),
-        admission: { source_scope: "local_foreground" as const, read_files: workspace.read_files as string[], required_reads: workspace.required_reads as string[], assertCurrent: current } };
+        admission: { source_scope: decodeExecutionContext(task.task.execution_context).source_scope as IssuedReadAdmission["source_scope"],
+          read_files: workspace.read_files as string[], required_reads: workspace.required_reads as string[], assertCurrent: current } };
       return new OpenCodeTaskAdapter(kernel, cache, actor, store, { executable: profile.executable, native_configuration: native,
         environment, state_home: root, ...(channel ? { communication: channel } : {}) }, runner, registration).prepare(task);
     }, current, object(config.limits) ? config.limits : {});
-    const delivery = config.delivery === undefined ? undefined : openFeishuDelivery(config.delivery, config.source.transport, current);
+    let inbox: FeishuInbox | undefined;
+    if (config.inbound !== undefined) {
+      const inbound = config.inbound;
+      requireThat(object(inbound) && typeof inbound.credentials_file === "string" && config.source.transport === "fs"
+        && object(config.delivery) && typeof config.delivery.app_id === "string"
+        && (inbound.port === undefined || (Number.isInteger(inbound.port) && Number(inbound.port) >= 0 && Number(inbound.port) <= 65535))
+        && (inbound.path === undefined || typeof inbound.path === "string"), "invalid_feishu_inbound_profile");
+      const loadedVerification = privateFile(inbound.credentials_file), verification = decodeSnapshot(loadedVerification.bytes).source;
+      requireThat(object(verification) && verification.app_id === config.delivery.app_id && typeof verification.verification_token === "string"
+        && typeof verification.encrypt_key === "string", "feishu_event_credentials_required");
+      const currentInbound = () => {
+        current(); requireThat(privateFile(inbound.credentials_file as string).revision === loadedVerification.revision, "feishu_event_configuration_changed");
+      };
+      const auth = new FeishuEventAuthenticator({ app_id: config.delivery.app_id, verification_token: verification.verification_token,
+        encrypt_key: verification.encrypt_key, allowed_chats: inbound.allowed_chats as string[], allowed_senders: inbound.allowed_senders as string[],
+        bot_open_id: inbound.bot_open_id as string | undefined, require_group_mention: inbound.require_group_mention as boolean | undefined }, currentInbound);
+      inbox = new FeishuInbox(kernel, actor, config.delivery.app_id, auth,
+        { provider: "opencode", model: provider.model as string, repo_root: workspace.directory as string }, currentInbound);
+    }
+    const delivery = config.delivery === undefined ? undefined : openFeishuDelivery(config.delivery, config.source.transport, current, fetch,
+      inbox ? { binding_digest: inbox.binding_digest, resolve: envelope => inbox!.replyTarget(envelope) } : undefined);
     const deliveries = delivery ? new DeliveryOutbox(kernel, actor, [delivery.adapter], current) : undefined;
+    const inboundConfig = config.inbound as Record<string, unknown> | undefined;
+    const inbound = inbox ? new FeishuInboundRuntime(inbox, runtime, deliveries!, delivery!.adapter.adapter_id,
+      inboundConfig?.path as string | undefined, inboundConfig?.port as number | undefined) : undefined;
     const submissionIdentity = (task: LegacyTask): SubmissionIdentity => {
       current();
       return delivery ? delivery.adapter.submissionIdentity(task.task_id, String(task.chat_id)) : { chat_id: String(task.chat_id) };
     };
     let stopping: Promise<void> | undefined, closing: Promise<void> | undefined;
-    const stop = () => stopping ??= Promise.all([runtime.stop(), deliveries?.stop(), delivery?.close()]).then(() => {});
+    const stop = () => stopping ??= Promise.all([runtime.stop(), deliveries?.stop(), delivery?.close(), inbound?.stop()]).then(() => {});
     const close = () => closing ??= stop().then(() => db.close());
-    return { runtime, submissionIdentity, stop, close, ...(deliveries ? { deliveries } : {}) };
+    return { runtime, submissionIdentity, stop, close, ...(deliveries ? { deliveries } : {}), ...(inbound ? { inbound } : {}) };
   } catch (error) { db.close(); throw error; }
 }

@@ -1,11 +1,11 @@
 import { FeishuTenantCredentials } from "./feishu-credentials";
-import { FeishuTextDelivery, type FeishuReplyTarget } from "./feishu-delivery";
+import { FeishuTextDelivery, type FeishuReplyTarget, type FeishuReplySource } from "./feishu-delivery";
 import { privateFile } from "./private-runtime-file";
 import { decodeSnapshot } from "./migration";
 import { object, requireThat } from "./value";
 
 /** Trusted private startup configuration, shared by the entrypoint and isolated HTTP acceptance. */
-export function openFeishuDelivery(profile: unknown, transport: string, current: () => void, request: typeof fetch = fetch) {
+export function openFeishuDelivery(profile: unknown, transport: string, current: () => void, request: typeof fetch = fetch, replySource?: FeishuReplySource) {
   requireThat(object(profile) && profile.kind === "feishu_text" && typeof profile.adapter_id === "string"
     && typeof profile.app_id === "string" && [undefined, "https://open.feishu.cn", "https://open.larksuite.com"].includes(profile.domain as string | undefined),
     "invalid_local_delivery_profile");
@@ -21,6 +21,7 @@ export function openFeishuDelivery(profile: unknown, transport: string, current:
       return { app_id: appId, app_secret: data.app_secret, revision: loaded.revision };
     } }, request) : undefined;
   const adapter = new FeishuTextDelivery({ adapter_id: profile.adapter_id, app_id: appId, transport, domain, assertCurrent: current,
+    reply_source: replySource,
     replies: profile.replies as Record<string, FeishuReplyTarget> | undefined,
     retryAuthentication: credentials ? () => credentials.retry() : undefined,
     assertAccessToken(token) {

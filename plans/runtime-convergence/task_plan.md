@@ -74,7 +74,11 @@ to private startup/control. Local HTTP, original-receipt readback, SIGKILL/reope
 concurrency and shutdown are tested without real chat notifications. That owner is published
 at 7ac3da8 with green CI. Selected-app token refresh, verified reply/thread delivery and
 complete stdio shutdown are now implemented in the startup/control path and pass the full
-255-test core suite. Complete their publication, then implement ingress and rich-media ownership.
+255-test core suite. They are published at dc373fb with green CI. Authenticated ingress,
+durable conversation processing and concrete native message-source enforcement now pass
+290 core tests and real two-turn OpenCode continuation across runtime reopen. Publish this
+increment and verify its exact-SHA CI; then complete group controller approval, rich-media,
+long-connection subscription and the remaining authorization profiles.
 These and other provider/write profiles remain required before
 the staged production switch.
 

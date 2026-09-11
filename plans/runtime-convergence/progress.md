@@ -2,21 +2,28 @@
 
 ## Current
 
-Published baseline `7ac3da837a3b78f2a9e8a31ee1a115e89ba81dd3` includes the schema-11
-terminal outbox and chat-text Feishu port, with exact-SHA green CI
-[34629868112](https://github.com/muqiao215/ControlMesh/actions/runs/34629868112).
-The installed Alpha job initially failed fetching uv metadata before application tests;
-one failed-job rerun passed. Earlier a9ec8b4 retains real ARM64-coordinator/x64-worker native
-Agent communication, original-session recall and initial mailbox acceptance.
+Published baseline is `dc373fb8470a50e41e4d3de25b3174d3528fee80`, including the durable
+outbox, selected-app credential refresh, verified replies and clean shutdown; exact-SHA
+[CI 34634003619](https://github.com/muqiao215/ControlMesh/actions/runs/34634003619) passed.
+Earlier a9ec8b4 retains real ARM64-coordinator/x64-worker communication, initial input and
+original-session recall acceptance.
 
-Current increment: selected-app tenant credential refresh, quoted/existing-topic replies,
-trusted startup reply-grant issuance and complete stdio shutdown are implemented.
-CI-version Bun with the qualified Docker image passed **255 tests / 3,168 assertions in
-39.48 seconds**, including real process, Docker and loopback HTTP recovery. The combined
-focused suite before the final stdio extension passed 67 tests / 686 assertions; the
-final full suite includes that extension. TS, ownership and diff checks passed.
-Publication and exact-SHA CI for this increment remain to verify. No real account/chat or
-model call was used. Production routing is not activated.
+The schema-12 authenticated Feishu ingress increment is implemented and locally accepted.
+CI Bun 1.3.11 passed **290 core tests / 3,322 assertions in 58.78 seconds** with the qualified
+Docker image; protocol Python tests passed 9/9, Ruff/typecheck/Web build/ownership checks
+passed. Tests cover real loopback HTTP, transaction rollback, deduplication, restart queues,
+conversation fairness, group approval refusal, actual headless process shutdown and remote
+source execution in Docker. Slow preparation and running-heartbeat expiry are distinct;
+real SIGSTOP/SIGKILL tests continue to stop native work without replay.
+
+A two-turn real OpenCode 1.18.29/M3 canary passed via signed encrypted loopback ingress,
+including runtime reopen, original-session recall, changed-file reads and duplicate input.
+Independent native-database readback confirmed two actual user messages/answers, no marker
+injection on the second turn, one task/two completed episodes, two fixture replies, and all
+nine containers absent. One model preflight plus two task turns ran three native model-run
+commands; actual provider API/billing counts were not measured. Publication and exact-SHA
+CI are the next action. No real Feishu account, production writer/service or installation
+was changed. Group controller approval, rich media and long connections remain open.
 
 Full goal active; CM-R0 through CM-R6 remain in progress and CM-R7 is not activated.
 Python v0.43.0 remains the released/installed production runtime. The private TS kernel now

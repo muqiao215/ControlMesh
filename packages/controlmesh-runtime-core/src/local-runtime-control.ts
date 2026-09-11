@@ -3,11 +3,12 @@ import type { LocalTaskRuntime } from "./local-task-runtime";
 import type { DeliveryOutbox } from "./delivery-outbox";
 import type { TerminalDelivery } from "@controlmesh/protocol";
 import type { SubmissionIdentity } from "./task-ingress";
+import type { FeishuInboundRuntime } from "./feishu-inbound-runtime";
 
 /** Private local control protocol. It never accepts caller-supplied principals, source contexts or grants. */
 export class LocalRuntimeControl {
   constructor(private readonly runtime: LocalTaskRuntime, private readonly deliveries?: DeliveryOutbox,
-    private readonly submissionIdentity?: (task: LegacyTask) => SubmissionIdentity) {}
+    private readonly submissionIdentity?: (task: LegacyTask) => SubmissionIdentity, private readonly inbound?: FeishuInboundRuntime) {}
 
   async handle(request: unknown): Promise<Record<string, unknown>> {
     let id: string | null = null;
@@ -19,13 +20,19 @@ export class LocalRuntimeControl {
         inspect_message: ["task_id", "message_id"], mailbox_status: ["task_id"],
         bind_delivery: ["task_id", "expected_revision", "adapter_id", "output_policy"], deliveries: ["task_id"],
         drain_deliveries: [], retry_delivery: ["delivery_id"], reconcile_delivery: ["delivery_id", "remote_message_id"], revoke_delivery: ["task_id"],
+        start_inbound: [], inbound_status: [], drain_inbound: [], retry_inbound: ["receipt_id"],
       };
       requireThat(typeof request.op === "string" && Object.hasOwn(fields, request.op), "unknown_local_operation");
       requireThat(Object.keys(request).every(key => ["id", "op", ...fields[request.op as string]].includes(key)), "unexpected_local_request_field");
       let result: unknown;
+      if (["start_inbound", "inbound_status", "drain_inbound", "retry_inbound"].includes(request.op)) requireThat(this.inbound, "feishu_inbound_not_configured");
       if (["bind_delivery", "deliveries", "drain_deliveries", "retry_delivery", "reconcile_delivery", "revoke_delivery"].includes(request.op))
         requireThat(this.deliveries, "delivery_not_configured");
       switch (request.op) {
+        case "start_inbound": result = this.inbound!.start(); break;
+        case "inbound_status": result = this.inbound!.status(); break;
+        case "drain_inbound": await this.inbound!.drain(); result = this.inbound!.status(); break;
+        case "retry_inbound": identifier(request.receipt_id); this.inbound!.retry(id, request.receipt_id); result = { retried: true }; break;
         case "submit": {
           requireThat(object(request.task) && typeof request.task.chat_id === "string", "invalid_local_task");
           const task = request.task as LegacyTask;

@@ -6,6 +6,8 @@ import type { ProcessAdmission, ProcessOutcome, ProcessSpec } from "../process-s
 import { digest, requireThat } from "../value";
 import type { NativeRunner } from "./opencode-execution";
 import { assertNativeAgentConfiguration, type NativeAgentConfiguration } from "./native-agent-profile";
+import { enforceExecutionPolicy } from "../execution-policy";
+import type { ExecutionContext } from "../execution-context";
 
 export interface OpenCodeContainerProfile {
   container: Omit<ContainerConfiguration, "resources" | "workspace_layout">;
@@ -39,6 +41,13 @@ export class OpenCodeReadContainerRunner implements NativeRunner {
     return digest({ schema_version: "controlmesh.opencode_container_read.v1", profile: this.profile,
       resources: resourceMounts(this.configuration),
       ...(this.profile.communication ? { communication_identity: assertNativeAgentConfiguration(this.profile.communication) } : {}) });
+  }
+
+  assertSource(context: ExecutionContext): void {
+    requireThat(this.runtimeDigest() === this.initialDigest, "native_container_profile_changed");
+    enforceExecutionPolicy(context, true);
+    requireThat(context.origin === "user" && ["local_foreground", "direct_message", "group_message"].includes(context.source_scope), "source_execution_floor_unavailable");
+    // Every run below goes through ContainerProcessSupervisor; Docker failure never selects a host runner.
   }
 
   async run(spec: ProcessSpec, admission: ProcessAdmission): Promise<ProcessOutcome> {

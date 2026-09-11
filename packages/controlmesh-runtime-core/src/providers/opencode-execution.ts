@@ -5,7 +5,8 @@ import { randomUUID } from "node:crypto";
 import type { LegacyTask } from "../value";
 import { ProcessSupervisor, type ProcessSpec, type ProcessOutcome, type ProcessAdmission } from "../process-supervisor";
 import { digest, object, requireThat } from "../value";
-import { enforceLocalReadSource } from "../execution-policy";
+import { enforceNativeReadSource } from "../execution-policy";
+import type { ExecutionContext } from "../execution-context";
 import { NativeSessionStore, type NativeSessionRef, type NativeBaseline } from "./native-session";
 import { NativeSessionLease } from "./native-lease";
 import { assertReadGrantSnapshot, inspectReadPermissions, readFileGrant, readOnlyEnvironment } from "./opencode-profile";
@@ -17,7 +18,8 @@ import { nativeInput, nativeMailboxEvidence, type NativeMailboxBatch } from "./n
 import { nativeAgentTools, type NativeAgentScope, type NativeAgentToolResult } from "./native-agent-journal";
 import { assertNativeAgentConfiguration, nativeAgentScope, type NativeAgentConfiguration } from "./native-agent-profile";
 
-export interface NativeRunner { run(spec: ProcessSpec, admission: ProcessAdmission): Promise<ProcessOutcome>; runtimeDigest?(): string }
+export interface NativeRunner { run(spec: ProcessSpec, admission: ProcessAdmission): Promise<ProcessOutcome>; runtimeDigest?(): string;
+  assertSource?(context: ExecutionContext): void }
 export interface OpenCodeWorkerConfig {
   executable: string;
   native_configuration: Record<string, unknown>;
@@ -27,7 +29,7 @@ export interface OpenCodeWorkerConfig {
 }
 export interface IssuedReadAdmission {
   // Issued by trusted local ingress. Never derive these values from transcript text or a remote body.
-  source_scope: "local_foreground";
+  source_scope: "local_foreground" | "direct_message" | "group_message";
   read_files: readonly string[];
   required_reads: readonly string[];
   assertCurrent: () => void;
@@ -53,11 +55,12 @@ export class OpenCodeExecution {
     private readonly runner: NativeRunner = new ProcessSupervisor()) {}
 
   async execute<T>(task: LegacyTask, binding: ProbeBinding, admission: IssuedReadAdmission, hooks: NativeExecutionHooks<T>, timeoutMs = 60_000): Promise<T> {
-    requireThat(admission.source_scope === "local_foreground", "source_execution_floor_unavailable");
+    requireThat(["local_foreground", "direct_message", "group_message"].includes(admission.source_scope), "source_execution_floor_unavailable");
     requireThat(binding.cli_version === "1.18.29", "native_permission_profile_unverified");
     requireThat(binding.runtime_digest === this.runner.runtimeDigest?.(), "worker_runtime_binding_mismatch");
     requireThat(Number.isSafeInteger(timeoutMs) && timeoutMs >= 1000 && timeoutMs <= 300_000, "invalid_native_timeout");
-    enforceLocalReadSource(task.execution_context);
+    const source = enforceNativeReadSource(task.execution_context, this.runner);
+    requireThat(source.source_scope === admission.source_scope, "source_execution_floor_unavailable");
     requireThat(task.provider === "opencode" && task.model === binding.model && binding.device_id === this.store.deviceId, "worker_task_binding_mismatch");
     requireThat(typeof task.repo_root === "string" && typeof task.prompt === "string" && task.prompt.length > 0 && Buffer.byteLength(task.prompt) <= 32768, "invalid_native_task");
     const delivery = hooks.mailbox_delivery ? structuredClone(hooks.mailbox_delivery) : undefined;
@@ -89,6 +92,7 @@ export class OpenCodeExecution {
     let manifest: NativeManifest | null = null;
     const assertCurrent = () => {
       hooks.assertCurrent();
+      enforceNativeReadSource(task.execution_context, this.runner);
       requireThat(stableTask() === issuedTask && realpathSync(String(task.repo_root)) === cwd, "worker_task_binding_changed");
       requireThat(digest(this.config.native_configuration) === configurationDigest, "native_configuration_changed");
       requireThat(binding.runtime_digest === this.runner.runtimeDigest?.(), "worker_runtime_binding_mismatch");

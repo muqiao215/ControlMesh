@@ -6,6 +6,7 @@ import { ContainerProcessSupervisor, OneShotProviderProcess, issueExecutionConte
 import { planContainer } from "../src/containers/plan";
 import { digest } from "../src/value";
 import { ProcessSupervisor } from "../src/process-supervisor";
+import type { ProcessAdmission, ProcessSpec } from "../src/process-supervisor";
 import { containerLeaseCurrent } from "../src/containers/lease";
 
 const image = process.env.CM_CONTAINER_TEST_IMAGE;
@@ -24,6 +25,20 @@ function spec(workspace: string, script: string, id = "fixture"): ContainerProce
   return { execution_id: id, command: ["/usr/local/bin/node", "-e", script], cwd: workspace, env: {}, timeout_ms: 20_000, no_network: true, writable_roots: [join(workspace, "allowed")] };
 }
 const ready = { assertCurrent() {} };
+
+for (const revoked of [false, true]) actual(`slow preparation rechecks live authority before starting the execution heartbeat (revoked=${revoked})`, async () => {
+  const f = fixture(); let stopped = false;
+  class SlowPreparation extends ProcessSupervisor {
+    override async run(input: ProcessSpec, admission: ProcessAdmission) {
+      if (input.command.includes("image") && input.command.includes("inspect")) { await Bun.sleep(1200); stopped = revoked; }
+      return super.run(input, admission);
+    }
+  }
+  const runner = new ContainerProcessSupervisor(f.config, new SlowPreparation());
+  const execution = runner.run(spec(f.workspace, "console.log('authorized')"), { assertCurrent() { if (stopped) throw new Error("preparation_revoked"); } });
+  if (revoked) await expect(execution).rejects.toThrow("preparation_revoked");
+  else expect(await execution).toMatchObject({ reason: "exited", exit_code: 0, stdout: "authorized\n", cleanup: "removed" });
+}, 30_000);
 async function waitFor(check: () => boolean | Promise<boolean>, ms = 5000) {
   const end = performance.now() + ms;
   while (!(await check())) { if (performance.now() > end) throw new Error("container barrier timed out"); await Bun.sleep(25); }

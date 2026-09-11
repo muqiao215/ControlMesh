@@ -2,7 +2,7 @@ import { realpathSync } from "node:fs";
 import { digest, requireThat } from "../value";
 import type { RuntimeKernel, Principal, TaskSnapshot } from "../kernel";
 import type { LocalTaskExecution } from "../local-task-runtime";
-import { enforceLocalReadSource } from "../execution-policy";
+import { enforceNativeReadSource } from "../execution-policy";
 import { directoryIdentity, nativeTaskDigest } from "./native-manifest";
 import { readFileGrant, assertReadGrantSnapshot } from "./opencode-profile";
 import { OpenCodePreflight } from "./opencode-preflight";
@@ -41,7 +41,8 @@ export class OpenCodeTaskAdapter {
       requireThat(typeof task.task.repo_root === "string" && realpathSync(task.task.repo_root) === identity.path
         && digest(directoryIdentity(identity.path)) === digest(identity), "task_workspace_registration_mismatch");
       requireThat(nativeTaskDigest(this.kernel.inspect(this.actor, task.task.task_id).task) === issued, "worker_task_binding_changed");
-      enforceLocalReadSource(task.task.execution_context);
+      const source = enforceNativeReadSource(task.task.execution_context, this.runner);
+      requireThat(source.source_scope === this.registration.admission.source_scope, "source_execution_floor_unavailable");
       const files = readFileGrant(identity.path, this.registration.admission.read_files);
       assertReadGrantSnapshot(task.task.tool_grant, files, this.config.communication ? nativeAgentTools : []);
       if (this.config.communication) {

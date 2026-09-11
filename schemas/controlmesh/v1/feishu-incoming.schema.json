@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.controlmesh.dev/controlmesh/v1/feishu-incoming.schema.json",
+  "title": "FeishuIncomingMessage",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "app_id",
+    "event_id",
+    "message_id",
+    "sender_id",
+    "chat_id",
+    "thread_id",
+    "root_id",
+    "text",
+    "created_at",
+    "source_scope",
+    "mentions_local_bot"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "controlmesh.feishu_incoming.v1",
+      "type": "string"
+    },
+    "app_id": {
+      "type": "string",
+      "pattern": "^cli_[A-Za-z0-9_-]{1,120}$"
+    },
+    "event_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,128}$"
+    },
+    "message_id": {
+      "type": "string",
+      "pattern": "^om_[A-Za-z0-9_-]{1,120}$"
+    },
+    "sender_id": {
+      "type": "string",
+      "pattern": "^ou_[A-Za-z0-9_-]{1,120}$"
+    },
+    "chat_id": {
+      "type": "string",
+      "pattern": "^oc_[A-Za-z0-9_-]{1,120}$"
+    },
+    "thread_id": {
+      "type": "string",
+      "pattern": "^(?:|th_[A-Za-z0-9_-]{1,120})$"
+    },
+    "root_id": {
+      "type": "string",
+      "pattern": "^(?:|om_[A-Za-z0-9_-]{1,120})$"
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32768
+    },
+    "created_at": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "source_scope": {
+      "type": "string",
+      "enum": [
+        "direct_message",
+        "group_message"
+      ]
+    },
+    "mentions_local_bot": {
+      "type": "boolean"
+    }
+  }
+}

@@ -46,3 +46,12 @@ export function enforceLocalReadSource(raw: unknown): ExecutionContext {
   requireThat(context.origin === "user" && context.source_scope === "local_foreground", "source_execution_floor_unavailable");
   return context;
 }
+
+/** Concrete runners own the source floor. A task body cannot declare sandbox availability. */
+export function enforceNativeReadSource(raw: unknown, runner: { assertSource?: (context: ExecutionContext) => void }): ExecutionContext {
+  const context = decodeExecutionContext(raw);
+  if (!runner.assertSource) return enforceLocalReadSource(raw);
+  const checked: unknown = runner.assertSource(context);
+  if (checked !== undefined) { void Promise.resolve(checked).catch(() => {}); requireThat(false, "admission_must_be_synchronous"); }
+  return context;
+}

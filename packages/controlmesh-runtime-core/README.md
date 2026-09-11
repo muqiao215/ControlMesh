@@ -228,6 +228,61 @@ awaiting control replies. Intentional input-stream closure is a clean exit; unre
 and persistence failures remain errors. A real stdio process test holds an HTTP request,
 signals the child and verifies a prompt clean exit with the uncertain delivery preserved.
 
+## Authenticated headless Feishu ingress
+
+The private candidate can accept signed text events without opening Web. Configure
+`source.transport: "fs"`, a selected Feishu delivery adapter, and the following `inbound`
+object in its private runtime configuration:
+
+```json
+{
+  "inbound": {
+    "credentials_file": "/absolute/private-event-credentials.json",
+    "allowed_senders": ["ou_selected_user"],
+    "allowed_chats": ["oc_selected_chat"],
+    "bot_open_id": "ou_selected_bot",
+    "require_group_mention": true,
+    "path": "/feishu/events",
+    "port": 8788
+  }
+}
+```
+
+The mode-0600 event credential file contains `app_id`, `verification_token` and
+`encrypt_key`; the app must match the selected delivery app. Changing either private file
+requires restarting the candidate. Sender/chat allowlists are explicit; empty lists admit
+nobody. This port verifies the signature over original HTTP bytes, checks timestamp/token/
+app identity, and supports encrypted AES-CBC event envelopes and token-authenticated URL
+verification. Only allowlisted human text messages enter the inbox; group mentions must
+identify the configured bot.
+
+```sh
+bun packages/controlmesh-runtime-core/scripts/serve-feishu.ts /absolute/private-config.json
+```
+
+The listener binds only `127.0.0.1`; a separately configured ingress proxy is needed for
+provider delivery. The JSON-lines controller also exposes `start_inbound`, `inbound_status`,
+`drain_inbound` and `retry_inbound` (with `receipt_id`). Their request bodies cannot replace
+the configured port, app, identity or execution authority.
+
+Schema 12 retains normalized messages and event/message aliases before returning the HTTP
+receipt. Duplicate events return the same receipt. Creating/resuming the conversation task,
+binding the original reply destination, enqueuing work and marking input applied share one
+transaction. An HTTP receipt means persisted input; `applied` means queued task input,
+not successful Agent execution. Inspect task/run and delivery status separately. Completed
+turns resume their original native session; active turns defer subsequent messages. Unknown
+effects require reconciliation. Blocked input requires explicit retry and is never rewritten.
+The inbox admits at most 128 unprocessed records; a blocked conversation does not prevent
+independent conversations from progressing. Processing is event-driven, with no cron/model
+polling. Applied event history currently remains stored; automatic retention is not implemented.
+
+Reply identity comes from the verified conversation-opening event and stays pinned across
+turns. Direct-message execution uses the qualified OpenCode read container. Host runners
+still admit only local foreground input, and group messages retain their controller-approval
+requirement; that approval path remains to be ported. Other event types, attachments, cards,
+long-connection subscription, legacy conversation-ID adoption and production cutover remain
+in the migration plan. HTTP fixtures do not establish real Feishu-account acceptance.
+
 ## Snapshot migration
 
 `LegacyMigration` imports a reviewed snapshot into an empty, explicit database. It keeps

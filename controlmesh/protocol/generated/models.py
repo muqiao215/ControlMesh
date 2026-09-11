@@ -223,6 +223,22 @@ class ExecutionLease(BaseModel):
     lease_until: int
 
 
+class FeishuIncomingMessage(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    schema_version: Literal["controlmesh.feishu_incoming.v1"]
+    app_id: str
+    event_id: str
+    message_id: str
+    sender_id: str
+    chat_id: str
+    thread_id: str
+    root_id: str
+    text: str
+    created_at: int
+    source_scope: Literal["direct_message", "group_message"]
+    mentions_local_bot: bool
+
+
 class LogEvent(BaseModel):
     model_config = ConfigDict(extra="allow")
     schema_version: Literal["controlmesh.log_event.v1"]

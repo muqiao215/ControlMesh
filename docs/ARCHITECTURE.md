@@ -557,13 +557,32 @@ cached/prepared credentials. Authentication failures latch; transient failures c
 Explicit blocked-delivery retry may reset the auth latch but never replay an uncertain send.
 Private startup can retain an externally supplied token file or opt into app-secret refresh.
 
-Reply targets are trusted per-task startup configuration and part of adapter identity.
+Reply targets are trusted per-task startup configuration or a registered inbox resolver,
+and their binding is part of adapter identity.
 Control derives the task's reply thread/grant from this profile; the adapter reads the
 original message before a dedicated reply POST and checks chat/parent/root/topic in the
 acknowledgement and later recovery. Existing-topic and quoted replies are covered by local
 HTTP tests. The stdio owner stops runtime, transport and credential operations together;
 expected signal-induced input closure is not a startup failure. Media/new-topic creation,
 user/marketplace auth, other adapters and production ingress/cutover remain in the plan.
+
+`feishu-event-auth.ts` verifies original event bytes and normalizes allowlisted human text
+messages. `feishu-inbox.ts` owns schema-12 event aliases and conversation-to-task mapping.
+An HTTP acknowledgement follows persistence; atomic application creates/resumes, binds and
+queues the task. Follow-ups wait for active execution and retain its native session. The
+reply resolver validates the immutable opening event against issued source/reply authority.
+`feishu-inbound-runtime.ts` runs a bounded loopback listener and event-driven work pump,
+including queued-work recovery before releasing a conversation's next message. Blocked
+conversations do not monopolize the batch. `scripts/serve-feishu.ts` is the headless owner;
+Web is not involved in execution or message exchange. The verified source remains direct/
+group message throughout admission. Only the actual container runner provides remote read
+execution; group controller approval cannot be waived by transport admission.
+
+Container preparation checks the current task authorization and total deadline at each
+step. The one-second in-container execution heartbeat starts immediately before launch,
+after the durable launch marker, so slow preparation does not expire a process that does
+not exist yet. Once armed, an expired heartbeat cannot renew; SIGSTOP/SIGKILL acceptance
+still requires native work to stop and recovery to avoid restarting it.
 
 ## Codekit integration (v0.43.0)
 

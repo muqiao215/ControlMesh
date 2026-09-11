@@ -124,9 +124,10 @@ export class ContainerProcessSupervisor {
     requireThat(spec.stdin_text === undefined || Buffer.byteLength(spec.stdin_text) <= 65536, "invalid_process_input");
     requireThat(Object.keys(spec.env).length <= 256 && Object.entries(spec.env).every(([key, value]) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(key) && typeof value === "string" && value.length <= 32768 && !value.includes("\0")), "invalid_container_environment");
     const execution = digest(spec.execution_id), directory = join(this.configuration.state_root, execution);
-    let active = true, previousExpiry = Infinity;
+    let active = true, executionHeartbeat = false, previousExpiry = Infinity;
     const current = () => {
-      requireThat(active && !admission.signal?.aborted && elapsedMs() < deadline && elapsedMs() < previousExpiry, "container_authority_expired");
+      requireThat(active && !admission.signal?.aborted && elapsedMs() < deadline
+        && (!executionHeartbeat || elapsedMs() < previousExpiry), "container_authority_expired");
       requireThat(digest([spec, this.configuration]) === original, "container_launch_changed");
       requireThat(digest(directoryIdentity(this.configuration.state_root)) === stateIdentity, "container_state_replaced");
       assertMounts(plan);
@@ -145,11 +146,11 @@ export class ContainerProcessSupervisor {
       socket: this.configuration.socket, engine_id: null, container_id: null, creation_uncertain: false, state: "preparing" };
     atomic(join(directory, "record.json"), record);
     const renew = () => { current(); atomic(join(directory, "lease.json"), { boot_id: boot, expires_ms: previousExpiry }); };
-    renew();
     const context: ProcessAdmission = { assertCurrent: renew, remainingMs: () => Math.min(deadline - elapsedMs(), admission.remainingMs?.() ?? Infinity), signal: admission.signal };
     let removed = false;
     let outcome: ProcessOutcome = { reason: "spawn_failed", exit_code: null, stdout: "", stderr: "", duration_ms: 0 };
     try {
+      renew();
       record.engine_id = await this.engine(context); atomic(join(directory, "record.json"), record);
       const build = await Bun.build({ entrypoints: [join(import.meta.dir, "init.ts")], target: "node", format: "cjs" });
       requireThat(build.success && build.outputs.length === 1, "container_init_build_failed");
@@ -174,7 +175,10 @@ export class ContainerProcessSupervisor {
       const inspected = await this.inspect(record, context);
       requireThat(inspected !== null && inspected.State?.Status === "created", "container_start_state_invalid");
       this.verifyIsolation(inspected, plan, directory);
-      renew(); record.state = "running"; atomic(join(directory, "record.json"), record);
+      record.state = "running"; atomic(join(directory, "record.json"), record);
+      // No native process exists during preparation. Start its heartbeat only after the durable
+      // launch marker, with freshly checked task authority; an expired running lease never revives.
+      renew(); executionHeartbeat = true;
       outcome = await this.supervisor.run({ command: [this.configuration.docker, "--host", `unix://${this.configuration.socket}`, "--config", join(this.configuration.state_root, "cli"), "container", "start", "--attach", "--interactive", record.container_id],
         cwd: this.configuration.state_root, env: { PATH: "/usr/bin:/bin", HOME: this.configuration.state_root, LC_ALL: "C" }, timeout_ms: Math.max(1, Math.floor(deadline - elapsedMs())),
         ...(spec.stdin_text === undefined ? {} : { stdin_text: spec.stdin_text }), ...(spec.max_output_bytes === undefined ? {} : { max_output_bytes: spec.max_output_bytes }) },

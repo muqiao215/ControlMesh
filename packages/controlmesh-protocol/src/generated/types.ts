@@ -200,6 +200,21 @@ export interface ExecutionLease {
   "lease_until": number;
 }
 
+export interface FeishuIncomingMessage {
+  "schema_version": "controlmesh.feishu_incoming.v1";
+  "app_id": string;
+  "event_id": string;
+  "message_id": string;
+  "sender_id": string;
+  "chat_id": string;
+  "thread_id": string;
+  "root_id": string;
+  "text": string;
+  "created_at": number;
+  "source_scope": "direct_message" | "group_message";
+  "mentions_local_bot": boolean;
+}
+
 export interface LogEvent {
   [key: string]: unknown;
   "schema_version": "controlmesh.log_event.v1";

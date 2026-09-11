@@ -7,6 +7,8 @@ import { planContainer } from "../src/containers/plan";
 import { RuntimeDatabase, RuntimeKernel, AgentMailbox, type Principal } from "../src";
 import { NativeAgentBroker } from "../src/providers/native-agent-broker";
 import { prepareNativeAgentConfiguration, nativeAgentScope } from "../src/providers/native-agent-profile";
+import { issueExecutionContext } from "../src/execution-context";
+import { enforceNativeReadSource } from "../src/execution-policy";
 
 const actual = process.env.CM_CONTAINER_TEST_IMAGE ? test : test.skip;
 const roots: string[] = [];
@@ -22,6 +24,31 @@ function fixture() {
   const env = { XDG_DATA_HOME: data, XDG_CACHE_HOME: cache, HOME: "/host/private/home", OPENCODE_CONFIG_DIR: "/host/private/config" };
   return { root, workspace, state, data, cache, auth, profile, env, runner: new OpenCodeReadContainerRunner(profile) };
 }
+
+test("only the concrete container runner admits remote message sources; host runners retain their local floor", () => {
+  const f = fixture();
+  for (const scope of ["direct_message", "group_message"] as const) {
+    const context = issueExecutionContext({ origin: "user", source_scope: scope, transport: "fs" });
+    expect(enforceNativeReadSource(context, f.runner)).toEqual(context);
+    expect(() => enforceNativeReadSource(context, {})).toThrow();
+  }
+  const scheduled = issueExecutionContext({ origin: "cron", source_scope: "cron", transport: "fs" });
+  expect(() => enforceNativeReadSource(scheduled, f.runner)).toThrow("source_execution_floor_unavailable");
+  renameSync(f.auth, `${f.auth}.old`); writeFileSync(f.auth, '{"fixture":"replaced"}', { mode: 0o600 });
+  expect(() => enforceNativeReadSource(issueExecutionContext({ origin: "user", source_scope: "direct_message", transport: "fs" }), f.runner))
+    .toThrow("native_container_profile_changed");
+});
+
+actual("an admitted direct message still runs in Docker and cannot write the project", async () => {
+  const f = fixture(); writeFileSync(join(f.workspace, "PROJECT.md"), "fixture project");
+  const context = issueExecutionContext({ origin: "user", source_scope: "direct_message", transport: "fs" });
+  const admission = { assertCurrent() { enforceNativeReadSource(context, f.runner); } };
+  const result = await f.runner.run({ command: [f.profile.executable, "-e",
+    "const fs=require('node:fs');let denied=false;try{fs.writeFileSync('PROJECT.md','changed')}catch{denied=true};console.log(JSON.stringify({denied,inside:fs.existsSync('/.dockerenv'),text:fs.readFileSync('PROJECT.md','utf8')}))"],
+    cwd: f.workspace, env: f.env, timeout_ms: 20_000 }, admission);
+  expect(result).toMatchObject({ reason: "exited", exit_code: 0 });
+  expect(JSON.parse(result.stdout)).toEqual({ denied: true, inside: true, text: "fixture project" });
+}, 30_000);
 
 actual("a native container calls only its scoped MCP broker through a read-only task channel", async () => {
   const f = fixture(), db = new RuntimeDatabase(":memory:"), kernel = new RuntimeKernel(db);

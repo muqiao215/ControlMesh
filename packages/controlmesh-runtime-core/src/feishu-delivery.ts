@@ -20,6 +20,7 @@ export interface FeishuDeliveryConfiguration {
   assertAccessToken?(token: string): void;
   retryAuthentication?(): void;
   replies?: Record<string, FeishuReplyTarget>;
+  reply_source?: FeishuReplySource;
   assertCurrent(): void;
 }
 
@@ -29,6 +30,18 @@ export interface FeishuReplyTarget {
   thread_id: string;
   reply_in_thread: boolean;
 }
+export interface FeishuReplySource {
+  binding_digest: string;
+  resolve(envelope: TerminalDelivery): FeishuReplyTarget | undefined;
+}
+
+function validateReply(reply: FeishuReplyTarget): void {
+  requireThat(object(reply) && Object.keys(reply).every(key => ["chat_id", "message_id", "thread_id", "reply_in_thread"].includes(key))
+    && typeof reply.chat_id === "string" && /^oc_[A-Za-z0-9_-]{1,120}$/.test(reply.chat_id)
+    && typeof reply.message_id === "string" && /^om_[A-Za-z0-9_-]{1,120}$/.test(reply.message_id)
+    && typeof reply.thread_id === "string" && typeof reply.reply_in_thread === "boolean"
+    && (reply.reply_in_thread ? /^th_[A-Za-z0-9_-]{1,120}$/.test(reply.thread_id) : reply.thread_id === ""), "invalid_feishu_reply_profile");
+}
 
 /** Feishu plain-text, chat-addressed API port. HTTP acknowledgement is not end-user read status. */
 export class FeishuTextDelivery implements DeliveryAdapter {
@@ -37,6 +50,7 @@ export class FeishuTextDelivery implements DeliveryAdapter {
   readonly binding_digest: string;
   private readonly domain: string;
   private readonly replies: Record<string, FeishuReplyTarget>;
+  private readonly replySource: FeishuReplySource | undefined;
   constructor(private readonly config: FeishuDeliveryConfiguration, private readonly request: typeof fetch = fetch) {
     identifier(config.adapter_id); identifier(config.app_id);
     requireThat(/^[a-z0-9_-]{1,32}$/.test(config.transport), "invalid_delivery_transport");
@@ -44,17 +58,17 @@ export class FeishuTextDelivery implements DeliveryAdapter {
     requireThat(["https://open.feishu.cn", "https://open.larksuite.com"].includes(this.domain), "untrusted_feishu_endpoint");
     this.adapter_id = config.adapter_id; this.transport = config.transport;
     this.replies = structuredClone(config.replies ?? {});
+    this.replySource = config.reply_source ? { ...config.reply_source } : undefined;
+    requireThat(!this.replySource || (/^[a-f0-9]{64}$/.test(this.replySource.binding_digest)
+      && typeof this.replySource.resolve === "function"), "invalid_feishu_reply_source");
     requireThat(object(this.replies) && Object.keys(this.replies).length <= 128, "invalid_feishu_reply_profile");
     for (const [taskId, reply] of Object.entries(this.replies)) {
       identifier(taskId);
-      requireThat(object(reply) && Object.keys(reply).every(key => ["chat_id", "message_id", "thread_id", "reply_in_thread"].includes(key))
-        && typeof reply.chat_id === "string" && /^oc_[A-Za-z0-9_-]{1,120}$/.test(reply.chat_id)
-        && typeof reply.message_id === "string" && /^om_[A-Za-z0-9_-]{1,120}$/.test(reply.message_id)
-        && typeof reply.thread_id === "string" && typeof reply.reply_in_thread === "boolean"
-        && (reply.reply_in_thread ? /^th_[A-Za-z0-9_-]{1,120}$/.test(reply.thread_id) : reply.thread_id === ""), "invalid_feishu_reply_profile");
+      validateReply(reply);
     }
     this.binding_digest = digest({ adapter: "feishu_text.v1", adapter_id: this.adapter_id, transport: this.transport, domain: this.domain,
-      app_id: config.app_id, ...(Object.keys(this.replies).length ? { replies: this.replies } : {}) });
+      app_id: config.app_id, ...(Object.keys(this.replies).length ? { replies: this.replies } : {}),
+      ...(this.replySource ? { reply_source: this.replySource.binding_digest } : {}) });
   }
   assertCurrent(): void {
     const result: unknown = this.config.assertCurrent();
@@ -70,12 +84,20 @@ export class FeishuTextDelivery implements DeliveryAdapter {
     requireThat(!reply || reply.chat_id === chatId, "feishu_reply_chat_mismatch");
     return { chat_id: chatId, ...(reply ? { thread_id: reply.thread_id } : {}) };
   }
+  private replyFor(envelope: TerminalDelivery): FeishuReplyTarget | undefined {
+    const fixed = Object.hasOwn(this.replies, envelope.task_id) ? this.replies[envelope.task_id] : undefined;
+    const dynamic = this.replySource?.resolve(structuredClone(envelope));
+    if (dynamic !== undefined) validateReply(dynamic);
+    requireThat(!fixed || !dynamic || digest(fixed) === digest(dynamic), "feishu_reply_source_conflict");
+    return dynamic ?? fixed;
+  }
   async prepare(original: TerminalDelivery, context: DeliveryContext): Promise<PreparedDelivery> {
     context.assertCurrent(); this.assertCurrent();
     const inputDigest = digest(original);
-    const reply = Object.hasOwn(this.replies, original.task_id) ? this.replies[original.task_id] : undefined;
+    const reply = this.replyFor(original), replyDigest = digest(reply ?? null);
     const target = (envelope: TerminalDelivery) => {
       requireThat(digest(envelope) === inputDigest, "feishu_prepared_input_changed");
+      requireThat(digest(this.replyFor(envelope) ?? null) === replyDigest, "feishu_reply_source_changed");
       requireThat(envelope.target.transport === this.transport && /^oc_[A-Za-z0-9_-]{1,120}$/.test(envelope.target.chat_id), "feishu_target_unqualified");
       requireThat(envelope.target.topic_id === "" && envelope.target.thread_id === (reply?.thread_id ?? ""), "feishu_thread_profile_unqualified");
       requireThat(!reply || reply.chat_id === envelope.target.chat_id, "feishu_reply_chat_mismatch");
