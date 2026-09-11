@@ -52,6 +52,6 @@ test("live official Python SDK decrypts the same AES/PKCS7 event bytes", () => {
   const original = event("独立 SDK 解密校验"), packet = signed(original, true);
   const child = Bun.spawnSync(["uv", "run", "python", "-c",
     "import json,sys; from lark_oapi.core.utils.decryptor import AESCipher; value=json.load(sys.stdin); print(AESCipher('fixture_encryption').decrypt_str(value['encrypt']))"],
-    { cwd: fileURLToPath(new URL("../../..", import.meta.url)), stdin: packet.bytes, stdout: "pipe", stderr: "pipe", timeout: 10_000 });
-  expect(child.exitCode).toBe(0); expect(JSON.parse(child.stdout.toString())).toEqual(original);
-});
+    { cwd: fileURLToPath(new URL("../../..", import.meta.url)), stdin: packet.bytes, stdout: "pipe", stderr: "pipe", timeout: 30_000 });
+  expect(child.exitCode, child.stderr.toString()).toBe(0); expect(JSON.parse(child.stdout.toString())).toEqual(original);
+}, 35_000);

@@ -21,9 +21,13 @@ including runtime reopen, original-session recall, changed-file reads and duplic
 Independent native-database readback confirmed two actual user messages/answers, no marker
 injection on the second turn, one task/two completed episodes, two fixture replies, and all
 nine containers absent. One model preflight plus two task turns ran three native model-run
-commands; actual provider API/billing counts were not measured. Publication and exact-SHA
-CI are the next action. No real Feishu account, production writer/service or installation
-was changed. Group controller approval, rich media and long connections remain open.
+commands; actual provider API/billing counts were not measured. The increment was pushed
+at `3b8ecf8ef4916eef26f391d42523cb21195aabb1`. Its CI run 34638622658 exposed Bun's default
+five-second test deadline killing the cold Python SDK oracle (exit 143); the explicit
+cross-language test now allows 35 seconds around a bounded 30-second child. Its assertions
+and all runtime deadlines are unchanged. Verify the corrected commit's CI next. No real
+Feishu account, production writer/service or installation was changed. Group controller
+approval, rich media and long connections remain open.
 
 Full goal active; CM-R0 through CM-R6 remain in progress and CM-R7 is not activated.
 Python v0.43.0 remains the released/installed production runtime. The private TS kernel now
