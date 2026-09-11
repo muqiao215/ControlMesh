@@ -3,7 +3,7 @@
 This is the actual TypeScript state/coordination kernel for the approved runtime migration.
 It accepts lifecycle operations, uses a versioned Bun SQLite database, and is exercised by
 independent OS processes. It is not the older fixture-case-switching facade candidate.
-It is private, has no production startup route, and does not yet replace Python TaskHub.
+It has an explicit private candidate startup route and does not yet replace Python TaskHub.
 Track completion in [the repository plan](../../plans/runtime-convergence/task_plan.md).
 
 ## Current behavior
@@ -15,6 +15,14 @@ Track completion in [the repository plan](../../plans/runtime-convergence/task_p
   channel. It rejects task-body authority and mismatched command origins, commits task/
   grant/source/event/receipts together and retains the original trace on replay/restart.
   It is an internal coordinator entrypoint, not a remote task creation endpoint.
+- `LocalTaskRuntime` connects that ingress to durable bounded queues, one preflight and
+  actual native execution. Schema 8 retains run receipts across process restarts. Shared
+  controller limits, atomic claims and binding/revision checks prevent duplicate execution;
+  blocked quota does not repeatedly probe. Inspection/submission/enqueue never launch models.
+- `OpenCodeTaskAdapter` selects only a registered workspace/model/container profile and
+  uses the same current grant and configuration checks before preflight and native dispatch.
+  The qualified source is local foreground read-only work; unavailable admission never
+  silently falls back to another model or host runtime.
 - `execution-context`, `execution-policy` and `execution-grants` port the existing source
   enums, sandbox floors, provider flag mapping, submit grants and pinned reply checks.
   An async-local scope keeps concurrent task provenance separate. New TS ingress denies
@@ -131,6 +139,54 @@ bun packages/controlmesh-runtime-core/scripts/legacy-snapshot.ts \
 To import a synthetic/offline copy, additionally supply `--import`, an absolute
 `--destination`, the preview's canonical `--expected-digest`, and the owning `--principal`.
 The target directory must exist. No automatic live-home path or writer cutover is offered.
+
+## Private local coordinator entrypoint
+
+From the repository root, run:
+
+```sh
+bun packages/controlmesh-runtime-core/scripts/local-runtime.ts /absolute/private-config.json
+```
+
+Configuration uses `schema_version: "controlmesh.local_runtime.v1"` and `mode: "candidate"`.
+The canonical absolute file must be owned by the current user with mode `0600`; its
+`state_root` must be a separate existing directory with mode `0700`. Known Python state
+markers are refused. Configuration changes revoke admission until restart. Do not point
+this candidate at the production home or treat marker checks as writer-cutover proof.
+
+The remaining fields bind trusted local registration:
+
+| Field | Required configuration |
+| --- | --- |
+| `principal_id`, `device_id` | Stable local owner/device identifiers |
+| `source` | `human_request` command origin, `user` origin, `local_foreground` source scope and explicit `transport`; this profile does not admit cron or Agent-origin ingress |
+| `limits` | Optional `parallelism` (1–16), `max_pending` (1–1024), `lease_ms` (1000–300000); controllers in one database must agree |
+| `opencode` | Explicit executable, selected model, CLI version `1.18.29`, private `native_configuration`, string-valued environment with absolute XDG data/cache homes |
+| `opencode.container` | Local Docker executable/socket, available immutable image ID, native-compatible Node executable and resource bounds; native OpenCode and Git must exist in the image |
+| `workspace` | Canonical directory, exact `read_files`, and the granted subset `required_reads` |
+
+Keep configuration and native credentials outside Git. The adapter uses the existing
+native store and read-only auth file, not copied transcripts or credentials in an image.
+Status can be inspected even when native credentials or the provider executable are absent.
+
+Each stdin line is one request with a unique `id` and an `op`. Responses carry that ID,
+`ok`, and either `result` or a safe error code; concurrent responses may arrive out of order.
+Supported operations are `submit`, `inspect_task`, `enqueue`, `inspect_run`, `resume`,
+`cancel`, `tell`, and `drain`. For example, after submitting a registered waiting task:
+
+```json
+{"id":"inspect-1","op":"inspect_task","task_id":"example"}
+{"id":"execute-1","op":"enqueue","task_id":"example","expected_revision":1}
+{"id":"work-1","op":"drain"}
+```
+
+`enqueue` returns a persisted run ID without invoking a model. `drain` advances the queue
+and reports queued/running counts; it does not wait for another controller's active work.
+Repeating `execute-1` with its original body returns the original run's current state,
+including after restart. A changed body with the same ID is rejected. Blocked runs are
+not automatically retried. `tell` only means a pending message was persisted; it does not
+yet mean a native Agent read or applied it. SIGINT/SIGTERM stop owned work; interrupted
+external effects require reconciliation. EOF does not automatically execute pending work.
 
 ## Evidence and remaining work
 

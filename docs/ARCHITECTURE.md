@@ -336,6 +336,25 @@ production startup route; provider/transport ownership and `controlmesh_runtime`
 promotion storage still belong to Python. Its database must not be shared over a network
 filesystem. See the package README for implemented behavior and activation gates.
 
+`LocalTaskRuntime` adds the private local task execution owner. SQLite schema 8 stores
+queued runs, their expected task revision and provider/profile binding, plus the claimed
+episode and terminal outcome. Two controllers sharing the configured principal/device
+share a persisted concurrency policy; claim and queue ownership commit in one transaction.
+The pure resolver does not invoke a provider. Execution performs one durable preflight
+before the actual native worker; inspection, submission and replay do not probe a model.
+Blocked runs remain blocked until a new explicit request. Recovery consults original
+episodes and never replays an uncertain native operation.
+
+`scripts/local-runtime.ts` exposes this owner through bounded JSON-lines on stdin/stdout.
+It requires an explicit private candidate configuration and isolated state directory,
+refuses the known legacy state layout, and constructs the OpenCode adapter lazily. Only
+`drain` advances execution; requests can inspect or cancel work while it is active. EOF
+waits for already requested work but does not start queued tasks. This is not the installed
+`cm` command or a production writer lock. Source/grant/principal authority comes from the
+private configuration and issuance owner, never request body fields. The qualified profile
+is local foreground OpenCode container reads. `tell` persists a pending mailbox message;
+native consumption and other ingress/transport profiles are still separate work.
+
 The private `OpenCodeWorker` now connects kernel leases/effect receipts to actual native
 process supervision and terminal evidence. Its current profile is explicitly issued local
 foreground work with literal read permissions; unknown source, unsupported network or
@@ -345,6 +364,12 @@ flocks interoperate with the old Python lock namespace. Result observations are 
 before verification; only verified native lineage, output and required reads can confirm
 an effect. Interrupted or inconsistent work remains unknown and cannot be auto-resumed.
 This implemented private path does not switch any released transport/runtime owner.
+
+OpenCode's shared `global` project row is not stable worktree authority: both a no-Git
+preflight and an empty Git repository can rewrite it. CM resolves a global session's Git
+root from its bound directory, uses `/` only for a proven non-Git directory, and rejects
+broken Git discovery. Non-global sessions retain the native project worktree. Native
+identity, resolved permission and current-read verification remain required afterward.
 
 New private TS submissions use `TaskIngress`: configured channel provenance is separate
 from `Principal.origin`, task bodies cannot issue grants, and task creation/source/grant/

@@ -27,3 +27,7 @@ export { OneShotProviderProcess, type OneShotLaunch, type OneShotAdmission, type
 export { ContainerProcessSupervisor, type ContainerProcessSpec, type ContainerOutcome } from "./containers/process";
 export { type ContainerConfiguration } from "./containers/plan";
 export { OpenCodeReadContainerRunner, type OpenCodeContainerProfile } from "./providers/opencode-container";
+export { LocalTaskRuntime, type LocalRun, type LocalTaskExecution, type LocalTaskResolver, type LocalRuntimeOptions } from "./local-task-runtime";
+export { OpenCodeTaskAdapter, type OpenCodeTaskRegistration } from "./providers/opencode-task-adapter";
+export { openLocalRuntime } from "./local-runtime-config";
+export { LocalRuntimeControl } from "./local-runtime-control";

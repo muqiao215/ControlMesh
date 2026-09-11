@@ -15,7 +15,8 @@ export class OpenCodeWorker {
     this.execution = new OpenCodeExecution(store, config, runner);
   }
 
-  async execute(actor: Principal, lease: Lease, binding: ProbeBinding, admission: IssuedReadAdmission, timeoutMs = 60_000): Promise<TaskSnapshot> {
+  async execute(actor: Principal, lease: Lease, binding: ProbeBinding, admission: IssuedReadAdmission, timeoutMs = 60_000,
+    lifecycle: { signal?: AbortSignal; remainingMs?: () => number } = {}): Promise<TaskSnapshot> {
     requireThat(actor.origin === "human_request", "source_execution_floor_unavailable");
     const task = this.kernel.inspect(actor, lease.task_id).task, issued = nativeTaskDigest(task);
     const request = (operation: string) => `native-${digest([lease.episode_id, operation])}`;
@@ -27,6 +28,7 @@ export class OpenCodeWorker {
     };
     try {
       return await this.execution.execute(task, binding, admission, {
+        ...lifecycle,
         assertCurrent,
         assertReady: () => { this.cache.assertReady(actor, binding); },
         preflightGeneration: () => this.cache.inspect(actor, binding).generation!,

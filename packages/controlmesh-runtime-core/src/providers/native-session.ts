@@ -155,7 +155,18 @@ export class NativeSessionStore {
 
   worktree(ref: NativeSessionRef): string {
     return this.inspect(ref.session_id, (db, current) => {
-      requireThat(current.store_id === ref.store_id && current.project_id === ref.project_id, "native_identity_changed");
+      requireThat(current.store_id === ref.store_id && current.project_id === ref.project_id && current.directory === ref.directory, "native_identity_changed");
+      if (ref.project_id === "global") {
+        // OpenCode rewrites this shared project row whenever any non-project probe opens.
+        // Empty Git repositories also use global; their ReadTool base is still the Git root.
+        const git = Bun.spawnSync(["/usr/bin/git", "-C", current.directory, "rev-parse", "--show-toplevel"], {
+          timeout: 2000, stdout: "pipe", stderr: "pipe",
+          env: { PATH: "/usr/bin:/bin", LC_ALL: "C", GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null" },
+        });
+        if (git.exitCode === 0) return realpathSync(git.stdout.toString().trim());
+        requireThat(git.exitCode === 128 && git.stderr.toString().startsWith("fatal: not a git repository (or any"), "native_worktree_unavailable");
+        return "/";
+      }
       const row = db.query("SELECT worktree FROM project WHERE id=?").get(ref.project_id) as { worktree: string } | null;
       requireThat(row && typeof row.worktree === "string" && isAbsolute(row.worktree), "native_worktree_unavailable");
       return realpathSync(row.worktree);

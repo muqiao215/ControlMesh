@@ -26,13 +26,16 @@ async function waitForPids(path: string): Promise<{ root: number; grandchild?: n
 function alive(pid: number): boolean {
   try {
     const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
-    return stat.slice(stat.lastIndexOf(")") + 2)[0] !== "Z";
+    const state = stat.slice(stat.lastIndexOf(")") + 2).charAt(0);
+    return state !== "" && state !== "Z" && state !== "X";
   } catch { return false; }
 }
 async function expectGone(pids: number[]) {
   const deadline = performance.now() + 3_000;
-  while (pids.some(alive) && performance.now() < deadline) await Bun.sleep(20);
-  expect(pids.filter(alive)).toEqual([]);
+  let remaining = pids.filter(alive);
+  while (remaining.length && performance.now() < deadline) { await Bun.sleep(20); remaining = pids.filter(alive); }
+  // Assert the completed poll, not a second /proc read racing zombie/dead/reaped transitions.
+  expect(remaining).toEqual([]);
 }
 
 test("real command result is collected and the anchor group is reaped", async () => {

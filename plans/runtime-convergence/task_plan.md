@@ -32,7 +32,7 @@ Move runtime authority to TypeScript without losing task correctness, provider e
 | ID | Deliverable / implementation seam | Exit evidence | State |
 |---|---|---|---|
 | CM-R0 | Inventory real owners and versioned payloads; extend existing lifecycle/provider/gate goldens | Reproducible baseline plus ledger of every persisted field and side effect | in_progress |
-| CM-R1 | TS execution kernel behind existing facade; transitions, events, cancellation, deadlines, process supervision | Python/TS differential traces for success, failure, timeout, cancel, crash/restart; zero duplicate side effects in shadow mode | in_progress: transactional kernel implemented; process/provider parity pending |
+| CM-R1 | TS execution kernel behind existing facade; transitions, events, cancellation, deadlines, process supervision | Python/TS differential traces for success, failure, timeout, cancel, crash/restart; zero duplicate side effects in shadow mode | in_progress: transactional kernel, durable local queue and actual private stdio execution implemented; full process/provider/transport parity pending |
 | CM-R2 | Transactional state migration and startup recovery | Dry-run migration counts/digests, interrupted migration replay, rollback compatibility, corrupt-input refusal | in_progress: snapshot migration plus persisted native manifests/reconciliation; other stores/cutover pending |
 | CM-R3 | Provider/transport/workspace/grant ports | Actual adapter smoke for each supported provider; grants enforced natively; process tree cleanup and result-delivery reconciliation | in_progress: source/grant/one-shot/container ports; real host and container OpenCode read profiles with native auth/state; other provider/write/source profiles and transports pending |
 | CM-R4 | Device coordinator and worker execution authority | Two-device lease expiry, fencing, clock skew, network partition and worker restart tests; stale worker cannot write or redeliver | in_progress: real ARM64 coordinator/x64 OpenCode worker continuation and reopen passed; remote reconciliation implemented, other profiles and rollout pending |
@@ -69,8 +69,11 @@ No claim that full TS migration or distributed coordination has completed. A sco
 
 ## Next Step
 
-Connect qualified execution owners to actual task/transport startup and extend native write
-and other provider profiles; the OpenCode container read/auth/state continuation gate has passed.
+The private local coordinator now has a durable queue and explicit stdio startup. Its real
+existing-session adoption and control-process restart acceptance passed; it does not switch
+the installed TaskHub or a production writer. Connect qualified execution owners to native
+mailbox application and transport startup, then extend native write and other provider
+profiles. The OpenCode container read/auth/state continuation gate has passed.
 Connect History adoption into device-local handles, mailbox application and independent
 SpecMesh lifecycle checks. Complete other recovery/abandonment/store owners and the
 512-module/57-field ownership parity. Do not activate over live data before writer-exclusion,

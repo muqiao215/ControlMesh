@@ -152,9 +152,53 @@ locks. Remote authentication attests the reporting device, not its honesty; nati
 verification describes the device snapshot checked before report delivery. The read profile
 and task evidence do not automatically promote history into authoritative project truth.
 
+## Local task execution entrypoint — 2026-09-11
+
+Schema 8 adds durable local runs. `LocalTaskRuntime` binds queued work to the task revision
+and trusted provider profile, persists claims atomically with execution episodes, shares
+configured controller concurrency limits, and retains outcomes across restart. Its
+OpenCode adapter uses one durable preflight and the qualified native container driver.
+The private stdio entrypoint accepts bounded requests with explicit request IDs; metadata
+does not call models and duplicate execution requests never redispatch. Cancellation,
+controller stop and uncertain results retain the existing kernel reconciliation rules.
+`tell` persists a pending message only; native application is not completed by this entrypoint.
+
+The first real adoption attempt passed preflight but was refused with
+`native_worktree_changed`. OpenCode rewrites the shared `global` project row when its
+no-Git probe runs; empty Git repositories use that same project ID. The worker had used
+the probe's `/` as the adopted session's read-permission base. The attempt remains
+unknown in its original private coordinator, all six containers were recorded removed,
+and no resume/retry was issued against that uncertain task. The fix derives global
+session worktrees from their bound directory, retains native worktrees for other projects,
+and refuses broken Git discovery. The regression covers a changed/removed probe path,
+nested empty-Git workspace, mismatched session directory and broken `.git` pointer.
+
+Corrected real acceptance ran **2026-09-11 14:08:50–14:09:31 UTC** through the actual
+stdio executable in separate processes. Headless History discovery/revalidation selected
+an existing controlled OpenCode 1.18.29/M3 session. First execution recalled its earlier
+marker and read the current project; after controller exit/restart, an explicit resume
+recalled the same marker without reinjection and read the changed file. Both task episodes
+and local runs completed. Inspection, submission and enqueue/replay made zero model calls;
+one probe plus two turns made three model invocations/nine native commands. Preflight
+generation remained 1. Replaying the first enqueue after restart added no native calls.
+All nine owned containers were independently absent via Docker inspect.
+
+Final local verification: strict TS and the 512-module/57-field ownership drift check
+passed. CI Bun 1.3.11 ran **154 tests / 2081 assertions across 21 files, zero failures,
+32.18 seconds**, including real Docker and process recovery. The four focused native/
+local-entry suites passed **29 tests / 204 assertions**. An intermediate full run exposed
+a test-only `/proc` cleanup race: it reread a process after already observing termination
+and treated dead/empty state as live. The helper now recognizes terminal states and asserts
+the completed poll without extending its deadline. Full verification passed after that fix.
+
+Private logs and scripts remain in `outputs/runtime-convergence/local-runtime-*` in the
+workspace, not this repository. Production Python, live tasks, service installation,
+default writer and release version are unchanged. The failed attempt is retained separately
+as `local-runtime-acceptance-before-worktree-fix.*`; successful acceptance does not erase it.
+
 ## Next
 
-Connect the qualified execution owners to actual task/transport startup and native mailbox work;
+Connect the local task entrypoint to actual native mailbox application and transport startup;
 extend provider/write profiles with real native permission and outcome verification.
 Then continue stores, History adoption, SpecMesh lifecycle and the production writer switch.
 The current Node-image process profile is not a substitute for native provider qualification.

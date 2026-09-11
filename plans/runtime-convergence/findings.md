@@ -209,3 +209,21 @@ Native recovery initially lacked pre-execution evidence: the baseline row hashes
 Real SIGKILL acceptance now covers the gap between durable native observation and terminal task commit: a separate process reopens the coordinator, confirms the reviewed original result, replays that acceptance idempotently and resumes the original native session. It recalls the original marker and reads the changed project file. This does not cover missing observations, unqualified providers/write profiles, hostile independent native clients, other stores or fleet-native admission; those remain full-goal requirements.
 
 The initial follow-up returned an old project value without a new native read and correctly failed `required_native_read_unproven`. OpenCode 1.18.29 [LLM request preparation](https://github.com/anomalyco/opencode/blob/v1.18.29/packages/opencode/src/session/llm/request.ts#L54) uses the custom Agent prompt in place of its provider default. The earlier two-sentence custom prompt omitted the required current-turn file list. The worker now issues that list and verifies the resolved Agent prompt before dispatch; tool permission rules and required native read evidence remain independent enforcement checks. Native's normal text loop does not force a read tool merely because a user requests one, so instructions alone are not completion evidence.
+
+The actual local TaskHub entrypoint exposed an adoption-only ordering defect hidden by
+the earlier fresh-session acceptance. A preflight opens a non-Git directory before an
+existing-session worker reads its worktree. OpenCode 1.18.29's
+[Project.fromDirectory](https://github.com/anomalyco/opencode/blob/v1.18.29/packages/opencode/src/project/project.ts#L195)
+updates the shared `global` project worktree each time; empty Git repositories also use
+that ID. A content-bound session reference therefore does not make this shared project
+row stable. Global worktree lookup now derives from the bound session directory and
+local Git discovery. A genuine non-Git directory maps to `/`; a broken Git pointer or
+discovery failure rejects. Other project IDs still use the native project worktree, and
+session identity/current read/grant checks remain intact. The corrected actual stdio
+startup plus process-restart canary passed; the original failed operation was not replayed.
+
+The local queue is a new isolated candidate owner, not installed TaskHub parity. It admits
+only a private configured local foreground read profile, requires an explicit drain, and
+retains pending mail independently of native consumption. Filesystem marker checks avoid
+accidental legacy-home use but are not production writer exclusion. Device fleet admission,
+other stores and transport delivery still need their own migration and release gates.

@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { mkdtempSync, renameSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { NativeSessionStore, nativeContentRevision } from "../src/providers/native-session";
@@ -56,4 +56,24 @@ test("unbounded native history is refused before loading source content", () => 
   const current = store(), writer = new Database(current.path);
   writer.query("UPDATE part SET data=zeroblob(33554433)").run(); writer.close();
   expect(() => current.store.read(fixture.session_id)).toThrow("native_session_too_large");
+});
+
+test("global native sessions derive their own Git root instead of another probe's shared project row", () => {
+  const current = store(), child = join(current.dir, "nested"); mkdirSync(child);
+  const writer = new Database(current.path);
+  writer.exec("CREATE TABLE project (id TEXT PRIMARY KEY,worktree TEXT)");
+  writer.query("INSERT INTO project VALUES ('global','/')").run();
+  writer.query("UPDATE session SET project_id='global',directory=?").run(child);
+  try {
+    const ref = current.store.read(fixture.session_id);
+    expect(current.store.worktree(ref)).toBe("/");
+    expect(Bun.spawnSync(["/usr/bin/git", "init", current.dir], { stdout: "pipe", stderr: "pipe" }).exitCode).toBe(0);
+    expect(current.store.worktree(ref)).toBe(current.dir);
+    writer.query("UPDATE project SET worktree=?").run("/unrelated-or-removed-probe");
+    expect(current.store.worktree(ref)).toBe(current.dir);
+    expect(() => current.store.worktree({ ...ref, directory: current.dir })).toThrow("native_identity_changed");
+    rmSync(join(current.dir, ".git"), { recursive: true });
+    writeFileSync(join(current.dir, ".git"), "gitdir: /missing-git-worktree\n");
+    expect(() => current.store.worktree(ref)).toThrow("native_worktree_unavailable");
+  } finally { writer.close(); }
 });
