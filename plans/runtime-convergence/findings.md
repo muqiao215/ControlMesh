@@ -1,5 +1,19 @@
 # Findings
 
+The initial native image had OpenCode but no Git. A Git-capable image was required to preserve
+the provider's real repository worktree identity, not just cwd in an unversioned fixture.
+Real container acceptance now uses pinned image identity, original paths and native auth/state:
+two distinct task turns plus a tool-denied model probe, with only three model calls. After the
+coordinator and runner reopened, the native session recalled its original marker and read the
+changed project file. Source/grant/result evidence remains issued and verified by the TS owners.
+
+OpenCode data contains both its SQLite session store and `auth.json`. Mounting the native data
+directory read-write with a nested regular-file read-only auth mount permits native messages
+while rejecting credential overwrite/unlink. Only OpenCode data/cache subdirectories are
+mounted; neighboring data and the host HOME/config are absent. Runtime cache/manifest identity
+now includes an optional runtime digest, preserving old host records while preventing them
+from qualifying a container. Model/config/credential/device fields keep their existing meaning.
+
 Container native continuation needs its original absolute directory: OpenCode session rows,
 native read evidence and the CM manifest all bind that path. The container's previous fixed
 `/workspace` mount changed it. An explicit `native` layout now preserves the canonical project

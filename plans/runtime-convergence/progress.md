@@ -8,8 +8,10 @@ supports a qualified OpenCode read profile, native continuation, device coordina
 explicit recovery of a result lost between the device and coordinator. Other provider,
 write/sandbox, transport, store and product owners remain required for full migration.
 One-shot routing/result handling and host execution shipped at `0b01ea2` with exact-commit
-green CI 34597493500. The next implemented unit is actual per-execution container lifecycle
-and its one-shot integration; native provider image/auth/state qualification remains open.
+green CI 34597493500. Per-execution container lifecycle and original-directory mapping shipped
+with exact-SHA green CI at `8fd3f2f`. The OpenCode read profile now has real container/native
+auth/state/continuation acceptance; general write, other provider and production ingress
+qualification remain open.
 
 ## Done
 
@@ -55,6 +57,25 @@ and its one-shot integration; native provider image/auth/state qualification rem
   observed immutable ID remains unknown; absence cannot close a still-pending daemon request.
   Cleanup resolves only the original owned container and never starts it. The one-shot caller
   retains source/confirmation/native tool checks while outer isolation enforces network/roots.
+- Container OpenCode read driver: narrowly selected persistent native data/cache, read-only
+  auth overlay, temporary HOME/config and runtime-bound preflight/dispatch. A real Git project
+  passed trusted TaskIngress -> model preflight -> native task -> coordinator/runner reopen ->
+  same-session resume -> confirmed result. Headless Viewer independently revalidated the first
+  native reference. The second turn recalled a marker without reinjection and read the changed
+  PROJECT.md. Both episodes were done and both effects confirmed. The production writer and
+  scheduler/transport startup were not switched.
+
+Container native verification: strict TS and CI-version Bun 1.3.11 full core passed **140 tests /
+2,019 assertions**, including actual directory/resource mounts and both original and new provider
+binding checks. The subsequent worker suite passes **12 tests / 135 assertions**, including
+host/container admission separation; strict TS and both Python CI-workflow tests also pass.
+Real acceptance on **2026-09-11 13:21:49–13:22:35 UTC** used x64 OpenCode 1.18.29 with the
+previously selected M3 provider, a pinned Node/Git image, one model probe and two task turns
+(three model invocations total, nine native commands). The cache generation remained 1 after
+reopening. All owner-labelled containers were independently absent afterward; the credential
+file was unchanged. Private raw evidence, image recipe/digest and canary live outside Git in
+the workspace's `outputs/runtime-convergence/container-native-*`. No transcript was copied
+into the follow-up prompt, and no provider credentials entered the image or coordinator database.
 
 Container local verification: strict TS and CI-version Bun 1.3.11 passed **132 core tests /
 1,987 assertions**, including real Docker execution and the existing **410 live Python/TS
@@ -116,7 +137,7 @@ Earlier implementation history is in Git; it is not duplicated here.
 ## Remaining
 
 All original CM-R0–CM-R7 gates remain authoritative: remaining provider/transport/workspace/
-artifact owners, native provider write and container image/auth/state qualification, other persisted runtime stores,
+artifact owners, native provider write and other image/auth/state profiles, other persisted runtime stores,
 writer exclusion and rollback, existing History session adoption, native mailbox application,
 independent SpecMesh current-checkout/lifecycle gates, fleet enrollment/rotation/fairness and
 real topology execution, terminal product work, default TS switch, Python retirement and
@@ -133,8 +154,7 @@ and task evidence do not automatically promote history into authoritative projec
 
 ## Next
 
-Qualify actual provider images with scoped credentials and persistent native state using the
-verified native directory layout, then validate same-session continuation through that owner.
-Connect the implemented execution owners to task/transport ingress and native mailbox work,
-then continue stores, History adoption, SpecMesh lifecycle and the production writer switch.
+Connect the qualified execution owners to actual task/transport startup and native mailbox work;
+extend provider/write profiles with real native permission and outcome verification.
+Then continue stores, History adoption, SpecMesh lifecycle and the production writer switch.
 The current Node-image process profile is not a substitute for native provider qualification.

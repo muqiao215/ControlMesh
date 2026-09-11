@@ -26,3 +26,4 @@ export { observeOneShot, type OneShotObservation } from "./providers/oneshot-obs
 export { OneShotProviderProcess, type OneShotLaunch, type OneShotAdmission, type OneShotRun } from "./providers/oneshot-process";
 export { ContainerProcessSupervisor, type ContainerProcessSpec, type ContainerOutcome } from "./containers/process";
 export { type ContainerConfiguration } from "./containers/plan";
+export { OpenCodeReadContainerRunner, type OpenCodeContainerProfile } from "./providers/opencode-container";

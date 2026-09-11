@@ -26,3 +26,17 @@ test("the service connects native evidence to the durable cache and repeated req
     expect(cache.assertReady(actor, binding).observation.status).toBe("ready");
   } finally { db.close(); }
 });
+
+test("runtime identity is checked before cached admission or native model dispatch", async () => {
+  const db = new RuntimeDatabase(":memory:");
+  const actor: Principal = { id: "operator", origin: "internal", device_id: "local", scopes: ["provider:probe"] };
+  const binding: ProbeBinding = { provider: "opencode", model: "configured/model", device_id: "local", cli_version: "1.18.29", config_digest: digest({}), credential_revision: "synthetic", permission_profile: "deny-tools-v1" };
+  let calls = 0;
+  const native = new OpenCodePreflight({ runtimeDigest: () => "c".repeat(64), async run() { calls++; throw new Error("must not launch"); } });
+  try {
+    const service = new ProviderPreflightService(new PreflightCache(db), native);
+    await expect(service.ensure(actor, "wrong-runtime", binding, { executable: "/bin/opencode", model: binding.model, native_configuration: {}, environment: {}, assertCurrent() {} })).rejects.toThrow("probe_runtime_binding_mismatch");
+    expect(calls).toBe(0);
+    expect(db.sql.query("SELECT COUNT(*) AS count FROM provider_checks").get()).toEqual({ count: 0 });
+  } finally { db.close(); }
+});

@@ -108,6 +108,13 @@ test("schedule-origin actor cannot use the local read worker even with identical
   expect(f.commands).toHaveLength(0);
 });
 
+test("container-bound readiness cannot run through a host native worker", async () => {
+  const f = setup();
+  await expect(f.worker.execute(actor, f.lease(), { ...f.binding, runtime_digest: "c".repeat(64) }, f.admission)).rejects.toThrow("worker_runtime_binding_mismatch");
+  expect(f.commands).toHaveLength(0);
+  expect(f.db.sql.query("SELECT COUNT(*) AS count FROM effects").get()).toEqual({ count: 0 });
+});
+
 test("invalid persisted provenance and approval-only grants are rejected before any native command", async () => {
   const context = issueExecutionContext({ origin: "user", source_scope: "local_foreground", transport: "test" });
   const cases = [

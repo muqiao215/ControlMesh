@@ -165,7 +165,7 @@ export class ContainerProcessSupervisor {
         "--tmpfs", "/tmp:rw,nosuid,nodev,noexec,size=67108864,mode=1777", "--workdir", plan.working_directory, "--entrypoint", this.configuration.node_executable];
       for (const [key, value] of Object.entries(labels(record))) args.push("--label", `${key}=${value}`);
       for (const key of ["NODE_OPTIONS", "NODE_PATH", "LD_PRELOAD", "LD_LIBRARY_PATH"]) args.push("--env", `${key}=`);
-      for (const mount of plan.mounts) args.push("--mount", `type=bind,source=${mount.source},destination=${mount.target},bind-propagation=rprivate,bind-recursive=disabled${mount.readonly ? ",readonly" : ""}`);
+      for (const mount of plan.mounts) args.push("--mount", `type=bind,source=${mount.source},destination=${mount.target},bind-propagation=rprivate${mount.kind === "directory" ? ",bind-recursive=disabled" : ""}${mount.readonly ? ",readonly" : ""}`);
       args.push("--mount", `type=bind,source=${directory},destination=/cm-control,readonly,bind-propagation=rprivate,bind-recursive=disabled`, record.image, "/cm-control/init.cjs");
       record.creation_uncertain = true; atomic(join(directory, "record.json"), record);
       const created = await this.docker(args, context);

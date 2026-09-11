@@ -34,7 +34,7 @@ Move runtime authority to TypeScript without losing task correctness, provider e
 | CM-R0 | Inventory real owners and versioned payloads; extend existing lifecycle/provider/gate goldens | Reproducible baseline plus ledger of every persisted field and side effect | in_progress |
 | CM-R1 | TS execution kernel behind existing facade; transitions, events, cancellation, deadlines, process supervision | Python/TS differential traces for success, failure, timeout, cancel, crash/restart; zero duplicate side effects in shadow mode | in_progress: transactional kernel implemented; process/provider parity pending |
 | CM-R2 | Transactional state migration and startup recovery | Dry-run migration counts/digests, interrupted migration replay, rollback compatibility, corrupt-input refusal | in_progress: snapshot migration plus persisted native manifests/reconciliation; other stores/cutover pending |
-| CM-R3 | Provider/transport/workspace/grant ports | Actual adapter smoke for each supported provider; grants enforced natively; process tree cleanup and result-delivery reconciliation | in_progress: source/grant/one-shot ports and per-execution container lifecycle; real local OpenCode read profile; container provider/auth/native-state qualification and transports pending |
+| CM-R3 | Provider/transport/workspace/grant ports | Actual adapter smoke for each supported provider; grants enforced natively; process tree cleanup and result-delivery reconciliation | in_progress: source/grant/one-shot/container ports; real host and container OpenCode read profiles with native auth/state; other provider/write/source profiles and transports pending |
 | CM-R4 | Device coordinator and worker execution authority | Two-device lease expiry, fencing, clock skew, network partition and worker restart tests; stale worker cannot write or redeliver | in_progress: real ARM64 coordinator/x64 OpenCode worker continuation and reopen passed; remote reconciliation implemented, other profiles and rollout pending |
 | CM-R5 | Agent mailbox and task dependency exchange | Duplicate/out-of-order/replayed messages, bounded broadcast, cancellation propagation and backpressure evidence | in_progress: durable core mailbox tested; native/transport integration pending |
 | CM-R6 | History headless candidate + native adoption + SpecMesh lifecycle hooks | Real continuation canary binds provider session, current repo and approved task scope; see HV-H3 / SM-P2 | in_progress: real same-session recall/current-file and post-SIGKILL continuation passed; SpecMesh hooks and full matrix remain |
@@ -69,8 +69,8 @@ No claim that full TS migration or distributed coordination has completed. A sco
 
 ## Next Step
 
-Qualify actual provider images, scoped authentication and persistent native state in the
-container execution owner using the verified native directory layout for real continuation.
+Connect qualified execution owners to actual task/transport startup and extend native write
+and other provider profiles; the OpenCode container read/auth/state continuation gate has passed.
 Connect History adoption into device-local handles, mailbox application and independent
 SpecMesh lifecycle checks. Complete other recovery/abandonment/store owners and the
 512-module/57-field ownership parity. Do not activate over live data before writer-exclusion,

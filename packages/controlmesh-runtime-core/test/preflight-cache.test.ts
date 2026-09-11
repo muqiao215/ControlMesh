@@ -29,6 +29,19 @@ test("duplicate/concurrent admissions do not repeat a charge; readiness is cache
   expect(cache.begin(actor, "changed", { ...binding, credential_revision: "synthetic-v2" }).decision).toBe("probe");
 });
 
+test("host readiness and a different image profile cannot qualify a container runtime", () => {
+  const { cache } = fixture();
+  const host = cache.begin(actor, "host", binding).permit!;
+  cache.complete(actor, binding, host, report("ready"));
+  const container = { ...binding, runtime_digest: "c".repeat(64) };
+  expect(() => cache.assertReady(actor, container)).toThrow("provider_preflight_not_current");
+  const permit = cache.begin(actor, "container", container).permit!;
+  expect(() => cache.complete(actor, container, permit, report("ready"))).toThrow("probe_report_runtime_mismatch");
+  cache.complete(actor, container, permit, { ...report("ready"), runtime_digest: container.runtime_digest });
+  expect(cache.assertReady(actor, container).runtime_digest).toBe(container.runtime_digest);
+  expect(() => cache.assertReady(actor, { ...container, runtime_digest: "d".repeat(64) })).toThrow("provider_preflight_not_current");
+});
+
 test("quota without a proven reset and auth failure remain paused across reconstructed service objects", () => {
   const { cache, db, advance } = fixture();
   const permit = cache.begin(actor, "start", binding).permit!;

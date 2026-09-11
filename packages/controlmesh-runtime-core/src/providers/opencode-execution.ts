@@ -14,7 +14,7 @@ import type { ProbeBinding } from "./preflight-cache";
 import type { ProviderFailure } from "./opencode-events";
 import { assertWorkspaceManifest, directoryIdentity, nativeReadInstructions, nativeTaskDigest, permissionEvidence, snapshotReads, type NativeManifest } from "./native-manifest";
 
-export interface NativeRunner { run(spec: ProcessSpec, admission: ProcessAdmission): Promise<ProcessOutcome> }
+export interface NativeRunner { run(spec: ProcessSpec, admission: ProcessAdmission): Promise<ProcessOutcome>; runtimeDigest?(): string }
 export interface OpenCodeWorkerConfig {
   executable: string;
   native_configuration: Record<string, unknown>;
@@ -49,6 +49,7 @@ export class OpenCodeExecution {
   async execute<T>(task: LegacyTask, binding: ProbeBinding, admission: IssuedReadAdmission, hooks: NativeExecutionHooks<T>, timeoutMs = 60_000): Promise<T> {
     requireThat(admission.source_scope === "local_foreground", "source_execution_floor_unavailable");
     requireThat(binding.cli_version === "1.18.29", "native_permission_profile_unverified");
+    requireThat(binding.runtime_digest === this.runner.runtimeDigest?.(), "worker_runtime_binding_mismatch");
     requireThat(Number.isSafeInteger(timeoutMs) && timeoutMs >= 1000 && timeoutMs <= 300_000, "invalid_native_timeout");
     enforceLocalReadSource(task.execution_context);
     requireThat(task.provider === "opencode" && task.model === binding.model && binding.device_id === this.store.deviceId, "worker_task_binding_mismatch");
@@ -74,6 +75,7 @@ export class OpenCodeExecution {
       hooks.assertCurrent();
       requireThat(stableTask() === issuedTask && realpathSync(String(task.repo_root)) === cwd, "worker_task_binding_changed");
       requireThat(digest(this.config.native_configuration) === configurationDigest, "native_configuration_changed");
+      requireThat(binding.runtime_digest === this.runner.runtimeDigest?.(), "worker_runtime_binding_mismatch");
       requireThat(digest({ source: admission.source_scope, files: readFileGrant(cwd, admission.read_files), required: readFileGrant(cwd, admission.required_reads) }) === issuedGrant, "issued_read_grant_changed");
       lock?.assertCurrent();
       if (manifest) assertWorkspaceManifest(manifest);

@@ -369,8 +369,12 @@ process acceptance is not real model qualification for every listed provider.
 The private container owner creates from an already available image digest on a local Linux
 Docker engine with seccomp. A nonroot execution has a read-only root filesystem, no added
 capabilities, no-new-privileges, private PID/IPC/cgroup namespaces and memory/CPU/PID limits.
-Only the configured workspace and private control directory are mounted. Writable roots use
-specific nested bind mounts; the control directory and other project paths remain read-only.
+The configured workspace, private control directory and explicitly selected device-local
+native resources are mounted. Writable project roots use specific nested bind mounts; the
+control directory and other project paths remain read-only. Native resource directories
+cannot overlap the workspace or controller state. Read-only regular-file mounts can protect
+credentials inside a writable native data directory; writable file mounts and other nested
+resource directories are rejected.
 Recursive submount copying is disabled. `no_network` selects an isolated network namespace
 for the entire process, including its model client; it is not an HTTP allowlist.
 The default `portable` workspace layout mounts at `/workspace`. A configured `native`
@@ -390,10 +394,20 @@ Cleanup cannot start an old execution. Unknown cleanup stays explicit, and expir
 is independently callable after the controller dies. Private launch material is removed only
 after container removal is confirmed; records retain the execution's no-replay marker.
 
-This Node-image execution profile is a tested TS isolation/lifecycle path, not yet the
-complete provider image/auth/native-state migration. It does not mount the legacy shared CM
-home or automatically adopt sessions. Native layout preserves directory paths, while scoped
-authentication and persistent provider state still need their own qualified integration.
+`OpenCodeReadContainerRunner` connects the existing preflight and local/device native driver
+to this owner. It preserves the original project and native data/cache paths, mounts only the
+OpenCode subdirectories, and overlays `auth.json` read-only. HOME, configuration and incidental
+state stay in the container's temporary home. Its runtime digest binds the image/profile and
+resource identities in both the readiness cache and native dispatch manifest; host-only
+readiness or another runtime cannot admit that execution. A changed resource requires an
+explicitly reconstructed profile and matching preflight. Provider credential revision remains
+separately bound. It does not mount the legacy CM home or automatically adopt sessions.
+
+Real x64 OpenCode 1.18.29/M3 acceptance covers this read profile in a Git-capable pinned image:
+trusted TaskIngress, real model preflight, original native session continuation after coordinator
+and runner reopen, headless Viewer revalidation, required current-file reads and confirmed
+kernel results. Other provider/write/source profiles, production startup and writer cutover
+remain required; this adapter does not widen the local read driver's source policy.
 
 The private `DeviceCoordinator` now exposes a separate loopback worker protocol with
 credentials mapped to trusted device registrations. Tasks have persisted, digest-bound

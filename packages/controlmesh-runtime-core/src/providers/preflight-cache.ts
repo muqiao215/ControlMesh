@@ -10,6 +10,7 @@ import type { ProviderFailure } from "./opencode-events";
 export interface ProbeBinding {
   provider: string; model: string; device_id: string; cli_version: string;
   config_digest: string; credential_revision: string; permission_profile: string;
+  runtime_digest?: string;
 }
 export interface ProbePermit { cache_key: string; generation: number; token: string }
 export interface ProbeDecision {
@@ -34,6 +35,7 @@ export class PreflightCache {
     requireThat(actor.device_id === binding.device_id, "probe_device_mismatch");
     requireThat(binding.provider.length > 0 && binding.model.length > 0 && binding.cli_version.length > 0 && binding.permission_profile.length > 0 && binding.credential_revision.length > 0, "incomplete_probe_binding");
     requireThat(/^[0-9a-f]{64}$/.test(binding.config_digest), "invalid_probe_config_digest");
+    requireThat(binding.runtime_digest === undefined || /^[0-9a-f]{64}$/.test(binding.runtime_digest), "invalid_probe_runtime_digest");
     return digest({ principal: actor.id, binding });
   }
 
@@ -116,6 +118,7 @@ export class PreflightCache {
     const key = this.key(actor, binding);
     requireThat(permit.cache_key === key, "probe_binding_mismatch");
     requireThat(report.model === binding.model && report.config_digest === binding.config_digest && report.cli_version === binding.cli_version, "probe_report_identity_mismatch");
+    requireThat(report.runtime_digest === binding.runtime_digest, "probe_report_runtime_mismatch");
     requireThat(["ready", "unavailable", "degraded"].includes(report.observation.status) && /^[a-z0-9_]{1,96}$/.test(report.observation.reason), "invalid_probe_observation");
     if (report.observation.status === "ready") requireThat(report.model_invoked && /^[0-9a-f]{64}$/.test(report.permission_digest ?? "") && report.observation.reason === "native_sentinel_verified", "probe_readiness_unproven");
     this.db.transaction(() => {

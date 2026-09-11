@@ -9,6 +9,7 @@ export class ProviderPreflightService {
 
   async ensure(actor: Principal, requestId: string, binding: ProbeBinding, input: OpenCodeProbeInput): Promise<ProbeDecision> {
     requireThat(binding.provider === "opencode" && binding.model === input.model && binding.config_digest === digest(input.native_configuration), "probe_input_binding_mismatch");
+    requireThat(binding.runtime_digest === this.opencode.runtimeDigest(), "probe_runtime_binding_mismatch");
     const decision = this.cache.begin(actor, requestId, binding);
     if (decision.decision !== "probe") return decision;
     const permit = decision.permit!;
