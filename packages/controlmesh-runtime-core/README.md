@@ -43,6 +43,18 @@ Track completion in [the repository plan](../../plans/runtime-convergence/task_p
   agent/session permissions, passes the prompt through bounded stdin, verifies native
   append lineage and required current-file reads, and atomically confirms the result.
   A real same-session marker-recall/current-file canary passed; see the active plan.
+- `DeviceCoordinator` provides an explicitly started, Bearer-authenticated private worker
+  port on loopback. Pinned SSH forwarding carries it to a second device. Trusted local
+  registrations bind credential hashes to owners, device IDs, capabilities and logical
+  workspaces. Device requests cannot choose identity, scopes, executable code or local
+  paths. Assignment digests bind the input inspected before claim; task-authority changes
+  invalidate it. Revocation is durable and rechecked after asynchronous request reads.
+- `DeviceClient` does not follow redirects or automatically retry mutations. Worker
+  deadlines start before sending a lease request and subtract network delay and a safety
+  margin. Linux uptime includes suspend; a stopped/expired authority cannot revive.
+  `DeviceWorker` supplies `runProcess` to locally registered adapters with the current
+  lease deadline passed directly to the process anchor, even if its controller freezes.
+  Cross-device mailbox peers must be explicitly assigned.
 
 `Principal` is an internal admission object constructed by trusted ingress. Never accept
 its identity, scopes, origin or device from an unauthenticated JSON request. The kernel is
@@ -77,7 +89,37 @@ All fixtures are synthetic; these tests do not touch provider accounts or operat
 
 Remaining before activation: operator/native reconciliation, tell/ask and general resume integration,
 provider adapter/permission parity and non-Linux supervision, transport delivery, all other Python
-stores, authenticated coordinator/worker transport, two actual devices, the full native
+stores, native provider integration with the device transport, the full native
 continuation matrix, SpecMesh lifecycle admission, full rollback and production-writer exclusion.
 Mailbox application references are reports until the native adapter independently verifies
 them. A coordinator fence cannot prevent an uncooperative external program's side effect.
+
+The authenticated worker transport and a real x64/ARM64 synthetic two-device canary are
+now implemented. Remaining fleet work includes the actual native provider/grant adapters
+over this transport, durable presence/capability revision and topology/dependency policy,
+credential rotation/re-enrollment, unattended service rollout and activation/rollback.
+The local `OpenCodeWorker` is not yet a remote `DeviceAdapter`; assigning a capability is
+not a provider tool grant. Production adapters must independently enforce current source,
+grant, native-session and workspace rules and verify native evidence before returning a
+result. Remote completion is an authenticated worker report, not protection against a
+compromised device that fabricates evidence.
+
+## Device transport contract
+
+`schemas/controlmesh/v1/device-*.schema.json` owns the private command/response/lease-window
+shapes. Operations are queue, inspect, claim, start, renew, dispatch, observe, complete,
+unknown and bounded mailbox send/read/ack. Operator task creation, assignment, cancellation
+and revocation remain trusted local methods. `complete` atomically confirms one observed
+effect and finishes the episode; it does not execute an external action on receipt replay.
+
+Limits: 128 configured devices, 32 queued jobs returned, 32 KiB assigned inputs, 256 KiB
+request bodies, 3-second body read, 8 in-flight requests and 64 requests/second per device,
+0.5–30-second wire leases. HTTP rejects browser-origin requests and content encodings;
+credentials remain in local configuration. The existing public SDK/Web gain no mutations.
+SQLite schema 3 adds assignments; schema 4 adds durable device revocations. No database is
+shared with a worker. The current queue scan is bounded to 1,024 waiting assignments per
+owner; large fleet pagination/fairness remains required before production activation.
+
+`scripts/device-canary-worker.ts` is an explicit synthetic acceptance driver, not a service
+entrypoint. It reads an owner-only mode-0600 configuration and runs only its fixed read/
+hold fixture. It never loads a model credential, sends bot traffic or starts a scheduler.

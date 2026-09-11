@@ -116,6 +116,20 @@ test("PID 1, current process and forged process-group identities are rejected be
   expect(() => signalAnchoredGroup({ ...current, pid: 1 }, "SIGKILL")).toThrow("unsafe_process_id");
 });
 
+test("anchor enforces the device lease while its controller is SIGSTOP-frozen", async () => {
+  const { path } = spec("family");
+  const controller = Bun.spawn([process.execPath, join(import.meta.dir, "supervisor-driver.ts"), path, "bounded-lease"], { stdin: "ignore", stdout: "ignore", stderr: "pipe" });
+  try {
+    const pids = await waitForPids(path);
+    controller.kill("SIGSTOP");
+    await Bun.sleep(700);
+    expect([pids.root, pids.grandchild!].filter(alive)).toEqual([]);
+  } finally {
+    if (controller.exitCode === null) controller.kill("SIGKILL");
+    await controller.exited;
+  }
+});
+
 test("admission denial never starts the anchor or provider", async () => {
   const { input, path } = spec("hold");
   await expect(new ProcessSupervisor().run(input, { assertCurrent() { throw new Error("not authorized"); } })).rejects.toThrow("not authorized");

@@ -1,14 +1,23 @@
 import { isAbsolute } from "node:path";
 import { processIdentity, stopOwnAnchor } from "./process-group";
+import { elapsedMs } from "./elapsed-clock";
 
 // Private IPC child of ProcessSupervisor. It stays alive after the provider exits
 // so its controller always has a live, verifiable process-group leader to stop.
 if (processIdentity(process.pid).group !== process.pid || !process.send) process.exit(64);
 let started = false;
-let authorizedUntil = performance.now() + 5_000;
+let authorizedUntil = elapsedMs() + 5_000;
 let deadline = authorizedUntil;
+let leaseDeadline = Infinity;
+function updateLease(message: Record<string, unknown>): void {
+  const value = message.authority_deadline_ms;
+  if (value === undefined && leaseDeadline === Infinity) return;
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= elapsedMs()) stopOwnAnchor();
+  leaseDeadline = value as number;
+}
 const timer = setInterval(() => {
-  if (performance.now() >= authorizedUntil || performance.now() >= deadline) stopOwnAnchor();
+  try { if (elapsedMs() >= authorizedUntil || elapsedMs() >= deadline || elapsedMs() >= leaseDeadline) stopOwnAnchor(); }
+  catch { stopOwnAnchor(); }
 }, 25);
 process.on("SIGTERM", () => { /* remain a verifiable anchor during the grace period */ });
 process.on("disconnect", () => stopOwnAnchor());
@@ -16,7 +25,10 @@ process.on("message", (input: unknown) => {
   if (!input || typeof input !== "object") return;
   const message = input as Record<string, unknown>;
   if (message.type === "renew" && started) {
-    authorizedUntil = performance.now() + 1_000;
+    // An old queued IPC renewal must not revive an anchor after suspend or controller loss.
+    if (elapsedMs() >= authorizedUntil || elapsedMs() >= deadline || elapsedMs() >= leaseDeadline) stopOwnAnchor();
+    updateLease(message);
+    authorizedUntil = elapsedMs() + 1_000;
     return;
   }
   if (message.type !== "start" || started) return;
@@ -30,8 +42,10 @@ process.on("message", (input: unknown) => {
     process.send!({ type: "spawn_failed" });
     return;
   }
-  authorizedUntil = performance.now() + 1_000;
-  deadline = performance.now() + timeout;
+  if (elapsedMs() >= authorizedUntil) stopOwnAnchor();
+  updateLease(message);
+  authorizedUntil = elapsedMs() + 1_000;
+  deadline = elapsedMs() + timeout;
   try {
     const child = Bun.spawn(command, { cwd, env, stdin: "pipe", stdout: "inherit", stderr: "inherit" });
     if (typeof stdin === "string") child.stdin.write(stdin);

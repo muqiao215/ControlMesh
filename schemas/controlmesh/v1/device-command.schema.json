@@ -1,0 +1,373 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.controlmesh.dev/controlmesh/v1/device-command.schema.json",
+  "title": "DeviceCommand",
+  "description": "Private worker transport; identities, scopes, workspace mappings and executable adapters come only from trusted configuration.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "request_id",
+    "operation",
+    "arguments"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "controlmesh.device_command.v1"
+    },
+    "request_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+    },
+    "operation": {
+      "enum": [
+        "queue",
+        "inspect",
+        "claim",
+        "start",
+        "renew",
+        "dispatch",
+        "observe",
+        "complete",
+        "unknown",
+        "messages",
+        "send",
+        "ack"
+      ]
+    },
+    "arguments": {
+      "type": "object"
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "operation": {
+          "const": "queue"
+        },
+        "arguments": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [],
+          "properties": {}
+        }
+      }
+    },
+    {
+      "properties": {
+        "operation": {
+          "const": "inspect"
+        },
+        "arguments": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "task_id"
+          ],
+          "properties": {
+            "task_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+            }
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "operation": {
+          "const": "claim"
+        },
+        "arguments": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "task_id",
+            "revision",
+            "ttl_ms",
+            "assignment_digest"
+          ],
+          "properties": {
+            "task_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "ttl_ms": {
+              "type": "integer",
+              "minimum": 500,
+              "maximum": 30000
+            },
+            "assignment_digest": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "operation": {
+          "const": "start"
+        },
+        "arguments": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "lease"
+          ],
+          "properties": {
+            "lease": {
+              "$ref": "execution-lease.schema.json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "operation": {
+          "const": "renew"
+        },
+        "arguments": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "lease",
+            "ttl_ms"
+          ],
+          "properties": {
+            "lease": {
+              "$ref": "execution-lease.schema.json"
+            },
+            "ttl_ms": {
+              "type": "integer",
+              "minimum": 500,
+              "maximum": 30000
+            }
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "operation": {
+          "const": "dispatch"
+        },
+        "arguments": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "lease",
+            "effect_id",
+            "intent"
+          ],
+          "properties": {
+            "lease": {
+              "$ref": "execution-lease.schema.json"
+            },
+            "effect_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+            },
+            "intent": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "operation": {
+          "const": "observe"
+        },
+        "arguments": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "lease",
+            "effect_id",
+            "observation"
+          ],
+          "properties": {
+            "lease": {
+              "$ref": "execution-lease.schema.json"
+            },
+            "effect_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+            },
+            "observation": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "operation": {
+          "const": "complete"
+        },
+        "arguments": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "lease",
+            "effect_id",
+            "result"
+          ],
+          "properties": {
+            "lease": {
+              "$ref": "execution-lease.schema.json"
+            },
+            "effect_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+            },
+            "result": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "operation": {
+          "const": "unknown"
+        },
+        "arguments": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "lease",
+            "reason"
+          ],
+          "properties": {
+            "lease": {
+              "$ref": "execution-lease.schema.json"
+            },
+            "reason": {
+              "type": "string",
+              "pattern": "^[a-z0-9_]{1,96}$"
+            }
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "operation": {
+          "const": "messages"
+        },
+        "arguments": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "lease"
+          ],
+          "properties": {
+            "lease": {
+              "$ref": "execution-lease.schema.json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "operation": {
+          "const": "send"
+        },
+        "arguments": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "lease",
+            "recipient_task",
+            "kind",
+            "payload",
+            "causation_id",
+            "ttl_ms"
+          ],
+          "properties": {
+            "lease": {
+              "$ref": "execution-lease.schema.json"
+            },
+            "recipient_task": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+            },
+            "kind": {
+              "enum": [
+                "tell",
+                "ask_parent",
+                "answer",
+                "handoff"
+              ]
+            },
+            "payload": {
+              "type": "object"
+            },
+            "causation_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "ttl_ms": {
+              "type": "integer",
+              "minimum": 100,
+              "maximum": 3600000
+            }
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "operation": {
+          "const": "ack"
+        },
+        "arguments": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "lease",
+            "message_id",
+            "phase",
+            "evidence"
+          ],
+          "properties": {
+            "lease": {
+              "$ref": "execution-lease.schema.json"
+            },
+            "message_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+            },
+            "phase": {
+              "enum": [
+                "received",
+                "consumed"
+              ]
+            },
+            "evidence": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      }
+    }
+  ]
+}

@@ -366,3 +366,19 @@ Persist uncertain external effects and reconcile before another execution. Use S
 one coordinator host, never as a shared network file. Native clients outside CM still need
 revision reinspection and cannot be made safe by an advisory CM-only lease. This decision
 does not claim production cutover or complete provider parity.
+
+## 2026-09-11 — Separate worker execution authority from human ingress and device clocks
+
+Use an authenticated private worker port and a coordinator-local database. A device token
+maps to a configured owner/device/capability/workspace set; worker events use agent origin.
+Operator assignment and revocation are local authority and revocation is durable. Keep
+absolute workspaces, native databases and provider credentials on the device. Bind an
+assignment digest before claim so an old inspected input cannot execute after reassignment.
+
+The worker derives a conservative deadline from request-send time plus coordinator
+remaining duration. It does not compare device wall clocks. Linux uptime accounts for
+suspend, and the process anchor receives the same authority deadline so controller stalls
+cannot extend work through a fixed heartbeat grace period. A lost/expired authority never
+revives from a delayed response. Repeated external dispatch remains denied and uncertain
+completion requires reconciliation. These controls fence coordinator writes and supervise
+cooperating process groups; they do not make an uncooperative external service transactional.

@@ -10,3 +10,6 @@ export { ProviderPreflightService } from "./providers/preflight-service";
 export { NativeSessionStore, type NativeSessionRef } from "./providers/native-session";
 export { HistoryClient, type HistoryConfig } from "./providers/history-client";
 export { OpenCodeWorker, type OpenCodeWorkerConfig, type IssuedReadAdmission } from "./providers/opencode-worker";
+export { DeviceCoordinator, type DeviceRegistration, type DeviceAssignment, type DeviceJob } from "./device-coordinator";
+export { DeviceClient, DeviceLeaseAuthority, type DeviceClientOptions } from "./device-client";
+export { DeviceWorker, type DeviceAdapter, type DeviceAdapterContext, type DeviceWorkerOptions } from "./device-worker";

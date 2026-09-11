@@ -26,7 +26,7 @@ export class RuntimeDatabase {
       this.transaction(() => {
         const version = (this.sql.query("PRAGMA user_version").get() as { user_version: number }).user_version;
         const app = (this.sql.query("PRAGMA application_id").get() as { application_id: number }).application_id;
-        requireThat(version >= 0 && version <= 2, "unsupported_database_version");
+        requireThat(version >= 0 && version <= 4, "unsupported_database_version");
         requireThat(app === 0 || app === APPLICATION_ID, "foreign_database");
         if (version === 0) {
           const tables = this.sql.query("SELECT name FROM sqlite_master WHERE type='table'").all();
@@ -88,6 +88,23 @@ export class RuntimeDatabase {
               retry_after INTEGER, lease_until INTEGER NOT NULL, probe_token TEXT, report TEXT
             );
             PRAGMA user_version = 2;
+          `);
+        }
+        if (version < 3) {
+          this.sql.exec(`
+            CREATE TABLE device_assignments (
+              task_id TEXT PRIMARY KEY REFERENCES tasks(task_id), principal TEXT NOT NULL,
+              authority_digest TEXT NOT NULL, specification TEXT NOT NULL
+            );
+            PRAGMA user_version = 3;
+          `);
+        }
+        if (version < 4) {
+          this.sql.exec(`
+            CREATE TABLE device_revocations (
+              device_id TEXT PRIMARY KEY, principal TEXT NOT NULL, revoked_at INTEGER NOT NULL
+            );
+            PRAGMA user_version = 4;
           `);
         }
       });

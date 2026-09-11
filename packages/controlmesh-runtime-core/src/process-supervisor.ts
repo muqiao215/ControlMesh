@@ -1,6 +1,7 @@
 import { isAbsolute, join } from "node:path";
 import { processIdentity, signalAnchoredGroup, type ProcessIdentity } from "./process-group";
 import { requireThat } from "./value";
+import { elapsedMs } from "./elapsed-clock";
 
 export interface ProcessSpec {
   command: string[];
@@ -20,6 +21,7 @@ export interface ProcessOutcome {
 export interface ProcessAdmission {
   // Supplied by the trusted worker. It must recheck current lease, grant and workspace binding.
   assertCurrent: () => void;
+  remainingMs?: () => number;
   signal?: AbortSignal;
   abortOnStderrLine?: (line: string) => boolean;
 }
@@ -33,11 +35,16 @@ export class ProcessSupervisor {
     const cap = spec.max_output_bytes ?? 4 * 1024 * 1024;
     requireThat(Number.isSafeInteger(cap) && cap > 0 && cap <= 16 * 1024 * 1024, "invalid_output_limit");
     const authorize = () => {
+      const checkedAt = elapsedMs();
       const result: unknown = admission.assertCurrent();
       if (result !== undefined) {
         void Promise.resolve(result).catch(() => {});
         requireThat(false, "admission_must_be_synchronous");
       }
+      if (!admission.remainingMs) return undefined;
+      const remaining = admission.remainingMs();
+      requireThat(typeof remaining === "number" && Number.isFinite(remaining) && remaining > 0 && remaining <= 86_400_000, "invalid_authority_deadline");
+      return checkedAt + remaining;
     };
     authorize();
     const started = performance.now();
@@ -68,11 +75,11 @@ export class ProcessSupervisor {
         const event = message as Record<string, unknown>;
         if (event.type === "ready") {
           try {
-            authorize();
+            const authorityDeadline = authorize();
             requireThat(!stopping && !admission.signal?.aborted, "execution_cancelled_before_start");
             identity = processIdentity(child.pid);
             requireThat(identity.group === child.pid && identity.session === child.pid, "anchor_not_detached");
-            child.send({ type: "start", ...spec });
+            child.send({ type: "start", ...spec, authority_deadline_ms: authorityDeadline });
           } catch { stop("authority_lost"); }
         } else if (event.type === "exited") {
           code = typeof event.code === "number" ? event.code : null;
@@ -81,7 +88,7 @@ export class ProcessSupervisor {
       },
     });
     const controller = setInterval(() => {
-      try { authorize(); if (!stopping) child.send({ type: "renew" }); }
+      try { const authorityDeadline = authorize(); if (!stopping) child.send({ type: "renew", authority_deadline_ms: authorityDeadline }); }
       catch { stop("authority_lost"); }
     }, 100);
     const deadline = setTimeout(() => stop("deadline"), spec.timeout_ms);

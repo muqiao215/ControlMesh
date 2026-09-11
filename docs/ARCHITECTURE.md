@@ -338,6 +338,17 @@ before verification; only verified native lineage, output and required reads can
 an effect. Interrupted or inconsistent work remains unknown and cannot be auto-resumed.
 This implemented private path does not switch any released transport/runtime owner.
 
+The private `DeviceCoordinator` now exposes a separate loopback worker protocol with
+credentials mapped to trusted device registrations. Tasks have persisted, digest-bound
+assignments to capabilities and logical workspaces; physical paths and executable
+adapters stay on each device. Durable revocation survives coordinator reconstruction.
+The worker's `runProcess` supplies a suspend-aware lease deadline to the Linux process
+anchor. Request replay never restores expired execution authority, and completion commits
+the effect/result receipt atomically. Explicit peer assignments allow cross-device
+mailbox exchange without granting execution access to the peer task. This transport has
+real synthetic x64/ARM64 evidence; native provider fleet adapters and production startup
+remain gated by the active plan.
+
 ## Codekit integration (v0.43.0)
 
 See [CODEKIT-INTEGRATION](CODEKIT-INTEGRATION.md) for the new module boundary, public invocation and limits. This local implementation does not establish deployment acceptance.

@@ -86,6 +86,30 @@ class ControlMeshConfig(BaseModel):
     workspace: dict[str, Any] | None = None
 
 
+class DeviceCommand(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    schema_version: Literal["controlmesh.device_command.v1"]
+    request_id: str
+    operation: Literal["queue", "inspect", "claim", "start", "renew", "dispatch", "observe", "complete", "unknown", "messages", "send", "ack"]
+    arguments: dict[str, Any]
+
+
+class DeviceLeaseWindow(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    schema_version: Literal["controlmesh.device_lease_window.v1"]
+    lease: ExecutionLease
+    remaining_ms: int
+
+
+class DeviceResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    schema_version: Literal["controlmesh.device_response.v1"]
+    request_id: str | None
+    ok: bool
+    data: Any | None = None
+    error: str | None = None
+
+
 class DoctorResult(BaseModel):
     model_config = ConfigDict(extra="allow")
     schema_version: Literal["controlmesh.doctor_result.v1"]

@@ -75,6 +75,27 @@ export interface ControlMeshConfig {
   "workspace"?: Record<string, unknown>;
 }
 
+export interface DeviceCommand {
+  "schema_version": "controlmesh.device_command.v1";
+  "request_id": string;
+  "operation": "queue" | "inspect" | "claim" | "start" | "renew" | "dispatch" | "observe" | "complete" | "unknown" | "messages" | "send" | "ack";
+  "arguments": Record<string, unknown>;
+}
+
+export interface DeviceLeaseWindow {
+  "schema_version": "controlmesh.device_lease_window.v1";
+  "lease": ExecutionLease;
+  "remaining_ms": number;
+}
+
+export interface DeviceResponse {
+  "schema_version": "controlmesh.device_response.v1";
+  "request_id": string | null;
+  "ok": boolean;
+  "data"?: unknown;
+  "error"?: string;
+}
+
 export interface DoctorResult {
   [key: string]: unknown;
   "schema_version": "controlmesh.doctor_result.v1";

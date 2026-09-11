@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.controlmesh.dev/controlmesh/v1/device-lease-window.schema.json",
+  "title": "DeviceLeaseWindow",
+  "description": "Freshly checked coordinator lease duration. The client starts its local deadline before sending the request, subtracts a safety margin, and never revives an expired authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "lease",
+    "remaining_ms"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "controlmesh.device_lease_window.v1"
+    },
+    "lease": {
+      "$ref": "execution-lease.schema.json"
+    },
+    "remaining_ms": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 30000
+    }
+  }
+}
