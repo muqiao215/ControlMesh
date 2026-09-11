@@ -7794,6 +7794,9 @@ var controlmeshSchemas = {
       },
       mailbox_delivery: {
         $ref: "native-mailbox-binding.schema.json"
+      },
+      workspace_write: {
+        $ref: "device-workspace-binding.schema.json"
       }
     }
   },
@@ -7852,7 +7855,7 @@ var controlmeshSchemas = {
       read_count: {
         type: "integer",
         minimum: 0,
-        maximum: 80
+        maximum: 9007199254740991
       },
       evidence: {
         $ref: "device-evidence-ref.schema.json"
@@ -7865,6 +7868,9 @@ var controlmeshSchemas = {
       },
       mailbox_delivery: {
         $ref: "native-mailbox-proof.schema.json"
+      },
+      workspace_write: {
+        $ref: "device-workspace-proof.schema.json"
       }
     }
   },
@@ -8072,6 +8078,78 @@ var controlmeshSchemas = {
         }
       }
     ]
+  },
+  "device-workspace-binding.schema.json": {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    $id: "https://schemas.controlmesh.dev/controlmesh/v1/device-workspace-binding.schema.json",
+    title: "DeviceWorkspaceBinding",
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "profile_digest",
+      "workflow_binding"
+    ],
+    properties: {
+      profile_digest: {
+        type: "string",
+        pattern: "^[a-f0-9]{64}$"
+      },
+      workflow_binding: {
+        type: [
+          "string",
+          "null"
+        ],
+        pattern: "^[a-f0-9]{64}$"
+      }
+    }
+  },
+  "device-workspace-proof.schema.json": {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    $id: "https://schemas.controlmesh.dev/controlmesh/v1/device-workspace-proof.schema.json",
+    title: "DeviceWorkspaceProof",
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "profile_digest",
+      "proposal_digest",
+      "changed_count"
+    ],
+    properties: {
+      profile_digest: {
+        type: "string",
+        pattern: "^[a-f0-9]{64}$"
+      },
+      proposal_digest: {
+        type: "string",
+        pattern: "^[a-f0-9]{64}$"
+      },
+      changed_count: {
+        type: "integer",
+        minimum: 0,
+        maximum: 2048
+      },
+      specmesh: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "snapshot_digest",
+          "status",
+          "closeout_verified"
+        ],
+        properties: {
+          snapshot_digest: {
+            type: "string",
+            pattern: "^[a-f0-9]{64}$"
+          },
+          status: {
+            const: "pass"
+          },
+          closeout_verified: {
+            const: false
+          }
+        }
+      }
+    }
   },
   "doctor-result.schema.json": {
     $schema: "https://json-schema.org/draft/2020-12/schema",

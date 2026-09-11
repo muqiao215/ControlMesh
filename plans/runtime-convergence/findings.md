@@ -1,5 +1,16 @@
 # Findings
 
+## Device protocol and packaged dashboard synchronization
+
+Commit `80b330c` omitted the regenerated `controlmesh/web_static/assets/main.js` after
+adding device write contracts. Both product CI jobs passed their behavior checks but failed
+the final packaged-asset drift gate. The Web imports the SDK's protocol validators, so a
+protocol-only change can require a dashboard rebuild. Rebuild through the Web package with
+CI's Bun 1.3.11; running the build script from the repository root also changes generated
+module-path comments. The corrected package-directory build matches the full diff produced
+by CI run 34654692522. Preserve the drift gate; this correction does not change UI behavior,
+the installed production writer, or the accepted native execution path.
+
 ## Authenticated ingress and conversation recovery
 
 The Python HTTP listener in messenger/feishu/inbound.py passes decoded events onward;

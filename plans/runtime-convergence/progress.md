@@ -6,8 +6,16 @@ Full goal active: CM-R0 through CM-R6 remain in progress, CM-R7 is not activated
 v0.43.0 remains released/installed production. Local TaskHub write/recovery baseline
 `e56d95b7f632c133ba380fa5ae91f94986bff784` has exact-SHA
 [CI success](https://github.com/muqiao215/ControlMesh/actions/runs/34651878404).
-The current increment adds **device-local staged writes and original-proposal recovery**;
-publication and exact-SHA CI must be verified after commit.
+Device-local staged writes and original-proposal recovery were pushed as
+`80b330cc9cde5ab900650df0f127c06ab28c6b37`. Its
+[CI run](https://github.com/muqiao215/ControlMesh/actions/runs/34654692522) passed both
+Python suites, runtime/protocol/SDK tests, actual Docker and installed-wheel smoke. The two
+product jobs failed their final generated-dashboard synchronization check: new device
+protocol validators had not been rebuilt into the wheel's JS asset. The follow-up regenerates
+that asset using CI Bun 1.3.11 from the Web package directory; its complete diff matches
+the asset generated in CI. Local isolated-wheel smoke passed again, including installed
+CLI/HTTP/SDK reads, artifact downloads and mutation rejection. Its repeated build leaves
+the same asset bytes. Exact-SHA CI for this correction remains to be verified after push.
 
 `OpenCodeDeviceAdapter` accepts trusted relative write roots and optional independent
 SpecMesh. Actual native writes stay staged; full manifests/native/session/files remain on
