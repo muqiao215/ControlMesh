@@ -96,3 +96,20 @@ test("received mailbox items survive closing and reopening the on-disk runtime",
     expect(restarted.pending(owner, lease)).toEqual([]);
   } finally { db.close(); rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("schema v1 upgrades transactionally to v2 without replacing tasks or their metadata", () => {
+  const dir = mkdtempSync(join(tmpdir(), "cm-schema-upgrade-"));
+  const path = join(dir, "runtime.sqlite");
+  let db = new RuntimeDatabase(path);
+  try {
+    const kernel = new RuntimeKernel(db);
+    const original = kernel.submit(actor, "create", { task_id: "upgrade", chat_id: "synthetic", status: "waiting", future: { preserved: true } });
+    // Exact v1 table set: v2 only adds provider_checks, leaving all earlier tables unchanged.
+    db.sql.exec("DROP TABLE provider_checks; PRAGMA user_version=1");
+    db.close();
+    db = new RuntimeDatabase(path);
+    expect(db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 2 });
+    expect(new RuntimeKernel(db).inspect(actor, "upgrade")).toEqual(original);
+    expect(db.sql.query("SELECT COUNT(*) AS n FROM provider_checks").get()).toEqual({ n: 0 });
+  } finally { db.close(); rmSync(dir, { recursive: true, force: true }); }
+});

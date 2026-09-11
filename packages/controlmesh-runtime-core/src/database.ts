@@ -26,7 +26,7 @@ export class RuntimeDatabase {
       this.transaction(() => {
         const version = (this.sql.query("PRAGMA user_version").get() as { user_version: number }).user_version;
         const app = (this.sql.query("PRAGMA application_id").get() as { application_id: number }).application_id;
-        requireThat(version === 0 || version === 1, "unsupported_database_version");
+        requireThat(version >= 0 && version <= 2, "unsupported_database_version");
         requireThat(app === 0 || app === APPLICATION_ID, "foreign_database");
         if (version === 0) {
           const tables = this.sql.query("SELECT name FROM sqlite_master WHERE type='table'").all();
@@ -79,6 +79,16 @@ export class RuntimeDatabase {
           `);
         } else {
           requireThat(app === APPLICATION_ID, "foreign_database");
+        }
+        if (version < 2) {
+          this.sql.exec(`
+            CREATE TABLE provider_checks (
+              cache_key TEXT PRIMARY KEY, generation INTEGER NOT NULL, state TEXT NOT NULL,
+              reason TEXT NOT NULL, attempts INTEGER NOT NULL, valid_until INTEGER NOT NULL,
+              retry_after INTEGER, lease_until INTEGER NOT NULL, probe_token TEXT, report TEXT
+            );
+            PRAGMA user_version = 2;
+          `);
         }
       });
       this.sql.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;");
