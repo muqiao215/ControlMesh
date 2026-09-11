@@ -75,6 +75,22 @@ export interface ControlMeshConfig {
   "workspace"?: Record<string, unknown>;
 }
 
+export interface DeliveryReceipt {
+  "schema_version": "controlmesh.delivery_receipt.v1";
+  "delivery_id": string;
+  "envelope_digest": string;
+  "target_digest": string;
+  "adapter_digest": string;
+  "remote_message_id": string;
+}
+
+export interface DeliveryTarget {
+  "transport": string;
+  "chat_id": string;
+  "topic_id": string;
+  "thread_id": string;
+}
+
 export interface DeviceCommand {
   "schema_version": "controlmesh.device_command.v1";
   "request_id": string;
@@ -327,6 +343,23 @@ export interface Task {
   "elapsed_seconds"?: number;
   "result_preview"?: string;
   "last_question"?: string;
+}
+
+export interface TerminalDelivery {
+  "schema_version": "controlmesh.terminal_delivery.v1";
+  "delivery_id": string;
+  "task_id": string;
+  "event_seq": number;
+  "task_revision": number;
+  "fence": number;
+  "status": "done" | "failed" | "cancelled";
+  "origin": "task_result";
+  "command_origin": "human_request" | "agent_message" | "schedule" | "recovery" | "internal";
+  "execution_context": Record<string, unknown>;
+  "target": DeliveryTarget;
+  "text": string;
+  "output_policy": "summarized_only" | "full";
+  "created_at": number;
 }
 
 export interface Topology {

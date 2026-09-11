@@ -533,6 +533,25 @@ qualified local read profile is supported; missing historical manifests and inco
 evidence remain unknown. Other runtime/store/profile recovery and production cutover remain
 in the convergence plan.
 
+## Private TS terminal delivery
+
+`delivery-outbox.ts` owns terminal-result projection and uncertain transport outcomes;
+`feishu-delivery.ts` is its first concrete adapter. Schema 11 retains explicit task routes,
+event-based pending delivery, dispatch attempts, original acknowledgements and accepted
+remote receipts. Kernel terminal events remain durable, allowing projection after restart
+without rerunning execution. Routes derive destinations from issued reply grants and pin
+source/adapter identity. There is no cross-transport broadcast fallback, model injection or
+automatic resend of an uncertain outcome.
+
+The private local entrypoint optionally configures one selected Feishu text adapter; tasks
+still require explicit route binding. Execution completion and delivery completion remain
+distinct. Readback can accept a retained original acknowledgement only after matching current
+authority and the actual remote message; an unobserved send stays unknown. A 128-record
+unresolved queue, four shared dispatch slots and per-task ordering bound work. Shutdown
+drains HTTP before storage closes. HTTP/SIGKILL tests use loopback and fixture
+credentials. Thread/media, other adapters, token refresh and production ingress/cutover
+remain in the convergence plan.
+
 ## Codekit integration (v0.43.0)
 
 See [CODEKIT-INTEGRATION](CODEKIT-INTEGRATION.md) for the new module boundary, public invocation and limits. This local implementation does not establish deployment acceptance.

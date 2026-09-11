@@ -1,9 +1,11 @@
 import { identifier, object, requireThat, RuntimeConflict, type LegacyTask } from "./value";
 import type { LocalTaskRuntime } from "./local-task-runtime";
+import type { DeliveryOutbox } from "./delivery-outbox";
+import type { TerminalDelivery } from "@controlmesh/protocol";
 
 /** Private local control protocol. It never accepts caller-supplied principals, source contexts or grants. */
 export class LocalRuntimeControl {
-  constructor(private readonly runtime: LocalTaskRuntime) {}
+  constructor(private readonly runtime: LocalTaskRuntime, private readonly deliveries?: DeliveryOutbox) {}
 
   async handle(request: unknown): Promise<Record<string, unknown>> {
     let id: string | null = null;
@@ -13,10 +15,14 @@ export class LocalRuntimeControl {
         submit: ["task"], inspect_task: ["task_id"], enqueue: ["task_id", "expected_revision"], inspect_run: ["run_id"],
         resume: ["task_id", "expected_revision", "prompt"], cancel: ["task_id", "expected_revision"], tell: ["task_id", "text"], drain: [],
         inspect_message: ["task_id", "message_id"], mailbox_status: ["task_id"],
+        bind_delivery: ["task_id", "expected_revision", "adapter_id", "output_policy"], deliveries: ["task_id"],
+        drain_deliveries: [], retry_delivery: ["delivery_id"], reconcile_delivery: ["delivery_id", "remote_message_id"], revoke_delivery: ["task_id"],
       };
       requireThat(typeof request.op === "string" && Object.hasOwn(fields, request.op), "unknown_local_operation");
       requireThat(Object.keys(request).every(key => ["id", "op", ...fields[request.op as string]].includes(key)), "unexpected_local_request_field");
       let result: unknown;
+      if (["bind_delivery", "deliveries", "drain_deliveries", "retry_delivery", "reconcile_delivery", "revoke_delivery"].includes(request.op))
+        requireThat(this.deliveries, "delivery_not_configured");
       switch (request.op) {
         case "submit": {
           requireThat(object(request.task) && typeof request.task.chat_id === "string", "invalid_local_task");
@@ -30,7 +36,19 @@ export class LocalRuntimeControl {
         case "tell": identifier(request.task_id); result = this.runtime.tell(id, request.task_id, request.text as string); break;
         case "inspect_message": identifier(request.task_id); identifier(request.message_id); result = this.runtime.inspectMessage(request.task_id, request.message_id); break;
         case "mailbox_status": identifier(request.task_id); result = this.runtime.mailboxStatus(request.task_id); break;
-        case "drain": { await this.runtime.drain(); const queue = this.runtime.queueStatus(); result = { drained: queue.queued === 0 && queue.running === 0, ...queue }; break; }
+        case "drain": { await this.runtime.drain(); await this.deliveries?.drain(); const queue = this.runtime.queueStatus();
+          result = { drained: queue.queued === 0 && queue.running === 0, ...queue, ...(this.deliveries ? { deliveries: this.deliveries.status() } : {}) }; break; }
+        case "bind_delivery": {
+          identifier(request.task_id); identifier(request.adapter_id);
+          this.deliveries!.bindTask(id, request.task_id, request.expected_revision as number, request.adapter_id,
+            request.output_policy as TerminalDelivery["output_policy"] | undefined); result = { bound: true }; break;
+        }
+        case "deliveries": identifier(request.task_id); result = this.deliveries!.list(request.task_id); break;
+        case "drain_deliveries": await this.deliveries!.drain(); result = this.deliveries!.status(); break;
+        case "retry_delivery": identifier(request.delivery_id); result = this.deliveries!.retryBlocked(id, request.delivery_id); break;
+        case "reconcile_delivery": identifier(request.delivery_id); identifier(request.remote_message_id);
+          result = await this.deliveries!.reconcile(request.delivery_id, request.remote_message_id); break;
+        case "revoke_delivery": identifier(request.task_id); this.deliveries!.revokeTask(id, request.task_id); result = { revoked: true }; break;
       }
       return { id, ok: true, result };
     } catch (error) {

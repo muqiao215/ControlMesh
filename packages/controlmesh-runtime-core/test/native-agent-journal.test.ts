@@ -146,10 +146,10 @@ test("schema nine upgrade preserves existing mailbox reservations and their disp
   f.mailbox.acknowledge(actor, "receive", f.leases.child, sent.message_id, "received", null);
   f.db.sql.query("INSERT INTO native_mailbox_deliveries VALUES (?,?,?,?)").run(sent.message_id, "child-effect", "original-message-digest", "original-batch-digest");
   const before = f.db.sql.query("SELECT * FROM execution_manifests ORDER BY effect_id").all();
-  f.db.sql.exec("DROP TABLE native_agent_deliveries; DROP TABLE native_agent_calls; PRAGMA user_version=9");
+  f.db.sql.exec("DROP TABLE transport_receipts; DROP TABLE delivery_outbox; DROP TABLE delivery_routes; DROP TABLE native_agent_deliveries; DROP TABLE native_agent_calls; PRAGMA user_version=9");
   f.db.close(); databases.delete(f.db); f.advance(101);
   const db = new RuntimeDatabase(f.path, f.clock); databases.add(db);
-  expect(db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 10 });
+  expect(db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 11 });
   expect(db.sql.query("SELECT * FROM execution_manifests ORDER BY effect_id").all()).toEqual(before);
   expect(db.sql.query("SELECT message_id,delivery_digest FROM native_mailbox_deliveries").all())
     .toEqual([{ message_id: sent.message_id, delivery_digest: "original-batch-digest" }]);

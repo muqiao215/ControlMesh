@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.controlmesh.dev/controlmesh/v1/delivery-target.schema.json",
+  "title": "DeliveryTarget",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "transport",
+    "chat_id",
+    "topic_id",
+    "thread_id"
+  ],
+  "properties": {
+    "transport": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]{1,32}$"
+    },
+    "chat_id": {
+      "type": "string",
+      "maxLength": 128,
+      "minLength": 1
+    },
+    "topic_id": {
+      "type": "string",
+      "maxLength": 128
+    },
+    "thread_id": {
+      "type": "string",
+      "maxLength": 128
+    }
+  }
+}

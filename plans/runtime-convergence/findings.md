@@ -1,5 +1,18 @@
 # Findings
 
+## Terminal delivery owner under migration
+
+Python bus/bus.py owns injection, locking and output routing. Its unicast path falls back
+to broadcasting on another transport when the target transport is absent; its adapters
+return no persisted delivery receipt, so exception swallowing cannot prove delivery.
+Feishu bot.py's message sender returns None for HTTP/decode failure and does not validate
+the API code before extracting a message ID. The new TS terminal-result owner uses durable
+kernel task.done/failed/cancelled events and an explicit task route instead. Event projection
+and outbox insertion share a transaction; an interrupted sender never causes model replay.
+This is a deliberate delivery-policy correction, not byte-identical routing parity. The
+existing Python production bus and bot remain authoritative until the complete port and
+cutover gates pass.
+
 Native Agent communication: `NativeAgentJournal` records each logical tool request
 before applying it, binds it to the dispatched task/episode manifest, assigns
 `agent_message` provenance internally, and refuses replay of an unresolved request.

@@ -2,20 +2,21 @@
 
 ## Current
 
-Published baseline `ae9861152eadb4e0fae1b40054df5191ef2ff752` includes cross-device native
-Agent communication and has verified green CI
-[34622269044](https://github.com/muqiao215/ControlMesh/actions/runs/34622269044).
+Published baseline `a9ec8b4f396ab1cbc850ba814d15a50dd3740e69` includes cross-device native
+Agent communication and automatic initial mailbox input, with verified green CI
+[34625005898](https://github.com/muqiao215/ControlMesh/actions/runs/34625005898).
 Two OpenCode Agents used scoped MCP send/ask_parent/receive/answer with the coordinator
 on ARM64 and execution on x64. Original-session recall and outcome reconciliation after
 coordinator reopen passed without executing another native command.
 
-Current increment: automatic device initial mailbox input, compact dispatch bindings and
-atomic reservation/consumption are implemented. CI-version Bun with the qualified Docker
-image passed 192 core tests / 2,500 assertions; TS, Web build, nine Python protocol tests,
-Ruff and the 512-module/57-field ownership drift check passed. Real ARM64-coordinator/x64
-OpenCode initial-input acceptance and independent readback passed, including lost completion,
-model-free recovery and original-session recall without redelivery. Publication of this
-increment is being completed; earlier CI is not its acceptance.
+Current increment: schema-11 terminal delivery outbox, Feishu text send/readback and private
+startup/control integration are implemented. Full CI-version Bun with the qualified Docker
+image passed 220 tests / 2,767 assertions in 39.61 seconds. Final focused checks, including
+the live Python fallback, expired-token startup, shared concurrency budget and shutdown,
+passed 41 tests / 327 assertions in 2.31 seconds.
+Real loopback HTTP plus sender SIGKILL/reopen verifies no repeated POST or Agent execution.
+TS, Web build, nine Python protocol tests, Ruff and ownership checks passed. Publication and
+exact-SHA CI remain to verify; earlier CI is not this increment's acceptance.
 
 Full goal active; CM-R0 through CM-R6 remain in progress and CM-R7 is not activated.
 Python v0.43.0 remains the released/installed production runtime. The private TS kernel now
@@ -153,7 +154,7 @@ Earlier implementation history is in Git; it is not duplicated here.
 
 All original CM-R0–CM-R7 gates remain authoritative: remaining provider/transport/workspace/
 artifact owners, native provider write and other image/auth/state profiles, other persisted runtime stores,
-writer exclusion and rollback, device-local History adoption, device-native Agent communication and mailbox application,
+writer exclusion and rollback, device-local History adoption, broader Agent/topology integration,
 independent SpecMesh current-checkout/lifecycle gates, fleet enrollment/rotation/fairness and
 real topology execution, terminal product work, default TS switch, Python retirement and
 release/install/running alignment. A qualified native read profile and isolated process tests do not
@@ -294,9 +295,9 @@ case normalization confirmed removal without rerunning any provider execution.
 
 ## Next
 
-Connect device-native Agent communication and mailbox delivery to actual execution;
-extend provider/write profiles with real native permission and outcome verification.
-Then continue stores, History adoption, SpecMesh lifecycle and the production writer switch.
+Close terminal delivery publication, then extend transport ingress and provider/write profiles
+with real source, permission and outcome verification. Continue stores, device-local History
+adoption, independent SpecMesh lifecycle and the production writer switch.
 The current Node-image process profile is not a substitute for native provider qualification.
 
 ## Device-native communication — 2026-09-12
@@ -409,3 +410,32 @@ its raw report remains in its unique work directory. The readback script was cor
 the marker label and for inspecting an earlier turn after a later turn exists; native
 execution was not repeated for either readback correction. This closes the qualified device
 initial-input acceptance, not the complete runtime migration or production cutover.
+
+## Terminal transport delivery — schema 11
+
+The outbox projects accepted terminal events with task revision/fence and original source
+context separate from event origin. Explicit binding pins reply identity and selected adapter;
+result text cannot redirect delivery. The bounded queue reserves one attempt before network
+effects, retains original acknowledgements before acceptance and assigns a remote receipt once.
+Missing acknowledgements and expired sends stay unknown. Retained acknowledgements can be
+read back after restart without resending. Credential failure before dispatch requires explicit
+retry. Missing adapters never broadcast to another channel. Private configuration/control wires
+binding, drain, readback, revocation and separate delivery status without model injection.
+
+The Feishu text port validates HTTP/API success and original app/chat/message/content using
+the installed official Lark SDK shapes. Headers distinguish scheduled, heartbeat, Agent and
+ordinary tasks. Acceptance uses real loopback HTTP and fixture credentials, including SIGKILL
+after server receipt and before client acknowledgement. The child is reaped; repeated drain
+after database reopen issues no second POST. A separate acceptance-transaction failure retains
+the acknowledgement, then one GET accepts it; repeated reconciliation issues no extra request.
+Changed remote identity/content, missing original receipt, stale routes, credential expiry,
+queue capacity, four shared dispatch slots and concurrent senders are covered. Shutdown
+aborts and drains in-flight HTTP before storage closes. Python's live generic summary fallback
+agrees for all three terminal states. No provider/model commands or real chat notifications
+were used. Rich-media/thread, token refresh, other transport/startup owners and production
+release/install remain required for the full migration.
+
+Upgrade fixtures now construct genuine pre-11 databases before reopening; retaining new tables
+while changing user_version initially failed as expected. Core and focused logs are private
+outputs/runtime-convergence/delivery-{core-final,focused}.log in the shared task workspace. Production
+Python v0.43.0, live services and task writers remain unchanged.

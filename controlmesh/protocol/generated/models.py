@@ -86,6 +86,24 @@ class ControlMeshConfig(BaseModel):
     workspace: dict[str, Any] | None = None
 
 
+class DeliveryReceipt(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    schema_version: Literal["controlmesh.delivery_receipt.v1"]
+    delivery_id: str
+    envelope_digest: str
+    target_digest: str
+    adapter_digest: str
+    remote_message_id: str
+
+
+class DeliveryTarget(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    transport: str
+    chat_id: str
+    topic_id: str
+    thread_id: str
+
+
 class DeviceCommand(BaseModel):
     model_config = ConfigDict(extra="allow")
     schema_version: Literal["controlmesh.device_command.v1"]
@@ -355,6 +373,24 @@ class Task(BaseModel):
     elapsed_seconds: float | None = None
     result_preview: str | None = None
     last_question: str | None = None
+
+
+class TerminalDelivery(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    schema_version: Literal["controlmesh.terminal_delivery.v1"]
+    delivery_id: str
+    task_id: str
+    event_seq: int
+    task_revision: int
+    fence: int
+    status: Literal["done", "failed", "cancelled"]
+    origin: Literal["task_result"]
+    command_origin: Literal["human_request", "agent_message", "schedule", "recovery", "internal"]
+    execution_context: dict[str, Any]
+    target: DeliveryTarget
+    text: str
+    output_policy: Literal["summarized_only", "full"]
+    created_at: int
 
 
 class Topology(BaseModel):

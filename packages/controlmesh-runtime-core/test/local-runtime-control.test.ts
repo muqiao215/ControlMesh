@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LocalRuntimeControl, openLocalRuntime, RuntimeDatabase } from "../src";
+import { LocalRuntimeControl, openLocalRuntime, RuntimeDatabase, type Principal } from "../src";
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -50,6 +50,25 @@ test("private configuration is explicit, legacy state is refused, and config rep
   } finally { await owned.close(); }
 });
 
+test("configured delivery stays independent of native startup and an expired selected-app token blocks before HTTP", async () => {
+  const f = fixture(), tokenPath = join(f.root, "delivery-token.json");
+  writeFileSync(tokenPath, JSON.stringify({ app_id: "cli_fixture", tenant_access_token: "fixture_expired", expires_at: 1 }), { mode: 0o600 });
+  writeFileSync(f.path, JSON.stringify({ ...f.config, source: { ...f.config.source, transport: "fs" },
+    delivery: { kind: "feishu_text", adapter_id: "selected-app", app_id: "cli_fixture", token_file: tokenPath } }));
+  const owned = openLocalRuntime(f.path), control = new LocalRuntimeControl(owned.runtime, owned.deliveries);
+  try {
+    expect(owned.deliveries?.status()).toEqual({ pending: 0, dispatching: 0, sent: 0, unknown: 0, blocked: 0 });
+    expect(await control.handle({ id: "submit", op: "submit", task: { task_id: "a", status: "waiting", chat_id: "oc_fixture" } })).toMatchObject({ ok: true });
+    expect(await control.handle({ id: "bind", op: "bind_delivery", task_id: "a", expected_revision: 1, adapter_id: "selected-app" })).toMatchObject({ ok: true });
+    const principal: Principal = { id: "operator", device_id: "local", origin: "internal", scopes: ["task:read", "task:execute"] };
+    const kernel = owned.runtime.kernel, lease = kernel.claim(principal, "claim", "a", 1, 5000);
+    kernel.start(principal, "start", lease); kernel.finish(principal, "finish", lease, "done", { delivery_text: "fixture summary" });
+    expect(await control.handle({ id: "deliver", op: "drain_deliveries" })).toMatchObject({ ok: true, result: { blocked: 1, sent: 0 } });
+    expect(owned.deliveries!.list("a")[0]).toMatchObject({ reason: "feishu_token_unavailable", observed_receipt: null });
+    expect(kernel.db.sql.query("SELECT COUNT(*) AS n FROM provider_checks").get()).toEqual({ n: 0 }); expect(existsSync(f.data)).toBe(false);
+  } finally { await owned.close(); }
+});
+
 test("actual stdio entrypoint handles bounded commands and preserves request IDs without a provider call", async () => {
   const f = fixture();
   const child = Bun.spawn([process.execPath, join(import.meta.dir, "../scripts/local-runtime.ts"), f.path], { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
@@ -74,10 +93,10 @@ test("schema eight upgrades without losing tasks or queued messages and without 
   const sent = first.runtime.tell("note", "a", "Survive upgrade");
   await first.close();
   const previous = new RuntimeDatabase(join(f.state, "runtime.sqlite"));
-  previous.sql.exec("DROP TABLE native_agent_deliveries; DROP TABLE native_agent_calls; DROP TABLE native_mailbox_deliveries; PRAGMA user_version=8"); previous.close();
+  previous.sql.exec("DROP TABLE transport_receipts; DROP TABLE delivery_outbox; DROP TABLE delivery_routes; DROP TABLE native_agent_deliveries; DROP TABLE native_agent_calls; DROP TABLE native_mailbox_deliveries; PRAGMA user_version=8"); previous.close();
   const restored = openLocalRuntime(f.path);
   try {
-    expect(restored.runtime.kernel.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 10 });
+    expect(restored.runtime.kernel.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 11 });
     expect(restored.runtime.inspectTask("a").task.status).toBe("waiting");
     expect(restored.runtime.inspectMessage("a", sent.message_id).payload).toEqual({ text: "Survive upgrade" });
     expect(restored.runtime.mailboxStatus("a")).toEqual({ pending_count: 1 });

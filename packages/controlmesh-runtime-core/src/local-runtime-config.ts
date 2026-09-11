@@ -12,6 +12,8 @@ import { directoryIdentity } from "./providers/native-manifest";
 import { decodeSnapshot } from "./migration";
 import { digest, identifier, object, requireThat } from "./value";
 import { prepareNativeAgentConfiguration } from "./providers/native-agent-profile";
+import { DeliveryOutbox } from "./delivery-outbox";
+import { FeishuTextDelivery } from "./feishu-delivery";
 
 /** Never log the content: configuration and native auth may contain credentials. */
 function privateFile(path: string): { bytes: Buffer; revision: string } {
@@ -30,7 +32,7 @@ function privateFile(path: string): { bytes: Buffer; revision: string } {
 }
 
 /** Explicit isolated candidate configuration. Reading task state does not inspect or probe any provider. */
-export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; close: () => Promise<void> } {
+export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; deliveries?: DeliveryOutbox; close: () => Promise<void> } {
   const loaded = privateFile(path), config = decodeSnapshot(loaded.bytes).source;
   requireThat(object(config) && config.schema_version === "controlmesh.local_runtime.v1" && config.mode === "candidate", "unsupported_local_runtime_config");
   requireThat(typeof config.state_root === "string" && isAbsolute(config.state_root) && realpathSync(config.state_root) === config.state_root, "private_runtime_state_required");
@@ -67,7 +69,8 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; clo
     requireThat(privateFile(path).revision === loaded.revision && digest(directoryIdentity(root)) === initialRoot, "runtime_configuration_changed");
   };
   const actor: Principal = { id: config.principal_id, device_id: config.device_id, origin: "human_request",
-    scopes: ["task:create", "task:read", "task:execute", "task:resume", "task:cancel", "task:reconcile", "task:admin", "message:send", "message:read", "message:ack", "provider:probe"] };
+    scopes: ["task:create", "task:read", "task:execute", "task:resume", "task:cancel", "task:reconcile", "task:admin", "message:send", "message:read", "message:ack", "provider:probe",
+      "delivery:read", "delivery:configure", "delivery:project", "delivery:send", "delivery:reconcile"] };
   const db = new RuntimeDatabase(join(root, "runtime.sqlite")), kernel = new RuntimeKernel(db), cache = new PreflightCache(db);
   try {
     const runtime = new LocalTaskRuntime(kernel, actor, { command_origin: "human_request", origin: "user", source_scope: "local_foreground", transport: config.source.transport }, task => {
@@ -89,6 +92,25 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; clo
       return new OpenCodeTaskAdapter(kernel, cache, actor, store, { executable: profile.executable, native_configuration: native,
         environment, state_home: root, ...(channel ? { communication: channel } : {}) }, runner, registration).prepare(task);
     }, current, object(config.limits) ? config.limits : {});
-    return { runtime, close: async () => { await runtime.stop(); db.close(); } };
+    let deliveries: DeliveryOutbox | undefined;
+    if (config.delivery !== undefined) {
+      const delivery = config.delivery;
+      requireThat(object(delivery) && delivery.kind === "feishu_text" && typeof delivery.adapter_id === "string"
+        && typeof delivery.app_id === "string" && typeof delivery.token_file === "string"
+        && [undefined, "https://open.feishu.cn", "https://open.larksuite.com"].includes(delivery.domain as string | undefined), "invalid_local_delivery_profile");
+      const transport = new FeishuTextDelivery({ adapter_id: delivery.adapter_id, app_id: delivery.app_id, transport: config.source.transport,
+        domain: delivery.domain as "https://open.feishu.cn" | "https://open.larksuite.com" | undefined, assertCurrent: current,
+        async tenantAccessToken(context) {
+          context.assertCurrent(); current();
+          const credential = decodeSnapshot(privateFile(delivery.token_file as string).bytes).source;
+          requireThat(object(credential) && credential.app_id === delivery.app_id && typeof credential.tenant_access_token === "string"
+            && Number.isSafeInteger(credential.expires_at) && Number(credential.expires_at) > Date.now(), "feishu_token_unavailable");
+          return credential.tenant_access_token;
+        } });
+      deliveries = new DeliveryOutbox(kernel, actor, [transport], current);
+    }
+    return { runtime, ...(deliveries ? { deliveries } : {}), close: async () => {
+      await Promise.all([runtime.stop(), deliveries?.stop()]); db.close();
+    } };
   } catch (error) { db.close(); throw error; }
 }

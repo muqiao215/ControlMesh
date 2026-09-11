@@ -26,7 +26,7 @@ export class RuntimeDatabase {
       this.transaction(() => {
         const version = (this.sql.query("PRAGMA user_version").get() as { user_version: number }).user_version;
         const app = (this.sql.query("PRAGMA application_id").get() as { application_id: number }).application_id;
-        requireThat(version >= 0 && version <= 10, "unsupported_database_version");
+        requireThat(version >= 0 && version <= 11, "unsupported_database_version");
         requireThat(app === 0 || app === APPLICATION_ID, "foreign_database");
         if (version === 0) {
           const tables = this.sql.query("SELECT name FROM sqlite_master WHERE type='table'").all();
@@ -184,6 +184,30 @@ export class RuntimeDatabase {
               message_digest TEXT NOT NULL
             );
             PRAGMA user_version = 10;
+          `);
+        }
+        if (version < 11) {
+          this.sql.exec(`
+            CREATE TABLE delivery_routes (
+              task_id TEXT PRIMARY KEY REFERENCES tasks(task_id), principal TEXT NOT NULL,
+              adapter_id TEXT NOT NULL, adapter_digest TEXT NOT NULL, binding TEXT NOT NULL,
+              digest TEXT NOT NULL, first_event INTEGER NOT NULL, active INTEGER NOT NULL DEFAULT 1
+            );
+            CREATE TABLE delivery_outbox (
+              delivery_id TEXT PRIMARY KEY, event_seq INTEGER NOT NULL UNIQUE REFERENCES events(seq),
+              task_id TEXT NOT NULL REFERENCES delivery_routes(task_id), principal TEXT NOT NULL,
+              route_digest TEXT NOT NULL, envelope TEXT NOT NULL, envelope_digest TEXT NOT NULL,
+              state TEXT NOT NULL CHECK(state IN ('pending','dispatching','sent','unknown','blocked')),
+              attempt_id TEXT, attempt_started INTEGER, attempt_until INTEGER, observation TEXT, receipt TEXT, reason TEXT,
+              created_at INTEGER NOT NULL
+            );
+            CREATE INDEX delivery_pending ON delivery_outbox(principal,state,event_seq);
+            CREATE TABLE transport_receipts (
+              adapter_digest TEXT NOT NULL, remote_message_id TEXT NOT NULL,
+              delivery_id TEXT NOT NULL UNIQUE REFERENCES delivery_outbox(delivery_id),
+              PRIMARY KEY(adapter_digest,remote_message_id)
+            );
+            PRAGMA user_version = 11;
           `);
         }
       });

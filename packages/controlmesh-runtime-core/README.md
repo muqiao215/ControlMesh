@@ -129,6 +129,63 @@ grants. New trusted task submissions use `TaskIngress`; migration uses its separ
 snapshot path. Valid legacy contexts remain readable, but incomplete context cannot reach
 the native worker and new ingress cannot choose `legacy_compat` as a fallback.
 
+## Durable terminal-result delivery
+
+`DeliveryOutbox` projects accepted `task.done`, `task.failed` and `task.cancelled` events
+into schema-11 outbox records. Projection and insertion are transactional; a restart can
+catch up without executing a model. Routes must be explicitly bound while a task is
+waiting. Each route pins the issued grant's transport/chat/topic/thread, source context,
+output policy and selected adapter. A result body cannot select a destination or turn a
+scheduled result into user authorization. No missing-target broadcast fallback exists.
+At most 128 unresolved records are projected; later events stay durable. A task's later
+result cannot overtake its unresolved earlier delivery.
+
+One sender reserves an attempt before issuing HTTP. Controllers share at most four active
+sends in the coordinator database. Shutdown aborts/drains HTTP before closing storage.
+Lost/expired sends stay unknown and are never reclaimed for automatic resend. The original
+remote acknowledgement is retained
+before accepting sent state. If local acceptance fails, explicit readback of that acknowledged
+message can reconcile without POST/model execution. No original acknowledgement means no
+automatic reconciliation; a similar message is insufficient. A remote receipt is assigned
+once per adapter. Credential/preparation failure blocks before send and requires explicit retry.
+
+`FeishuTextDelivery` is the first concrete adapter, for chat-addressed plain text. It checks
+HTTP/API success, message ID, selected app sender, chat, text and creation time. Readback also
+rejects deleted/updated messages. Shapes follow the installed official Lark SDK and the
+[send](https://open.feishu.cn/document/server-docs/im-v1/message/create) and
+[get](https://open.feishu.cn/document/server-docs/im-v1/message/get) contracts. Responses are
+bounded, redirects denied and errors omit provider bodies/tokens. Tests use real loopback
+HTTP and fixture credentials; no real Feishu chat was contacted. Thread/reply, cards/files,
+other transports, token refresh and production ingress remain required ports. API
+acknowledgement is not end-user read status.
+
+The private local entrypoint accepts optional delivery configuration. Its `source.transport`
+must match the intended reply channel (for example `fs`). The selected app must be explicit;
+credentials are not discovered or bound automatically.
+
+```json
+{
+  "delivery": {
+    "kind": "feishu_text",
+    "adapter_id": "selected-feishu-app",
+    "app_id": "cli_explicitly_selected_app",
+    "token_file": "/absolute/private/tenant-token.json"
+  }
+}
+```
+
+The owner-only token file contains `app_id`, `tenant_access_token` and `expires_at` (Unix
+milliseconds); expiry or app mismatch blocks before HTTP. Startup/inspection do not read
+the token and control replies never contain it. Token issuance/refresh remains external.
+Before enqueueing, `bind_delivery` takes `task_id`, `expected_revision`, `adapter_id` and
+optional `output_policy` (`summarized_only` by default; `full` only when explicit). Enabling
+an adapter creates no task routes. `drain` runs queued work and drains bound results, reporting
+separate delivery counts; `drain_deliveries` does only the latter. `deliveries` lists a task's
+states and distinguishes observed from accepted receipts. `retry_delivery` admits only an
+unstarted blocked record; `reconcile_delivery` requires the original `remote_message_id`;
+`revoke_delivery` disables that task's route. These are private control operations, not new
+public Web/SDK mutations.
+
 ## Snapshot migration
 
 `LegacyMigration` imports a reviewed snapshot into an empty, explicit database. It keeps
@@ -249,7 +306,7 @@ It keeps the original goldens and separately exercises stricter TS admission rul
 static tool expressions are retained; portable grant tokens have their own bounded format.
 
 Remaining before activation: reconciliation for the other execution profiles and abandonment policy, general resume integration,
-provider adapter/permission parity and non-Linux supervision, transport delivery, all other Python
+provider adapter/permission parity and non-Linux supervision, remaining transport delivery/ingress, all other Python
 stores, other provider profiles over the device transport, the full native
 continuation matrix, SpecMesh lifecycle admission, full rollback and production-writer exclusion.
 Generic mailbox application references remain reports; qualified native OpenCode reservations

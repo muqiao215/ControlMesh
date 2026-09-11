@@ -7150,6 +7150,79 @@ var controlmeshSchemas = {
       }
     }
   },
+  "delivery-receipt.schema.json": {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    $id: "https://schemas.controlmesh.dev/controlmesh/v1/delivery-receipt.schema.json",
+    title: "DeliveryReceipt",
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "schema_version",
+      "delivery_id",
+      "envelope_digest",
+      "target_digest",
+      "adapter_digest",
+      "remote_message_id"
+    ],
+    properties: {
+      schema_version: {
+        const: "controlmesh.delivery_receipt.v1"
+      },
+      delivery_id: {
+        type: "string",
+        pattern: "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+      },
+      envelope_digest: {
+        type: "string",
+        pattern: "^[a-f0-9]{64}$"
+      },
+      target_digest: {
+        type: "string",
+        pattern: "^[a-f0-9]{64}$"
+      },
+      adapter_digest: {
+        type: "string",
+        pattern: "^[a-f0-9]{64}$"
+      },
+      remote_message_id: {
+        type: "string",
+        maxLength: 192,
+        minLength: 1
+      }
+    }
+  },
+  "delivery-target.schema.json": {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    $id: "https://schemas.controlmesh.dev/controlmesh/v1/delivery-target.schema.json",
+    title: "DeliveryTarget",
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "transport",
+      "chat_id",
+      "topic_id",
+      "thread_id"
+    ],
+    properties: {
+      transport: {
+        type: "string",
+        pattern: "^[a-z0-9_-]{1,32}$"
+      },
+      chat_id: {
+        type: "string",
+        maxLength: 128,
+        minLength: 1
+      },
+      topic_id: {
+        type: "string",
+        maxLength: 128
+      },
+      thread_id: {
+        type: "string",
+        maxLength: 128
+      }
+    }
+  },
   "device-command.schema.json": {
     $schema: "https://json-schema.org/draft/2020-12/schema",
     $id: "https://schemas.controlmesh.dev/controlmesh/v1/device-command.schema.json",
@@ -8750,6 +8823,144 @@ var controlmeshSchemas = {
       },
       last_question: {
         type: "string"
+      }
+    }
+  },
+  "terminal-delivery.schema.json": {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    $id: "https://schemas.controlmesh.dev/controlmesh/v1/terminal-delivery.schema.json",
+    title: "TerminalDelivery",
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "schema_version",
+      "delivery_id",
+      "task_id",
+      "event_seq",
+      "task_revision",
+      "fence",
+      "status",
+      "origin",
+      "command_origin",
+      "execution_context",
+      "target",
+      "text",
+      "output_policy",
+      "created_at"
+    ],
+    properties: {
+      schema_version: {
+        const: "controlmesh.terminal_delivery.v1"
+      },
+      delivery_id: {
+        type: "string",
+        pattern: "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+      },
+      task_id: {
+        type: "string",
+        pattern: "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+      },
+      event_seq: {
+        type: "integer",
+        minimum: 1
+      },
+      task_revision: {
+        type: "integer",
+        minimum: 1
+      },
+      fence: {
+        type: "integer",
+        minimum: 0
+      },
+      status: {
+        enum: [
+          "done",
+          "failed",
+          "cancelled"
+        ]
+      },
+      origin: {
+        const: "task_result"
+      },
+      command_origin: {
+        enum: [
+          "human_request",
+          "agent_message",
+          "schedule",
+          "recovery",
+          "internal"
+        ]
+      },
+      execution_context: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "trace_id",
+          "origin",
+          "source_scope",
+          "transport",
+          "source_ref"
+        ],
+        properties: {
+          trace_id: {
+            type: "string",
+            pattern: "^[a-f0-9]{32}$"
+          },
+          origin: {
+            enum: [
+              "background",
+              "cron",
+              "webhook_wake",
+              "webhook_cron",
+              "heartbeat",
+              "interagent",
+              "task_result",
+              "task_question",
+              "user",
+              "api"
+            ]
+          },
+          source_scope: {
+            enum: [
+              "local_foreground",
+              "direct_message",
+              "group_message",
+              "bot_handoff",
+              "api",
+              "cron",
+              "webhook",
+              "heartbeat",
+              "background_task",
+              "task_result"
+            ]
+          },
+          transport: {
+            type: "string",
+            pattern: "^[a-z0-9_-]{1,32}$"
+          },
+          source_ref: {
+            type: "string",
+            pattern: "^([a-f0-9]{24})?$"
+          }
+        }
+      },
+      target: {
+        $ref: "delivery-target.schema.json"
+      },
+      text: {
+        type: "string",
+        maxLength: 65536,
+        minLength: 1
+      },
+      output_policy: {
+        enum: [
+          "summarized_only",
+          "full"
+        ]
+      },
+      created_at: {
+        type: "integer",
+        minimum: 0
       }
     }
   },

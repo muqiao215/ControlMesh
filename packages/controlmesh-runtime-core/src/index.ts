@@ -31,3 +31,5 @@ export { LocalTaskRuntime, type LocalRun, type LocalTaskExecution, type LocalTas
 export { OpenCodeTaskAdapter, type OpenCodeTaskRegistration } from "./providers/opencode-task-adapter";
 export { openLocalRuntime } from "./local-runtime-config";
 export { LocalRuntimeControl } from "./local-runtime-control";
+export { DeliveryOutbox, type DeliveryAdapter, type DeliveryContext, type PreparedDelivery, type DeliveryView } from "./delivery-outbox";
+export { FeishuTextDelivery, type FeishuDeliveryConfiguration } from "./feishu-delivery";

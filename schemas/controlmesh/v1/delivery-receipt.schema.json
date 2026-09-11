@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.controlmesh.dev/controlmesh/v1/delivery-receipt.schema.json",
+  "title": "DeliveryReceipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "delivery_id",
+    "envelope_digest",
+    "target_digest",
+    "adapter_digest",
+    "remote_message_id"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "controlmesh.delivery_receipt.v1"
+    },
+    "delivery_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+    },
+    "envelope_digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "target_digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "adapter_digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "remote_message_id": {
+      "type": "string",
+      "maxLength": 192,
+      "minLength": 1
+    }
+  }
+}
