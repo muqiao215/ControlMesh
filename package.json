@@ -4,6 +4,7 @@
   "type": "module",
   "packageManager": "pnpm@10.33.4",
   "scripts": {
+    "runtime": "bun packages/controlmesh-runtime-core/scripts/cm-runtime.ts",
     "generate:protocol": "node packages/controlmesh-protocol/scripts/generate.mjs",
     "generate:protocol:python": "uv run python scripts/generate_protocol.py",
     "generate:all-protocol": "pnpm generate:protocol && pnpm generate:protocol:python",

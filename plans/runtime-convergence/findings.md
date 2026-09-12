@@ -1,5 +1,37 @@
 # Findings
 
+## Persistent local runtime entry — 2026-09-13 in progress
+
+The preceding turn changed authoritative code and pushed e2b16e3; it is progress, not a
+blocked wait. Exact CI 34709699732 completed successfully this turn. Previous local startup
+was scripts/local-runtime.ts with bounded concurrent JSON lines on stdin/stdout. The runtime
+and native recovery owners already exist, but a second terminal cannot reconnect to that
+control channel. LocalRuntimeControl also lacks a bounded task list and event cursor for a
+workbench. These are remaining CM-R1/R3 entrypoint owners, not a reason to create another
+task database or replay provider sessions. The selected next implementation is a private
+Unix-socket service, normal CLI commands, and authority-scoped task/event reads; graphical
+terminal product acceptance and production cutover stay pending.
+
+The socket service, CLI entry and bounded task/event reads are implemented. A real-process
+experiment showed Bun 1.3.11 reports ENOENT for a SIGKILL-orphaned socket whose inode still
+exists. Treating that verified refusal alongside ECONNREFUSED, under an OS-held lock and
+unchanged-inode check, enables restart without deleting active/replaced endpoints. Clean
+close also explicitly removes its own inode because Bun can leave it behind. Timeouts and
+permission failures remain unknown. Creation emits authorization as its own event; initial
+test assumptions of one/two events were corrected to preserve that provenance. Explicit
+event reads retain the kernel's existing task:admin permission; task lists are local-principal
+scoped. Node data callbacks were narrowed to Buffer for typecheck.
+
+CLI process/restart cases passed 4 tests / 39 assertions / 5.85s. A normal configured Docker
+service test passed 1 / 161 / 16.37s: client exit, automatic queue execution, service restart,
+same native session and changed current-file publication. The Claude process is synthetic;
+the broker, native verifier, OS processes, socket, SQLite and Docker are real. Original
+focused failures were preserved in /tmp/cm-runtime-service-focused.log; final targeted logs
+are /tmp/cm-runtime-cli-final.log and /tmp/cm-runtime-service-container.log. Full gate passed
+803 tests / 10317 assertions / 75 files / 447.07s, exit 0, in /tmp/cm-runtime-service-full.log.
+Typecheck and normal pnpm command help passed. No database or public protocol schema changed.
+No real model or production service was started. Final exact-commit CI remains to be checked.
+
 ## Canonical artifact publication — 2026-09-13 checkpoint
 
 The inbox owner at ad9c20c passed exact-commit CI 34707785916. Received bytes now have a

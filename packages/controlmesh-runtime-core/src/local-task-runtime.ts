@@ -97,6 +97,31 @@ export class LocalTaskRuntime {
     requireThat(actor.id === this.actor.id && actor.device_id === this.actor.device_id && actor.origin === this.actor.origin, "local_principal_mismatch");
   }
   inspectTask(taskId: string): TaskSnapshot { this.current(); return this.kernel.inspect(this.actor, taskId); }
+  listTasks(after = "", limit = 50) {
+    this.current(); requireScope(this.actor, "task:read"); if (after !== "") identifier(after);
+    requireThat(Number.isSafeInteger(limit) && limit >= 1 && limit <= 100, "invalid_local_page_limit");
+    const rows = this.kernel.db.sql.query("SELECT task_id FROM tasks WHERE principal=? AND task_id>? ORDER BY task_id LIMIT ?")
+      .all(this.actor.id, after, limit + 1) as { task_id: string }[];
+    const tasks = rows.slice(0, limit).map(({ task_id }) => {
+      const snapshot = this.kernel.inspect(this.actor, task_id), task = snapshot.task;
+      const run = this.kernel.db.sql.query("SELECT run_id,state,outcome FROM local_runs WHERE task_id=? AND principal=? AND device_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1")
+        .get(task_id, this.actor.id, this.actor.device_id!) as { run_id: string; state: string; outcome: string | null } | null;
+      return { task_id, status: task.status, revision: snapshot.revision, needs_reconciliation: snapshot.needs_reconciliation,
+        title: typeof task.title === "string" ? task.title.slice(0, 160) : typeof task.prompt === "string" ? task.prompt.slice(0, 160) : "",
+        provider: typeof task.provider === "string" ? task.provider : null, model: typeof task.model === "string" ? task.model : null,
+        project: typeof task.repo_root === "string" ? task.repo_root : null,
+        run: run ? { run_id: run.run_id, state: run.state, outcome: run.outcome ? JSON.parse(run.outcome) : null } : null };
+    });
+    return { tasks, next_after: rows.length > limit ? tasks.at(-1)!.task_id : null };
+  }
+  taskEvents(taskId: string, after = 0, limit = 50) {
+    this.inspectTask(taskId);
+    requireThat(Number.isSafeInteger(after) && after >= 0 && Number.isSafeInteger(limit) && limit >= 1 && limit <= 100, "invalid_local_event_cursor");
+    const rows = this.kernel.db.sql.query("SELECT seq,kind,revision,fence,origin,at,payload FROM events WHERE task_id=? AND seq>? ORDER BY seq LIMIT ?")
+      .all(taskId, after, limit + 1) as { seq: number; kind: string; revision: number; fence: number; origin: string; at: number; payload: string }[];
+    const events = rows.slice(0, limit).map(row => ({ ...row, payload: JSON.parse(row.payload) }));
+    return { task_id: taskId, events, next_after: events.at(-1)?.seq ?? after, has_more: rows.length > limit };
+  }
   parallelLimit(): number { this.current(); return this.parallelism; }
   queueStatus(): { queued: number; running: number } {
     this.current(); requireScope(this.actor, "task:read");

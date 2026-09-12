@@ -856,6 +856,16 @@ in the convergence plan.
 
 ## Private TS terminal delivery
 
+The candidate `scripts/cm-runtime.ts` entry connects to a persistent local Unix-socket
+service (`local-runtime-service.ts` / `runtime-control-socket.ts`). It uses the existing
+LocalTaskRuntime, LocalRuntimeControl and SQLite owners. Client lifetime does not own task
+execution; concurrent requests allow cancellation during asynchronous work. A descriptor
+flock fences the listener before profile startup, and stale sockets require connection
+refusal plus identity checks before removal. Task/event reads stay bounded and retain kernel
+authorization and provenance. The normal command path and limits are in the
+[local service runbook](../plans/runtime-convergence/local-control-service.md). This adds no
+public mutation API, installed default switch or completed interactive-terminal claim.
+
 `delivery-outbox.ts` owns terminal-result projection and uncertain transport outcomes;
 `feishu-delivery.ts` is its first concrete adapter. Schema 11 retains explicit task routes,
 event-based pending delivery, dispatch attempts, original acknowledgements and accepted

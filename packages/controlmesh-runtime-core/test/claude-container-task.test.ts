@@ -7,6 +7,8 @@ import { ClaudeTaskAdapter } from "../src/providers/claude-task-adapter";
 import { PreflightCache } from "../src/providers/preflight-cache";
 import { digest } from "../src/value";
 import type { ClaudeTaskConfiguration } from "../src/providers/claude-task-profile";
+import { startLocalRuntimeService } from "../src/local-runtime-service";
+import { requestRuntimeControl } from "../src/runtime-control-socket";
 
 const actual = process.env.CM_CONTAINER_TEST_IMAGE ? test : test.skip;
 const cleanup: (() => void | Promise<void>)[] = [];
@@ -72,6 +74,42 @@ actual("normal configuration runs and resumes Claude in Docker with image-owned 
   const records = f.records(); expect(records).toHaveLength(6); expect(records.every(row => row.state === "removed")).toBe(true);
   for (const row of f.rows("SELECT payload FROM execution_manifests")) expect(JSON.parse(row.payload).container.runtime_digest).toMatch(/^[a-f0-9]{64}$/);
   for (const row of f.rows("SELECT result FROM episodes")) expect(JSON.parse(row.result).container).toMatchObject({ image_id: f.selected.container!.image_id, cleanup: "removed" });
+}, 90_000);
+
+actual("persistent socket service executes after clients disconnect and resumes the original native session after service restart", async () => {
+  // Synthetic Claude, actual Docker, native stream verification, file publication and normal service configuration.
+  const f = await fixture(); await f.opened.close();
+  const socket = join(f.root, "runtime.sock"); let service = await startLocalRuntimeService(f.file, socket);
+  cleanup.push(() => service.close()); let sequence = 0;
+  const call = (op: string, args = {}) => requestRuntimeControl(socket, { id: `client-${++sequence}`, op, ...args });
+  const terminal = async () => {
+    const until = Date.now() + 45_000;
+    while (Date.now() < until) {
+      const reply = await call("inspect_task", { task_id: "task" }); expect(reply.ok).toBe(true);
+      const snapshot = reply.result as any;
+      if (["done", "failed", "cancelled", "stale"].includes(snapshot.task.status)) return snapshot;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    throw new Error("service task did not reach a terminal observation");
+  };
+  expect(await call("submit", { task: { task_id: "task", chat_id: "fixture", status: "waiting", provider: "claude", model: "fixture-model",
+    repo_root: f.workspace, prompt: "Read PROJECT.md and write result.txt.", completion_requirements: { schema_version: "controlmesh.task_completion.v1", files: [{ path: "result.txt", mode: "write" }] } } })).toMatchObject({ ok: true });
+  expect(await call("enqueue", { task_id: "task", expected_revision: 1 })).toMatchObject({ ok: true });
+  const first = await terminal(); expect(first.task.status).toBe("done");
+  expect(readFileSync(join(f.workspace, "result.txt"), "utf8")).toBe("current fact\n");
+  const original = readFileSync(join(f.config, "inputs.jsonl"), "utf8");
+  expect(original.trim().split("\n")).toHaveLength(1);
+  await service.close(); service = await startLocalRuntimeService(f.file, socket);
+  expect((await call("inspect_task", { task_id: "task" })).result).toEqual(first);
+  expect(readFileSync(join(f.config, "inputs.jsonl"), "utf8")).toBe(original);
+  writeFileSync(join(f.workspace, "PROJECT.md"), "current fact after reconnect\n");
+  const resumed = await call("resume", { task_id: "task", expected_revision: first.revision, prompt: "Continue the same session and read the changed PROJECT.md." });
+  expect(resumed.ok).toBe(true);
+  expect(await call("enqueue", { task_id: "task", expected_revision: (resumed.result as any).revision })).toMatchObject({ ok: true });
+  expect((await terminal()).task.status).toBe("done");
+  const inputs = readFileSync(join(f.config, "inputs.jsonl"), "utf8").trim().split("\n").map(line => JSON.parse(line));
+  expect(inputs).toHaveLength(2); expect(inputs[1].session_id).toBe(inputs[0].session_id);
+  expect(readFileSync(join(f.workspace, "result.txt"), "utf8")).toBe("current fact after reconnect\n");
 }, 90_000);
 
 actual("container result lost before observation recovers through normal startup without a build, process or second publication", async () => {

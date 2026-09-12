@@ -28,6 +28,7 @@ export class LocalRuntimeControl {
       requireThat(object(request), "invalid_local_request"); identifier(request.id); id = request.id;
       const fields: Record<string, readonly string[]> = {
         ...topologyControlFields,
+        status: [], list_tasks: ["after", "limit"], task_events: ["task_id", "after", "limit"],
         submit: ["task", "specmesh_requirements_sha256"], inspect_task: ["task_id"], enqueue: ["task_id", "expected_revision"], inspect_run: ["run_id"],
         resume: ["task_id", "expected_revision", "prompt"], cancel: ["task_id", "expected_revision"], tell: ["task_id", "text"], drain: [],
         inspect_message: ["task_id", "message_id"], mailbox_status: ["task_id"],
@@ -47,6 +48,9 @@ export class LocalRuntimeControl {
         requireThat(this.deliveries, "delivery_not_configured");
       if (Object.hasOwn(topologyControlFields, request.op)) result = await topologyControl(this.scheduler, request, id);
       switch (request.op) {
+        case "status": result = { queue: this.runtime.queueStatus(), parallelism: this.runtime.parallelLimit() }; break;
+        case "list_tasks": result = this.runtime.listTasks(request.after as string | undefined, request.limit as number | undefined); break;
+        case "task_events": identifier(request.task_id); result = this.runtime.taskEvents(request.task_id, request.after as number | undefined, request.limit as number | undefined); break;
         case "history_search":
           requireThat(this.history && typeof request.provider === "string" && typeof request.query === "string", "native_history_not_configured");
           result = await this.history.search(request.provider, request.query); break;

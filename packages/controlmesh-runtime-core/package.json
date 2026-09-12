@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
+  "bin": { "cm-runtime": "./scripts/cm-runtime.ts" },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
     "test": "bun test test/*.test.ts"

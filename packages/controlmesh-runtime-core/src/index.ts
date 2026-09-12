@@ -68,3 +68,5 @@ export { decodeTopologySchedulePlan, type TopologySchedulePlan, type ScheduleNod
 
 export { DeviceTopologyRuntime, type DeviceTopologyRoute } from "./device-topology-runtime";
 export type { TopologyRuntime } from "./topology-runtime";
+export { startLocalRuntimeService } from "./local-runtime-service";
+export { listenRuntimeControl, requestRuntimeControl } from "./runtime-control-socket";

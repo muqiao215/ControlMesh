@@ -1,0 +1,99 @@
+import { afterEach, expect, test } from "bun:test";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { parseRuntimeCli, renderRuntimeReply, terminalText } from "../src/runtime-cli";
+import { RuntimeDatabase } from "../src/database";
+const roots: string[] = [];
+afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
+function fixture() {
+  const root = mkdtempSync(join(tmpdir(), "cm-cli-")); roots.push(root);
+  const state = join(root, "state"), workspace = join(root, "project"), data = join(root, "native-data");
+  mkdirSync(state, { mode: 0o700 }); mkdirSync(workspace, { mode: 0o700 });
+  const config = join(root, "profile.json"), socket = join(root, "runtime.sock");
+  writeFileSync(config, JSON.stringify({ schema_version: "controlmesh.local_runtime.v1", mode: "candidate", state_root: state,
+    principal_id: "operator", device_id: "desktop", source: { command_origin: "human_request", origin: "user", source_scope: "local_foreground", transport: "terminal" },
+    opencode: { executable: "/missing/opencode", model: "fixture/model", cli_version: "1.18.29", native_configuration: {},
+      environment: { XDG_DATA_HOME: data, XDG_CACHE_HOME: join(root, "native-cache") },
+      container: { docker: "/missing/docker", socket: "/missing/docker.sock", image_id: `sha256:${"a".repeat(64)}`, node_executable: "/usr/local/bin/node" } },
+    workspace: { directory: workspace, read_files: [], required_reads: [] } }), { mode: 0o600 });
+  return { root, state, workspace, data, config, socket };
+}
+const executable = join(import.meta.dir, "../scripts/cm-runtime.ts");
+async function invoke(socket: string, ...args: string[]) {
+  const child = Bun.spawn([process.execPath, executable, "--socket", socket, "--json", ...args], { stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+  const [stdout, stderr, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+  return { code, stderr, value: stdout.trim() ? JSON.parse(stdout) : null };
+}
+async function serve(config: string, socket: string) {
+  const child = Bun.spawn([process.execPath, executable, "--socket", socket, "serve", "--config", config], { stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+  const reader = child.stdout.getReader(), error = new Response(child.stderr).text();
+  const deadline = setTimeout(() => { if (child.exitCode === null) child.kill("SIGTERM"); }, 10_000);
+  let line = "";
+  try {
+    while (!line.includes("\n")) { const next = await reader.read(); if (next.done) break; line += new TextDecoder().decode(next.value); }
+    if (!line.trim()) throw new Error(`service startup failed: ${await error}`);
+    expect(JSON.parse(line.trim())).toMatchObject({ status: "listening", socket });
+  } catch (cause) { if (child.exitCode === null) child.kill("SIGTERM"); await child.exited; await reader.cancel(); throw cause; }
+  finally { clearTimeout(deadline); }
+  return { child, async stop(signal: "SIGTERM" | "SIGKILL" = "SIGTERM") {
+    if (child.exitCode === null) child.kill(signal); const code = await child.exited; await reader.cancel(); expect(await error).toBe(""); return code;
+  } };
+}
+
+test("normal command entrypoint reconnects after clients exit and service SIGKILL, preserving tasks and cancellations", async () => {
+  const f = fixture(); let service = await serve(f.config, f.socket);
+  try {
+    const args = ["new", "project-task", "--project", f.workspace, "--provider", "opencode", "--model", "fixture/model", "--prompt", "中文计划\n继续", "--request-id", "original-request"];
+    const created = await invoke(f.socket, ...args); expect(created).toMatchObject({ code: 0, value: { ok: true, result: { revision: 1 } } });
+    expect(await invoke(f.socket, ...args)).toEqual(created);
+    expect(await invoke(f.socket, "tasks")).toMatchObject({ code: 0, value: { result: { tasks: [{ task_id: "project-task", status: "waiting" }] } } });
+    expect((await invoke(f.socket, "cancel", "project-task", "--revision", "1", "--request-id", "cancel-original")).value)
+      .toMatchObject({ ok: true, result: { task: { status: "cancelled" } } });
+    await service.stop("SIGKILL"); expect(existsSync(f.socket)).toBe(true);
+    service = await serve(f.config, f.socket);
+    expect((await invoke(f.socket, "inspect", "project-task")).value).toMatchObject({ ok: true, result: { task: { status: "cancelled", prompt: "中文计划\n继续" } } });
+    const observed = (await invoke(f.socket, "events", "project-task")).value;
+    expect(observed.ok).toBe(true);
+    expect(observed.result.events.map((event: { kind: string; origin: string }) => [event.kind, event.origin]))
+      .toEqual([["task.created", "human_request"], ["task.authorization_issued", "human_request"], ["task.cancelled", "human_request"]]);
+    expect((await invoke(f.socket, "status")).value).toMatchObject({ ok: true, result: { queue: { queued: 0, running: 0 } } });
+    expect(existsSync(f.data)).toBe(false);
+    expect(await service.stop()).toBe(0); expect(existsSync(f.socket)).toBe(false);
+    const db = new RuntimeDatabase(join(f.state, "runtime.sqlite"));
+    try { for (const table of ["provider_checks", "local_runs", "effects"]) expect(db.sql.query(`SELECT COUNT(*) AS n FROM ${table}`).get()).toEqual({ n: 0 }); }
+    finally { db.close(); }
+  } finally { await service.stop(); }
+}, 20_000);
+
+test("service duplicate launch fails before changing live runtime state", async () => {
+  const f = fixture(), service = await serve(f.config, f.socket);
+  try {
+    const second = await invoke(f.socket, "serve", "--config", f.config);
+    expect(second).toMatchObject({ code: 2, value: null }); expect(JSON.parse(second.stderr)).toEqual({ error: "local_service_already_running" });
+    expect((await invoke(f.socket, "status")).code).toBe(0); expect(existsSync(f.data)).toBe(false);
+  } finally { await service.stop(); }
+});
+
+test("CLI validates authority-related inputs, preserves explicit request IDs and never changes source or grants", () => {
+  const f = fixture(), base = ["--socket", f.socket];
+  const request = join(f.root, "request.json"); writeFileSync(request, JSON.stringify({ id: "same", op: "inspect_task", task_id: "known" }));
+  expect(parseRuntimeCli([...base, "request", "--file", request])?.request).toEqual({ id: "same", op: "inspect_task", task_id: "known" });
+  expect(() => parseRuntimeCli([...base, "request", "--file", request, "--request-id", "different"])).toThrow("cli_request_id_conflict");
+  expect(() => parseRuntimeCli([...base, "cancel", "known"])).toThrow("missing_cli_option");
+  expect(() => parseRuntimeCli([...base, "cancel", "known", "--revision", "3", "--origin", "human_request"])).toThrow("unknown_cli_option");
+  expect(() => parseRuntimeCli([...base, "status", "--socket", f.socket])).toThrow("duplicate_cli_option");
+  expect(() => parseRuntimeCli([...base, "tasks", "--limit", "NaN"])).toThrow("invalid_cli_number");
+  const prompt = join(f.root, "prompt.md"); writeFileSync(prompt, "本地项目\n明确的新问题");
+  const parsed = parseRuntimeCli([...base, "new", "a", "--project", f.workspace, "--provider", "claude", "--model", "configured", "--prompt-file", prompt]);
+  expect(parsed?.request).toMatchObject({ op: "submit", task: { status: "waiting", chat_id: "terminal", prompt: readFileSync(prompt, "utf8") } });
+  expect(JSON.stringify(parsed?.request)).not.toContain("tool_grant"); expect(JSON.stringify(parsed?.request)).not.toContain("origin");
+});
+
+test("human summaries and machine JSON cannot execute terminal control sequences", () => {
+  const hostile = "\x1b[2J完成\x1b]8;;https://example.invalid\x07链接\x1b]8;;\x07\r\b\x9b2J";
+  const response = { id: "task", ok: true, result: { tasks: [{ task_id: "a", status: "waiting", provider: "claude", model: "configured", title: hostile }], next_after: null } };
+  const display = renderRuntimeReply(response); expect(display).not.toMatch(/[\x00-\x09\x0b-\x1f\x7f-\x9f]/);
+  const raw = renderRuntimeReply(response, true); expect(raw).not.toMatch(/[\x00-\x1f\x7f-\x9f]/); expect(JSON.parse(raw)).toEqual(response);
+  expect(terminalText(hostile)).not.toContain("\x1b");
+});

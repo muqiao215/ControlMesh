@@ -9,9 +9,14 @@
 ## Context
 
 2026-09-06 用户明确否定当前截图中的粗糙终端体验，要求先按 SpecMesh 写计划。
-本次交付是计划与项目记忆更新；下列实现阶段尚未开始。
+最初交付是计划与项目记忆；交互界面的下列实现阶段尚未完成。
 基线 `main@1d62506`。已有 `README.md`、`pyproject.toml` 的 cm 入口改动需保留。
 实际代码证据、截图与版本差异见 [findings.md](findings.md)。
+
+2026-09-13 范围更新：用户已授权完整 TypeScript 运行时迁移，统一归
+[runtime-convergence](../runtime-convergence/task_plan.md)。当前先接通该 TS runtime 的
+独立后台服务和可重连命令入口，再承接本计划的界面要求。下面保留完整 UX 验收，
+不把新命令入口当成交互终端完成，也不再按旧候选方向另建 Python 交互实现。
 
 ## Requirements
 
@@ -31,7 +36,7 @@
   空闲无草稿时提示再次 Ctrl+C 退出。Esc 优先关闭菜单/详情，不含糊取消任务。
 - 模型和会话选择可发现；切换模型失败时保留原值，执行中禁用切换或明确排队。
   会话恢复显示真实历史和状态，不以重放旧 prompt 伪装恢复。
-- tasks/inbox 显示后台任务状态、待回答问题与结果；操作调用既有 Python 能力。
+- tasks/inbox 显示后台任务状态、待回答问题与结果；操作调用统一运行时能力。
   patch acceptance 不得绕过 controller 的 identity/freshness/promotion 检查。
 - 可选服务失败使用非阻塞状态提示，并说明影响和诊断入口；核心 provider 不可用时
   给出可操作的错误。详细日志与聊天区分开，不能只打印 “API failed to start”。
@@ -42,7 +47,7 @@
 ## Non-goals
 
 - 本阶段不重做 Web Dashboard，不建立桌面 Electron 应用。
-- 不迁移 Python TaskHub/provider/recovery/promotion 到 TypeScript。
+- 运行时迁移统一归 runtime-convergence；本计划不另建任务、provider 或恢复数据库。
 - 不开放公开 mutation API，不改 localhost/Bearer 边界，不添加任务类型。
 - 不复制 Codex 品牌或声称与其全部功能等价。
 - 不把工具白名单、隔离状态、审批按钮做成没有后端约束的装饰。
@@ -58,10 +63,13 @@
 
 ## Technical Direction
 
-首选保持 Python 交互层，利用现有 Rich 渲染，评估 prompt_toolkit 输入与布局能力。
-这是候选实现方向，尚未冻结依赖。用最小可运行原型验证中文、多行、菜单、流式输出、
-resize 和 native 终端交接；若无法满足，再比较其他 TUI 方案并记录决定。
-不要为了追随 TypeScript 迁移而新建一套 runtime 或未经审查的本地写接口。
+交互层接入 runtime-convergence 的现有 TS runtime 与私有后台控制服务；UI 生命周期
+与任务执行分开。输入/布局依赖仍需原型验证中文、多行、菜单、流式输出、resize 和
+native 终端交接后选择。旧 Python Rich/prompt_toolkit 方向作为历史候选保留在 Git；
+不得复制另一套 runtime、直接写 SQLite 或用转发 Python 冒充迁移完成。
+
+以下 Python 文件仍是现有生产行为的迁移与对照来源；新入口和后台服务的运行方式见
+[local-control-service](../runtime-convergence/local-control-service.md)。
 
 - `cli_commands/terminal.py`、`terminal/app.py`：入口、生命周期、终端能力检测。
 - `terminal/enhanced_shell.py`：拆分输入/展示与当前串行循环，保留普通文本降级入口。
@@ -70,7 +78,7 @@ resize 和 native 终端交接；若无法满足，再比较其他 TUI 方案并
 - `terminal/rendering.py`：消息类型、Markdown/代码/工具视图、输出清理。
 - `terminal/runtime.py`：提供展示需要的现有事件与操作适配，不在 UI 持久化任务状态。
 - `terminal/session.py`、`inbox.py`、`tasks_view.py`、`native_pty.py`：优先复用并审计实际能力。
-- UI 暂存草稿/选中项；Python session/TaskHub 继续拥有历史、任务、结果与恢复。
+- UI 只暂存草稿/选中项；统一 session/TaskHub runtime 拥有历史、任务、结果与恢复。
 
 ## Plan
 

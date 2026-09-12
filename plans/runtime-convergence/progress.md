@@ -8,10 +8,10 @@ The 512-module/57-field ledger is an inventory, not completed parity.
 
 | Delivery area | Verified state | Remaining acceptance |
 |---|---|---|
-| Published CI baseline | ad9c20c; CI 34707785916 success | Verify canonical publication checkpoint after publication |
-| TS runtime | Kernel, local/device execution, mailbox, topology and retained recovery have scoped implementations/tests | Complete provider/transport/store/terminal ownership and parity |
+| Published CI baseline | e2b16e3; CI 34709699732 success | Verify persistent local service checkpoint after publication |
+| TS runtime | Kernel, local/device execution, mailbox, topology and retained recovery; reconnectable local service/CLI with full local regression | Final CI; remaining provider/transport/store/terminal ownership and parity |
 | Native continuation | Simple direct and streamed exact recall passed; earlier topology first runs and current artifacts passed | Full worker/merger continuation and complex-context acceptance still fail |
-| Multi-device | Earlier physical ARM64/x64 evidence; bounded HTTP artifact inbox/upload/recovery; opt-in canonical publication with focused acceptance | Final CI, initial workspace distribution, physical transfer acceptance and full profiles |
+| Multi-device | Earlier physical ARM64/x64 evidence; bounded HTTP artifact inbox/upload/recovery; opt-in canonical publication with CI | Initial workspace distribution, physical transfer acceptance and full profiles |
 | SpecMesh/History | Independent integration and scoped continuity evidence exist | Reviewed closeout and remaining full integration acceptance |
 | Release/local alignment | Production still Python 0.43.0 | Full-goal acceptance, release/install, staged default switch |
 
@@ -22,7 +22,22 @@ shows invalid read arguments, not a proven concurrent file change. The attempt a
 05a0e591-a529-4401-b28a-932b3e948f95 are guarded against replay. No new native model canary
 was launched during this correction.
 
-Current checkpoint connects accepted inbox bytes to optional canonical publication.
+Current checkpoint adds a persistent local service and normal `pnpm runtime` command entry.
+It reuses LocalTaskRuntime, task/event read authority and the existing native queue; clients
+reconnect over a private Unix socket. OS-held listener locking precedes profile startup.
+Client timeout never retries/cancels execution; another connection can cancel in-flight work.
+CLI SIGKILL/restart, original task/cancellation retention and normal shutdown passed (four
+CLI tests / 39 assertions / 5.85s). Socket cases passed for pages, concurrency, lock/path
+protection, frame bounds and Chinese input. A configured Docker case passed one test /
+161 assertions / 16.37s: automatic execution after client disconnect, service restart and
+same-native-session continuation with changed current files. Claude is synthetic in that
+case; it is not new model or physical-device acceptance. Typecheck passed. Full regression
+passed 803 tests / 10317 assertions / 75 files / 447.07s, exit 0, at
+/tmp/cm-runtime-service-full.log. Normal `pnpm runtime --help` also passed. Final commit/CI
+remain pending. This changes no database or public protocol schema. Service usage and
+limits: [local-control-service.md](local-control-service.md). No production service was changed.
+
+The published e2b16e3 checkpoint connects accepted inbox bytes to optional canonical publication.
 Database 28 and a sparse WorkspaceStage capture write-file baselines before child dispatch,
 preserve unrelated local edits, reject conflicting changes and recover per-file progress.
 All writes check scheduler authority. Independent SpecMesh checks bracket publication.
@@ -33,8 +48,8 @@ Full regression: 789 passed / one test-double timeout / 790 cases / 10075 assert
 73 files / 364.85s, exit 1 (/tmp/cm-canonical-full.log). The old preparation double omitted
 the new step method; its correction and early-exit reporting passed the full scheduler file:
 62 tests / 669 assertions / 25.88s (/tmp/cm-canonical-scheduler.log). Typecheck passed after
-the correction. Production code was unchanged; final exact-commit CI remains pending.
-Do not describe these separate runs as a single green full-suite result. No model input launched.
+the correction. Production code was unchanged; final exact-commit CI 34709699732 passed.
+The separate local runs were not represented as one green full run. No model input launched.
 
 The preceding checkpoint implements opt-in native completion-file upload over the authenticated
 worker port. Database 27 stores bounded chunks; terminal acceptance independently verifies
@@ -91,7 +106,7 @@ Detailed evidence and guarded attempts are in findings.md; no failed result was 
 
 ## Remaining
 
-1. Publish the canonical-publication checkpoint and verify final exact-commit CI, including the corrected scheduler fixture.
+1. Publish the verified persistent service and check exact-commit CI; then connect the interactive terminal frontend to this owner.
 2. Complete initial workspace distribution and physical transfer/publication acceptance. Finish real
    topology/current-source acceptance and reviewed SpecMesh closeout; guard failed attempts.
 3. Complete remaining provider, transport, store and terminal owners and the parity ledger.
@@ -116,8 +131,8 @@ multi-file publication can leave partial progress; inspect and explicitly recove
 
 ## Next
 
-Commit/push canonical publication and verify its exact-commit CI, including the corrected scheduler fixture.
-Then qualify initial workspace delivery and two-device transfer/publication. Continue the other
+Publish the verified persistent service and check exact-commit CI. Connect the terminal
+frontend to the same owner and qualify initial workspace delivery/two-device publication. Continue the other
 runtime owners and full rollout gates. Do not return to repeated similar model probes.
 
 ## Retained evidence

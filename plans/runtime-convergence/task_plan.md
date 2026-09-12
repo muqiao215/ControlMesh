@@ -32,7 +32,7 @@ Move runtime authority to TypeScript without losing task correctness, provider e
 | ID | Deliverable / implementation seam | Exit evidence | State |
 |---|---|---|---|
 | CM-R0 | Inventory real owners and versioned payloads; extend existing lifecycle/provider/gate goldens | Reproducible baseline plus ledger of every persisted field and side effect | in_progress |
-| CM-R1 | TS execution kernel behind existing facade; transitions, events, cancellation, deadlines, process supervision | Python/TS differential traces for success, failure, timeout, cancel, crash/restart; zero duplicate side effects in shadow mode | in_progress: transactional kernel, durable local queue and actual private stdio execution implemented; full process/provider/transport parity pending |
+| CM-R1 | TS execution kernel behind existing facade; transitions, events, cancellation, deadlines, process supervision | Python/TS differential traces for success, failure, timeout, cancel, crash/restart; zero duplicate side effects in shadow mode | in_progress: transactional kernel, durable local queue, private stdio and persistent local service/CLI implemented; full process/provider/transport parity and terminal interface pending |
 | CM-R2 | Transactional state migration and startup recovery | Dry-run migration counts/digests, interrupted migration replay, rollback compatibility, corrupt-input refusal | in_progress: snapshot migration plus persisted native manifests/reconciliation; other stores/cutover pending |
 | CM-R3 | Provider/transport/workspace/grant ports | Actual adapter smoke for each supported provider; grants enforced natively; process tree cleanup and result-delivery reconciliation | in_progress: source/grant/one-shot/container ports; real host/container OpenCode read and local TaskHub and device staged-write/recovery profiles with native auth/state; durable terminal outbox and Feishu text send/readback verified with local HTTP; other provider/write/source profiles, production transport acceptance and remaining transports pending |
 | CM-R4 | Device coordinator and worker execution authority | Two-device lease expiry, fencing, clock skew, network partition and worker restart tests; stale worker cannot write or redeliver | in_progress: real ARM64/x64 native writes, retained-proposal recovery and current SpecMesh reads/writes accepted; normal configured startup/control, two task-bound native sessions and linked handoffs accepted; persistent scheduling, real parallel native mailbox exchange and no-replay restart recovery accepted; other profiles and rollout pending |
@@ -69,12 +69,12 @@ No claim that full TS migration or distributed coordination has completed. A sco
 
 ## Next Step
 
-Publish the opt-in canonical-publication owner and verify its exact-commit CI, including the
-corrected scheduler test double. The full local run had 789 passes and one fixture timeout;
-the corrected scheduler file passed all 62 cases. The prior artifact inbox/upload/recovery owner ad9c20c passed 774 local
-tests and exact-commit CI 34707785916. Database 28 now captures exact write-file baselines
-before dispatch; publication reuses WorkspaceStage conflict checks and durable recovery.
-Then qualify initial workspace distribution and two physical devices. Continue remaining
+Publish the persistent local TS service and normal command entry, then verify exact-commit CI.
+Full local regression passed 803 tests / 10317 assertions. Task/event reads, independent clients, execution-time cancellation,
+SIGKILL/restart and synthetic-container session continuity have focused evidence. The next
+terminal frontend must use this same runtime, profile, grants, queue and native recovery owner.
+The e2b16e3 publication checkpoint passed CI 34709699732. Initial workspace distribution and
+two physical devices remain required. Continue remaining
 native/source/artifact, provider/transport/store/terminal and CM-R0–CM-R7 rollout requirements.
 Complex topology continuation remains unaccepted; no guarded attempt/session may be replayed.
 
