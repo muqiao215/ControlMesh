@@ -205,3 +205,19 @@ socket/daemon verifies reconnect and zero provider checks/execution/native files
 empty queue. Existing stdio/EOF/scheduler/control tests remain passing. This is local
 process evidence, not a new physical two-device/native canary. Initial workspace transfer,
 remaining provider/store/transport migration and CM-R7 cutover remain open.
+
+## 2026-09-13 — initial workspace receiver primitive
+
+Implemented exact-manifest validation and initial-input staging. Preparation leaves target
+workspace untouched; identical files are preserved, conflicts refused, and original
+WorkspaceStage provides recovery/promotion/concurrent-write checks. The runtime must
+issue expected digest/allowlist/authority; there is no public operation or automatic seed
+application yet. Network transfer, assignment binding and execution admission are next
+and remain required for initial-distribution completion.
+
+Seed + existing stage tests: 22 passed, 97 assertions, 1.407s (`/tmp/cm-workspace-seed.log`).
+Covers retained-stage reopen/publication, exact bytes, unrelated-file preservation,
+conflicting existing content, bad bytes/path, symlink and concurrent destination creation.
+Typecheck and diff-check passed. No production/native files or devices were modified.
+Prior `d0dab04` CI run 34713715880 completed success; `8422a1d` run 34713930764 was still
+running at the latest read.

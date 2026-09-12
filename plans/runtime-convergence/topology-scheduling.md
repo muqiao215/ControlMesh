@@ -364,3 +364,22 @@ transport and not an arbitrary shell endpoint. One-second read-only health check
 the service on configuration/listener identity revocation. SIGTERM closes its listener
 and owned runtime. No unit/cron/default installation is performed. Initial workspace
 distribution and physical rollout acceptance remain pending.
+
+## Initial workspace delivery — receiver primitive in progress
+
+`src/workspace-seed.ts` prepares exact initial input files using the existing WorkspaceStage.
+Its caller must supply the authorized manifest digest, exact file allowlist, received bytes
+and synchronous runtime authority. Bounds are 80 files, 4 MiB/file and 16 MiB total; paths
+exclude traversal, `.git`, backslashes and control characters. Byte hashes and sizes are
+checked before staging. Missing destination files are proposed for creation; identical
+existing files remain unchanged; differing files are rejected. The destination is not
+modified during preparation. Persist the returned stage path/reference and proposal digest
+before using existing gated promotion/recovery. This is not atomic multi-file publication.
+
+This internal primitive currently has no network/control caller. Initial distribution is
+NOT implemented yet. Required next steps: bind a versioned manifest to the coordinator's
+assignment and receiver's registered workspace; authenticated bounded chunk transfer and
+durable receipt; persist the prepared reference before promotion; prevent claims/native
+execution until source verification; verify cancellation/revocation, interrupted transfer,
+restart and actual two-device delivery. Never accept a remote absolute path or promote
+under caller-provided authority. Source packaging must exclude unapproved files/secrets.
