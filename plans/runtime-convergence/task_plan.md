@@ -75,8 +75,10 @@ While it is unavailable, continue CM-R3: the normal local runtime registration c
 exposes only Claude/OpenCode. Existing Codex/Gemini one-shot command/observation modules
 do not provide registered persistent native-session adapters. CodexSessionStore and CodexResumeProcess now provide private identity/baseline/turn
 verification, exact UUID supervised resume and model-free retained-output verification.
-Next wire the normal task journal/preflight and registration, qualify fresh-session
-creation and effective native sandbox behavior, and add independent History candidates. Port that ownership without presenting one-shot execution
+CodexTaskAdapter now wires the existing queue/kernel journal and retained-result recovery
+for trusted adopted sessions. Next provide actual readiness and normal registration,
+qualify fresh-session creation, interrupted lineage and effective native sandbox behavior,
+and add independent History candidates plus mailbox/topology/file-receipt integration. Port that ownership without presenting one-shot execution
 or a standalone transcript reader as completed native continuity.
 The configured coordinator now issues a versioned snapshot reference; device assignments
 bind it, and authenticated chunk reads require the current assignment and execution lease.

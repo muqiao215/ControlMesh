@@ -22,6 +22,30 @@ shows invalid read arguments, not a proven concurrent file change. The attempt a
 05a0e591-a529-4401-b28a-932b3e948f95 are guarded against replay. No new native model canary
 was launched during this correction.
 
+CodexTaskAdapter now implements LocalTaskExecution for explicitly trusted adopted sessions.
+It reuses kernel start/dispatch/observation/confirm/finish and execution_manifests rather
+than introducing a parallel task store. The manifest binds task/configuration digests and
+native baseline; environment values are not persisted in it. Private output records use
+exclusive creation, fsync and directory identity, and survive a missing database observation.
+Recovery acquires the native advisory lease, revalidates retained evidence and reconciles
+through the existing kernel without readiness probing or another native process. Repeated
+recovery uses the original command receipt. A later explicit resume takes the newly
+confirmed session reference from the kernel's result.
+
+18 queue/process/session tests passed, 100 assertions, 2.97s
+(/tmp/cm-codex-task-final.log); typecheck and diff-check passed. Tests use a supervised
+synthetic native executable and real private files/database; no model call occurred.
+TaskIngress correctly refused authority supplied in a task body, so fixture registration
+uses trusted kernel issuance; public ingress was not weakened. Normal configuration and
+History authorization are not yet wired. Pending mailbox, topology assignments and file
+completion contracts refuse in this partial adapter rather than silently dropping input
+or asserting receipt-less success. Fresh-session and interrupted-lineage support, actual
+provider readiness and native sandbox qualification remain required.
+
+7338c3c CI 34717037974 and 7c96b76 CI 34716653749 passed. Earlier documentation-only
+2ff693e CI 34716372099 failed its container job with container_engine_unavailable;
+subsequent complete gates passed. This does not establish physical device availability.
+
 Codex exact-session process owner now reuses ProcessSupervisor and NativeSessionLease.
 It validates native source, current readiness/authority and execution policy before task
 input; host-ineligible origins and unsupported grants refuse. The pinned 0.154.0 version

@@ -1,3 +1,6 @@
+import { CodexTaskAdapter } from "../src/providers/codex-task-adapter";
+import { ProcessSupervisor } from "../src/process-supervisor";
+import { RuntimeDatabase, RuntimeKernel, LocalTaskRuntime, type Principal } from "../src";
 import { afterEach, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -22,16 +25,17 @@ function fixture(mode = "normal") {
   const executable = join(root, "codex-fixture");
   writeFileSync(executable, `#!${process.execPath}\nconst fs=require('node:fs');
 if(process.argv.includes('--version')) { console.log('codex-cli '+(process.env.FIXTURE_MODE==='version'?'0.0.0':'0.154.0')); process.exit(0); }
-if(!fs.existsSync(process.env.FIXTURE_DISPATCH)) process.exit(9);
+if(process.env.FIXTURE_DISPATCH!=='managed'&&!fs.existsSync(process.env.FIXTURE_DISPATCH)) process.exit(9);
 let prompt=''; for await(const chunk of process.stdin) prompt+=chunk;
 fs.writeFileSync(process.env.FIXTURE_ARGS,JSON.stringify(process.argv.slice(2)));
+const turnId=process.env.FIXTURE_DYNAMIC_TURN?require('node:crypto').randomUUID():'new';
 const emit=(type,payload)=>JSON.stringify({type,payload})+'\\n';
 fs.appendFileSync(process.env.FIXTURE_ROLLOUT,
- emit('event_msg',{type:'task_started',turn_id:'new'})+
- emit('turn_context',{turn_id:'new',cwd:process.cwd(),model:'fixture-model'})+
+ emit('event_msg',{type:'task_started',turn_id:turnId})+
+ emit('turn_context',{turn_id:turnId,cwd:process.cwd(),model:'fixture-model'})+
  emit('event_msg',{type:'user_message',message:prompt})+
  emit('event_msg',{type:'agent_message',phase:'final',message:'remembered'})+
- emit('event_msg',{type:'task_complete',turn_id:'new',last_agent_message:'remembered'}));
+ emit('event_msg',{type:'task_complete',turn_id:turnId,last_agent_message:'remembered'}));
 console.log(JSON.stringify({type:'thread.started',thread_id:process.env.FIXTURE_MODE==='foreign'?'foreign':process.env.FIXTURE_SESSION}));
 console.log(JSON.stringify({type:'item.completed',item:{type:'agent_message',text:'remembered'}}));
 console.log(JSON.stringify({type:'turn.completed'}));
@@ -88,4 +92,46 @@ test("Codex executable replacement after version check withholds task input", as
     writeFileSync(f.input.executable, "#!/bin/sh\nexit 0\n", { mode: 0o700 });
   } })).rejects.toThrow("codex_resume_configuration_changed");
   expect(() => readFileSync(join(f.root, "args.json"))).toThrow();
+});
+
+
+test.each([false, true])("Codex queue owns dispatch, durable output and restart recovery (lost observation=%s)", async loseObservation => {
+  const f = fixture(), path = join(f.root, "runtime.sqlite"); let db = new RuntimeDatabase(path), kernel = new RuntimeKernel(db);
+  const actor: Principal = { id: "operator", device_id: "device", origin: "human_request", scopes: ["task:create", "task:read", "task:execute", "task:resume", "task:reconcile", "task:admin", "task:cancel", "message:read"] };
+  const { reference, prompt, execution_context, tool_grant, ...config } = f.input;
+  config.environment = { ...config.environment, FIXTURE_DISPATCH: "managed", FIXTURE_DYNAMIC_TURN: "1", PRIVATE_FIXTURE_VALUE: "not-a-real-credential" };
+  let nativeRuns = 0;
+  const process = new CodexResumeProcess({ run: async (spec, admission) => {
+    if (!spec.command.includes("--version")) {
+      nativeRuns++; expect(db.sql.query("SELECT COUNT(*) AS n FROM execution_manifests").get()).toEqual({ n: nativeRuns });
+    }
+    return new ProcessSupervisor().run(spec, admission);
+  } });
+  const readiness = { ensure: async () => ({ decision: "cached" as const, reason: "ready", retry_after: null, permit: null, report: null }), assertReady: () => {} };
+  let adapter = new CodexTaskAdapter(kernel, actor, config, readiness, () => {}, process);
+  const source = { command_origin: "human_request" as const, origin: "user" as const, source_scope: "local_foreground" as const, transport: "terminal" };
+  let runtime = new LocalTaskRuntime(kernel, actor, source, snapshot => adapter.prepare(snapshot), () => {});
+  try {
+    kernel.submit(actor, "create", { task_id: "task", chat_id: "test", status: "waiting", provider: "codex", model: config.model, repo_root: reference.directory,
+      prompt, native_session: reference, tool_grant, execution_context });
+    if (loseObservation) kernel.recordEffectObservation = () => { throw new Error("synthetic observation loss"); };
+    const run = runtime.enqueue("run", "task", 1); await runtime.drain();
+    const snapshot = kernel.inspect(actor, "task");
+    const effect = db.sql.query("SELECT effect_id FROM effects").get() as { effect_id: string };
+    expect(String((db.sql.query("SELECT payload FROM execution_manifests").get() as { payload: string }).payload)).not.toContain("not-a-real-credential");
+    if (loseObservation) {
+      expect(snapshot.needs_reconciliation).toBe(true); expect(runtime.inspect(run.run_id).state).not.toBe("completed");
+      await runtime.stop(); db.close(); db = new RuntimeDatabase(path); kernel = new RuntimeKernel(db);
+      adapter = new CodexTaskAdapter(kernel, actor, config, readiness, () => {}, process);
+      const binding = adapter.inspectRecovery("task", snapshot.revision, effect.effect_id);
+      expect(adapter.recover("recover", "task", snapshot.revision, binding).task.status).toBe("done");
+      expect(adapter.recover("recover", "task", snapshot.revision, binding).task.status).toBe("done");
+      expect(nativeRuns).toBe(1);
+      runtime = new LocalTaskRuntime(kernel, actor, source, value => adapter.prepare(value), () => {});
+    } else expect(snapshot.task.status).toBe("done");
+    const completed = kernel.inspect(actor, "task"), resumed = kernel.resume(actor, "resume", "task", completed.revision, "Continue again");
+    expect((resumed.task.native_session as { session_id: string }).session_id).toBe(reference.session_id);
+    runtime.enqueue("second", "task", resumed.revision); await runtime.drain();
+    expect(kernel.inspect(actor, "task").task.status).toBe("done"); expect(nativeRuns).toBe(2);
+  } finally { await runtime.stop(); db.close(); }
 });
