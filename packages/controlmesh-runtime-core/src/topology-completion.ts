@@ -1,3 +1,4 @@
+import { topologyExecution } from "./topology-execution";
 import { readAggregateResult, type AggregateResultBinding } from "./topology-aggregate";
 import type { TopologyArtifactGate } from "./topology-artifacts";
 import { command, requireScope } from "./commands";
@@ -41,9 +42,9 @@ function acceptedInputs(kernel: RuntimeKernel, actor: Principal, taskId: string,
       const checked = readAggregateResult(kernel, actor, binding as unknown as AggregateResultBinding, ancestors);
       requireThat(canonical(checked) === row.accepted, "topology_completion_result_changed"); continue;
     }
-    const run = kernel.db.sql.query("SELECT state,task_id,lease FROM local_runs WHERE run_id=?").get(row.run_id) as { state: string; task_id: string; lease: string | null } | null;
+    const run = topologyExecution(kernel, actor, row.child_id, row.run_id);
     requireThat(run?.state === "completed" && run.task_id === row.child_id && run.lease, "topology_completion_run_unresolved");
-    const lease = JSON.parse(run.lease);
+    const lease = run.lease;
     requireThat(binding.task_id === row.child_id && binding.episode_id === lease.episode_id, "topology_completion_execution_changed");
     const base = { task_id: row.child_id, revision: binding.revision as number, episode_id: lease.episode_id as string,
       effect_id: binding.effect_id as string, topology: row.topology, substage: row.substage, worker_role: row.worker_role };

@@ -11,14 +11,15 @@ const cleanup: (() => void | Promise<void>)[] = [];
 afterEach(async () => { for (const done of cleanup.splice(0).reverse()) await done(); });
 const actor: Principal = { id: "operator", device_id: "worker", origin: "agent_message", scopes: ["provider:probe"] };
 
-function fixture() {
+function fixture(topologyScheduler?: Record<string, unknown>) {
   const root = mkdtempSync(join(tmpdir(), "cm-device-control-")); cleanup.push(() => rmSync(root, { recursive: true, force: true }));
   const state = join(root, "coordinator"), workerState = join(root, "worker"), workspace = join(root, "project");
   for (const path of [state, workerState, workspace]) mkdirSync(path, { mode: 0o700 });
   const token = randomBytes(32).toString("base64url"), path = join(root, "coordinator.json");
   const config = { schema_version: "controlmesh.device_runtime.v1", mode: "candidate", role: "coordinator", state_root: state,
     principal_id: actor.id, device_id: "coordinator", devices: [{ device_id: "worker", principal_id: actor.id,
-      token_sha256: createHash("sha256").update(token).digest("hex"), capabilities: ["native"], workspace_ids: ["project"] }] };
+      token_sha256: createHash("sha256").update(token).digest("hex"), capabilities: ["native"], workspace_ids: ["project"] }],
+    ...(topologyScheduler ? { topology_scheduler: topologyScheduler } : {}) };
   writeFileSync(path, JSON.stringify(config), { mode: 0o600 });
   let coordinator = openDeviceRuntime(path); cleanup.push(() => coordinator.close());
   const call = async (id: string, op: string, args: object = {}) => coordinator.control.handle({ id, op, ...args });
@@ -262,4 +263,78 @@ test("scheduled execution shares control reservations and normal authenticated c
   expect((await control.handle({ id: "pause", op: "pause_scheduler" })).ok).toBe(true);
   for (const row of db.sql.query("SELECT run_id FROM device_scheduled_work").all() as { run_id: string }[]) expect((await control.handle({ id: row.run_id, op: "inspect_operation", operation_id: row.run_id })).result).toMatchObject({ status: "settled", result: { status: "done" } });
   expect((await f.call("inspect", "inspect_task", { task_id: "one" })).result).toMatchObject({ task: { status: "done" } });
+});
+
+
+const topologyProfile = (auto_start = false) => ({ auto_start, interval_ms: 100, routes: Object.fromEntries(["root_a", "root_control"]
+  .map(id => [id, { workspace_id: "project", capability: "native", device_ids: ["worker"] }])) });
+const topologyPlan = { schema_version: "controlmesh.topology_schedule.v1", root_task_id: "root", nodes: [{ task_id: "root", topology: "pipeline",
+  worker_roles: ["a"], controller_role: "control", roles: ["a", "control"].map(role => ({ role, task_id: `root_${role}`, resume_prompt: "Continue the original task" })) }] };
+async function registerTopology(f: ReturnType<typeof fixture>) {
+  for (const task_id of ["root", "root_a", "root_control"]) expect(await f.call(`create-${task_id}`, "submit", { task: {
+    task_id, chat_id: "terminal", status: "waiting", provider: "fixture", prompt: "bounded fixture", ...(task_id === "root" ? { topology: "pipeline" } : {}) } })).toMatchObject({ ok: true });
+  expect(await f.call("register", "register_schedule", { plan: topologyPlan })).toMatchObject({ ok: true, result: { mode: "paused" } });
+}
+
+test("normal device topology controls preserve explicit recovery and cancellation across restart", async () => {
+  const f = fixture(topologyProfile()); await registerTopology(f);
+  expect(await f.call("status", "status")).toMatchObject({ result: { endpoint: null } });
+  expect(await f.call("idle", "drain_schedules")).toMatchObject({ ok: true });
+  const client = await f.start(); expect((await client.queuePage(null)).items).toEqual([]);
+  expect(await f.call("activate", "activate_schedule", { root_task_id: "root", expected_revision: 1 })).toMatchObject({ ok: true });
+  expect(await f.call("dispatch", "drain_schedules")).toMatchObject({ ok: true });
+  const job = await client.inspect("root_a"), authority = await client.claim(job.task_id, job.revision, job.assignment_digest, 3000);
+  await client.command("release", { lease: authority.lease, reason: "quota" }); authority.stop();
+  await f.call("observe", "drain_schedules");
+  const blocked = await f.call("inspect", "inspect_schedule", { root_task_id: "root" });
+  expect(blocked).toMatchObject({ ok: true, result: { mode: "blocked", reason: { code: "quota" } } });
+  await f.reopen();
+  expect((await f.call("inspect-again", "inspect_schedule", { root_task_id: "root" })).result).toEqual(blocked.result);
+  const state = blocked.result as { revision: number; nodes: { task_revision: number; topology_revision: number }[] };
+  const task = (await f.call("child", "inspect_task", { task_id: "root_a" })).result as { revision: number };
+  expect(await f.call("recover", "retry_schedule_child", { root_task_id: "root", expected_revision: state.revision,
+    node_id: "root", parent_revision: state.nodes[0]!.task_revision, topology_revision: state.nodes[0]!.topology_revision,
+    child_id: "root_a", child_revision: task.revision })).toMatchObject({ ok: true });
+  await f.call("retry-dispatch", "drain_schedules");
+  const nextClient = await f.start(), next = await nextClient.inspect("root_a"); expect(next.assignment_digest).not.toBe(job.assignment_digest);
+  const parent = (await f.call("parent", "inspect_task", { task_id: "root" })).result as { revision: number };
+  expect(await f.call("cancel-root", "cancel", { task_id: "root", expected_revision: parent.revision })).toMatchObject({ ok: true });
+  await f.call("observe-cancel", "drain_schedules");
+  expect(await f.call("cancelled", "inspect_schedule", { root_task_id: "root" })).toMatchObject({ result: { mode: "cancelled" } });
+  await expect(nextClient.claim(next.task_id, next.revision, next.assignment_digest, 3000)).rejects.toThrow("topology_parent_inactive");
+});
+
+test("device topology configuration and control reject missing or changed authority", async () => {
+  const unconfigured = fixture(); expect(await unconfigured.call("missing", "scheduler_status")).toMatchObject({ ok: false, error: "topology_scheduler_not_configured" });
+  const f = fixture(topologyProfile());
+  expect(await f.call("extra", "scheduler_status", { actor })).toMatchObject({ ok: false, error: "unexpected_device_control_field" });
+  writeFileSync(f.path, JSON.stringify({ ...f.config, topology_scheduler: { ...topologyProfile(), interval_ms: 200 } }));
+  expect(await f.call("changed", "scheduler_status")).toMatchObject({ ok: false, error: "runtime_configuration_changed" });
+  writeFileSync(f.path, JSON.stringify({ ...f.config, topology_scheduler: { ...topologyProfile(), routes: { root_a: { workspace_id: "project", capability: "native", device_ids: ["worker"], input: {} } } } }));
+  await expect(f.reopen()).rejects.toThrow("invalid_device_topology_route");
+});
+
+test("normal coordinator daemon dispatches configured topology after EOF and stops on SIGTERM", async () => {
+  const f = fixture(topologyProfile(true)); await registerTopology(f);
+  await f.call("activate", "activate_schedule", { root_task_id: "root", expected_revision: 1 });
+  const child = Bun.spawn([process.execPath, join(import.meta.dir, "../scripts/device-runtime.ts"), f.path, "--daemon"], { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
+  const stderr = new Response(child.stderr).text(), reader = child.stdout.getReader();
+  try {
+    child.stdin.write(JSON.stringify({ id: "status", op: "status" }) + "\n"); child.stdin.end();
+    const status = JSON.parse(new TextDecoder().decode((await reader.read()).value));
+    expect(status).toMatchObject({ ok: true, result: { role: "coordinator" } });
+    const client = new DeviceClient({ endpoint: status.result.endpoint, token: f.token, device_id: "worker" });
+    let queued = false;
+    for (let poll = 0; poll < 50 && !queued; poll++) { queued = (await client.queuePage(null)).items.some(job => job.task_id === "root_a"); if (!queued) await Bun.sleep(20); }
+    expect(queued).toBe(true); expect(child.exitCode).toBeNull();
+    const db = new RuntimeDatabase(join(f.state, "runtime.sqlite"));
+    try {
+      expect(db.sql.query("SELECT DISTINCT origin FROM events WHERE kind='device.assigned'").all()).toEqual([{ origin: "schedule" }]);
+      expect(db.sql.query("SELECT COUNT(*) AS n FROM episodes").get()).toEqual({ n: 0 });
+    } finally { db.close(); }
+    expect(child.pid).toBeGreaterThan(1); expect(child.pid).not.toBe(process.pid); child.kill("SIGTERM");
+    expect(await child.exited).toBe(0); expect(await stderr).toBe("");
+  } finally { if (child.exitCode === null) { child.kill("SIGTERM"); await child.exited; } await reader.cancel(); }
+  await f.reopen();
+  expect(await f.call("retained", "inspect_schedule", { root_task_id: "root" })).toMatchObject({ result: { mode: "active" } });
 });

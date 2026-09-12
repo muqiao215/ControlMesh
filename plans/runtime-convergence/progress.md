@@ -3,64 +3,63 @@
 ## Current
 
 Full CM-R0–CM-R7 remains in progress. Installed CM 0.43.0 is still the production Python
-writer. There has been no live migration, release, installation or default/service switch.
+writer. No release, installation, live migration or default/service switch has occurred.
 The 512-module/57-field ledger is an inventory, not a completed parity score.
 
-Published 725f22c has verified successful CI 34691621283. Current local work adds automatic
-topology scheduling through normal isolated configuration and JSON-lines control, with
-candidate database schema 24. Full pinned verification passed: 645 tests / 8529 assertions
-across 67 files, 213.47s, exit 0. Remote publication/CI are separate from local acceptance.
-This does not establish device topology integration or real native-model topology acceptance.
+Published f45c1ab has successful CI 34692640944. This schema-25 increment adds
+device topology execution, normal startup/control and coordinator-wide admission limits.
+Full pinned verification passed: 680 tests / 8884 assertions across 68 files, 218.98s,
+exit 0 (/tmp/cm-device-topology-full.log), including inventory drift and typecheck.
+Remote publication/CI remain separate from local acceptance.
 
 ## Done
 
-- Immutable schedule plans bind existing task IDs, roles, budgets and aggregate graph.
-  Registration is paused; activation and optional background startup are explicit. Model
-  decisions cannot add tasks/roles/grants. External/overlapping assignments reject.
-- Pipeline, fanout, director and judge progress through existing atomic local compositions,
-  including all 16 nested combinations. Aggregates wait for actual parent dispatch.
-  Preview does not accept output; committed steps revalidate task/checkpoint/effect state.
-- Fenced schedule leases serialize async artifact admission. Pause or a replacement owner
-  invalidates pending publication. Normal shutdown retains active plan state; paused,
-  blocked and completed states persist. Already-admitted native work keeps its lifecycle.
-- Private normal startup exposes register/activate/pause/inspect, answer and explicit retry
-  controls. Optional EOF keepalive and signal shutdown work in the actual CLI process.
-  Automatic transition events record schedule origin without changing actor authorization.
-- Existing bounded malformed-output recovery retains rejected proof and original sessions;
-  polling never retries blocked native work. Unknown/cancelled work remains unreplayable.
-  Frozen repair/interruption policy stops loops; two explicit native retries survive restart.
-- Focused gate: 68 pass, 0 fail, 462 assertions across 3 files, 6.62s. Typecheck passed.
-  Evidence: /tmp/cm-topology-service-focused.log. Controlled resolvers/negative artifact
-  fixture and a credential-free actual CLI test; no new native-model prompts.
-- Current full gate: 645 pass, 0 fail, 8529 assertions across 67 files in 213.47s (exit 0),
-  including inventory drift and typecheck. Evidence: /tmp/cm-topology-scheduler-full.log.
-- Previous full recovery gate at 725f22c: 612 pass, 0 fail, 8283 assertions across 66 files,
-  209.12s, /tmp/cm-topology-recovery-full.log. Earlier aggregate/reopen evidence and actual
-  scoped native/device/History/SpecMesh acceptances remain in Git and the archive below.
+- Local scheduling supports four topologies, sixteen nested combinations, persisted
+  registration, background startup, bounded recovery, origin and fenced completion.
+- Device execution reuses authenticated coordinator/worker queues. Atomic claim binds the
+  actual device/episode/fence and checks global admission capacity across worker restarts.
+  Assignment and execution digests are rechecked before accepting child output.
+- Explicit routes retain native handles on the issuing authorized device. Local queue or
+  missing coordinator ownership cannot substitute for remote execution evidence.
+- Released/expired admissions disappear from discovery. Explicit bounded recovery retains
+  task IDs and rejected evidence; unknown effects and canceled work are not replayed.
+- Normal coordinator configuration/control/CLI starts optional background scheduling and
+  supports recovery/cancel without model credentials. EOF/SIGTERM behavior is verified.
+- Schema 24 to 25 preserves paused registration, completed local proof and task identities;
+  restarting does not reopen completed work or replay paused tasks.
+- Focused gate: 72 pass / 675 assertions, 3 files, 9.35s, before the final cap addition;
+  then 30 pass / 305 assertions, 1 file, 3.74s for device topology and negative cases.
+  Logs: /tmp/cm-device-topology-control-focused.log and /tmp/cm-device-topology-negative.log.
+- Current full pinned gate: 680 pass / 8884 assertions, 68 files, 218.98s, exit 0;
+  inventory drift and typecheck passed. Log: /tmp/cm-device-topology-full.log.
+- Prior full gate at f45c1ab: 645 pass / 8529 assertions, 67 files, 213.47s, exit 0.
+  Log: /tmp/cm-topology-scheduler-full.log.
 
 ## Remaining
 
-1. Bind immutable topology plans to device coordinator/worker queues and recovery.
-2. Real native topology/source-revision acceptance and reviewed SpecMesh project closeout.
-3. Remaining provider, transport, store and terminal product owners; complete parity ledger.
+1. Verify publication and CI for this tested device topology increment.
+2. Real native topology/current-source acceptance, remote root artifact validation and
+   reviewed SpecMesh project closeout.
+3. Remaining provider, transport, store and terminal owners; complete parity ledger.
 4. Full-goal acceptance, release, installed-version alignment and staged default switch.
 
 ## Issues
 
-Do not replay failed native acceptance attempts or launch browser-account/cron/bot canaries.
-Keep canceled tasks 77f04609/7738c5eb canceled. An observation timeout does not prove that
-an execution stopped. Candidate schema 24 rollback requires a pre-upgrade backup.
-Full verification process completed with exit 0; do not repeat unchanged checks.
+No replay of guarded native failures or browser-account/cron/bot canaries. Keep tasks
+77f04609/7738c5eb canceled. Observation timeout does not prove execution has stopped.
+Schema 25 rollback requires a pre-upgrade backup. Device root file completion remains
+blocked without a remote artifact gate. Controlled HTTP adapters are not native-model
+acceptance. The original full verification completed with exit 0; do not repeat unchanged checks.
 
 ## Next
 
-Implement device topology assignment/dispatch using the published local schedule contract,
-then qualify real native topology execution and source revision handling. Complete all remaining
-CM-R0–CM-R7 owners; this local service does not replace full migration acceptance.
+Verify remote publication/CI for this bounded device increment, then continue native
+topology/current-source and remote artifact
+acceptance, followed by all remaining CM-R0–CM-R7 owners and rollout gates.
 
 ## Retained evidence
 
-The local service contract and controls are in [topology-scheduling.md](topology-scheduling.md).
-Detailed earlier execution and original native failures/recoveries remain in
-[progress-through-6146dab.md](progress-through-6146dab.md). Search that archive for the
-relevant owner. Current durable runtime boundaries are in docs/ARCHITECTURE.md.
+[topology-scheduling.md](topology-scheduling.md) covers local and device configuration,
+controls, recovery and current limits. Earlier execution and guarded native attempts remain
+in [progress-through-6146dab.md](progress-through-6146dab.md); use targeted searches.
+Durable ownership boundaries are in ../../docs/ARCHITECTURE.md.

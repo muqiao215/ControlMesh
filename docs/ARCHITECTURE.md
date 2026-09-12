@@ -484,8 +484,8 @@ the pure transition functions retain their original standalone defaults.
 Generic provider resume still refuses completed orchestration tasks. Older candidates
 reject schema 23; rollback requires a pre-upgrade database backup, never changing a
 populated database version. Schema 24 adds local automatic scheduling, described below;
-device topology assignment, semantic project closeout and full native/device acceptance
-remain open.
+semantic project closeout and full native/device acceptance remain open. Schema 25 adds
+device topology assignment as described below.
 
 `TopologyScheduler` now owns bounded automatic local progression over an immutable graph
 of already-authorized tasks. Schema 24 stores schedule identity, plan digest, state/revision
@@ -508,8 +508,21 @@ replayed automatically. Explicit malformed-result recovery preserves its two-ret
 
 The control and configuration contract is documented in
 `plans/runtime-convergence/topology-scheduling.md`. These are private candidate interfaces;
-there is no production installation/default switch or device topology dispatch from this
-increment. Older candidates reject schema 24; rollback requires the prior database backup.
+there is no production installation/default switch. Schema 25 adds `DeviceTopologyRuntime`
+behind the same composition interface. Immutable routes bind native tasks to the existing
+authenticated device queues. Assignment/execution digests and the actual device episode are
+revalidated when collecting and completing a topology. Kernel claim binds that episode
+atomically and enforces the coordinator-wide admission cap across workers and restart.
+Execution sources remain explicit; remote output never masquerades as a local run.
+
+The ordinary device coordinator configuration and CLI own optional background progression;
+workers retain their existing independent native lifecycle. Issued native sessions remain
+on their original authorized device. Released or expired admission cannot be rediscovered;
+explicit bounded recovery creates a new assignment under the original task identity.
+Unknown work and revoked authority remain blocked. Automatic assignments record schedule
+origin. Controlled HTTP/configuration/upgrade fixtures do not establish real native-model
+acceptance. Device root artifact completion remains gated pending remote current-file and
+source evidence. Older candidates reject schema 25; rollback needs the prior backup.
 
 `LocalTaskRuntime` adds the private local task execution owner. SQLite schema 8 stores
 queued runs, their expected task revision and provider/profile binding, plus the claimed

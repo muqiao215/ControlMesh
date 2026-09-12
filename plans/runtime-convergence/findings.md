@@ -1343,3 +1343,32 @@ Full scheduler gate completed with exit 0: 645 pass, 0 fail, 8529 assertions acr
 in 213.47s (/tmp/cm-topology-scheduler-full.log). Existing Python differential suites,
 process/native/device fixtures, all older candidate upgrades and the new service gates
 passed together. This is controlled automated evidence, not new real-model acceptance.
+
+
+## Device topology integration and review
+
+Published f45c1ab has verified successful remote CI 34692640944. Current schema-25 code
+binds shared topology compositions to coordinator device assignments and actual worker
+claims rather than local_runs. Normal coordinator configuration/control/daemon owns the
+optional loop. The full pinned gate passed: 680 tests / 8884 assertions across 68 files in 218.98s,
+exit 0, /tmp/cm-device-topology-full.log. Inventory drift and typecheck also passed.
+
+The important difference from a local queue is that worker preflight releases the episode
+without a coordinator-owned local run. The old device assignment must stop appearing in
+discovery, otherwise worker scheduling can repeatedly probe the same quota failure.
+Explicit topology recovery now archives the bound lease and creates a fresh assignment.
+Review also found that independent worker caps did not enforce coordinator parallelism;
+discovery and atomic claim now check the persisted global admission count.
+
+Controlled focused gates passed: 72 tests / 675 assertions across device topology, normal
+device control and local scheduler (9.35s), then 30 device topology tests / 305 assertions
+(3.74s) after adding coordinator cap, expired/unknown work and native-device routing cases.
+The latter native reference is schema-valid synthetic routing data, not real native proof.
+Evidence: /tmp/cm-device-topology-control-focused.log and /tmp/cm-device-topology-negative.log.
+Typecheck passed. One test-edit command used the package directory with a repository-relative
+path and failed before writing; correcting the workdir/signature resolved it. Schema reads
+initially omitted the canonical v1 directory; no schema was changed.
+
+Remote artifact/current-source aggregation and reviewed SpecMesh project closeout remain
+unimplemented here. Root completion with required files blocks instead of accepting remote
+text as current local file evidence. Full CM-R0–CM-R7 and release/default switch remain open.

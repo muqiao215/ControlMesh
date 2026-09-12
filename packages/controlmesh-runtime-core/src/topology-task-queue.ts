@@ -1,18 +1,19 @@
+import { topologyExecution } from "./topology-execution";
 import { readAggregateResult } from "./topology-aggregate";
 import { command, requireScope } from "./commands";
 import { RuntimeKernel, type Principal, type Lease } from "./kernel";
-import { LocalTaskRuntime } from "./local-task-runtime";
+import type { TopologyRuntime } from "./topology-runtime";
 import { RuntimeTopology } from "./runtime-topology";
 import { readTeamTaskResult, readTeamControlDecision, TeamOutputError, teamWorkerSubstage, type TeamTaskResultBinding } from "./team-task-result";
 import { canonical, digest, identifier, requireThat, terminal } from "./value";
 
 interface Assignment {
   child_id: string; parent_id: string; topology: string; substage: string;
-  worker_role: string; checkpoint_id: string; run_id: string; accepted: string | null; generation: number; execution_id: string; kind: "native" | "aggregate";
+  worker_role: string; checkpoint_id: string; run_id: string; accepted: string | null; generation: number; execution_id: string; execution_source: "local" | "device"; kind: "native" | "aggregate";
 }
 /** Associates already-authorized child tasks with topology roles and the existing local queue. */
 export class TopologyTaskQueue {
-  constructor(private readonly kernel: RuntimeKernel, private readonly runtime: LocalTaskRuntime) {
+  constructor(private readonly kernel: RuntimeKernel, private readonly runtime: TopologyRuntime) {
     requireThat(runtime.kernel === kernel, "topology_queue_database_mismatch");
   }
   private parent(actor: Principal, parentId: string, taskRevision: number, topologyRevision: number) {
@@ -47,8 +48,8 @@ export class TopologyTaskQueue {
         ancestor = row?.parent_id ?? null;
       }
       const run = this.runtime.enqueue(`topology-run-${digest([actor.id, requestId])}`, childId, childRevision);
-      this.kernel.db.sql.query("INSERT INTO topology_tasks (child_id,parent_id,topology,substage,worker_role,checkpoint_id,run_id,accepted,execution_id) VALUES (?,?,?,?,?,?,?,NULL,?)")
-        .run(childId, parentId, topology.state.topology, cp.substage, role, cp.checkpoint_id, run.run_id, topology.state.execution_id);
+      this.kernel.db.sql.query("INSERT INTO topology_tasks (child_id,parent_id,topology,substage,worker_role,checkpoint_id,run_id,accepted,execution_id,execution_source) VALUES (?,?,?,?,?,?,?,NULL,?,?)")
+        .run(childId, parentId, topology.state.topology, cp.substage, role, cp.checkpoint_id, run.run_id, topology.state.execution_id, this.runtime.topologySource);
       return { child_id: childId, run_id: run.run_id };
     }, value => { this.runtime.assertPrincipal(actor); requireScope(actor, "team:write"); requireScope(actor, "task:execute"); this.kernel.inspect(actor, parentId); this.kernel.inspect(actor, childId); return value; });
   }
@@ -145,9 +146,9 @@ export class TopologyTaskQueue {
       let rejection: Record<string, unknown>;
       if (child.task.status === "done") {
         requireThat(run.state === "completed", "topology_child_not_completed");
-        const row = this.kernel.db.sql.query("SELECT lease FROM local_runs WHERE run_id=?").get(prior.run_id) as { lease: string | null };
-        requireThat(row.lease !== null, "topology_child_execution_missing");
-        const lease = JSON.parse(row.lease) as Lease;
+        const execution = topologyExecution(this.kernel, actor, childId, prior.run_id);
+        requireThat(execution.lease !== null, "topology_child_execution_missing");
+        const lease = execution.lease;
         const effects = this.kernel.db.sql.query("SELECT effect_id FROM effects WHERE task_id=? AND episode_id=? AND state='confirmed'").all(childId, lease.episode_id) as { effect_id: string }[];
         requireThat(effects.length === 1, "topology_child_result_ambiguous");
         const proof = this.kernel.inspectCompletedEffect(actor, childId, childRevision, lease.episode_id, effects[0]!.effect_id);
@@ -219,9 +220,9 @@ export class TopologyTaskQueue {
       }
       const run = this.runtime.inspect(assignment.run_id);
       requireThat(run.task_id === childId && run.state === "completed", "topology_child_not_completed");
-      const row = this.kernel.db.sql.query("SELECT lease FROM local_runs WHERE run_id=?").get(run.run_id) as { lease: string | null };
-      requireThat(row.lease !== null, "topology_child_execution_missing");
-      const lease = JSON.parse(row.lease) as Lease;
+      const execution = topologyExecution(this.kernel, actor, childId, run.run_id);
+      requireThat(execution.lease !== null, "topology_child_execution_missing");
+      const lease = execution.lease;
       const effects = this.kernel.db.sql.query("SELECT e.effect_id FROM effects e JOIN episodes p ON p.episode_id=e.episode_id WHERE e.task_id=? AND e.episode_id=? AND e.fence=? AND e.state='confirmed' AND e.result=p.result")
         .all(childId, lease.episode_id, lease.fence) as { effect_id: string }[];
       requireThat(effects.length === 1, "topology_child_result_ambiguous");

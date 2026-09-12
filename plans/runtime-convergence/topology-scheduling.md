@@ -106,3 +106,75 @@ See `test/topology-scheduler.test.ts` for all local topology combinations, backg
 separate-connection coordination, recovery, caps and stale artifact refusal. Actual CLI
 configuration/EOF/SIGTERM checks are in `test/local-runtime-control.test.ts`. Controlled
 resolver and negative artifact fixtures do not prove actual provider/model acceptance.
+
+
+## Device coordinator execution
+
+The same plan and control operations are available in the private device coordinator.
+Add `topology_scheduler` to its existing `controlmesh.device_runtime.v1` configuration:
+
+```json
+{
+  "topology_scheduler": {
+    "auto_start": true,
+    "parallelism": 2,
+    "max_pending": 128,
+    "interval_ms": 250,
+    "routes": {
+      "project_worker": {
+        "workspace_id": "project",
+        "capability": "native",
+        "device_ids": ["desktop", "arm-worker"]
+      },
+      "project_reviewer": {
+        "workspace_id": "project",
+        "capability": "native",
+        "device_ids": ["desktop"]
+      }
+    }
+  }
+}
+```
+
+This is a configuration fragment: task IDs must match the submitted tasks and registered
+plan; workspace/capability/device IDs must already be authorized in the device catalog.
+Every native role needs an explicit route. Optional `peer_tasks` and `parent_task` retain
+the existing mailbox authorization rules. Aggregate nodes are reduced by the coordinator
+and are never sent to a provider. Model output cannot supply routes or alter their scope.
+Native continuation narrows an approved route to the handle's issuing device; a handle on
+an unlisted device blocks admission. Native stores and credentials stay on that device.
+
+The ordinary `device-runtime.ts <config> --daemon` path starts the HTTP coordinator and,
+when `auto_start` is true, the topology loop. Opening the configuration without daemon
+startup creates no listener or model invocation. Registration remains paused until explicit
+activation. Device workers retain their existing independent startup, preflight and queues.
+`drain_schedules` advances available coordinator transitions and returns when progress needs
+an external worker; it does not run a second provider loop or wait forever for a device.
+
+Schema 25 records `execution_source` on assignments and stores device run bindings in
+`topology_device_runs`. Assignment generation, execution projection and immutable routing
+policy are checked against the current coordinator state. Kernel claim binds the actual
+worker device, episode and fence in the same transaction that creates the lease. Missing
+execution ownership, substituted local runs, revoked devices or changed assignments cannot
+supply accepted results. Existing local completion digests are preserved by the upgrade.
+
+`parallelism` limits admitted topology episodes across this coordinator's device workers,
+in addition to each worker's own cap. Discovery hides jobs when the cap is full; claim
+rechecks the cap transactionally, including after coordinator restart. `max_pending` bounds
+the queued device topology runs. Neither limit claims that an unreachable physical process
+has stopped; episode fencing and uncertain-effect reconciliation remain authoritative.
+
+Preflight release or unstarted lease expiry consumes that assignment's admission. The old
+job disappears from discovery and cannot be reclaimed by a worker poll. Explicit
+`retry_schedule_child` archives it and creates a new assignment under the original task;
+malformed output retains the existing bounded retry and native-session rules. Unknown
+side effects, cancellation and revoked execution authority cannot be replayed as retries.
+
+Current verification uses authenticated HTTP and controlled adapters, including all four
+root topologies and all sixteen nested pairs. Normal configuration, CLI EOF/SIGTERM,
+restart, explicit recovery and schema-24 upgrade are covered separately. These tests do
+not qualify a real native-model topology. Root file delivery still requires a topology
+artifact gate; the device configuration has no remote artifact gate yet and therefore
+blocks such completion with `topology_artifact_gate_required`. Remote current-source and
+artifact acceptance and reviewed SpecMesh closeout remain required before full rollout.
+Older candidates reject schema 25; rollback requires the pre-upgrade database backup.

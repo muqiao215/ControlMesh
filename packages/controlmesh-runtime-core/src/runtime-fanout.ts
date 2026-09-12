@@ -2,7 +2,7 @@ import type { TopologyArtifactGate } from "./topology-artifacts";
 import { completeTopologyStep } from "./topology-completion";
 import { command, requireScope } from "./commands";
 import { RuntimeKernel, type Principal } from "./kernel";
-import { LocalTaskRuntime } from "./local-task-runtime";
+import type { TopologyRuntime } from "./topology-runtime";
 import { RuntimeTopology, type TopologySnapshot } from "./runtime-topology";
 import { TopologyTaskQueue } from "./topology-task-queue";
 import type { FanoutResultOptions } from "./team-fanout";
@@ -13,7 +13,7 @@ export interface FanoutChild { task_id: string; revision: number; role: string; 
 export class RuntimeFanout {
   private readonly topology: RuntimeTopology;
   private readonly queue: TopologyTaskQueue;
-  constructor(private readonly kernel: RuntimeKernel, private readonly runtime: LocalTaskRuntime, private readonly completionGate?: TopologyArtifactGate) {
+  constructor(private readonly kernel: RuntimeKernel, private readonly runtime: TopologyRuntime, private readonly completionGate?: TopologyArtifactGate) {
     this.topology = new RuntimeTopology(kernel); this.queue = new TopologyTaskQueue(kernel, runtime);
   }
   private authorize(actor: Principal, parentId: string, children: readonly FanoutChild[]): void {

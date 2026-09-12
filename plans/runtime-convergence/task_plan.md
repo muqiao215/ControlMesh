@@ -69,9 +69,10 @@ No claim that full TS migration or distributed coordination has completed. A sco
 
 ## Next Step
 
-Bind the persisted topology graphs to the existing device coordinator/worker queues
-with current assignment and native authority checks. Automatic local scheduling passed
-645 tests / 8529 assertions across 67 files; see progress.md for the retained full gate. Continue real native topology/source-revision qualification and all remaining
+Verify publication/CI for schema-25 device topology integration after its full local gate
+passed (680 tests / 8884 assertions across 68 files). Authenticated
+worker dispatch, actual episode bindings, normal coordinator startup and bounded recovery
+are implemented; see progress.md for the current full gate. Continue real native topology/source-revision qualification and all remaining
 CM-R0–CM-R7 owners and rollout gates. Local background fixtures do not narrow this goal.
 
 Current implementation and native evidence belong in progress.md and its retained archive,
@@ -117,8 +118,10 @@ actual leaf tool receipts. This does not establish automatic service or device d
 Current recovery foundation adds read-only result preview, typed malformed-output
 classification, explicit same-session retry with a durable two-retry ceiling and optional
 pipeline/fanout repair/interruption caps. Schema 24 now adds frozen schedule registration, background local service startup/control,
-explicit recovery and origin-attributed automatic transitions. Device topology dispatch and
-real native topology acceptance remain next after this increment's full verification. Continue all remaining CM-R0–CM-R7 provider/transport/store, native source
+explicit recovery and origin-attributed automatic transitions. Schema 25 adds device topology
+dispatch through the existing worker lifecycle, frozen routes and atomic episode/admission
+bindings. Normal coordinator controls, restart and bounded recovery are implemented. Real
+native topology, remote artifact/current-source and reviewed closeout acceptance remain next. Continue all remaining CM-R0–CM-R7 provider/transport/store, native source
 revision and release/install gates; explicit local queue tests do not narrow that scope.
 There is no production writer switch, release or installed-version alignment yet.
 

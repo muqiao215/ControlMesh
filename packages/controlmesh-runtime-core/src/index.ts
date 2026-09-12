@@ -65,3 +65,6 @@ export { TopologyArtifactGate, type TopologyArtifactConfiguration, type Topology
 
 export { TopologyScheduler, type TopologySchedulerOptions } from "./topology-scheduler";
 export { decodeTopologySchedulePlan, type TopologySchedulePlan, type ScheduleNode, type ScheduleRole } from "./topology-schedule-plan";
+
+export { DeviceTopologyRuntime, type DeviceTopologyRoute } from "./device-topology-runtime";
+export type { TopologyRuntime } from "./topology-runtime";

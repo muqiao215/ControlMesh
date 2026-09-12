@@ -34,6 +34,7 @@ export interface LocalRuntimeOptions { parallelism?: number; max_pending?: numbe
 
 /** Durable local execution entrypoint. No automatic retries, provider fallback or legacy-writer activation. */
 export class LocalTaskRuntime {
+  readonly topologySource = "local" as const;
   private readonly owner = randomUUID();
   private readonly actor: Principal;
   private readonly ingress: TaskIngress;
@@ -141,6 +142,7 @@ export class LocalTaskRuntime {
       requireThat(this.rows("queued").length < this.maxPending, "local_queue_full");
       requireThat(!this.kernel.db.sql.query("SELECT 1 FROM local_runs WHERE task_id=? AND state IN ('queued','running')").get(taskId), "task_already_queued");
       this.kernel.assertNativeTask(this.actor, taskId);
+      requireThat(!this.kernel.db.sql.query("SELECT 1 FROM topology_tasks WHERE child_id=? AND execution_source='device'").get(taskId), "device_topology_requires_device_queue");
       const execution = this.resolve(task); this.checkExecution(execution);
       this.kernel.db.sql.query("INSERT INTO local_runs (run_id,principal,device_id,origin,task_id,expected_revision,binding_digest,state,created_at) VALUES (?,?,?,?,?,?,?,'queued',?)")
         .run(runId, this.actor.id, this.actor.device_id!, this.actor.origin, taskId, expectedRevision, execution.binding_digest, this.kernel.db.now());

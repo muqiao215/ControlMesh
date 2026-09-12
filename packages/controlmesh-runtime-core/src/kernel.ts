@@ -1,3 +1,4 @@
+import { topologyNativeClaim } from "./topology-execution";
 import { assertTopologyCompletionPermit, type TopologyCompletionPermit } from "./topology-artifacts";
 import { verifiedTopologyCompletion } from "./topology-completion";
 import { decodeTopologyState, startTopology } from "./team-topology";
@@ -130,9 +131,10 @@ export class RuntimeKernel {
     requireThat(Number.isSafeInteger(expected) && task.revision === expected, "revision_conflict");
   }
 
+  eventOrigin(actor: Principal): Principal["origin"] { return this.scheduleActor === actor.id ? "schedule" : actor.origin; }
   private event(actor: Principal, task: TaskRow, kind: string, payload: unknown): void {
     this.db.sql.query("INSERT INTO events (task_id,kind,revision,fence,principal,origin,at,payload) VALUES (?,?,?,?,?,?,?,?)")
-      .run(task.task_id, kind, task.revision, task.fence, actor.id, this.scheduleActor === actor.id ? "schedule" : actor.origin, this.db.now(), canonical(payload));
+      .run(task.task_id, kind, task.revision, task.fence, actor.id, this.eventOrigin(actor), this.db.now(), canonical(payload));
   }
 
   private save(task: TaskRow): void {
@@ -213,7 +215,7 @@ export class RuntimeKernel {
       this.revision(task, expectedRevision);
       requireThat(!terminal.has(task.status) && !task.needs_reconciliation, "task_not_admitted");
       this.assertNativeTask(actor, taskId);
-      this.assertTopologyParents(taskId);
+      this.assertTopologyParents(taskId); topologyNativeClaim(this, actor, taskId);
       const now = this.db.now();
       if (task.active_episode) {
         const previous = this.db.sql.query("SELECT * FROM episodes WHERE episode_id=?").get(task.active_episode) as EpisodeRow;
@@ -226,6 +228,7 @@ export class RuntimeKernel {
       task.status = "running";
       const lease: Lease = { schema_version: "controlmesh.execution_lease.v1", task_id: taskId, episode_id: task.active_episode, device_id: actor.device_id!, fence: task.fence, lease_until: now + ttlMs };
       assertProtocolSchema<Lease>("execution-lease.schema.json", lease);
+      topologyNativeClaim(this, actor, taskId, lease);
       this.db.sql.query("INSERT INTO episodes (episode_id,task_id,device_id,fence,state,lease_until) VALUES (?,?,?,?,'leased',?)")
         .run(lease.episode_id, taskId, lease.device_id, lease.fence, lease.lease_until);
       this.save(task);

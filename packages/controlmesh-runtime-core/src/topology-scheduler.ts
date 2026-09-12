@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { command, requireScope } from "./commands";
 import { RuntimeKernel, type Principal } from "./kernel";
-import { LocalTaskRuntime } from "./local-task-runtime";
+import type { TopologyRuntime } from "./topology-runtime";
 import { RuntimeTopology } from "./runtime-topology";
 import { RuntimePipeline, type PipelineChild } from "./runtime-pipeline";
 import { RuntimeFanout } from "./runtime-fanout";
@@ -37,7 +37,7 @@ export class TopologyScheduler {
   private readonly interval: number; private readonly leaseMs: number; private readonly maxSteps: number;
   private timer?: ReturnType<typeof setInterval>; private ticking?: Promise<number>; private draining?: Promise<void>;
   private stopping = false; private error: string | null = null;
-  constructor(private readonly kernel: RuntimeKernel, private readonly runtime: LocalTaskRuntime, private readonly actor: Principal,
+  constructor(private readonly kernel: RuntimeKernel, private readonly runtime: TopologyRuntime, private readonly actor: Principal,
     options: TopologySchedulerOptions = {}, private readonly gate?: TopologyArtifactGate) {
     requireThat(runtime.kernel === kernel, "topology_queue_database_mismatch"); this.authorize();
     this.interval = options.interval_ms ?? 250; this.leaseMs = options.lease_ms ?? 30000; this.maxSteps = options.max_steps ?? 16;
@@ -333,6 +333,7 @@ export class TopologyScheduler {
   async drain() {
     for (let i = 0; i < 256; i++) {
       const changes = await this.tick(); await this.draining;
+      if (this.runtime.topologySource === "device" && changes === 0) return;
       if (!changes && this.runtime.queueStatus().queued === 0 && this.runtime.queueStatus().running === 0) {
         // One final pass observes native completion or a retained preflight block.
         if (await this.tick() === 0) return;

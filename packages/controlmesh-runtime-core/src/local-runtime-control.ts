@@ -1,3 +1,4 @@
+import { topologyControl, topologyControlFields } from "./topology-control";
 import type { TopologyScheduler } from "./topology-scheduler";
 import { adoptSpecMeshCompletion, unchangedSpecMeshCompletion } from "./specmesh-completion";
 import { identifier, object, requireThat, RuntimeConflict, type LegacyTask } from "./value";
@@ -26,11 +27,7 @@ export class LocalRuntimeControl {
     try {
       requireThat(object(request), "invalid_local_request"); identifier(request.id); id = request.id;
       const fields: Record<string, readonly string[]> = {
-        register_schedule: ["plan"], inspect_schedule: ["root_task_id"],
-        activate_schedule: ["root_task_id", "expected_revision"], pause_schedule: ["root_task_id", "expected_revision"],
-        start_scheduler: [], scheduler_status: [], drain_schedules: [],
-        retry_schedule_child: ["root_task_id", "expected_revision", "node_id", "parent_revision", "topology_revision", "child_id", "child_revision", "prompt"],
-        answer_schedule: ["root_task_id", "expected_revision", "node_id", "parent_revision", "topology_revision", "input"],
+        ...topologyControlFields,
         submit: ["task", "specmesh_requirements_sha256"], inspect_task: ["task_id"], enqueue: ["task_id", "expected_revision"], inspect_run: ["run_id"],
         resume: ["task_id", "expected_revision", "prompt"], cancel: ["task_id", "expected_revision"], tell: ["task_id", "text"], drain: [],
         inspect_message: ["task_id", "message_id"], mailbox_status: ["task_id"],
@@ -48,21 +45,8 @@ export class LocalRuntimeControl {
       if (["start_inbound", "inbound_status", "drain_inbound", "retry_inbound"].includes(request.op)) requireThat(this.inbound, "feishu_inbound_not_configured");
       if (["bind_delivery", "deliveries", "drain_deliveries", "retry_delivery", "reconcile_delivery", "revoke_delivery"].includes(request.op))
         requireThat(this.deliveries, "delivery_not_configured");
-      if (request.op.includes("schedule")) requireThat(this.scheduler, "topology_scheduler_not_configured");
+      if (Object.hasOwn(topologyControlFields, request.op)) result = await topologyControl(this.scheduler, request, id);
       switch (request.op) {
-        case "register_schedule": result = this.scheduler!.register(id, request.plan); break;
-        case "inspect_schedule": identifier(request.root_task_id); result = this.scheduler!.inspect(request.root_task_id); break;
-        case "activate_schedule": case "pause_schedule": identifier(request.root_task_id);
-          result = this.scheduler!.setMode(id, request.root_task_id, request.expected_revision as number, request.op === "activate_schedule" ? "active" : "paused"); break;
-        case "start_scheduler": result = this.scheduler!.start(); break;
-        case "scheduler_status": result = this.scheduler!.status(); break;
-        case "drain_schedules": await this.scheduler!.drain(); result = this.scheduler!.status(); break;
-        case "retry_schedule_child": identifier(request.root_task_id); identifier(request.node_id); identifier(request.child_id);
-          result = this.scheduler!.retry(id, request.root_task_id, request.expected_revision as number, request.node_id, request.parent_revision as number,
-            request.topology_revision as number, request.child_id, request.child_revision as number, request.prompt as string | undefined); break;
-        case "answer_schedule": identifier(request.root_task_id); identifier(request.node_id);
-          result = this.scheduler!.answer(id, request.root_task_id, request.expected_revision as number, request.node_id, request.parent_revision as number,
-            request.topology_revision as number, request.input as string); break;
         case "history_search":
           requireThat(this.history && typeof request.provider === "string" && typeof request.query === "string", "native_history_not_configured");
           result = await this.history.search(request.provider, request.query); break;

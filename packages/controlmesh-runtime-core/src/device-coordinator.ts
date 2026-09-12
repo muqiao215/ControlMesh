@@ -1,3 +1,4 @@
+import { topologyNativeClaim } from "./topology-execution";
 import { verifyDeviceCompletion } from "./task-completion";
 import { assertDeviceWorkspaceGrant, verifyDeviceWorkspaceProof } from "./providers/device-workspace-proof";
 import { createHash, timingSafeEqual } from "node:crypto";
@@ -140,7 +141,7 @@ export class DeviceCoordinator {
       this.kernel.db.sql.query("INSERT INTO device_assignment_generations VALUES (?,?) ON CONFLICT(task_id) DO UPDATE SET generation=excluded.generation")
         .run(taskId, digest([actor.id, requestId]));
       this.kernel.db.sql.query("INSERT INTO events (task_id,kind,revision,fence,principal,origin,at,payload) VALUES (?,'device.assigned',?,?,?,?,?,?)")
-        .run(taskId, current.revision, current.fence, actor.id, actor.origin, this.kernel.db.now(), canonical({ assignment_digest: this.assignmentDigest(taskId, specification) }));
+        .run(taskId, current.revision, current.fence, actor.id, this.kernel.eventOrigin(actor), this.kernel.db.now(), canonical({ assignment_digest: this.assignmentDigest(taskId, specification) }));
       return { assigned: true };
     });
   }
@@ -154,7 +155,17 @@ export class DeviceCoordinator {
     return row ? digest({ specification, generation: row.generation }) : digest(specification);
   }
 
-  private assignment(device: DeviceRegistration, taskId: string): DeviceJob {
+  inspectIssued(actor: Principal, taskId: string, deviceId?: string) {
+    this.assertCurrent(); requireScope(actor, "device:assign"); this.kernel.inspect(actor, taskId);
+    const row = this.kernel.db.sql.query("SELECT specification FROM device_assignments WHERE task_id=? AND principal=?").get(taskId, actor.id) as { specification: string } | null;
+    requireThat(row, "assignment_unavailable"); const specification = JSON.parse(row.specification) as DeviceAssignment;
+    const device = deviceId === undefined ? specification.device_ids.map(id => this.devices.get(id)).find(item => item && !this.revoked(item.device_id)) : this.devices.get(deviceId);
+    requireThat(device && device.principal_id === actor.id && specification.device_ids.includes(device.device_id), "device_not_authorized");
+    const job = this.assignment(device, taskId, true);
+    return { specification, assignment_digest: job.assignment_digest, execution_digest: job.execution_digest! };
+  }
+
+  private assignment(device: DeviceRegistration, taskId: string, allowReleasedTopology = false): DeviceJob {
     this.assertCurrent();
     requireThat(!this.revoked(device.device_id), "device_revoked");
     identifier(taskId);
@@ -165,6 +176,10 @@ export class DeviceCoordinator {
     requireThat(device.capabilities.includes(specification.capability) && device.workspace_ids.includes(specification.workspace_id), "device_capability_unavailable");
     const task = this.kernel.inspect(this.actor(device), taskId);
     requireThat(taskAuthority(task) === row.authority_digest, "assignment_authority_changed");
+    if (!allowReleasedTopology && task.task.status === "waiting") {
+      const run = this.kernel.db.sql.query("SELECT r.lease FROM topology_tasks t JOIN topology_device_runs r ON r.run_id=t.run_id WHERE t.child_id=? AND t.execution_source='device'").get(taskId) as { lease: string | null } | null;
+      requireThat(!run?.lease, "device_topology_retry_required");
+    }
     // Execution authority is projected from the stored task, never the assignment's input body.
     const execution = Object.fromEntries(["provider", "model", "prompt", "execution_context", "tool_grant", "native_session", "completion_requirements"]
       .filter(key => Object.hasOwn(task.task, key)).map(key => [key, task.task[key]]));
@@ -228,7 +243,7 @@ export class DeviceCoordinator {
       let scanned = 0;
       for (const row of rows) {
         scanned++;
-        try { jobs.push(this.assignment(device, row.task_id)); } catch (error) { if (!(error instanceof RuntimeConflict)) throw error; }
+        try { const job = this.assignment(device, row.task_id); topologyNativeClaim(this.kernel, actor, row.task_id); jobs.push(job); } catch (error) { if (!(error instanceof RuntimeConflict)) throw error; }
         if (jobs.length === 32) break;
       }
       return input.operation === "queue" ? jobs : { items: jobs,

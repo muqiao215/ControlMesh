@@ -192,9 +192,26 @@ test("schema twenty-three upgrade adds empty scheduler storage without changing 
   const f = fixture();
   try {
     const before = f.kernel.inspect(actor, "root");
-    f.db.sql.exec("DROP TABLE topology_schedule_members; DROP TABLE topology_schedules; PRAGMA user_version=23"); await f.restart();
-    expect(f.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 24 });
+    f.db.sql.exec("DROP TABLE topology_device_runs; ALTER TABLE topology_tasks DROP COLUMN execution_source; DROP TABLE topology_schedule_members; DROP TABLE topology_schedules; PRAGMA user_version=23"); await f.restart();
+    expect(f.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 25 });
     expect(f.kernel.inspect(actor, "root")).toEqual(before);
     expect(f.db.sql.query("SELECT COUNT(*) AS n FROM topology_schedules").get()).toEqual({ n: 0 });
+  } finally { await f.close(); }
+});
+
+
+for (const completed of [false, true]) test(`schema twenty-four upgrade preserves ${completed ? "completed proof" : "paused registration"}`, async () => {
+  const f = fixture();
+  try {
+    f.register(); if (completed) { f.activate(); await f.scheduler.drain(); }
+    const schedule = f.scheduler.inspect("root"), task = f.kernel.inspect(actor, "root"), calls = [...f.calls];
+    const proof = f.db.sql.query("SELECT * FROM topology_completions").all();
+    f.db.sql.exec("DROP TABLE topology_device_runs; ALTER TABLE topology_tasks DROP COLUMN execution_source; PRAGMA user_version=24");
+    await f.restart();
+    expect(f.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 25 });
+    expect(f.scheduler.inspect("root")).toEqual(schedule); expect(f.kernel.inspect(actor, "root")).toEqual(task);
+    expect(f.db.sql.query("SELECT * FROM topology_completions").all()).toEqual(proof);
+    expect(f.db.sql.query("SELECT DISTINCT execution_source FROM topology_tasks").all()).toEqual(completed ? [{ execution_source: "local" }] : []);
+    await f.scheduler.drain(); expect(f.calls).toEqual(calls); expect(f.scheduler.inspect("root")).toEqual(schedule);
   } finally { await f.close(); }
 });

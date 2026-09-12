@@ -1,3 +1,6 @@
+import { topologyControl, topologyControlFields } from "./topology-control";
+import type { TopologyScheduler } from "./topology-scheduler";
+import type { DeviceTopologyRuntime } from "./device-topology-runtime";
 import { adoptSpecMeshCompletion, unchangedSpecMeshCompletion } from "./specmesh-completion";
 import type { SpecMeshPort } from "./specmesh-port";
 import type { DeviceClient } from "./device-client";
@@ -31,15 +34,20 @@ export class DeviceCoordinatorControl implements RuntimeControl {
   private server?: Bun.Server<undefined>;
   private stopped = false;
   private maintenance?: ReturnType<typeof setInterval>;
+  private topology?: { scheduler: TopologyScheduler; runtime: DeviceTopologyRuntime; auto_start: boolean };
+  attachTopology(scheduler: TopologyScheduler, runtime: DeviceTopologyRuntime, autoStart: boolean) {
+    requireThat(!this.topology, "topology_scheduler_already_configured"); this.topology = { scheduler, runtime, auto_start: autoStart };
+  }
   constructor(private readonly kernel: RuntimeKernel, private readonly actor: Principal,
     private readonly coordinator: DeviceCoordinator, private readonly devices: readonly DeviceRegistration[],
     private readonly assertCurrent: () => void, private readonly port = 0, private readonly specmesh?: SpecMeshPort) {
     this.ingress = new TaskIngress(kernel, { command_origin: "human_request", origin: "user", source_scope: "local_foreground", transport: "cm-device" }, assertCurrent);
   }
-  async stop(): Promise<void> { this.stopped = true; if (this.maintenance) clearInterval(this.maintenance); await this.server?.stop(true); await this.specmesh?.stop(); this.server = undefined; }
+  async stop(): Promise<void> { this.stopped = true; if (this.maintenance) clearInterval(this.maintenance); await Promise.all([this.topology?.scheduler.stop(), this.topology?.runtime.stop(), this.server?.stop(true), this.specmesh?.stop()]); this.server = undefined; }
   startDaemon(): void {
     this.assertCurrent(); requireThat(!this.stopped, "device_runtime_stopped");
     this.server ??= this.coordinator.listen(this.port);
+    if (this.topology?.auto_start) this.topology.scheduler.start();
     const recover = () => { this.assertCurrent(); this.kernel.recoverExpired({ ...this.actor, origin: "recovery" }); };
     recover(); this.maintenance ??= setInterval(() => { try { recover(); } catch { void this.stop(); } }, 2000);
   }
@@ -48,6 +56,7 @@ export class DeviceCoordinatorControl implements RuntimeControl {
     try {
       this.assertCurrent(); requireThat(!this.stopped, "device_runtime_stopped");
       const value = request(input, {
+        ...topologyControlFields,
         status: [], start: [], submit: ["task", "specmesh_requirements_sha256"], inspect_task: ["task_id"],
         assign: ["task_id", "expected_revision", "workspace_id", "capability", "device_ids", "peer_tasks", "parent_task"],
         cancel: ["task_id", "expected_revision"], resume: ["task_id", "expected_revision", "prompt"],
@@ -57,6 +66,7 @@ export class DeviceCoordinatorControl implements RuntimeControl {
       id = value.id;
       let result: unknown;
       const key = `device-control-${digest(id)}`;
+      if (typeof value.op === "string" && Object.hasOwn(topologyControlFields, value.op)) result = await topologyControl(this.topology?.scheduler, value, key);
       switch (value.op) {
         case "start":
           // The coordinator checks configuration at both authentication boundaries and during Agent calls.

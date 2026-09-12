@@ -1,3 +1,5 @@
+import { DeviceTopologyRuntime, type DeviceTopologyRoute } from "./device-topology-runtime";
+import { TopologyScheduler } from "./topology-scheduler";
 import { existsSync, lstatSync, mkdirSync, realpathSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { RuntimeDatabase } from "./database";
@@ -54,7 +56,7 @@ export function openDeviceRuntime(path: string): DeviceRuntime {
   requireThat(object(config) && config.schema_version === "controlmesh.device_runtime.v1" && config.mode === "candidate"
     && ["coordinator", "worker"].includes(String(config.role)), "unsupported_device_runtime_config");
   const common = ["schema_version", "mode", "role", "state_root", "principal_id", "device_id"];
-  fields(config, [...common, ...(config.role === "coordinator" ? ["devices", "listen_port", "specmesh"]
+  fields(config, [...common, ...(config.role === "coordinator" ? ["devices", "listen_port", "specmesh", "topology_scheduler"]
     : ["coordinator", "opencode", "claude", "workspaces", "capabilities", "communication", "history", "max_parallel", "scheduler"])], "invalid_device_runtime_config");
   identifier(config.principal_id); identifier(config.device_id);
   requireThat(typeof config.state_root === "string" && isAbsolute(config.state_root), "private_runtime_state_required");
@@ -99,14 +101,26 @@ export function openDeviceRuntime(path: string): DeviceRuntime {
       const port = integer(config.listen_port ?? 0, 0, 65535, "invalid_device_port");
       const kernel = new RuntimeKernel(database());
       const actor: Principal = { id: config.principal_id, device_id: config.device_id, origin: "human_request",
-        scopes: ["task:create", "task:read", "task:resume", "task:cancel", "task:reconcile", "task:admin", "device:assign", "device:revoke"] };
+        scopes: ["task:create", "task:read", "task:resume", "task:cancel", "task:reconcile", "task:admin", "device:assign", "device:revoke", ...(config.topology_scheduler === undefined ? [] : ["task:execute", "team:write"])] };
       let specmesh: SpecMeshPort | undefined;
       if (config.specmesh !== undefined) {
         fields(config.specmesh, ["workspace", "configuration"], "invalid_specmesh_profile");
         requireThat(typeof config.specmesh.workspace === "string" && object(config.specmesh.configuration), "invalid_specmesh_profile");
         specmesh = new SpecMeshPort(config.specmesh.configuration as unknown as SpecMeshConfiguration, config.specmesh.workspace, current);
       }
-      control = new DeviceCoordinatorControl(kernel, actor, new DeviceCoordinator(kernel, devices, current), devices, current, port, specmesh);
+      const coordinator = new DeviceCoordinator(kernel, devices, current);
+      const coordinatorControl = new DeviceCoordinatorControl(kernel, actor, coordinator, devices, current, port, specmesh);
+      if (config.topology_scheduler !== undefined) {
+        const schedule = config.topology_scheduler;
+        fields(schedule, ["auto_start", "routes", "parallelism", "max_pending", "interval_ms", "lease_ms", "max_steps"], "invalid_device_topology_profile");
+        requireThat(typeof schedule.auto_start === "boolean" && object(schedule.routes), "invalid_device_topology_profile");
+        const runtime = new DeviceTopologyRuntime(kernel, actor, coordinator, schedule.routes as Record<string, DeviceTopologyRoute>, current,
+          integer(schedule.parallelism ?? 2, 1, 16, "invalid_device_topology_limits"), integer(schedule.max_pending ?? 128, 1, 1024, "invalid_device_topology_limits"));
+        const scheduler = new TopologyScheduler(kernel, runtime, actor, { interval_ms: schedule.interval_ms as number | undefined,
+          lease_ms: schedule.lease_ms as number | undefined, max_steps: schedule.max_steps as number | undefined });
+        coordinatorControl.attachTopology(scheduler, runtime, schedule.auto_start);
+      }
+      control = coordinatorControl;
     } else {
       fields(config.coordinator, ["endpoint", "token"], "invalid_device_coordinator_profile");
       requireThat(typeof config.coordinator.endpoint === "string" && typeof config.coordinator.token === "string", "invalid_device_coordinator_profile");
