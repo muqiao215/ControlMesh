@@ -2,6 +2,18 @@
 
 ## Current
 
+Codex active communication now registers the existing broker and fixed peer scope through
+normal local configuration. Native MCP receipts are matched to the durable call journal;
+completion and retained-result recovery share journal verification/consumption. Installed
+CLI + real Viewer + synthetic loopback Responses send/recovery: 2 tests, 41 assertions,
+33.49s, exactly one attributed peer message and no recovery request. Broker/journal/Codex
+regression: 24 tests, 190 assertions, 6.06s; final receipt refusal additions: 2 tests,
+14 assertions. Typecheck/diff-check passed. Native ask/receive/answer exchange and device
+qualification remain pending, along with the full migration and release gates.
+Evidence logs: /tmp/cm-native-mcp-final.log and /tmp/cm-codex-active-regression.log.
+Previous 9c99092 CI 34725610771 succeeded; 5d0dcae CI was running when checked.
+
+
 Codex initial mailbox delivery is implemented with the existing reservation/consumption
 and recovery transactions. Native user-message ID plus exact composed input establishes
 delivery; changed mailbox content blocks recovery without consumption. Actual CLI +

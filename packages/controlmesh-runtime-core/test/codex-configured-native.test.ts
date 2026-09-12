@@ -10,15 +10,15 @@ import { observeOneShot } from "../src/providers/oneshot-observation";
 import { findCodexSession } from "../src/providers/codex-registration";
 import { openLocalRuntime } from "../src/local-runtime-config";
 import { LocalRuntimeControl } from "../src/local-runtime-control";
-import { codexMessagesResponse, codexPatchResponse, codexTextResponse } from "./helpers/codex-responses";
+import { codexSearchResponse, codexFunctionResponse, codexMessagesResponse, codexPatchResponse, codexTextResponse } from "./helpers/codex-responses";
 
 const executable = process.env.CM_CODEX_TEST_EXECUTABLE, viewer = process.env.CM_HISTORY_TEST_ROOT;
-test.skipIf(!executable || !viewer).each(["normal", "lost-observation", "readonly-patch", "commentary", "mailbox", "mailbox-recovery"])("installed Codex persists native context through Viewer adoption and configured runtime reopen (%s)", async mode => {
-  const inbox = mode.startsWith("mailbox"), lost = mode === "lost-observation" || mode === "mailbox-recovery", patch = mode === "readonly-patch";
+test.skipIf(!executable || !viewer).each(["normal", "lost-observation", "readonly-patch", "commentary", "mailbox", "mailbox-recovery", "active-send", "active-send-recovery"])("installed Codex persists native context through Viewer adoption and configured runtime reopen (%s)", async mode => {
+  const active = mode.startsWith("active-send"), inbox = mode.startsWith("mailbox"), lost = mode === "lost-observation" || mode === "mailbox-recovery" || mode === "active-send-recovery", patch = mode === "readonly-patch";
   const root = mkdtempSync(join(tmpdir(), "cm-native-codex-flow-")), home = join(root, "home"), workspace = join(root, "project"), state = join(root, "state");
   for (const path of [home, workspace, state]) mkdirSync(path, { mode: 0o700 });
   const marker = randomUUID(), requests: { phase: string; has_seed: boolean; mailbox_input: boolean }[] = [];
-  let patchIssued = false;
+  let patchIssued = false, sendIssued = false, searchIssued = false;
   const patchOutputs: string[] = [];
   const target = join(workspace, "readonly-canary.txt");
   const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
@@ -28,6 +28,14 @@ test.skipIf(!executable || !viewer).each(["normal", "lost-observation", "readonl
     const phase = last.includes("Reply with exactly PONG.") ? "probe" : last.includes("Seed marker:") ? "seed" : "resume";
     requests.push({ phase, has_seed: all.includes(marker), mailbox_input: last.includes("peer-mailbox-canary") });
     if (phase === "resume" && !all.includes(marker)) return Response.json({ error: { message: "fixture_missing_prior_context" } }, { status: 400 });
+    if (active && phase === "resume" && !sendIssued) {
+      const namespace = (body.input ?? []).filter((item: any) => item.type === "tool_search_output").flatMap((item: any) => item.tools ?? []).find((item: any) => item.name === "mcp__controlmesh");
+      const tool = namespace?.tools?.find((tool: any) => tool.name === "send");
+      if (!tool && !searchIssued) { searchIssued = true; return codexSearchResponse(body.model); }
+      if (!tool) throw new Error("missing MCP send after native search");
+      sendIssued = true;
+      return codexFunctionResponse(body.model, tool.name, { request_id: "native-send", recipient_task: "peer", text: "Native agent message" }, namespace.name);
+    }
     if (patch && phase === "resume") {
       for (const item of body.input ?? []) if (item.type === "custom_tool_call_output") patchOutputs.push(JSON.stringify(item.output));
       if (!patchIssued) {
@@ -54,6 +62,7 @@ test.skipIf(!executable || !viewer).each(["normal", "lost-observation", "readonl
     writeFileSync(configPath, JSON.stringify({ schema_version: "controlmesh.local_runtime.v1", mode: "candidate", state_root: state,
       principal_id: "operator", device_id: "desktop", source: { command_origin: "human_request", origin: "user", source_scope: "local_foreground", transport: "terminal" },
       workspace: { directory: workspace, read_files: [], required_reads: [] },
+      ...(active ? { communication: { node_executable: process.execPath, tasks: { task: { peer_tasks: ["peer"], parent_task: "peer" } } } } : {}),
       codex: { executable, cli_version: "0.154.0", codex_home: home, model: "gpt-5.5", environment }, history: { directory: viewer, python: "/usr/bin/python3" } }), { mode: 0o600 });
     owned = openLocalRuntime(configPath);
     const control = () => new LocalRuntimeControl(owned!.runtime, owned!.deliveries, owned!.submissionIdentity, owned!.inbound, owned!.specmesh, owned!.recovery, owned!.history);
@@ -63,6 +72,7 @@ test.skipIf(!executable || !viewer).each(["normal", "lost-observation", "readonl
     const adopted = await request("adopt", "prepare_adoption", { task_id: "task", provider: "codex", session_id: reference.session_id });
     expect(readFileSync(store.path)).toEqual(before); expect(requests).toHaveLength(1);
     const submitted = await request("submit", "submit", { task: { task_id: "task", chat_id: "fixture", status: "waiting", provider: "codex", model: "gpt-5.5", repo_root: workspace, prompt: "Continue the earlier conversation.", native_session: adopted.native_session } });
+    if (active) await request("peer-create", "submit", { task: { task_id: "peer", chat_id: "fixture", status: "waiting", provider: "codex", model: "gpt-5.5", repo_root: workspace, prompt: "Peer fixture" } });
     if (inbox) {
       const actor = { id: "operator", origin: "human_request" as const, device_id: "desktop", scopes: ["task:create", "task:read", "task:execute", "message:send"] };
       const peer = owned.runtime.kernel.submit(actor, "peer-create", { task_id: "peer", chat_id: "fixture", status: "waiting" });
@@ -95,8 +105,13 @@ test.skipIf(!executable || !viewer).each(["normal", "lost-observation", "readonl
     const resumed = await request("resume", "resume", { task_id: "task", expected_revision: completed.revision, prompt: "Continue once more." });
     await request("enqueue-again", "enqueue", { task_id: "task", expected_revision: resumed.revision }); await owned.runtime.drain();
     expect(owned.runtime.inspectTask("task").task.status).toBe("done");
-    expect(requests.map(item => item.phase)).toEqual(patch ? ["seed", "probe", "resume", "resume", "resume"] : ["seed", "probe", "resume", "resume"]);
+    expect(requests.map(item => item.phase)).toEqual(active ? ["seed", "probe", "resume", "resume", "resume", "resume"] : patch ? ["seed", "probe", "resume", "resume", "resume"] : ["seed", "probe", "resume", "resume"]);
     if (inbox) expect(requests.filter(item => item.phase === "resume").map(item => item.mailbox_input)).toEqual([true, false]);
+    if (active) {
+      expect(sendIssued).toBe(true);
+      expect(owned.runtime.kernel.db.sql.query("SELECT COUNT(*) AS n FROM messages WHERE recipient_task='peer'").get()).toEqual({ n: 1 });
+      expect(owned.runtime.kernel.db.sql.query("SELECT sender_task,origin FROM messages WHERE recipient_task='peer'").get()).toEqual({ sender_task: "task", origin: "agent_message" });
+    }
     if (patch) {
       expect(patchIssued).toBe(true);
       expect(patchOutputs.length).toBeGreaterThan(0);

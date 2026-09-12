@@ -80,7 +80,8 @@ account behavior or native tool permissions. Gemini persistent registration, Cod
 fresh-session creation, interrupted lineage qualification, effective native sandbox
 behavior, and Codex active messaging/topology/file-receipt integration remain.
 Codex initial mailbox delivery and retained consumption recovery are now integrated;
-active send/ask/receive/answer tooling is still pending. Complete these
+active messaging is now registered through the shared broker; installed-native send and
+retained recovery pass, while native ask/receive/answer and full exchange remain pending. Complete these
 owners without presenting one-shot execution or a transcript reader as full continuity.
 The configured coordinator now issues a versioned snapshot reference; device assignments
 bind it, and authenticated chunk reads require the current assignment and execution lease.

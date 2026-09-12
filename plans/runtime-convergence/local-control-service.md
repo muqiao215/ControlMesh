@@ -189,7 +189,7 @@ handle to `new TASK --provider codex --adoption JSON`, then explicitly `enqueue`
 adoption and execution journal; retained-result recovery does not call the model.
 
 This profile currently runs already-adopted sessions under native read-only settings.
-It does not yet fulfill configured required-file, write, communication or SpecMesh
+It does not yet fulfill configured required-file, write or SpecMesh
 completion contracts; those contracts are rejected before probing and remain migration
 work. Preserve governed project requirements. The existing Python production entrypoint
 and released default are unchanged; full native sandbox/real-account qualification is
@@ -207,5 +207,15 @@ input preserves sender/origin metadata and does not change task permissions. Dis
 reserves the exact batch; verified native user-message identity and full input equality
 permit atomic consumption with completion. Reconciliation uses the original batch and
 refuses changed mailbox content without another model call. Already consumed messages
-are not appended to the next turn. Active Agent messaging tools remain unimplemented
-for Codex; the communication configuration contract is still rejected.
+are not appended to the next turn. Codex also accepts the existing communication.tasks configuration for active messaging.
+It registers only send/ask_parent/receive/answer on one controller-owned MCP server,
+with per-tool approval and fixed task peers/parent. The broker retains task/lease checks,
+call budgets and origin attribution. Native MCP result text/arguments must match the
+existing durable journal before completion or recovery. Installed-native send and its
+recovery have passed; ask/receive/answer still need their native exchange qualification.
+No new protocol or second message store is used.
+
+Codex 0.154.0 discovers these MCP tools through native tool_search, then calls the
+mcp__controlmesh namespace. Per-tool approval configuration follows the
+[official MCP options](https://learn.chatgpt.com/docs/extend/mcp?surface=cli); permission
+is limited to the four broker-owned tools rather than a server-wide approval default.

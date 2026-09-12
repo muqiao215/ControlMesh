@@ -1944,3 +1944,21 @@ only after verification, reopen performs no new model request and the next expli
 does not reappend the consumed message. CI fixtures additionally reject mailbox payload
 changes during recovery and retain received state. This covers initial inbox delivery,
 not active MCP messaging tools, physical multi-device Codex or full topology acceptance.
+
+## 2026-09-13 — Codex active messaging registration and send
+
+The native CLI defers CM MCP tools behind tool_search. The qualification fixture now
+uses native tool_search_call and the returned mcp__controlmesh namespace before sending
+its function_call. Native defaults refused send under approval_policy=never; explicit
+per-tool approval for the four already scoped broker capabilities resolves this without
+changing shell/filesystem policy. Server configuration also limits enabled_tools to those
+four and requires startup success. Official option reference:
+https://learn.chatgpt.com/docs/extend/mcp?surface=cli
+
+CodexRegistration resolves the common communication.tasks profile. CodexTaskAdapter
+starts/stops the existing NativeAgentBroker, binds scope/stdio command in its dispatch
+manifest, and checks completed native MCP receipts against NativeAgentJournal. Recovery
+uses retained output and reconciles the original call journal without starting the broker
+or CLI. Real native send and lost-observation recovery each produced exactly one peer
+message with origin=agent_message. Live account, native ask/receive/answer exchange and
+multi-device Codex remain pending. All native fixtures use isolated loopback Responses.
