@@ -26,3 +26,11 @@ Phase 1 至 Phase 4：交互原型、前台执行闭环、持续工作视图、�
 ## Next
 
 从 Phase 1 开始做可操作终端原型，优先首屏、中文多行、slash 菜单、流式输出。
+
+## 2026-09-13 — TS socket terminal prototype
+
+Implemented explicit `cm-runtime --socket ABS ui`, dynamically loaded OpenTUI 0.5.11 on Bun 1.3.11. Header reads service registration; scrollable task/event view, fixed multiline composer and filtered slash menu. New task uses acknowledged submit revision for enqueue. Lost acknowledgement retains target, request ID and draft; no automatic mutation replay. Explicit resume registers new input; enqueue remains explicit. Ctrl+C reads current revision and requests cancellation while preserving draft; cancellation acknowledgement does not assert process exit. Non-TTY exits before renderer loading.
+
+Validation: typecheck passed. Focused CLI + terminal: 10 pass, 0 fail, 80 assertions (10.90s), `/tmp/cm-terminal-focused-authorized.log`. Renderer tests cover Chinese/emoji bracketed paste, resize, menu selection without mutation, ambiguous submit, current-revision enqueue/cancel and non-TTY. Initial service tests failed in restricted environment; after network permission and configured UV cache, passed without service implementation changes. Actual PTY command `/quit` exited 0, echo and ICANON restored. No real provider invoked.
+
+Still pending: native borrowing, actual provider streaming, inbox selection/reply UX, richer session/model selection, NO_COLOR validation, full visual/real-model acceptance and packaging/cutover. This is a prototype, not UX-01..12 completion.

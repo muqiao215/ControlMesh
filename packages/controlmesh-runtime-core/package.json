@@ -4,10 +4,15 @@
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
-  "bin": { "cm-runtime": "./scripts/cm-runtime.ts" },
+  "bin": {
+    "cm-runtime": "./scripts/cm-runtime.ts"
+  },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
     "test": "bun test test/*.test.ts"
   },
-  "dependencies": { "@controlmesh/protocol": "workspace:*" }
+  "dependencies": {
+    "@controlmesh/protocol": "workspace:*",
+    "@opentui/core": "0.5.11"
+  }
 }

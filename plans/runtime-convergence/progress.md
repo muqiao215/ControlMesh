@@ -148,3 +148,7 @@ runtime owners and full rollout gates. Do not return to repeated similar model p
 input delivery, recovery and limits. Earlier guarded attempts remain in
 [progress-through-6146dab.md](progress-through-6146dab.md); use targeted searches.
 Durable boundaries are in [ARCHITECTURE.md](../../docs/ARCHITECTURE.md).
+
+## 2026-09-13 — terminal integration checkpoint
+
+Exact baseline `3571ca33f0bca442e0bc77150f281657c975d589` CI run 34711851901 completed success. Added TS interactive socket-client prototype; evidence and limitations in `../terminal-product-v1/progress.md`. Production remains Python; full migration, physical multi-device acceptance and real Agent continuation remain open.

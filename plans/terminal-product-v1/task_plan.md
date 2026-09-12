@@ -144,8 +144,12 @@ native 终端交接后选择。旧 Python Rich/prompt_toolkit 方向作为历史
 
 ## Status
 
-计划已建立；实现未开始。原有 runtime 测试与 TypeScript parity 不算本计划 UX 验收。
+TS 交互原型实现中；复用常驻 Unix socket 服务。原有 runtime 测试与 TypeScript parity 不算本计划 UX 验收。
 
 ## Next Step
 
 执行 Phase 1 的可操作交互原型，先打通首屏、中文输入、`/` 菜单与流式输出。
+
+## TS interactive implementation — 2026-09-13
+
+Pinned OpenTUI 0.5.11 / Bun 1.3.11. Compact project/model header, scrollable task work, fixed multiline composer; auxiliary commands use a filtered slash menu. UI owns only ephemeral selection/draft. Socket owner handles all state; requests retain IDs, with no automatic mutation retries. Native borrowing, active Ctrl+C cancellation, token streaming and full UX acceptance remain required.

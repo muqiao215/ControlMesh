@@ -38,3 +38,7 @@
 
 只读审计终端入口、shell、router、rendering、runtime、测试目录及项目所有权索引。
 本次是计划交付，不运行 provider，不复用旧测试数量声称新的 UX 已通过。
+
+## 2026-09-13 — ownership and component selection
+
+Earlier Python UI evaluation is superseded by authorized complete TS migration. Published OpenTUI 0.5.11 loads on pinned Bun 1.3.11; use existing compiled package, not main-branch source build requirements. Terminal remains a private socket client: no SQLite/native-store ownership. Refresh generation prevents a stale read from replacing a later command result. Explicit events view survives refresh. Escape hides the slash menu while retaining its draft. No component/test result establishes real Agent memory continuity.

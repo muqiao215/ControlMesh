@@ -8,6 +8,7 @@ export const runtimeHelp = `ControlMesh TypeScript 运行时（候选入口）
 用法：cm-runtime --socket /absolute/private/runtime.sock COMMAND
 
   serve --config FILE             启动后台运行时服务，前台保持运行
+  ui                              打开交互终端（需要 TTY）
   status                          查看队列与并发容量
   tasks [--after ID] [--limit N]   查看任务、结果状态和阻塞原因
   inspect TASK                    查看任务及当前版本
@@ -50,7 +51,7 @@ export function parseRuntimeCli(argv: string[]): RuntimeCliCommand | null {
     else { const next = argv[++i]; requireThat(next !== undefined && !next.startsWith("--"), "missing_cli_option_value"); flags[arg] = next; }
   }
   const command = args[0]!, options: Record<string, string[]> = {
-    serve: ["--config"], status: [], tasks: ["--after", "--limit"], inspect: [], events: ["--after", "--limit"],
+    ui: [], serve: ["--config"], status: [], tasks: ["--after", "--limit"], inspect: [], events: ["--after", "--limit"],
     new: ["--project", "--provider", "--model", "--prompt", "--prompt-file"], enqueue: ["--revision"],
     resume: ["--revision", "--prompt", "--prompt-file"], cancel: ["--revision"], tell: ["--text"], request: ["--file"],
   };
@@ -66,6 +67,7 @@ export function parseRuntimeCli(argv: string[]): RuntimeCliCommand | null {
   const targeted = ["inspect", "events", "new", "enqueue", "resume", "cancel", "tell"].includes(command);
   requireThat(args.length === (targeted ? 2 : 1), "invalid_cli_arguments");
   const base = { command, socket, json: flags["--json"] === true, timeout_ms };
+  if (command === "ui") return base;
   if (command === "serve") { const config = text("--config"); requireThat(isAbsolute(config), "private_config_path_required"); return { ...base, config }; }
   if (targeted) identifier(args[1]);
   let request: Record<string, unknown>;

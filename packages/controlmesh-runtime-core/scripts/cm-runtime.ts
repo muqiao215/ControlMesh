@@ -8,7 +8,11 @@ let requestId: unknown;
 try {
   const command = parseRuntimeCli(process.argv.slice(2));
   if (!command) console.log(runtimeHelp);
-  else if (command.command === "serve") {
+  else if (command.command === "ui") {
+    requireThat(process.stdin.isTTY && process.stdout.isTTY && !command.json, "terminal_tty_required");
+    const { runRuntimeTerminal } = await import("../src/runtime-terminal");
+    await runRuntimeTerminal(command.socket, command.timeout_ms);
+  } else if (command.command === "serve") {
     let wake!: () => void;
     const stopped = new Promise<void>(resolve => { wake = resolve; });
     process.once("SIGINT", wake); process.once("SIGTERM", wake);
