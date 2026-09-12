@@ -169,10 +169,10 @@ test("schema eleven upgrades preserving an existing task, result route and origi
   f.runtime.submit("legacy", { task_id: "legacy", status: "waiting", chat_id: "oc_chat" }, { chat_id: "oc_chat" });
   f.deliveries.bindTask("legacy-bind", "legacy", 1, "selected-app");
   const oldTask = f.runtime.inspectTask("legacy");
-  f.db.sql.exec("DROP TABLE team_phases; DROP TABLE device_scheduled_work; DROP TABLE device_scheduler_leases; DROP TABLE device_assignment_generations; DROP TABLE device_native_adoptions; DROP TABLE command_reservations; DROP TABLE feishu_conversations; DROP TABLE feishu_event_aliases; DROP TABLE feishu_inbox; PRAGMA user_version=11");
+  f.db.sql.exec("DROP TABLE team_topologies; DROP TABLE team_phases; DROP TABLE device_scheduled_work; DROP TABLE device_scheduler_leases; DROP TABLE device_assignment_generations; DROP TABLE device_native_adoptions; DROP TABLE command_reservations; DROP TABLE feishu_conversations; DROP TABLE feishu_event_aliases; DROP TABLE feishu_inbox; PRAGMA user_version=11");
   await f.close(); const restored = f.open();
   expect(restored.runtime.inspectTask("legacy")).toEqual(oldTask);
-  expect(restored.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 16 });
+  expect(restored.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 17 });
   expect(restored.db.sql.query("SELECT task_id FROM delivery_routes").all()).toEqual([{ task_id: "legacy" }]);
   expect(restored.inbox.status()).toEqual({ pending: 0, applied: 0, blocked: 0 });
   expect(f.seen).toHaveLength(0);

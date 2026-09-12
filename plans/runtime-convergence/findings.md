@@ -1002,3 +1002,16 @@ string encoding; do not substitute raw-file SHA hashing. readTeamTaskResult chec
 that digest before whole-document JSON parsing and role/topology/substage matching.
 Expected assignment remains a trusted scheduler input until persistent topology
 registration is wired; caller-supplied bindings must not authorize a team transition.
+
+## Topology state migration boundary
+
+Python TaskHub owns a task-local topology state JSON file. The TS candidate uses a
+foreign-keyed task record with independent topology revision and command receipts.
+Python empty role lists mean inherit on interrupt/resume; round and artifact counts
+also survive interruption. Four real-spine sequences verify this behavior.
+Normalized TS persistence requires all fields and ISO calendar timestamps, not all
+Pydantic input coercions or accepted timestamp spellings. The complete state is
+validated before storage; Python model_copy can defer cross-field failures until
+its next read. Waiting-parent/current-checkpoint consistency fails immediately in TS.
+Raw result fields remain an internal composition input, not a public completion API;
+future task assignments must load accepted results through readTeamTaskResult.

@@ -2,6 +2,19 @@
 
 ## Current
 
+Topology execution state now has a canonical normalized schema, TS checkpoint/
+interruption/resume transitions, and private RuntimeTopology transactional storage.
+Four topology sequences match the real Python spine. Version17 adds team_topologies;
+version16 upgrade and historical upgrade fixtures preserve prior stores. Scope/task
+revision/topology revision checks precede writes, and terminal or uncertain tasks
+cannot advance topology. Generated protocol, Web bundle and ownership inventory
+updated. Python protocol9tests pass; full pinned runtime gate488pass0fail,6205
+assertions across53files in194.65s; typecheck and Web build pass.
+Next: persistent child-task assignments and pipeline/fanout/director/judge dispatch
+composition using readTeamTaskResult. This state store does not execute Agents.
+No production migration or release. Older candidates reject version17; rollback uses
+pre-upgrade database backup, never schema-version editing on populated state.
+
 Team task-result reader connects accepted kernel output to normalized team results.
 It checks text digest and the trusted scheduler's expected topology/substage/role;
 whole-document JSON only. Normal completion and reconciliation survive database

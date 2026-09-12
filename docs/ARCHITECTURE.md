@@ -336,6 +336,14 @@ production startup route; provider/transport ownership and `controlmesh_runtime`
 promotion storage still belong to Python. Its database must not be shared over a network
 filesystem. See the package README for implemented behavior and activation gates.
 
+`RuntimeTopology` stores normalized topology checkpoints and parent-input interruption
+state in candidate schema 17. It checks task ownership, task revision and its own topology
+revision inside the command transaction. `team-topology.ts` owns state transitions;
+the canonical `team-topology-state` schema and cross-field checks reject inconsistent
+state before persistence. These components do not yet dispatch topology workers.
+`readTeamTaskResult` decodes an explicitly bound, accepted execution result; a future
+scheduler must supply the persisted role/phase assignment, not trust model self-labels.
+
 `LocalTaskRuntime` adds the private local task execution owner. SQLite schema 8 stores
 queued runs, their expected task revision and provider/profile binding, plus the claimed
 episode and terminal outcome. Two controllers sharing the configured principal/device

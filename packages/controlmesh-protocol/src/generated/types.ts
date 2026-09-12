@@ -408,6 +408,17 @@ export interface TeamStructuredResult {
   "repair_hint": unknown;
 }
 
+export interface TeamTopologyState {
+  "schema_version": 1;
+  "task_id": string;
+  "execution_id": string;
+  "topology": "pipeline" | "fanout_merge" | "director_worker" | "debate_judge";
+  "checkpoints": Record<string, unknown>[];
+  "interruption": Record<string, unknown>;
+  "created_at": unknown;
+  "updated_at": unknown;
+}
+
 export interface TerminalDelivery {
   "schema_version": "controlmesh.terminal_delivery.v1";
   "delivery_id": string;

@@ -2680,6 +2680,1031 @@ export const controlmeshSchemas = {
     }
   ]
 },
+  "team-topology-state.schema.json": {
+  "description": "TaskHub-backed persisted execution state for the topology seam.",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+    },
+    "execution_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+    },
+    "topology": {
+      "enum": [
+        "pipeline",
+        "fanout_merge",
+        "director_worker",
+        "debate_judge"
+      ]
+    },
+    "checkpoints": {
+      "items": {
+        "description": "One persisted topology execution checkpoint.",
+        "properties": {
+          "checkpoint_id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+          },
+          "topology": {
+            "enum": [
+              "pipeline",
+              "fanout_merge",
+              "director_worker",
+              "debate_judge"
+            ]
+          },
+          "substage": {
+            "type": "string",
+            "minLength": 1
+          },
+          "phase_status": {
+            "enum": [
+              "pending",
+              "in_progress",
+              "blocked",
+              "completed",
+              "failed"
+            ]
+          },
+          "active_roles": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array"
+          },
+          "completed_roles": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array"
+          },
+          "latest_summary": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "waiting_on": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "artifact_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "needs_parent_input": {
+            "type": "boolean"
+          },
+          "repair_state": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "round_index": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "round_limit": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "result": {
+            "anyOf": [
+              {
+                "description": "Schema-versioned worker result envelope for topology execution.",
+                "properties": {
+                  "schema_version": {
+                    "const": 1
+                  },
+                  "status": {
+                    "enum": [
+                      "completed",
+                      "failed",
+                      "blocked",
+                      "needs_parent_input",
+                      "needs_repair"
+                    ]
+                  },
+                  "topology": {
+                    "enum": [
+                      "pipeline",
+                      "fanout_merge",
+                      "director_worker",
+                      "debate_judge"
+                    ]
+                  },
+                  "substage": {
+                    "title": "Substage",
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "worker_role": {
+                    "title": "Worker Role",
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "result_items": {
+                    "items": {
+                      "description": "Neutral runtime item reference preserved inside structured team results.",
+                      "properties": {
+                        "kind": {
+                          "enum": [
+                            "message",
+                            "tool_call",
+                            "tool_result",
+                            "interrupt",
+                            "dispatch",
+                            "phase_transition",
+                            "repair_note"
+                          ]
+                        },
+                        "ref": {
+                          "title": "Ref",
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "summary": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Summary"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "ref",
+                        "summary"
+                      ],
+                      "title": "TeamResultItemRef",
+                      "type": "object",
+                      "additionalProperties": false
+                    },
+                    "title": "Result Items",
+                    "type": "array"
+                  },
+                  "summary": {
+                    "title": "Summary",
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "evidence": {
+                    "items": {
+                      "description": "Pointer to evidence selected from ControlMesh-owned runtime truth.",
+                      "properties": {
+                        "ref": {
+                          "title": "Ref",
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "kind": {
+                          "title": "Kind",
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "summary": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Summary"
+                        }
+                      },
+                      "required": [
+                        "ref",
+                        "kind",
+                        "summary"
+                      ],
+                      "title": "TeamEvidenceRef",
+                      "type": "object",
+                      "additionalProperties": false
+                    },
+                    "title": "Evidence",
+                    "type": "array"
+                  },
+                  "confidence": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "artifacts": {
+                    "items": {
+                      "description": "Pointer to an artifact owned by ControlMesh task/runtime storage.",
+                      "properties": {
+                        "ref": {
+                          "title": "Ref",
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "kind": {
+                          "title": "Kind",
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "label": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Label"
+                        },
+                        "summary": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Summary"
+                        }
+                      },
+                      "required": [
+                        "ref",
+                        "kind",
+                        "label",
+                        "summary"
+                      ],
+                      "title": "TeamArtifactRef",
+                      "type": "object",
+                      "additionalProperties": false
+                    },
+                    "title": "Artifacts",
+                    "type": "array"
+                  },
+                  "next_action": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "title": "Next Action"
+                  },
+                  "needs_parent_input": {
+                    "title": "Needs Parent Input",
+                    "type": "boolean"
+                  },
+                  "repair_hint": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "title": "Repair Hint"
+                  }
+                },
+                "required": [
+                  "schema_version",
+                  "status",
+                  "topology",
+                  "substage",
+                  "worker_role",
+                  "result_items",
+                  "summary",
+                  "evidence",
+                  "confidence",
+                  "artifacts",
+                  "next_action",
+                  "needs_parent_input",
+                  "repair_hint"
+                ],
+                "title": "TeamStructuredResult",
+                "type": "object",
+                "additionalProperties": false,
+                "allOf": [
+                  {
+                    "if": {
+                      "properties": {
+                        "topology": {
+                          "const": "pipeline"
+                        }
+                      }
+                    },
+                    "then": {
+                      "properties": {
+                        "substage": {
+                          "enum": [
+                            "planning",
+                            "worker_running",
+                            "review_running",
+                            "completed",
+                            "failed",
+                            "waiting_parent",
+                            "repairing"
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "if": {
+                      "properties": {
+                        "topology": {
+                          "const": "fanout_merge"
+                        }
+                      }
+                    },
+                    "then": {
+                      "properties": {
+                        "substage": {
+                          "enum": [
+                            "planning",
+                            "dispatching",
+                            "collecting",
+                            "reducing",
+                            "completed",
+                            "failed",
+                            "waiting_parent",
+                            "repairing"
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "if": {
+                      "properties": {
+                        "topology": {
+                          "const": "director_worker"
+                        }
+                      }
+                    },
+                    "then": {
+                      "properties": {
+                        "substage": {
+                          "enum": [
+                            "planning",
+                            "dispatching",
+                            "collecting",
+                            "director_deciding",
+                            "waiting_parent",
+                            "repairing",
+                            "completed",
+                            "failed"
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "if": {
+                      "properties": {
+                        "topology": {
+                          "const": "debate_judge"
+                        }
+                      }
+                    },
+                    "then": {
+                      "properties": {
+                        "substage": {
+                          "enum": [
+                            "planning",
+                            "candidate_round",
+                            "collecting",
+                            "judging",
+                            "waiting_parent",
+                            "repairing",
+                            "completed",
+                            "failed"
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "if": {
+                      "properties": {
+                        "topology": {
+                          "enum": [
+                            "director_worker",
+                            "debate_judge"
+                          ]
+                        }
+                      }
+                    },
+                    "then": {
+                      "properties": {
+                        "substage": {
+                          "const": "collecting"
+                        },
+                        "status": {
+                          "enum": [
+                            "completed",
+                            "failed",
+                            "needs_repair"
+                          ]
+                        },
+                        "needs_parent_input": {
+                          "const": false
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "if": {
+                      "properties": {
+                        "status": {
+                          "const": "needs_parent_input"
+                        }
+                      }
+                    },
+                    "then": {
+                      "properties": {
+                        "needs_parent_input": {
+                          "const": true
+                        }
+                      }
+                    },
+                    "else": {
+                      "properties": {
+                        "needs_parent_input": {
+                          "const": false
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "if": {
+                      "properties": {
+                        "status": {
+                          "const": "needs_repair"
+                        }
+                      }
+                    },
+                    "then": {
+                      "properties": {
+                        "repair_hint": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reduced_result": {
+            "anyOf": [
+              {
+                "description": "Reduced topology boundary kept separate from worker-level envelopes.",
+                "properties": {
+                  "schema_version": {
+                    "const": 1
+                  },
+                  "topology": {
+                    "enum": [
+                      "pipeline",
+                      "fanout_merge",
+                      "director_worker",
+                      "debate_judge"
+                    ]
+                  },
+                  "final_status": {
+                    "enum": [
+                      "completed",
+                      "failed",
+                      "blocked",
+                      "needs_parent_input",
+                      "needs_repair"
+                    ]
+                  },
+                  "reduced_summary": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "selected_evidence": {
+                    "items": {
+                      "description": "Pointer to evidence selected from ControlMesh-owned runtime truth.",
+                      "properties": {
+                        "ref": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "kind": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "summary": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "ref",
+                        "kind",
+                        "summary"
+                      ],
+                      "type": "object",
+                      "additionalProperties": false
+                    },
+                    "type": "array"
+                  },
+                  "selected_artifacts": {
+                    "items": {
+                      "description": "Pointer to an artifact owned by ControlMesh task/runtime storage.",
+                      "properties": {
+                        "ref": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "kind": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "label": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "summary": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "ref",
+                        "kind",
+                        "label",
+                        "summary"
+                      ],
+                      "type": "object",
+                      "additionalProperties": false
+                    },
+                    "type": "array"
+                  },
+                  "next_action": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "schema_version",
+                  "topology",
+                  "final_status",
+                  "reduced_summary",
+                  "selected_evidence",
+                  "selected_artifacts",
+                  "next_action"
+                ],
+                "type": "object",
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recorded_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "checkpoint_id",
+          "topology",
+          "substage",
+          "phase_status",
+          "active_roles",
+          "completed_roles",
+          "latest_summary",
+          "waiting_on",
+          "artifact_count",
+          "needs_parent_input",
+          "repair_state",
+          "round_index",
+          "round_limit",
+          "result",
+          "reduced_result",
+          "recorded_at"
+        ],
+        "type": "object",
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "topology": {
+                  "const": "pipeline"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "substage": {
+                  "enum": [
+                    "planning",
+                    "worker_running",
+                    "review_running",
+                    "completed",
+                    "failed",
+                    "waiting_parent",
+                    "repairing"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "topology": {
+                  "const": "fanout_merge"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "substage": {
+                  "enum": [
+                    "planning",
+                    "dispatching",
+                    "collecting",
+                    "reducing",
+                    "completed",
+                    "failed",
+                    "waiting_parent",
+                    "repairing"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "topology": {
+                  "const": "director_worker"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "substage": {
+                  "enum": [
+                    "planning",
+                    "dispatching",
+                    "collecting",
+                    "director_deciding",
+                    "waiting_parent",
+                    "repairing",
+                    "completed",
+                    "failed"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "topology": {
+                  "const": "debate_judge"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "substage": {
+                  "enum": [
+                    "planning",
+                    "candidate_round",
+                    "collecting",
+                    "judging",
+                    "waiting_parent",
+                    "repairing",
+                    "completed",
+                    "failed"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "needs_parent_input": {
+                  "const": true
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "waiting_on": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        ]
+      },
+      "type": "array",
+      "minItems": 1
+    },
+    "interruption": {
+      "description": "Interruption/resume boundary carried by the execution seam from day one.",
+      "properties": {
+        "status": {
+          "enum": [
+            "idle",
+            "waiting_parent"
+          ]
+        },
+        "requested_by_role": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "question": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "waiting_on": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "raised_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resume_substage": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resume_phase_status": {
+          "anyOf": [
+            {
+              "enum": [
+                "pending",
+                "in_progress",
+                "blocked",
+                "completed",
+                "failed"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resume_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "last_parent_input": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_resumed_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "requested_by_role",
+        "question",
+        "waiting_on",
+        "raised_at",
+        "resume_substage",
+        "resume_phase_status",
+        "resume_count",
+        "last_parent_input",
+        "last_resumed_at"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "waiting_parent"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "requested_by_role": {
+                "type": "string",
+                "minLength": 1
+              },
+              "question": {
+                "type": "string",
+                "minLength": 1
+              },
+              "waiting_on": {
+                "type": "string",
+                "minLength": 1
+              },
+              "raised_at": {
+                "type": "string",
+                "minLength": 1
+              },
+              "resume_substage": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "created_at": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "updated_at": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "task_id",
+    "execution_id",
+    "topology",
+    "checkpoints",
+    "interruption",
+    "created_at",
+    "updated_at"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://controlmesh.dev/schemas/v1/team-topology-state.schema.json",
+  "title": "TeamTopologyState"
+},
   "terminal-delivery.schema.json": {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas.controlmesh.dev/controlmesh/v1/terminal-delivery.schema.json",

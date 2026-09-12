@@ -445,6 +445,18 @@ class TeamStructuredResult(BaseModel):
     repair_hint: Any
 
 
+class TeamTopologyState(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    schema_version: Literal[1]
+    task_id: str
+    execution_id: str
+    topology: Literal["pipeline", "fanout_merge", "director_worker", "debate_judge"]
+    checkpoints: list[dict[str, Any]]
+    interruption: dict[str, Any]
+    created_at: Any
+    updated_at: Any
+
+
 class TerminalDelivery(BaseModel):
     model_config = ConfigDict(extra="allow")
     schema_version: Literal["controlmesh.terminal_delivery.v1"]

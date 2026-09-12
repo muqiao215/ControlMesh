@@ -54,3 +54,5 @@ export { TeamOrchestrator, initialTeamPhaseState, transitionTeamPhase, isTermina
 
 export { decodeTeamResult, type StructuredTeamResult } from "./team-result-validation";
 export { readTeamTaskResult, type TeamTaskResultBinding } from "./team-task-result";
+
+export { RuntimeTopology, type TopologySnapshot } from "./runtime-topology";
