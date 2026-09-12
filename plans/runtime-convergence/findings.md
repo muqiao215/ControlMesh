@@ -904,3 +904,24 @@ Both controls now bypass async adoption when no source hash is selected. A test 
 the persisted task immediately after handle(submit), before awaiting its Promise.
 First broader local run independently reproduced the ordering failure; focused rerun
 passed after correction. Required asynchronous adoption remains explicit.
+
+## Real OpenCode exact-byte acceptance — 2026-09-12
+
+Three separately guarded tasks resumed the original TaskHub write session. Each
+read the current fixture documents and returned the original marker. The model's
+native write argument omitted the requested LF; resulting staged bytes likewise
+lacked LF. A second task explicitly described the missing byte; a third requested
+native apply_patch but still invoked write. Thus patch-tool behavior was not tested,
+and neither CM byte loss nor the sole upstream root cause is established. Exact
+completion SHA-256 rejected all three before canonical publication. Each task used
+one ready preflight generation; all18 owned containers were independently absent.
+
+Private evidence in the coordinating workspace: outputs/runtime-convergence/
+opencode-contract{,-correction,-patch}-native-acceptance.{ts,json,log}, three wx
+attempt guards, verify_opencode_contract_attempts.py and
+opencode-contract-independent-readback.json. Never rerun the guarded scripts. No
+native state copied and no original failure record overwritten. The first readback
+assertion used case-sensitive Docker error text; lowercase comparison fixed the
+verifier, without changing runtime or acceptance. These failed real runs do not
+invalidate the demonstrated rejection behavior, but do not establish successful
+artifact delivery, recovery acceptance or complete migration.

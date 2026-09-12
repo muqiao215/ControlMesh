@@ -2,6 +2,18 @@
 
 ## Current
 
+Real OpenCode declared-artifact acceptance FAILED (three distinct guarded tasks,
+2026-09-12). Same original native session recalled its marker and consumed current
+project value, but every resulting file omitted final LF; fixed SHA-256 requirements
+blocked publication. Two explicit corrections did not fix it. The third prompt
+requested apply_patch but native evidence shows write, so apply_patch was NOT tested.
+Do not rerun these scripts or continue prompt-only retries. All18 owned containers
+confirmed absent by live Docker inspect. Model-free readback proves each staged file
+would match only after adding LF; canonical output remains absent. No requirement
+was weakened and no failed attempt was marked done. Next investigate actual provider
+tool construction/selection from retained evidence while progressing remaining ports;
+this is not successful delivery or full native acceptance.
+
 Final OpenCode completion/source-ordering gate passed:477tests0fail,5,043assertions,
 192.17s, pinned Bun1.3.11 + Docker image + independent SpecMesh. Log
 /tmp/cm-opencode-completion-final.log, process41734 exit0. This supersedes the
