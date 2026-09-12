@@ -531,8 +531,19 @@ and in-flight native communication; controlled shutdown interrupts owned executi
 Worker run IDs are reserved transactionally before asynchronous work. Concurrent duplicate
 requests share one result; a reservation left by a previous process cannot restart a model,
 and a completed ID cannot execute a later task revision. See the package's
-`DEVICE-RUNTIME.md` for the private contract. Persistent device scheduling, full operator
-product integration and installed production startup remain separate rollout requirements.
+`DEVICE-RUNTIME.md` for the private contract. Full operator product integration and installed
+production startup remain separate rollout requirements.
+
+`DeviceScheduler` persists discovery and attempts in additive candidate schema 15. The
+coordinator's explicit assignment generation supplies stable work identity across incidental
+task revisions; paginated discovery prevents a bounded first page from hiding later work.
+One device-local elapsed-time/boot-bound lease owns automatic admission. The existing worker
+and native/file/message guards check its generation alongside coordinator authority; new manual
+runs cannot bypass its concurrency budget. Restart retains unknown outcomes for original-effect
+reconciliation, rather than rerunning a task. Only evidenced pre-execution provider reset dates
+enable timed retries; cache probe budgets and explicit private operator resets remain separate.
+Daemon mode starts scheduling or coordinator expiry maintenance independently of the human Web
+and stdin lifetime. A persisted pause survives restart; no human conversation or cron is used.
 
 The optional worker-local History adapter invokes the independent headless CLI. It prepares
 an immutable native reference in candidate schema 14's `device_native_adoptions` registry,

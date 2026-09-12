@@ -457,3 +457,19 @@ Keep the released Python owner until those gates and writer cutover are verified
 Record creation intent before the daemon call. A lost create response may arrive after a
 negative inspect, so retain uncertainty until the originally labelled immutable ID has been
 observed and removed. Never retry that execution or manufacture completion from absence.
+
+## 2026-09-12 — Schedule explicit assignments, retain uncertain attempts
+
+Use a persistent device daemon queue keyed by assignment generation and execution projection.
+Task revision is unsuitable as retry identity: releasing an unstarted lease changes revision
+and would otherwise create a fresh automatic attempt for the same quota failure. A new explicit
+assignment is a new intent; command replay is not. Paginated discovery keeps blocked/foreign
+first-page work from starving later assignments.
+
+Fence local scheduler ownership with boot identity, elapsed time and a generation checked at
+worker side-effect admission. Preserve unknown runs across takeover, with original-effect
+reconciliation before any explicit retry. Recreating a model prompt on a timer would lose
+provenance and duplicate effects. Only cache-evidenced pre-execution reset dates permit automatic
+retry; private operator cache reset has separate authority and makes no model call itself.
+Daemon pause persists across restart. Revisit this local lease when adding cross-host worker
+state ownership, not by sharing a native provider database or treating cron as coordination.

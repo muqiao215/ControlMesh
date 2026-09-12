@@ -94,7 +94,7 @@ export interface DeliveryTarget {
 export interface DeviceCommand {
   "schema_version": "controlmesh.device_command.v1";
   "request_id": string;
-  "operation": "queue" | "inspect" | "claim" | "start" | "renew" | "dispatch" | "observe" | "complete" | "unknown" | "messages" | "send" | "ack" | "release" | "reconciliation" | "reconcile" | "native_call" | "native_input";
+  "operation": "queue" | "inspect" | "claim" | "start" | "renew" | "dispatch" | "observe" | "complete" | "unknown" | "messages" | "send" | "ack" | "release" | "reconciliation" | "reconcile" | "native_call" | "native_input" | "queue_page";
   "arguments": Record<string, unknown>;
 }
 

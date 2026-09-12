@@ -80,7 +80,25 @@ export class DeviceClient {
 
   async inspect(taskId: string): Promise<DeviceJob> {
     const value = await this.command("inspect", { task_id: taskId });
+    return this.job(value, taskId);
+  }
+
+  async queuePage(after: string | null): Promise<{ items: DeviceJob[]; next_cursor: string | null }> {
+    if (after !== null) identifier(after);
+    const value = await this.command("queue_page", { after });
+    requireThat(object(value) && Array.isArray(value.items) && value.items.length <= 32, "invalid_device_queue");
+    const items = value.items.map(item => this.job(item, object(item) ? String(item.task_id) : ""));
+    let previous = after ?? "";
+    for (const item of items) { requireThat(item.task_id > previous && item.status === "waiting", "invalid_device_queue"); previous = item.task_id; }
+    requireThat(value.next_cursor === null || (typeof value.next_cursor === "string" && value.next_cursor > (after ?? "") && value.next_cursor >= previous), "invalid_device_queue");
+    if (value.next_cursor !== null) identifier(value.next_cursor);
+    return { items, next_cursor: value.next_cursor as string | null };
+  }
+
+  private job(value: unknown, taskId: string): DeviceJob {
+    identifier(taskId);
     requireThat(object(value) && value.task_id === taskId && typeof value.status === "string" && Number.isSafeInteger(value.revision) && object(value.input), "invalid_device_job");
+    for (const key of ["needs_reconciliation", "active_episode"]) requireThat(value[key] === undefined || typeof value[key] === "boolean", "invalid_device_job");
     identifier(value.workspace_id); identifier(value.capability);
     requireThat(typeof value.assignment_digest === "string" && /^[a-f0-9]{64}$/.test(value.assignment_digest), "invalid_device_job");
     if (value.execution !== undefined || value.execution_digest !== undefined) {

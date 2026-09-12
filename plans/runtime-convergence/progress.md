@@ -2,6 +2,52 @@
 
 ## Current
 
+Full goal remains active. This increment implements **persistent device scheduling** through
+normal headless startup; CM-R7 is unactivated and installed production remains Python 0.43.0.
+Native adoption predecessor `c2f170519fea20286eaa1df5bc735772dbe9c1e7` is published with
+[passing exact-SHA CI](https://github.com/muqiao215/ControlMesh/actions/runs/34659708183).
+
+Candidate schema 15 persists explicit assignment generations, scheduler leases and work states.
+Paginated discovery, bounded concurrency, elapsed-time ownership fencing, persisted pause,
+typed preflight waiting and private readiness/retry controls share the normal worker admission.
+Unknown attempts survive restart without model replay. See the package's `DEVICE-RUNTIME.md`
+and [device-scheduling-design.md](device-scheduling-design.md).
+
+Actual acceptance **2026-09-12 00:20:38–00:21:59 UTC** ran the normal daemon entrypoint on an
+ARM64 coordinator and the x64 desktop worker. Automatic discovery launched two real OpenCode
+1.18.29/M3 tasks concurrently, without explicit run commands. Native message exchange completed
+in both directions. Losing one observation and reopening both ends did not repeat execution;
+original-effect reconciliation used zero native calls. An explicit resumed assignment then
+continued the original session and consumed changed current project facts. Pause survived a
+worker restart. Three scheduled records completed, each at attempt 1.
+
+Independent native SQLite/local journal readback confirms 11,366 ms of overlapping first turns,
+two native sessions, three task turns, marker recall, actual native mailbox tools and five
+required SpecMesh reads per turn. Two preflight entries remained generation 1; actual billing/API
+request counts were not measured. All 15 recorded container IDs, the local worker process and
+the temporary remote directory are absent. Remote terminal outcomes were captured through
+verified control responses during the trial; its temporary database was removed during cleanup,
+so no retained independent remote SQLite comparison is claimed.
+
+Validation: pinned CI Bun 1.3.11, actual Docker and independent SpecMesh: **378 passed, 0 skipped,
+0 failed**, 4,069 assertions, 74.62 seconds. Two later scheduler regressions cover removed-assignment
+starvation and rejected competing-start persistence; final focused scheduler/control verification
+passed **21/21**, 181 assertions. Source typecheck and Python protocol tests **9/9** passed after
+those changes. Protocol outputs, ownership inventory and packaged Web assets are synchronized.
+The independent repository SpecMesh check passed with seven references and expected warnings
+for uncommitted project facts; it does not constitute reviewed semantic closeout.
+Publication and exact-SHA CI for this increment remain to be recorded after commit.
+
+Private evidence in the coordinating workspace: `outputs/runtime-convergence/device-scheduler-acceptance.{ts,json,log}`,
+`verify_device_scheduler.py`, and `device-scheduler-independent-verification.json`. No provider
+credentials, native stores or private fleet inventory are published with the implementation.
+
+Next: publish this accepted scheduler increment, then continue the remaining provider/transport/
+store/topology/product and rollout owners in task_plan.md. This scoped acceptance does not close
+all migration phases or activate the installed production writer.
+
+## Previous native adoption and device startup increments
+
 Full goal remains active, CM-R7 unactivated, and installed production remains Python 0.43.0.
 Published predecessor `950f8aab5aa259c3edec4868600a5b411c9cafbf`; exact-SHA [CI passed](https://github.com/muqiao215/ControlMesh/actions/runs/34657572203).
 The normal private device startup/control increment is committed and pushed.
@@ -80,11 +126,8 @@ SpecMesh check passed with seven references and only expected uncommitted-fact w
 Private evidence is `outputs/runtime-convergence/device-startup-*` plus
 `verify_device_startup_native.py` in the coordinating workspace.
 
-Next: publish and verify the accepted device-local History adoption increment, then persistent
-device work scheduling and recovery control,
-then the remaining provider/transport/store/topology/product and release/install owners in
-task_plan.md. An explicit private control entrypoint does not establish the full installed
-multi-device product or authorize marking the full migration complete.
+Historical next-step statement superseded by Current above; both normal startup and native
+adoption are now published with passing exact-SHA CI. Full migration remains open.
 
 ## Previous device-write increment
 

@@ -1,6 +1,7 @@
 import type { DeviceClient } from "./device-client";
 import type { DeviceCoordinator, DeviceRegistration } from "./device-coordinator";
-import type { DeviceWorker } from "./device-worker";
+import type { DeviceWorker, DeviceRunAdmission, DeviceRunOutcome } from "./device-worker";
+import type { DeviceScheduler } from "./device-scheduler";
 import type { RuntimeDatabase } from "./database";
 import type { RuntimeKernel, Principal } from "./kernel";
 import { TaskIngress } from "./task-ingress";
@@ -26,12 +27,19 @@ export class DeviceCoordinatorControl implements RuntimeControl {
   private readonly ingress: TaskIngress;
   private server?: Bun.Server<undefined>;
   private stopped = false;
+  private maintenance?: ReturnType<typeof setInterval>;
   constructor(private readonly kernel: RuntimeKernel, private readonly actor: Principal,
     private readonly coordinator: DeviceCoordinator, private readonly devices: readonly DeviceRegistration[],
     private readonly assertCurrent: () => void, private readonly port = 0) {
     this.ingress = new TaskIngress(kernel, { command_origin: "human_request", origin: "user", source_scope: "local_foreground", transport: "cm-device" }, assertCurrent);
   }
-  async stop(): Promise<void> { this.stopped = true; await this.server?.stop(true); this.server = undefined; }
+  async stop(): Promise<void> { this.stopped = true; if (this.maintenance) clearInterval(this.maintenance); await this.server?.stop(true); this.server = undefined; }
+  startDaemon(): void {
+    this.assertCurrent(); requireThat(!this.stopped, "device_runtime_stopped");
+    this.server ??= this.coordinator.listen(this.port);
+    const recover = () => { this.assertCurrent(); this.kernel.recoverExpired({ ...this.actor, origin: "recovery" }); };
+    recover(); this.maintenance ??= setInterval(() => { try { recover(); } catch { void this.stop(); } }, 2000);
+  }
   async handle(input: unknown): Promise<Record<string, unknown>> {
     let id: unknown = null;
     try {
@@ -96,15 +104,31 @@ export class DeviceWorkerControl implements RuntimeControl {
   private readonly pending = new Map<string, Promise<unknown>>();
   private readonly runningTasks = new Set<string>();
   private stopped = false;
+  private scheduler?: DeviceScheduler;
   constructor(private readonly db: RuntimeDatabase, private readonly actor: Principal, private readonly client: DeviceClient,
     private readonly worker: DeviceWorker, private readonly assertCurrent: () => void,
     private readonly interrupt: () => void, private readonly maxParallel = 4, private readonly history?: DeviceNativeAdoptions) {
     requireThat(Number.isSafeInteger(maxParallel) && maxParallel >= 1 && maxParallel <= 8, "invalid_device_concurrency");
   }
   async stop(): Promise<void> {
-    this.stopped = true; this.interrupt(); await Promise.allSettled([...this.pending.values(), this.history?.stop()]);
+    this.stopped = true; this.interrupt(); await Promise.allSettled([...this.pending.values(), this.history?.stop(), this.scheduler?.stop()]);
   }
-  private async once(id: string, operation: string, body: Record<string, unknown>, run: () => Promise<unknown>): Promise<unknown> {
+  attachScheduler(scheduler: DeviceScheduler): void { requireThat(!this.scheduler, "device_scheduler_already_configured"); this.scheduler = scheduler; }
+  capacity(): number { return Math.max(0, this.maxParallel - this.pending.size); }
+  startDaemon(): void { requireThat(this.scheduler, "device_scheduler_not_configured"); this.scheduler.start(); }
+  runScheduled(id: string, job: { task_id: string; revision: number; assignment_digest: string }, admission?: DeviceRunAdmission): Promise<DeviceRunOutcome> {
+    const body = { task_id: job.task_id, revision: job.revision, assignment_digest: job.assignment_digest };
+    return this.once(id, "run", body, async () => {
+      requireThat(!this.stopped && !this.runningTasks.has(job.task_id), "device_task_already_running");
+      this.runningTasks.add(job.task_id);
+      try { this.assertCurrent(); return await this.worker.run(job.task_id, 10_000, { revision: job.revision, assignment_digest: job.assignment_digest }, admission); }
+      finally { this.runningTasks.delete(job.task_id); }
+    }, () => {
+      if (admission) admission.assertCurrent();
+      else if (this.scheduler) requireThat(!this.scheduler.status().lease_current, "device_scheduler_owns_execution");
+    }) as Promise<DeviceRunOutcome>;
+  }
+  private async once(id: string, operation: string, body: Record<string, unknown>, run: () => Promise<unknown>, admit?: () => void): Promise<unknown> {
     const key = `device-control-${digest(id)}`, op = `device.control.${operation}`;
     const saved = commandReceipt(this.db, this.actor, key, op, body);
     if (saved) return saved.value;
@@ -116,6 +140,7 @@ export class DeviceWorkerControl implements RuntimeControl {
       if (settled) return settled;
       const reserved = this.db.sql.query("SELECT 1 FROM command_reservations WHERE principal=? AND request_id=?").get(this.actor.id, key);
       requireThat(!reserved || operation === "reconcile" || operation === "prepare_adoption", "device_run_outcome_unknown");
+      admit?.();
       reserveCommand(this.db, this.actor, key, op, body);
       return null;
     });
@@ -131,10 +156,22 @@ export class DeviceWorkerControl implements RuntimeControl {
       this.assertCurrent(); requireThat(!this.stopped, "device_runtime_stopped");
       const value = request(input, { status: [], assignments: [], inspect_task: ["task_id"], inspect_operation: ["operation_id"],
         run: ["task_id", "expected_revision", "assignment_digest"], reconcile: ["challenge_id"],
+        scheduler_status: [], start_scheduler: [], pause_scheduler: [], inspect_scheduled: ["work_id"], retry_scheduled: ["work_id", "expected_attempt"],
+        inspect_provider: ["task_id"], retry_provider: ["task_id", "expected_generation"],
         history_search: ["workspace_id", "query"], prepare_adoption: ["task_id", "workspace_id", "capability", "session_id"] });
       id = value.id;
       let result: unknown;
       switch (value.op) {
+        case "scheduler_status": requireThat(this.scheduler, "device_scheduler_not_configured"); result = this.scheduler.status(); break;
+        case "start_scheduler": requireThat(this.scheduler, "device_scheduler_not_configured"); result = this.scheduler.start(id as string); break;
+        case "pause_scheduler": requireThat(this.scheduler, "device_scheduler_not_configured"); result = await this.scheduler.pause(id as string); break;
+        case "inspect_scheduled": requireThat(this.scheduler, "device_scheduler_not_configured"); result = this.scheduler.inspect(value.work_id as string); break;
+        case "retry_scheduled": requireThat(this.scheduler, "device_scheduler_not_configured"); result = await this.scheduler.retry(id as string, value.work_id as string, value.expected_attempt as number); break;
+        case "inspect_provider": identifier(value.task_id); result = await this.worker.readiness(value.task_id); break;
+        case "retry_provider":
+          requireScope(this.actor, "device:schedule"); identifier(value.task_id);
+          requireThat(Number.isSafeInteger(value.expected_generation) && Number(value.expected_generation) >= 1, "invalid_provider_generation");
+          result = await this.worker.readiness(value.task_id, { request_id: `device-provider-${digest(id)}`, expected_generation: value.expected_generation as number }); break;
         case "history_search": {
           requireThat(this.history, "native_history_not_configured"); identifier(value.workspace_id);
           requireThat(typeof value.query === "string", "invalid_history_query");
@@ -162,13 +199,7 @@ export class DeviceWorkerControl implements RuntimeControl {
           identifier(value.task_id);
           requireThat(Number.isSafeInteger(value.expected_revision) && Number(value.expected_revision) >= 0
             && typeof value.assignment_digest === "string" && /^[a-f0-9]{64}$/.test(value.assignment_digest), "invalid_device_run_binding");
-          const taskId = value.task_id, body = { task_id: taskId, revision: value.expected_revision, assignment_digest: value.assignment_digest };
-          result = await this.once(id as string, "run", body, async () => {
-            requireThat(!this.stopped && !this.runningTasks.has(taskId), "device_task_already_running");
-            this.runningTasks.add(taskId);
-            try { this.assertCurrent(); return await this.worker.run(taskId, 10_000, { revision: body.revision as number, assignment_digest: body.assignment_digest as string }); }
-            finally { this.runningTasks.delete(taskId); }
-          }); break;
+          result = await this.runScheduled(id as string, { task_id: value.task_id, revision: value.expected_revision as number, assignment_digest: value.assignment_digest }); break;
         }
         case "reconcile": {
           identifier(value.challenge_id); const challengeId = value.challenge_id;

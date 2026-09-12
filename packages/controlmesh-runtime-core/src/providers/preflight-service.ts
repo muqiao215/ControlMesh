@@ -1,7 +1,12 @@
 import type { Principal } from "../kernel";
-import { digest, requireThat } from "../value";
+import { digest, requireThat, RuntimeConflict } from "../value";
 import { OpenCodePreflight, type OpenCodeProbeInput } from "./opencode-preflight";
 import { PreflightCache, type ProbeBinding, type ProbeDecision } from "./preflight-cache";
+
+/** A retry date is evidence from the local preflight owner, not a scheduler guess. */
+export class ProviderPreparationWait extends RuntimeConflict {
+  constructor(readonly decision: ProbeDecision) { super("provider_preflight_not_ready"); }
+}
 
 /** One real native probe per durable permit; callers cannot submit readiness reports through this service. */
 export class ProviderPreflightService {

@@ -23,9 +23,11 @@ import { WorkspaceStage } from "./workspace-stage";
 import { writeRoots } from "./providers/native-workspace";
 import { HistoryClient } from "./providers/history-client";
 import { DeviceNativeAdoptions } from "./providers/device-native-adoption";
+import { DeviceScheduler, type DeviceSchedulerOptions } from "./device-scheduler";
 
 export interface DeviceRuntime {
   control: RuntimeControl;
+  startDaemon(): void;
   stop(): Promise<void>;
   close(): Promise<void>;
 }
@@ -50,7 +52,7 @@ export function openDeviceRuntime(path: string): DeviceRuntime {
     && ["coordinator", "worker"].includes(String(config.role)), "unsupported_device_runtime_config");
   const common = ["schema_version", "mode", "role", "state_root", "principal_id", "device_id"];
   fields(config, [...common, ...(config.role === "coordinator" ? ["devices", "listen_port"]
-    : ["coordinator", "opencode", "workspaces", "capabilities", "communication", "history", "max_parallel"])], "invalid_device_runtime_config");
+    : ["coordinator", "opencode", "workspaces", "capabilities", "communication", "history", "max_parallel", "scheduler"])], "invalid_device_runtime_config");
   identifier(config.principal_id); identifier(config.device_id);
   requireThat(typeof config.state_root === "string" && isAbsolute(config.state_root), "private_runtime_state_required");
   const root = config.state_root;
@@ -150,7 +152,7 @@ export function openDeviceRuntime(path: string): DeviceRuntime {
             && Object.values(historyConfig.environment).every(value => typeof value === "string"))), "invalid_device_history_profile");
       }
       const local = database(), cache = new PreflightCache(local), journal = new DeviceExecutionJournal(local, config.device_id);
-      const actor: Principal = { id: config.principal_id, device_id: config.device_id, origin: "agent_message", scopes: ["provider:probe", "history:read", "history:adopt"] };
+      const actor: Principal = { id: config.principal_id, device_id: config.device_id, origin: "agent_message", scopes: ["provider:probe", "history:read", "history:adopt", "device:schedule"] };
       const nativeStore = new NativeSessionStore(join(environment.XDG_DATA_HOME, "opencode/opencode.db"), actor.device_id!);
       const history = historyConfig ? new DeviceNativeAdoptions(local, actor, nativeStore, new HistoryClient({ python: historyConfig.python as string,
         viewer_directory: historyConfig.directory as string,
@@ -190,10 +192,15 @@ export function openDeviceRuntime(path: string): DeviceRuntime {
               permission_profile: writes.length ? "opencode-native-workspace-v1" : "opencode-native-read-v1", runtime_digest: runner.runtimeDigest() }) }, runner);
       };
       const worker = new DeviceWorker(client, { workspaces, adapters, journal, signal: abort.signal });
-      control = new DeviceWorkerControl(local, actor, client, worker, current, () => abort.abort(), parallel, history);
+      const workerControl = new DeviceWorkerControl(local, actor, client, worker, current, () => abort.abort(), parallel, history);
+      if (config.scheduler !== undefined) fields(config.scheduler, ["parallelism", "max_pending", "poll_ms", "lease_ms", "max_backoff_ms"], "invalid_device_scheduler_profile");
+      const schedulerOptions = { parallelism: parallel, ...(config.scheduler as DeviceSchedulerOptions | undefined) };
+      requireThat(Number(schedulerOptions.parallelism) <= parallel, "invalid_device_scheduler_limits");
+      workerControl.attachScheduler(new DeviceScheduler(local, actor, client, { capacity: () => workerControl.capacity(), run: (id, job, admission) => workerControl.runScheduled(id, job, admission) }, current, schedulerOptions));
+      control = workerControl;
     }
     let closing: Promise<void> | undefined;
     const stop = () => { stopping = true; return control.stop(); };
-    return { control, stop, close: () => closing ??= stop().finally(() => { closed = true; db!.close(); }) };
+    return { control, startDaemon: () => { current(); control.startDaemon(); }, stop, close: () => closing ??= stop().finally(() => { closed = true; db!.close(); }) };
   } catch (error) { db?.close(); throw error; }
 }

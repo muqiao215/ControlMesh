@@ -2,7 +2,7 @@ import { requireThat } from "./value";
 import type { RuntimeControl } from "./device-runtime-control";
 
 /** Shared bounded stdin/stdout transport; shutdown interrupts only work owned by this runtime. */
-export async function serveRuntimeControl(control: RuntimeControl, owned: { stop(): Promise<void>; close(): Promise<void> }): Promise<void> {
+export async function serveRuntimeControl(control: RuntimeControl, owned: { stop(): Promise<void>; close(): Promise<void> }, options: { keep_alive?: boolean } = {}): Promise<void> {
   const pending = new Set<Promise<void>>();
   const output = (value: unknown) => new Promise<void>((resolve, reject) => {
     process.stdout.write(JSON.stringify(value) + "\n", error => error ? reject(error) : resolve());
@@ -18,7 +18,9 @@ export async function serveRuntimeControl(control: RuntimeControl, owned: { stop
     void reply.catch(error => { failed = error; process.stdin.destroy(); });
     pending.add(reply);
   };
-  const interrupted = () => { stopping = true; void owned.stop().catch(error => { failed = error; }).finally(() => process.stdin.destroy()); };
+  let wake!: () => void;
+  const interruptedSignal = new Promise<void>(resolve => { wake = resolve; });
+  const interrupted = () => { stopping = true; void owned.stop().catch(error => { failed = error; }).finally(() => { process.stdin.destroy(); wake(); }); };
   process.once("SIGTERM", interrupted); process.once("SIGINT", interrupted);
   try {
     try {
@@ -36,5 +38,7 @@ export async function serveRuntimeControl(control: RuntimeControl, owned: { stop
     }
     if (!stopping) { buffer += decoder.decode(); if (buffer.trim()) dispatch(buffer); }
     await Promise.all(pending); if (failed) throw failed;
+    if (options.keep_alive && !stopping) await interruptedSignal;
+    if (failed) throw failed;
   } finally { process.off("SIGTERM", interrupted); process.off("SIGINT", interrupted); }
 }

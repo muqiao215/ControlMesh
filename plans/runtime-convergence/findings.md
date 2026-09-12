@@ -1,5 +1,27 @@
 # Findings
 
+## Persistent device scheduling — 2026-09-12
+
+- A fixed first page can starve later assignments: the protocol now scans at most 1024 candidates
+  and returns at most 32 matching jobs with a cursor. A regression crosses 1025 foreign jobs.
+- Unstarted lease release changes task revision. Scheduler identity therefore uses explicit
+  assignment generation plus execution projection; a quota wait does not manufacture new work.
+  Legacy assignment digests remain compatible and replayed assignment IDs retain their receipt.
+- A local owner lease must renew independently of awaited network discovery. Admission checks
+  that lease at native/file/message boundaries; concurrent manual execution cannot bypass it.
+- Readiness inspection/reset does not run a provider. Confirmed pre-execution reset dates may
+  schedule bounded retries; unknown effects cannot. Operator retries first verify the coordinator
+  has no active episode or pending reconciliation. Persisted pause survives stdin EOF and restart.
+- Final review found two queue-control defects: an unavailable old assignment could block discovery,
+  and rejected competing start could persist enabled policy before lease acquisition. Known removed
+  assignments now become superseded; lease acquisition and explicit-start receipt are transactional.
+  Targeted regressions pass. A documentation patch initially failed its context check atomically;
+  it was corrected without changing code or repeating the real canary.
+- Independent real-trial readback proves 11,366 ms of overlapping OpenCode first turns, bidirectional
+  native messages, one attempt per assignment and zero model replay in recovery. The temporary
+  remote coordinator database was deleted after authenticated terminal snapshots and cleanup;
+  independent post-trial verification uses retained local/native records, not that removed database.
+
 ## Normal native device startup and control
 
 The old device script registered a synthetic adapter; direct library canaries did not expose

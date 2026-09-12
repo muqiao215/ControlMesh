@@ -3,7 +3,7 @@ import { randomBytes, createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DeviceClient, DeviceWorker, DeviceWorkerControl, openDeviceRuntime, RuntimeDatabase, type Principal } from "../src";
+import { DeviceClient, DeviceScheduler, DeviceWorker, DeviceWorkerControl, openDeviceRuntime, RuntimeDatabase, type Principal } from "../src";
 import { digest } from "../src/value";
 import { reserveCommand } from "../src/commands";
 
@@ -166,4 +166,55 @@ test("invalid native staging layout is rejected at normal startup before opening
   writeFileSync(profile.path, JSON.stringify(value));
   expect(() => openDeviceRuntime(profile.path)).toThrow("workspace_stage_private_state_required");
   expect(existsSync(join(f.root, "runtime.sqlite"))).toBe(false); expect(existsSync(join(f.root, "native-data"))).toBe(false);
+});
+
+test("normal coordinator daemon survives stdin EOF, runs maintenance and stops its owned listener on SIGTERM", async () => {
+  const f = fixture(), child = Bun.spawn([process.execPath, join(import.meta.dir, "../scripts/device-runtime.ts"), f.path, "--daemon"], { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
+  const stderr = new Response(child.stderr).text(), reader = child.stdout.getReader();
+  try {
+    child.stdin.write(JSON.stringify({ id: "status", op: "status" }) + "\n"); child.stdin.end();
+    const line = await reader.read(); const status = JSON.parse(new TextDecoder().decode(line.value));
+    expect(status).toMatchObject({ ok: true, result: { role: "coordinator" } }); expect(status.result.endpoint).toStartWith("http://127.0.0.1:");
+    await Bun.sleep(40); expect(child.exitCode).toBeNull();
+    expect(child.pid).toBeGreaterThan(1); expect(child.pid).not.toBe(process.pid); child.kill("SIGTERM");
+    expect(await child.exited).toBe(0); expect(await stderr).toBe("");
+  } finally { if (child.exitCode === null) { child.kill("SIGTERM"); await child.exited; } await reader.cancel(); }
+});
+
+test("normal configured worker daemon preserves explicit pause across EOF and restart without provider credentials", async () => {
+  const f = fixture(); await f.start();
+  const endpoint = (await f.call("start", "start")).result as { endpoint: string }, config = f.workerConfig(endpoint.endpoint);
+  for (const first of [true, false]) {
+    const child = Bun.spawn([process.execPath, join(import.meta.dir, "../scripts/device-runtime.ts"), config.path, "--daemon"], { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
+    const stderr = new Response(child.stderr).text(), reader = child.stdout.getReader();
+    try {
+      child.stdin.write(JSON.stringify({ id: first ? "pause" : "status", op: first ? "pause_scheduler" : "scheduler_status" }) + "\n"); child.stdin.end();
+      const result = JSON.parse(new TextDecoder().decode((await reader.read()).value));
+      expect(result).toMatchObject({ ok: true, result: { enabled: false, running: false, active: 0 } });
+      await Bun.sleep(25); expect(child.exitCode).toBeNull(); expect(child.pid).toBeGreaterThan(1); expect(child.pid).not.toBe(process.pid); child.kill("SIGTERM");
+      expect(await child.exited).toBe(0); expect(await stderr).toBe("");
+    } finally { if (child.exitCode === null) { child.kill("SIGTERM"); await child.exited; } await reader.cancel(); }
+  }
+  expect(existsSync(join(f.root, "native-data"))).toBe(false);
+});
+
+test("scheduled execution shares control reservations and normal authenticated coordinator claims", async () => {
+  const f = fixture(), client = await f.start(); await f.submit("one", [], "fixture"); await f.submit("two", [], "fixture");
+  const db = new RuntimeDatabase(join(f.workerState, "scheduled.sqlite")); cleanup.push(() => db.close());
+  const owner = { ...actor, scopes: [...actor.scopes, "device:schedule"] }, abort = new AbortController(); let executions = 0;
+  const worker = new DeviceWorker(client, { workspaces: { project: f.workspace }, signal: abort.signal, adapters: { native: {
+    async execute(context) { context.assertCurrent(); executions++; return { observation: { fixture: true }, result: { fixture: true } }; }
+  } } });
+  const control = new DeviceWorkerControl(db, owner, client, worker, () => {}, () => abort.abort(), 2);
+  const scheduler = new DeviceScheduler(db, owner, client, { capacity: () => control.capacity(), run: (id, job, admission) => control.runScheduled(id, job, admission) }, () => {}, { poll_ms: 100 });
+  control.attachScheduler(scheduler); cleanup.push(() => control.stop());
+  expect((await control.handle({ id: "start", op: "start_scheduler" })).ok).toBe(true);
+  const queued = await client.inspect("one");
+  expect((await control.handle({ id: "manual-bypass", op: "run", task_id: "one", expected_revision: queued.revision, assignment_digest: queued.assignment_digest })).error).toBe("device_scheduler_owns_execution");
+  expect((await control.handle({ id: "check-manual", op: "inspect_operation", operation_id: "manual-bypass" })).result).toEqual({ status: "absent" });
+  for (let i = 0; i < 200 && (db.sql.query("SELECT COUNT(*) AS n FROM device_scheduled_work WHERE state='completed'").get() as { n: number }).n < 2; i++) await Bun.sleep(5);
+  expect(executions).toBe(2); expect(db.sql.query("SELECT state,COUNT(*) AS n FROM device_scheduled_work GROUP BY state").all()).toEqual([{ state: "completed", n: 2 }]);
+  expect((await control.handle({ id: "pause", op: "pause_scheduler" })).ok).toBe(true);
+  for (const row of db.sql.query("SELECT run_id FROM device_scheduled_work").all() as { run_id: string }[]) expect((await control.handle({ id: row.run_id, op: "inspect_operation", operation_id: row.run_id })).result).toMatchObject({ status: "settled", result: { status: "done" } });
+  expect((await f.call("inspect", "inspect_task", { task_id: "one" })).result).toMatchObject({ task: { status: "done" } });
 });

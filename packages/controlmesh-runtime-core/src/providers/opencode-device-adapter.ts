@@ -11,7 +11,7 @@ import { OpenCodeExecution, type NativeRunner, type OpenCodeWorkerConfig, type I
 import { assertReadGrantSnapshot, assertWorkspaceGrantSnapshot, readFileGrant } from "./opencode-profile";
 import { NativeSessionStore } from "./native-session";
 import { PreflightCache, type ProbeBinding } from "./preflight-cache";
-import { ProviderPreflightService } from "./preflight-service";
+import { ProviderPreflightService, ProviderPreparationWait } from "./preflight-service";
 import { OpenCodePreflight } from "./opencode-preflight";
 import { nativeAgentTools } from "./native-agent-journal";
 import { NativeAgentChannel } from "./native-agent-broker";
@@ -50,6 +50,20 @@ export class OpenCodeDeviceAdapter implements DeviceAdapter {
   private registrationDigest(): string {
     return digest({ configuration: Object.fromEntries(Object.entries(this.config).filter(([, value]) => value !== undefined)), read_files: this.options.read_files, required_reads: this.options.required_reads,
       write_roots: this.options.write_roots ?? [], workflow_binding: this.options.specmesh?.binding_digest ?? null });
+  }
+
+  readiness(): Record<string, unknown> {
+    const checked: unknown = this.options.assertCurrent();
+    if (checked !== undefined) { void Promise.resolve(checked).catch(() => {}); requireThat(false, "admission_must_be_synchronous"); }
+    const binding = this.options.binding(), value = this.cache.inspect(this.actor, binding);
+    return { provider: binding.provider, model: binding.model, generation: value.generation ?? null,
+      decision: value.decision, reason: value.reason, retry_after: value.retry_after };
+  }
+
+  retryReadiness(requestId: string, expectedGeneration: number): Record<string, unknown> {
+    this.readiness();
+    this.cache.retry({ ...this.actor, origin: "internal", scopes: [...this.actor.scopes, "provider:retry"] }, requestId, this.options.binding(), expectedGeneration);
+    return this.readiness();
   }
 
   private async checkWorkflow(workspace: string, required: readonly string[], assertCurrent: () => void,
@@ -185,7 +199,7 @@ export class OpenCodeDeviceAdapter implements DeviceAdapter {
     const check = await this.preflight.ensure(this.actor, `device-probe-${digest([context.authority.lease.episode_id, binding])}`, binding,
       { executable: this.config.executable, model: binding.model, native_configuration: this.config.native_configuration, environment: this.config.environment,
         assertCurrent: current, remainingMs: context.authority.remainingMs, signal: context.authority.signal });
-    requireThat(check.decision === "cached", "provider_preflight_not_ready");
+    if (check.decision !== "cached") throw new ProviderPreparationWait(check);
     let original: Record<string, unknown> | undefined;
     let dispatched = false;
     const channel = this.config.communication ? new NativeAgentChannel(context.authority.lease, this.config.communication, current, {

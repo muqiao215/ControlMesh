@@ -37,6 +37,8 @@ export interface DeviceJob {
   assignment_digest: string;
   execution?: Record<string, unknown>;
   execution_digest?: string;
+  needs_reconciliation?: boolean;
+  active_episode?: boolean;
   peer_tasks?: readonly string[];
   parent_task?: string | null;
 }
@@ -132,14 +134,21 @@ export class DeviceCoordinator {
       requireThat(current.revision === revision && current.task.status === "waiting" && !current.active_episode && !current.needs_reconciliation, "task_not_assignable");
       this.kernel.db.sql.query("INSERT INTO device_assignments VALUES (?,?,?,?) ON CONFLICT(task_id) DO UPDATE SET principal=excluded.principal,authority_digest=excluded.authority_digest,specification=excluded.specification")
         .run(taskId, actor.id, taskAuthority(current), canonical(specification));
+      this.kernel.db.sql.query("INSERT INTO device_assignment_generations VALUES (?,?) ON CONFLICT(task_id) DO UPDATE SET generation=excluded.generation")
+        .run(taskId, digest([actor.id, requestId]));
       this.kernel.db.sql.query("INSERT INTO events (task_id,kind,revision,fence,principal,origin,at,payload) VALUES (?,'device.assigned',?,?,?,?,?,?)")
-        .run(taskId, current.revision, current.fence, actor.id, actor.origin, this.kernel.db.now(), canonical({ assignment_digest: digest(specification) }));
+        .run(taskId, current.revision, current.fence, actor.id, actor.origin, this.kernel.db.now(), canonical({ assignment_digest: this.assignmentDigest(taskId, specification) }));
       return { assigned: true };
     });
   }
 
   private actor(device: DeviceRegistration): Principal {
     return { id: device.principal_id, device_id: device.device_id, origin: "agent_message", scopes: workerScopes };
+  }
+
+  private assignmentDigest(taskId: string, specification: DeviceAssignment): string {
+    const row = this.kernel.db.sql.query("SELECT generation FROM device_assignment_generations WHERE task_id=?").get(taskId) as { generation: string } | null;
+    return row ? digest({ specification, generation: row.generation }) : digest(specification);
   }
 
   private assignment(device: DeviceRegistration, taskId: string): DeviceJob {
@@ -157,7 +166,8 @@ export class DeviceCoordinator {
     const execution = Object.fromEntries(["provider", "model", "prompt", "execution_context", "tool_grant", "native_session"]
       .filter(key => Object.hasOwn(task.task, key)).map(key => [key, task.task[key]]));
     return { task_id: taskId, revision: task.revision, status: task.task.status, workspace_id: specification.workspace_id,
-      capability: specification.capability, input: specification.input, assignment_digest: digest(specification), execution, execution_digest: digest(execution),
+      capability: specification.capability, input: specification.input, assignment_digest: this.assignmentDigest(taskId, specification), execution, execution_digest: digest(execution),
+      needs_reconciliation: task.needs_reconciliation, active_episode: task.active_episode !== null,
       peer_tasks: specification.peer_tasks ?? [], parent_task: specification.parent_task ?? null };
   }
 
@@ -208,14 +218,18 @@ export class DeviceCoordinator {
     if (input.operation === "reconciliation") return this.reconciliation.inspect(device, args.challenge_id as string);
     if (input.operation === "reconcile") return this.reconciliation.report(device, request, args.report as DeviceReconciliationReport);
     // JSON Schema validates the discriminated arguments before these casts.
-    if (input.operation === "queue") {
-      const rows = this.kernel.db.sql.query("SELECT a.task_id FROM device_assignments a JOIN tasks t ON a.task_id=t.task_id WHERE a.principal=? AND t.status='waiting' AND t.needs_reconciliation=0 ORDER BY a.task_id LIMIT 1024").all(actor.id) as { task_id: string }[];
+    if (input.operation === "queue" || input.operation === "queue_page") {
+      const after = input.operation === "queue_page" ? args.after : null;
+      const rows = this.kernel.db.sql.query("SELECT a.task_id FROM device_assignments a JOIN tasks t ON a.task_id=t.task_id WHERE a.principal=? AND t.status='waiting' AND t.needs_reconciliation=0 AND a.task_id>? ORDER BY a.task_id LIMIT 1024").all(actor.id, typeof after === "string" ? after : "") as { task_id: string }[];
       const jobs: DeviceJob[] = [];
+      let scanned = 0;
       for (const row of rows) {
+        scanned++;
         try { jobs.push(this.assignment(device, row.task_id)); } catch (error) { if (!(error instanceof RuntimeConflict)) throw error; }
         if (jobs.length === 32) break;
       }
-      return jobs;
+      return input.operation === "queue" ? jobs : { items: jobs,
+        next_cursor: scanned && (scanned < rows.length || rows.length === 1024) ? rows[scanned - 1].task_id : null };
     }
     if (input.operation === "inspect" || input.operation === "claim") {
       const job = this.assignment(device, args.task_id as string);

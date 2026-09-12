@@ -222,6 +222,29 @@ test("recovery factories receive the original retained job after coordinator and
   expect(snapshot.revision).toBeGreaterThan(original.revision);
 });
 
+for (const reset of [null, 60_000]) test(`device preparation exposes only the cache owner's evidenced quota wait (${reset})`, async () => {
+  const f = setup(), cache = new PreflightCache(f.workerDB); f.workerDB.sql.exec("DELETE FROM provider_checks");
+  const permit = cache.begin(device, "quota-seed", f.binding).permit!, retry = reset === null ? null : Date.now() + reset;
+  cache.complete(device, f.binding, permit, { model: f.binding.model, config_digest: f.binding.config_digest, cli_version: f.binding.cli_version,
+    permission_digest: "a".repeat(64), tool_count: 12, model_invoked: true, duration_ms: 1,
+    observation: { status: "unavailable", reason: "quota_exhausted", session_id: "ses_Quota", failure: { code: "quota_exhausted", reset_at: retry, reset_text: null, retry_after_ms: null } } });
+  expect(await f.worker.run("native-task", 5000)).toEqual({ status: "unavailable", reason: "quota_exhausted", retry_after: retry });
+  expect(f.commands).toHaveLength(0); expect(f.calls()).toBe(0);
+  const task = f.kernel.inspect(owner, "native-task"); expect(task.task.status).toBe("waiting"); expect(task.active_episode).toBeNull(); expect(task.needs_reconciliation).toBe(false);
+  expect(await f.worker.readiness("native-task")).toMatchObject({ generation: 1, reason: "quota_exhausted", retry_after: retry });
+  await expect(f.worker.readiness("native-task", { request_id: "wrong-generation", expected_generation: 2 })).rejects.toThrow("probe_retry_revision_conflict");
+  expect(await f.worker.readiness("native-task", { request_id: "operator-reset", expected_generation: 1 })).toMatchObject({ reason: "explicit_retry", generation: 1 });
+  expect(f.commands).toHaveLength(0); expect(f.kernel.inspect(owner, "native-task")).toEqual(task);
+});
+
+test("lost scheduler admission after mailbox inspection cannot spend a native model or keep its execution lease", async () => {
+  const f = setup(), abort = new AbortController(); let valid = true;
+  f.hooks.afterInput = () => { valid = false; };
+  const result = await f.worker.run("native-task", 5000, undefined, { signal: abort.signal, assertCurrent() { if (!valid) throw new Error("fixture scheduler fenced"); } });
+  expect(result.status).toBe("unavailable"); expect(f.commands).toHaveLength(0);
+  expect(f.kernel.inspect(owner, "native-task").active_episode).toBeNull();
+});
+
 test("native device execution persists local evidence and resumes its original session through an opaque handle", async () => {
   const f = setup();
   const first = await f.worker.run("native-task", 5000);
@@ -494,10 +517,10 @@ test("recovery keeps an already delivered matching observation immutable", async
 test("schema six upgrade preserves completed device evidence while adding durable recovery requests", async () => {
   const f = setup(); expect((await f.worker.run("native-task", 5000)).status).toBe("done");
   const original = f.workerDB.sql.query("SELECT * FROM device_execution_records").all();
-  f.workerDB.sql.exec("DROP TABLE device_native_adoptions; DROP TABLE command_reservations; DROP TABLE feishu_conversations; DROP TABLE feishu_event_aliases; DROP TABLE feishu_inbox; DROP TABLE transport_receipts; DROP TABLE delivery_outbox; DROP TABLE delivery_routes; DROP TABLE native_agent_deliveries; DROP TABLE native_agent_calls; DROP TABLE native_mailbox_deliveries; DROP TABLE local_runs; DROP TABLE device_reconciliations; PRAGMA user_version=6");
+  f.workerDB.sql.exec("DROP TABLE device_scheduled_work; DROP TABLE device_scheduler_leases; DROP TABLE device_assignment_generations; DROP TABLE device_native_adoptions; DROP TABLE command_reservations; DROP TABLE feishu_conversations; DROP TABLE feishu_event_aliases; DROP TABLE feishu_inbox; DROP TABLE transport_receipts; DROP TABLE delivery_outbox; DROP TABLE delivery_routes; DROP TABLE native_agent_deliveries; DROP TABLE native_agent_calls; DROP TABLE native_mailbox_deliveries; DROP TABLE local_runs; DROP TABLE device_reconciliations; PRAGMA user_version=6");
   const upgraded = new RuntimeDatabase(join(f.root, "worker.sqlite"));
   try {
-    expect(upgraded.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 14 });
+    expect(upgraded.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 15 });
     expect(upgraded.sql.query("SELECT * FROM device_execution_records").all()).toEqual(original);
     expect(upgraded.sql.query("SELECT COUNT(*) AS n FROM device_reconciliations").get()).toEqual({ n: 0 });
   } finally { upgraded.close(); }

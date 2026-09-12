@@ -10,6 +10,10 @@ import { ExecutionPolicyDenied } from "./execution-policy";
 import { ToolGrantDenied } from "./execution-grants";
 import { ProcessSupervisor, type ProcessSpec, type ProcessOutcome } from "./process-supervisor";
 import { decodeNativeMailbox, nativeInput, type NativeMailboxBatch } from "./providers/native-mailbox-input";
+import { ProviderPreparationWait } from "./providers/preflight-service";
+
+export interface DeviceRunAdmission { signal: AbortSignal; assertCurrent(): void }
+export interface DeviceRunOutcome { status: "done" | "unknown" | "unavailable"; reason?: string; retry_after?: number | null; result?: Record<string, unknown> }
 
 export interface DeviceAdapterContext {
   job: DeviceJob;
@@ -28,6 +32,8 @@ export interface DeviceAdapterContext {
 export interface DeviceAdapter {
   /** A prepared adapter must durably dispatch and observe through the supplied context before returning. */
   dispatch_mode?: "prepared";
+  readiness?(): Record<string, unknown>;
+  retryReadiness?(requestId: string, expectedGeneration: number): Record<string, unknown>;
   /** Must verify its native result; returning only an exit code is not semantic acceptance. */
   execute(context: DeviceAdapterContext): Promise<{ observation: Record<string, unknown>; result: Record<string, unknown> }>;
   reconcile?(challenge: DeviceReconciliationChallenge, workspace: string, assertCurrent: () => void,
@@ -66,6 +72,17 @@ export class DeviceWorker {
   private adapter(job: DeviceJob, workspace: string): DeviceAdapter | undefined {
     const selected = Object.hasOwn(this.adapters, job.capability) ? this.adapters[job.capability] : undefined;
     return typeof selected === "function" ? selected(structuredClone(job), workspace) : selected;
+  }
+
+  /** Private operator inspection/reset; never launches a native process or changes task state. */
+  async readiness(taskId: string, retry?: { request_id: string; expected_generation: number }): Promise<Record<string, unknown>> {
+    requireThat(!this.signal?.aborted, "device_worker_stopped");
+    const job = await this.client.inspect(taskId), workspace = this.workspaces.get(job.workspace_id);
+    requireThat(workspace && realpathSync(workspace.path) === workspace.path, "local_capability_unavailable");
+    const stat = lstatSync(workspace.path); requireThat(stat.dev === workspace.dev && stat.ino === workspace.ino, "worker_workspace_changed");
+    const adapter = this.adapter(job, workspace.path); requireThat(adapter?.readiness, "provider_readiness_unavailable");
+    if (retry) { requireThat(adapter.retryReadiness, "provider_retry_unavailable"); return adapter.retryReadiness(retry.request_id, retry.expected_generation); }
+    return adapter.readiness();
   }
 
   /** Explicit request ID only: no unknown-task scan, new lease, provider probe or automatic execution. */
@@ -121,14 +138,17 @@ export class DeviceWorker {
     });
   }
 
-  async run(taskId: string, ttlMs = 10_000, expected?: { revision: number; assignment_digest: string }): Promise<{ status: "done" | "unknown" | "unavailable"; reason?: string; result?: Record<string, unknown> }> {
-    requireThat(!this.signal?.aborted, "device_worker_stopped");
+  async run(taskId: string, ttlMs = 10_000, expected?: { revision: number; assignment_digest: string }, admission?: DeviceRunAdmission): Promise<DeviceRunOutcome> {
+    const signal = this.signal && admission ? AbortSignal.any([this.signal, admission.signal]) : admission?.signal ?? this.signal;
+    requireThat(!signal?.aborted, "device_worker_stopped");
     const job = await this.client.inspect(taskId), issuedJob = digest(job);
     requireThat(!expected || (job.revision === expected.revision && job.assignment_digest === expected.assignment_digest), "device_assignment_changed");
     const workspace = this.workspaces.get(job.workspace_id);
     requireThat(workspace, "local_capability_unavailable");
     const assertWorkspace = () => {
-      requireThat(!this.signal?.aborted, "device_worker_stopped");
+      requireThat(!signal?.aborted, "device_worker_stopped");
+      const checked: unknown = admission?.assertCurrent();
+      if (checked !== undefined) { void Promise.resolve(checked).catch(() => {}); requireThat(false, "admission_must_be_synchronous"); }
       const stat = lstatSync(workspace.path);
       requireThat(stat.isDirectory() && !stat.isSymbolicLink() && realpathSync(workspace.path) === workspace.path && stat.dev === workspace.dev && stat.ino === workspace.ino, "worker_workspace_changed");
       requireThat(digest(job) === issuedJob, "device_job_changed");
@@ -141,8 +161,8 @@ export class DeviceWorker {
     assertWorkspace();
     const authority = await this.client.claim(taskId, job.revision, job.assignment_digest, ttlMs);
     const abort = () => authority.stop();
-    this.signal?.addEventListener("abort", abort, { once: true });
-    if (this.signal?.aborted) abort();
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
     const assertCurrent = () => { authority.assertCurrent(); assertWorkspace(); };
     const effect = randomUUID();
     let attempted = false, dispatched = false, prepared = false, verified = false;
@@ -241,7 +261,7 @@ export class DeviceWorker {
       if (prepared) journal!.completed(effect);
       return { status: "done", result: output.result };
     } catch (error) {
-      const reason = error instanceof RuntimeConflict ? error.code : error instanceof ExecutionPolicyDenied ? error.decision.reason_code
+      const reason = error instanceof ProviderPreparationWait ? error.decision.reason : error instanceof RuntimeConflict ? error.code : error instanceof ExecutionPolicyDenied ? error.decision.reason_code
         : error instanceof ToolGrantDenied ? error.reason_code : "device_preparation_unavailable";
       if (prepared) { try { journal!.unknown(effect); } catch { /* preserve the original durable record if storage is unavailable */ } }
       if (preparedMode && attempted && !dispatched) {
@@ -258,14 +278,19 @@ export class DeviceWorker {
         // A lost dispatch or completion response is uncertain. Never repeat a native operation here.
         try { await this.client.command("unknown", { lease: authority.lease, reason: dispatched ? "worker_outcome_unproven" : "worker_admission_unproven" }); } catch { /* coordinator expiry recovery retains uncertainty */ }
       } else {
-        try { await this.client.command("release", { lease: authority.lease, reason }); } catch { /* unstarted expiry recovery is safe if the response is lost */ }
+        try {
+          const release = await this.client.command("release", { lease: authority.lease, reason });
+          if (error instanceof ProviderPreparationWait && object(release) && release.task_id === taskId && release.status === "waiting") {
+            return { status: "unavailable", reason, retry_after: error.decision.retry_after };
+          }
+        } catch { /* unstarted expiry recovery is safe if the response is lost */ }
       }
       return attempted ? { status: "unknown" } : { status: "unavailable", reason };
     } finally {
       closed = true;
       if (timer) clearTimeout(timer);
       authority.stop();
-      this.signal?.removeEventListener("abort", abort);
+      signal?.removeEventListener("abort", abort);
       await renewal;
     }
   }

@@ -7262,7 +7262,8 @@ var controlmeshSchemas = {
           "reconciliation",
           "reconcile",
           "native_call",
-          "native_input"
+          "native_input",
+          "queue_page"
         ]
       },
       arguments: {
@@ -7724,6 +7725,33 @@ var controlmeshSchemas = {
             properties: {
               lease: {
                 $ref: "execution-lease.schema.json"
+              }
+            }
+          }
+        }
+      },
+      {
+        properties: {
+          operation: {
+            const: "queue_page"
+          },
+          arguments: {
+            type: "object",
+            additionalProperties: false,
+            required: [
+              "after"
+            ],
+            properties: {
+              after: {
+                anyOf: [
+                  {
+                    type: "string",
+                    pattern: "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+                  },
+                  {
+                    type: "null"
+                  }
+                ]
               }
             }
           }

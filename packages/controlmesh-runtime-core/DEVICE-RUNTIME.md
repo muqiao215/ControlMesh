@@ -7,6 +7,8 @@ It does not activate the installed production writer or replace the terminal pro
 
 ```sh
 bun packages/controlmesh-runtime-core/scripts/device-runtime.ts /absolute/private-profile.json
+# Unattended service: survives stdin EOF, exits on SIGINT/SIGTERM.
+bun packages/controlmesh-runtime-core/scripts/device-runtime.ts /absolute/private-profile.json --daemon
 ```
 
 Configuration is owned by the current user, mode 0600, at a canonical absolute path. The
@@ -30,7 +32,9 @@ Coordinator fields:
 | `devices` | 1–128 registrations; each has `device_id`, matching `principal_id`, `token_sha256`, unique `capabilities` and logical `workspace_ids` |
 
 The coordinator stores the device token's SHA256 digest, not provider credentials. The
-worker port starts only after an explicit `start` operation. It binds to 127.0.0.1;
+worker port starts after an explicit `start` operation or `--daemon`. Daemon mode also
+recovers expired coordinator episodes every two seconds without invoking a provider.
+It binds to 127.0.0.1;
 cross-device deployment carries it through a host-verified SSH tunnel or an authenticated
 HTTPS deployment. The public Web/SDK facade remains separate. Configuration replacement
 invalidates active admission, including requests already reading their body.
@@ -47,6 +51,7 @@ Worker fields:
 | `communication` | Optional `node_executable` used by native Agent MCP; required for assignments with peers/parent |
 | `history` | Optional independent History backend: absolute `python`, repository `directory`, and optional explicit `environment`; no Web server required |
 | `max_parallel` | 1–8 active control executions per process; default 4 |
+| `scheduler` | Optional limits: `parallelism` (1–8, defaults to and cannot exceed `max_parallel`), `max_pending` (1–1024, default 128), `poll_ms` (100–60000, default 2000), `lease_ms` (2000–30000, default 10000), `max_backoff_ms` (`poll_ms`–300000, default 60000) |
 
 `opencode.environment` supplies device-local `XDG_DATA_HOME` and `XDG_CACHE_HOME`. Container
 settings use the existing qualified OpenCode profile; the runtime sets its own control
@@ -88,6 +93,12 @@ Worker operations:
 - `run` with `task_id`, `expected_revision`, `assignment_digest` copied from inspection.
 - `inspect_operation` with `operation_id`: `absent`, `running`, `unknown`, or `settled`.
 - `reconcile` with the coordinator-issued `challenge_id`.
+- `scheduler_status`, `start_scheduler`, `pause_scheduler`.
+- `inspect_scheduled` with `work_id`; `retry_scheduled` additionally takes `expected_attempt`.
+- `inspect_provider` with `task_id`; `retry_provider` additionally takes `expected_generation`.
+  These inspect/reset the local readiness cache without running a model or changing a task.
+  Explicit reset requires the private operator's `device:schedule` authority; it is not an
+  Agent mailbox or native MCP operation.
 - `history_search` with `workspace_id`, `query`: up to 20 device-local suggestions,
   filtered to the registered project. Requires the optional `history` profile.
 - `prepare_adoption` with `task_id`, `workspace_id`, `capability`, `session_id`: verifies
@@ -125,11 +136,38 @@ deadline and 256-KiB output limit; shutdown drains them. They inherit only the e
 configured History environment, not the provider credential environment. This invokes
 `python -m history_core`; the human Web frontend is not started.
 
-Multiple explicit run requests may overlap within the configured bound. Work is not
-automatically scanned or retried on startup. EOF drains submitted requests; SIGINT/SIGTERM
-interrupt owned execution before closing its database. Uncertain external outcomes remain
-visible. No polling task is injected into a human conversation and no cron is created.
+## Persistent scheduling
 
-Full rollout still needs the remaining provider/transport/store/topology owners, persistent
-device scheduling, reviewed SpecMesh closeout, user terminal workflow, package/default switch
+`--daemon` starts automatic worker discovery unless a previous `pause_scheduler` is persisted.
+Without the flag, opening a profile or inspecting status starts neither scheduling nor a model;
+use `start_scheduler` explicitly. `pause_scheduler` stops admission and drains active work.
+SIGINT/SIGTERM interrupts owned work and drains it before closing the database. Interactive
+EOF drains submitted requests; daemon EOF leaves the service available.
+
+Candidate schema 15 adds assignment generations, a scheduler lease and durable scheduled work.
+A record identifies the task's explicit assignment and execution projection, not its changing
+revision. Repeating an assignment command preserves its receipt; a new explicit assignment ID
+creates a new identity. Legacy assignments retain their original digest. Discovery uses the
+authenticated `queue_page` operation: at most 32 returned jobs and 1024 scanned candidates per
+page, with an advancing cursor even when the scanned work belongs to another device.
+
+Only one scheduler owns the local principal/device lease. Linux boot identity and elapsed
+time fence a superseded process at existing native/file/message admission boundaries. New
+manual `run` calls reject while that lease is current; historical run receipts remain readable.
+Worker reservations and scheduler concurrency bounds apply together. Old production writers
+must still be drained before any eventual production activation.
+
+Interrupted runs become `unknown` and never automatically execute again. Inspect the original
+effect and reconcile its retained result; a later discovery pass updates local bookkeeping.
+Explicit `retry_scheduled` requires the same assignment, expected attempt and a current waiting
+task with no active episode or pending reconciliation. It cannot bypass an uncertain effect.
+
+Confirmed pre-execution quota failures with an evidenced future reset become timed `waiting`.
+Quota without reset, authentication failures and exhausted probe budgets remain `blocked`.
+After resolving the cause, inspect/reset readiness at its expected generation, then explicitly
+retry the scheduled work. Provider-cache probe limits remain authoritative; transport failures
+use bounded backoff. No polling task is injected into a human conversation and no cron is created.
+
+Full rollout still needs the remaining provider/transport/store/topology owners,
+reviewed SpecMesh closeout, user terminal workflow, package/default switch
 and installation gates in `plans/runtime-convergence/task_plan.md`.

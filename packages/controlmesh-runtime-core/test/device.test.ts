@@ -68,6 +68,41 @@ test("assignment binds capabilities, devices, current task content and claim-tim
   await expect(f.clients[0].inspect("task")).rejects.toThrow("assignment_authority_changed");
 });
 
+test("paginated queue advances past 1024 other-device assignments and all 32-item pages", async () => {
+  const f = fixture();
+  f.db.transaction(() => {
+    for (let i = 0; i < 1025; i++) f.task(`foreign-${String(i).padStart(4, "0")}`, ["device-1"]);
+    for (let i = 0; i < 34; i++) f.task(`own-${String(i).padStart(2, "0")}`, ["device-0"]);
+  });
+  const first = await f.clients[0].queuePage(null); expect(first.items).toEqual([]); expect(first.next_cursor).toBe("foreign-1023");
+  const second = await f.clients[0].queuePage(first.next_cursor); expect(second.items).toHaveLength(32); expect(second.next_cursor).toBe("own-31");
+  const last = await f.clients[0].queuePage(second.next_cursor); expect(last.items.map(job => job.task_id)).toEqual(["own-32", "own-33"]); expect(last.next_cursor).toBeNull();
+  expect(JSON.stringify(second)).not.toContain("/private/");
+}, 20_000);
+
+test("identical explicit assignments acquire new identity while old schema assignments retain their digest", async () => {
+  const f = fixture(), specification = f.task();
+  f.db.sql.query("DELETE FROM device_assignment_generations WHERE task_id='task'").run();
+  const legacy = await f.clients[0].inspect("task"); expect(legacy.assignment_digest).toBe(digest(specification));
+  f.coordinator.assign(owner, "reassign", "task", legacy.revision, specification);
+  const fresh = await f.clients[0].inspect("task"); expect(fresh.assignment_digest).not.toBe(legacy.assignment_digest);
+  f.coordinator.assign(owner, "reassign", "task", legacy.revision, specification);
+  expect((await f.clients[0].inspect("task")).assignment_digest).toBe(fresh.assignment_digest);
+  await expect(f.clients[0].claim("task", legacy.revision, legacy.assignment_digest, 5000)).rejects.toThrow("assignment_revision_conflict");
+});
+
+test("schema fourteen upgrades preserve task and native adoption records without assigning or executing work", async () => {
+  const f = fixture(); f.task(); const before = f.kernel.inspect(owner, "task");
+  f.db.sql.query("INSERT INTO device_native_adoptions VALUES (?,?,?,?,?,?,?,?,?)").run("legacy", owner.id, "device-0", "task", "project", "synthetic", "profile", "{}", "context");
+  const rows = f.db.sql.query("SELECT * FROM device_native_adoptions").all();
+  f.db.sql.exec("DROP TABLE device_scheduled_work; DROP TABLE device_scheduler_leases; DROP TABLE device_assignment_generations; PRAGMA user_version=14");
+  const restored = new RuntimeDatabase(f.path); cleanup.push(() => restored.close());
+  expect(restored.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 15 });
+  expect(new RuntimeKernel(restored).inspect(owner, "task")).toEqual(before);
+  expect(restored.sql.query("SELECT * FROM device_native_adoptions").all()).toEqual(rows);
+  expect(restored.sql.query("SELECT COUNT(*) AS n FROM device_scheduled_work").get()).toEqual({ n: 0 });
+});
+
 test("device revocation survives restart and is rechecked after an in-flight body read", async () => {
   const f = fixture();
   let body!: ReadableStreamDefaultController<Uint8Array>;
@@ -197,7 +232,8 @@ test("coordinator restart preserves assignments/receipts; expired running work s
   const server = coordinator.listen(); cleanup.push(() => server.stop(true));
   const client = new DeviceClient({ endpoint: server.url.origin, token: f.tokens[0], device_id: "device-0" });
   const saved = JSON.parse((reopened.sql.query("SELECT specification FROM device_assignments").get() as { specification: string }).specification);
-  expect((await client.inspect("task")).assignment_digest).toBe(digest(saved));
+  const generation = (reopened.sql.query("SELECT generation FROM device_assignment_generations WHERE task_id='task'").get() as { generation: string }).generation;
+  expect((await client.inspect("task")).assignment_digest).toBe(digest({ specification: saved, generation }));
   expect(kernel.recoverExpired({ ...owner, origin: "recovery" })).toEqual(["task"]);
   expect(kernel.inspect(owner, "task").needs_reconciliation).toBe(true);
   await expect(client.command("complete", { lease: authority.lease, effect_id: "pending", result: {} })).rejects.toThrow("effect_observation_required");
@@ -206,9 +242,9 @@ test("coordinator restart preserves assignments/receipts; expired running work s
 
 test("v2 database migrates atomically without losing a task or preflight decision", () => {
   const f = fixture(); f.task();
-  f.db.sql.exec("DROP TABLE device_native_adoptions; DROP TABLE command_reservations; DROP TABLE feishu_conversations; DROP TABLE feishu_event_aliases; DROP TABLE feishu_inbox; DROP TABLE transport_receipts; DROP TABLE delivery_outbox; DROP TABLE delivery_routes; DROP TABLE native_agent_deliveries; DROP TABLE native_agent_calls; DROP TABLE native_mailbox_deliveries; DROP TABLE local_runs; DROP TABLE device_assignments; DROP TABLE device_revocations; DROP TABLE execution_manifests; DROP TABLE effect_observations; DROP TABLE device_execution_records; DROP TABLE device_reconciliations; PRAGMA user_version=2");
+  f.db.sql.exec("DROP TABLE device_scheduled_work; DROP TABLE device_scheduler_leases; DROP TABLE device_assignment_generations; DROP TABLE device_native_adoptions; DROP TABLE command_reservations; DROP TABLE feishu_conversations; DROP TABLE feishu_event_aliases; DROP TABLE feishu_inbox; DROP TABLE transport_receipts; DROP TABLE delivery_outbox; DROP TABLE delivery_routes; DROP TABLE native_agent_deliveries; DROP TABLE native_agent_calls; DROP TABLE native_mailbox_deliveries; DROP TABLE local_runs; DROP TABLE device_assignments; DROP TABLE device_revocations; DROP TABLE execution_manifests; DROP TABLE effect_observations; DROP TABLE device_execution_records; DROP TABLE device_reconciliations; PRAGMA user_version=2");
   const reopened = new RuntimeDatabase(f.path); cleanup.push(() => reopened.close());
-  expect(reopened.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 14 });
+  expect(reopened.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 15 });
   expect((reopened.sql.query("SELECT COUNT(*) AS n FROM tasks").get() as { n: number }).n).toBe(1);
   expect(reopened.sql.query("SELECT name FROM sqlite_master WHERE name='provider_checks'").get()).not.toBeNull();
 });
