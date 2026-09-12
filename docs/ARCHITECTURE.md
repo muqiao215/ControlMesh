@@ -351,6 +351,11 @@ checks the ancestor chain at admission and execution/publication boundaries; cha
 checkpoints or inactive parents revoke child execution while lease-bound cleanup stays
 available. Automatic topology policies and device queue composition remain pending.
 
+Candidate schema 19 adds assignment generations and prior-assignment history.
+`TopologyTaskQueue.resume` archives the resolved assignment and reuses Kernel.resume
+and the local queue in one transaction, preserving child task/native identity and
+authorization across checkpoints. A new generation does not overwrite prior evidence.
+
 `LocalTaskRuntime` adds the private local task execution owner. SQLite schema 8 stores
 queued runs, their expected task revision and provider/profile binding, plus the claimed
 episode and terminal outcome. Two controllers sharing the configured principal/device

@@ -7,7 +7,7 @@ import { canonical, digest, identifier, requireThat, terminal } from "./value";
 
 interface Assignment {
   child_id: string; parent_id: string; topology: string; substage: string;
-  worker_role: string; checkpoint_id: string; run_id: string; accepted: string | null;
+  worker_role: string; checkpoint_id: string; run_id: string; accepted: string | null; generation: number;
 }
 /** Associates already-authorized child tasks with topology roles and the existing local queue. */
 export class TopologyTaskQueue {
@@ -46,11 +46,34 @@ export class TopologyTaskQueue {
         ancestor = row?.parent_id ?? null;
       }
       const run = this.runtime.enqueue(`topology-run-${digest([actor.id, requestId])}`, childId, childRevision);
-      this.kernel.db.sql.query("INSERT INTO topology_tasks VALUES (?,?,?,?,?,?,?,NULL)")
+      this.kernel.db.sql.query("INSERT INTO topology_tasks (child_id,parent_id,topology,substage,worker_role,checkpoint_id,run_id,accepted) VALUES (?,?,?,?,?,?,?,NULL)")
         .run(childId, parentId, topology.state.topology, cp.substage, role, cp.checkpoint_id, run.run_id);
       return { child_id: childId, run_id: run.run_id };
     }, value => { this.runtime.assertPrincipal(actor); requireScope(actor, "team:write"); requireScope(actor, "task:execute"); this.kernel.inspect(actor, parentId); this.kernel.inspect(actor, childId); return value; });
   }
+  /** Preserve task/native identity while atomically replacing a completed assignment. */
+  resume(actor: Principal, requestId: string, parentId: string, parentRevision: number, topologyRevision: number,
+    childId: string, childRevision: number, role: string, prompt: string): { child_id: string; run_id: string; generation: number } {
+    this.runtime.assertPrincipal(actor); requireScope(actor, "team:write"); requireScope(actor, "task:execute"); requireScope(actor, "task:resume");
+    this.kernel.inspect(actor, parentId); this.kernel.inspect(actor, childId);
+    return command(this.kernel.db, actor, requestId, "topology.resume_child", { parentId, parentRevision, topologyRevision, childId, childRevision, role, prompt }, () => {
+      const topology = this.parent(actor, parentId, parentRevision, topologyRevision);
+      const prior = this.kernel.db.sql.query("SELECT * FROM topology_tasks WHERE child_id=? AND parent_id=?").get(childId, parentId) as Assignment | null;
+      requireThat(prior && prior.checkpoint_id !== topology.state.checkpoints.at(-1)!.checkpoint_id, "topology_new_checkpoint_required");
+      const child = this.kernel.inspect(actor, childId);
+      requireThat(child.revision === childRevision && !child.needs_reconciliation && child.active_episode === null
+        && (child.task.status === "failed" || (child.task.status === "done" && prior.accepted !== null)), "topology_previous_result_unresolved");
+      requireThat(Number.isSafeInteger(prior.generation) && prior.generation >= 1 && prior.generation < Number.MAX_SAFE_INTEGER, "invalid_assignment_generation");
+      const generation = prior.generation + 1;
+      this.kernel.db.sql.query("INSERT INTO topology_task_history VALUES (?,?,?)").run(childId, prior.generation, canonical(prior));
+      const resumed = this.runtime.resume(`topology-resume-${digest([actor.id, requestId])}`, childId, childRevision, prompt);
+      this.kernel.db.sql.query("DELETE FROM topology_tasks WHERE child_id=?").run(childId);
+      const queued = this.enqueue(actor, `topology-reassign-${digest([actor.id, requestId])}`, parentId, parentRevision, topologyRevision, childId, resumed.revision, role);
+      this.kernel.db.sql.query("UPDATE topology_tasks SET generation=? WHERE child_id=?").run(generation, childId);
+      return { ...queued, generation };
+    }, value => { this.runtime.assertPrincipal(actor); requireScope(actor, "team:write"); requireScope(actor, "task:execute"); requireScope(actor, "task:resume"); this.kernel.inspect(actor, parentId); this.kernel.inspect(actor, childId); return value; });
+  }
+
   collect(actor: Principal, requestId: string, parentId: string, parentRevision: number, topologyRevision: number,
     childId: string, childRevision: number): ReturnType<typeof readTeamTaskResult> {
     this.runtime.assertPrincipal(actor); requireScope(actor, "team:write"); requireScope(actor, "task:execute");

@@ -1035,3 +1035,14 @@ The initial assignment table has one row per child, so cross-stage reuse of the 
 TaskHub child ID remains unsupported. Do not replace native continuity with a fresh
 conversation to work around it; add explicit assignment generations before claiming
 repair/resume orchestration complete.
+
+## Assignment generations resolve same-child reuse
+
+Schema19 archives each replaced topology_tasks row with its generation, including the
+accepted result/run binding. TopologyTaskQueue.resume calls existing Kernel.resume,
+which keeps task ID, provider fields, source context, grant and retained native session.
+Only a new checkpoint and terminal resolved child can enter a new generation. A done
+child must first have collected output; failed native tasks still require the kernel's
+no-unresolved-effects check. All archive/resume/queue writes roll back together.
+This supersedes the initial same-child limitation above. Malformed done output still
+needs an explicit reject/recovery path; do not reinterpret it as accepted just to resume.

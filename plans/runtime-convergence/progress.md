@@ -2,6 +2,19 @@
 
 ## Current
 
+Topology child resume now preserves task/native identity across checkpoints through
+assignment generations. Candidate schema19 adds generation and immutable prior-row
+history. Archive, Kernel.resume, re-enqueue and generation update share one command
+transaction. A successful prior result must be collected first; uncertain or canceled
+work cannot be silently discarded. Synthetic repair/reopen verifies the same task ID,
+native session reference and grants, two episodes and one archived result; injected
+reassignment failure rolls everything back. Focused9tests53assertions and typecheck
+pass; full pinned runtime gate497pass0fail,6258assertions across54files in195.32s.
+Real cross-stage native acceptance remains pending. Previousd675042 CI passed.
+Next: automatic topology policies, explicit rejection/recovery of malformed output,
+parent-interruption handling, and device queue composition. No production cutover;
+version19 rollback needs a pre-upgrade backup, not a downgraded version marker.
+
 TopologyTaskQueue now binds already-authorized child tasks to a persisted role and
 checkpoint, enqueues through LocalTaskRuntime, and collects only its stored run's
 accepted episode/effect output. Candidate schema18 adds topology_tasks. Registration
@@ -11,8 +24,7 @@ or changed checkpoints refuse further child effects; release/unknown bookkeeping
 remains possible under the original lease. Focused23tests151assertions and typecheck
 pass; expanded full runtime gate494pass0fail,6236assertions across54files in195.13s.
 No production/default change. Previous7182236 CI confirmed successful.
-Next: automatic pipeline/fanout/director/judge policy composition, same-child
-assignment generations across resume/repair, cancellation UX,
+Next: automatic pipeline/fanout/director/judge policy composition, cancellation UX,
 and multi-device topology dispatch. Current queue composition is local and requires
 independently authorized children; it does not derive new child grants from a parent.
 Version18 rollback requires pre-upgrade backup; prior candidates reject the database.

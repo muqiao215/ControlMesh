@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { RuntimeDatabase, RuntimeKernel, RuntimeTopology, LocalTaskRuntime, TopologyTaskQueue, type Principal, type LocalTaskResolver } from "../src";
 import { digest } from "../src/value";
-const actor: Principal = { id: "owner", device_id: "local", origin: "internal", scopes: ["task:create", "task:read", "task:execute", "task:cancel", "task:reconcile", "task:admin", "team:write"] };
+const actor: Principal = { id: "owner", device_id: "local", origin: "internal", scopes: ["task:create", "task:read", "task:execute", "task:cancel", "task:resume", "task:reconcile", "task:admin", "team:write"] };
 const source = { command_origin: "internal" as const, origin: "background" as const, source_scope: "background_task" as const, transport: "terminal" };
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), "cm-topology-queue-")), path = join(root, "runtime.sqlite");
@@ -19,8 +19,8 @@ function fixture() {
       kernel.dispatchEffect(actor, `dispatch-${lease.episode_id}`, lease, lease.episode_id, { fixture: true });
       if (cancelDuringExecution) kernel.cancel(actor, "parent-cancel", "parent", kernel.inspect(actor, "parent").revision);
       context.assertCurrent();
-      const text = JSON.stringify({ topology: "pipeline", substage: snapshot.task.task_id === "reviewer" ? "review_running" : "worker_running", worker_role: snapshot.task.task_id, status: "completed", summary: "accepted" });
-      const accepted = { text, output_digest: digest(text) };
+      const text = JSON.stringify({ topology: "pipeline", substage: snapshot.task.prompt === "repair" ? "repairing" : snapshot.task.task_id === "reviewer" ? "review_running" : "worker_running", worker_role: snapshot.task.task_id, status: "completed", summary: "accepted" });
+      const accepted = { text, output_digest: digest(text), native_session: { session_id: `ses_synthetic_${snapshot.task.task_id}` } };
       kernel.confirmEffect(actor, `confirm-${lease.episode_id}`, lease, lease.episode_id, accepted);
       return kernel.finish(actor, `finish-${lease.episode_id}`, lease, "done", accepted);
     },
@@ -108,12 +108,79 @@ test("version seventeen adds assignment storage without changing persisted topol
   const f = fixture();
   try {
     const before = f.topology.inspect(actor, "parent");
-    f.db.sql.exec("DROP TABLE topology_tasks; PRAGMA user_version=17");
+    f.db.sql.exec("DROP TABLE topology_task_history; DROP TABLE topology_tasks; PRAGMA user_version=17");
     const upgraded = new RuntimeDatabase(f.path);
     try {
-      expect(upgraded.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 18 });
+      expect(upgraded.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 19 });
       expect(new RuntimeTopology(new RuntimeKernel(upgraded)).inspect(actor, "parent")).toEqual(before);
       expect(upgraded.sql.query("SELECT COUNT(*) AS n FROM topology_tasks").get()).toEqual({ n: 0 });
+    } finally { upgraded.close(); }
+  } finally { await f.close(); }
+});
+
+test("repair reuses child/native identity, archives its prior assignment and replays once", async () => {
+  const f = fixture();
+  try {
+    f.queue.enqueue(actor, "worker-run", "parent", 1, 2, "worker", 1, "worker"); await f.runtime.drain();
+    const done = f.kernel.inspect(actor, "worker");
+    const previous = f.queue.collect(actor, "first-result", "parent", 1, 2, "worker", done.revision);
+    const phase = f.topology.checkpoint(actor, "repair-phase", "parent", 1, 2, { substage: "repairing", phase_status: "in_progress", active_roles: ["worker"] });
+    // Fail after task resume and old-assignment removal, to check the complete transaction rollback.
+    f.db.sql.exec("CREATE TRIGGER reject_reassign BEFORE INSERT ON topology_tasks BEGIN SELECT RAISE(ABORT,'reassign_failed'); END");
+    expect(() => f.queue.resume(actor, "repair", "parent", 1, phase.revision, "worker", done.revision, "worker", "repair")).toThrow("reassign_failed");
+    expect(f.kernel.inspect(actor, "worker")).toEqual(done);
+    expect(f.db.sql.query("SELECT COUNT(*) AS n FROM topology_task_history").get()).toEqual({ n: 0 });
+    expect(f.runtime.queueStatus()).toEqual({ queued: 0, running: 0 });
+    f.db.sql.exec("DROP TRIGGER reject_reassign");
+    const next = f.queue.resume(actor, "repair", "parent", 1, phase.revision, "worker", done.revision, "worker", "repair");
+    const resumed = f.kernel.inspect(actor, "worker");
+    expect(resumed.task.task_id).toBe("worker");
+    expect(resumed.task.native_session).toEqual({ session_id: "ses_synthetic_worker" });
+    expect(resumed.task.tool_grant).toEqual(done.task.tool_grant);
+    expect(resumed.task.execution_context).toEqual(done.task.execution_context);
+    expect(next.generation).toBe(2);
+    expect(f.queue.resume(actor, "repair", "parent", 1, phase.revision, "worker", done.revision, "worker", "repair")).toEqual(next);
+    const history = f.db.sql.query("SELECT assignment FROM topology_task_history WHERE child_id='worker' AND generation=1").get() as { assignment: string };
+    expect(JSON.parse(JSON.parse(history.assignment).accepted)).toEqual(previous);
+    await f.runtime.stop();
+    const reopened = new RuntimeDatabase(f.path), kernel = new RuntimeKernel(reopened);
+    const runtime = new LocalTaskRuntime(kernel, actor, source, f.resolver, () => {}), queue = new TopologyTaskQueue(kernel, runtime);
+    try {
+      await runtime.drain();
+      const accepted = queue.collect(actor, "repair-result", "parent", 1, phase.revision, "worker", kernel.inspect(actor, "worker").revision);
+      expect(accepted.result.substage).toBe("repairing");
+      expect(accepted.binding.episode_id).not.toBe(previous.binding.episode_id);
+      expect(f.calls).toEqual(["probe:worker", "execute:worker", "probe:worker", "execute:worker"]);
+      expect(reopened.sql.query("SELECT COUNT(*) AS n FROM tasks").get()).toEqual({ n: 3 });
+      expect(reopened.sql.query("SELECT COUNT(*) AS n FROM episodes").get()).toEqual({ n: 2 });
+    } finally { await runtime.stop(); reopened.close(); }
+  } finally { await f.close(); }
+});
+
+test("uncollected completion cannot be discarded by a repair request", async () => {
+  const f = fixture();
+  try {
+    f.queue.enqueue(actor, "worker-run", "parent", 1, 2, "worker", 1, "worker"); await f.runtime.drain();
+    const done = f.kernel.inspect(actor, "worker");
+    const phase = f.topology.checkpoint(actor, "repair-phase", "parent", 1, 2, { substage: "repairing", phase_status: "in_progress", active_roles: ["worker"] });
+    expect(() => f.queue.resume(actor, "repair", "parent", 1, phase.revision, "worker", done.revision, "worker", "repair")).toThrow("topology_previous_result_unresolved");
+    expect(f.kernel.inspect(actor, "worker")).toEqual(done);
+    expect(f.db.sql.query("SELECT COUNT(*) AS n FROM topology_task_history").get()).toEqual({ n: 0 });
+  } finally { await f.close(); }
+});
+
+test("version eighteen assignment gains a generation without losing its run or accepted result", async () => {
+  const f = fixture();
+  try {
+    f.queue.enqueue(actor, "worker-run", "parent", 1, 2, "worker", 1, "worker"); await f.runtime.drain();
+    f.queue.collect(actor, "result", "parent", 1, 2, "worker", f.kernel.inspect(actor, "worker").revision);
+    const before = f.db.sql.query("SELECT * FROM topology_tasks WHERE child_id='worker'").get();
+    f.db.sql.exec("DROP TABLE topology_task_history; ALTER TABLE topology_tasks DROP COLUMN generation; PRAGMA user_version=18");
+    const upgraded = new RuntimeDatabase(f.path);
+    try {
+      expect(upgraded.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 19 });
+      expect(upgraded.sql.query("SELECT * FROM topology_tasks WHERE child_id='worker'").get()).toEqual(before);
+      expect(upgraded.sql.query("SELECT COUNT(*) AS n FROM topology_task_history").get()).toEqual({ n: 0 });
     } finally { upgraded.close(); }
   } finally { await f.close(); }
 });

@@ -117,10 +117,10 @@ test("schema thirteen upgrade preserves task, event and command receipt identity
   const f = setup(), kernel = new RuntimeKernel(f.db);
   const original = kernel.submit(actor, "create", { task_id: "waiting", chat_id: "terminal", status: "waiting", future: { preserved: true } });
   const rows = (db: RuntimeDatabase) => ["tasks", "events", "receipts", "command_reservations"].map(table => db.sql.query(`SELECT * FROM ${table}`).all());
-  const before = rows(f.db); f.db.sql.exec("DROP TABLE topology_tasks; DROP TABLE team_topologies; DROP TABLE team_phases; DROP TABLE device_scheduled_work; DROP TABLE device_scheduler_leases; DROP TABLE device_assignment_generations; DROP TABLE device_native_adoptions; PRAGMA user_version=13");
+  const before = rows(f.db); f.db.sql.exec("DROP TABLE topology_task_history; DROP TABLE topology_tasks; DROP TABLE team_topologies; DROP TABLE team_phases; DROP TABLE device_scheduled_work; DROP TABLE device_scheduler_leases; DROP TABLE device_assignment_generations; DROP TABLE device_native_adoptions; PRAGMA user_version=13");
   const reopened = new RuntimeDatabase(f.dbPath);
   try {
-    expect(reopened.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 18 });
+    expect(reopened.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 19 });
     expect(rows(reopened)).toEqual(before); expect(new RuntimeKernel(reopened).inspect(actor, "waiting")).toEqual(original);
     expect(reopened.sql.query("SELECT COUNT(*) AS n FROM device_native_adoptions").get()).toEqual({ n: 0 });
     expect(f.calls).toHaveLength(0);
