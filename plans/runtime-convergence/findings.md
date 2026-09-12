@@ -1,5 +1,40 @@
 # Findings
 
+## Confirmed native read-contract failures — 2026-09-12
+
+The retained real reviewer turn ended with matching session/input and zero workspace calls.
+The prior verifier threw required-read-missing before returning a result, so normal task
+handling marked this known negative as uncertain execution. ClaudeTaskEvidence now verifies
+all actual calls first and emits a narrow native_task_failure only without write staging or
+communication authority. Kernel, device wire results and reconciliation preserve `failed`.
+The scheduler settles the execution without automatic retry. Failure cannot claim completion,
+publication or SpecMesh success; other providers and uncertain effects retain existing rules.
+
+Controlled local tests cover explicit same-session continuation after a known failure,
+consumed input, lost observation, idempotent recovery and refusal under write/message scope.
+Actual containers with synthetic Claude/native transcripts verify device completion and
+recovery without rebuilding or calling the provider. The tool table is unchanged; read-only
+authority remains enforced by NativeWorkspaceFiles, not inferred from advertised MCP names.
+
+Retained real evidence was then reconciled using normal configured recovery: reviewer became
+failed, seven missing files were recorded, original session retained, native/project bytes
+unchanged, input consumed and duplicate acceptance emitted no events. No model, tool broker
+or build ran; one local flock helper acquired the existing session lock. An initial guard
+had rejected even flock before acceptance; its failed record is preserved. This is recovery
+of a real failed turn, not successful topology execution or the planned native reopen test.
+Operator-only reports: topology-read-failure-reconciliation[-lock]-20260912.{json,ts} under
+outputs/runtime-convergence in the originating workspace. No session store or credentials
+are part of this commit.
+
+Verification: full runtime gate 697 pass / 9018 assertions / 69 files / 236.71s, then a
+scoped resume-error cleanup passed kernel/local Claude tests (31 / 188 / 4.30s) and typecheck.
+Python protocol tests: 9 pass; generated TS/Python protocol bytes reproduce unchanged.
+The new generated Python model required updating only its source hash in the 512-module
+inventory. Initial fixture failures (MCP advertisement, write completion under read-only
+grants, and nested task snapshot shape) were corrected without loosening runtime guards.
+A wrong-workdir launch was stopped at exit 130; protocol regeneration initially hit the
+read-only default UV cache, then passed with the established task-local cache override.
+
 ## Atomic root completion and retained evidence — 2026-09-12
 
 All four local queue compositions invoke the same terminal completion helper. Candidate

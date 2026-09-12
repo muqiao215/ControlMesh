@@ -133,6 +133,7 @@ export interface DeviceNativeAdoption {
 }
 
 export interface DeviceNativeResult {
+  "task_failure"?: NativeTaskFailure;
   "schema_version": "controlmesh.device_native_result.v1";
   "text": string;
   "output_digest": string;
@@ -301,6 +302,13 @@ export interface NativeMailboxProof {
   "delivery_digest": string;
   "message_ids": string[];
   "native_user_message_id": string;
+}
+
+export interface NativeTaskFailure {
+  "schema_version": "controlmesh.native_task_failure.v1";
+  "code": "workspace_tool_required_read_missing";
+  "scope": "read_only_without_communication";
+  "missing_files": string[];
 }
 
 export interface ProviderCapability {

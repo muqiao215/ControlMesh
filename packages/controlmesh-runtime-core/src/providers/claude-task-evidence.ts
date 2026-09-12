@@ -1,3 +1,4 @@
+import { missingRequiredReads } from "../native-task-failure";
 import { closeSync, constants, fsyncSync, openSync, writeFileSync } from "node:fs";
 import { decodeTaskCompletion } from "../task-completion";
 import { dirname, join, relative } from "node:path";
@@ -137,14 +138,15 @@ export class ClaudeTaskEvidence {
     requireThat(native.tools.every(tool => tool.name.startsWith("mcp__workspace__") || (m.communication && tool.name.startsWith("mcp__controlmesh__"))), "claude_native_tool_ungranted");
     const proof = files.verify(native.tools.filter(tool => tool.name.startsWith("mcp__workspace__")).map(tool => {
       return { tool: "controlmesh_" + tool.name.slice("mcp__workspace__".length), input: tool.input, output: tool.output };
-    }), scope.required);
-    const completion = files.verifyCompletion(this.task.completion_requirements, proof);
+    }), []);
+    const taskFailure = missingRequiredReads(this.config.workspace, scope.required, proof, !this.stage && !m.communication);
+    const completion = taskFailure ? undefined : files.verifyCompletion(this.task.completion_requirements, proof);
     this.communicationTools = native.tools.filter(tool => tool.name.startsWith("mcp__controlmesh__"))
       .map(tool => ({ tool: tool.name.replace("mcp__controlmesh__", "controlmesh_"), input: tool.input, output: tool.output }));
     const communication = m.communication ? this.verifyCommunication!(m.communication, this.communicationTools) : undefined;
     const result: Record<string, unknown> = { native_session: native.reference, user_message_id: native.user_message_id,
       assistant_message_ids: native.assistant_message_ids, text: observed.text, output_digest: digest(observed.text), workspace_tools: proof,
-      ...(completion ? { completion } : {}), read_files: proof.read_files, native_turns: turns, ...(communication ? { communication } : {}), ...(container ? { container } : {}),
+      ...(taskFailure ? { task_failure: taskFailure } : {}), ...(completion ? { completion } : {}), read_files: proof.read_files, native_turns: turns, ...(communication ? { communication } : {}), ...(container ? { container } : {}),
       ...(m.mailbox_delivery ? { mailbox_delivery: nativeMailboxEvidence(m.mailbox_delivery, native.user_message_id) } : {}) };
     if (this.stage) {
       let receipt: ReturnType<WorkspaceStage["proposalReceipt"]> | undefined;

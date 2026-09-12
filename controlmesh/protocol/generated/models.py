@@ -152,6 +152,7 @@ class DeviceNativeAdoption(BaseModel):
 
 class DeviceNativeResult(BaseModel):
     model_config = ConfigDict(extra="allow")
+    task_failure: NativeTaskFailure | None = None
     schema_version: Literal["controlmesh.device_native_result.v1"]
     text: str
     output_digest: str
@@ -335,6 +336,14 @@ class NativeMailboxProof(BaseModel):
     delivery_digest: str
     message_ids: list[str]
     native_user_message_id: str
+
+
+class NativeTaskFailure(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    schema_version: Literal["controlmesh.native_task_failure.v1"]
+    code: Literal["workspace_tool_required_read_missing"]
+    scope: Literal["read_only_without_communication"]
+    missing_files: list[str]
 
 
 class ProviderCapability(BaseModel):

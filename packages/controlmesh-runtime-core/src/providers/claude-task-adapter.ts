@@ -1,3 +1,4 @@
+import { nativeTaskOutcome } from "../native-task-failure";
 import { mkdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -155,14 +156,14 @@ export class ClaudeTaskAdapter {
         (scope, tools) => journal.verify(effect, scope, tools));
       evidence.verify(); publishing = true;
       const result = evidence.publish(authority);
-      const publication = await context.verifyPublication?.(() => { current(); evidence.assertPublished(); }) ?? {};
+      const publication = nativeTaskOutcome(result) === "failed" ? {} : await context.verifyPublication?.(() => { current(); evidence.assertPublished(); }) ?? {};
       return this.kernel.db.transaction(() => {
         current(); evidence.assertPublished();
         if (delivery) mailbox.consume(this.actor, lease, effect, delivery, result);
         if (communication) journal.consume(this.actor, lease, effect, communication.scope, evidence.communicationTools);
         const accepted = { ...publication, ...result, mailbox_pending_count: mailbox.pendingCount(this.actor, task.task_id) };
         this.kernel.confirmEffect(this.actor, request("confirm"), lease, effect, accepted);
-        return this.kernel.finish(this.actor, request("finish"), lease, "done", accepted);
+        return this.kernel.finish(this.actor, request("finish"), lease, nativeTaskOutcome(accepted), accepted);
       });
     } catch (error) {
       if (dispatched) {

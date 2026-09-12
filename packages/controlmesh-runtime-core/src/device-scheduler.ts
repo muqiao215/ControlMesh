@@ -181,7 +181,7 @@ export class DeviceScheduler {
   private same(row: WorkRow, job: DeviceJob): boolean { return row.assignment_digest === job.assignment_digest && row.execution_digest === job.execution_digest; }
   private settle(row: WorkRow, job: DeviceJob): boolean {
     if (!this.same(row, job)) { this.set(row, "superseded", "assignment_changed"); return true; }
-    if (job.status === "done" || job.status === "cancelled") { this.set(row, job.status === "done" ? "completed" : "cancelled", "coordinator_terminal"); return true; }
+    if (job.status === "done" || job.status === "failed" || job.status === "cancelled") { this.set(row, job.status === "cancelled" ? "cancelled" : "completed", "coordinator_terminal"); return true; }
     return false;
   }
   private async inspectAssignment(row: WorkRow): Promise<DeviceJob | null> {
@@ -249,7 +249,7 @@ export class DeviceScheduler {
       const promise = Promise.resolve().then(() => this.executor.run(id, job, admission)).then(result => {
         this.current();
         const retry = result.status === "unavailable" && Number.isSafeInteger(result.retry_after) && Number(result.retry_after) > this.db.now() ? Number(result.retry_after) : null;
-        this.set(started, result.status === "done" ? "completed" : result.status === "unknown" ? "unknown" : retry !== null ? "waiting" : "blocked",
+        this.set(started, result.status === "done" || result.status === "failed" ? "completed" : result.status === "unknown" ? "unknown" : retry !== null ? "waiting" : "blocked",
           result.reason ?? result.status, retry);
       }).catch(error => {
         try {

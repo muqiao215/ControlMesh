@@ -37,6 +37,7 @@ const fakePreflight = new ClaudePreflight({ run: async spec => spec.command.incl
 class FixtureControl {
   count = 0;
   modifyRequired = false;
+  skipRequired = false;
   extraStaged = false;
   unrecordedCommunication = false;
   onCommunication?: (call: (name: string, args: Record<string, unknown>) => Promise<any>) => Promise<void>;
@@ -78,12 +79,12 @@ class FixtureControl {
         source("user", [{ type: "tool_result", tool_use_id: id, content: result.content, ...(result.isError ? { is_error: true } : {}) }]);
         return JSON.parse(result.content![0].text);
       };
-      let read = await call("read_file", { request_id: "read", path: "PROJECT.md" });
+      let read = this.skipRequired ? { content: "unread fixture output" } : await call("read_file", { request_id: "read", path: "PROJECT.md" });
       if (this.modifyRequired) {
         await call("edit_file", { request_id: "edit", path: "PROJECT.md", expected_sha256: read.sha256, old_text: read.content, new_text: read.content + "updated\n" });
         read = await call("read_file", { request_id: "reread", path: "PROJECT.md" });
       }
-      await call("write_file", { request_id: "write", path: `result-${this.count}.txt`, expected_sha256: null, content: read.content });
+      if (this.config.write_roots.length) await call("write_file", { request_id: "write", path: `result-${this.count}.txt`, expected_sha256: null, content: read.content });
       if (messageClient && this.onCommunication) await this.onCommunication((name, args) => call(name, args, true));
       if (messageClient && this.unrecordedCommunication) await messageClient.tool("send", { request_id: "unrecorded", recipient_task: "peer", text: "Missing native source evidence" });
       if (this.extraStaged) {
@@ -98,7 +99,7 @@ class FixtureControl {
     } finally { await client.close(); await messageClient?.close(); }
   }
 }
-function fixture() {
+function fixture(readOnly = false) {
   const root = mkdtempSync(join(tmpdir(), "cm-claude-task-")); cleanup.push(() => rmSync(root, { recursive: true, force: true }));
   const state = join(root, "state"), workspace = join(root, "project"), home = join(root, "home"), configDir = join(home, "config");
   for (const path of [state, workspace, home, configDir]) mkdirSync(path, { mode: 0o700 });
@@ -106,7 +107,7 @@ function fixture() {
   const db = new RuntimeDatabase(join(state, "runtime.sqlite")), kernel = new RuntimeKernel(db); cleanup.push(() => db.close());
   const cache = new PreflightCache(db), control = new FixtureControl(); control.kernel = kernel;
   const config: ClaudeTaskConfiguration = { state_home: state, executable: process.execPath, node_executable: Bun.which("node")!, environment: { home, config_directory: configDir, credentials: {} },
-    model: "fixture-model", workspace, read_files: [join(workspace, "PROJECT.md")], required_reads: [join(workspace, "PROJECT.md")], write_roots: [workspace] };
+    model: "fixture-model", workspace, read_files: [join(workspace, "PROJECT.md")], required_reads: [join(workspace, "PROJECT.md")], write_roots: readOnly ? [] : [workspace] };
   control.config = config;
   const runtime = new LocalTaskRuntime(kernel, actor, { command_origin: "human_request", origin: "user", source_scope: "local_foreground", transport: "terminal" },
     task => new ClaudeTaskAdapter(kernel, cache, actor, config, () => {}, control, fakePreflight).prepare(task), () => {});
@@ -280,4 +281,54 @@ test("Claude message grants reject before preflight and unobserved sends cannot 
   const reconciler = new ClaudeTaskReconciler(f.kernel, f.config, () => {}), binding = reconciler.inspect(actor, "task", stopped.revision, f.effect());
   await expect(reconciler.accept(actor, "reject", "task", stopped.revision, binding)).rejects.toThrow("native_agent_call_unobserved");
   expect(f.control.count).toBe(1);
+});
+
+test("verified read-only failure preserves the session and consumes input without reporting success or retrying", async () => {
+  const f = fixture(true); f.control.skipRequired = true;
+  const task = f.create(), told = f.runtime.tell("tell-failure", "task", "Required project context must be read.");
+  f.runtime.enqueue("queue", "task", task.revision); await f.runtime.drain();
+  const failed = f.kernel.inspect(actor, "task");
+  expect(failed.task.status).toBe("failed"); expect(failed.needs_reconciliation).toBe(false);
+  expect(failed.task.error).toBe("workspace_tool_required_read_missing");
+  expect(f.runtime.inspectMessage("task", told.message_id).status).toBe("consumed");
+  const result = JSON.parse((f.db.sql.query("SELECT result FROM episodes").get() as { result: string }).result);
+  expect(result.task_failure).toMatchObject({ code: "workspace_tool_required_read_missing", missing_files: ["PROJECT.md"] });
+  expect(result.workspace_tools.written_files).toEqual([]); expect(result.completion).toBeUndefined();
+  expect(existsSync(join(f.workspace, "result-1.txt"))).toBe(false);
+  await f.runtime.drain(); expect(f.control.count).toBe(1);
+  f.control.skipRequired = false;
+  const resumed = f.runtime.resume("explicit-resume", "task", failed.revision, "Read PROJECT.md in the same session.");
+  expect(resumed.task.error).toBe("");
+  f.runtime.enqueue("queue-resume", "task", resumed.revision); await f.runtime.drain();
+  const latest = JSON.parse((f.db.sql.query("SELECT result FROM episodes ORDER BY rowid DESC LIMIT 1").get() as { result: string }).result);
+  expect(f.kernel.inspect(actor, "task").task.status).toBe("done");
+  expect(f.kernel.inspect(actor, "task").task.error).toBe("");
+  expect(latest.native_session.session_id).toBe(result.native_session.session_id); expect(f.control.count).toBe(2);
+});
+
+test("lost read-only failure observation reconciles once from retained output with no completion publication", async () => {
+  const f = fixture(true); f.control.skipRequired = true;
+  const task = f.create(); f.kernel.recordEffectObservation = () => { throw new Error("fixture lost observation"); };
+  f.runtime.enqueue("queue", "task", task.revision); await f.runtime.drain();
+  const stale = f.kernel.inspect(actor, "task"); expect(stale.needs_reconciliation).toBe(true);
+  await f.runtime.stop();
+  const db = new RuntimeDatabase(join(f.state, "runtime.sqlite")); cleanup.push(() => db.close());
+  const owner = new RuntimeKernel(db), recovery = new ClaudeTaskReconciler(owner, f.config, () => {});
+  const candidate = recovery.inspect(actor, "task", stale.revision, f.effect());
+  const accepted = await recovery.accept(actor, "recover-failure", "task", stale.revision, candidate, async () => { throw new Error("failure must not publish completion"); });
+  expect(accepted.task.status).toBe("failed"); expect(accepted.needs_reconciliation).toBe(false);
+  const events = db.sql.query("SELECT COUNT(*) AS n FROM events").get();
+  expect(await recovery.accept(actor, "recover-failure", "task", stale.revision, candidate)).toEqual(accepted);
+  expect(db.sql.query("SELECT COUNT(*) AS n FROM events").get()).toEqual(events); expect(f.control.count).toBe(1);
+});
+
+test.each(["write", "communication"])("missing required reads with %s authority still require reconciliation", async mode => {
+  const f = fixture(mode === "communication"); f.control.skipRequired = true;
+  if (mode === "communication") f.config.communication = { peer_tasks: ["peer"], parent_task: null };
+  const task = f.create(); f.runtime.enqueue("queue", "task", task.revision); await f.runtime.drain();
+  const stale = f.kernel.inspect(actor, "task"); expect(stale.needs_reconciliation).toBe(true);
+  expect(stale.task.status).toBe("stale"); expect(f.control.count).toBe(1);
+  const recovery = new ClaudeTaskReconciler(f.kernel, f.config, () => {}), candidate = recovery.inspect(actor, "task", stale.revision, f.effect());
+  await expect(recovery.accept(actor, "reject-failure", "task", stale.revision, candidate)).rejects.toThrow("workspace_tool_required_read_missing");
+  expect(existsSync(join(f.workspace, "result-1.txt"))).toBe(false);
 });

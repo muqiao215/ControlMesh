@@ -1,3 +1,4 @@
+import { nativeTaskOutcome } from "../native-task-failure";
 import type { Principal, ReconciliationBinding, RuntimeKernel, TaskSnapshot } from "../kernel";
 import { digest, requireThat } from "../value";
 import { NativeSessionLease } from "./native-lease";
@@ -45,7 +46,7 @@ export class ClaudeTaskReconciler {
       this.kernel.reserveReconciliation(actor, requestId, taskId, revision, binding);
       const result = verifier.publish(operation => this.kernel.db.transaction(() => { current(); return operation(); }));
       const assertPublished = () => { current(); verifier.assertPublished(); };
-      const publication = await verifyPublication?.(assertPublished) ?? {};
+      const publication = nativeTaskOutcome(result) === "failed" ? {} : await verifyPublication?.(assertPublished) ?? {};
       assertPublished();
       return this.kernel.reconcileEffect(actor, requestId, taskId, revision, binding, saved => {
         assertPublished(); const mailbox = new NativeMailboxDelivery(this.kernel);

@@ -10,22 +10,25 @@ import { ClaudeSessionStore } from "../src/providers/claude-session";
 import { RuntimeDatabase } from "../src/database";
 
 const actual = process.env.CM_CONTAINER_TEST_IMAGE ? test : test.skip;
-actual.each(["normal", "recovery", "adoption", "absent", "wrong-hash"])("configured Claude device continuation: %s", async mode => {
+actual.each(["normal", "recovery", "adoption", "absent", "wrong-hash", "read-failure", "read-failure-recovery"])("configured Claude device continuation: %s", async mode => {
+  const readFailure = mode.startsWith("read-failure");
+  const capability = readFailure ? "claude.read" : "claude.write";
   const invalid = mode === "absent" || mode === "wrong-hash";
-  const interrupted = mode === "recovery" || invalid, adopted = mode === "adoption";
+  const interrupted = mode === "recovery" || mode === "read-failure-recovery" || invalid, adopted = mode === "adoption";
   const root = mkdtempSync(join(tmpdir(), "cm-claude-device-"));
   let coordinator: DeviceRuntime | undefined, worker: DeviceRuntime | undefined;
   try {
     const state = join(root, "coordinator"), local = join(root, "worker"), workspace = join(root, "project"), home = join(root, "home"), config = join(home, "config");
     for (const path of [state, local, workspace, home, config]) mkdirSync(path, { mode: 0o700 });
     writeFileSync(join(workspace, "PROJECT.md"), "device current fact\n");
+    if (readFailure) writeFileSync(join(config, "fixture-read-only"), "fixture");
     const built = await Bun.build({ entrypoints: [join(import.meta.dir, "helpers/claude-container-native.ts")], target: "node", format: "esm" });
     expect(built.success).toBe(true);
     const executable = join(root, "claude"); writeFileSync(executable, `#!/usr/local/bin/node\n${await built.outputs[0].text()}`, { mode: 0o700 });
     const token = randomBytes(32).toString("base64url"), coordinatorPath = join(root, "coordinator.json");
     writeFileSync(coordinatorPath, JSON.stringify({ schema_version: "controlmesh.device_runtime.v1", mode: "candidate", role: "coordinator", state_root: state,
       principal_id: "operator", device_id: "coordinator", devices: [{ device_id: "worker", principal_id: "operator", token_sha256: createHash("sha256").update(token).digest("hex"),
-        capabilities: ["claude.write"], workspace_ids: ["project"] }] }), { mode: 0o600 });
+        capabilities: [capability], workspace_ids: ["project"] }] }), { mode: 0o600 });
     coordinator = openDeviceRuntime(coordinatorPath);
     const call = (id: string, op: string, args: object = {}) => coordinator!.control.handle({ id, op, ...args });
     const started = await call("start", "start"); expect(started.ok).toBe(true);
@@ -34,8 +37,8 @@ actual.each(["normal", "recovery", "adoption", "absent", "wrong-hash"])("configu
       principal_id: "operator", device_id: "worker", coordinator: { endpoint: (started.result as { endpoint: string }).endpoint, token },
       claude: { executable, node_executable: "/usr/local/bin/node", cli_version: "2.1.263", model: "fixture-model", home, config_directory: config, environment: {}, timeout_ms: 45000, max_turns: 16,
         container: { docker: "/usr/bin/docker", socket: realpathSync("/var/run/docker.sock"), image_id: process.env.CM_CONTAINER_TEST_IMAGE, node_executable: "/usr/local/bin/node", memory_mb: 512 } },
-      workspaces: { project: { directory: workspace, read_files: ["PROJECT.md"], required_reads: ["PROJECT.md"], write_roots: ["."] } },
-      capabilities: { "claude.write": { workspace_ids: ["project"], writable: true } } }), { mode: 0o600 });
+      workspaces: { project: { directory: workspace, read_files: ["PROJECT.md"], required_reads: ["PROJECT.md"], write_roots: readFailure ? [] : ["."] } },
+      capabilities: { [capability]: { workspace_ids: ["project"], writable: !readFailure } } }), { mode: 0o600 });
     const originalSession = "aaaaaaaa-bbbb-cccc-dddd-000000000001";
     const nativePath = join(config, "projects/fixture", originalSession + ".jsonl");
     if (adopted) {
@@ -76,14 +79,14 @@ print(json.dumps(result))
       const candidates = await worker.control.handle({ id: "search-after", op: "history_search", workspace_id: "project", query: "SpecMesh" });
       expect(candidates).toMatchObject({ ok: true, result: { items: [{ session_id: originalSession }] } });
       expect(JSON.stringify(candidates)).not.toContain(root);
-      const adoption = await worker.control.handle({ id: "adopt", op: "prepare_adoption", task_id: "task", workspace_id: "project", capability: "claude.write", session_id: originalSession });
+      const adoption = await worker.control.handle({ id: "adopt", op: "prepare_adoption", task_id: "task", workspace_id: "project", capability, session_id: originalSession });
       expect(adoption).toMatchObject({ ok: true, result: { authorization: "context_only" } });
       native_session = (adoption.result as { native_session: unknown }).native_session;
       expect(readFileSync(nativePath)).toEqual(originalBytes); expect(existsSync(join(config, "inputs.jsonl"))).toBe(false);
       await worker.close(); worker = openDeviceRuntime(workerPath);
     }
-    expect((await call("submit", "submit", { task: { task_id: "task", chat_id: "terminal", status: "waiting", provider: "claude", model: "fixture-model", prompt: "Read PROJECT.md and write result.txt.", completion_requirements: { schema_version: "controlmesh.task_completion.v1", files: [{ path: mode === "absent" ? "missing.txt" : "result.txt", mode: "write", ...(mode === "wrong-hash" ? { sha256: "0".repeat(64) } : {}) }] }, ...(native_session ? { native_session } : {}) } })).ok).toBe(true);
-    expect((await call("assign", "assign", { task_id: "task", expected_revision: 1, workspace_id: "project", capability: "claude.write", device_ids: ["worker"] })).ok).toBe(true);
+    expect((await call("submit", "submit", { task: { task_id: "task", chat_id: "terminal", status: "waiting", provider: "claude", model: "fixture-model", prompt: "Read PROJECT.md and write result.txt.", completion_requirements: { schema_version: "controlmesh.task_completion.v1", files: [{ path: readFailure ? "PROJECT.md" : mode === "absent" ? "missing.txt" : "result.txt", mode: readFailure ? "read" : "write", ...(mode === "wrong-hash" ? { sha256: "0".repeat(64) } : {}) }] }, ...(native_session ? { native_session } : {}) } })).ok).toBe(true);
+    expect((await call("assign", "assign", { task_id: "task", expected_revision: 1, workspace_id: "project", capability, device_ids: ["worker"] })).ok).toBe(true);
     const inspected = await worker.control.handle({ id: "inspect", op: "inspect_task", task_id: "task" });
     expect(inspected).toMatchObject({ result: { execution: { completion_requirements: { schema_version: "controlmesh.task_completion.v1" } } } });
     const job = inspected.result as { revision: number; assignment_digest: string };
@@ -95,7 +98,7 @@ print(json.dumps(result))
     let run;
     try { run = await worker.control.handle({ id: "run", op: "run", task_id: "task", expected_revision: job.revision, assignment_digest: job.assignment_digest }); }
     finally { lost?.mockRestore(); }
-    expect(run).toMatchObject({ ok: true, result: { status: interrupted ? "unknown" : "done" } });
+    expect(run).toMatchObject({ ok: true, result: { status: interrupted ? "unknown" : readFailure ? "failed" : "done" } });
     if (interrupted) {
       expect(existsSync(join(workspace, "result.txt"))).toBe(false);
       const db = new RuntimeDatabase(join(state, "runtime.sqlite"));
@@ -117,13 +120,29 @@ print(json.dumps(result))
           expect(readFileSync(join(config, "inputs.jsonl"))).toEqual(inputsBefore);
           expect(build).not.toHaveBeenCalled(); expect(spawn).not.toHaveBeenCalled(); return;
         }
+        if (readFailure) {
+          expect(recovered).toMatchObject({ ok: true, result: { status: "failed" } });
+          expect(await worker.control.handle({ id: "recover", op: "reconcile", challenge_id: challenge.challenge_id })).toEqual(recovered);
+          expect(existsSync(join(workspace, "result.txt"))).toBe(false);
+          expect(readFileSync(join(config, "inputs.jsonl"))).toEqual(inputsBefore);
+          expect(build).not.toHaveBeenCalled(); expect(spawn).not.toHaveBeenCalled();
+        } else {
         expect(recovered).toMatchObject({ ok: true, result: { status: "done" } });
         const inode = statSync(join(workspace, "result.txt")).ino;
         expect(await worker.control.handle({ id: "recover", op: "reconcile", challenge_id: challenge.challenge_id })).toEqual(recovered);
         expect(statSync(join(workspace, "result.txt")).ino).toBe(inode);
         expect(readFileSync(join(config, "inputs.jsonl"))).toEqual(inputsBefore);
         expect(build).not.toHaveBeenCalled(); expect(spawn).not.toHaveBeenCalled();
+        }
       } finally { build.mockRestore(); spawn.mockRestore(); }
+    }
+    if (readFailure) {
+      const failed = await call("failed", "inspect_task", { task_id: "task" });
+      expect(failed).toMatchObject({ ok: true, result: { task: { status: "failed" }, needs_reconciliation: false, result: { task_failure: { missing_files: ["PROJECT.md"] } } } });
+      expect(JSON.stringify(failed)).not.toContain(root);
+      expect(existsSync(join(workspace, "result.txt"))).toBe(false);
+      expect(readFileSync(join(config, "inputs.jsonl"), "utf8").trim().split("\n")).toHaveLength(1);
+      return;
     }
     expect(readFileSync(join(workspace, "result.txt"), "utf8")).toBe("device current fact\n");
     expect(readFileSync(join(config, "inputs.jsonl"), "utf8").trim().split("\n")).toHaveLength(1);
@@ -134,7 +153,7 @@ print(json.dumps(result))
     const resumed = await call("resume", "resume", { task_id: "task", expected_revision: done.revision, prompt: "Continue with current PROJECT.md." });
     expect(resumed.ok).toBe(true);
     expect((await call("reassign", "assign", { task_id: "task", expected_revision: (resumed.result as { revision: number }).revision,
-      workspace_id: "project", capability: "claude.write", device_ids: ["worker"] })).ok).toBe(true);
+      workspace_id: "project", capability, device_ids: ["worker"] })).ok).toBe(true);
     const next = (await worker.control.handle({ id: "inspect-next", op: "inspect_task", task_id: "task" })).result as typeof job;
     expect(await worker.control.handle({ id: "continue", op: "run", task_id: "task", expected_revision: next.revision, assignment_digest: next.assignment_digest }))
       .toMatchObject({ ok: true, result: { status: "done" } });

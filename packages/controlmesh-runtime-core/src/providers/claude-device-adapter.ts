@@ -1,3 +1,4 @@
+import { nativeTaskOutcome } from "../native-task-failure";
 import { deviceCompletionProof } from "../task-completion";
 import { mkdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
@@ -88,9 +89,9 @@ export class ClaudeDeviceAdapter implements DeviceAdapter {
   private networkResult(result: Record<string, unknown>, evidence: DeviceEvidenceRef, task: LegacyTask): DeviceNativeResult {
     requireThat(typeof result.text === "string" && Buffer.byteLength(result.text) <= 65536 && Array.isArray(result.read_files), "native_device_result_too_large");
     const workspace = deviceWorkspaceProof(evidence.workspace_write, result);
-    const completion = deviceCompletionProof(task.completion_requirements, result.completion);
+    const completion = nativeTaskOutcome(result) === "failed" ? undefined : deviceCompletionProof(task.completion_requirements, result.completion);
     const value = { schema_version: "controlmesh.device_native_result.v1", text: result.text, output_digest: result.output_digest, read_count: result.read_files.length, evidence,
-      ...(completion ? { completion } : {}), ...(workspace ? { workspace_write: workspace } : {}), ...(result.communication ? { communication: result.communication } : {}),
+      ...(result.task_failure ? { task_failure: result.task_failure } : {}), ...(completion ? { completion } : {}), ...(workspace ? { workspace_write: workspace } : {}), ...(result.communication ? { communication: result.communication } : {}),
       ...(result.mailbox_delivery ? { mailbox_delivery: result.mailbox_delivery } : {}),
       native_session: { schema_version: "controlmesh.device_native_session.v1", device_id: this.journal.deviceId, evidence } };
     assertProtocolSchema<DeviceNativeResult>("device-native-result.schema.json", value); return value;
@@ -161,9 +162,9 @@ export class ClaudeDeviceAdapter implements DeviceAdapter {
       const observation = { schema_version: "controlmesh.claude_device_observation.v1", terminal: observed.terminal, native };
       if (observed.failure) this.cache.recordExecutionFailure(this.actor, binding, generation, observed.failure);
       await context.observe(observation);
-      const evidence = this.evidence(task, retained, observation, authorized, context.effect_id); evidence.verify();
+      const evidence = this.evidence(task, retained, observation, authorized, context.effect_id), verifiedResult = evidence.verify();
       if (stage) { await context.preparePublication(); publishing = true; evidence.publish(authority); }
-      workflow = await this.workflow(scope.required, () => { authorized(); evidence.assertPublished(); }, context.authority.signal, context.authority.remainingMs);
+      workflow = nativeTaskOutcome(verifiedResult) === "failed" ? undefined : await this.workflow(scope.required, () => { authorized(); evidence.assertPublished(); }, context.authority.signal, context.authority.remainingMs);
       const result = { ...evidence.verify(), ...(workflow ? { specmesh: { snapshot_digest: workflow.snapshot_digest, status: "pass", closeout_verified: false } } : {}) };
       authorized(); evidence.assertPublished();
       return { observation, result: { ...this.networkResult(result, context.retainVerifiedResult(result), task) } };
@@ -182,12 +183,12 @@ export class ClaudeDeviceAdapter implements DeviceAdapter {
       requireThat(digest(this.config) === registration && digest(claudeProbeBinding(this.config, this.journal.deviceId)) === digest(binding)
         && this.journal.inspect(challenge.manifest).observation_digest === saved.observation_digest, "claude_device_reconciliation_changed"); };
     try {
-      const evidence = this.evidence(task, manifest, JSON.parse(saved.observation), current, saved.effect_id); evidence.verify();
+      const evidence = this.evidence(task, manifest, JSON.parse(saved.observation), current, saved.effect_id), verifiedResult = evidence.verify();
       if (manifest.stage) {
         requireThat(preparePublication, "device_publication_authority_required"); await preparePublication(); current();
         evidence.publish(run => this.journal.db.transaction(() => { current(); return run(); }));
       }
-      const workflow = await this.workflow(scope.required, () => { current(); evidence.assertPublished(); });
+      const workflow = nativeTaskOutcome(verifiedResult) === "failed" ? undefined : await this.workflow(scope.required, () => { current(); evidence.assertPublished(); });
       const result = { ...evidence.verify(), ...(workflow ? { specmesh: { snapshot_digest: workflow.snapshot_digest, status: "pass", closeout_verified: false } } : {}) };
       current(); evidence.assertPublished();
       const reference = this.journal.retainReconciledResult(challenge.manifest, result), { result_digest: _result, ...observationRef } = reference;

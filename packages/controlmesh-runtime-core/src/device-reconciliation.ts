@@ -1,3 +1,4 @@
+import { nativeTaskOutcome, assertNativeFailureManifest } from "./native-task-failure";
 import { verifyDeviceCompletion } from "./task-completion";
 import { verifyDeviceWorkspaceProof } from "./providers/device-workspace-proof";
 import { randomUUID } from "node:crypto";
@@ -13,7 +14,7 @@ interface RecoveryRow {
   challenge_id: string; principal: string; device_id: string; registration_digest: string; task_id: string;
   challenge_digest: string; challenge: string; report_digest: string | null; response: string | null;
 }
-export interface ReconciliationReceipt { task_id: string; status: "done"; revision: number; challenge_id: string; evidence: DeviceEvidenceRef }
+export interface ReconciliationReceipt { task_id: string; status: "done" | "failed"; revision: number; challenge_id: string; evidence: DeviceEvidenceRef }
 
 /** A trusted request authorizes one bounded result verification, never another provider execution. */
 export class DeviceReconciliation {
@@ -105,7 +106,8 @@ export class DeviceReconciliation {
       this.current(device, row, challenge);
       const { observation, result } = report;
       verifyDeviceWorkspaceProof(challenge.manifest.workspace_write, result.workspace_write);
-      verifyDeviceCompletion(this.assignment(device, row.task_id).execution?.completion_requirements, result.completion);
+      assertNativeFailureManifest(challenge.manifest as unknown as Record<string, unknown>, result as unknown as Record<string, unknown>);
+      if (nativeTaskOutcome(result as unknown as Record<string, unknown>) === "done") verifyDeviceCompletion(this.assignment(device, row.task_id).execution?.completion_requirements, result.completion);
       for (const ref of [observation.evidence, result.evidence]) {
         const { observation_digest: _observation, result_digest: _result, ...base } = ref;
         requireThat(digest(base) === digest(challenge.manifest), "device_evidence_reference_mismatch");
@@ -135,7 +137,7 @@ export class DeviceReconciliation {
         return { ...result, reconciliation: { schema_version: "controlmesh.device_reconciliation.v1", challenge_id: challenge.challenge_id,
           challenge_digest: row.challenge_digest, report_digest: digest(report) } };
       });
-      const receipt: ReconciliationReceipt = { task_id: row.task_id, status: "done", revision: done.revision, challenge_id: challenge.challenge_id, evidence: result.evidence };
+      const receipt: ReconciliationReceipt = { task_id: row.task_id, status: nativeTaskOutcome(result as unknown as Record<string, unknown>), revision: done.revision, challenge_id: challenge.challenge_id, evidence: result.evidence };
       this.kernel.db.sql.query("UPDATE device_reconciliations SET report_digest=?,response=? WHERE challenge_id=?")
         .run(digest(report), canonical(receipt), challenge.challenge_id);
       return receipt;

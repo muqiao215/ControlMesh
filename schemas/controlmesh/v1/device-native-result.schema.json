@@ -13,6 +13,7 @@
     "native_session"
   ],
   "properties": {
+    "task_failure": { "$ref": "native-task-failure.schema.json" },
     "schema_version": {
       "const": "controlmesh.device_native_result.v1"
     },

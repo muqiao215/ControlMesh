@@ -6,15 +6,24 @@ Full CM-R0–CM-R7 remains in progress. Installed CM 0.43.0 remains the producti
 writer. No release, installation, live migration or default/service switch has occurred.
 The 512-module/57-field ledger is an inventory, not completed parity.
 
-Published cd4a47f matches origin/main and has successful CI 34694128788. This schema-26
-increment closes a real native-input gap: Agents now receive frozen role/stage/output
-contracts and prior results through verified native mailbox delivery. Full local verification
-passed: 688 tests / 8937 assertions, 68 files, 220.41s, exit 0; inventory drift and typecheck
-passed (/tmp/cm-topology-input-final.log). A final visibility check then made missing device
-context visibly block its schedule; its full device-topology suite and typecheck passed
-(33 tests / 322 assertions, 4.84s, /tmp/cm-topology-input-visibility.log). Publication/CI remain pending.
+Published 12c9bba (native topology input delivery) has successful exact-SHA CI
+34695456970. This increment fixes verified read-only Claude required-read failures across
+local/device completion and recovery. Retained real reviewer recovery passed without
+another model or tool invocation. Its original topology canary remains failed.
+
+Full runtime gate passed: 697 tests, 9018 assertions, 69 files, 236.71s, exit 0
+(/tmp/cm-native-failure-full2.log), including ownership drift and typecheck. A final scoped
+change clears the previous missing-read error when explicitly resuming; kernel/local Claude
+checks and typecheck then passed (31 tests, 188 assertions, 4.30s,
+/tmp/cm-native-failure-resume.log). Python protocol: 9 pass. All four generated protocol
+files reproduce unchanged. Publication and remote CI for this increment are pending.
 
 ## Done
+
+- Real retained reviewer recovery: failed, no reconciliation needed, seven missing reads,
+  original session and native/project bytes preserved, context consumed. Duplicate acceptance
+  emitted no events. Zero model/broker/build calls; one local flock helper. The original
+  topology canary remains failed and no native prompt was replayed.
 
 - Local/device topology dispatch supports four root kinds and sixteen nested pairs, frozen
   plans/routes, bounded recovery, source-bound results and persisted global admission caps.
@@ -38,8 +47,7 @@ context visibly block its schedule; its full device-topology suite and typecheck
 
 ## Remaining
 
-1. Publish/verify this input-delivery increment; investigate native task-contract failure
-   recovery using retained evidence, without replaying the failed reviewer attempt.
+1. Publish the verified known-failure increment and verify its remote SHA/CI.
 2. Complete real native topology and current-source acceptance, remote root artifact
    validation, reviewed SpecMesh closeout and pending candidate-input migration.
 3. Complete remaining provider, transport, store and terminal owners and the parity ledger.
@@ -50,8 +58,8 @@ context visibly block its schedule; its full device-topology suite and typecheck
 No replay of guarded native failures or browser-account/cron/bot canaries. Keep tasks
 77f04609/7738c5eb canceled. Observation timeout does not prove execution has stopped.
 Add topology-input-native-acceptance-20260912 to the guarded attempts. Its reviewer is
-stale with reconciliation required; do not invoke the script again or send another prompt
-to its sessions. The original script and full test process both reached terminal states.
+now confirmed failed after retained-evidence recovery; do not invoke the original script
+again or send another prompt to its sessions. The original script and full test process both reached terminal states.
 The canary is not accepted; its report records actual native calls and do_not_replay=true.
 Retained operator workspace: outputs/runtime-convergence/topology-input-native-acceptance-20260912.{json,log,ts}.
 Schema 26 rollback requires a pre-upgrade backup. Legacy pending assignments without a
@@ -59,10 +67,9 @@ frozen input block; remote root file completion still requires a future remote a
 
 ## Next
 
-Publish this tested native-input increment, then distinguish provable task-contract failure
-from uncertain external execution using retained native evidence. Finish real topology,
-source and artifact acceptance and all remaining CM-R0–CM-R7 owners and rollout gates.
-Do not replace the full goal with these scoped checks or mark the failed canary accepted.
+Publish the verified known-failure increment. Continue real topology, current-source and
+remote artifact acceptance, then finish remaining CM-R0–CM-R7 owners and rollout gates.
+Do not replace the full goal with this scoped recovery or mark the original canary accepted.
 
 ## Retained evidence
 

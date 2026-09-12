@@ -893,6 +893,15 @@ and publication checks remain separate from semantic closeout. See the active
 [Claude continuity design](../plans/runtime-convergence/claude-continuity-design.md) for qualified
 profiles and the remaining peer/adoption/device boundaries. Production remains Python-owned.
 
+A verified terminal Claude turn can still fail its task contract. Missing mandatory reads
+produce `native_task_failure.v1` only after identity, native input, source and every tool
+receipt pass, and only without write staging or communication authority. Local and device
+completion/reconciliation retain the original session and missing relative paths, confirm
+the observed effect, and finish the task as `failed`. Artifact and SpecMesh success claims
+are omitted. Device workers check the receipt status against their retained result; the
+scheduler settles this execution without automatically retrying it. Uncertain execution,
+unverified writes/messages and other providers retain their existing reconciliation rules.
+
 Claude's local candidate now composes the separate workspace MCP channel and existing task
 communication broker. Native control verifies both exact tool tables before input; each message
 call retains the fixed task/episode/fence scope and durable journal response. Original JSONL

@@ -1,3 +1,4 @@
+import { nativeTaskOutcome, assertNativeFailureManifest } from "./native-task-failure";
 import { assertTopologyNativeInput } from "./topology-native-input";
 import { topologyNativeClaim } from "./topology-execution";
 import { verifyDeviceCompletion } from "./task-completion";
@@ -271,7 +272,8 @@ export class DeviceCoordinator {
           assertProtocolSchema("device-native-result.schema.json", args.result);
           const result = args.result as Record<string, unknown>;
           verifyDeviceWorkspaceProof(manifest.workspace_write, result.workspace_write);
-          verifyDeviceCompletion(job.execution?.completion_requirements, result.completion);
+          assertNativeFailureManifest(manifest, result);
+          if (nativeTaskOutcome(result) === "done") verifyDeviceCompletion(job.execution?.completion_requirements, result.completion);
           this.evidenceMatches(manifest, result.evidence);
           requireThat(result.evidence.result_digest && result.evidence.observation_digest && digest(result.text) === result.output_digest, "device_result_evidence_missing");
           const original = this.kernel.db.sql.query("SELECT payload FROM effect_observations WHERE effect_id=?").get(args.effect_id as string) as { payload: string } | null;
@@ -298,7 +300,7 @@ export class DeviceCoordinator {
           .get(args.effect_id as string, lease.episode_id, lease.fence) as { result: string | null } | null;
         requireThat(observed && observed.result !== null, "effect_observation_required");
         this.kernel.confirmEffect(actor, `${request}:effect`, lease, args.effect_id as string, args.result);
-        const result = this.kernel.finish(actor, request, lease, "done", args.result as Record<string, unknown>);
+        const result = this.kernel.finish(actor, request, lease, nativeTaskOutcome(args.result as Record<string, unknown>), args.result as Record<string, unknown>);
         return { task_id: result.task.task_id, status: result.task.status, revision: result.revision };
       });
     }

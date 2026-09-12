@@ -16,6 +16,8 @@ if (args.includes("--safe-mode")) {
   process.exit(0);
 }
 const config = process.env.CLAUDE_CONFIG_DIR!, session_id = args[args.indexOf(args.includes("--resume") ? "--resume" : "--session-id") + 1];
+const readOnly = existsSync(join(config, "fixture-read-only"));
+const workspaceTools = ["edit_file", "read_file", "write_file"];
 const projects = join(config, "projects", "fixture"); mkdirSync(projects, { recursive: true, mode: 0o700 });
 const path = join(projects, session_id + ".jsonl");
 let parent = existsSync(path) ? JSON.parse(readFileSync(path, "utf8").trim().split("\n").at(-1)!).uuid : null;
@@ -56,7 +58,7 @@ for await (const line of createInterface({ input: process.stdin })) {
       : type === "mcp_set_servers" ? { added: Object.keys(servers), removed: [], errors: {} }
       : { mcpServers: Object.entries(servers).map(([name, config]) => ({ name, config, status: "connected", scope: "dynamic",
         serverInfo: { name: name === "workspace" ? "controlmesh-workspace" : "controlmesh-task-communication", version: "1.0.0" },
-        tools: (name === "workspace" ? ["edit_file", "read_file", "write_file"] : ["send", "ask_parent", "receive", "answer"]).map(name => ({ name })) })) };
+        tools: (name === "workspace" ? workspaceTools : ["send", "ask_parent", "receive", "answer"]).map(name => ({ name })) })) };
     emit({ type: "control_response", response: { subtype: "success", request_id: frame.request_id, response } });
   } else if (frame.type === "user") {
     appendFileSync(join(config, "inputs.jsonl"), JSON.stringify({ session_id, prompt: frame.message.content }) + "\n");
@@ -64,7 +66,7 @@ for await (const line of createInterface({ input: process.stdin })) {
     if (!directWriteDenied) throw new Error("fixture requires a read-only project");
     source("user", frame.message.content);
     emit({ type: "system", subtype: "init", cwd, session_id, model, claude_code_version: "2.1.263", permissionMode: "dontAsk",
-      tools: ["edit_file", "read_file", "write_file"].map(name => `mcp__workspace__${name}`), mcp_servers: [{ name: "workspace", status: "connected" }], plugins: [], skills: [], slash_commands: [] });
+      tools: workspaceTools.map(name => `mcp__workspace__${name}`), mcp_servers: [{ name: "workspace", status: "connected" }], plugins: [], skills: [], slash_commands: [] });
     const client = new Client(servers.workspace); await client.initialize();
     const call = async (name: string, input: Record<string, unknown>) => {
       const id = randomUUID(); source("assistant", [{ type: "tool_use", id, name: `mcp__workspace__${name}`, input }], "tool_use");
@@ -73,11 +75,13 @@ for await (const line of createInterface({ input: process.stdin })) {
       return JSON.parse(row.result.content[0].text);
     };
     try {
+      if (!readOnly) {
       const read = await call("read_file", { request_id: "read", path: "PROJECT.md" });
       const result = await call("read_file", { request_id: "existing", path: "result.txt" });
       const written = await call("write_file", { request_id: "write", path: "result.txt", expected_sha256: result.ok ? result.sha256 : "missing", content: read.content });
       if (!written.ok) throw new Error("fixture write failed");
       await call("read_file", { request_id: "readback", path: "result.txt" });
+      }
       const message = source("assistant", [{ type: "text", text: "DONE" }], "end_turn");
       emit({ type: "assistant", session_id, message });
       emit({ type: "result", session_id, subtype: "success", is_error: false, result: "DONE", num_turns: 5 });

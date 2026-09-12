@@ -1092,6 +1092,9 @@ export const controlmeshSchemas = {
     "native_session"
   ],
   "properties": {
+    "task_failure": {
+      "$ref": "native-task-failure.schema.json"
+    },
     "schema_version": {
       "const": "controlmesh.device_native_result.v1"
     },
@@ -1883,6 +1886,42 @@ export const controlmeshSchemas = {
     "native_user_message_id": {
       "type": "string",
       "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+    }
+  }
+},
+  "native-task-failure.schema.json": {
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.controlmesh.dev/controlmesh/v1/native-task-failure.schema.json",
+  "title": "NativeTaskFailure",
+  "description": "A verified terminal native turn that failed its read-only task contract; this is not task completion or permission to retry.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "code",
+    "scope",
+    "missing_files"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "controlmesh.native_task_failure.v1"
+    },
+    "code": {
+      "const": "workspace_tool_required_read_missing"
+    },
+    "scope": {
+      "const": "read_only_without_communication"
+    },
+    "missing_files": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096
+      }
     }
   }
 },

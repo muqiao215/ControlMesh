@@ -1,3 +1,4 @@
+import { nativeTaskOutcome } from "./native-task-failure";
 import { randomUUID } from "node:crypto";
 import { lstatSync, realpathSync } from "node:fs";
 import { isAbsolute } from "node:path";
@@ -13,7 +14,7 @@ import { decodeNativeMailbox, nativeInput, type NativeMailboxBatch } from "./pro
 import { ProviderPreparationWait } from "./providers/preflight-service";
 
 export interface DeviceRunAdmission { signal: AbortSignal; assertCurrent(): void }
-export interface DeviceRunOutcome { status: "done" | "unknown" | "unavailable"; reason?: string; retry_after?: number | null; result?: Record<string, unknown> }
+export interface DeviceRunOutcome { status: "done" | "failed" | "unknown" | "unavailable"; reason?: string; retry_after?: number | null; result?: Record<string, unknown> }
 
 export interface DeviceAdapterContext {
   job: DeviceJob;
@@ -89,9 +90,11 @@ export class DeviceWorker {
   async reconcile(challengeId: string): Promise<unknown> {
     requireThat(!this.signal?.aborted, "device_worker_stopped");
     const receipt = (value: unknown) => {
-      requireThat(object(value) && value.challenge_id === challengeId && value.status === "done" && Number.isSafeInteger(value.revision), "invalid_reconciliation_response");
+      requireThat(object(value) && value.challenge_id === challengeId && (value.status === "done" || value.status === "failed") && Number.isSafeInteger(value.revision), "invalid_reconciliation_response");
       assertProtocolSchema<DeviceEvidenceRef>("device-evidence-ref.schema.json", value.evidence);
       requireThat(value.evidence.device_id === this.client.deviceId && value.evidence.task_id === value.task_id && this.journal, "reconciliation_device_mismatch");
+      const retained = this.journal.inspect(value.evidence);
+      requireThat(retained.result && value.status === nativeTaskOutcome(JSON.parse(retained.result)), "invalid_reconciliation_response");
       this.journal.acknowledgeReconciliation(value.evidence);
       return value;
     };
@@ -257,9 +260,9 @@ export class DeviceWorker {
       await renewal;
       assertCurrent();
       const completion = await this.client.command("complete", { lease: authority.lease, effect_id: effect, result: output.result }, `device-${effect}-complete`);
-      requireThat(object(completion) && completion.task_id === taskId && completion.status === "done", "completion_unproven");
+      requireThat(object(completion) && completion.task_id === taskId && completion.status === nativeTaskOutcome(output.result), "completion_unproven");
       if (prepared) journal!.completed(effect);
-      return { status: "done", result: output.result };
+      return { status: nativeTaskOutcome(output.result), ...(output.result.task_failure ? { reason: "workspace_tool_required_read_missing" } : {}), result: output.result };
     } catch (error) {
       const reason = error instanceof ProviderPreparationWait ? error.decision.reason : error instanceof RuntimeConflict ? error.code : error instanceof ExecutionPolicyDenied ? error.decision.reason_code
         : error instanceof ToolGrantDenied ? error.reason_code : "device_preparation_unavailable";

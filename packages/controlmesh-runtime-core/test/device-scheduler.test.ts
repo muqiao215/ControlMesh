@@ -25,7 +25,7 @@ function fixture() {
   };
   const executor = { capacity: () => 8, async run(id: string, job: DeviceJob, admission: DeviceRunAdmission) {
     admission.assertCurrent(); calls.push({ id, job, admission }); const result = await behavior.run(job, admission);
-    if (result.status === "done") jobs.get(job.task_id)!.status = "done"; return result;
+    if (result.status === "done" || result.status === "failed") jobs.get(job.task_id)!.status = result.status; return result;
   } };
   const create = (local = db, boot = "fixture-boot") => {
     const scheduler = new DeviceScheduler(local, actor, client, executor, () => { if (!valid) throw new RuntimeConflict("runtime_configuration_changed"); },
@@ -143,4 +143,14 @@ test("a failed competing start cannot persist a success receipt or change schedu
   const other = f.create(); expect(() => other.start("competing-start")).toThrow("device_scheduler_already_running");
   expect(f.db.sql.query("SELECT * FROM meta WHERE key LIKE 'device-scheduler:%'").all()).toEqual(before);
   expect(f.db.sql.query("SELECT COUNT(*) AS n FROM receipts WHERE request_id='competing-start'").get()).toEqual({ n: 0 });
+});
+
+test("confirmed task failure settles execution and survives reopen without automatic retry", async () => {
+  const f = fixture(); f.task("failed");
+  f.behavior.run = async () => ({ status: "failed", reason: "workspace_tool_required_read_missing" });
+  f.scheduler.start(); await f.scheduler.tick(); await spin(() => f.rows()[0]?.state === "completed");
+  expect(f.jobs.get("failed")!.status).toBe("failed"); await f.scheduler.stop();
+  const restored = f.create(); restored.start();
+  for (let i = 0; i < 3; i++) { f.advance(); await restored.tick(); }
+  expect(f.calls).toHaveLength(1); expect(f.rows()).toHaveLength(1);
 });

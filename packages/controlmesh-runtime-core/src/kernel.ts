@@ -1,3 +1,4 @@
+import { nativeTaskOutcome } from "./native-task-failure";
 import { topologyNativeClaim } from "./topology-execution";
 import { assertTopologyNativeInput } from "./topology-native-input";
 import { assertTopologyCompletionPermit, type TopologyCompletionPermit } from "./topology-artifacts";
@@ -283,6 +284,7 @@ export class RuntimeKernel {
     this.scope(actor, "task:execute");
     this.owned(actor, this.row(proof.task_id));
     requireThat(outcome === "done" || outcome === "failed", "invalid_outcome");
+    if (result.task_failure !== undefined) requireThat(outcome === nativeTaskOutcome(result), "native_task_outcome_mismatch");
     return this.request(actor, requestId, "finish", { proof, outcome, result }, () => {
       const { task, episode } = this.lease(actor, proof);
       requireThat(episode.state === "running", "episode_not_started");
@@ -292,6 +294,7 @@ export class RuntimeKernel {
       task.active_episode = null;
       const raw = JSON.parse(task.raw) as LegacyTask;
       raw.completed_at = this.db.now() / 1000;
+      if (result.task_failure !== undefined) raw.error = "workspace_tool_required_read_missing";
       task.raw = canonical(raw);
       this.save(task);
       this.event(actor, task, `task.${outcome}`, { episode_id: proof.episode_id, result });
@@ -401,6 +404,7 @@ export class RuntimeKernel {
       if (result.native_session) raw.native_session = result.native_session;
       raw.prompt = prompt;
       raw.completed_at = null;
+      if (raw.error === "workspace_tool_required_read_missing") raw.error = "";
       task.raw = canonical(raw);
       task.status = "waiting";
       task.active_episode = null;
@@ -589,20 +593,22 @@ export class RuntimeKernel {
       const accepted = verify(evidence);
       if (accepted && typeof accepted.then === "function") { void Promise.resolve(accepted).catch(() => {}); requireThat(false, "verifier_must_be_synchronous"); }
       requireThat(object(accepted), "invalid_reconciled_result");
-      const result = canonical(accepted);
+      const outcome = nativeTaskOutcome(accepted), result = canonical(accepted);
       requireThat(Buffer.byteLength(result) <= 4 * 1024 * 1024, "reconciled_result_too_large");
       // A trusted verifier may call other state APIs; it cannot override cancellation or replace the reviewed inputs.
       const current = this.inspectReconciliation(actor, taskId, expectedRevision, binding.effect_id);
       requireThat(current.manifest_digest === binding.manifest_digest && current.observation_digest === binding.observation_digest, "reconciliation_evidence_changed");
       this.db.sql.query("UPDATE effects SET state='confirmed',result=? WHERE effect_id=?").run(result, binding.effect_id);
-      this.db.sql.query("UPDATE episodes SET state='done',lease_until=0,result=? WHERE episode_id=?").run(result, binding.episode_id);
+      this.db.sql.query("UPDATE episodes SET state=?,lease_until=0,result=? WHERE episode_id=?").run(outcome, result, binding.episode_id);
       const task = this.row(taskId);
-      task.status = "done"; task.needs_reconciliation = 0; task.active_episode = null;
+      task.status = outcome; task.needs_reconciliation = 0; task.active_episode = null;
       const raw = JSON.parse(task.raw) as LegacyTask;
-      raw.completed_at = this.db.now() / 1000; task.raw = canonical(raw);
+      raw.completed_at = this.db.now() / 1000;
+      if (accepted.task_failure !== undefined) raw.error = "workspace_tool_required_read_missing";
+      task.raw = canonical(raw);
       this.save(task);
       this.event(actor, task, "effect.reconciled", { ...binding, acceptance_digest: digest(accepted) });
-      this.event(actor, task, "task.done", { episode_id: binding.episode_id, reconciled: true, result: accepted });
+      this.event(actor, task, `task.${outcome}`, { episode_id: binding.episode_id, reconciled: true, result: accepted });
       return this.snapshot(task);
     });
   }
