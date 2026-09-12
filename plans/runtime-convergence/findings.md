@@ -1890,3 +1890,14 @@ results without re-reading credentials; removing auth.json after a lost observat
 not prevent model-free recovery. Required-file/workflow contracts currently refuse at
 prepare, before a probe. This is a missing capability to implement, not permission to
 remove a governed project's requirements.
+
+## 2026-09-13 — installed Codex structured turn records
+
+The configured native fixture reproduced `native_turn_not_completed` at baseline even
+though the installed 0.154.0 process exited successfully. Actual persisted user/assistant
+messages are event_msg.item_completed with item types UserMessage/AgentMessage and
+text/Text content parts. They replace the legacy user_message/agent_message events in
+this fixture. The reader now accepts either representation, while duplicate mixed records,
+foreign turn IDs and invalid content still refuse. The real CLI + real headless Viewer
+adoption and two continuations survive CM reopen with original context in both requests.
+Synthetic loopback model responses do not establish real-account execution acceptance.

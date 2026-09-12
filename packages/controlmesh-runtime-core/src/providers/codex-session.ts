@@ -109,6 +109,25 @@ export class CodexSessionStore {
         requireThat(active && active.prompt === null && typeof p.message === "string", "native_concurrent_turn_or_missing_lineage"); active.prompt = p.message;
       } else if (row.type === "event_msg" && p.type === "agent_message" && p.phase === "final") {
         requireThat(active && active.output === null && typeof p.message === "string", "native_turn_content_mismatch"); active.output = p.message;
+      } else if (row.type === "event_msg" && p.type === "item_completed") {
+        const item = p.item as Record<string, unknown> | undefined;
+        requireThat(active && p.turn_id === active.id && item && typeof item === "object", "native_concurrent_turn_or_missing_lineage");
+        if (item.type === "UserMessage" || item.type === "AgentMessage") {
+          const user = item.type === "UserMessage";
+          requireThat(typeof item.id === "string" && item.id.length > 0 && item.phase === undefined
+            && Array.isArray(item.content) && item.content.length > 0, "native_turn_content_mismatch");
+          const content = item.content.map((part: unknown) => {
+            requireThat(part && typeof part === "object" && !Array.isArray(part), "native_turn_content_mismatch");
+            const value = part as Record<string, unknown>;
+            requireThat(value.type === (user ? "text" : "Text") && typeof value.text === "string", "native_turn_content_mismatch");
+            return value.text;
+          }).join("");
+          if (user) {
+            requireThat(active.prompt === null, "native_concurrent_turn_or_missing_lineage"); active.prompt = content;
+          } else {
+            requireThat(active.output === null, "native_turn_content_mismatch"); active.output = content;
+          }
+        }
       } else if (row.type === "event_msg" && p.type === "task_complete") {
         requireThat(active && p.turn_id === active.id && active.prompt !== null && active.output !== null && active.model
           && p.last_agent_message === active.output, "native_turn_not_completed");

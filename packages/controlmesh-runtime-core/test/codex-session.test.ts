@@ -64,3 +64,24 @@ test("Codex partial, malformed, foreign-session, symlink and workspace-switched 
   writeFileSync(f.path, f.raw); const alias = join(f.root, `rollout-alias-${id}.jsonl`); symlinkSync(f.path, alias);
   expect(() => new CodexSessionStore(alias, "device").read(id)).toThrow("native_store_path_must_be_canonical");
 });
+
+test("Codex structured message events preserve exact turn lineage and reject duplicate or non-text content", () => {
+  const f = fixture(), baseline = f.store.baseline(f.store.read(id));
+  const user = { type: "item_completed", turn_id: "second", item: { type: "UserMessage", id: "user-id", content: [{ type: "text", text: "continue" }] } };
+  const agent = { type: "item_completed", turn_id: "second", item: { type: "AgentMessage", id: "agent-id", content: [{ type: "Text", text: "answer" }] } };
+  const start = f.row("event_msg", { type: "task_started", turn_id: "second" }) + f.row("turn_context", { turn_id: "second", cwd: f.workspace, model: "fixture-model" });
+  const end = f.row("event_msg", { type: "task_complete", turn_id: "second", last_agent_message: "answer" });
+  const messages = f.row("event_msg", user) + f.row("event_msg", agent);
+  writeFileSync(f.path, f.raw + start + messages + end);
+  expect(f.store.verifyTurn(id, baseline, "continue", "answer", "fixture-model").turn_id).toBe("second");
+  for (const invalid of [
+    f.row("event_msg", { ...user, turn_id: "foreign" }) + f.row("event_msg", agent),
+    messages + f.row("event_msg", agent),
+    f.row("event_msg", { type: "user_message", message: "continue" }) + messages,
+    messages.replace('"type":"Text"', '"type":"ToolResult"'),
+    messages.replace('"id":"agent-id"', '"id":""'),
+  ]) {
+    writeFileSync(f.path, f.raw + start + invalid + end);
+    expect(() => f.store.verifyTurn(id, baseline, "continue", "answer", "fixture-model")).toThrow();
+  }
+});

@@ -1,3 +1,4 @@
+import { codexTextResponse } from "./helpers/codex-responses";
 import { expect, test } from "bun:test";
 import { CodexPreflight } from "../src/providers/codex-preflight";
 
@@ -10,17 +11,7 @@ test.skipIf(!executable)("installed Codex uses the selected local endpoint and c
     const value = await request.json() as Record<string, any>;
     requests.push({ path: new URL(request.url).pathname, model: value.model, tools: (value.tools ?? []).map((tool: any) => tool.name ?? tool.type) });
     if (quota) return Response.json({ error: { message: "insufficient_quota", code: "insufficient_quota", type: "insufficient_quota" } }, { status: 402 });
-    const item = { id: "msg_fixture", type: "message", role: "assistant", status: "completed", content: [{ type: "output_text", text: "PONG", annotations: [] }] };
-    const response = { id: "resp_fixture", object: "response", created_at: 1, status: "completed", model: value.model, output: [item], usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } };
-    const events = [
-      { type: "response.created", response: { ...response, status: "in_progress", output: [] } },
-      { type: "response.output_item.added", output_index: 0, item: { ...item, status: "in_progress", content: [] } },
-      { type: "response.content_part.added", item_id: item.id, output_index: 0, content_index: 0, part: { type: "output_text", text: "", annotations: [] } },
-      { type: "response.output_text.delta", item_id: item.id, output_index: 0, content_index: 0, delta: "PONG" },
-      { type: "response.output_text.done", item_id: item.id, output_index: 0, content_index: 0, text: "PONG" },
-      { type: "response.output_item.done", output_index: 0, item }, { type: "response.completed", response },
-    ];
-    return new Response(events.map((event, sequence_number) => `event: ${event.type}\ndata: ${JSON.stringify({ ...event, sequence_number })}\n\n`).join(""), { headers: { "content-type": "text/event-stream" } });
+    return codexTextResponse(value.model, "PONG");
   } });
   const input = { executable: executable!, model: "gpt-5.5", native_configuration: {}, environment: { OPENAI_BASE_URL: `http://127.0.0.1:${server.port}/v1`, OPENAI_API_KEY: "local-fixture-only" },
     auth_json: JSON.stringify({ OPENAI_API_KEY: "local-fixture-only" }), timeout_ms: 15000, assertCurrent() {} };

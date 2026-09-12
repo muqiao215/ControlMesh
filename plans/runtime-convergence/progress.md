@@ -2,6 +2,19 @@
 
 ## Current
 
+Installed Codex 0.154.0 + the real History Viewer now pass the isolated configured
+adoption/reopen test: seed a native session, adopt through ordinary CM configuration,
+continue, close/reopen CM, continue again with the same UUID and the original marker
+present in both provider requests. The loopback Responses fixture supplies model output;
+this proves native persistence/request continuity, not live-account or tool permission
+acceptance. One native test / 15 assertions passed in 12.17s. The previous blocker was
+structured `item_completed` UserMessage/AgentMessage records being ignored by the legacy
+turn reader. Both formats are now supported with exact turn/content/end-event checks;
+duplicate/mixed messages, foreign turns and non-text message parts refuse.
+17 targeted regression tests / 118 assertions, typecheck and diff-check passed.
+Full migration/release/default-switch and physical multi-device acceptance remain open.
+
+
 Ordinary controlmesh.local_runtime.v1 configuration now registers Codex through
 CodexRegistration, LocalCodexHistory, CodexTaskPreflight and CodexTaskAdapter. The
 existing control commands can prepare adoption, submit, enqueue, inspect, resume and
