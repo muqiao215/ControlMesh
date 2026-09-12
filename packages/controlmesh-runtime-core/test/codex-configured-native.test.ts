@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { AgentMailbox } from "../src/mailbox";
 import { ProcessSupervisor } from "../src/process-supervisor";
 import { codexProbeCommand } from "../src/providers/codex-preflight";
 import { observeOneShot } from "../src/providers/oneshot-observation";
@@ -12,11 +13,11 @@ import { LocalRuntimeControl } from "../src/local-runtime-control";
 import { codexMessagesResponse, codexPatchResponse, codexTextResponse } from "./helpers/codex-responses";
 
 const executable = process.env.CM_CODEX_TEST_EXECUTABLE, viewer = process.env.CM_HISTORY_TEST_ROOT;
-test.skipIf(!executable || !viewer).each(["normal", "lost-observation", "readonly-patch", "commentary"])("installed Codex persists native context through Viewer adoption and configured runtime reopen (%s)", async mode => {
-  const lost = mode === "lost-observation", patch = mode === "readonly-patch";
+test.skipIf(!executable || !viewer).each(["normal", "lost-observation", "readonly-patch", "commentary", "mailbox", "mailbox-recovery"])("installed Codex persists native context through Viewer adoption and configured runtime reopen (%s)", async mode => {
+  const inbox = mode.startsWith("mailbox"), lost = mode === "lost-observation" || mode === "mailbox-recovery", patch = mode === "readonly-patch";
   const root = mkdtempSync(join(tmpdir(), "cm-native-codex-flow-")), home = join(root, "home"), workspace = join(root, "project"), state = join(root, "state");
   for (const path of [home, workspace, state]) mkdirSync(path, { mode: 0o700 });
-  const marker = randomUUID(), requests: { phase: string; has_seed: boolean }[] = [];
+  const marker = randomUUID(), requests: { phase: string; has_seed: boolean; mailbox_input: boolean }[] = [];
   let patchIssued = false;
   const patchOutputs: string[] = [];
   const target = join(workspace, "readonly-canary.txt");
@@ -25,7 +26,7 @@ test.skipIf(!executable || !viewer).each(["normal", "lost-observation", "readonl
     const users = (body.input ?? []).filter((item: any) => item.role === "user");
     const last = JSON.stringify(users.at(-1)), all = JSON.stringify(body.input);
     const phase = last.includes("Reply with exactly PONG.") ? "probe" : last.includes("Seed marker:") ? "seed" : "resume";
-    requests.push({ phase, has_seed: all.includes(marker) });
+    requests.push({ phase, has_seed: all.includes(marker), mailbox_input: last.includes("peer-mailbox-canary") });
     if (phase === "resume" && !all.includes(marker)) return Response.json({ error: { message: "fixture_missing_prior_context" } }, { status: 400 });
     if (patch && phase === "resume") {
       for (const item of body.input ?? []) if (item.type === "custom_tool_call_output") patchOutputs.push(JSON.stringify(item.output));
@@ -62,9 +63,18 @@ test.skipIf(!executable || !viewer).each(["normal", "lost-observation", "readonl
     const adopted = await request("adopt", "prepare_adoption", { task_id: "task", provider: "codex", session_id: reference.session_id });
     expect(readFileSync(store.path)).toEqual(before); expect(requests).toHaveLength(1);
     const submitted = await request("submit", "submit", { task: { task_id: "task", chat_id: "fixture", status: "waiting", provider: "codex", model: "gpt-5.5", repo_root: workspace, prompt: "Continue the earlier conversation.", native_session: adopted.native_session } });
+    if (inbox) {
+      const actor = { id: "operator", origin: "human_request" as const, device_id: "desktop", scopes: ["task:create", "task:read", "task:execute", "message:send"] };
+      const peer = owned.runtime.kernel.submit(actor, "peer-create", { task_id: "peer", chat_id: "fixture", status: "waiting" });
+      const lease = owned.runtime.kernel.claim(actor, "peer-claim", "peer", peer.revision, 60000);
+      new AgentMailbox(owned.runtime.kernel).send({ ...actor, origin: "agent_message" }, "peer-send", {
+        recipient_task: "task", sender_lease: lease, kind: "tell", payload: { text: "peer-mailbox-canary" }, causation_id: null, ttl_ms: 60000,
+      });
+    }
     if (lost) owned.runtime.kernel.recordEffectObservation = () => { throw new Error("fixture observation loss"); };
     await request("enqueue", "enqueue", { task_id: "task", expected_revision: submitted.revision }); await owned.runtime.drain();
     let completed = owned.runtime.inspectTask("task"); expect(completed.task.status, JSON.stringify(completed)).toBe(lost ? "stale" : "done");
+    if (inbox) expect(owned.runtime.kernel.db.sql.query("SELECT status,origin,sender_task FROM messages WHERE recipient_task='task'").get()).toEqual({ status: lost ? "received" : "consumed", origin: "agent_message", sender_task: "peer" });
     const effect = (owned.runtime.kernel.db.sql.query("SELECT effect_id FROM effects").get() as { effect_id: string }).effect_id;
     const nativeBeforeRecovery = readFileSync(store.path), requestsBeforeRecovery = requests.length;
     await owned.close();
@@ -81,10 +91,12 @@ test.skipIf(!executable || !viewer).each(["normal", "lost-observation", "readonl
       expect(requests).toHaveLength(requestsBeforeRecovery);
       writeFileSync(authPath, auth, { mode: 0o600 });
     }
+    if (inbox) expect(owned.runtime.kernel.db.sql.query("SELECT status FROM messages WHERE recipient_task='task'").get()).toEqual({ status: "consumed" });
     const resumed = await request("resume", "resume", { task_id: "task", expected_revision: completed.revision, prompt: "Continue once more." });
     await request("enqueue-again", "enqueue", { task_id: "task", expected_revision: resumed.revision }); await owned.runtime.drain();
     expect(owned.runtime.inspectTask("task").task.status).toBe("done");
     expect(requests.map(item => item.phase)).toEqual(patch ? ["seed", "probe", "resume", "resume", "resume"] : ["seed", "probe", "resume", "resume"]);
+    if (inbox) expect(requests.filter(item => item.phase === "resume").map(item => item.mailbox_input)).toEqual([true, false]);
     if (patch) {
       expect(patchIssued).toBe(true);
       expect(patchOutputs.length).toBeGreaterThan(0);

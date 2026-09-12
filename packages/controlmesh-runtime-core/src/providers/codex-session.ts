@@ -14,7 +14,7 @@ export interface CodexNativeBaseline {
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const identity = (stat: BigIntStats) => [stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs].map(String).join(":");
 const revision = (store: string, bytes: Uint8Array) => createHash("sha256").update(canonical(["codex-rollout-content-v1", store]) + "\n").update(bytes).digest("hex");
-interface Turn { id: string; model: string; prompt: string | null; output: string | null; messages: string[]; completed: boolean }
+interface Turn { id: string; model: string; prompt: string | null; userId: string | null; output: string | null; messages: string[]; completed: boolean }
 
 /** Strict execution evidence; tolerant UI indexing must not authorize a native resume. */
 export class CodexSessionStore {
@@ -94,7 +94,7 @@ export class CodexSessionStore {
     requireThat(turn.model === model && current.reference.model === model, "native_model_mismatch");
     requireThat(messages === undefined || canonical(turn.messages) === canonical(messages), "native_turn_content_mismatch");
     requireThat(turn.prompt === prompt && turn.output === output, "native_turn_content_mismatch");
-    return { reference: current.reference, turn_id: turn.id, prompt_sha256: digest(prompt), output_sha256: digest(output) };
+    return { reference: current.reference, turn_id: turn.id, user_message_id: turn.userId, prompt_sha256: digest(prompt), output_sha256: digest(output) };
   }
   private turns(records: Record<string, unknown>[]): Turn[] {
     const turns: Turn[] = [], ids = new Set<string>(), messageIds = new Set<string>(); let active: Turn | undefined;
@@ -102,7 +102,7 @@ export class CodexSessionStore {
       const p = row.payload as Record<string, unknown>;
       if (row.type === "event_msg" && p.type === "task_started") {
         requireThat(!active && typeof p.turn_id === "string" && p.turn_id.length > 0 && !ids.has(p.turn_id), "native_concurrent_turn_or_missing_lineage");
-        ids.add(p.turn_id); messageIds.clear(); active = { id: p.turn_id, model: "", prompt: null, output: null, messages: [], completed: false };
+        ids.add(p.turn_id); messageIds.clear(); active = { id: p.turn_id, model: "", prompt: null, userId: null, output: null, messages: [], completed: false };
       } else if (row.type === "turn_context") {
         requireThat(active && p.turn_id === active.id && typeof p.model === "string" && (!active.model || active.model === p.model), "native_turn_context_mismatch");
         active.model = p.model;
@@ -130,7 +130,7 @@ export class CodexSessionStore {
             requireThat(active.prompt !== null && active.output === null, "native_turn_content_mismatch"); continue;
           }
           if (user) {
-            requireThat(active.prompt === null, "native_concurrent_turn_or_missing_lineage"); active.prompt = content;
+            requireThat(active.prompt === null, "native_concurrent_turn_or_missing_lineage"); active.prompt = content; active.userId = item.id;
           } else {
             requireThat(active.output === null, "native_turn_content_mismatch"); active.output = content;
           }

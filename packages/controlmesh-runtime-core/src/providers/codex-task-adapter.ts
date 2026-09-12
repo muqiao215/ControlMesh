@@ -1,5 +1,6 @@
 import { NativeSessionLease } from "./native-lease";
-import { AgentMailbox } from "../mailbox";
+import { NativeMailboxDelivery } from "./native-mailbox";
+import { nativeInput, nativeMailboxEvidence, type NativeMailboxBatch } from "./native-mailbox-input";
 import { closeSync, constants, fsyncSync, mkdirSync, openSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -25,6 +26,7 @@ interface CodexTaskManifest extends Record<string, unknown> {
   task_digest: string; configuration_digest: string;
   dispatch: CodexResumeDispatch;
   execution_directory: DirectoryIdentity;
+  mailbox_delivery?: NativeMailboxBatch;
 }
 
 /** Queue integration for an explicitly adopted session. Readiness remains a registered provider owner. */
@@ -50,7 +52,6 @@ export class CodexTaskAdapter {
   prepare(snapshot: TaskSnapshot): LocalTaskExecution {
     this.current();
     requireThat(!this.kernel.db.sql.query("SELECT 1 FROM topology_tasks WHERE child_id=?").get(snapshot.task.task_id), "codex_topology_profile_unavailable");
-    requireThat(new AgentMailbox(this.kernel).pendingCount(this.actor, snapshot.task.task_id) === 0, "codex_mailbox_profile_unavailable");
     const input = this.input(snapshot), issued = nativeTaskDigest(snapshot.task), configuration = digest(this.config);
     new CodexSessionStore(input.rollout_path, this.actor.device_id!).validate(input.reference);
     const current = () => {
@@ -79,26 +80,33 @@ export class CodexTaskAdapter {
   }
   private result(input: CodexResumeInput, manifest: CodexTaskManifest, outcome: ProcessOutcome, current: () => void) {
     const verified = verifyRetainedCodexResume(input, manifest.dispatch, outcome, current);
-    return { text: verified.observation.text, output_digest: digest(verified.observation.text), native_session: verified.evidence.reference,
+    const batch = manifest.mailbox_delivery;
+    if (batch) requireThat(typeof verified.evidence.user_message_id === "string", "native_mailbox_delivery_unproven");
+    return { ...(batch ? { user_message_id: verified.evidence.user_message_id!, mailbox_delivery: nativeMailboxEvidence(batch, verified.evidence.user_message_id!) } : {}), text: verified.observation.text, output_digest: digest(verified.observation.text), native_session: verified.evidence.reference,
       native_turn: verified.evidence.turn_id };
   }
   private async execute(snapshot: TaskSnapshot, input: CodexResumeInput, lease: Lease, context: LocalExecutionContext, configured: () => void) {
     const effect = `codex-${lease.episode_id}`, request = (op: string) => `${effect}-${op}`;
     let manifest: CodexTaskManifest | undefined, observation: Record<string, unknown> | undefined;
     const current = () => { configured(); context.assertCurrent(); this.kernel.withLease(this.actor, lease, () => {}); };
+    const mailbox = new NativeMailboxDelivery(this.kernel);
     try {
+      current();
+      const delivery = mailbox.pendingCount(this.actor, lease.task_id) > 0 ? mailbox.prepare(this.actor, lease, input.prompt, 32768) : undefined;
+      input = { ...input, prompt: nativeInput(input.prompt, delivery) };
       const observeReadiness = this.readiness.captureOutcome?.();
       await this.process.run(input, { signal: context.signal, remainingMs: context.remainingMs, assertCurrent: current,
         assertReady: () => this.readiness.assertReady(),
         retainDispatch: dispatch => {
           current(); const path = join(this.config.state_home, `codex-resume-${randomUUID()}`); mkdirSync(path, { mode: 0o700 });
           const issued: CodexTaskManifest = { schema_version: "controlmesh.codex_dispatch.v1", configuration_digest: digest(this.config),
-            task_digest: nativeTaskDigest(snapshot.task), dispatch, execution_directory: directoryIdentity(path) };
+            task_digest: nativeTaskDigest(snapshot.task), dispatch, ...(delivery ? { mailbox_delivery: delivery } : {}), execution_directory: directoryIdentity(path) };
           this.kernel.db.transaction(() => {
             current(); this.kernel.start(this.actor, request("start"), lease);
             const permit = this.kernel.dispatchEffect(this.actor, request("dispatch"), lease, effect,
               { provider: "codex", model: input.model, session_id: input.reference.session_id, prompt_digest: digest(input.prompt) }, issued);
             requireThat(permit.dispatch_permitted, "native_request_already_dispatched");
+            if (delivery) mailbox.reserve(this.actor, lease, effect, delivery);
           }); manifest = issued;
         },
         retainOutcome: outcome => { requireThat(manifest, "codex_dispatch_missing"); observation = this.retain(manifest, outcome).observation; observeReadiness?.(outcome); },
@@ -109,6 +117,7 @@ export class CodexTaskAdapter {
         requireThat(digest(retained.observation) === digest(observation), "codex_outcome_binding_changed");
         const result = this.result(input, manifest!, retained.outcome, current);
         this.kernel.recordEffectObservation(this.actor, request("observe"), lease, effect, observation!);
+        if (delivery) mailbox.consume(this.actor, lease, effect, delivery, result);
         this.kernel.confirmEffect(this.actor, request("confirm"), lease, effect, result);
         return this.kernel.finish(this.actor, request("finish"), lease, "done", result);
       });
@@ -121,7 +130,8 @@ export class CodexTaskAdapter {
     this.current(); const target = this.kernel.inspectReconciliationTarget(this.actor, taskId, revision, effect), raw = target.manifest;
     requireThat(object(raw) && raw.schema_version === "controlmesh.codex_dispatch.v1" && object(raw.dispatch) && object(raw.execution_directory)
       && raw.configuration_digest === digest(this.config) && raw.task_digest === nativeTaskDigest(target.task.task), "codex_dispatch_changed");
-    const manifest = raw as CodexTaskManifest, retained = this.read(manifest), input = this.input(target.task);
+    const manifest = raw as CodexTaskManifest, retained = this.read(manifest), base = this.input(target.task);
+    const input = { ...base, prompt: nativeInput(base.prompt, manifest.mailbox_delivery) };
     requireThat(!target.observation || digest(target.observation) === digest(retained.observation), "codex_outcome_binding_changed");
     return { target, manifest, retained, input };
   }
@@ -141,7 +151,11 @@ export class CodexTaskAdapter {
         if (!value.target.observation) this.kernel.admitReconciliationObservation(this.actor, taskId, revision,
           { episode_id: binding.episode_id, effect_id: binding.effect_id, manifest_digest: binding.manifest_digest }, value.retained.observation, `codex-recovery-${digest(request)}`);
         return this.kernel.reconcileEffect(this.actor, request, taskId, revision, binding,
-          () => this.result(value.input, value.manifest, value.retained.outcome, guarded));
+          original => {
+            const result = this.result(value.input, value.manifest, value.retained.outcome, guarded);
+            if (value.manifest.mailbox_delivery) new NativeMailboxDelivery(this.kernel).reconcile(this.actor, original, value.manifest.mailbox_delivery, result);
+            return result;
+          });
       });
     } finally { lock.close(); }
   }

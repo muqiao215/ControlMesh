@@ -78,7 +78,9 @@ headless Viewer have passed configured adoption and context-preserving continuat
 across reopen against a synthetic loopback model endpoint. This does not qualify live
 account behavior or native tool permissions. Gemini persistent registration, Codex
 fresh-session creation, interrupted lineage qualification, effective native sandbox
-behavior, and Codex mailbox/topology/file-receipt integration remain. Complete these
+behavior, and Codex active messaging/topology/file-receipt integration remain.
+Codex initial mailbox delivery and retained consumption recovery are now integrated;
+active send/ask/receive/answer tooling is still pending. Complete these
 owners without presenting one-shot execution or a transcript reader as full continuity.
 The configured coordinator now issues a versioned snapshot reference; device assignments
 bind it, and authenticated chunk reads require the current assignment and execution lease.

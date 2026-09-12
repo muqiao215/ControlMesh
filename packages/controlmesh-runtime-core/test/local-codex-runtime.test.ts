@@ -34,7 +34,7 @@ if(process.argv.includes('--ephemeral')) {
 } else {
  if(!process.argv.includes('resume')||!process.argv.includes(${JSON.stringify(id)})) process.exit(9);
  const turn=crypto.randomUUID(), emit=(type,payload)=>JSON.stringify({type,payload})+'\\n';
- fs.appendFileSync(${JSON.stringify(path)},emit('event_msg',{type:'task_started',turn_id:turn})+emit('turn_context',{turn_id:turn,cwd:process.cwd(),model:'fixture-model'})+emit('event_msg',{type:'user_message',message:prompt})+emit('event_msg',{type:'agent_message',phase:'final',message:'continued'})+emit('event_msg',{type:'task_complete',turn_id:turn,last_agent_message:'continued'}));
+ fs.appendFileSync(${JSON.stringify(path)},emit('event_msg',{type:'task_started',turn_id:turn})+emit('turn_context',{turn_id:turn,cwd:process.cwd(),model:'fixture-model'})+emit('event_msg',{type:'item_completed',turn_id:turn,item:{type:'UserMessage',id:crypto.randomUUID(),content:[{type:'text',text:prompt}]}})+emit('event_msg',{type:'agent_message',phase:'final',message:'continued'})+emit('event_msg',{type:'task_complete',turn_id:turn,last_agent_message:'continued'}));
  for(const value of [{type:'thread.started',thread_id:${JSON.stringify(id)}},{type:'item.completed',item:{type:'agent_message',text:'continued'}},{type:'turn.completed'}]) console.log(JSON.stringify(value));
 }
 `, { mode: 0o700 });
@@ -58,21 +58,29 @@ test.each([false, true])("normal Codex config adopts, probes, executes and resum
   const selected = await f.request(current.control, "adopt", "prepare_adoption", { task_id: "task", provider: "codex", session_id: id });
   expect(current.owned.runtime.kernel.db.sql.query("SELECT COUNT(*) AS n FROM provider_checks").get()).toEqual({ n: 0 });
   const submitted = await f.request(current.control, "create", "submit", { task: { task_id: "task", chat_id: "test", status: "waiting", provider: "codex", model: "fixture-model", repo_root: f.workspace, prompt: "Continue", native_session: selected.native_session } });
+  await f.request(current.control, "tell", "tell", { task_id: "task", text: "Native inbox update" });
   if (lost) current.owned.runtime.kernel.recordEffectObservation = () => { throw new Error("fixture observation loss"); };
   await f.request(current.control, "enqueue", "enqueue", { task_id: "task", expected_revision: submitted.revision });
   await current.owned.runtime.drain();
   let snapshot = current.owned.runtime.inspectTask("task");
   expect(snapshot.task.status).toBe(lost ? "stale" : "done");
+  expect(current.owned.runtime.kernel.db.sql.query("SELECT status FROM messages WHERE recipient_task='task'").get()).toEqual({ status: lost ? "received" : "consumed" });
   const effect = (current.owned.runtime.kernel.db.sql.query("SELECT effect_id FROM effects").get() as { effect_id: string }).effect_id;
   await current.owned.close();
   const auth = readFileSync(f.authPath); if (lost) rmSync(f.authPath);
   current = f.open();
   if (lost) {
     const binding = current.owned.recovery.inspect("task", snapshot.revision, effect);
+    const savedMessage = current.owned.runtime.kernel.db.sql.query("SELECT payload FROM messages WHERE recipient_task='task'").get() as { payload: string };
+    current.owned.runtime.kernel.db.sql.query("UPDATE messages SET payload=? WHERE recipient_task='task'").run(JSON.stringify({ text: "changed after dispatch" }));
+    await expect(current.owned.recovery.accept("recover", "task", snapshot.revision, binding)).rejects.toThrow("native_mailbox_changed");
+    expect(current.owned.runtime.kernel.db.sql.query("SELECT status FROM messages WHERE recipient_task='task'").get()).toEqual({ status: "received" });
+    current.owned.runtime.kernel.db.sql.query("UPDATE messages SET payload=? WHERE recipient_task='task'").run(savedMessage.payload);
     await current.owned.recovery.accept("recover", "task", snapshot.revision, binding);
     snapshot = current.owned.runtime.inspectTask("task"); expect(snapshot.task.status).toBe("done");
     expect(readFileSync(f.probes, "utf8")).toBe("probe\n"); writeFileSync(f.authPath, auth, { mode: 0o600 });
   }
+  expect(current.owned.runtime.kernel.db.sql.query("SELECT status FROM messages WHERE recipient_task='task'").get()).toEqual({ status: "consumed" });
   const resumed = await f.request(current.control, "resume", "resume", { task_id: "task", expected_revision: snapshot.revision, prompt: "Again" });
   await f.request(current.control, "enqueue-again", "enqueue", { task_id: "task", expected_revision: resumed.revision });
   await current.owned.runtime.drain();

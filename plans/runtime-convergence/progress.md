@@ -2,6 +2,16 @@
 
 ## Current
 
+Codex initial mailbox delivery is implemented with the existing reservation/consumption
+and recovery transactions. Native user-message ID plus exact composed input establishes
+delivery; changed mailbox content blocks recovery without consumption. Actual CLI +
+Viewer Agent-origin delivery/recovery: 2 tests, 39 assertions, 25.16s. Targeted runtime,
+mailbox and native regressions: 24 tests, 161 assertions, 5.32s; final added corruption
+case: 4 tests, 37 assertions, 2.81s. Typecheck passed. No real model/account or old native
+session was used. Active Codex messaging tools, topology/file contracts, physical device
+acceptance and full migration/release remain pending.
+
+
 Installed Codex phased commentary/final output now verifies without making a successful
 turn stale. Exec JSON lacks phase, so every ordered message is compared to the persisted
 turn before selecting its final answer. A native apply_patch attempt in the configured

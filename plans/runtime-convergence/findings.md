@@ -1926,3 +1926,21 @@ stdout text would also mismatch task_complete.last_agent_message. The retained v
 now matches all ordered stdout agent messages to the persisted turn and exposes only
 its unique final answer. Commentary cannot complete a turn or follow its final answer;
 duplicate message IDs, unknown phases and dropped/changed stdout commentary refuse.
+
+## 2026-09-13 — Codex native initial mailbox delivery
+
+CodexTaskAdapter now uses NativeMailboxDelivery/nativeInput instead of refusing pending
+messages. The private manifest retains the delivery batch, dispatch and reservation share
+a transaction, and CodexSessionStore exposes the verified structured UserMessage ID.
+Full composed prompt equality is checked before nativeMailboxEvidence permits consumption.
+Recovery reconstructs that original input, verifies retained output, then reconciles the
+same reserved batch inside the kernel reconciliation transaction. No protocol/schema or
+second mailbox store was introduced. A task without pending messages retains its existing
+permission requirements; a delivered batch requires message:ack.
+
+Real installed CLI + Viewer with loopback model responses passed normal and lost-result
+Agent-origin delivery. Sender task and origin remain attributed, received becomes consumed
+only after verification, reopen performs no new model request and the next explicit turn
+does not reappend the consumed message. CI fixtures additionally reject mailbox payload
+changes during recovery and retain received state. This covers initial inbox delivery,
+not active MCP messaging tools, physical multi-device Codex or full topology acceptance.

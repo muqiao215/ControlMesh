@@ -201,3 +201,11 @@ message must match the ordered native history; only the final answer becomes the
 result. The installed-native test also attempts apply_patch inside its temporary
 read-only workspace and verifies rejection plus absence of the file. This narrow
 qualification does not enable file completion profiles or broader tool/network grants.
+
+Codex now receives pending mailbox messages at the start of a queued native turn. The
+input preserves sender/origin metadata and does not change task permissions. Dispatch
+reserves the exact batch; verified native user-message identity and full input equality
+permit atomic consumption with completion. Reconciliation uses the original batch and
+refuses changed mailbox content without another model call. Already consumed messages
+are not appended to the next turn. Active Agent messaging tools remain unimplemented
+for Codex; the communication configuration contract is still rejected.
