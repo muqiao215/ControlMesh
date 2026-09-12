@@ -1,5 +1,38 @@
 # Findings
 
+## Durable controller identity, budgets and actual local queue — 2026-09-12
+
+`RuntimeControlTopology` composes both pure policies with the existing LocalTaskRuntime.
+Schema 20 stores controller task/role and frozen director/judge budgets in topology_controls.
+The controller's initial task must be an unassigned waiting task at the expected revision;
+normal queue admission or another topology assignment prevents concurrent takeover.
+Same-role reassignment must reuse the original task. Children retain their independently
+issued grants; this service does not create authority or select an unapproved session.
+
+`TopologyTaskQueue.collectDecision` reads the accepted episode/effect of its actual stored
+run. `readTeamControlDecision` validates full JSON, output digest, topology and expected
+round; a director dispatch after planning targets the next round, other decisions target
+the current round. Worker batches map dispatching/candidate_round to collecting envelopes.
+Plain worker result bindings retain their existing shape. Generic RuntimeTopology mutation
+refuses managed control rows, so an alternate checkpoint write cannot reset their budgets.
+
+Collection, current-batch policy and all next-task admissions share one transaction.
+A missing next batch, queue capacity failure, changed role identity or wrong decision
+rolls back accepted output and the topology transition. Old command receipts replay once;
+current actor ownership and scopes are rechecked. Model evidence remains an assertion,
+separate from the proven task/output binding.
+
+Python's pure judge policy does not bound repeated repair or parent interruption. The
+local service now freezes explicit caps (default one each) and counts persisted repairing/
+waiting_parent checkpoints. Exhaustion stores a failed summary with no extra dispatch;
+it does not relabel the original accepted model decision. Parent completion, a polling
+service and device topology scheduling remain separate unimplemented owners.
+
+Synthetic actual-queue tests cover controller/native identity across database reopen,
+latest repaired candidate evidence, round-2 decisions, repeated-repair and parent caps,
+total dispatch cap, wrong assignment metadata, partial/missing batch refusal, rollback,
+controller identity/scopes/cancellation and schema-19 upgrade. They invoke no real model.
+
 ## Director/judge decisions and repaired candidate evidence — 2026-09-12
 
 The control-decision boundary has 778 raw JSON cases compared to real Python models;

@@ -350,7 +350,8 @@ with a `LocalTaskRuntime` run and collects the run's accepted effect output. The
 checks the ancestor chain at admission and execution/publication boundaries; changed
 checkpoints or inactive parents revoke child execution while lease-bound cleanup stays
 available. The pipeline and fanout compositions below drive explicit local steps;
-director/judge dispatch, automatic service loops and device queue composition remain pending.
+automatic service loops and device queue composition remain pending;
+director/judge explicit dispatch is described below.
 
 Candidate schema 19 adds assignment generations and prior-assignment history.
 `TopologyTaskQueue.resume` archives the resolved assignment and reuses Kernel.resume
@@ -370,14 +371,26 @@ dispatch order and commits with reduction/next-task admission. Partial batches a
 capacity failures roll back rather than revoking workers that are still executing.
 
 `DirectorPolicy` and `JudgePolicy` port pure decision/checkpoint behavior against the
-live Python runtimes. Canonical decision schemas normalize raw control envelopes;
-these decoders establish shape, not trusted task/round provenance. Director limits
-bound rounds, interruptions, repairs and dispatches, but must still be frozen in
-persisted task configuration before service activation. Judge repair uses the latest
-candidate batch within a formal round, retaining older checkpoints for audit. Judge
-service repair/interruption budgets and both controllers' accepted-decision binding,
-queue composition and parent finalization remain pending. These policies are internal;
-they do not issue child tasks or make native execution claims.
+live Python runtimes. `RuntimeControlTopology` now composes them with accepted local
+controller output and whole-batch worker collection. Candidate schema 20 adds
+`topology_controls`: immutable controller task/role, parallel limit and per-task budgets.
+A reopened service uses the original policy, not new process defaults. Generic topology
+mutations reject managed control topologies, preventing an alternate checkpoint API
+from bypassing the controller policy.
+
+Control decisions must come from the assigned task's accepted episode/effect output;
+role, substage and current decision round are checked against persisted state. Collection,
+policy advancement and enqueue/resume share one command transaction. Repeated roles
+retain their original task identity, with assignment generations preserving old evidence.
+Judge repair keeps the formal round but uses only the latest candidate batch. The service
+adds durable repair/interruption caps (default one each) beyond the Python pure judge
+policy's formal-round limit; exhaustion records a terminal failure without another queue
+admission. Original accepted decisions remain available in assignment history.
+
+These are explicit local steps. They do not create child grants, run a background polling
+loop, qualify a real-model topology, finalize a parent TaskHub task or dispatch device
+workers. Full topology service scheduling and those ownership gates remain open. Older
+runtime candidates reject schema 20; rollback requires a pre-upgrade database backup.
 
 `LocalTaskRuntime` adds the private local task execution owner. SQLite schema 8 stores
 queued runs, their expected task revision and provider/profile binding, plus the claimed

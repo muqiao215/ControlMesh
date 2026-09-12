@@ -45,6 +45,7 @@ export class RuntimeTopology {
       const current = this.inspect(actor, taskId);
       requireThat(current, "topology_not_found");
       requireThat(Number.isSafeInteger(expectedRevision) && current.revision === expectedRevision, "revision_conflict");
+      requireThat(!this.kernel.db.sql.query("SELECT 1 FROM topology_controls WHERE task_id=?").get(taskId), "controlled_topology_requires_controller");
       const state = transform(current.state, new Date(this.kernel.db.now()));
       const revision = current.revision + 1;
       this.kernel.db.sql.query("UPDATE team_topologies SET revision=?,state=? WHERE task_id=?").run(revision, canonical(state), taskId);

@@ -2,7 +2,7 @@ import { command, requireScope } from "./commands";
 import { RuntimeKernel, type Principal, type Lease } from "./kernel";
 import { LocalTaskRuntime } from "./local-task-runtime";
 import { RuntimeTopology } from "./runtime-topology";
-import { readTeamTaskResult } from "./team-task-result";
+import { readTeamTaskResult, readTeamControlDecision, type TeamTaskResultBinding } from "./team-task-result";
 import { canonical, digest, identifier, requireThat, terminal } from "./value";
 
 interface Assignment {
@@ -76,9 +76,18 @@ export class TopologyTaskQueue {
 
   collect(actor: Principal, requestId: string, parentId: string, parentRevision: number, topologyRevision: number,
     childId: string, childRevision: number): ReturnType<typeof readTeamTaskResult> {
+    return this.collectBound(actor, requestId, parentId, parentRevision, topologyRevision, childId, childRevision, "topology.collect", (kernel, actor, { round_index: _round, ...binding }) => readTeamTaskResult(kernel, actor, binding));
+  }
+  collectDecision(actor: Principal, requestId: string, parentId: string, parentRevision: number, topologyRevision: number,
+    childId: string, childRevision: number): ReturnType<typeof readTeamControlDecision> {
+    return this.collectBound(actor, requestId, parentId, parentRevision, topologyRevision, childId, childRevision, "topology.collect_decision", readTeamControlDecision);
+  }
+  private collectBound<T>(actor: Principal, requestId: string, parentId: string, parentRevision: number, topologyRevision: number,
+    childId: string, childRevision: number, operation: string,
+    read: (kernel: RuntimeKernel, actor: Principal, binding: TeamTaskResultBinding & { round_index: number }) => T): T {
     this.runtime.assertPrincipal(actor); requireScope(actor, "team:write"); requireScope(actor, "task:execute");
     this.kernel.inspect(actor, parentId); this.kernel.inspect(actor, childId);
-    return command(this.kernel.db, actor, requestId, "topology.collect", { parentId, parentRevision, topologyRevision, childId, childRevision }, () => {
+    return command(this.kernel.db, actor, requestId, operation, { parentId, parentRevision, topologyRevision, childId, childRevision }, () => {
       const topology = this.parent(actor, parentId, parentRevision, topologyRevision), cp = topology.state.checkpoints.at(-1)!;
       const assignment = this.kernel.db.sql.query("SELECT * FROM topology_tasks WHERE child_id=? AND parent_id=?").get(childId, parentId) as Assignment | null;
       requireThat(assignment && assignment.accepted === null && assignment.checkpoint_id === cp.checkpoint_id
@@ -91,11 +100,12 @@ export class TopologyTaskQueue {
       const effects = this.kernel.db.sql.query("SELECT e.effect_id FROM effects e JOIN episodes p ON p.episode_id=e.episode_id WHERE e.task_id=? AND e.episode_id=? AND e.fence=? AND e.state='confirmed' AND e.result=p.result")
         .all(childId, lease.episode_id, lease.fence) as { effect_id: string }[];
       requireThat(effects.length === 1, "topology_child_result_ambiguous");
-      const accepted = readTeamTaskResult(this.kernel, actor, { task_id: childId, revision: childRevision, episode_id: lease.episode_id,
+      const workerBatch = ((assignment.topology === "fanout_merge" || assignment.topology === "director_worker") && assignment.substage === "dispatching")
+        || (assignment.topology === "debate_judge" && assignment.substage === "candidate_round");
+      const accepted = read(this.kernel, actor, { task_id: childId, revision: childRevision, episode_id: lease.episode_id,
         effect_id: effects[0]!.effect_id, topology: assignment.topology,
-        // Fanout workers run under one stable dispatch checkpoint and report collecting results.
-        substage: assignment.topology === "fanout_merge" && assignment.substage === "dispatching" ? "collecting" : assignment.substage,
-        worker_role: assignment.worker_role });
+        substage: workerBatch ? "collecting" : assignment.substage,
+        worker_role: assignment.worker_role, round_index: cp.round_index ?? 0 });
       this.kernel.db.sql.query("UPDATE topology_tasks SET accepted=? WHERE child_id=?").run(canonical(accepted), childId);
       return accepted;
     }, value => { this.runtime.assertPrincipal(actor); requireScope(actor, "team:write"); this.kernel.inspect(actor, parentId); this.kernel.inspect(actor, childId); return value; });

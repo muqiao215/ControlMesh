@@ -143,14 +143,15 @@ routing raw Agent responses into runtime completion.
 
 ## Current topology checkpoint — 2026-09-12
 
-Pipeline/fanout policies and explicit transactional local queue steps are implemented.
-Director/judge pure policies and normalized control decision schemas are implemented;
-they are not yet connected to accepted controller task results or dispatch. Do not
-interpret their differential tests as a real native topology acceptance.
+Pipeline, fanout, director and judge now have explicit transactional local queue steps.
+Director/judge bind normalized decisions to accepted controller episode/effect output,
+current checkpoint and expected round. Schema 20 freezes controller task/role and
+budgets; same-role resumes retain child identities through assignment generations.
+Judge service repair/interruption loops are capped durably (default one each), including
+after restart. Parent task finalization is not yet connected to terminal checkpoints.
 
-Next: persist immutable per-task control budgets, bind control decisions to accepted
-execution and checkpoint/round identity, compose director/judge child queues, then
-implement bounded service repair/parent completion and device topology dispatch.
-Python judge repair now selects evidence from the latest candidate batch, not an old
-batch with the same formal round. All CM-R0–CM-R7 gates above remain authoritative;
-there is no production writer switch, release or installed-version alignment yet.
+Next: implement parent lifecycle finalization, bounded automatic service scheduling and
+malformed-output recovery, then device topology dispatch and real native topology
+acceptance. Continue all remaining CM-R0–CM-R7 provider/transport/store, native source
+revision and release/install gates; explicit local queue tests do not narrow that scope.
+There is no production writer switch, release or installed-version alignment yet.
