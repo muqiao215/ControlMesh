@@ -42,3 +42,8 @@
 ## 2026-09-13 — ownership and component selection
 
 Earlier Python UI evaluation is superseded by authorized complete TS migration. Published OpenTUI 0.5.11 loads on pinned Bun 1.3.11; use existing compiled package, not main-branch source build requirements. Terminal remains a private socket client: no SQLite/native-store ownership. Refresh generation prevents a stale read from replacing a later command result. Explicit events view survives refresh. Escape hides the slash menu while retaining its draft. No component/test result establishes real Agent memory continuity.
+
+Uncertainty must retain request identity for all mutations, not only submit. Runtime
+receipts hash the operation/body/origin/device under the principal and reject conflicting
+re-use. A read-only refresh is not proof a previous command failed. UI packet retention
+is currently process-local; durable client draft/uncertain-request recovery remains open.

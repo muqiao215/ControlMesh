@@ -34,3 +34,20 @@ Implemented explicit `cm-runtime --socket ABS ui`, dynamically loaded OpenTUI 0.
 Validation: typecheck passed. Focused CLI + terminal: 10 pass, 0 fail, 80 assertions (10.90s), `/tmp/cm-terminal-focused-authorized.log`. Renderer tests cover Chinese/emoji bracketed paste, resize, menu selection without mutation, ambiguous submit, current-revision enqueue/cancel and non-TTY. Initial service tests failed in restricted environment; after network permission and configured UV cache, passed without service implementation changes. Actual PTY command `/quit` exited 0, echo and ICANON restored. No real provider invoked.
 
 Still pending: native borrowing, actual provider streaming, inbox selection/reply UX, richer session/model selection, NO_COLOR validation, full visual/real-model acceptance and packaging/cutover. This is a prototype, not UX-01..12 completion.
+
+## 2026-09-13 — uncertain command acknowledgement
+
+Closed the duplicate-command gap for tell/resume/enqueue/cancel, extending the original
+new-task protection. The client retains exact uncertain packets; explicit `/retry` uses
+the original ID and body. Further mutations are blocked while reads remain available.
+Retry selects the original target and never automatically enqueues subsequent work.
+A matching explicit response settles transport uncertainty; runtime authorization and
+revision checks still apply. This does not claim process-persistent client recovery.
+
+Focused terminal gate: 5 passed, 27 assertions, including real Unix socket + SQLite test
+that loses a successful tell acknowledgement, attempts duplicate Enter, then explicitly
+retries and observes exactly one mailbox message. No provider is launched. Initial test
+fixture lacked task:reconcile required by LocalTaskRuntime; corrected the fixture scope,
+without changing runtime authorization.
+
+Final focused CLI + terminal: 11 passed, 86 assertions, 10.66s; typecheck and diff-check passed. Log: `/tmp/cm-terminal-retry-focused.log`. Baseline `1b6c716cd1bc20e781691346ba1d419d3a4ffa52` CI run 34712641985 completed success.

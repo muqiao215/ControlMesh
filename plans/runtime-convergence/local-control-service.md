@@ -107,3 +107,20 @@ service integration evidence, not new real-model memory or physical multi-device
 The full goal still includes remaining provider/transport/store owners, terminal editing and
 rendering, initial workspace distribution, real complex continuation, physical end-to-end
 acceptance, reviewed SpecMesh closeout, packaging, release/install and the staged default switch.
+
+## Interactive client prototype
+
+`pnpm runtime --socket "$CM_SOCKET" ui` opens the Bun/OpenTUI client in a TTY. It does
+not start a second service. Plain text in new-task mode submits and then enqueues only
+the acknowledged revision. `/open TASK` selects existing work; `/resume TEXT` registers
+a new round and `/enqueue` explicitly executes it. `/tell TEXT` uses the task mailbox.
+`/events` preserves the event view during polling. `/model PROVIDER` chooses among the
+registered providers for new work only; it does not change an existing native session.
+
+On an unacknowledged mutation, the client retains the exact packet in memory and blocks
+new mutations. `/retry` explicitly resends that same ID/body through runtime idempotency;
+it never creates a fresh task or automatically enqueues a follow-on step. Read commands
+remain available. The request ID is displayed; retained packets and drafts are currently
+process-local, so client restart does not restore them. `/quit` detaches without stopping
+the service. This remains an interactive prototype: full terminal-product gates, native
+borrowing, real-model acceptance and installed-entry cutover are pending.
