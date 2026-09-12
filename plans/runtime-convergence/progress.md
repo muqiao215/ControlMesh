@@ -2,6 +2,13 @@
 
 ## Current
 
+2026-09-12 update: main 7885871 passed the local 471-test runtime gate, but CI
+34679141057 failed because bundled Web validators were stale after adding artifact
+completion schemas. Rebuilt using pinned Bun 1.3.11; this corrects packaging only.
+Independent SpecMesh requirement candidates and paired adapter verification remain
+uncommitted work. Four real device attempts remain failed; full TS cutover and
+release are not complete. The container-only status below is historical.
+
 Current increment: **normal local Claude container dispatch and retained recovery**. Optional
 trusted `claude.container` selects the concrete probe/control runners; host driver overrides are
 refused. Image-owned Node no longer needs a host counterpart. Dispatch binds the runtime digest,

@@ -7759,6 +7759,32 @@ var controlmeshSchemas = {
       }
     ]
   },
+  "device-completion-proof.schema.json": {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    $id: "https://schemas.controlmesh.dev/controlmesh/v1/device-completion-proof.schema.json",
+    title: "DeviceCompletionProof",
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "requirements_digest",
+      "sha256"
+    ],
+    properties: {
+      requirements_digest: {
+        type: "string",
+        pattern: "^[a-f0-9]{64}$"
+      },
+      sha256: {
+        type: "array",
+        minItems: 1,
+        maxItems: 32,
+        items: {
+          type: "string",
+          pattern: "^[a-f0-9]{64}$"
+        }
+      }
+    }
+  },
   "device-evidence-ref.schema.json": {
     $schema: "https://json-schema.org/draft/2020-12/schema",
     $id: "https://schemas.controlmesh.dev/controlmesh/v1/device-evidence-ref.schema.json",
@@ -7929,6 +7955,9 @@ var controlmeshSchemas = {
       },
       workspace_write: {
         $ref: "device-workspace-proof.schema.json"
+      },
+      completion: {
+        $ref: "device-completion-proof.schema.json"
       }
     }
   },
@@ -8868,6 +8897,52 @@ var controlmeshSchemas = {
           "integer",
           "null"
         ]
+      }
+    }
+  },
+  "task-completion.schema.json": {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    $id: "https://schemas.controlmesh.dev/controlmesh/v1/task-completion.schema.json",
+    title: "TaskCompletion",
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "schema_version",
+      "files"
+    ],
+    properties: {
+      schema_version: {
+        const: "controlmesh.task_completion.v1"
+      },
+      files: {
+        type: "array",
+        minItems: 1,
+        maxItems: 32,
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: [
+            "path",
+            "mode"
+          ],
+          properties: {
+            path: {
+              type: "string",
+              minLength: 1,
+              maxLength: 1024
+            },
+            mode: {
+              enum: [
+                "read",
+                "write"
+              ]
+            },
+            sha256: {
+              type: "string",
+              pattern: "^[a-f0-9]{64}$"
+            }
+          }
+        }
       }
     }
   },
