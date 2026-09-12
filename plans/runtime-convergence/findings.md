@@ -1,5 +1,33 @@
 # Findings
 
+## Native max-turns resume adds a synthetic pair — 2026-09-12
+
+The bounded corrective input did succeed in the original native session: 10 turns, eight reads
+and one correctly preconditioned write, exact old marker plus newly changed file fact. CM initially
+rejected its source as unsupported_native_content. Actual CLI 2.1.263 inserts a user isMeta record
+containing "Continue from where you left off." and a zero-token <synthetic> stop_sequence answer
+"No response requested." immediately after the prior max_turns_reached attachment and before the
+submitted task input. These two records are native padding, not another model turn or task input.
+
+The strict reader now accepts the observed stop only with resolved tools/no queued input, positive
+integer maxTurns and turnCount=maxTurns+1. It accepts only the exact pinned synthetic pair with
+correct identity/parent chain, zero input/output usage and an ensuing explicit input. Partial,
+altered, misplaced or tool-bearing padding still rejects. Completion requires a subsequent actual
+model end_turn; the failed turn cannot become successful evidence. This preserves the entire raw
+prefix without replacing files, weakening tool grants or invoking another native attempt.
+
+The original result was recovered from retained evidence. Deliberate task.done loss after canonical
+publication, reopen and repeated acceptance passed with zero native execution, stable native bytes
+and canonical inode. A diagnostic JSON digest incorrectly received Buffer after those assertions;
+preserve that failed report. Separate read-only verification uses a byte SHA-256, matches all nine
+original tools to durable receipts, confirms one effect/task completion and no remaining processes.
+
+History refresh/search uses its existing independent CLI with a private derived cache. Canonical
+existing ancestors are checked before mkdir, including future directories, so source/cache symlink
+aliases cannot put derived state into the native source. A missing source may be registered before
+first provider use, but must be canonical when queried. Full History indexing/backlog/daemon limits
+remain separate work; the scoped CM subprocess timeout is not proof of a bounded resident service.
+
 ## Actual adoption failure: missing write precondition looked like a conflict — 2026-09-12
 
 The real History CLI successfully refreshed/searched the configured original Claude JSONL and
@@ -19,11 +47,11 @@ changed arguments under the old request_id, successful explicit creation, and co
 of null over an existing file. Native semantic no-progress detection is a remaining runtime gap;
 the current turn/request budgets bound work but allowed many identical mistakes in this trial.
 
-## Current adoption integration seam — 2026-09-12
+## Original adoption integration seam — 2026-09-12
 
 `DeviceNativeAdoptions` already persists opaque device/task/workspace/capability-bound context
-handles in `device_native_adoptions`. The local task/control path has no adoption operations;
-ClaudeHistoryClient only validates an explicit UUID/file. History's existing headless JSONL CLI
+handles in `device_native_adoptions`. Before this increment the local task/control path had no
+adoption operations; ClaudeHistoryClient only validated an explicit UUID/file. History's existing headless JSONL CLI
 supports explicit refresh/search with a separate derived cache and no Web server. A fresh cache
 does not refresh during search; report explicit freshness/refresh semantics rather than silently
 claiming that empty results describe all native history. Reuse the current registry for the local

@@ -202,5 +202,45 @@ question/answer/acknowledgement, three consumed messages, one preflight and two 
 Independent raw-source/control/file/journal verification used zero native commands and found no
 owned process. Existing one-shot behavior and OpenCode-specific manifests remain intact.
 
-Next connect History candidate/adoption and container/device profiles. Remaining mixed-provider
+Next connect container/device profiles. Remaining mixed-provider
 and write topologies, provider/transport/store/product parity and CM-R7 gates stay open.
+
+## Local History adoption contract
+
+The private candidate's `scripts/local-runtime.ts` JSON-lines controller accepts optional trusted
+configuration alongside an explicitly registered Claude profile:
+
+```json
+{"history":{"directory":"/absolute/path/to/Codex-Claude-History-Viewer","python":"/usr/bin/python3"}}
+```
+
+The installed `cm` command/public read-only API is not this candidate entry point. A calling Agent
+uses the controller operations below; provider/source paths remain configuration-owned:
+
+```json
+{"id":"refresh-1","op":"refresh_history","provider":"claude"}
+{"id":"search-1","op":"history_search","provider":"claude","query":"SpecMesh"}
+{"id":"prepare-1","op":"prepare_adoption","provider":"claude","task_id":"continue-project","session_id":"<selected candidate UUID>"}
+```
+
+Preparation returns `authorization: context_only` and an opaque `native_session`. Pass that object
+as the normal submit task's native_session with the same task/provider/model/workspace. Submission
+and enqueue/drain remain separate explicit operations; search/refresh/prepare do not execute.
+Handles persist across reopen. Source bytes are independently validated again at execution.
+The local adapter currently qualifies Claude; unregistered providers reject without fallback.
+Existing device OpenCode adoption remains supported through its own configured path.
+
+Search reports freshness unknown and refresh_policy explicit; it never refreshes automatically.
+The History process receives no provider credentials and uses a separate private derived cache.
+Canonical ancestor checks reject path aliases before cache creation. Four pending requests,
+10-second subprocess timeout, 20 candidates and 256 KiB output bound this CM interface; History's
+complete indexing/backlog and resident-service budgets remain separate gates.
+
+The native reader now recognizes the actual max_turns_reached attachment as a failed but resumable
+boundary only when all tools/queued input are resolved. Native 2.1.263 emits an exact metadata
+user/synthetic-assistant pair before the next explicit input; only that qualified pair is context
+padding. It cannot contribute a model result or make the old failed turn successful. A real
+corrective adoption input completed exact old-memory/current-file output with nine tools in ten
+turns. Retained recovery, including an injected post-publication task.done loss, required no model
+execution and preserved source bytes/file inode. Independent readback accepted the scoped result;
+original failed attempts and the later diagnostic-report digest error remain recorded separately.

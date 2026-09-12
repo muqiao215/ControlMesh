@@ -28,10 +28,11 @@ import type { LocalRuntimeRecovery } from "./local-runtime-control";
 import { ClaudeTaskAdapter } from "./providers/claude-task-adapter";
 import { ClaudeTaskReconciler } from "./providers/claude-task-reconciler";
 import type { ClaudeTaskConfiguration } from "./providers/claude-task-profile";
+import { LocalNativeHistory, type LocalNativeHistoryPort } from "./providers/local-native-history";
 
 /** Explicit isolated candidate configuration. Reading task state does not inspect or probe any provider. */
 export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; deliveries?: DeliveryOutbox; inbound?: FeishuInboundRuntime;
-  specmesh?: SpecMeshPort; recovery: LocalRuntimeRecovery;
+  specmesh?: SpecMeshPort; recovery: LocalRuntimeRecovery; history?: LocalNativeHistoryPort;
   submissionIdentity: (task: LegacyTask) => SubmissionIdentity; stop: () => Promise<void>; close: () => Promise<void> } {
   const loaded = privateFile(path), config = decodeSnapshot(loaded.bytes).source;
   requireThat(object(config) && config.schema_version === "controlmesh.local_runtime.v1" && config.mode === "candidate", "unsupported_local_runtime_config");
@@ -79,7 +80,7 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
   };
   const actor: Principal = { id: config.principal_id, device_id: config.device_id, origin: "human_request",
     scopes: ["task:create", "task:read", "task:execute", "task:resume", "task:cancel", "task:reconcile", "task:admin", "message:send", "message:read", "message:ack", "provider:probe",
-      "delivery:read", "delivery:configure", "delivery:project", "delivery:send", "delivery:reconcile", "feishu:ingest", "feishu:read", "feishu:process"] };
+      "delivery:read", "delivery:configure", "delivery:project", "delivery:send", "delivery:reconcile", "feishu:ingest", "feishu:read", "feishu:process", "history:read", "history:adopt"] };
   const db = new RuntimeDatabase(join(root, "runtime.sqlite")), kernel = new RuntimeKernel(db), cache = new PreflightCache(db);
   try {
     requireThat(config.specmesh === undefined || object(config.specmesh), "invalid_specmesh_profile");
@@ -96,6 +97,8 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
         ...(specmesh && roots.length ? { workflow_binding: specmesh.binding_digest } : {}),
         ...(selected.timeout_ms !== undefined ? { timeout_ms: selected.timeout_ms as number } : {}), ...(selected.max_turns !== undefined ? { max_turns: selected.max_turns as number } : {}) };
     };
+    requireThat(config.history === undefined || (object(config.history) && typeof config.history.directory === "string" && typeof config.history.python === "string"), "invalid_native_history_profile");
+    const history = config.history === undefined ? undefined : new LocalNativeHistory(db, actor, config.history as { directory: string; python: string }, root, claudeConfiguration, current);
     const registered = (task: TaskSnapshot) => {
       current();
       requireThat(provider && environment, "opencode_not_registered");
@@ -197,8 +200,8 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
       return delivery ? delivery.adapter.submissionIdentity(task.task_id, String(task.chat_id)) : { chat_id: String(task.chat_id) };
     };
     let stopping: Promise<void> | undefined, closing: Promise<void> | undefined;
-    const stop = () => stopping ??= Promise.all([runtime.stop(), deliveries?.stop(), delivery?.close(), inbound?.stop(), specmesh?.stop()]).then(() => {});
+    const stop = () => stopping ??= Promise.all([runtime.stop(), deliveries?.stop(), delivery?.close(), inbound?.stop(), specmesh?.stop(), history?.stop()]).then(() => {});
     const close = () => closing ??= stop().then(() => db.close());
-    return { runtime, recovery, submissionIdentity, stop, close, ...(deliveries ? { deliveries } : {}), ...(inbound ? { inbound } : {}), ...(specmesh ? { specmesh } : {}) };
+    return { runtime, recovery, submissionIdentity, stop, close, ...(history ? { history } : {}), ...(deliveries ? { deliveries } : {}), ...(inbound ? { inbound } : {}), ...(specmesh ? { specmesh } : {}) };
   } catch (error) { db.close(); throw error; }
 }

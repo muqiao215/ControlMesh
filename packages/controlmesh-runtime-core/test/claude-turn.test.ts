@@ -126,6 +126,60 @@ test("adoption refuses queued input, unknown compaction, active tool turns and u
   for (const added of variants) { writeFileSync(s.path, raw + s.encode(added)); expect(() => s.store.baseline(s.store.read(session))).toThrow(); }
 });
 
+test("a native max-turns boundary permits explicit same-session continuation but never proves the failed turn complete", () => {
+  const s = setup(), original = s.store.baseline(s.store.read(session));
+  const failed = [s.user(3, 2, "read current"),
+    s.assistant(4, 3, [{ type: "tool_use", id: "call", name: "mcp__workspace__read_file", input: { path: "PROJECT.md" } }], "tool_use"),
+    s.user(5, 4, [{ type: "tool_result", tool_use_id: "call", content: "current fact" }]),
+    s.node(6, 5, "attachment", { attachment: { type: "max_turns_reached", maxTurns: 1, turnCount: 2 } })];
+  const prefix = s.encode([...s.rows, ...failed]); writeFileSync(s.path, prefix);
+  expect(() => s.store.verifyTurn(session, original, "read current", "", "fixture-model")).toThrow("native_turn_not_completed");
+  const resumed = s.store.baseline(s.store.read(session)); expect(resumed.tip_uuid).toBe(uuid(6));
+  appendFileSync(s.path, s.encode([s.user(7, 6, "continue explicitly"), s.assistant(8, 7, [s.text("done")])]));
+  expect(s.store.verifyTurn(session, resumed, "continue explicitly", "done", "fixture-model").user_message_id).toBe(uuid(7));
+  expect(s.store.baseline(s.store.read(session)).tip_uuid).toBe(uuid(8));
+  expect(() => s.store.verifyTurn(session, original, "read current", "done", "fixture-model")).toThrow("native_concurrent_turn_or_missing_lineage");
+});
+
+test("an interruption marker cannot hide pending calls, invent termination, or allow model output without new input", () => {
+  const s = setup(), call = { type: "tool_use", id: "call", name: "read_file", input: {} };
+  const first = [s.user(3, 2, "read"), s.assistant(4, 3, [call], "tool_use")];
+  const result = s.user(5, 4, [{ type: "tool_result", tool_use_id: "call", content: "current" }]);
+  const stop = (parent = 5, values = {}) => s.node(6, parent, "attachment", { attachment: { type: "max_turns_reached", maxTurns: 1, turnCount: 2, ...values } });
+  for (const added of [
+    [...first, stop(4)],
+    [s.user(3, 2, "read"), stop(3)],
+    ...[{ maxTurns: 0 }, { turnCount: 1 }, { maxTurns: "1" }].map(values => [...first, result, stop(5, values)]),
+    [...first, result, stop(), s.assistant(7, 6, [s.text("invented completion")])],
+    [...first, result, stop(), s.node(7, 6, "attachment", { attachment: { type: "max_turns_reached", maxTurns: 1, turnCount: 2 } })],
+  ]) { writeFileSync(s.path, s.encode([...s.rows, ...added])); expect(() => s.store.baseline(s.store.read(session))).toThrow(); }
+});
+
+test("the exact native synthetic resume pair is context padding, never a second input or model completion", () => {
+  const s = setup();
+  const closed = [s.user(3, 2, "read"), s.assistant(4, 3, [{ type: "tool_use", id: "call", name: "read_file", input: {} }], "tool_use"),
+    s.user(5, 4, [{ type: "tool_result", tool_use_id: "call", content: "current" }]),
+    s.node(6, 5, "attachment", { attachment: { type: "max_turns_reached", maxTurns: 1, turnCount: 2 } })];
+  const prefix = s.encode([...s.rows, ...closed]); writeFileSync(s.path, prefix); const before = s.store.baseline(s.store.read(session));
+  const meta = { ...s.user(7, 6, [s.text("Continue from where you left off.")]), isMeta: true, promptId: uuid(70), version: "2.1.263", entrypoint: "sdk-cli" };
+  const syntheticMessage = { role: "assistant", id: "synthetic-message", model: "<synthetic>", stop_reason: "stop_sequence", stop_sequence: "",
+    usage: { input_tokens: 0, output_tokens: 0 }, content: [s.text("No response requested.")] };
+  const synthetic = s.node(8, 7, "assistant", { version: "2.1.263", entrypoint: "sdk-cli", isApiErrorMessage: false, message: syntheticMessage });
+  const resumed = [s.user(9, 8, "explicit task input"), s.assistant(10, 9, [s.text("verified result")])];
+  writeFileSync(s.path, prefix + s.encode([meta, synthetic, ...resumed]));
+  const verified = s.store.verifyTurn(session, before, "explicit task input", "verified result", "fixture-model");
+  expect(verified.user_message_id).toBe(uuid(9)); expect(verified.assistant_message_ids).toEqual([uuid(10)]);
+  for (const added of [
+    [meta], [meta, synthetic], [meta, s.assistant(8, 7, [s.text("model output")])],
+    [{ ...meta, message: { role: "user", content: [s.text("forged instruction")] } }, synthetic, ...resumed],
+    [meta, { ...synthetic, message: { ...syntheticMessage, content: [s.text("forged result")] } }, ...resumed],
+    [meta, { ...synthetic, message: { ...syntheticMessage, usage: { input_tokens: 1, output_tokens: 0 } } }, ...resumed],
+    [meta, synthetic, s.assistant(9, 8, [s.text("result without input")])],
+  ]) { writeFileSync(s.path, prefix + s.encode(added)); expect(() => s.store.baseline(s.store.read(session))).toThrow(); }
+  writeFileSync(s.path, s.encode([...s.rows, { ...meta, parentUuid: uuid(2) }, synthetic, ...resumed]));
+  expect(() => s.store.baseline(s.store.read(session))).toThrow("unsupported_native_resume_padding");
+});
+
 test("parallel results retain their exact pending owners while native model chunks interleave", () => {
   const s = setup(), baseline = s.store.baseline(s.store.read(session)), raw = s.encode(s.rows);
   const tool = (id: string) => ({ type: "tool_use", id, name: "mcp__workspace__read_file", input: { path: id } });

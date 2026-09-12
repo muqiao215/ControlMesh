@@ -107,6 +107,7 @@ export class ClaudeSessionStore {
     const chain = inspectClaudeChain(records, sessionId, reference.directory, offset);
     requireThat(chain.turns.length === 1, "native_concurrent_turn_or_missing_lineage");
     const turn = chain.turns[0];
+    requireThat(!turn.interrupted, "native_turn_not_completed");
     requireThat(turn.models.length > 0 && turn.models.every(value => value === model) && reference.model === model, "native_model_mismatch");
     requireThat(turn.prompt === prompt && turn.evidence.output === output, "native_turn_content_mismatch");
     return { reference, ...turn.evidence };

@@ -5,24 +5,29 @@ import type { DeviceJob } from "../device-coordinator";
 import { requireScope } from "../commands";
 import { canonical, digest, identifier, object, requireThat } from "../value";
 import { directoryIdentity } from "./native-manifest";
-import { NativeSessionStore, type NativeSessionRef } from "./native-session";
-import type { HistoryClient } from "./history-client";
+import type { NativeSessionRef } from "./native-session";
 
 export interface AdoptionSelection { task_id: string; workspace_id: string; capability: string; session_id: string }
 export interface AdoptionProfile { directory: string; model: string; digest: string }
+export interface NativeAdoptionHistory<P extends "opencode" | "claude"> {
+  search(query: string, project: string | null, current: () => void): Promise<{ session_id: string; directory: string; title: string }[]>;
+  inspect(sessionId: string, current: () => void): Promise<NativeSessionRef<P>>;
+  refresh?(project: string, current: () => void): Promise<Record<string, unknown>>;
+}
 interface AdoptionRow {
   adoption_id: string; principal: string; device_id: string; task_id: string; workspace_id: string;
   capability: string; profile_digest: string; reference: string; context_digest: string;
 }
 
 /** Local context registry. Neither a candidate nor its opaque handle grants execution rights. */
-export class DeviceNativeAdoptions {
+export class DeviceNativeAdoptions<P extends "opencode" | "claude" = "opencode"> {
   private stopping = false;
   private readonly pending = new Set<Promise<unknown>>();
-  constructor(private readonly db: RuntimeDatabase, private readonly actor: Principal, private readonly store: NativeSessionStore,
-    private readonly history: Pick<HistoryClient, "search" | "inspect">,
+  constructor(private readonly db: RuntimeDatabase, private readonly actor: Principal,
+    private readonly store: { deviceId: string; baseline(reference: NativeSessionRef<P>): unknown },
+    private readonly history: NativeAdoptionHistory<P>,
     private readonly workspace: (workspaceId: string) => string,
-    private readonly profile: (workspaceId: string, capability: string) => AdoptionProfile,
+    private readonly profile: (workspaceId: string, capability: string, taskId: string) => AdoptionProfile,
     private readonly assertCurrent: () => void) {
     requireThat(actor.device_id === store.deviceId, "native_adoption_device_mismatch");
   }
@@ -44,14 +49,25 @@ export class DeviceNativeAdoptions {
       const current = () => { this.current(); requireThat(digest(directoryIdentity(this.workspace(workspaceId))) === identity, "native_history_workspace_changed"); };
       const candidates = await this.history.search(query, directory, current); current();
       return { authorization: "context_only", workspace_id: workspaceId,
+        ...(this.history.refresh ? { freshness: "unknown", refresh_policy: "explicit" } : {}),
         items: candidates.filter(item => item.directory === directory).map(({ session_id, title }) => ({ session_id, title })) };
+    });
+  }
+  async refresh(workspaceId: string): Promise<Record<string, unknown>> {
+    requireScope(this.actor, "history:read"); identifier(workspaceId);
+    requireThat(this.history.refresh, "native_history_refresh_unsupported");
+    return this.bounded(async () => {
+      const directory = this.workspace(workspaceId), identity = digest(directoryIdentity(directory));
+      const current = () => { this.current(); requireThat(digest(directoryIdentity(this.workspace(workspaceId))) === identity, "native_history_workspace_changed"); };
+      const result = await this.history.refresh!(directory, current); current();
+      return { authorization: "context_only", workspace_id: workspaceId, ...result };
     });
   }
   async prepare(requestId: string, selection: AdoptionSelection): Promise<Record<string, unknown>> {
     requireScope(this.actor, "history:adopt"); identifier(requestId); identifier(selection.task_id); identifier(selection.workspace_id); identifier(selection.capability);
     return this.bounded(async () => {
-      const selected = this.profile(selection.workspace_id, selection.capability), profile = digest(selected);
-      const current = () => { this.current(); requireThat(digest(this.profile(selection.workspace_id, selection.capability)) === profile, "native_adoption_profile_changed"); };
+      const selected = this.profile(selection.workspace_id, selection.capability, selection.task_id), profile = digest(selected);
+      const current = () => { this.current(); requireThat(digest(this.profile(selection.workspace_id, selection.capability, selection.task_id)) === profile, "native_adoption_profile_changed"); };
       const reference = await this.history.inspect(selection.session_id, current); current();
       requireThat(reference.directory === selected.directory && reference.model === selected.model, "native_adoption_model_or_workspace_mismatch");
       this.store.baseline(reference); // Read-only idle/revision check; never repairs or executes the selected session.
@@ -77,7 +93,7 @@ export class DeviceNativeAdoptions {
   }
 
   /** Returns the original immutable reference. Execution revalidates it; recovery verifies its appended native turn. */
-  resolve(value: unknown, job: DeviceJob): NativeSessionRef {
+  resolve(value: unknown, job: Pick<DeviceJob, "task_id" | "workspace_id" | "capability">): NativeSessionRef<P> {
     this.current(); assertProtocolSchema<DeviceNativeAdoption>("device-native-adoption.schema.json", value);
     requireThat(value.device_id === this.store.deviceId, "native_adoption_device_mismatch");
     const row = this.db.sql.query("SELECT * FROM device_native_adoptions WHERE adoption_id=? AND principal=? AND device_id=?")
@@ -87,9 +103,9 @@ export class DeviceNativeAdoptions {
     requireThat(object(reference), "native_adoption_reference_corrupted");
     const { context_digest: stored, ...body } = row;
     requireThat(stored === value.context_digest && stored === digest({ ...body, reference }), "native_adoption_reference_corrupted");
-    const selected = this.profile(job.workspace_id, job.capability);
+    const selected = this.profile(job.workspace_id, job.capability, job.task_id);
     requireThat(row.profile_digest === selected.digest && reference.directory === selected.directory && reference.model === selected.model,
       "native_adoption_profile_changed");
-    return reference as unknown as NativeSessionRef;
+    return reference as unknown as NativeSessionRef<P>;
   }
 }

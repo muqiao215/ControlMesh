@@ -6,6 +6,7 @@ import type { SubmissionIdentity } from "./task-ingress";
 import type { FeishuInboundRuntime } from "./feishu-inbound-runtime";
 import type { SpecMeshPort } from "./specmesh-port";
 import type { ReconciliationBinding, TaskSnapshot } from "./kernel";
+import type { LocalNativeHistoryPort } from "./providers/local-native-history";
 
 export interface LocalRuntimeRecovery {
   inspect(taskId: string, revision: number, effectId: string): ReconciliationBinding;
@@ -16,7 +17,7 @@ export interface LocalRuntimeRecovery {
 export class LocalRuntimeControl {
   constructor(private readonly runtime: LocalTaskRuntime, private readonly deliveries?: DeliveryOutbox,
     private readonly submissionIdentity?: (task: LegacyTask) => SubmissionIdentity, private readonly inbound?: FeishuInboundRuntime,
-    private readonly specmesh?: SpecMeshPort, private readonly recovery?: LocalRuntimeRecovery) {}
+    private readonly specmesh?: SpecMeshPort, private readonly recovery?: LocalRuntimeRecovery, private readonly history?: LocalNativeHistoryPort) {}
 
   async handle(request: unknown): Promise<Record<string, unknown>> {
     let id: string | null = null;
@@ -32,6 +33,7 @@ export class LocalRuntimeControl {
         prepare_handoff: ["task_id"], verify_specmesh: ["task_id"],
         inspect_reconciliation: ["task_id", "expected_revision", "effect_id"],
         reconcile_task: ["task_id", "expected_revision", "candidate"],
+        history_search: ["provider", "query"], refresh_history: ["provider"], prepare_adoption: ["task_id", "provider", "session_id"],
       };
       requireThat(typeof request.op === "string" && Object.hasOwn(fields, request.op), "unknown_local_operation");
       requireThat(Object.keys(request).every(key => ["id", "op", ...fields[request.op as string]].includes(key)), "unexpected_local_request_field");
@@ -40,6 +42,16 @@ export class LocalRuntimeControl {
       if (["bind_delivery", "deliveries", "drain_deliveries", "retry_delivery", "reconcile_delivery", "revoke_delivery"].includes(request.op))
         requireThat(this.deliveries, "delivery_not_configured");
       switch (request.op) {
+        case "history_search":
+          requireThat(this.history && typeof request.provider === "string" && typeof request.query === "string", "native_history_not_configured");
+          result = await this.history.search(request.provider, request.query); break;
+        case "refresh_history":
+          requireThat(this.history && typeof request.provider === "string", "native_history_not_configured");
+          result = await this.history.refresh(request.provider); break;
+        case "prepare_adoption":
+          requireThat(this.history && typeof request.provider === "string", "native_history_not_configured");
+          identifier(request.task_id); identifier(request.session_id);
+          result = await this.history.prepare(id, request.task_id, request.provider, request.session_id); break;
         case "inspect_reconciliation":
           requireThat(this.recovery, "local_recovery_not_configured"); identifier(request.task_id); identifier(request.effect_id);
           result = this.recovery.inspect(request.task_id, request.expected_revision as number, request.effect_id); break;
@@ -68,7 +80,9 @@ export class LocalRuntimeControl {
         case "retry_inbound": identifier(request.receipt_id); this.inbound!.retry(id, request.receipt_id); result = { retried: true }; break;
         case "submit": {
           requireThat(object(request.task) && typeof request.task.chat_id === "string", "invalid_local_task");
-          const task = request.task as LegacyTask;
+          const submitted = request.task as LegacyTask;
+          requireThat(this.history || !object(submitted.native_session) || submitted.native_session.schema_version !== "controlmesh.device_native_adoption.v1", "native_history_not_configured");
+          const task = this.history?.resolve(submitted) ?? submitted;
           const identity = this.submissionIdentity?.(task) ?? { chat_id: request.task.chat_id };
           requireThat(identity.thread_id === undefined || task.thread_id == null || String(task.thread_id) === identity.thread_id, "task_reply_identity_mismatch");
           result = this.runtime.submit(id, identity.thread_id ? { ...task, thread_id: identity.thread_id } : task, identity); break;

@@ -11,7 +11,7 @@ if (process.argv.length !== 3) {
 let owned: ReturnType<typeof openLocalRuntime> | undefined;
 try {
   owned = openLocalRuntime(process.argv[2]);
-  const control = new LocalRuntimeControl(owned.runtime, owned.deliveries, owned.submissionIdentity, owned.inbound, owned.specmesh, owned.recovery);
+  const control = new LocalRuntimeControl(owned.runtime, owned.deliveries, owned.submissionIdentity, owned.inbound, owned.specmesh, owned.recovery, owned.history);
   await serveRuntimeControl(control, owned);
 } catch (error) {
   console.error(JSON.stringify({ error: error instanceof RuntimeConflict ? error.code : "local_runtime_startup_failed" }));

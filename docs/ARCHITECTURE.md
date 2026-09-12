@@ -356,6 +356,12 @@ include OpenCode container reads and explicitly registered staged workspace writ
 `inspect_message` and `mailbox_status` expose delivery state without running a model.
 Other ingress/transport profiles are still separate work.
 
+Optional local `history` registration composes the independent headless CLI with the existing
+device_native_adoptions registry. Explicit refresh/search/prepare return context-only candidates;
+submit resolves the opaque task/device/workspace/model-bound handle, then ordinary ingress and
+execution owners issue current authority. Cache and native-source paths must be canonical and
+disjoint. Web is not required. See the [local Claude adoption contract](../plans/runtime-convergence/claude-continuity-design.md#local-history-adoption-contract).
+
 Optional trusted `workspace.write_roots` selects the staged write owner. Native containers
 see private snapshots projected at original paths; the controller alone publishes canonical
 changes. Version-2 native dispatch manifests retain write roots, stage basis and workflow
@@ -676,7 +682,10 @@ of OpenCode. A distinct Claude dispatch manifest binds the current task/native J
 scoped file tools and the existing stage. Fsynced raw process output precedes its compact kernel
 observation; normal completion and explicit recovery share the same source/tool/publication
 verifier. Recovery never invokes a provider. Claude parallel tool-result edges must bind to the
-exact pending call owner; they do not permit arbitrary history branches. Optional SpecMesh start
+exact pending call owner; they do not permit arbitrary history branches. A pinned max-turns
+attachment with no outstanding tools is a resumable failure boundary. Only its exact native
+synthetic resume pair is skipped as padding; a new explicit input and actual model completion
+are still required, and the failed turn cannot be reconciled as success. Optional SpecMesh start
 and publication checks remain separate from semantic closeout. See the active
 [Claude continuity design](../plans/runtime-convergence/claude-continuity-design.md) for qualified
 profiles and the remaining peer/adoption/device boundaries. Production remains Python-owned.

@@ -2,28 +2,42 @@
 
 ## Current
 
-Claude History adoption is implemented in the desktop worktree but **has not passed actual
-task acceptance and is not published**. Headless refresh/search found the original native UUID;
-preparation was context-only, and the handle resolved after reopening into that same session.
-The subsequent native run failed: 32 writes omitted the required `expected_sha256` argument,
-received the misleading `workspace_tool_content_changed` response, and repeated until Claude's
-64-turn limit (`error_max_turns`, reported num_turns 65). No adoption-result.txt was published.
-The original acceptance report remains failed. No new native attempt was started for diagnosis.
+Current increment: **headless History/Claude adoption through the normal local task owner**.
+Explicit refresh/search/prepare use the independent History CLI and the existing persistent
+adoption registry. Preparation is context-only and cannot create tasks or probe a model; submit
+resolves the task/device/workspace/model-bound handle through normal trusted ingress. Cache/source
+overlap and symlink aliases reject before creating a derived cache; search never refreshes itself.
 
-The narrow published correction makes missing write preconditions explicit and provides a
-repair hint, while preserving CAS checks and request-id idempotency. Focused real-MCP/file tests
-passed **11/11**, 321 assertions, 1.54 seconds, and typecheck passed. Before this correction, the
-worktree including adoption passed the full pinned runtime gate **438/438**, 4,706 assertions,
-86.49 seconds. These are distinct runs; neither establishes real adoption completion.
-Logs: `/tmp/cm-workspace-precondition-focused.log`, `/tmp/cm-claude-adoption-full.log`.
-Private failed evidence: `claude-history-adoption-acceptance.{ts,json,log}` in the coordinating
-workspace. The current installed production owner remains Python ControlMesh **v0.43.0**.
+Actual original-session adoption now passes independent verification. One separately recorded
+corrective native input resumed the same original JSONL after the earlier max-turns failure,
+read seven current continuity references and the result, wrote the exact original-marker/current-
+fact output, and finished in 10 native turns with nine tools. Neither marker nor new current fact
+was present in the new task prompt. One preflight generation preceded that execution.
+The verifier now recognizes the pinned max-turns stop and exact native synthetic resume pair;
+failed historical turns remain failed, and incomplete/forged pairs or pending calls reject.
 
-Next: qualify the corrected write path against retained original-session context with a separately
-bounded acceptance turn; never rerun the reserved failed script. Finish local adoption review and
-acceptance before publishing that integration. Repeated no-progress tool failures currently stop
-at execution/turn budgets; earlier semantic loop detection remains a harness gap. All remaining
-provider/transport/store/topology/product and CM-R0–R7 gates stay open.
+The new result was retained when unsupported synthetic padding initially blocked CM completion.
+After the parser correction, zero-model reconciliation published that same retained output. An
+injected loss of task.done then verified reopen/repeated acceptance with unchanged native bytes,
+unchanged canonical inode and one confirmed effect. Independent read-only source/control/receipt/
+database/file checks accepted the result and found no owned processes. The original failed reports
+remain: the retained-acceptance script also hit a final diagnostic JSON-digest(Buffer) mistake
+after all recovery assertions passed; the separate readback uses a byte SHA-256 and confirms state.
+
+Final pinned runtime gate with Docker and independent SpecMesh: **443/443**, zero failures,
+4,744 assertions, 87.69s (`/tmp/cm-claude-adoption-padding-final.log`). Chain tests **14/14**,
+68 assertions, and typecheck passed after correcting a test-fixture TypeScript annotation.
+Local History/max-turns focused gate was **17/17**, 98 assertions before synthetic-pair coverage.
+Private evidence: `claude-history-adoption-{corrected,retained}-acceptance.{ts,json,log}`,
+`verify_claude_history_adoption.ts`, `claude-history-adoption-independent-verification.{json,log}`.
+
+Next: Claude container/device profiles and remaining provider/transport/store/topology/product
+owners, then CM-R7 release and production cutover. Semantic no-progress detection and authoritative
+failed-effect abandonment remain gaps; this increment does not close them or the full matrix.
+Installed Python ControlMesh **v0.43.0** remains unchanged. Parser repair and recovery used no
+additional native execution. No bot, cron, service, default or installation was introduced.
+Predecessor 7d6e0a5ac33d00114a5ce94a31577ba87cc6f935
+is pushed with successful exact-SHA [CI 34672709887](https://github.com/muqiao215/ControlMesh/actions/runs/34672709887).
 
 ## Previous Claude peer communication increment
 
