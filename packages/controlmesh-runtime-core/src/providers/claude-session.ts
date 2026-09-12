@@ -3,8 +3,16 @@ import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, realpat
 import { basename, isAbsolute } from "node:path";
 import { canonical, digest, identifier, object, requireThat } from "../value";
 import type { NativeSessionRef } from "./native-session";
+import { inspectClaudeChain, type ClaudeTurnEvidence } from "./claude-turn";
 
 export type ClaudeSessionRef = NativeSessionRef<"claude">;
+export interface ClaudeNativeBaseline {
+  schema_version: "claude.native_baseline.v1";
+  reference: ClaudeSessionRef;
+  byte_length: number;
+  record_count: number;
+  tip_uuid: string;
+}
 const MAX_BYTES = 32 * 1024 * 1024;
 const sessionPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const identity = (s: BigIntStats) => [s.dev, s.ino, s.size, s.mtimeNs, s.ctimeNs].map(String).join(":");
@@ -69,5 +77,38 @@ export class ClaudeSessionStore {
     const current = this.read(ref.session_id);
     requireThat(current.store_id === ref.store_id && current.directory === ref.directory && current.project_id === ref.project_id, "native_identity_changed");
     requireThat(current.revision === ref.revision && current.model === ref.model, "native_revision_changed"); return current;
+  }
+
+  baseline(ref: ClaudeSessionRef): ClaudeNativeBaseline {
+    const current = this.snapshot(ref.session_id);
+    requireThat(digest(current.reference) === digest(ref), "native_reference_changed");
+    const chain = inspectClaudeChain(current.records, ref.session_id, ref.directory);
+    return { schema_version: "claude.native_baseline.v1", reference: current.reference, byte_length: current.bytes.length,
+      record_count: current.records.length, tip_uuid: chain.tip_uuid };
+  }
+
+  /** Re-read retained native bytes after execution or after a lost observation; never run a model. */
+  verifyTurn(sessionId: string, before: ClaudeNativeBaseline | null, prompt: string, output: string, model: string): ClaudeTurnEvidence & { reference: ClaudeSessionRef } {
+    const current = this.snapshot(sessionId), { reference, records, bytes } = current;
+    let offset = 0;
+    if (before) {
+      requireThat(before.schema_version === "claude.native_baseline.v1" && Number.isSafeInteger(before.byte_length) && before.byte_length > 0
+        && Number.isSafeInteger(before.record_count) && before.record_count > 0, "invalid_native_baseline");
+      const old = before.reference;
+      requireThat(old.provider === "claude" && old.schema_version === "agent.native_session.v2" && reference.session_id === old.session_id
+        && reference.device_id === old.device_id && reference.store_id === old.store_id && reference.directory === old.directory
+        && reference.project_id === old.project_id, "native_identity_changed");
+      requireThat(bytes.length > before.byte_length && bytes[before.byte_length - 1] === 10
+        && claudeContentRevision(reference.store_id, bytes.subarray(0, before.byte_length)) === old.revision, "native_prior_content_changed");
+      offset = before.record_count;
+      requireThat(offset < records.length && bytes.subarray(0, before.byte_length).filter(byte => byte === 10).length === offset, "invalid_native_baseline");
+      requireThat(inspectClaudeChain(records.slice(0, offset), sessionId, reference.directory).tip_uuid === before.tip_uuid, "native_baseline_tip_changed");
+    }
+    const chain = inspectClaudeChain(records, sessionId, reference.directory, offset);
+    requireThat(chain.turns.length === 1, "native_concurrent_turn_or_missing_lineage");
+    const turn = chain.turns[0];
+    requireThat(turn.models.length > 0 && turn.models.every(value => value === model) && reference.model === model, "native_model_mismatch");
+    requireThat(turn.prompt === prompt && turn.evidence.output === output, "native_turn_content_mismatch");
+    return { reference, ...turn.evidence };
   }
 }

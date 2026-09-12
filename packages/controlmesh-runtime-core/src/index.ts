@@ -8,7 +8,8 @@ export { OpenCodePreflight, type OpenCodeProbeInput, type OpenCodeProbeReport } 
 export { PreflightCache, type ProbeBinding, type ProbeDecision } from "./providers/preflight-cache";
 export { ProviderPreflightService } from "./providers/preflight-service";
 export { NativeSessionStore, type NativeSessionRef } from "./providers/native-session";
-export { ClaudeSessionStore, claudeContentRevision, type ClaudeSessionRef } from "./providers/claude-session";
+export { ClaudeSessionStore, claudeContentRevision, type ClaudeSessionRef, type ClaudeNativeBaseline } from "./providers/claude-session";
+export type { ClaudeTurnEvidence, ClaudeToolEvidence } from "./providers/claude-turn";
 export { ClaudePreflight, judgeClaudePreflight, type ClaudeProbeInput } from "./providers/claude-preflight";
 export type { ProviderProbeReport } from "./providers/probe-report";
 export { HistoryClient, ClaudeHistoryClient, type HistoryConfig } from "./providers/history-client";

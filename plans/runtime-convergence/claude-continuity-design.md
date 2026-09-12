@@ -49,3 +49,28 @@ probe on the second check and no remaining owned temporary directories/processes
 final observer rechecked retained native output without another model. Current readiness expiry
 is unchanged. Full Claude original-session execution, workspace/grant/container qualification,
 mailbox/retained-turn recovery and normal local/device configuration remain required next work.
+
+## Native append and workspace boundary qualification
+
+`ClaudeSessionStore.baseline` records the original reference, complete prefix byte/row lengths
+and idle chain leaf. `verifyTurn` rereads that same configured file, proves unchanged old bytes
+and file identity, then verifies exactly one new human input, UUID/parent continuity, main-session
+attachments, tool-use/result pairing, selected model and final model-message output. It rejects
+pending queue entries, incomplete calls, reused IDs, foreign branches and unsupported compaction.
+Tool evidence remains separate from authorization and current-file/semantic acceptance.
+
+Actual native session creation and explicit resume in separate processes recalled the original
+random marker. A subsequent current-file turn reported native success with zero tools and an
+incorrect answer. Independent revalidation of the retained third-turn baseline/outcome rejected
+that answer with no new model invocation. This is actual source-verifier evidence; the CM worker,
+successful required reads, staged writes and lost-result reconciliation remain unaccepted.
+
+A separate CLI qualification used two harmless files in an owned project: `dontAsk` and an exact
+Read allow rule still permitted reading the ungranted file. Do not weaken CM grants or route
+restrictive tasks through this host profile. The next owner should provide explicitly scoped
+CM workspace MCP operations with native built-ins disabled and independently recorded tool
+receipts. Reuse the current private channel, staged workspace and task/effect/lease ownership.
+The ordinary peer-message client must not silently acquire file capabilities. Reads must retain
+path/content freshness; writes must stay staged until current authority authorizes publication.
+The configured MCP profile needs its own native qualification: safe mode used for zero-tool
+preflight disables MCP, so preflight's profile cannot be silently reused as execution proof.

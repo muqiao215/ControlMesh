@@ -2,7 +2,38 @@
 
 ## Current
 
-Current increment: **Claude model preflight through the shared durable readiness budget**.
+Current increment: **Claude original-transcript append verification**. `ClaudeSessionStore`
+now captures an idle, byte-bound baseline and verifies exactly one appended input, the complete
+parent/attachment/tool-result chain, selected model and final model-message output. Replaced
+sources, changed old bytes, queued/unfinished input, duplicate identities, conflicting tools,
+compaction and unqualified record types reject. This source verifier issues no tools or models.
+
+Actual isolated CLI 2.1.263/MiniMax-M3 execution created a native session and resumed it in a
+second process with exact random-marker recall. A third turn requested a current-file read:
+the CLI reported success but made **zero Read calls** and guessed the wrong content. Acceptance
+correctly rejected it. Independent model-free rechecking of the third turn proves the retained
+baseline's source identity and old bytes are unchanged, and reproduces the rejection. It does
+not establish current-file acceptance or CM worker recovery. Two seed/recall model commands
+and one failed current-read command ran; no acceptance replay was used to manufacture a pass.
+
+A separate owned two-file qualification found that native `dontAsk` plus a scoped Read allow
+rule still read the ungranted file. Do not use those flags as a file-authority boundary. The next
+implementation is the CM-controlled workspace tool path, then actual Claude worker/configuration,
+staging and lost-result reconciliation. See `claude-continuity-design.md`.
+
+Validation: pinned Bun 1.3.11 targeted Claude/native regression **28/28**, 157 assertions,
+plus runtime-core typecheck. The full runtime-core gate with actual Docker and independent
+SpecMesh passed **404/404**, zero failures, 4,220 assertions in 74.51 seconds. The repository
+SpecMesh structural check passed with all seven task/core references and expected warnings
+for the modified task facts; this is not semantic closeout. Full test log:
+`/tmp/cm-claude-turn-full.log`. Private evidence in the coordinating workspace:
+`claude-read-scope-acceptance.json`, `claude-persisted-turn-acceptance.json`,
+`claude-persisted-read-{baseline,native}.json`, `claude-persisted-turn-independent-verification.json`.
+No installed runtime/default was changed. Full CM-R0–CM-R7 remains active.
+
+## Previous Claude readiness increment
+
+Claude model preflight runs through the shared durable readiness budget.
 Actual native Claude Code 2.1.263/MiniMax-M3 probe passed on 2026-09-12 00:58:59–00:59:01 UTC.
 Two native commands (version plus print) included one model probe; a second ensure operation
 reused the same generation-1 cache observation. Native init reported no tools, MCP servers or
@@ -21,7 +52,8 @@ Validation: pinned CI Bun 1.3.11 with actual Docker and independent SpecMesh pas
 empty-plugin evidence checks are covered by focused Claude/native-event regression **13/13**
 (97 assertions) and independent rejudging of the same retained native output; no model trial was repeated.
 Typecheck and repository SpecMesh structural check pass (seven references, expected dirty
-fact warnings). Publication/exact-SHA CI for this preflight increment is pending commit.
+fact warnings). Published as b0bd743dce2bc550f9bf0198670bacf29010b620, with
+[passing exact-SHA CI](https://github.com/muqiao215/ControlMesh/actions/runs/34663896019).
 
 Claude source predecessors are published: CM fb69bddebabde0fcb0b45d2746a8c18cb0f06e50 with
 [passing CI](https://github.com/muqiao215/ControlMesh/actions/runs/34663045103), History

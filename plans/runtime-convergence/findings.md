@@ -1,5 +1,27 @@
 # Findings
 
+## Claude append and file-permission qualification — 2026-09-12
+
+The actual pinned CLI does not make `--allowedTools Read(//absolute/file)` a closed read scope:
+with `--tools Read --permission-mode dontAsk`, both the allowed and explicitly ungranted
+synthetic file were read. CM cannot authorize a restrictive grant using that profile. Use a
+CM-controlled workspace capability with built-in tools disabled; qualify the configured MCP
+profile separately because safe mode disables MCP. Existing grant rejection remains in place.
+
+Actual persisted native rows include queue enqueue/dequeue, UUID-bearing token-reminder
+attachments in the parent chain, assistant blocks and last-prompt/mode metadata. The final
+native result corresponds to the final model message, not all preceding assistant text. The
+verifier handles this shape and preserves raw prefix bytes; unknown compaction/branching rejects.
+
+An actual same-session current-file trial returned successful prose containing a wrong value,
+without any tool use. The verifier raised `native_turn_content_mismatch`; subsequent rechecking
+used the already retained outcome, found zero tool calls and made zero additional model calls.
+Do not equate a native successful result or marker recall with current-file consumption. The
+real tool-call/result path still needs a qualified workspace-owner trial; synthetic tool-chain
+tests do not close it. The persisted test source is owned, and no arbitrary user history was
+appended. An initial source read used the wrong package prefix; all code is under
+`packages/controlmesh-runtime-core`, not `packages/runtime-core`.
+
 ## Claude shared preflight — 2026-09-12
 
 Local Claude supports safe mode while retaining the existing auth-token credential mode. Its
