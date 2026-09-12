@@ -26,7 +26,7 @@ export class RuntimeDatabase {
       this.transaction(() => {
         const version = (this.sql.query("PRAGMA user_version").get() as { user_version: number }).user_version;
         const app = (this.sql.query("PRAGMA application_id").get() as { application_id: number }).application_id;
-        requireThat(version >= 0 && version <= 23, "unsupported_database_version");
+        requireThat(version >= 0 && version <= 24, "unsupported_database_version");
         requireThat(app === 0 || app === APPLICATION_ID, "foreign_database");
         if (version === 0) {
           const tables = this.sql.query("SELECT name FROM sqlite_master WHERE type='table'").all();
@@ -348,6 +348,20 @@ export class RuntimeDatabase {
           this.sql.exec(`
             ALTER TABLE topology_tasks ADD COLUMN kind TEXT NOT NULL DEFAULT 'native' CHECK(kind IN ('native','aggregate'));
             PRAGMA user_version = 23;
+          `);
+        }
+        if (version < 24) {
+          this.sql.exec(`
+            CREATE TABLE topology_schedules (
+              root_id TEXT PRIMARY KEY REFERENCES tasks(task_id), principal TEXT NOT NULL,
+              device_id TEXT NOT NULL, origin TEXT NOT NULL, plan TEXT NOT NULL, plan_digest TEXT NOT NULL,
+              revision INTEGER NOT NULL, mode TEXT NOT NULL, reason TEXT,
+              lease_owner TEXT, lease_until INTEGER NOT NULL DEFAULT 0, lease_fence INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE TABLE topology_schedule_members (
+              task_id TEXT PRIMARY KEY REFERENCES tasks(task_id), root_id TEXT NOT NULL REFERENCES topology_schedules(root_id)
+            );
+            PRAGMA user_version = 24;
           `);
         }
       });

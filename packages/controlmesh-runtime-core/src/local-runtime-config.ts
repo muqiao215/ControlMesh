@@ -1,3 +1,5 @@
+import { TopologyScheduler } from "./topology-scheduler";
+import { TopologyArtifactGate } from "./topology-artifacts";
 import { mkdirSync, realpathSync, statSync, existsSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { RuntimeDatabase } from "./database";
@@ -32,7 +34,7 @@ import { LocalNativeHistory, type LocalNativeHistoryPort } from "./providers/loc
 
 /** Explicit isolated candidate configuration. Reading task state does not inspect or probe any provider. */
 export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; deliveries?: DeliveryOutbox; inbound?: FeishuInboundRuntime;
-  specmesh?: SpecMeshPort; recovery: LocalRuntimeRecovery; history?: LocalNativeHistoryPort;
+  scheduler?: TopologyScheduler; keep_alive?: boolean; specmesh?: SpecMeshPort; recovery: LocalRuntimeRecovery; history?: LocalNativeHistoryPort;
   submissionIdentity: (task: LegacyTask) => SubmissionIdentity; stop: () => Promise<void>; close: () => Promise<void> } {
   const loaded = privateFile(path), config = decodeSnapshot(loaded.bytes).source;
   requireThat(object(config) && config.schema_version === "controlmesh.local_runtime.v1" && config.mode === "candidate", "unsupported_local_runtime_config");
@@ -79,9 +81,13 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
   const current = () => {
     requireThat(privateFile(path).revision === loaded.revision && digest(directoryIdentity(root)) === initialRoot, "runtime_configuration_changed");
   };
+  const schedule = config.topology_scheduler;
+  requireThat(schedule === undefined || (object(schedule) && Object.keys(schedule).every(key => ["auto_start", "keep_alive", "interval_ms", "lease_ms", "max_steps", "artifact_files"].includes(key))
+    && typeof schedule.auto_start === "boolean" && typeof schedule.keep_alive === "boolean"
+    && (schedule.artifact_files === undefined || (Array.isArray(schedule.artifact_files) && schedule.artifact_files.every(file => typeof file === "string")))), "invalid_topology_scheduler_profile");
   const actor: Principal = { id: config.principal_id, device_id: config.device_id, origin: "human_request",
     scopes: ["task:create", "task:read", "task:execute", "task:resume", "task:cancel", "task:reconcile", "task:admin", "message:send", "message:read", "message:ack", "provider:probe",
-      "delivery:read", "delivery:configure", "delivery:project", "delivery:send", "delivery:reconcile", "feishu:ingest", "feishu:read", "feishu:process", "history:read", "history:adopt"] };
+      "delivery:read", "delivery:configure", "delivery:project", "delivery:send", "delivery:reconcile", "feishu:ingest", "feishu:read", "feishu:process", "history:read", "history:adopt", ...(schedule ? ["team:write"] : [])] };
   const db = new RuntimeDatabase(join(root, "runtime.sqlite")), kernel = new RuntimeKernel(db), cache = new PreflightCache(db);
   try {
     requireThat(config.specmesh === undefined || object(config.specmesh), "invalid_specmesh_profile");
@@ -201,9 +207,14 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
       current();
       return delivery ? delivery.adapter.submissionIdentity(task.task_id, String(task.chat_id)) : { chat_id: String(task.chat_id) };
     };
+    const scheduler = !object(schedule) ? undefined : new TopologyScheduler(kernel, runtime, actor, {
+      interval_ms: schedule.interval_ms as number | undefined, lease_ms: schedule.lease_ms as number | undefined, max_steps: schedule.max_steps as number | undefined,
+    }, Array.isArray(schedule.artifact_files) && schedule.artifact_files.length > 0 ? new TopologyArtifactGate(kernel,
+      { workspace: workspace.directory as string, allowed_files: schedule.artifact_files as string[] }, current, specmesh) : undefined);
+    if (scheduler && schedule!.auto_start) scheduler.start();
     let stopping: Promise<void> | undefined, closing: Promise<void> | undefined;
-    const stop = () => stopping ??= Promise.all([runtime.stop(), deliveries?.stop(), delivery?.close(), inbound?.stop(), specmesh?.stop(), history?.stop()]).then(() => {});
+    const stop = () => stopping ??= Promise.all([scheduler?.stop(), runtime.stop(), deliveries?.stop(), delivery?.close(), inbound?.stop(), specmesh?.stop(), history?.stop()]).then(() => {});
     const close = () => closing ??= stop().then(() => db.close());
-    return { runtime, recovery, submissionIdentity, stop, close, ...(history ? { history } : {}), ...(deliveries ? { deliveries } : {}), ...(inbound ? { inbound } : {}), ...(specmesh ? { specmesh } : {}) };
+    return { runtime, recovery, submissionIdentity, stop, close, ...(scheduler ? { scheduler, keep_alive: schedule!.keep_alive === true } : {}), ...(history ? { history } : {}), ...(deliveries ? { deliveries } : {}), ...(inbound ? { inbound } : {}), ...(specmesh ? { specmesh } : {}) };
   } catch (error) { db.close(); throw error; }
 }

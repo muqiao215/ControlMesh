@@ -159,8 +159,8 @@ test("dispatch failure rolls back accepted decision and stage; canceled and unde
 test("version nineteen upgrade retains tasks and does not invent control configuration", async () => {
   const f = fixture({ topology: "director_worker" }, [complete]);
   try {
-    f.db.sql.exec("ALTER TABLE topology_tasks DROP COLUMN kind; DROP TABLE topology_runs; ALTER TABLE topology_tasks DROP COLUMN execution_id; DROP TABLE topology_completions; DROP TABLE topology_controls; PRAGMA user_version=19"); await f.reopen();
-    expect(f.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 23 });
+    f.db.sql.exec("DROP TABLE topology_schedule_members; DROP TABLE topology_schedules; ALTER TABLE topology_tasks DROP COLUMN kind; DROP TABLE topology_runs; ALTER TABLE topology_tasks DROP COLUMN execution_id; DROP TABLE topology_completions; DROP TABLE topology_controls; PRAGMA user_version=19"); await f.reopen();
+    expect(f.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 24 });
     expect(f.db.sql.query("SELECT COUNT(*) AS n FROM tasks").get()).toEqual({ n: 5 });
     expect(f.control.inspect(actor, "parent")).toBeNull();
     f.start(); expect(f.snapshot().config.controller_task_id).toBe("control");
@@ -256,8 +256,8 @@ test("a bare terminal checkpoint cannot authorize parent completion, including a
     const forged = topology.checkpoint(actor, "checkpoint", "parent", 1, 1, { substage: "completed", phase_status: "completed", active_roles: [],
       reduced_result: { schema_version: 1, topology: "director_worker", final_status: "completed", reduced_summary: "not an accepted task result", selected_evidence: [], selected_artifacts: [], next_action: null } });
     expect(() => f.kernel.completeTopology(actor, "unsealed", "parent", 1, forged.revision)).toThrow("topology_completion_proof_missing");
-    f.db.sql.exec("ALTER TABLE topology_tasks DROP COLUMN kind; DROP TABLE topology_runs; ALTER TABLE topology_tasks DROP COLUMN execution_id; DROP TABLE topology_completions; PRAGMA user_version=20"); await f.reopen();
-    expect(f.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 23 });
+    f.db.sql.exec("DROP TABLE topology_schedule_members; DROP TABLE topology_schedules; ALTER TABLE topology_tasks DROP COLUMN kind; DROP TABLE topology_runs; ALTER TABLE topology_tasks DROP COLUMN execution_id; DROP TABLE topology_completions; PRAGMA user_version=20"); await f.reopen();
+    expect(f.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 24 });
     expect(() => f.kernel.completeTopology(actor, "after-upgrade", "parent", 1, forged.revision)).toThrow("topology_completion_proof_missing");
     expect(f.kernel.inspect(actor, "parent").task.status).toBe("waiting"); expect(f.calls).toEqual([]);
   } finally { await f.close(); }

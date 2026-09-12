@@ -266,9 +266,9 @@ test("private runtime control delivers only after explicit route binding and rep
 
 test("schema ten upgrade preserves existing task state and installs the delivery owner", () => {
   const f = setup(); f.create();
-  f.db.sql.exec("ALTER TABLE topology_tasks DROP COLUMN kind; DROP TABLE topology_runs; ALTER TABLE topology_tasks DROP COLUMN execution_id; DROP TABLE topology_completions; DROP TABLE topology_controls; DROP TABLE topology_task_history; DROP TABLE topology_tasks; DROP TABLE team_topologies; DROP TABLE team_phases; DROP TABLE device_scheduled_work; DROP TABLE device_scheduler_leases; DROP TABLE device_assignment_generations; DROP TABLE device_native_adoptions; DROP TABLE command_reservations; DROP TABLE feishu_conversations; DROP TABLE feishu_event_aliases; DROP TABLE feishu_inbox; DROP TABLE transport_receipts; DROP TABLE delivery_outbox; DROP TABLE delivery_routes; PRAGMA user_version=10");
+  f.db.sql.exec("DROP TABLE topology_schedule_members; DROP TABLE topology_schedules; ALTER TABLE topology_tasks DROP COLUMN kind; DROP TABLE topology_runs; ALTER TABLE topology_tasks DROP COLUMN execution_id; DROP TABLE topology_completions; DROP TABLE topology_controls; DROP TABLE topology_task_history; DROP TABLE topology_tasks; DROP TABLE team_topologies; DROP TABLE team_phases; DROP TABLE device_scheduled_work; DROP TABLE device_scheduler_leases; DROP TABLE device_assignment_generations; DROP TABLE device_native_adoptions; DROP TABLE command_reservations; DROP TABLE feishu_conversations; DROP TABLE feishu_event_aliases; DROP TABLE feishu_inbox; DROP TABLE transport_receipts; DROP TABLE delivery_outbox; DROP TABLE delivery_routes; PRAGMA user_version=10");
   const other = f.reopen(); expect(other.kernel.inspect(actor, "task").task.status).toBe("waiting");
-  expect(other.kernel.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 23 });
+  expect(other.kernel.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 24 });
 });
 
 test("summary fallback retains the live Python message bus policy for all terminal states", () => {

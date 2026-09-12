@@ -185,20 +185,16 @@ export class RuntimeControlTopology {
       return { topology, runs: this.enqueue(actor, requestId, parentRevision, { topology, config }, [controller]) };
     }, value => { this.authorize(actor, parentId, [...workers, controller]); return value; });
   }
-  decide(actor: Principal, requestId: string, parentId: string, parentRevision: number, revision: number,
-    controller: ControlChild, next: ControlChild[] = [], parent: { question?: string; waiting_on?: string } = {}) {
-    this.authorize(actor, parentId, [controller, ...next]);
-    return command(this.kernel.db, actor, requestId, "control.decide", { parentId, parentRevision, revision, controller, next, parent }, () => {
-      const current = this.current(actor, parentId, parentRevision, revision), { config } = current, at = new Date(this.kernel.db.now());
-      this.controller(config, controller);
-      const accepted = this.queue.collectDecision(actor, `control-decision-${digest(requestId)}`, parentId, parentRevision, revision, controller.task_id, controller.revision);
-      let state: TopologyState;
-      if (config.topology === "director_worker" && accepted.result.topology === "director_worker") {
-        state = new DirectorPolicy(config.parallel_limit, config.limits).decide(current.topology.state, accepted.result, parent, at);
+  private decisionState(current: ControlSnapshot, result: ReturnType<TopologyTaskQueue["collectDecision"]>["result"],
+    parent: { question?: string; waiting_on?: string }, at: Date): TopologyState {
+    const { config } = current;
+    let state: TopologyState;
+      if (config.topology === "director_worker" && result.topology === "director_worker") {
+        state = new DirectorPolicy(config.parallel_limit, config.limits).decide(current.topology.state, result, parent, at);
       } else {
-        requireThat(config.topology === "debate_judge" && accepted.result.topology === "debate_judge", "control_decision_kind_mismatch");
+        requireThat(config.topology === "debate_judge" && result.topology === "debate_judge", "control_decision_kind_mismatch");
         const configJudge = config as Extract<ControlConfig, { topology: "debate_judge" }>, raw = current.topology.state, policy = new JudgePolicy(config.parallel_limit);
-        const kind = accepted.result.decision, cap = kind === "needs_repair" ? configJudge.max_repair_cycles : configJudge.max_parent_interruptions;
+        const kind = result.decision, cap = kind === "needs_repair" ? configJudge.max_repair_cycles : configJudge.max_parent_interruptions;
         const count = raw.checkpoints.filter(cp => cp.substage === (kind === "needs_repair" ? "repairing" : "waiting_parent")).length;
         if ((kind === "needs_repair" || kind === "needs_parent_input") && count >= cap) {
           const cp = raw.checkpoints.at(-1)!, summary = `debate_judge stopped: ${kind === "needs_repair" ? "max_repair_cycles" : "max_parent_interruptions"} exhausted (${cap}).`;
@@ -206,11 +202,29 @@ export class RuntimeControlTopology {
             latest_summary: summary, round_index: cp.round_index, round_limit: cp.round_limit,
             reduced_result: { schema_version: 1, topology: "debate_judge", final_status: "failed", reduced_summary: summary, selected_evidence: [], selected_artifacts: [], next_action: null } }, at);
         } else {
-          requireThat(accepted.result.topology === "debate_judge", "control_decision_kind_mismatch");
-          state = policy.decide(raw, accepted.result, parent, at);
+          requireThat(result.topology === "debate_judge", "control_decision_kind_mismatch");
+          state = policy.decide(raw, result, parent, at);
           if (state.checkpoints.at(-1)!.substage === "repairing") state = policy.candidates(state, state.checkpoints.at(-1)!.active_roles, undefined, at);
         }
       }
+    return state;
+  }
+  previewDecision(actor: Principal, parentId: string, parentRevision: number, revision: number,
+    controller: ControlChild, parent: { question?: string; waiting_on?: string } = {}): TopologyState {
+    this.authorize(actor, parentId, [controller]);
+    const current = this.current(actor, parentId, parentRevision, revision);
+    this.controller(current.config, controller);
+    const accepted = this.queue.peekDecision(actor, parentId, parentRevision, revision, controller.task_id, controller.revision);
+    return this.decisionState(current, accepted.result, parent, new Date(this.kernel.db.now()));
+  }
+  decide(actor: Principal, requestId: string, parentId: string, parentRevision: number, revision: number,
+    controller: ControlChild, next: ControlChild[] = [], parent: { question?: string; waiting_on?: string } = {}) {
+    this.authorize(actor, parentId, [controller, ...next]);
+    return command(this.kernel.db, actor, requestId, "control.decide", { parentId, parentRevision, revision, controller, next, parent }, () => {
+      const current = this.current(actor, parentId, parentRevision, revision), { config } = current, at = new Date(this.kernel.db.now());
+      this.controller(config, controller);
+      const accepted = this.queue.collectDecision(actor, `control-decision-${digest(requestId)}`, parentId, parentRevision, revision, controller.task_id, controller.revision);
+      const state = this.decisionState(current, accepted.result, parent, at);
       const topology = this.save(current.topology, state);
       return { topology, runs: this.enqueue(actor, requestId, parentRevision, { topology, config }, next),
         parent: completeTopologyStep(this.kernel, actor, `control-complete-${digest(requestId)}`, parentRevision, topology, this.completionGate) };

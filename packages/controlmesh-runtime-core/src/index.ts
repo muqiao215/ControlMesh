@@ -62,3 +62,6 @@ export { RuntimeFanout, type FanoutChild } from "./runtime-fanout";
 export { decodeDirectorDecision, decodeJudgeDecision, type DirectorDecision, type JudgeDecision } from "./team-control-decision";
 export { RuntimeControlTopology, type ControlChild, type ControlSetup, type ControlConfig } from "./runtime-control-topology";
 export { TopologyArtifactGate, type TopologyArtifactConfiguration, type TopologyArtifactEvidence } from "./topology-artifacts";
+
+export { TopologyScheduler, type TopologySchedulerOptions } from "./topology-scheduler";
+export { decodeTopologySchedulePlan, type TopologySchedulePlan, type ScheduleNode, type ScheduleRole } from "./topology-schedule-plan";

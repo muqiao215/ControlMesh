@@ -1311,3 +1311,35 @@ Full pinned gate finished with exit 0: 612 pass, 0 fail, 8283 assertions across 
 in 209.12s (/tmp/cm-topology-recovery-full.log). Python inventory and runtime typecheck
 also passed. Existing nested aggregate, terminal completion and same-tree reopen fixtures
 remain green after adding rejected-assignment history. No production version switch.
+
+## Local automatic scheduler implementation
+
+Schema 24 adds immutable schedule membership, owner/device/origin, plan digest, revision,
+mode and fenced leases. The normal private configuration/control/CLI now owns an optional
+loop and explicit EOF keepalive. All four local topology kinds and all 16 nested kind pairs
+progress through the existing atomic composition methods. Registration does not execute
+providers; activation and configured background startup are distinct controls.
+
+Review caught premature aggregate startup: a director's registered child was eligible
+before being dispatched. Nodes now wait for the current actual parent reservation. Existing
+control policies must exactly match registered frozen limits, and external assignments
+cannot be silently attached. Shutdown preserves active plan mode while clearing loop/lease.
+Automatic kernel transition events carry schedule provenance without changing actor grants.
+
+Focused service verification: 68 pass, 0 fail, 462 assertions across scheduler, normal
+local control and existing controller suites, 6.62s (/tmp/cm-topology-service-focused.log).
+It includes real CLI EOF/SIGTERM behavior without credentials/native commands, two scheduler
+instances over separate database connections, all local graph combinations, preserved
+malformed/quota blocks, explicit recovery, parent answers and repair exhaustion. Typecheck
+passed. Artifact pause fencing uses a controlled negative fixture; existing file evidence
+acceptance remains in its own suites. No fresh native model acceptance is claimed.
+
+Previous published 725f22c has verified successful remote CI 34691621283. The earlier
+connection error happened before this turn's network grant; the subsequent exact-run query
+succeeded. Current full pinned gate runs under /tmp/cm-topology-scheduler-full.log and must
+be reported only after that original process reaches a terminal result.
+
+Full scheduler gate completed with exit 0: 645 pass, 0 fail, 8529 assertions across 67 files
+in 213.47s (/tmp/cm-topology-scheduler-full.log). Existing Python differential suites,
+process/native/device fixtures, all older candidate upgrades and the new service gates
+passed together. This is controlled automated evidence, not new real-model acceptance.

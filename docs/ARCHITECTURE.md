@@ -472,18 +472,44 @@ restart; ordinary accepted repair generations do not spend this recovery budget.
 quota deadlines block early retries. Unstarted blocked work retries its original input and
 rejects a replacement prompt; completed/failed native work requires an explicit new prompt.
 Cancelled, uncertain, aggregate and already-valid results cannot use this recovery path.
-Nothing in these helpers starts a polling loop or automatically retries a model.
+Nothing in these helpers starts a polling loop or automatically retries a model. The
+separately configured scheduler below owns automatic progression.
 
 Pipeline/fanout result options also support finite repair and parent-interruption limits.
 They count the existing execution checkpoints and terminate from host policy with the
 actual latest result evidence. Unsupported worker control statuses remain rejected; omitted
-limits preserve Python parity. Freezing these optional limits across service instances
-belongs to the pending schedule registration owner, not the pure transition functions.
+limits preserve Python parity. The schedule registration owner freezes these optional limits across service instances;
+the pure transition functions retain their original standalone defaults.
 
 Generic provider resume still refuses completed orchestration tasks. Older candidates
 reject schema 23; rollback requires a pre-upgrade database backup, never changing a
-populated database version. Automatic topology scheduling, device topology assignment,
-semantic project closeout and full native/device acceptance remain open.
+populated database version. Schema 24 adds local automatic scheduling, described below;
+device topology assignment, semantic project closeout and full native/device acceptance
+remain open.
+
+`TopologyScheduler` now owns bounded automatic local progression over an immutable graph
+of already-authorized tasks. Schema 24 stores schedule identity, plan digest, state/revision
+and fenced lease; a membership table prevents conflicting task registrations. Four local
+topologies and nested aggregates use the existing atomic queue compositions. An aggregate
+waits for actual parent dispatch. Model decisions cannot mint tasks, roles, grants or policy.
+
+Normal `openLocalRuntime` configuration and the JSON-lines CLI expose registration,
+activation/pause, inspection, explicit native retry and parent answers. Registration starts
+paused; background execution and EOF keepalive require explicit configuration. Inspection
+and unchanged polls do not produce user prompts or events. Kernel scheduled transitions
+retain the actor's authorization while recording `origin:schedule` for automatic events.
+
+A schedule lease serializes async preparation and transition admission. Actual task,
+checkpoint, assignment and native effect checks still run at commit. Pause/replacement
+owner fences stale artifact preparation; ordinary shutdown retains active plan state while
+stopping its loop. Native execution stays with LocalTaskRuntime and its existing leases.
+Blocked schedules survive restart; provider quota/unknown/cancelled outcomes are not
+replayed automatically. Explicit malformed-result recovery preserves its two-retry ceiling.
+
+The control and configuration contract is documented in
+`plans/runtime-convergence/topology-scheduling.md`. These are private candidate interfaces;
+there is no production installation/default switch or device topology dispatch from this
+increment. Older candidates reject schema 24; rollback requires the prior database backup.
 
 `LocalTaskRuntime` adds the private local task execution owner. SQLite schema 8 stores
 queued runs, their expected task revision and provider/profile binding, plus the claimed

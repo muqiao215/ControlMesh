@@ -167,10 +167,10 @@ test("schema eight upgrades without losing tasks or queued messages and without 
   const sent = first.runtime.tell("note", "a", "Survive upgrade");
   await first.close();
   const previous = new RuntimeDatabase(join(f.state, "runtime.sqlite"));
-  previous.sql.exec("ALTER TABLE topology_tasks DROP COLUMN kind; DROP TABLE topology_runs; ALTER TABLE topology_tasks DROP COLUMN execution_id; DROP TABLE topology_completions; DROP TABLE topology_controls; DROP TABLE topology_task_history; DROP TABLE topology_tasks; DROP TABLE team_topologies; DROP TABLE team_phases; DROP TABLE device_scheduled_work; DROP TABLE device_scheduler_leases; DROP TABLE device_assignment_generations; DROP TABLE device_native_adoptions; DROP TABLE command_reservations; DROP TABLE feishu_conversations; DROP TABLE feishu_event_aliases; DROP TABLE feishu_inbox; DROP TABLE transport_receipts; DROP TABLE delivery_outbox; DROP TABLE delivery_routes; DROP TABLE native_agent_deliveries; DROP TABLE native_agent_calls; DROP TABLE native_mailbox_deliveries; PRAGMA user_version=8"); previous.close();
+  previous.sql.exec("DROP TABLE topology_schedule_members; DROP TABLE topology_schedules; ALTER TABLE topology_tasks DROP COLUMN kind; DROP TABLE topology_runs; ALTER TABLE topology_tasks DROP COLUMN execution_id; DROP TABLE topology_completions; DROP TABLE topology_controls; DROP TABLE topology_task_history; DROP TABLE topology_tasks; DROP TABLE team_topologies; DROP TABLE team_phases; DROP TABLE device_scheduled_work; DROP TABLE device_scheduler_leases; DROP TABLE device_assignment_generations; DROP TABLE device_native_adoptions; DROP TABLE command_reservations; DROP TABLE feishu_conversations; DROP TABLE feishu_event_aliases; DROP TABLE feishu_inbox; DROP TABLE transport_receipts; DROP TABLE delivery_outbox; DROP TABLE delivery_routes; DROP TABLE native_agent_deliveries; DROP TABLE native_agent_calls; DROP TABLE native_mailbox_deliveries; PRAGMA user_version=8"); previous.close();
   const restored = openLocalRuntime(f.path);
   try {
-    expect(restored.runtime.kernel.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 23 });
+    expect(restored.runtime.kernel.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 24 });
     expect(restored.runtime.inspectTask("a").task.status).toBe("waiting");
     expect(restored.runtime.inspectMessage("a", sent.message_id).payload).toEqual({ text: "Survive upgrade" });
     expect(restored.runtime.mailboxStatus("a")).toEqual({ pending_count: 1 });
@@ -244,3 +244,53 @@ test("stdio rejects oversized commands and never treats their tail as another re
   expect(stdout).toBe(""); expect(code).toBe(2); expect(stderr).toMatch(/local_control_backpressure|local_request_too_large/);
   expect(readFileSync(f.path, "utf8")).toBe(JSON.stringify(f.config));
 }, 10_000);
+
+test("normal local configuration exposes paused schedules without provider credentials", async () => {
+  const f = fixture();
+  writeFileSync(f.path, JSON.stringify({ ...f.config, topology_scheduler: { auto_start: false, keep_alive: false, interval_ms: 100 } }));
+  const owned = openLocalRuntime(f.path), control = new LocalRuntimeControl(owned.runtime, owned.deliveries, owned.submissionIdentity, owned.inbound, owned.specmesh, owned.recovery, owned.history, owned.scheduler);
+  try {
+    expect(owned.scheduler?.status()).toEqual({ running: false, stopping: false, error: null });
+    for (const id of ["root", "worker", "reviewer"])
+      expect(await control.handle({ id: `submit-${id}`, op: "submit", task: { task_id: id, chat_id: "fixture", status: "waiting", provider: "opencode", prompt: "authorized initial input", repo_root: f.workspace } })).toMatchObject({ ok: true });
+    const plan = { schema_version: "controlmesh.topology_schedule.v1", root_task_id: "root", nodes: [{ task_id: "root", topology: "pipeline", worker_roles: ["worker"], controller_role: "reviewer",
+      roles: ["worker", "reviewer"].map(role => ({ role, task_id: role, resume_prompt: "continue" })) }] };
+    expect(await control.handle({ id: "register", op: "register_schedule", plan })).toMatchObject({ ok: true, result: { mode: "paused" } });
+    expect(await control.handle({ id: "drain", op: "drain_schedules" })).toMatchObject({ ok: true }); expect(existsSync(f.data)).toBe(false);
+    expect(await control.handle({ id: "activate", op: "activate_schedule", root_task_id: "root", expected_revision: 1 })).toMatchObject({ ok: true });
+    await control.handle({ id: "advance", op: "drain_schedules" });
+    expect(await control.handle({ id: "inspect", op: "inspect_schedule", root_task_id: "root" })).toMatchObject({ ok: true, result: { mode: "blocked" } });
+    expect(existsSync(f.data)).toBe(false);
+    writeFileSync(f.path, JSON.stringify({ ...f.config, topology_scheduler: { auto_start: false, keep_alive: false, interval_ms: 200 } }));
+    expect(await control.handle({ id: "changed", op: "inspect_schedule", root_task_id: "root" })).toMatchObject({ ok: false, error: "runtime_configuration_changed" });
+  } finally { await owned.close(); }
+});
+
+test("the actual local CLI keeps a configured scheduler alive after EOF and stops on SIGTERM", async () => {
+  const f = fixture();
+  writeFileSync(f.path, JSON.stringify({ ...f.config, topology_scheduler: { auto_start: true, keep_alive: true, interval_ms: 100 } }));
+  const child = Bun.spawn([process.execPath, join(import.meta.dir, "../scripts/local-runtime.ts"), f.path], { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
+  const deadline = setTimeout(() => { if (child.exitCode === null) child.kill("SIGTERM"); }, 8000);
+  const stderr = new Response(child.stderr).text(), reader = child.stdout.getReader();
+  try {
+    child.stdin.write(JSON.stringify({ id: "status", op: "scheduler_status" }) + "\n"); child.stdin.end();
+    let line = "";
+    while (!line.includes("\n")) { const part = await reader.read(); if (part.done) break; line += new TextDecoder().decode(part.value); }
+    expect(JSON.parse(line.trim())).toMatchObject({ id: "status", ok: true, result: { running: true } });
+    await Bun.sleep(150); expect(child.exitCode).toBeNull(); expect(existsSync(f.data)).toBe(false);
+    child.kill("SIGTERM"); expect(await child.exited).toBe(0); expect(await stderr).toBe("");
+  } finally { clearTimeout(deadline); if (child.exitCode === null) child.kill("SIGTERM"); await child.exited; reader.releaseLock(); }
+});
+
+test("scheduler configuration is explicit and rejects unknown or malformed fields", async () => {
+  const f = fixture();
+  for (const settings of [{ auto_start: "yes", keep_alive: false }, { auto_start: false, keep_alive: false, interval_ms: 1 },
+    { auto_start: false, keep_alive: false, grant: "all" }, { auto_start: true, keep_alive: false, artifact_files: ["../escape"] }]) {
+    writeFileSync(f.path, JSON.stringify({ ...f.config, topology_scheduler: settings })); expect(() => openLocalRuntime(f.path)).toThrow();
+  }
+  writeFileSync(f.path, JSON.stringify(f.config)); const owned = openLocalRuntime(f.path);
+  try {
+    expect(owned.scheduler).toBeUndefined();
+    expect(await new LocalRuntimeControl(owned.runtime).handle({ id: "start", op: "start_scheduler" })).toMatchObject({ ok: false, error: "topology_scheduler_not_configured" });
+  } finally { await owned.close(); }
+});

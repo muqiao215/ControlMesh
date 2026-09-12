@@ -49,6 +49,19 @@ export type ReconciliationTarget = Omit<ReconciliationEvidence, "observation" | 
 
 export class RuntimeKernel {
   constructor(readonly db: RuntimeDatabase) {}
+  private scheduleActor: string | null = null;
+  /** Mark internally scheduled transitions without changing the actor's authorization. */
+  scheduledTransition<T>(actor: Principal, run: () => T): T {
+    this.scope(actor, "team:write"); this.scope(actor, "task:execute");
+    const previous = this.scheduleActor; this.scheduleActor = actor.id;
+    try {
+      return this.db.transaction(() => {
+        const result = run();
+        requireThat(!(result && typeof (result as { then?: unknown }).then === "function"), "scheduled_transition_must_be_synchronous");
+        return result;
+      });
+    } finally { this.scheduleActor = previous; }
+  }
 
   private scope(actor: Principal, scope: string): void {
     requireScope(actor, scope);
@@ -119,7 +132,7 @@ export class RuntimeKernel {
 
   private event(actor: Principal, task: TaskRow, kind: string, payload: unknown): void {
     this.db.sql.query("INSERT INTO events (task_id,kind,revision,fence,principal,origin,at,payload) VALUES (?,?,?,?,?,?,?,?)")
-      .run(task.task_id, kind, task.revision, task.fence, actor.id, actor.origin, this.db.now(), canonical(payload));
+      .run(task.task_id, kind, task.revision, task.fence, actor.id, this.scheduleActor === actor.id ? "schedule" : actor.origin, this.db.now(), canonical(payload));
   }
 
   private save(task: TaskRow): void {
