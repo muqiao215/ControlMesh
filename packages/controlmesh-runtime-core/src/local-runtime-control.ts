@@ -1,4 +1,4 @@
-import { adoptSpecMeshCompletion } from "./specmesh-completion";
+import { adoptSpecMeshCompletion, unchangedSpecMeshCompletion } from "./specmesh-completion";
 import { identifier, object, requireThat, RuntimeConflict, type LegacyTask } from "./value";
 import type { LocalTaskRuntime } from "./local-task-runtime";
 import type { DeliveryOutbox } from "./delivery-outbox";
@@ -81,7 +81,9 @@ export class LocalRuntimeControl {
         case "retry_inbound": identifier(request.receipt_id); this.inbound!.retry(id, request.receipt_id); result = { retried: true }; break;
         case "submit": {
           requireThat(object(request.task) && typeof request.task.chat_id === "string", "invalid_local_task");
-          const adopted = await adoptSpecMeshCompletion(request.task as LegacyTask, request.specmesh_requirements_sha256, this.specmesh);
+          const adopted = request.specmesh_requirements_sha256 === undefined
+            ? unchangedSpecMeshCompletion(request.task as LegacyTask)
+            : await adoptSpecMeshCompletion(request.task as LegacyTask, request.specmesh_requirements_sha256, this.specmesh);
           const submitted = adopted.task;
           requireThat(this.history || !object(submitted.native_session) || submitted.native_session.schema_version !== "controlmesh.device_native_adoption.v1", "native_history_not_configured");
           const task = this.history?.resolve(submitted) ?? submitted;

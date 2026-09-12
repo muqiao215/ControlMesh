@@ -881,3 +881,26 @@ queue tests prove the exact completion contract survives and the local path/sour
 metadata is not transported. This is not evidence of identical worker source code;
 revision/content coordination must still be verified separately. No provider runs
 are issued by discovery or adoption.
+
+## OpenCode artifact requirements — 2026-09-12
+
+OpenCode's verified native turn already provides successful file-tool evidence;
+verifyWorkspaceTools now returns its scoped read/write paths for completion checks.
+Completion validates actual resulting bytes in the existing stage and requires a
+current-turn operation, so an old file's presence alone is insufficient. The same
+helper runs in normal completion and retained recovery. Device results bind the
+contract digest and ordered hashes through the existing coordinator checks. Contract
+prompt augmentation is reproduced during recovery and leaves undeclared task prompts
+unchanged. Existing grants remain the authority; requirements cannot extend them.
+
+## CI dependency and ordinary-submit ordering — 2026-09-12
+
+CI bb0d039 used SpecMesh5fab9f0, whose strict request schema rejects the newly selected
+requirements_path. CI pin must move with the reviewed standalone contract source;
+local checkout success did not verify the CI pairing. The same run exposed an added
+await in ordinary submit after helper extraction. Stdin dispatch accepts multiple
+commands, so an inspect could overtake a submission that previously ran synchronously.
+Both controls now bypass async adoption when no source hash is selected. A test reads
+the persisted task immediately after handle(submit), before awaiting its Promise.
+First broader local run independently reproduced the ordering failure; focused rerun
+passed after correction. Required asynchronous adoption remains explicit.

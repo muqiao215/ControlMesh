@@ -34,7 +34,7 @@ is provenance metadata, never a grant or a completed-task claim. Native task dig
 and artifact checks bind the adopted completion requirements through existing paths.
 
 Omitting the adoption field preserves ordinary submission. Unsupported completion
-providers still fail at ingress (currently only Claude is qualified). Submission does
+providers still fail at ingress (currently Claude and OpenCode have contract verification). Submission does
 not enqueue, probe a model, create artifacts, or enlarge permissions. Identical retries
 are idempotent while the source snapshot remains current; changed source fails rather
 than silently replacing the accepted contract. This is a candidate runtime interface,
@@ -58,3 +58,16 @@ The optional port is owned by coordinator shutdown. Without this trusted profile
 explicit adoption fails; ordinary submissions retain their existing behavior. Tests
 cover reopen/idempotency, stale hashes and actual loopback queue projection, with no
 provider input or output file creation.
+
+### OpenCode completion verification
+
+OpenCode uses native file-tool evidence from the current verified turn, not CM's
+Claude tool journal. Required paths are checked against existing registered reads
+and write roots before preflight. Execution and retained recovery reconstruct the
+same contract-bearing prompt and check each required read/write against native tool
+evidence, then inspect resulting bytes (staged bytes inside writable roots). Missing
+writes, deleted output files and wrong expected hashes cannot be published as success.
+Device results carry the same bounded contract digest/ordered hashes checked by the
+coordinator; native state and private paths remain local. Absent contracts preserve
+existing prompt bytes. This implementation/test coverage does not establish a new
+real-model acceptance or authorize a production runtime cutover.

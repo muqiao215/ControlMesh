@@ -2,6 +2,28 @@
 
 ## Current
 
+Final OpenCode completion/source-ordering gate passed:477tests0fail,5,043assertions,
+192.17s, pinned Bun1.3.11 + Docker image + independent SpecMesh. Log
+/tmp/cm-opencode-completion-final.log, process41734 exit0. This supersedes the
+failed first run below. Current increment ready for source publication; no model
+canary, package release, installation or production cutover performed.
+
+Final-source retest running as41734 (/tmp/cm-opencode-completion-final.log).
+First full gate: 476 pass / 1 fail, 5,039 assertions, 192.13s; the only failure
+was ordinary stdin submit ordering after shared async adoption. Restored synchronous
+unadopted submission in both controls and added a deterministic immediate-read
+regression. Control/SpecMesh/device suites pass35tests246assertions15.82s. CI also
+pinned old SpecMesh5fab9f0; pin now targets published d393c548a2a58989d65e6cdbd60a36e9a81a444f.
+Remote runs34679687668/34679978697/34680201025 failed; do not describe them as pending.
+
+OpenCode artifact-contract increment: normal execution, retained verification and
+device result proofs now enforce declared requirements. Both local and device
+registration check path scope before readiness; ingress admits Claude/OpenCode
+contracts. 42 tests / 436 assertions / 11.15s pass, including unmet local/device
+requirements refusing publication and recovery without extra native calls. Typecheck
+passes. Full pinned Docker gate running as55688 at
+/tmp/cm-opencode-completion-full.log; no live model input this increment.
+
 Device coordinator adoption increment: optional coordinator-local SpecMesh profile
 and shared local/device submit adopter implemented. Normal configured coordinator
 reopen and HTTP queue projection preserve requirements without absolute source paths.

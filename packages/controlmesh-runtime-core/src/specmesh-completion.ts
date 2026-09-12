@@ -2,10 +2,14 @@ import { decodeTaskCompletion } from "./task-completion";
 import { digest, requireThat, type LegacyTask } from "./value";
 import type { SpecMeshPort } from "./specmesh-port";
 
+export function unchangedSpecMeshCompletion(task: LegacyTask): { task: LegacyTask; assertCurrent(): void } {
+  requireThat(!Object.hasOwn(task, "specmesh_completion_source"), "task_body_cannot_issue_specmesh_source");
+  return { task: structuredClone(task), assertCurrent() {} };
+}
+
 /** Select requirements from the configured local checkout; source metadata grants no authority. */
 export async function adoptSpecMeshCompletion(task: LegacyTask, expectedHash: unknown, port?: SpecMeshPort): Promise<{ task: LegacyTask; assertCurrent(): void }> {
-  let submitted = structuredClone(task);
-  requireThat(!Object.hasOwn(submitted, "specmesh_completion_source"), "task_body_cannot_issue_specmesh_source");
+  let submitted = unchangedSpecMeshCompletion(task).task;
   if (expectedHash === undefined) return { task: submitted, assertCurrent() {} };
   requireThat(port, "specmesh_not_configured");
   requireThat(typeof expectedHash === "string" && /^[a-f0-9]{64}$/.test(expectedHash), "invalid_specmesh_requirements_hash");

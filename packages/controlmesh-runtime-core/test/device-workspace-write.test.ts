@@ -20,7 +20,7 @@ const device: Principal = { id: owner.id, device_id: "writer", origin: "agent_me
 const source = { command_origin: "human_request" as const, origin: "user" as const, source_scope: "local_foreground" as const, transport: "terminal" };
 const outcome = (stdout: string): ProcessOutcome => ({ reason: "exited", exit_code: 0, stdout, stderr: "", duration_ms: 1 });
 
-function setup(workflow = false) {
+function setup(workflow = false, requirement = { path: "src/counter.ts", mode: "write" }) {
   const root = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), "cm-device-write-"))), repo = join(root, "repo"), state = join(root, "state"), data = join(root, "data");
   for (const path of [repo, state, data, join(data, "opencode"), join(repo, "src"), join(repo, "docs")]) fs.mkdirSync(path, { mode: 0o700 });
   for (const [path, text] of Object.entries({ "AGENTS.md": "Read PROJECT.md and docs/ARCHITECTURE.md.\n", "PROJECT.md": "# Project\n\nCounter: 1\n",
@@ -99,6 +99,7 @@ function setup(workflow = false) {
       adapters: { "native.write": new OpenCodeDeviceAdapter(device, new PreflightCache(localDB), journal, store, config, options, runner) } });
   };
   const task = new TaskIngress(kernel, source, () => {}).submit(owner, "create", { task_id: "task", chat_id: "fixture", status: "waiting", provider: binding.provider,
+    completion_requirements: { schema_version: "controlmesh.task_completion.v1", files: [requirement] },
     model: binding.model, repo_root: "/coordinator/unused", prompt: "Update current project and code" }, { chat_id: "fixture" });
   const assignment = { capability: "native.write", workspace_id: "project", device_ids: [device.device_id!], input: {} };
   coordinator.assign(owner, "assign", "task", task.revision, assignment);
@@ -229,4 +230,15 @@ test("workspace read counts cover actual in-scope reads beyond the fixed require
   const done = await f.makeWorker().run("task", 10000);
   expect(done, JSON.stringify(done)).toMatchObject({ status: "done", result: { read_count: 86, workspace_write: { changed_count: 3 } } });
   expect(f.read()).toBe(2);
+});
+
+
+test("device cannot accept or recover an unmet OpenCode artifact requirement", async () => {
+  const f = setup(false, { path: "src/absent.ts", mode: "write" });
+  expect((await f.makeWorker().run("task", 5000)).status).toBe("unknown");
+  expect(f.read()).toBe(1);
+  const commands = f.commands(); f.reopen();
+  await expect(f.makeWorker().reconcile(f.challenge().challenge_id)).rejects.toThrow("task_completion_evidence_missing");
+  expect(f.commands()).toBe(commands); expect(f.read()).toBe(1);
+  expect(f.kernel().inspect(owner, "task").task.status).not.toBe("done");
 });

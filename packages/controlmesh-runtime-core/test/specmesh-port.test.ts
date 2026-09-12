@@ -221,6 +221,9 @@ paired("local submit explicitly adopts hashed requirements into durable ingress 
   expect(await control.handle({ id: "conflict", op: "submit", task: { ...task,
     completion_requirements: { schema_version: "controlmesh.task_completion.v1", files: [{ path: "other.txt", mode: "write" }] } },
     specmesh_requirements_sha256: sha })).toMatchObject({ ok: false, error: "specmesh_requirements_conflict" });
+  const ordinary = control.handle({ id: "ordinary", op: "submit", task: { ...task, task_id: "ordinary" } });
+  expect(runtime.inspectTask("ordinary").task.task_id).toBe("ordinary");
+  expect(await ordinary).toMatchObject({ ok: true });
   const request = { id: "adopt", op: "submit", task, specmesh_requirements_sha256: sha };
   const accepted = await control.handle(request);
   expect(accepted).toMatchObject({ ok: true });

@@ -1,3 +1,4 @@
+import { assertOpenCodeCompletionScope } from "./opencode-completion";
 import { realpathSync } from "node:fs";
 import { digest, requireThat } from "../value";
 import type { RuntimeKernel, Principal, TaskSnapshot } from "../kernel";
@@ -49,6 +50,7 @@ export class OpenCodeTaskAdapter {
       requireThat(source.source_scope === this.registration.admission.source_scope, "source_execution_floor_unavailable");
       const files = roots.length ? registeredReads(identity.path, this.registration.admission.read_files, roots, afterWrites)
         : readFileGrant(identity.path, this.registration.admission.read_files);
+      assertOpenCodeCompletionScope(task.task.completion_requirements, identity.path, files, roots);
       assertReadGrantSnapshot(task.task.tool_grant, files, this.config.communication ? nativeAgentTools : []);
       if (roots.length) {
         WorkspaceStage.assertLocation(this.config.state_home, identity.path);

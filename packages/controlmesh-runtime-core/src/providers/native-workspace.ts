@@ -65,7 +65,7 @@ export function workspacePermissionEvidence(resolved: unknown, agent: string, da
 }
 
 export function verifyWorkspaceTools(manifest: NativeManifest, stage: WorkspaceStage,
-  evidence: ReturnType<NativeSessionStore["verifyTurn"]>, receipt: NativeWriteReceipt): void {
+  evidence: ReturnType<NativeSessionStore["verifyTurn"]>, receipt: NativeWriteReceipt): { read_files: string[]; written_files: string[] } {
   const saved = manifest.workspace_write!;
   requireThat(object(receipt) && typeof receipt.proposal_digest === "string" && /^[a-f0-9]{64}$/.test(receipt.proposal_digest)
     && Array.isArray(receipt.changed_paths) && receipt.changed_paths.every(path => typeof path === "string"), "native_write_receipt_invalid");
@@ -94,4 +94,5 @@ export function verifyWorkspaceTools(manifest: NativeManifest, stage: WorkspaceS
     } else written.add(path(tool.input.filePath, true));
   }
   requireThat(receipt.changed_paths.every(changed => written.has(path(join(manifest.directory.path, changed), true))), "native_write_tool_evidence_missing");
+  return { read_files: read, written_files: [...written] };
 }

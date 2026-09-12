@@ -1,4 +1,4 @@
-import { adoptSpecMeshCompletion } from "./specmesh-completion";
+import { adoptSpecMeshCompletion, unchangedSpecMeshCompletion } from "./specmesh-completion";
 import type { SpecMeshPort } from "./specmesh-port";
 import type { DeviceClient } from "./device-client";
 import type { DeviceCoordinator, DeviceRegistration } from "./device-coordinator";
@@ -68,7 +68,9 @@ export class DeviceCoordinatorControl implements RuntimeControl {
           requireThat(object(value.task) && typeof value.task.chat_id === "string", "invalid_device_task");
           if (value.task.native_session) assertProtocolSchema(object(value.task.native_session) && value.task.native_session.schema_version === "controlmesh.device_native_adoption.v1"
             ? "device-native-adoption.schema.json" : "device-native-session.schema.json", value.task.native_session);
-          const adopted = await adoptSpecMeshCompletion(value.task as LegacyTask, value.specmesh_requirements_sha256, this.specmesh);
+          const adopted = value.specmesh_requirements_sha256 === undefined
+            ? unchangedSpecMeshCompletion(value.task as LegacyTask)
+            : await adoptSpecMeshCompletion(value.task as LegacyTask, value.specmesh_requirements_sha256, this.specmesh);
           this.assertCurrent(); requireThat(!this.stopped, "device_runtime_stopped"); adopted.assertCurrent();
           result = this.ingress.submit(this.actor, key, adopted.task, { chat_id: value.task.chat_id }); break;
         }

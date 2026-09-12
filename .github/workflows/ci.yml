@@ -142,7 +142,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: muqiao215/specmesh
-          ref: 5fab9f0f824352ef6d32b72cc8a31050e6499b5f
+          ref: d393c548a2a58989d65e6cdbd60a36e9a81a444f
           path: .ci-specmesh
           persist-credentials: false
       - uses: actions/setup-python@v6

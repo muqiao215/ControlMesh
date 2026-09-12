@@ -55,7 +55,7 @@ export class TaskIngress {
     };
     authorize();
     legacyTask(task);
-    if (decodeTaskCompletion(task.completion_requirements)) requireThat(task.provider === "claude", "completion_provider_unsupported");
+    if (decodeTaskCompletion(task.completion_requirements)) requireThat(["claude", "opencode"].includes(String(task.provider)), "completion_provider_unsupported");
     requireThat(!Object.hasOwn(task, "execution_context") && !Object.hasOwn(task, "tool_grant"), "task_body_cannot_issue_authority");
     requireThat(typeof identity.chat_id === "string" && String(task.chat_id) === identity.chat_id, "task_reply_identity_mismatch");
     const context = issueExecutionContext({ ...this.source, source_id: identity.source_id });

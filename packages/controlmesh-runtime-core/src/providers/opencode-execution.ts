@@ -1,3 +1,4 @@
+import { openCodeCompletionPrompt, assertOpenCodeCompletionScope, verifyOpenCodeCompletion } from "./opencode-completion";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, parse, relative } from "node:path";
@@ -74,13 +75,14 @@ export class OpenCodeExecution {
     requireThat(typeof task.repo_root === "string" && typeof task.prompt === "string" && task.prompt.length > 0 && Buffer.byteLength(task.prompt) <= 32768, "invalid_native_task");
     const delivery = hooks.mailbox_delivery ? structuredClone(hooks.mailbox_delivery) : undefined;
     requireThat(!delivery || delivery.task_id === task.task_id, "native_mailbox_task_mismatch");
-    const input = nativeInput(task.prompt, delivery);
+    const input = nativeInput(openCodeCompletionPrompt(task.prompt, task.completion_requirements), delivery);
     const cwd = realpathSync(task.repo_root);
     const roots = admission.workspace_write ? writeRoots(cwd, admission.workspace_write) : [];
     requireThat(Boolean(admission.workspace_write) === Boolean(hooks.workspace) && (!roots.length || this.runner.forStage), "native_write_owner_required");
     requireThat(!admission.workspace_write?.workflow_binding || hooks.workspace?.verifyPublication, "native_workflow_verifier_required");
     const files = roots.length ? registeredReads(cwd, admission.read_files, roots) : readFileGrant(cwd, admission.read_files);
     const required = readFileGrant(cwd, admission.required_reads);
+    assertOpenCodeCompletionScope(task.completion_requirements, cwd, files, roots);
     const communication = hooks.communication;
     requireThat(Boolean(communication) === Boolean(this.config.communication), "native_agent_profile_required");
     const communicationIdentity = this.config.communication ? assertNativeAgentConfiguration(this.config.communication) : null;
@@ -193,14 +195,16 @@ export class OpenCodeExecution {
       const evidence = this.store.verifyTurn(observation.session_id, baseline, input, observation.text);
       requireThat(evidence.reference.directory === cwd && evidence.reference.model === binding.model, "native_result_binding_mismatch");
       requireThat(this.store.worktree(evidence.reference) === worktree, "native_worktree_changed");
-      if (stage) verifyWorkspaceTools(manifest, stage, evidence, proposal!);
-      else {
+      const fileProof = stage ? verifyWorkspaceTools(manifest, stage, evidence, proposal!)
+        : { read_files: evidence.read_files.map(file => realpathSync(file)), written_files: [] };
+      if (!stage) {
         requireThat(required.every(file => evidence.read_files.some(read => realpathSync(read) === file)), "required_native_read_unproven");
         requireThat(evidence.read_files.every(file => files.includes(realpathSync(file))), "native_ungranted_read");
       }
       requireThat(communication || evidence.agent_tools.length === 0, "native_agent_scope_unavailable");
       const communicationEvidence = communication?.verify(evidence.agent_tools);
-      const accepted = { native_session: evidence.reference, user_message_id: evidence.user_message_id, assistant_message_ids: evidence.assistant_message_ids,
+      const completion = verifyOpenCodeCompletion(task.completion_requirements, cwd, fileProof, stage);
+      const accepted = { ...(completion ? { completion } : {}), native_session: evidence.reference, user_message_id: evidence.user_message_id, assistant_message_ids: evidence.assistant_message_ids,
         text: observation.text, output_digest: digest(observation.text), permission_digest: permissions.digest, read_files: evidence.read_files,
         ...(communicationEvidence ? { communication: communicationEvidence } : {}),
         ...(delivery ? { mailbox_delivery: nativeMailboxEvidence(delivery, evidence.user_message_id) } : {}) };

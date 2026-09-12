@@ -1,3 +1,5 @@
+import { assertOpenCodeCompletionScope } from "./opencode-completion";
+import { deviceCompletionProof } from "../task-completion";
 import { assertProtocolSchema, type DeviceReconciliationChallenge, type DeviceReconciliationReport, type DeviceEvidenceRef, type DeviceNativeResult } from "@controlmesh/protocol";
 import type { DeviceJob } from "../device-coordinator";
 import { NativeResultVerification } from "./native-result-verification";
@@ -95,6 +97,7 @@ export class OpenCodeDeviceAdapter implements DeviceAdapter {
       assertWorkspaceGrantSnapshot(job.execution.tool_grant, workspace, roots, this.config.communication ? nativeAgentTools : []);
     }
     const files = write ? registeredReads(workspace, paths(this.options.read_files), roots, afterWrites) : readFileGrant(workspace, paths(this.options.read_files));
+    assertOpenCodeCompletionScope(job.execution.completion_requirements, workspace, files, roots);
     const required = write ? registeredReads(workspace, paths(this.options.required_reads), roots, afterWrites) : readFileGrant(workspace, paths(this.options.required_reads));
     requireThat(required.every(file => files.includes(file)), "required_read_not_granted");
     if (this.config.communication) {
@@ -157,7 +160,7 @@ export class OpenCodeDeviceAdapter implements DeviceAdapter {
       const retained = { ...publication, ...verification.result };
       const ref = this.journal.retainReconciledResult(challenge.manifest, retained);
       const { result_digest: _result, ...observationRef } = ref;
-      const result = this.networkResult(retained, ref);
+      const result = this.networkResult(retained, ref, task.completion_requirements);
       const message: DeviceReconciliationReport = { schema_version: "controlmesh.device_reconciliation_report.v1",
         challenge_id: challenge.challenge_id, challenge_digest: digest(challenge),
         observation: { schema_version: "controlmesh.device_observation.v1", evidence: observationRef, terminal: true }, result };
@@ -166,10 +169,11 @@ export class OpenCodeDeviceAdapter implements DeviceAdapter {
     } finally { verification.close(); }
   }
 
-  private networkResult(result: Record<string, unknown>, evidence: DeviceEvidenceRef): DeviceNativeResult {
+  private networkResult(result: Record<string, unknown>, evidence: DeviceEvidenceRef, requirements: unknown): DeviceNativeResult {
     requireThat(typeof result.text === "string" && Buffer.byteLength(result.text) <= 64 * 1024 && Array.isArray(result.read_files), "native_device_result_too_large");
     const workspace = deviceWorkspaceProof(evidence.workspace_write, result);
-    const value = { schema_version: "controlmesh.device_native_result.v1", text: result.text, output_digest: result.output_digest,
+    const completion = deviceCompletionProof(requirements, result.completion);
+    const value = { ...(completion ? { completion } : {}), schema_version: "controlmesh.device_native_result.v1", text: result.text, output_digest: result.output_digest,
       read_count: result.read_files.length, evidence, ...(result.communication ? { communication: result.communication } : {}),
       ...(workspace ? { workspace_write: workspace } : {}),
       ...(result.mailbox_delivery ? { mailbox_delivery: result.mailbox_delivery } : {}),
@@ -231,7 +235,7 @@ export class OpenCodeDeviceAdapter implements DeviceAdapter {
         observe: async observation => { original = observation; await context.observe(observation); },
         complete: result => {
           const evidence = context.retainVerifiedResult(result);
-          return { ...this.networkResult(result, evidence) };
+          return { ...this.networkResult(result, evidence, task.completion_requirements) };
         },
       }, this.options.timeout_ms ?? 60_000);
       requireThat(original, "native_device_observation_missing");

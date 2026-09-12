@@ -16,7 +16,7 @@ const actor: Principal = { id: "operator", device_id: "local", origin: "human_re
 const source = { command_origin: "human_request" as const, origin: "user" as const, source_scope: "local_foreground" as const, transport: "terminal" };
 const outcome = (stdout: string): ProcessOutcome => ({ reason: "exited", exit_code: 0, stdout, stderr: "", duration_ms: 1 });
 
-function setup(scoped = false, workflow = false) {
+function setup(scoped = false, workflow = false, completion_requirements?: unknown) {
   const root = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), "cm-taskhub-write-"))); cleanup.push(() => fs.rmSync(root, { recursive: true, force: true }));
   const repo = join(root, "repo"), state = join(root, "state"), data = join(root, "data");
   for (const path of [repo, state, data, join(data, "opencode"), join(repo, "src")]) fs.mkdirSync(path, { mode: 0o700 });
@@ -89,6 +89,7 @@ function setup(scoped = false, workflow = false) {
   }, () => {});
   let runtime = runtimeFor();
   const task = runtime.submit("submit", { task_id: "task", chat_id: "fixture", status: "waiting", provider: "opencode", model: binding.model, repo_root: repo,
+    ...(completion_requirements === undefined ? {} : { completion_requirements }),
     prompt: "Update the code and project context", native_session: store.read(fixture.session_id) }, { chat_id: "fixture" });
   const run = () => runtime.enqueue(`run-${kernel.inspect(actor, "task").revision}`, "task", kernel.inspect(actor, "task").revision);
   const recovery = async (verify = true) => {
@@ -191,4 +192,23 @@ test("invalid local staging layout is refused before spending a native preflight
   const f = setup(); f.config.state_home = f.root; f.db().sql.exec("DELETE FROM provider_checks");
   expect(() => f.run()).toThrow("workspace_stage_private_state_required");
   expect(f.commands()).toBe(0); expect(f.calls()).toBe(0);
+});
+
+
+test("OpenCode declared artifacts require current-turn writes and exact resulting bytes", async () => {
+  const contract = (path: string, sha256?: string) => ({ schema_version: "controlmesh.task_completion.v1",
+    files: [{ path, mode: "write", ...(sha256 ? { sha256 } : {}) }] });
+  const valid = setup(false, false, contract("src/counter.ts"));
+  const run = valid.run(); await valid.runtime().drain();
+  expect(valid.runtime().inspect(run.run_id).state).toBe("completed");
+  expect(fs.readFileSync(join(valid.repo, "src/counter.ts"), "utf8")).toBe("2\n");
+  for (const requirement of [contract("src/missing.ts"), contract("src/counter.ts", "0".repeat(64))]) {
+    const f = setup(false, false, requirement), failed = f.run(); await f.runtime().drain();
+    expect(f.runtime().inspect(failed.run_id).state).not.toBe("completed");
+    expect(fs.readFileSync(join(f.repo, "src/counter.ts"), "utf8")).toBe("1\n");
+    const commands = f.commands(); f.reopen();
+    await expect(f.recovery()).rejects.toThrow("task_completion_");
+    expect(f.commands()).toBe(commands);
+    expect(fs.readFileSync(join(f.repo, "src/counter.ts"), "utf8")).toBe("1\n");
+  }
 });

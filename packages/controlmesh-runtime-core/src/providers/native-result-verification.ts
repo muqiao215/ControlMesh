@@ -1,3 +1,4 @@
+import { openCodeCompletionPrompt, verifyOpenCodeCompletion } from "./opencode-completion";
 import { realpathSync } from "node:fs";
 import { join, relative } from "node:path";
 import { digest, requireThat, type LegacyTask } from "../value";
@@ -56,7 +57,7 @@ export class NativeResultVerification {
       requireThat(binding.device_id === this.store.deviceId && this.store.identity() === manifest.native_store_id, "reconciliation_store_changed");
       requireThat(typeof task.repo_root === "string" && typeof task.prompt === "string" && realpathSync(task.repo_root) === manifest.directory.path, "native_workspace_mismatch");
       requireThat(!manifest.mailbox_delivery || manifest.mailbox_delivery.task_id === task.task_id, "native_mailbox_task_mismatch");
-      const input = nativeInput(task.prompt, manifest.mailbox_delivery);
+      const input = nativeInput(openCodeCompletionPrompt(task.prompt, task.completion_requirements), manifest.mailbox_delivery);
       const roots = admission.workspace_write ? writeRoots(manifest.directory.path, admission.workspace_write) : [];
       const files = roots.length ? registeredReads(manifest.directory.path, admission.read_files, roots, true) : readFileGrant(manifest.directory.path, admission.read_files);
       const required = roots.length ? registeredReads(manifest.directory.path, admission.required_reads, roots, true) : readFileGrant(manifest.directory.path, admission.required_reads);
@@ -79,10 +80,11 @@ export class NativeResultVerification {
       const verified = this.store.verifyTurn(observation.native_session_id, manifest.baseline, input, observation.text);
       requireThat(verified.reference.directory === manifest.directory.path && verified.reference.model === binding.model
         && this.store.worktree(verified.reference) === manifest.worktree.path, "native_result_binding_mismatch");
+      let fileProof = { read_files: verified.read_files.map(file => realpathSync(file)), written_files: [] as string[] };
       if (write) {
         this.stage = openWorkspace(manifest, this.config.state_home, admission.workspace_write!, task.tool_grant);
         this.proposal = observation.workspace_write as NativeWriteReceipt;
-        verifyWorkspaceTools(manifest, this.stage, verified, this.proposal);
+        fileProof = verifyWorkspaceTools(manifest, this.stage, verified, this.proposal);
       } else {
         const reads = verified.read_files.map(file => realpathSync(file));
         requireThat(required.every(file => reads.includes(file)) && reads.every(file => files.includes(file)), "required_native_read_unproven");
@@ -101,7 +103,8 @@ export class NativeResultVerification {
         }
         if (communicationIdentity) requireThat(this.config.communication && assertNativeAgentConfiguration(this.config.communication) === communicationIdentity, "native_agent_profile_changed");
       };
-      this.result = { native_session: verified.reference, user_message_id: verified.user_message_id, assistant_message_ids: verified.assistant_message_ids,
+      const completion = verifyOpenCodeCompletion(task.completion_requirements, manifest.directory.path, fileProof, this.stage);
+      this.result = { ...(completion ? { completion } : {}), native_session: verified.reference, user_message_id: verified.user_message_id, assistant_message_ids: verified.assistant_message_ids,
         text: observation.text, output_digest: digest(observation.text), permission_digest: saved.digest, read_files: verified.read_files,
         ...(communication ? { communication } : {}),
         ...(this.proposal ? { workspace_write: this.proposal } : {}),
