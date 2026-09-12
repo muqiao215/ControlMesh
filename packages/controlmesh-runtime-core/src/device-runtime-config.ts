@@ -1,3 +1,4 @@
+import { TopologyArtifactGate, type TopologyArtifactConfiguration } from "./topology-artifacts";
 import { DeviceTopologyRuntime, type DeviceTopologyRoute } from "./device-topology-runtime";
 import { TopologyScheduler } from "./topology-scheduler";
 import { existsSync, lstatSync, mkdirSync, realpathSync } from "node:fs";
@@ -112,12 +113,21 @@ export function openDeviceRuntime(path: string): DeviceRuntime {
       const coordinatorControl = new DeviceCoordinatorControl(kernel, actor, coordinator, devices, current, port, specmesh);
       if (config.topology_scheduler !== undefined) {
         const schedule = config.topology_scheduler;
-        fields(schedule, ["auto_start", "routes", "parallelism", "max_pending", "interval_ms", "lease_ms", "max_steps"], "invalid_device_topology_profile");
+        fields(schedule, ["auto_start", "routes", "parallelism", "max_pending", "interval_ms", "lease_ms", "max_steps", "artifacts"], "invalid_device_topology_profile");
         requireThat(typeof schedule.auto_start === "boolean" && object(schedule.routes), "invalid_device_topology_profile");
         const runtime = new DeviceTopologyRuntime(kernel, actor, coordinator, schedule.routes as Record<string, DeviceTopologyRoute>, current,
           integer(schedule.parallelism ?? 2, 1, 16, "invalid_device_topology_limits"), integer(schedule.max_pending ?? 128, 1, 1024, "invalid_device_topology_limits"));
+        let artifactGate: TopologyArtifactGate | undefined;
+        if (schedule.artifacts !== undefined) {
+          const artifacts = schedule.artifacts;
+          fields(artifacts, ["workspace", "allowed_files", "device_sources"], "invalid_device_artifact_profile");
+          requireThat(typeof artifacts.workspace === "string" && Array.isArray(artifacts.allowed_files) && object(artifacts.device_sources), "invalid_device_artifact_profile");
+          for (const [deviceId, workspaceId] of Object.entries(artifacts.device_sources))
+            requireThat(devices.some(device => device.device_id === deviceId && device.workspace_ids.includes(workspaceId as string)), "topology_artifact_device_source_not_registered");
+          artifactGate = new TopologyArtifactGate(kernel, artifacts as unknown as TopologyArtifactConfiguration, current, specmesh);
+        }
         const scheduler = new TopologyScheduler(kernel, runtime, actor, { interval_ms: schedule.interval_ms as number | undefined,
-          lease_ms: schedule.lease_ms as number | undefined, max_steps: schedule.max_steps as number | undefined });
+          lease_ms: schedule.lease_ms as number | undefined, max_steps: schedule.max_steps as number | undefined }, artifactGate);
         coordinatorControl.attachTopology(scheduler, runtime, schedule.auto_start);
       }
       control = coordinatorControl;

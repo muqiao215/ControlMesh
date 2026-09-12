@@ -69,12 +69,13 @@ No claim that full TS migration or distributed coordination has completed. A sco
 
 ## Next Step
 
-Publish schema-26 native topology input after its full local gate (688 tests / 8937
-assertions across 68 files, followed by the final 33-test visibility regression gate). The real worker proved input delivery and current reads;
-the reviewer failed required-read verification, so full native topology/continuity remains
-open. Use retained evidence to implement correct contract-failure recovery without replaying
-that attempt. Then finish native/source/remote-artifact acceptance and all remaining
-CM-R0–CM-R7 owners and rollout gates. See progress.md for exact current evidence.
+Publish canonical device artifact verification and the bundled-schema CI fix after the
+707-test runtime gate and isolated-wheel smoke, then verify exact-commit CI. Native input
+delivery and retained read-failure recovery are already published. Real-model topology and
+continuation remain open: the latest worker read eight files but returned fenced JSON, so
+collection blocked before the merger was assigned. Preserve that failed attempt without
+replay. Then finish native/source/artifact acceptance and all remaining CM-R0–CM-R7 owners
+and rollout gates. See progress.md for exact current evidence.
 
 Current implementation and native evidence belong in progress.md and its retained archive,
 not in competing historical next-step instructions. Scoped native acceptance does not

@@ -1,5 +1,47 @@
 # Findings
 
+## Canonical device artifacts and completion order — 2026-09-12
+
+The local artifact gate had read local_runs directly and rejected every device-native
+result. It now resolves the actual execution owner through topologyExecution. Remote file
+witnesses require an explicit device-to-logical-workspace map, current assignment/lease,
+confirmed effect, matching original device evidence/native handle, and a validated child
+completion contract. The coordinator still reads its actual canonical destination; matching
+remote hashes alone never complete a root. Device-local paths and source stores stay local.
+Normal device startup supplies this gate, including independent current SpecMesh checks.
+It does not transport files or verify an exclusively remote final workspace.
+
+snapshotReads returns sorted canonical paths. Indexing that array by unsorted task-contract
+order could pair a digest with the wrong file. Capture now looks up each exact requested
+path and preserves contract order; an internal symlink alias cannot replace that path.
+Missing destination files receive a specific status code without exposing a private path.
+
+Controlled HTTP/file-owner checks cover delivery followed by restart, absent/wrong source
+maps, revocation, native handle changes, resumed children, current bytes, internal/external
+symlinks and unsorted multi-file requirements. A separate actual-container fixture uses
+normal coordinator/worker startup, synthetic Claude/native records and real file tools,
+then finishes after explicit fixture delivery and coordinator restart with no new turn.
+Full runtime gate: 707 pass / 9114 assertions / 71 files / 249.57s, exit 0.
+
+Prior 8d5dae2 CI 34696701829 failed in bundled-dashboard drift checks: main.js embeds the
+protocol registry and the new native failure schema had not been rebuilt into it. The
+pinned Web build adds 39 schema lines. Isolated-wheel read-only Alpha smoke now passes,
+including installed imports, CLI/HTTP/SDK reads and packaged dashboard assets; production
+installation and services were untouched. GH log cache used a task-local XDG cache after
+the default read-only cache prevented downloading the log.
+
+The first real artifact canary stopped at invalid schedule registration; both candidate
+stores prove zero provider checks, executions, episodes or effects. Its original record is
+retained. The corrected bounded script includes fanout's required merger/controller, with
+one preflight and at most two native inputs. It finished unsuccessfully: one provider
+preflight and one worker execution were recorded. The worker read all eight required
+files and reached native done, but surrounded its result JSON with prose and a Markdown
+code fence. The scheduler correctly blocked with team_result_invalid_json before assigning
+the merger; the operator script then surfaced assignment_unavailable. No merger turn or
+root artifact completion occurred. Both attempts are retained and guarded against replay.
+This is a negative real-model acceptance result, not a passed multi-device or continuation
+gate. The helper process is terminal; there is no pending canary to poll or restart.
+
 ## Confirmed native read-contract failures — 2026-09-12
 
 The retained real reviewer turn ended with matching session/input and zero workspace calls.

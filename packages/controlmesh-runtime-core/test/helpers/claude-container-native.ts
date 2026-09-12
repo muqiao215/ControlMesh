@@ -82,9 +82,10 @@ for await (const line of createInterface({ input: process.stdin })) {
       if (!written.ok) throw new Error("fixture write failed");
       await call("read_file", { request_id: "readback", path: "result.txt" });
       }
-      const message = source("assistant", [{ type: "text", text: "DONE" }], "end_turn");
+      const text = existsSync(join(config, "fixture-result.json")) ? readFileSync(join(config, "fixture-result.json"), "utf8") : "DONE";
+      const message = source("assistant", [{ type: "text", text }], "end_turn");
       emit({ type: "assistant", session_id, message });
-      emit({ type: "result", session_id, subtype: "success", is_error: false, result: "DONE", num_turns: 5 });
+      emit({ type: "result", session_id, subtype: "success", is_error: false, result: text, num_turns: 5 });
     } finally { await client.close(); }
   }
 }

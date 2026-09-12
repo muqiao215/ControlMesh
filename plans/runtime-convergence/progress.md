@@ -6,17 +6,27 @@ Full CM-R0–CM-R7 remains in progress. Installed CM 0.43.0 remains the producti
 writer. No release, installation, live migration or default/service switch has occurred.
 The 512-module/57-field ledger is an inventory, not completed parity.
 
-Published 12c9bba (native topology input delivery) has successful exact-SHA CI
-34695456970. This increment fixes verified read-only Claude required-read failures across
-local/device completion and recovery. Retained real reviewer recovery passed without
-another model or tool invocation. Its original topology canary remains failed.
+Published 8d5dae2 matches origin/main. CI 34696701829 failed because the new protocol
+schema had not been rebuilt into controlmesh/web_static/assets/main.js. The pinned Web
+build now adds exactly that schema; isolated installed-wheel smoke verified the packaged
+result. The source increment is being finalized for direct main publication.
 
-Full runtime gate passed: 697 tests, 9018 assertions, 69 files, 236.71s, exit 0
-(/tmp/cm-native-failure-full2.log), including ownership drift and typecheck. A final scoped
-change clears the previous missing-read error when explicitly resuming; kernel/local Claude
-checks and typecheck then passed (31 tests, 188 assertions, 4.30s,
-/tmp/cm-native-failure-resume.log). Python protocol: 9 pass. All four generated protocol
-files reproduce unchanged. Publication and remote CI for this increment are pending.
+Current work enables canonical root artifact acceptance for device-native results through
+normal coordinator startup. Explicit device/workspace provenance and actual completed
+run/effect evidence must match current files on the coordinator. Automatic file transfer
+and remote-only final workspaces are still pending. Also fixed snapshot/contract file order
+and refused within-workspace symlink aliases. Typecheck passes. Focused local/aggregate:
+42 tests / 348 assertions / 9.12s. Device proof negatives: 9 / 65 / 2.35s. Full runtime gate
+passed: 707 / 9114 / 71 files / 249.57s, exit 0 (/tmp/cm-device-artifact-full.log), including
+the actual configured container path. Isolated-wheel Alpha smoke passed
+(/tmp/cm-device-artifact-alpha.log); the production installation was untouched.
+The first real canary stopped at schedule registration with zero native execution. The
+corrected worker/merger canary has finished unsuccessfully: one preflight and one worker
+turn occurred. Eight required files were read, but the final response included prose and
+a Markdown fence around JSON. The scheduler blocked at team_result_invalid_json; merger
+inspection returned assignment_unavailable. No merger turn, root completion or native
+continuation occurred. Both reports are retained with do_not_replay=true. No native
+acceptance process remains running. Controlled tests do not substitute for this failed gate.
 
 ## Done
 
@@ -47,7 +57,8 @@ files reproduce unchanged. Publication and remote CI for this increment are pend
 
 ## Remaining
 
-1. Publish the verified known-failure increment and verify its remote SHA/CI.
+1. Publish the verified canonical-device-artifact implementation and bundled-schema fix;
+   verify exact-commit CI. Real-model acceptance remains open after the recorded failure.
 2. Complete real native topology and current-source acceptance, remote root artifact
    validation, reviewed SpecMesh closeout and pending candidate-input migration.
 3. Complete remaining provider, transport, store and terminal owners and the parity ledger.
@@ -62,13 +73,18 @@ now confirmed failed after retained-evidence recovery; do not invoke the origina
 again or send another prompt to its sessions. The original script and full test process both reached terminal states.
 The canary is not accepted; its report records actual native calls and do_not_replay=true.
 Retained operator workspace: outputs/runtime-convergence/topology-input-native-acceptance-20260912.{json,log,ts}.
+Also guarded: device-artifact[-configured]-native-acceptance-20260912 reports/scripts in
+the same operator directory. The configured attempt ended at structured-result collection;
+do not replay its worker session or relabel it as an artifact/continuation success.
 Schema 26 rollback requires a pre-upgrade backup. Legacy pending assignments without a
-frozen input block; remote root file completion still requires a future remote artifact gate.
+frozen input block. Root artifact acceptance now supports already-delivered canonical files;
+automatic transfer and remote-only final workspaces still need implementation/acceptance.
 
 ## Next
 
-Publish the verified known-failure increment. Continue real topology, current-source and
-remote artifact acceptance, then finish remaining CM-R0–CM-R7 owners and rollout gates.
+Complete the canonical-device-artifact increment and repair the bundled-schema CI drift.
+Then close normal root-reopen controls, genuine topology continuation and remaining
+provider/transport/store/terminal owners, file transport and rollout gates.
 Do not replace the full goal with this scoped recovery or mark the original canary accepted.
 
 ## Retained evidence

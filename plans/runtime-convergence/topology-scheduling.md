@@ -205,9 +205,39 @@ remains required before rollout; do not synthesize an old input or replay an unk
 A real Claude/MiniMax-M3 canary used one successful preflight and two native task inputs.
 The worker read all seven required documents, produced accepted structured output, and its
 context message was consumed with native input evidence. The reviewer received the next
-context but made zero file tool calls; `workspace_tool_required_read_missing` retained it
-as unresolved. The pipeline did not complete and the planned original-session reopen did
+context but made zero file tool calls. Retained-evidence reconciliation later confirmed
+`workspace_tool_required_read_missing` as a task failure, without another model invocation. The pipeline did not complete and the planned original-session reopen did
 not execute. This is partial positive input-delivery evidence plus a real negative gate,
 not full topology or native-continuity acceptance. Retained local report:
 `outputs/runtime-convergence/topology-input-native-acceptance-20260912.json` in the operator
 workspace. Its attempt and native sessions must not be replayed automatically.
+## Canonical artifacts from device execution
+
+The device coordinator can verify already-delivered canonical files against an explicitly
+registered remote source. Add this to its `topology_scheduler` configuration:
+
+```json
+{"artifacts":{"workspace":"/absolute/canonical-project","allowed_files":["result.md"],"device_sources":{"desktop":"project","arm-worker":"project"}}}
+```
+
+`workspace` is the coordinator's actual final project directory, also named by the root
+and leaf TaskHub `repo_root`. It is distinct from each worker's device-local path. The
+`device_sources` map binds a device ID to its registered logical workspace ID. A filename,
+matching hash or native history claim cannot create that mapping. Unknown device/workspace
+pairs reject at startup; current device revocation and assignment identity are rechecked
+through the normal DeviceTopologyRuntime when completing a parent.
+
+Completion requires all of the following: the current native assignment generation and
+actual episode/effect; a schema-validated device native result and original evidence/native
+handle; a child file completion contract and matching digest; and the exact current bytes
+at the canonical destination. Local witnesses retain their original authority boundary.
+The gate works through nested aggregates and preserves each contract's file order.
+Missing files report `topology_artifact_file_unavailable`; changed bytes, symlink aliases,
+resumed children, changed evidence or revoked devices block or roll back the parent step.
+A SpecMesh-derived root contract still checks its current independent source before commit.
+
+This gate neither copies a file nor starts a provider. Delivery currently needs an explicit
+existing file/Git workflow; automatic cross-device artifact transport and remote-only final
+workspaces are still pending. Controlled HTTP/file-owner tests and the normal startup
+container fixture verify this canonical-delivery profile; model acceptance is recorded
+separately in the active progress file.

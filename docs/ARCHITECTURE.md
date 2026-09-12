@@ -521,8 +521,16 @@ on their original authorized device. Released or expired admission cannot be red
 explicit bounded recovery creates a new assignment under the original task identity.
 Unknown work and revoked authority remain blocked. Automatic assignments record schedule
 origin. Controlled HTTP/configuration/upgrade fixtures do not establish real native-model
-acceptance. Device root artifact completion remains gated pending remote current-file and
-source evidence. Older candidates reject schema 25; rollback needs the prior backup.
+acceptance. Optional coordinator `topology_scheduler.artifacts` supplies a canonical local
+destination and exact device-to-workspace source mappings. TopologyArtifactGate reuses the
+actual device run/episode/effect and portable completion proof, checks the native evidence
+and handle, then matches current canonical file bytes. Remote witnesses are recorded with
+their device/workspace/assignment identity and never become fabricated local runs. Files
+must already be delivered; this is not an automatic file transport or remote-only workspace
+verifier. Parent and leaf TaskHub repo_root identify the canonical destination. Existing
+SpecMesh source checks and transactional preparation/commit checks remain required. Snapshot
+paths are matched explicitly in contract order, rejecting symlink aliases. Older candidates
+reject schema 25; rollback needs the prior backup.
 
 Schema 26 adds `topology_native_inputs`: one bounded immutable context per native run.
 The topology queue freezes the assigned role/stage, output schema, registered worker roles,
