@@ -30,7 +30,7 @@ try {
       command.request = resolveRuntimeNew(command.request!, profile.result.configuration);
     }
     const reply = await requestRuntimeControl(command.socket, command.request!, command.timeout_ms);
-    console.log(renderRuntimeReply(reply, command.json)); if (!reply.ok) process.exitCode = 1;
+    console.log(renderRuntimeReply(reply, command.json)); if (!reply.ok || (["handoff", "verify"].includes(command.command) && (!object(reply.result) || reply.result.gate_passed !== true))) process.exitCode = 1;
   }
 } catch (error) {
   console.error(JSON.stringify({ error: error instanceof RuntimeConflict ? error.code : "local_runtime_command_failed", ...(requestId ? { request_id: requestId } : {}) }));

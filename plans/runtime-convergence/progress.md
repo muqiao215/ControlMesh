@@ -173,3 +173,20 @@ the fields required by the actual Viewer query to the test database, without alt
 production readers. This is cross-project protocol evidence, not a live-model resume canary.
 
 Final focused local History/control/terminal gate: 26 passed, 182 assertions, 5.05s (`/tmp/cm-opencode-history-focused.log`); typecheck and diff-check passed. Prior commits `0b521ef` and `0535bc9` CI runs 34713012235 and 34713186266 both completed success.
+
+## 2026-09-13 — headless Agent continuity CLI
+
+Added ordinary CLI commands for native History search/refresh/adoption preparation and
+SpecMesh handoff/closeout checks. New-task submission accepts a prepared adoption handle
+and new prompt; explicit enqueue remains separate. Stable request IDs remain intact,
+raw native references are rejected by the adoption flag, and server-side scope/profile
+validation remains authoritative. SpecMesh gate failure now produces process exit 1
+even when transport succeeded.
+
+Validation includes actual CLI child processes over Unix socket against the local native
+adoption registry: prepare, create, identical retry, zero model probes and unchanged
+isolated native source. A separate process test distinguishes failed/successful gate
+results. Real Agent recall, reviewed semantic closeout and complete migration/cutover
+remain pending.
+
+Final gate with actual History checkout selected via CM_HISTORY_TEST_ROOT: 13 passed, 131 assertions, 11.68s (`/tmp/cm-headless-continuity-final.log`). Typecheck and diff-check passed. Web remains read-only.

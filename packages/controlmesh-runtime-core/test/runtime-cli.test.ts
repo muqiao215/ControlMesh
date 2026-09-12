@@ -131,3 +131,27 @@ test("human summaries and machine JSON cannot execute terminal control sequences
   const raw = renderRuntimeReply(response, true); expect(raw).not.toMatch(/[\x00-\x1f\x7f-\x9f]/); expect(JSON.parse(raw)).toEqual(response);
   expect(terminalText(hostile)).not.toContain("\x1b");
 });
+
+test("headless history and SpecMesh commands keep request identity and reject raw native authority", () => {
+  const base = ["--socket", "/tmp/private/runtime.sock", "--request-id", "agent-step", "--json"];
+  expect(parseRuntimeCli([...base, "history-search", "--provider", "opencode", "--query", "SpecMesh"])?.request).toEqual({ id: "agent-step", op: "history_search", provider: "opencode", query: "SpecMesh" });
+  expect(parseRuntimeCli([...base, "history-refresh", "--provider", "claude"])?.request).toEqual({ id: "agent-step", op: "refresh_history", provider: "claude" });
+  expect(parseRuntimeCli([...base, "handoff", "task"])?.request).toEqual({ id: "agent-step", op: "prepare_handoff", task_id: "task" });
+  expect(parseRuntimeCli([...base, "verify", "task"])?.request).toEqual({ id: "agent-step", op: "verify_specmesh", task_id: "task" });
+  expect(() => parseRuntimeCli([...base, "new", "task", "--prompt", "new input", "--adoption", JSON.stringify({ schema_version: "agent.native_session.v2", session_id: "forged" })])).toThrow("cli_adoption_handle_required");
+});
+
+test("headless SpecMesh gate reports a failed check through process exit status even when transport succeeds", async () => {
+  const { listenRuntimeControl } = await import("../src/runtime-control-socket");
+  const f = fixture(); let passed = false;
+  const listener = await listenRuntimeControl(f.socket, { async handle(packet: unknown) {
+    const value = packet as { id: string }; return { id: value.id, ok: true, result: { gate_passed: passed } };
+  } });
+  try {
+    for (const command of ["handoff", "verify"]) {
+      expect(await invoke(f.socket, command, "task")).toMatchObject({ code: 1, value: { ok: true, result: { gate_passed: false } } });
+    }
+    passed = true;
+    expect(await invoke(f.socket, "verify", "task")).toMatchObject({ code: 0, value: { ok: true, result: { gate_passed: true } } });
+  } finally { await listener.close(); }
+});

@@ -15,11 +15,19 @@ export const runtimeHelp = `ControlMesh TypeScript 运行时（候选入口）
   events TASK [--after N]         查看有来源标记的任务事件
   new TASK --prompt TEXT           使用已注册项目和模型创建任务
     [--provider NAME] [--model ID] 多 Provider 时显式选择；使用 enqueue 执行
+    [--adoption JSON]             使用 prepare-adoption 返回的 native_session 引用
   enqueue TASK --revision N       执行已创建的任务
   resume TASK --revision N --prompt TEXT
                                   原任务续接；使用 enqueue 开始新回合
   cancel TASK --revision N        取消指定版本的任务
   tell TASK --text TEXT           向原任务发送后续信息
+  history-search --provider NAME [--query TEXT]
+                                  检索已注册原生历史，不执行模型
+  history-refresh --provider NAME 显式刷新支持缓存的历史源
+  prepare-adoption TASK --provider NAME --session ID
+                                  准备任务绑定的原生上下文，不创建任务
+  handoff TASK                    检查并准备 SpecMesh 交接
+  verify TASK                     检查 SpecMesh 收尾门禁
   request --file FILE             发送既有私有控制操作，供 Agent/脚本使用
 
 可选：--json，--request-id ID，--timeout-ms N；--prompt-file FILE 替代 --prompt。
@@ -51,8 +59,10 @@ export function parseRuntimeCli(argv: string[]): RuntimeCliCommand | null {
     else { const next = argv[++i]; requireThat(next !== undefined && !next.startsWith("--"), "missing_cli_option_value"); flags[arg] = next; }
   }
   const command = args[0]!, options: Record<string, string[]> = {
+    "history-search": ["--provider", "--query"], "history-refresh": ["--provider"],
+    "prepare-adoption": ["--provider", "--session"], handoff: [], verify: [],
     ui: [], serve: ["--config"], status: [], tasks: ["--after", "--limit"], inspect: [], events: ["--after", "--limit"],
-    new: ["--project", "--provider", "--model", "--prompt", "--prompt-file"], enqueue: ["--revision"],
+    new: ["--project", "--provider", "--model", "--prompt", "--prompt-file", "--adoption"], enqueue: ["--revision"],
     resume: ["--revision", "--prompt", "--prompt-file"], cancel: ["--revision"], tell: ["--text"], request: ["--file"],
   };
   requireThat(Object.hasOwn(options, command), "unknown_cli_command");
@@ -64,7 +74,7 @@ export function parseRuntimeCli(argv: string[]): RuntimeCliCommand | null {
   };
   const socket = text("--socket"); requireThat(isAbsolute(socket), "local_socket_path_invalid");
   const timeout_ms = number("--timeout-ms", 30_000); requireThat(timeout_ms > 0 && timeout_ms <= 300_000, "invalid_local_control_timeout");
-  const targeted = ["inspect", "events", "new", "enqueue", "resume", "cancel", "tell"].includes(command);
+  const targeted = ["inspect", "events", "new", "enqueue", "resume", "cancel", "tell", "prepare-adoption", "handoff", "verify"].includes(command);
   requireThat(args.length === (targeted ? 2 : 1), "invalid_cli_arguments");
   const base = { command, socket, json: flags["--json"] === true, timeout_ms };
   if (command === "ui") return base;
@@ -78,15 +88,24 @@ export function parseRuntimeCli(argv: string[]): RuntimeCliCommand | null {
     const prompt = () => { requireThat((flags["--prompt"] === undefined) !== (flags["--prompt-file"] === undefined), "cli_prompt_required");
       return flags["--prompt"] === undefined ? commandFile(text("--prompt-file")) : text("--prompt"); };
     switch (command) {
+      case "history-search": request = { op: "history_search", provider: text("--provider"), query: flags["--query"] ?? "" }; break;
+      case "history-refresh": request = { op: "refresh_history", provider: text("--provider") }; break;
+      case "prepare-adoption": identifier(text("--session")); request = { op: "prepare_adoption", task_id: args[1], provider: text("--provider"), session_id: text("--session") }; break;
+      case "handoff": case "verify": request = { op: command === "handoff" ? "prepare_handoff" : "verify_specmesh", task_id: args[1] }; break;
       case "status": request = { op: "status" }; break;
       case "tasks": request = { op: "list_tasks", after: flags["--after"] ?? "", limit: number("--limit", 50) }; break;
       case "inspect": request = { op: "inspect_task", task_id: args[1] }; break;
       case "events": request = { op: "task_events", task_id: args[1], after: number("--after", 0), limit: number("--limit", 50) }; break;
       case "new": {
+        let adoption: unknown;
+        if (flags["--adoption"] !== undefined) {
+          adoption = JSON.parse(text("--adoption"));
+          requireThat(object(adoption) && adoption.schema_version === "controlmesh.device_native_adoption.v1", "cli_adoption_handle_required");
+        }
         const project = flags["--project"] === undefined ? undefined : text("--project");
         requireThat(project === undefined || isAbsolute(project), "cli_project_required");
         request = { op: "submit", task: { task_id: args[1], status: "waiting", chat_id: "terminal", ...(project ? { repo_root: project } : {}),
-          ...(flags["--provider"] ? { provider: text("--provider") } : {}), ...(flags["--model"] ? { model: text("--model") } : {}), prompt: prompt() } }; break;
+          ...(flags["--provider"] ? { provider: text("--provider") } : {}), ...(flags["--model"] ? { model: text("--model") } : {}), prompt: prompt(), ...(adoption ? { native_session: adoption } : {}) } }; break;
       }
       case "enqueue": case "cancel": case "resume": request = { op: command, task_id: args[1], expected_revision: number("--revision"),
         ...(command === "resume" ? { prompt: prompt() } : {}) }; break;

@@ -146,3 +146,19 @@ OpenCode searches its registered SQLite source directly; `/refresh-history openc
 Other provider names remain unqualified. Provider-native
 execution still uses the existing registry/baseline checks and enqueue preflight. Terminal
 integration tests do not establish real-model memory recall.
+
+### Agent-facing continuity commands
+
+The noninteractive CLI exposes `history-search --provider NAME [--query TEXT]`,
+`history-refresh --provider NAME`, `prepare-adoption TASK --provider NAME --session ID`,
+`handoff TASK`, and `verify TASK`. Use `--json` and a stable `--request-id` for scripted
+steps. `prepare-adoption` returns context only; pass its `result.native_session` JSON as
+`new TASK --provider NAME --adoption JSON --prompt TEXT`. The handle is bound to the
+prepared task/provider/model/workspace and is revalidated by the runtime. Raw native
+references are not accepted by this flag. Use subprocess argument arrays rather than
+constructing shell command strings from returned JSON. Creation does not enqueue.
+
+`handoff` and `verify` exit 1 when `gate_passed` is not true, even if the socket operation
+completed successfully. Inspect the JSON gate result for details; a transport success
+alone does not authorize continuation or prove reviewed closeout. No command loads the
+interactive renderer or depends on the Web UI.

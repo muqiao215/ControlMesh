@@ -131,7 +131,7 @@ print(json.dumps(c if 'native-reference' in sys.argv else {'items':[{'id':c['ref
     workspace: { directory: workspace, read_files: [], required_reads: [] }, history: { directory: process.env.CM_HISTORY_TEST_ROOT ?? viewer, python: "/usr/bin/python3" } }), { mode: 0o600 });
   const open = () => {
     const owned = openLocalRuntime(path); cleanup.push(() => owned.close());
-    return { owned, control: new LocalRuntimeControl(owned.runtime, undefined, owned.submissionIdentity, undefined, undefined, owned.recovery, owned.history) };
+    return { owned, control: new LocalRuntimeControl(owned.runtime, undefined, owned.submissionIdentity, undefined, undefined, owned.recovery, owned.history, undefined, owned.describe) };
   };
   const first = open();
   expect(await first.control.handle({ id: "search", op: "history_search", provider: "opencode", query: "" })).toMatchObject({ ok: true, result: { items: [{ session_id: fixture.session_id }] } });
@@ -150,5 +150,21 @@ print(json.dumps(c if 'native-reference' in sys.argv else {'items':[{'id':c['ref
   expect(submitted).toMatchObject({ ok: true, result: { task: { native_session: reference } } });
   expect(await second.control.handle({ id: "submit", op: "submit", task })).toEqual(submitted);
   expect(second.owned.runtime.kernel.db.sql.query("SELECT COUNT(*) AS n FROM provider_checks").get()).toEqual({ n: 0 });
+  const { listenRuntimeControl } = await import("../src/runtime-control-socket");
+  const listener = await listenRuntimeControl(join(root, "runtime.sock"), second.control);
+  try {
+    const cli = async (...args: string[]) => {
+      const child = Bun.spawn([process.execPath, join(import.meta.dir, "../scripts/cm-runtime.ts"), "--socket", listener.path, "--json", ...args], { stdout: "pipe", stderr: "pipe" });
+      const [stdout, stderr, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+      expect(stderr).toBe(""); expect(code).toBe(0); return JSON.parse(stdout);
+    };
+    const ready = await cli("--request-id", "cli-prepare", "prepare-adoption", "cli-task", "--provider", "opencode", "--session", fixture.session_id);
+    expect(ready).toMatchObject({ id: "cli-prepare", ok: true, result: { authorization: "context_only" } });
+    const packet = JSON.stringify(ready.result.native_session);
+    const created = await cli("--request-id", "cli-create", "new", "cli-task", "--provider", "opencode", "--adoption", packet, "--prompt", "Only the new requested work");
+    expect(created).toMatchObject({ ok: true, result: { task: { native_session: reference, prompt: "Only the new requested work" } } });
+    expect(await cli("--request-id", "cli-create", "new", "cli-task", "--provider", "opencode", "--adoption", packet, "--prompt", "Only the new requested work")).toEqual(created);
+    expect(second.owned.runtime.kernel.db.sql.query("SELECT COUNT(*) AS n FROM provider_checks").get()).toEqual({ n: 0 });
+  } finally { await listener.close(); }
   expect(readFileSync(nativePath)).toEqual(before);
 });
