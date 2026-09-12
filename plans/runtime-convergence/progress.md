@@ -2,6 +2,18 @@
 
 ## Current
 
+Installed Codex phased commentary/final output now verifies without making a successful
+turn stale. Exec JSON lacks phase, so every ordered message is compared to the persisted
+turn before selecting its final answer. A native apply_patch attempt in the configured
+read-only temporary workspace was rejected and created no file. This does not qualify
+shell/network permissions or enable file completion profiles.
+Validation: 18 targeted tests / 126 assertions (5.45s); installed CLI + real Viewer +
+loopback Responses matrix 5 tests / 74 assertions (63.94s), including preflight quota,
+ordinary continuation, result reconciliation, readonly patch and commentary across reopen.
+Typecheck and diff-check passed. Evidence: /tmp/cm-native-turn-profiles.log. All fixtures
+are isolated; no real account or existing session was used. Full CM-R0–R7 remains open.
+
+
 Installed-native recovery qualification now also injects failure at CM's
 recordEffectObservation after the real Codex result has been retained. On reopen,
 reconciliation succeeds with the isolated auth file absent; repeating the same recovery

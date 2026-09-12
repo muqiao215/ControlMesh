@@ -1910,3 +1910,19 @@ The reopened runtime accepted the same reconciliation twice with the isolated au
 removed; neither the Responses request count nor rollout bytes changed. An explicit later
 resume did create the next request with original context. This qualifies persisted-result
 recovery only; interrupted native turns and physical device interruption remain distinct.
+
+## 2026-09-13 — native readonly patch and phased output
+
+An installed 0.154.0 configured continuation received a synthetic Responses custom
+apply_patch call targeting only its temporary workspace. The native tool returned a
+rejection and the file did not exist; subsequent continuation remained in the original
+session. This qualifies this tool/path/profile on this host, not shell/network/container
+or arbitrary writable-root enforcement.
+
+A second native fixture exposed a real failure: persisted AgentMessage records include
+phase=commentary and phase=final_answer, while exec JSON item.completed.agent_message
+omits phase. Rejecting all phases made successful development turns stale; aggregating
+stdout text would also mismatch task_complete.last_agent_message. The retained verifier
+now matches all ordered stdout agent messages to the persisted turn and exposes only
+its unique final answer. Commentary cannot complete a turn or follow its final answer;
+duplicate message IDs, unknown phases and dropped/changed stdout commentary refuse.

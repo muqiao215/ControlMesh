@@ -194,3 +194,10 @@ completion contracts; those contracts are rejected before probing and remain mig
 work. Preserve governed project requirements. The existing Python production entrypoint
 and released default are unchanged; full native sandbox/real-account qualification is
 still required by the runtime-convergence acceptance matrix.
+
+Codex retained verification uses persisted message phases to distinguish commentary from
+the final answer, because exec JSON does not expose that phase. Every emitted agent
+message must match the ordered native history; only the final answer becomes the task
+result. The installed-native test also attempts apply_patch inside its temporary
+read-only workspace and verifies rejection plus absence of the file. This narrow
+qualification does not enable file completion profiles or broader tool/network grants.

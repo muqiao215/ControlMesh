@@ -85,3 +85,20 @@ test("Codex structured message events preserve exact turn lineage and reject dup
     expect(() => f.store.verifyTurn(id, baseline, "continue", "answer", "fixture-model")).toThrow();
   }
 });
+
+test("Codex commentary is checked against stdout but cannot replace a unique final answer", () => {
+  const f = fixture(), baseline = f.store.baseline(f.store.read(id));
+  const start = f.row("event_msg", { type: "task_started", turn_id: "second" }) + f.row("turn_context", { turn_id: "second", cwd: f.workspace, model: "fixture-model" })
+    + f.row("event_msg", { type: "user_message", message: "continue" });
+  const message = (id: string, text: string, phase: string) => f.row("event_msg", { type: "item_completed", turn_id: "second", item: { type: "AgentMessage", id, phase, content: [{ type: "Text", text }] } });
+  const commentary = message("progress", "Checking", "commentary"), final = message("final", "answer", "final_answer");
+  const end = f.row("event_msg", { type: "task_complete", turn_id: "second", last_agent_message: "answer" });
+  writeFileSync(f.path, f.raw + start + commentary + final + end);
+  expect(f.store.verifyTurn(id, baseline, "continue", "answer", "fixture-model", ["Checking", "answer"]).turn_id).toBe("second");
+  expect(() => f.store.verifyTurn(id, baseline, "continue", "answer", "fixture-model", ["answer"])).toThrow("native_turn_content_mismatch");
+  expect(() => f.store.verifyTurn(id, baseline, "continue", "answer", "fixture-model", ["other", "answer"])).toThrow("native_turn_content_mismatch");
+  for (const messages of [commentary, final + commentary, commentary + commentary + final, final + final, message("unknown", "answer", "unknown")]) {
+    writeFileSync(f.path, f.raw + start + messages + end);
+    expect(() => f.store.verifyTurn(id, baseline, "continue", "answer", "fixture-model")).toThrow();
+  }
+});

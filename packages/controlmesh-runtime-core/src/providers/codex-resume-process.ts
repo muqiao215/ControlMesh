@@ -6,7 +6,7 @@ import { realpathSync, statSync } from "node:fs";
 import { ProcessSupervisor, type ProcessAdmission, type ProcessOutcome } from "../process-supervisor";
 import { decodeToolGrant, enforceProviderConfirmation, mapToolGrant } from "../execution-grants";
 import { enforceExecutionPolicy } from "../execution-policy";
-import { digest, requireThat } from "../value";
+import { digest, object, requireThat } from "../value";
 import { directoryIdentity } from "./native-manifest";
 import { NativeSessionLease } from "./native-lease";
 import { CodexSessionStore, type CodexNativeBaseline, type CodexSessionRef } from "./codex-session";
@@ -49,7 +49,14 @@ export function verifyRetainedCodexResume(input: CodexResumeInput, dispatch: Cod
   requireThat(process.reason === "exited" && process.exit_code === 0 && observation.terminal, "codex_native_outcome_unproven");
   requireThat(observation.session_id === input.reference.session_id, "native_session_mismatch");
   const store = new CodexSessionStore(input.rollout_path, input.reference.device_id);
-  const evidence = store.verifyTurn(input.reference.session_id, dispatch.baseline, input.prompt, observation.text, input.model);
+  // Exec JSON omits message phases. Verify every emitted message against the phased
+  // persisted turn, then expose only its final answer to the task result.
+  const messages = process.stdout.trim().split("\n").filter(Boolean).map(line => JSON.parse(line) as unknown)
+    .filter((row): row is Record<string, unknown> => object(row) && row.type === "item.completed" && object(row.item) && row.item.type === "agent_message")
+    .map(row => { const item = row.item as Record<string, unknown>; requireThat(typeof item.text === "string", "native_turn_content_mismatch"); return item.text; });
+  requireThat(messages.length > 0, "native_turn_content_mismatch");
+  observation.text = messages[messages.length - 1];
+  const evidence = store.verifyTurn(input.reference.session_id, dispatch.baseline, input.prompt, observation.text, input.model, messages);
   check(); return { process, observation, evidence };
 }
 

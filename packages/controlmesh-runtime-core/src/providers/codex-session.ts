@@ -14,7 +14,7 @@ export interface CodexNativeBaseline {
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const identity = (stat: BigIntStats) => [stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs].map(String).join(":");
 const revision = (store: string, bytes: Uint8Array) => createHash("sha256").update(canonical(["codex-rollout-content-v1", store]) + "\n").update(bytes).digest("hex");
-interface Turn { id: string; model: string; prompt: string | null; output: string | null; completed: boolean }
+interface Turn { id: string; model: string; prompt: string | null; output: string | null; messages: string[]; completed: boolean }
 
 /** Strict execution evidence; tolerant UI indexing must not authorize a native resume. */
 export class CodexSessionStore {
@@ -73,7 +73,7 @@ export class CodexSessionStore {
     this.turns(current.records);
     return { schema_version: "codex.native_baseline.v1", reference: ref, byte_length: current.bytes.length, record_count: current.records.length };
   }
-  verifyTurn(sessionId: string, before: CodexNativeBaseline | null, prompt: string, output: string, model: string) {
+  verifyTurn(sessionId: string, before: CodexNativeBaseline | null, prompt: string, output: string, model: string, messages?: readonly string[]) {
     const current = this.snapshot(sessionId); let offset = 0;
     const previousTurns = new Set<string>();
     if (before) {
@@ -92,29 +92,31 @@ export class CodexSessionStore {
     requireThat(turns.length === 1 && !previousTurns.has(turns[0].id), "native_concurrent_turn_or_missing_lineage");
     const turn = turns[0];
     requireThat(turn.model === model && current.reference.model === model, "native_model_mismatch");
+    requireThat(messages === undefined || canonical(turn.messages) === canonical(messages), "native_turn_content_mismatch");
     requireThat(turn.prompt === prompt && turn.output === output, "native_turn_content_mismatch");
     return { reference: current.reference, turn_id: turn.id, prompt_sha256: digest(prompt), output_sha256: digest(output) };
   }
   private turns(records: Record<string, unknown>[]): Turn[] {
-    const turns: Turn[] = [], ids = new Set<string>(); let active: Turn | undefined;
+    const turns: Turn[] = [], ids = new Set<string>(), messageIds = new Set<string>(); let active: Turn | undefined;
     for (const row of records) {
       const p = row.payload as Record<string, unknown>;
       if (row.type === "event_msg" && p.type === "task_started") {
         requireThat(!active && typeof p.turn_id === "string" && p.turn_id.length > 0 && !ids.has(p.turn_id), "native_concurrent_turn_or_missing_lineage");
-        ids.add(p.turn_id); active = { id: p.turn_id, model: "", prompt: null, output: null, completed: false };
+        ids.add(p.turn_id); messageIds.clear(); active = { id: p.turn_id, model: "", prompt: null, output: null, messages: [], completed: false };
       } else if (row.type === "turn_context") {
         requireThat(active && p.turn_id === active.id && typeof p.model === "string" && (!active.model || active.model === p.model), "native_turn_context_mismatch");
         active.model = p.model;
       } else if (row.type === "event_msg" && p.type === "user_message") {
         requireThat(active && active.prompt === null && typeof p.message === "string", "native_concurrent_turn_or_missing_lineage"); active.prompt = p.message;
       } else if (row.type === "event_msg" && p.type === "agent_message" && p.phase === "final") {
-        requireThat(active && active.output === null && typeof p.message === "string", "native_turn_content_mismatch"); active.output = p.message;
+        requireThat(active && active.output === null && typeof p.message === "string", "native_turn_content_mismatch"); active.output = p.message; active.messages.push(p.message);
       } else if (row.type === "event_msg" && p.type === "item_completed") {
         const item = p.item as Record<string, unknown> | undefined;
         requireThat(active && p.turn_id === active.id && item && typeof item === "object", "native_concurrent_turn_or_missing_lineage");
         if (item.type === "UserMessage" || item.type === "AgentMessage") {
           const user = item.type === "UserMessage";
-          requireThat(typeof item.id === "string" && item.id.length > 0 && item.phase === undefined
+          requireThat(typeof item.id === "string" && item.id.length > 0 && !messageIds.has(item.id)
+            && (user ? item.phase === undefined : item.phase === undefined || item.phase === "commentary" || item.phase === "final_answer")
             && Array.isArray(item.content) && item.content.length > 0, "native_turn_content_mismatch");
           const content = item.content.map((part: unknown) => {
             requireThat(part && typeof part === "object" && !Array.isArray(part), "native_turn_content_mismatch");
@@ -122,6 +124,11 @@ export class CodexSessionStore {
             requireThat(value.type === (user ? "text" : "Text") && typeof value.text === "string", "native_turn_content_mismatch");
             return value.text;
           }).join("");
+          messageIds.add(item.id);
+          if (!user) active.messages.push(content);
+          if (!user && item.phase === "commentary") {
+            requireThat(active.prompt !== null && active.output === null, "native_turn_content_mismatch"); continue;
+          }
           if (user) {
             requireThat(active.prompt === null, "native_concurrent_turn_or_missing_lineage"); active.prompt = content;
           } else {
