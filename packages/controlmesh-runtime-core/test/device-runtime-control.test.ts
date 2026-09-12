@@ -43,6 +43,51 @@ function fixture() {
     async reopen() { await coordinator.close(); coordinator = openDeviceRuntime(path); } };
 }
 
+test("device History refresh is explicit, scoped and unavailable after stop", async () => {
+  const f = fixture(), client = await f.start();
+  const db = new RuntimeDatabase(join(f.workerState, "history-control.sqlite")); cleanup.push(() => db.close());
+  const worker = new DeviceWorker(client, { workspaces: { project: f.workspace }, adapters: {} });
+  const calls: string[] = [];
+  const history = {
+    async search(workspace: string, query: string) { calls.push(`search:${workspace}:${query}`); return { items: [] }; },
+    async refresh(workspace: string) { calls.push(`refresh:${workspace}`); return { source: "claude", status: "refreshed" }; },
+    async prepare() { throw new Error("unexpected_adoption"); },
+    async stop() { calls.push("stop"); },
+  };
+  const control = new DeviceWorkerControl(db, { ...actor, scopes: [...actor.scopes, "history:read"] }, client, worker, () => {}, () => {}, 4, history);
+  expect((await control.handle({ id: "search", op: "history_search", workspace_id: "project", query: "SpecMesh" })).ok).toBe(true);
+  expect(calls).toEqual(["search:project:SpecMesh"]);
+  expect((await control.handle({ id: "refresh", op: "history_refresh", workspace_id: "project" })).result).toEqual({ source: "claude", status: "refreshed" });
+  expect((await control.handle({ id: "bad", op: "history_refresh", workspace_id: "project", source_path: "/private" })).ok).toBe(false);
+  const denied = new DeviceWorkerControl(db, actor, client, worker, () => {}, () => {}, 4, history);
+  expect((await denied.handle({ id: "denied", op: "history_refresh", workspace_id: "project" })).ok).toBe(false);
+  expect((await denied.handle({ id: "denied-search", op: "history_search", workspace_id: "project", query: "SpecMesh" })).ok).toBe(false);
+  expect(calls).toEqual(["search:project:SpecMesh", "refresh:project"]);
+  await control.stop();
+  expect((await control.handle({ id: "stopped", op: "history_refresh", workspace_id: "project" })).error).toBe("device_runtime_stopped");
+  expect(calls).toEqual(["search:project:SpecMesh", "refresh:project", "stop"]);
+});
+
+test("configured Claude worker opens without OpenCode state or implicit native execution", async () => {
+  const f = fixture(), client = await f.start(); await f.submit("claude-task", [], "claude");
+  const endpoint = (await f.call("start", "start")).result as { endpoint: string };
+  const profile = f.workerConfig(endpoint.endpoint), { opencode, ...common } = profile.value;
+  const claude = { model: "fixture/model", cli_version: "2.1.263", executable: "/missing/claude", node_executable: "/usr/local/bin/node",
+    home: join(f.root, "claude-home"), config_directory: join(f.root, "claude-state"), environment: {}, container: opencode.container };
+  writeFileSync(profile.path, JSON.stringify({ ...common, claude }), { mode: 0o600 });
+  const runtime = openDeviceRuntime(profile.path); cleanup.push(() => runtime.close());
+  expect((await runtime.control.handle({ id: "status", op: "status" })).ok).toBe(true);
+  expect((await runtime.control.handle({ id: "inspect", op: "inspect_task", task_id: "claude-task" })).result).toMatchObject({ execution: { provider: "claude" } });
+  expect(existsSync(claude.config_directory)).toBe(false);
+  expect(existsSync(join(f.root, "native-data"))).toBe(false);
+  const db = new RuntimeDatabase(join(f.workerState, "runtime.sqlite"));
+  try { for (const table of ["tasks", "provider_checks", "device_execution_records"]) expect(db.sql.query(`SELECT COUNT(*) AS n FROM ${table}`).get()).toEqual({ n: 0 }); }
+  finally { db.close(); }
+  await runtime.close();
+  writeFileSync(profile.path, JSON.stringify({ ...common, claude, opencode }), { mode: 0o600 });
+  expect(() => openDeviceRuntime(profile.path)).toThrow("device_provider_selection_required");
+});
+
 test("private configured coordinator and worker inspect assignments with no native credentials or provider probes", async () => {
   const f = fixture(); expect((await f.call("status", "status")).result).toMatchObject({ role: "coordinator", endpoint: null });
   await f.submit("one");

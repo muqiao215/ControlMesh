@@ -285,3 +285,48 @@ reuse DeviceWorker's prepared dispatch/observe/result, current authority, mailbo
 publication/reconciliation interfaces; it must not create another local kernel inside a worker.
 The current device configuration is OpenCode-specific and remains unchanged until those Claude
 ports are qualified. Full provider/transport/store/topology/product and CM-R7 gates remain open.
+
+### Required artifact acceptance (observed 2026-09-12; local/device file contract implemented)
+
+A real device turn exhausted its useful writes, then returned native `success`
+with text explicitly acknowledging inability. Its verified workspace proposal was
+empty. Reconciliation reached `done`, while the independent requested-artifact
+check failed. Native terminal status proves protocol completion, not fulfillment.
+
+The current candidate adds a versioned, explicit task completion contract,
+shared by local/device execution and retained recovery. Do not infer it from
+natural-language phrases or equate writable roots with required writes:
+
+- Each requirement names a canonical project-relative path and explicitly chooses
+  an existing-file verification or a current-turn write requirement. Optional
+  expected content digests must be caller-issued; the worker cannot invent them.
+- Validate shape, unique bounded paths, containment and capability compatibility
+  before preflight. Unsupported providers must reject declared requirements,
+  rather than accept and silently ignore them.
+- Bind declared requirements into task/dispatch identities and durable recovery
+  records. Preserve old task digest behavior when no contract was declared.
+  Changing requirements after dispatch must invalidate acceptance.
+- Evaluate staged bytes and native write/read receipts before publication, then
+  recheck canonical bytes after publication. An old existing artifact cannot
+  satisfy a current-turn write requirement. Missing/wrong content must withhold
+  completion and preserve evidence; it must not automatically repeat execution.
+- Carry bounded requirement/evidence digests through device results; keep private
+  paths/content on the worker. Reconciliation uses the original contract, never
+  the current conversation or a replacement configuration.
+- SpecMesh may provide requirements through its independent adapter. Its document
+  structural check remains distinct from artifact and semantic acceptance.
+
+Acceptance cases: native success/no requested artifact; pre-existing artifact
+without current write; correct staged output; wrong expected digest; requirement
+mutation; unsupported provider; lost observation and reopened recovery; repeated
+acceptance without another publication. This gap remains part of the full
+migration scope, not closed by the current canary's outer assertion.
+
+Current candidate evidence: task-completion.v1 supports per-file read/write and
+optional exact content hash; native task/portable device digests bind it; normal
+Claude and retained recovery share receipt/content validation. Device completion
+proofs carry ordered hashes and the contract digest. Declared missing/wrong-hash
+artifacts fail actual container tests. Undeclared historical tasks retain their
+old digest/semantics. TaskIngress currently rejects contracts for other providers.
+Independent SpecMesh requirement transport, other provider qualification, broad
+semantic acceptance and fresh real-model delivery remain incomplete.

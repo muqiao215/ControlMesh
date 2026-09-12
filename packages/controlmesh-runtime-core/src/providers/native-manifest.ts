@@ -1,6 +1,7 @@
 import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, realpathSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { relative } from "node:path";
+import { decodeTaskCompletion } from "../task-completion";
 import { digest, object, requireThat } from "../value";
 import type { LegacyTask } from "../value";
 import type { ProbeBinding } from "./preflight-cache";
@@ -39,6 +40,7 @@ export interface NativeManifest extends Record<string, unknown> {
 
 export function nativeTaskDigest(task: LegacyTask): string {
   return digest({ provider: task.provider, model: task.model, repo_root: task.repo_root, prompt: task.prompt,
+    ...(task.completion_requirements === undefined ? {} : { completion_requirements: decodeTaskCompletion(task.completion_requirements) }),
     native_session: task.native_session ?? null, tool_grant: task.tool_grant ?? null, execution_context: task.execution_context ?? null });
 }
 

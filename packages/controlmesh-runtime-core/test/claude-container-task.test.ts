@@ -31,8 +31,8 @@ async function fixture(image = process.env.CM_CONTAINER_TEST_IMAGE ?? `sha256:${
       environment: {}, container: selected.container, timeout_ms: selected.timeout_ms, max_turns: selected.max_turns },
     workspace: { directory: workspace, read_files: selected.read_files, required_reads: selected.required_reads, write_roots: selected.write_roots } }), { mode: 0o600 });
   const opened = openLocalRuntime(file); cleanup.push(() => opened.close());
-  const submit = () => opened.runtime.submit("create", { task_id: "task", chat_id: "fixture", status: "waiting", provider: "claude", model: "fixture-model",
-    repo_root: workspace, prompt: "Read current context and write result.txt." }, { chat_id: "fixture" });
+  const submit = (requirements?: unknown) => opened.runtime.submit("create", { task_id: "task", chat_id: "fixture", status: "waiting", provider: "claude", model: "fixture-model",
+    repo_root: workspace, prompt: "Read current context and write result.txt.", ...(requirements ? { completion_requirements: requirements } : {}) }, { chat_id: "fixture" });
   const rows = (sql: string): any[] => opened.runtime.kernel.db.sql.query(sql).all();
   const records = () => readdirSync(join(state, "claude-containers")).filter(name => /^[a-f0-9]{64}$/.test(name))
     .map(name => JSON.parse(readFileSync(join(state, "claude-containers", name, "record.json"), "utf8")));
@@ -50,7 +50,7 @@ test("container registration cannot inject a host execution or probe driver", as
 });
 
 actual("normal configuration runs and resumes Claude in Docker with image-owned Node and one cached readiness probe", async () => {
-  const f = await fixture(), created = f.submit();
+  const f = await fixture(), created = f.submit({ schema_version: "controlmesh.task_completion.v1", files: [{ path: "result.txt", mode: "write" }] });
   f.opened.runtime.enqueue("queue", "task", created.revision);
   expect(existsSync(join(f.state, "claude-containers"))).toBe(false);
   await f.opened.runtime.drain();
@@ -112,3 +112,15 @@ actual("an unavailable container image blocks readiness without falling back to 
   expect(f.rows("SELECT state FROM provider_checks")).toEqual([{ state: "unavailable" }]);
   expect(f.records()).toHaveLength(1);
 }, 30_000);
+
+actual.each(["absent", "wrong-hash"])("native success cannot publish an unmet artifact contract: %s", async mode => {
+  const f = await fixture();
+  const task = f.submit({ schema_version: "controlmesh.task_completion.v1", files: [{ path: mode === "absent" ? "missing.txt" : "result.txt", mode: "write", ...(mode === "wrong-hash" ? { sha256: "0".repeat(64) } : {}) }] });
+  f.opened.runtime.enqueue("queue", "task", task.revision); await f.opened.runtime.drain();
+  const stale = f.opened.runtime.inspectTask("task"); expect(stale.task.status).toBe("stale");
+  expect(existsSync(join(f.workspace, "result.txt"))).toBe(false);
+  const effect = f.rows("SELECT effect_id FROM effects")[0].effect_id;
+  const candidate = f.opened.recovery.inspect("task", stale.revision, effect);
+  await expect(f.opened.recovery.accept("reject", "task", stale.revision, candidate)).rejects.toThrow(mode === "absent" ? "task_completion_evidence_missing" : "task_completion_content_mismatch");
+  expect(readFileSync(join(f.config, "inputs.jsonl"), "utf8").trim().split("\n")).toHaveLength(1);
+}, 60000);

@@ -33,12 +33,12 @@ const messageTools = [
   { name: "answer", description: "Answer a received ask_parent question using its message_id. The recorded sender determines the recipient.", properties: { request_id: requestId, question_id: { type: "string" }, text }, required: ["request_id", "question_id", "text"] },
 ];
 const path = { type: "string", description: "Literal file path within the CM-issued workspace scope. Relative paths are relative to the registered project; symlinks and .git are forbidden." };
-const hash = { type: ["string", "null"], description: "Current full-file SHA-256 from read_file; null only when creating a missing file. A changed file is never silently overwritten." };
+const hash = { type: "string", pattern: "^(?:[a-f0-9]{64}|missing)$", description: "REQUIRED. Use the string missing to require that the file does not exist, or the current full-file SHA-256 from read_file to replace an existing file. Never omit this property." };
 const fileText = { type: "string", maxLength: 8192, description: "UTF-8 text. The entire tool request must fit 17000 bytes; use bounded edits for large files." };
 const workspaceTools = [
   { name: "read_file", description: "Read current authorized file bytes. Follow next_offset until eof; pass sha256 as expected_sha256 on every subsequent page. A partial page does not establish a complete required read. At most 256 total workspace requests per execution.",
     properties: { request_id: requestId, path, offset: { type: "integer", minimum: 0 }, expected_sha256: { type: "string" } }, required: ["request_id", "path"] },
-  { name: "write_file", description: "Create or replace a staged UTF-8 file after checking its current hash. This does not publish to the user's workspace. At most 8192 UTF-8 bytes per write; edit_file can change a larger existing file.",
+  { name: "write_file", description: 'Create or replace a staged UTF-8 file. REQUIRED: include expected_sha256 in the JSON arguments, use the string missing for a new file. Create example: {"request_id":"create-1","path":"result.txt","expected_sha256":"missing","content":"text"}. To replace, first read_file and use its full-file sha256 instead of missing. Omitting expected_sha256 always rejects; repeating an omitted argument will never write. This does not publish to the user workspace. At most 8192 UTF-8 bytes per write; edit_file can change a larger existing file.',
     properties: { request_id: requestId, path, expected_sha256: hash, content: fileText }, required: ["request_id", "path", "expected_sha256", "content"] },
   { name: "edit_file", description: "Replace one exact occurrence in a staged file after checking its current hash. Ambiguous or absent matches reject. This does not publish to the user's workspace.",
     properties: { request_id: requestId, path, expected_sha256: { type: "string" }, old_text: fileText, new_text: fileText }, required: ["request_id", "path", "expected_sha256", "old_text", "new_text"] },

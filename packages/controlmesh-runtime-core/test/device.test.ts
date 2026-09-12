@@ -38,6 +38,23 @@ function fixture() {
   return { dir, path, db, kernel, tokens, registrations, coordinator, server, clients, task, claim, advance(ms: number) { offset += ms; } };
 }
 
+test.each(["claude", "opencode"])("%s cannot bypass native evidence through generic device commands", async provider => {
+  const f = fixture();
+  const created = f.kernel.submit(owner, "create-native", { task_id: "native", chat_id: "test", status: "waiting",
+    provider, model: "fixture/model", prompt: "read current project", repo_root: "/private/coordinator" });
+  f.coordinator.assign(owner, "assign-native", "native", created.revision, { workspace_id: "project", capability: "synthetic",
+    device_ids: ["device-0"], input: {} });
+  const client = f.clients[0], authority = await f.claim(client, "native");
+  try {
+    const args = { lease: authority.lease, effect_id: "unbound" };
+    await expect(client.command("dispatch", { ...args, intent: {} })).rejects.toThrow("device_native_manifest_required");
+    await expect(client.command("observe", { ...args, observation: { terminal: true } })).rejects.toThrow("device_native_manifest_required");
+    await expect(client.command("complete", { ...args, result: { text: "unverified" } })).rejects.toThrow("device_native_manifest_required");
+    expect(f.db.sql.query("SELECT COUNT(*) AS n FROM effects").get()).toEqual({ n: 0 });
+    expect(f.kernel.inspect(owner, "native").task.status).not.toBe("done");
+  } finally { authority.stop(); }
+});
+
 test("HTTP authenticates before parsing, rejects browser/body identities, hides unassigned tasks and absolute roots", async () => {
   const f = fixture();
   f.task("private", ["device-0"]);

@@ -112,6 +112,12 @@ class DeviceCommand(BaseModel):
     arguments: dict[str, Any]
 
 
+class DeviceCompletionProof(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    requirements_digest: str
+    sha256: list[str]
+
+
 class DeviceEvidenceRef(BaseModel):
     model_config = ConfigDict(extra="allow")
     schema_version: Literal["controlmesh.device_evidence.v1"]
@@ -155,6 +161,7 @@ class DeviceNativeResult(BaseModel):
     communication: NativeAgentProof | None = None
     mailbox_delivery: NativeMailboxProof | None = None
     workspace_write: DeviceWorkspaceProof | None = None
+    completion: DeviceCompletionProof | None = None
 
 
 class DeviceNativeSession(BaseModel):
@@ -373,6 +380,12 @@ class RuntimeEvent(BaseModel):
     transport: str
     chat_id: str | int
     topic_id: str | int | None = None
+
+
+class TaskCompletion(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    schema_version: Literal["controlmesh.task_completion.v1"]
+    files: list[dict[str, Any]]
 
 
 class TaskEvent(BaseModel):

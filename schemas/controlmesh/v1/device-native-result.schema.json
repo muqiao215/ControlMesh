@@ -43,6 +43,9 @@
     },
     "workspace_write": {
       "$ref": "device-workspace-proof.schema.json"
+    },
+    "completion": {
+      "$ref": "device-completion-proof.schema.json"
     }
   }
 }

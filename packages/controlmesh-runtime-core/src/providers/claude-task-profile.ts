@@ -1,3 +1,4 @@
+import { decodeTaskCompletion } from "../task-completion";
 import { existsSync, lstatSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { contains, type ContainerConfiguration } from "../containers/plan";
@@ -55,7 +56,7 @@ export function assertClaudeTaskConfiguration(config: ClaudeTaskConfiguration): 
 }
 
 /** Resolve one native UUID only under the configured provider store. History/body paths have no authority. */
-export function findClaudeSession(config: ClaudeTaskConfiguration, deviceId: string, sessionId: string): ClaudeSessionStore | null {
+export function findClaudeSession(config: { environment: Pick<ClaudeTaskConfiguration["environment"], "config_directory"> }, deviceId: string, sessionId: string): ClaudeSessionStore | null {
   requireThat(/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(sessionId), "invalid_native_session_id");
   const root = join(config.environment.config_directory, "projects");
   if (!existsSync(root)) return null;
@@ -71,19 +72,25 @@ export function findClaudeSession(config: ClaudeTaskConfiguration, deviceId: str
 }
 
 /** Literal file capability comes from trusted registration plus the current portable task grant. */
-export function claudeTaskScope(config: ClaudeTaskConfiguration, task: LegacyTask, afterPublication = false): {
+export function claudeTaskScope(config: ClaudeTaskConfiguration, task: LegacyTask, afterPublication = false, containerSource?: ClaudeContainerProbeRunner): {
   reads: string[]; required: string[]; roots: string[]; tools: (typeof nativeWorkspaceTools)[number][];
   communication?: { peer_tasks: string[]; parent_task: string | null };
 } {
   requireThat(task.provider === "claude" && task.model === config.model && typeof task.repo_root === "string"
     && realpathSync(task.repo_root) === config.workspace && directoryIdentity(config.workspace).path === config.workspace, "claude_task_registration_mismatch");
-  enforceNativeReadSource(task.execution_context, {});
+  if (containerSource) requireThat(config.container && containerSource.runtimeDigest() === new ClaudeContainerProbeRunner(claudeContainerProfile(config)).runtimeDigest(), "claude_container_source_mismatch");
+  enforceNativeReadSource(task.execution_context, containerSource ?? {});
   WorkspaceStage.assertLocation(config.state_home, config.workspace);
   const grant = decodeToolGrant(task.tool_grant); enforceProviderConfirmation("claude", grant);
   requireThat(grant.network_policy === "sandbox_default", "no_network_unenforceable");
   const roots = config.write_roots.length ? writeRoots(config.workspace, { roots: config.write_roots, ...(config.workflow_binding ? { workflow_binding: config.workflow_binding } : {}) }) : [];
   const reads = registeredReads(config.workspace, config.read_files, roots, afterPublication);
   const required = registeredReads(config.workspace, config.required_reads, roots, afterPublication);
+  const completion = decodeTaskCompletion(task.completion_requirements);
+  if (completion) for (const file of completion.files) {
+    const path = join(config.workspace, file.path);
+    requireThat(file.mode === "write" ? roots.some(root => contains(root, path)) : reads.includes(path), "completion_exceeds_file_grant");
+  }
   requireThat(required.every(path => reads.includes(path)), "required_read_not_granted");
   const allows = grant.tool_allow.map(tool => tool.toLowerCase()), denies = grant.tool_deny.map(tool => tool.toLowerCase());
   if (config.communication) {
@@ -94,6 +101,8 @@ export function claudeTaskScope(config: ClaudeTaskConfiguration, task: LegacyTas
   const allowed = (operation: string) => !denies.includes(operation) && !denies.includes(`controlmesh_${operation}_file`)
     && (!allows.length || allows.includes(operation) || allows.includes(`controlmesh_${operation}_file`));
   const tools = nativeWorkspaceTools.filter(tool => allowed(tool.slice("controlmesh_".length, -"_file".length)) && (tool === "controlmesh_read_file" || roots.length > 0));
+  if (completion) for (const file of completion.files) requireThat(file.mode === "read"
+    ? tools.includes("controlmesh_read_file") : tools.includes("controlmesh_write_file") || tools.includes("controlmesh_edit_file"), "completion_exceeds_file_grant");
   requireThat(tools.length > 0 && (!required.length || tools.includes("controlmesh_read_file")), "claude_file_tools_not_granted");
   if (roots.length && grant.writable_roots.length) requireThat(roots.every(root => grant.writable_roots.some(path =>
     contains(realpathSync(isAbsolute(path) ? path : join(config.workspace, path)), root))), "native_write_roots_exceed_grant");

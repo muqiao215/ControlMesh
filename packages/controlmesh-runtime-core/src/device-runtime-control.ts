@@ -11,6 +11,7 @@ import { assertProtocolSchema } from "@controlmesh/protocol";
 import type { DeviceNativeAdoptions } from "./providers/device-native-adoption";
 
 export interface RuntimeControl { handle(request: unknown): Promise<Record<string, unknown>> }
+export type DeviceHistoryControl = Pick<DeviceNativeAdoptions<"opencode" | "claude">, "search" | "refresh" | "prepare" | "stop">;
 
 function request(input: unknown, fields: Record<string, readonly string[]>): Record<string, unknown> {
   requireThat(object(input), "invalid_device_control_request"); identifier(input.id);
@@ -107,7 +108,7 @@ export class DeviceWorkerControl implements RuntimeControl {
   private scheduler?: DeviceScheduler;
   constructor(private readonly db: RuntimeDatabase, private readonly actor: Principal, private readonly client: DeviceClient,
     private readonly worker: DeviceWorker, private readonly assertCurrent: () => void,
-    private readonly interrupt: () => void, private readonly maxParallel = 4, private readonly history?: DeviceNativeAdoptions) {
+    private readonly interrupt: () => void, private readonly maxParallel = 4, private readonly history?: DeviceHistoryControl) {
     requireThat(Number.isSafeInteger(maxParallel) && maxParallel >= 1 && maxParallel <= 8, "invalid_device_concurrency");
   }
   async stop(): Promise<void> {
@@ -158,7 +159,7 @@ export class DeviceWorkerControl implements RuntimeControl {
         run: ["task_id", "expected_revision", "assignment_digest"], reconcile: ["challenge_id"],
         scheduler_status: [], start_scheduler: [], pause_scheduler: [], inspect_scheduled: ["work_id"], retry_scheduled: ["work_id", "expected_attempt"],
         inspect_provider: ["task_id"], retry_provider: ["task_id", "expected_generation"],
-        history_search: ["workspace_id", "query"], prepare_adoption: ["task_id", "workspace_id", "capability", "session_id"] });
+        history_search: ["workspace_id", "query"], history_refresh: ["workspace_id"], prepare_adoption: ["task_id", "workspace_id", "capability", "session_id"] });
       id = value.id;
       let result: unknown;
       switch (value.op) {
@@ -172,7 +173,13 @@ export class DeviceWorkerControl implements RuntimeControl {
           requireScope(this.actor, "device:schedule"); identifier(value.task_id);
           requireThat(Number.isSafeInteger(value.expected_generation) && Number(value.expected_generation) >= 1, "invalid_provider_generation");
           result = await this.worker.readiness(value.task_id, { request_id: `device-provider-${digest(id)}`, expected_generation: value.expected_generation as number }); break;
+        case "history_refresh": {
+          requireScope(this.actor, "history:read");
+          requireThat(this.history, "native_history_not_configured"); identifier(value.workspace_id);
+          result = await this.history.refresh(value.workspace_id); break;
+        }
         case "history_search": {
+          requireScope(this.actor, "history:read");
           requireThat(this.history, "native_history_not_configured"); identifier(value.workspace_id);
           requireThat(typeof value.query === "string", "invalid_history_query");
           result = await this.history.search(value.workspace_id, value.query); break;

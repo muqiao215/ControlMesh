@@ -11,6 +11,9 @@ import { privateFile } from "./private-runtime-file";
 import { decodeSnapshot } from "./migration";
 import { digest, identifier, object, requireThat } from "./value";
 import { PreflightCache } from "./providers/preflight-cache";
+import { ClaudeDeviceAdapter } from "./providers/claude-device-adapter";
+import { ClaudeHistoryCatalog } from "./providers/claude-history-catalog";
+import { findClaudeSession, type ClaudeTaskConfiguration } from "./providers/claude-task-profile";
 import { NativeSessionStore } from "./providers/native-session";
 import { OpenCodeDeviceAdapter } from "./providers/opencode-device-adapter";
 import { OpenCodeReadContainerRunner, OpenCodeStagedContainerRunner, type OpenCodeContainerProfile } from "./providers/opencode-container";
@@ -52,7 +55,7 @@ export function openDeviceRuntime(path: string): DeviceRuntime {
     && ["coordinator", "worker"].includes(String(config.role)), "unsupported_device_runtime_config");
   const common = ["schema_version", "mode", "role", "state_root", "principal_id", "device_id"];
   fields(config, [...common, ...(config.role === "coordinator" ? ["devices", "listen_port"]
-    : ["coordinator", "opencode", "workspaces", "capabilities", "communication", "history", "max_parallel", "scheduler"])], "invalid_device_runtime_config");
+    : ["coordinator", "opencode", "claude", "workspaces", "capabilities", "communication", "history", "max_parallel", "scheduler"])], "invalid_device_runtime_config");
   identifier(config.principal_id); identifier(config.device_id);
   requireThat(typeof config.state_root === "string" && isAbsolute(config.state_root), "private_runtime_state_required");
   const root = config.state_root;
@@ -102,15 +105,23 @@ export function openDeviceRuntime(path: string): DeviceRuntime {
       fields(config.coordinator, ["endpoint", "token"], "invalid_device_coordinator_profile");
       requireThat(typeof config.coordinator.endpoint === "string" && typeof config.coordinator.token === "string", "invalid_device_coordinator_profile");
       const client = new DeviceClient({ endpoint: config.coordinator.endpoint, token: config.coordinator.token, device_id: config.device_id });
-      fields(config.opencode, ["model", "cli_version", "executable", "environment", "native_configuration", "container", "timeout_ms"], "invalid_device_provider_profile");
-      const provider = config.opencode;
-      requireThat(typeof provider.model === "string" && provider.model.length > 0 && provider.cli_version === "1.18.29"
-        && typeof provider.executable === "string" && isAbsolute(provider.executable) && object(provider.native_configuration)
+      requireThat((config.opencode !== undefined) !== (config.claude !== undefined), "device_provider_selection_required");
+      const providerName = config.claude !== undefined ? "claude" : "opencode";
+      const provider = providerName === "claude" ? config.claude : config.opencode;
+      fields(provider, providerName === "claude"
+        ? ["model", "cli_version", "executable", "node_executable", "home", "config_directory", "environment", "container", "timeout_ms", "max_turns"]
+        : ["model", "cli_version", "executable", "environment", "native_configuration", "container", "timeout_ms"], "invalid_device_provider_profile");
+      requireThat(typeof provider.model === "string" && provider.model.length > 0
+        && provider.cli_version === (providerName === "claude" ? "2.1.263" : "1.18.29")
+        && typeof provider.executable === "string" && isAbsolute(provider.executable)
         && object(provider.environment) && Object.values(provider.environment).every(value => typeof value === "string")
         && object(provider.container), "invalid_device_provider_profile");
-      const environment = provider.environment as Record<string, string>, native = provider.native_configuration;
-      requireThat(typeof environment.XDG_DATA_HOME === "string" && isAbsolute(environment.XDG_DATA_HOME)
+      const environment = provider.environment as Record<string, string>;
+      const native = providerName === "opencode" ? provider.native_configuration : {};
+      requireThat(object(native), "invalid_device_provider_profile");
+      if (providerName === "opencode") requireThat(typeof environment.XDG_DATA_HOME === "string" && isAbsolute(environment.XDG_DATA_HOME)
         && typeof environment.XDG_CACHE_HOME === "string" && isAbsolute(environment.XDG_CACHE_HOME), "explicit_native_state_required");
+      else requireThat([provider.home, provider.config_directory, provider.node_executable].every(value => typeof value === "string" && isAbsolute(value)), "explicit_native_state_required");
       const timeout = integer(provider.timeout_ms ?? 60_000, 1000, 300_000, "invalid_native_timeout");
       const parallel = integer(config.max_parallel ?? 4, 1, 8, "invalid_device_concurrency");
       requireThat(object(config.workspaces) && Object.keys(config.workspaces).length > 0 && Object.keys(config.workspaces).length <= 128
@@ -153,8 +164,21 @@ export function openDeviceRuntime(path: string): DeviceRuntime {
       }
       const local = database(), cache = new PreflightCache(local), journal = new DeviceExecutionJournal(local, config.device_id);
       const actor: Principal = { id: config.principal_id, device_id: config.device_id, origin: "agent_message", scopes: ["provider:probe", "history:read", "history:adopt", "device:schedule"] };
-      const nativeStore = new NativeSessionStore(join(environment.XDG_DATA_HOME, "opencode/opencode.db"), actor.device_id!);
-      const history = historyConfig ? new DeviceNativeAdoptions(local, actor, nativeStore, new HistoryClient({ python: historyConfig.python as string,
+      const claudeConfiguration = (workspaceId: string, capability: string, peers?: { peer_tasks: string[]; parent_task: string | null }): ClaudeTaskConfiguration => {
+        current(); const selected = profiles.get(workspaceId), permission = capabilities.get(capability);
+        requireThat(providerName === "claude" && selected && permission && permission.workspace_ids.includes(workspaceId), "local_capability_unavailable");
+        const specmesh = selected.specmesh ? new SpecMeshPort(selected.specmesh, selected.directory, current) : undefined;
+        return { executable: provider.executable as string, node_executable: provider.node_executable as string, state_home: root,
+          environment: { home: provider.home as string, config_directory: provider.config_directory as string, credentials: environment },
+          model: provider.model as string, workspace: selected.directory,
+          read_files: selected.read_files.map(path => resolve(selected.directory, path)), required_reads: selected.required_reads.map(path => resolve(selected.directory, path)),
+          write_roots: permission.writable ? selected.write_roots.map(path => resolve(selected.directory, path)) : [],
+          container: provider.container as ClaudeTaskConfiguration["container"], timeout_ms: timeout,
+          ...(provider.max_turns !== undefined ? { max_turns: integer(provider.max_turns, 1, 128, "invalid_claude_task_configuration") } : {}),
+          ...(permission.writable && specmesh ? { workflow_binding: specmesh.binding_digest } : {}), ...(peers ? { communication: peers } : {}) };
+      };
+      const nativeStore = providerName === "opencode" ? new NativeSessionStore(join(environment.XDG_DATA_HOME, "opencode/opencode.db"), actor.device_id!) : undefined;
+      const history = historyConfig && nativeStore ? new DeviceNativeAdoptions(local, actor, nativeStore, new HistoryClient({ python: historyConfig.python as string,
         viewer_directory: historyConfig.directory as string,
         environment: { PATH: "/usr/bin:/bin", PYTHONUTF8: "1", PYTHONNOUSERSITE: "1", PYTHONDONTWRITEBYTECODE: "1", ...historyConfig.environment as Record<string, string> | undefined } }, nativeStore),
         workspaceId => { current(); const selected = profiles.get(workspaceId); requireThat(selected, "local_capability_unavailable"); return selected.directory; },
@@ -164,15 +188,36 @@ export function openDeviceRuntime(path: string): DeviceRuntime {
           return { directory: selected.directory, model: provider.model as string, digest: digest({ principal: actor.id, device: actor.device_id,
             provider, selected, directory_identity: directoryIdentity(selected.directory), permission, communication: communication ?? null, history: historyConfig }) };
         }, current) : undefined;
+      const locateClaude = (sessionId: string) => {
+        current();
+        const store = findClaudeSession({ environment: { config_directory: provider.config_directory as string } }, actor.device_id!, sessionId);
+        requireThat(store, "native_session_missing"); return store;
+      };
+      const claudeHistory = historyConfig && providerName === "claude" ? new DeviceNativeAdoptions<"claude">(local, actor,
+        { deviceId: actor.device_id!, baseline: reference => locateClaude(reference.session_id).baseline(reference) },
+        new ClaudeHistoryCatalog({ python: historyConfig.python as string, viewer_directory: historyConfig.directory as string,
+          environment: { PATH: "/usr/bin:/bin", PYTHONUTF8: "1", PYTHONNOUSERSITE: "1", PYTHONDONTWRITEBYTECODE: "1", ...historyConfig.environment as Record<string, string> | undefined },
+          source_directory: join(provider.config_directory as string, "projects"), cache_directory: join(root, "history-claude") }, locateClaude),
+        workspaceId => { current(); const selected = profiles.get(workspaceId); requireThat(selected, "local_capability_unavailable"); return selected.directory; },
+        (workspaceId, capability) => { const selected = claudeConfiguration(workspaceId, capability);
+          return { directory: selected.workspace, model: selected.model, digest: digest(selected) }; }, current) : undefined;
       const abort = new AbortController(), adapters: Record<string, DeviceWorkerOptions["adapters"][string]> = {};
       for (const [capability, selection] of capabilities) adapters[capability] = (job, workspace) => {
         current(); requireThat(selection.workspace_ids.includes(job.workspace_id) && job.execution, "local_capability_unavailable");
         const selected = profiles.get(job.workspace_id)!;
-        requireThat(workspace === selected.directory && job.execution.provider === "opencode" && job.execution.model === provider.model, "native_device_provider_mismatch");
+        requireThat(workspace === selected.directory && job.execution.provider === providerName && job.execution.model === provider.model, "native_device_provider_mismatch");
         const context = decodeExecutionContext(job.execution.execution_context);
         requireThat(context.origin === "user" && ["local_foreground", "direct_message", "group_message"].includes(context.source_scope), "source_execution_floor_unavailable");
-        enforceProviderConfirmation("opencode", decodeToolGrant(job.execution.tool_grant));
+        enforceProviderConfirmation(providerName, decodeToolGrant(job.execution.tool_grant));
         requireThat(communication || (!(job.peer_tasks?.length) && !job.parent_task), "native_communication_not_configured");
+        if (providerName === "claude") {
+          requireThat(!communication || communication.node_executable === provider.node_executable, "claude_communication_node_mismatch");
+          const selectedConfig = claudeConfiguration(job.workspace_id, capability, communication
+            ? { peer_tasks: [...job.peer_tasks ?? []], parent_task: job.parent_task ?? null } : undefined);
+          const specmesh = selected.specmesh ? new SpecMeshPort(selected.specmesh, workspace, current) : undefined;
+          return new ClaudeDeviceAdapter(actor, cache, journal, selectedConfig, { assertCurrent: current,
+            ...(claudeHistory ? { adoptions: claudeHistory } : {}), ...(specmesh ? { specmesh } : {}) });
+        }
         const containerRoot = join(root, "containers"); mkdirSync(containerRoot, { recursive: true, mode: 0o700 });
         const channel = communication ? prepareNativeAgentConfiguration(join(root, "task-channels", digest(job.task_id)),
           communication.node_executable as string, job.task_id, [...job.peer_tasks ?? []], job.parent_task ?? null) : undefined;
@@ -183,7 +228,7 @@ export function openDeviceRuntime(path: string): DeviceRuntime {
         const roots = writes.length ? writeRoots(workspace, { roots: writes.map(item => resolve(workspace, item)) }) : [];
         const runner = roots.length ? new OpenCodeStagedContainerRunner(profile, { directory: workspace, write_roots: roots }) : new OpenCodeReadContainerRunner(profile);
         const specmesh = selected.specmesh ? new SpecMeshPort(selected.specmesh, workspace, current) : undefined;
-        return new OpenCodeDeviceAdapter(actor, cache, journal, nativeStore,
+        return new OpenCodeDeviceAdapter(actor, cache, journal, nativeStore!,
           { executable: profile.executable, native_configuration: native, environment, state_home: root, ...(channel ? { communication: channel } : {}) },
           { read_files: selected.read_files, required_reads: selected.required_reads, write_roots: writes, timeout_ms: timeout, assertCurrent: current,
             ...(history ? { adoptions: history } : {}),
@@ -192,7 +237,7 @@ export function openDeviceRuntime(path: string): DeviceRuntime {
               permission_profile: writes.length ? "opencode-native-workspace-v1" : "opencode-native-read-v1", runtime_digest: runner.runtimeDigest() }) }, runner);
       };
       const worker = new DeviceWorker(client, { workspaces, adapters, journal, signal: abort.signal });
-      const workerControl = new DeviceWorkerControl(local, actor, client, worker, current, () => abort.abort(), parallel, history);
+      const workerControl = new DeviceWorkerControl(local, actor, client, worker, current, () => abort.abort(), parallel, claudeHistory ?? history);
       if (config.scheduler !== undefined) fields(config.scheduler, ["parallelism", "max_pending", "poll_ms", "lease_ms", "max_backoff_ms"], "invalid_device_scheduler_profile");
       const schedulerOptions = { parallelism: parallel, ...(config.scheduler as DeviceSchedulerOptions | undefined) };
       requireThat(Number(schedulerOptions.parallelism) <= parallel, "invalid_device_scheduler_limits");

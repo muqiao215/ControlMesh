@@ -75,7 +75,7 @@ for await (const line of createInterface({ input: process.stdin })) {
     try {
       const read = await call("read_file", { request_id: "read", path: "PROJECT.md" });
       const result = await call("read_file", { request_id: "existing", path: "result.txt" });
-      const written = await call("write_file", { request_id: "write", path: "result.txt", expected_sha256: result.ok ? result.sha256 : null, content: read.content });
+      const written = await call("write_file", { request_id: "write", path: "result.txt", expected_sha256: result.ok ? result.sha256 : "missing", content: read.content });
       if (!written.ok) throw new Error("fixture write failed");
       await call("read_file", { request_id: "readback", path: "result.txt" });
       const message = source("assistant", [{ type: "text", text: "DONE" }], "end_turn");

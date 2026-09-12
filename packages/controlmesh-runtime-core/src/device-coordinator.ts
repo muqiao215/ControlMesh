@@ -1,3 +1,4 @@
+import { verifyDeviceCompletion } from "./task-completion";
 import { assertDeviceWorkspaceGrant, verifyDeviceWorkspaceProof } from "./providers/device-workspace-proof";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { assertProtocolSchema, ProtocolValidationError, type DeviceCommand, type DeviceLeaseWindow, type DeviceReconciliationReport } from "@controlmesh/protocol";
@@ -10,6 +11,8 @@ import { setTimeout as delay } from "node:timers/promises";
 import { decodeNativeAgentScope, NativeAgentJournal } from "./providers/native-agent-journal";
 import { NativeMailboxDelivery } from "./providers/native-mailbox";
 import { nativeInput } from "./providers/native-mailbox-input";
+
+const nativeProvider = (provider: unknown) => provider === "opencode" || provider === "claude";
 
 export interface DeviceRegistration {
   device_id: string;
@@ -163,7 +166,7 @@ export class DeviceCoordinator {
     const task = this.kernel.inspect(this.actor(device), taskId);
     requireThat(taskAuthority(task) === row.authority_digest, "assignment_authority_changed");
     // Execution authority is projected from the stored task, never the assignment's input body.
-    const execution = Object.fromEntries(["provider", "model", "prompt", "execution_context", "tool_grant", "native_session"]
+    const execution = Object.fromEntries(["provider", "model", "prompt", "execution_context", "tool_grant", "native_session", "completion_requirements"]
       .filter(key => Object.hasOwn(task.task, key)).map(key => [key, task.task[key]]));
     return { task_id: taskId, revision: task.revision, status: task.task.status, workspace_id: specification.workspace_id,
       capability: specification.capability, input: specification.input, assignment_digest: this.assignmentDigest(taskId, specification), execution, execution_digest: digest(execution),
@@ -247,11 +250,12 @@ export class DeviceCoordinator {
       // Commit verification receipt and task outcome together. Exact lost-response replay is safe;
       // conflicting/late new results still pass the kernel's fence and lease checks.
       return this.kernel.db.transaction(() => {
-        if (job.execution?.provider === "opencode") {
+        if (nativeProvider(job.execution?.provider)) {
           const manifest = this.nativeManifest(lease, args.effect_id as string);
           assertProtocolSchema("device-native-result.schema.json", args.result);
           const result = args.result as Record<string, unknown>;
           verifyDeviceWorkspaceProof(manifest.workspace_write, result.workspace_write);
+          verifyDeviceCompletion(job.execution?.completion_requirements, result.completion);
           this.evidenceMatches(manifest, result.evidence);
           requireThat(result.evidence.result_digest && result.evidence.observation_digest && digest(result.text) === result.output_digest, "device_result_evidence_missing");
           const original = this.kernel.db.sql.query("SELECT payload FROM effect_observations WHERE effect_id=?").get(args.effect_id as string) as { payload: string } | null;
@@ -287,13 +291,13 @@ export class DeviceCoordinator {
         case "start": this.kernel.start(actor, request, lease); return this.window(actor, lease);
         case "renew": return this.window(actor, this.kernel.renew(actor, request, lease, args.ttl_ms as number));
         case "native_input": {
-          requireThat(job.execution?.provider === "opencode" && typeof job.execution.prompt === "string"
+          requireThat(nativeProvider(job.execution?.provider) && typeof job.execution?.prompt === "string"
             && job.execution.prompt.length > 0 && Buffer.byteLength(job.execution.prompt) <= 32768, "native_device_input_unavailable");
           return this.nativeDelivery.prepare(actor, lease, job.execution.prompt) ?? null;
         }
         case "dispatch": {
           const manifest = args.manifest as Record<string, unknown> | undefined;
-          requireThat(job.execution?.provider !== "opencode" || manifest, "device_native_manifest_required");
+          requireThat(!nativeProvider(job.execution?.provider) || manifest, "device_native_manifest_required");
           if (manifest) requireThat(manifest.device_id === device.device_id && manifest.task_id === job.task_id
             && manifest.episode_id === lease.episode_id && manifest.fence === lease.fence && manifest.effect_id === args.effect_id
             && manifest.assignment_digest === job.assignment_digest && !manifest.observation_digest && !manifest.result_digest, "device_manifest_binding_mismatch");
@@ -305,7 +309,7 @@ export class DeviceCoordinator {
           }
           const delivery = manifest?.mailbox_delivery ? this.nativeDelivery.resolveBinding(actor, lease.task_id, manifest.mailbox_delivery) : undefined;
           if (delivery) {
-            requireThat(job.execution?.provider === "opencode" && typeof job.execution.prompt === "string", "native_device_input_unavailable");
+            requireThat(nativeProvider(job.execution?.provider) && typeof job.execution?.prompt === "string", "native_device_input_unavailable");
             nativeInput(job.execution.prompt, delivery);
           }
           // Prepared native adapters start and dispatch together after their device-local manifest is durable.
@@ -316,7 +320,7 @@ export class DeviceCoordinator {
           return permit;
         }
         case "observe": {
-          if (job.execution?.provider === "opencode") {
+          if (nativeProvider(job.execution?.provider)) {
             const manifest = this.nativeManifest(lease, args.effect_id as string);
             assertProtocolSchema("device-observation.schema.json", args.observation);
             const observation = args.observation as Record<string, unknown>;

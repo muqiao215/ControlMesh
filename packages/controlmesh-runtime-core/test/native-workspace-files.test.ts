@@ -56,6 +56,41 @@ test("missing write preconditions explain corrective input without inventing a c
   expect(reopened.call("controlmesh_write_file", { ...input, request_id: "existing", expected_sha256: null })).toMatchObject({ ok: false, error: "workspace_tool_content_changed" });
   expect(existsSync(join(f.workspace, "new.txt"))).toBe(false);
 });
+test("explicit missing sentinel creates once and never overwrites an existing file", () => {
+  const f = fixture(), input = { request_id: "create", path: "new.txt", expected_sha256: "missing", content: "first" };
+  const created = f.call("write_file", input); expect(created).toMatchObject({ ok: true });
+  const reopened = new NativeWorkspaceFiles(f.config, f.authority, () => {});
+  expect(reopened.call("controlmesh_write_file", input)).toEqual(created);
+  for (const expected_sha256 of ["missing", null, "not-a-hash", ""]) {
+    expect(f.call("write_file", { ...input, request_id: `reject-${String(expected_sha256) || "empty"}`, expected_sha256, content: "overwrite" }))
+      .toMatchObject({ ok: false, error: "workspace_tool_content_changed" });
+  }
+  expect(readFileSync(join(f.stage!.fileScope().tree, "new.txt"), "utf8")).toBe("first");
+  const read = f.call("read_file", { request_id: "read", path: "new.txt" });
+  expect(f.call("write_file", { ...input, request_id: "replace", expected_sha256: read.sha256, content: "second" })).toMatchObject({ ok: true });
+  expect(readFileSync(join(f.stage!.fileScope().tree, "new.txt"), "utf8")).toBe("second");
+  expect(existsSync(join(f.workspace, "new.txt"))).toBe(false);
+  expect(f.files.verify(f.proof, []).written_files).toEqual([join(f.workspace, "new.txt")]);
+  const substituted = f.proof.map((call, index) => index === 0 ? { ...call, input: { ...call.input, expected_sha256: null } } : call);
+  expect(() => f.files.verify(substituted, [])).toThrow("workspace_tool_call_unproven");
+});
+
+test("completion requires current-turn evidence and optional exact content, not existing files", () => {
+  const f = fixture(), requirement = { schema_version: "controlmesh.task_completion.v1", files: [{ path: "new.txt", mode: "write" }] };
+  expect(() => f.files.verifyCompletion(requirement, f.files.verify([], []))).toThrow("task_completion_evidence_missing");
+  const readExisting = { ...requirement, files: [{ path: "PROJECT.md", mode: "read" }] };
+  expect(() => f.files.verifyCompletion(readExisting, f.files.verify([], []))).toThrow("task_completion_evidence_missing");
+  f.call("read_file", { request_id: "context", path: "PROJECT.md" });
+  expect(f.files.verifyCompletion(readExisting, f.files.verify(f.proof, []))).toMatchObject({ files: [{ path: "PROJECT.md", mode: "read" }] });
+  f.call("write_file", { request_id: "create", path: "new.txt", expected_sha256: "missing", content: "output" });
+  const proof = f.files.verify(f.proof, []), verified = f.files.verifyCompletion(requirement, proof)!;
+  expect(verified).toMatchObject({ files: [{ path: "new.txt", mode: "write" }] });
+  expect(() => f.files.verifyCompletion({ ...requirement, files: [{ path: "new.txt", mode: "write", sha256: "0".repeat(64) }] }, proof)).toThrow("task_completion_content_mismatch");
+  for (const path of ["../new.txt", "/new.txt", "a/../new.txt", "./new.txt", ".git/config", "a//b"]) {
+    expect(() => f.files.verifyCompletion({ ...requirement, files: [{ path, mode: "write" }] }, proof)).toThrow("invalid_completion_path");
+  }
+});
+
 test("explicit file scope denies ungranted reads and does not grant writes to a read-only owner", () => {
   const f = fixture(false);
   expect(f.call("read_file", { request_id: "allowed", path: "PROJECT.md" })).toMatchObject({ ok: true, content: "original current fact\n", eof: true });
@@ -135,7 +170,12 @@ test("a real Node MCP workspace client exposes only file tools and enforces the 
   const broker = new NativeAgentChannel(f.lease, config, () => {}, { assertDispatched: () => f.kernel.withLease(actor, f.lease, () => {}), call: async (tool, input) => f.files.call(tool, input) });
   cleanup.push(() => broker.close()); await broker.start();
   const client = new NativeMcpTestClient(broker.command); cleanup.push(() => client.close()); await client.initialize();
-  expect((await client.request("tools/list")).result?.tools?.map(tool => tool.name)).toEqual(["read_file", "write_file", "edit_file"]);
+  const listed = (await client.request("tools/list")).result?.tools;
+  expect(listed?.map(tool => tool.name)).toEqual(["read_file", "write_file", "edit_file"]);
+  expect(listed?.find(tool => tool.name === "write_file")).toMatchObject({ inputSchema: {
+    required: ["request_id", "path", "expected_sha256", "content"],
+    properties: { expected_sha256: { type: "string", pattern: "^(?:[a-f0-9]{64}|missing)$" } },
+  } });
   const allowed = await client.tool("read_file", { request_id: "allowed", path: "PROJECT.md" });
   expect(JSON.parse(allowed.result!.content![0].text)).toMatchObject({ ok: true, content: "original current fact\n" });
   const denied = await client.tool("read_file", { request_id: "denied", path: "ungranted.txt" });

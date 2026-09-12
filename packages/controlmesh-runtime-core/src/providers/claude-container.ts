@@ -12,6 +12,8 @@ import { directoryIdentity, type DirectoryIdentity } from "./native-manifest";
 import { ClaudeControlRunner, assertClaudeControlEnvironment, type ClaudeControlEnvironment } from "./claude-control-runner";
 import { validateClaudeControlInput, type ClaudeControlInput } from "./claude-control";
 import { claudeProbeCommand, claudeProbeCredentialKeys } from "./claude-preflight";
+import type { ExecutionContext } from "../execution-context";
+import { enforceExecutionPolicy } from "../execution-policy";
 
 export interface ClaudeContainerProbeProfile {
   container: Omit<ContainerConfiguration, "resources" | "workspace_layout">;
@@ -49,6 +51,12 @@ export class ClaudeContainerProbeRunner {
   runtimeDigest(): string {
     return digest({ schema_version: "controlmesh.claude_container_probe.v1", profile: this.profile,
       executable: executableIdentity(this.profile.executable), resources: resourceMounts(this.configuration) });
+  }
+  assertSource(context: ExecutionContext): void {
+    requireThat(this.runtimeDigest() === this.initial, "claude_container_probe_profile_changed");
+    enforceExecutionPolicy(context, true);
+    requireThat(context.origin === "user" && ["local_foreground", "direct_message", "group_message"].includes(context.source_scope), "source_execution_floor_unavailable");
+    // This readiness profile can only dispatch through the concrete container supervisor.
   }
   async run(spec: ProcessSpec, admission: ProcessAdmission): Promise<ProcessOutcome> {
     const version = canonical(spec.command) === canonical([this.profile.executable, "--version"]), index = spec.command.indexOf("--model");

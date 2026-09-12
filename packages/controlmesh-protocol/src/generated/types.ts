@@ -98,6 +98,11 @@ export interface DeviceCommand {
   "arguments": Record<string, unknown>;
 }
 
+export interface DeviceCompletionProof {
+  "requirements_digest": string;
+  "sha256": string[];
+}
+
 export interface DeviceEvidenceRef {
   "schema_version": "controlmesh.device_evidence.v1";
   "device_id": string;
@@ -137,6 +142,7 @@ export interface DeviceNativeResult {
   "communication"?: NativeAgentProof;
   "mailbox_delivery"?: NativeMailboxProof;
   "workspace_write"?: DeviceWorkspaceProof;
+  "completion"?: DeviceCompletionProof;
 }
 
 export interface DeviceNativeSession {
@@ -340,6 +346,11 @@ export interface RuntimeEvent {
   "transport": string;
   "chat_id": string | number;
   "topic_id"?: string | number | null;
+}
+
+export interface TaskCompletion {
+  "schema_version": "controlmesh.task_completion.v1";
+  "files": Record<string, unknown>[];
 }
 
 export interface TaskEvent {

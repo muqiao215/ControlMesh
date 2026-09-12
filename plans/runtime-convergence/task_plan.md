@@ -69,8 +69,11 @@ No claim that full TS migration or distributed coordination has completed. A sco
 
 ## Next Step
 
-Connect Claude's qualified local/container execution to DeviceWorker's existing dispatch,
-publication, mailbox and retained-reconciliation ports, then continue the remaining owners below.
+Qualify Claude device execution with real native acceptance and independent readback, including
+communication and SpecMesh profiles, then continue all remaining owners below. Normal configured
+device execution, worker reopen/original-session continuation, lost-observation reconciliation and
+History adoption now pass synthetic-provider tests over actual Docker and coordinator HTTP;
+these tests do not replace real-model/device qualification.
 Normal local container configuration, History adoption, readiness, original-session recall,
 seven current continuity reads, staged publication and lost-completion recovery now have actual
 native evidence and independent model-free readback. Device Claude admission remains pending.

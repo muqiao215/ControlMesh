@@ -1,3 +1,4 @@
+import { verifyDeviceCompletion } from "./task-completion";
 import { verifyDeviceWorkspaceProof } from "./providers/device-workspace-proof";
 import { randomUUID } from "node:crypto";
 import { assertProtocolSchema, type DeviceEvidenceRef, type DeviceReconciliationChallenge, type DeviceReconciliationReport } from "@controlmesh/protocol";
@@ -32,7 +33,7 @@ export class DeviceReconciliation {
       const job = this.assignment(device, taskId);
       const manifest: unknown = target.manifest;
       assertProtocolSchema<DeviceReconciliationChallenge["manifest"]>("device-evidence-ref.schema.json", manifest);
-      requireThat(job.execution?.provider === "opencode" && job.execution_digest, "device_reconciliation_profile_unavailable");
+      requireThat((job.execution?.provider === "opencode" || job.execution?.provider === "claude") && job.execution_digest, "device_reconciliation_profile_unavailable");
       requireThat(manifest.device_id === device.device_id && manifest.task_id === taskId && manifest.effect_id === effectId
         && manifest.episode_id === target.episode.episode_id && manifest.fence === target.episode.fence
         && manifest.assignment_digest === job.assignment_digest && !manifest.observation_digest && !manifest.result_digest, "device_manifest_binding_mismatch");
@@ -104,6 +105,7 @@ export class DeviceReconciliation {
       this.current(device, row, challenge);
       const { observation, result } = report;
       verifyDeviceWorkspaceProof(challenge.manifest.workspace_write, result.workspace_write);
+      verifyDeviceCompletion(this.assignment(device, row.task_id).execution?.completion_requirements, result.completion);
       for (const ref of [observation.evidence, result.evidence]) {
         const { observation_digest: _observation, result_digest: _result, ...base } = ref;
         requireThat(digest(base) === digest(challenge.manifest), "device_evidence_reference_mismatch");

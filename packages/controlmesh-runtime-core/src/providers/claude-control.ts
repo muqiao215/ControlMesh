@@ -196,6 +196,8 @@ export function observeClaudeControl(outcome: ProcessOutcome, input: ClaudeContr
     const result = machine.nativeRows.at(-1);
     requireThat(machine.complete && attemptRecord && result?.type === "result", "claude_native_completion_unproven");
     if (result.is_error === true) {
+      // A native task budget is not provider health or account quota evidence.
+      if (result.subtype === "error_max_turns") return rejected("claude_native_turn_limit_exceeded");
       const message = [result.error, ...(Array.isArray(result.errors) ? result.errors : []), result.result]
         .flatMap(value => typeof value === "string" ? [value] : object(value) && typeof value.message === "string" ? [value.message] : []).join("\n");
       const failure = nativeFailure(/you['’]?ve hit your limit|exceeded your current quota/i.test(message) ? `usage limit reached; ${message}` : message);

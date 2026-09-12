@@ -78,6 +78,17 @@ test("retained native quota is classified, and changed input or truncated wrappe
   expect(observeClaudeControl(outcome, { ...f.input, prompt: "another task" })).toMatchObject({ terminal: false, input_attempted: null });
   expect(observeClaudeControl({ ...outcome, stdout: "" }, f.input)).toMatchObject({ terminal: false, input_attempted: null });
 });
+test("native max-turn completion is a task limit, not a provider health failure", async () => {
+  const f = fixture("quota"), outcome = await new ClaudeControlRunner().run(f.input, f.environment, { assertCurrent() {} });
+  const rows = outcome.stdout.trim().split("\n").map(line => JSON.parse(line));
+  const result = rows.find(row => row.event === "native" && row.row?.type === "result").row;
+  result.subtype = "error_max_turns"; result.errors = ["Reached maximum number of turns (6)"];
+  delete result.error; result.result = "";
+  expect(observeClaudeControl({ ...outcome, stdout: rows.map(row => JSON.stringify(row)).join("\n") + "\n" }, f.input))
+    .toMatchObject({ terminal: false, input_attempted: true, invalid_reason: "claude_native_turn_limit_exceeded", failure: null });
+  expect(observeClaudeControl(outcome, f.input)).toMatchObject({ failure: { code: "quota_exhausted" } });
+});
+
 test("parallel tool blocks count as one model turn; reused identities and extra actual turns still reject", async () => {
   const f = fixture(), input = { ...f.input, max_turns: 1 };
   const outcome = await new ClaudeControlRunner().run(input, f.environment, { assertCurrent() {} });

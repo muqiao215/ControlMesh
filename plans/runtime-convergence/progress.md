@@ -973,3 +973,302 @@ one unknown delivery. All child handles and HTTP servers are closed. Local evide
 outputs/runtime-convergence/feishu-auth-replies-core.log, feishu-auth-replies-focused.log,
 feishu-stdio-focused.log. Full ingress, rich media, user/marketplace auth and production
 transport qualification remain open, alongside the other migration owners.
+
+## 2026-09-12 — Claude device adapter integration in progress
+
+Confirmed published CM e9d73aae0e7d165fcead999a6f1329fd63bd1c90 CI
+34676334207 completed successfully, including all required jobs. The current
+uncommitted Claude device adapter now passes runtime-core typecheck after
+converting the schema-validated network result to the Worker record shape.
+Coordinator native evidence guards cover Claude as well as OpenCode. A new
+HTTP regression test verifies both providers reject dispatch, observation and
+completion without a retained manifest, leaving zero effects and no done task.
+Pinned Bun focused device/device-native tests: 63 passed, 0 failed, 681 assertions
+in 6.10s (/tmp/cm-claude-device-coordinator-tests.log). Typecheck exit 0
+(/tmp/cm-claude-device-types.log). These checks do not qualify the new adapter.
+
+Remaining immediate work: configured Claude worker startup and History catalog
+wiring, concrete container adapter execution/recovery tests, then controlled real
+device native continuation acceptance. No release, install or default switch.
+Full CM-R0–R7 and cross-project delivery scope remains open.
+
+### Device History control port
+
+The worker control accepts provider-independent search/refresh/prepare/stop
+methods, rather than an OpenCode-only adoption registry. Added explicit
+history_refresh(workspace_id); both search and refresh enforce history:read at
+the control boundary. No file path is accepted, query does not refresh, and
+stopped controls refuse work. Focused control regression: 12 passed, 0 failed
+(/tmp/cm-device-history-control.log); typecheck passed before the final scope
+guard addition (/tmp/cm-device-history-types.log). This is control-layer
+qualification only; Claude normal startup/catalog wiring remains pending.
+
+### Configured Claude device entry point
+
+Worker startup now accepts exactly one explicit opencode or claude profile.
+Claude profile fields match the existing local runtime configuration, require
+a container and use registered workspace read/write capabilities. The adapter
+factory checks task provider/model and builds ClaudeDeviceAdapter with the
+optional SpecMesh port and Claude History adoption registry. History uses its
+independent headless catalog, worker-local cache and existing opaque adoption
+records; no OpenCode database is instantiated for a Claude worker.
+
+Typecheck passed (/tmp/cm-claude-device-config-types.log); configured control
+tests: 13 pass, 0 fail, 124 assertions in 1.87s
+(/tmp/cm-claude-device-config-tests.log). New test confirms Claude startup and
+assignment inspection without native directories, probes, task rows or execution
+records, and rejects ambiguous dual-provider configuration. This qualifies
+startup inspection only. Container execution/reconciliation and actual configured
+History adoption still require tests. Mixed-provider registration per worker is
+not implemented; full migration/provider/topology scope remains open.
+
+### Configured Claude device container continuation
+
+Added test/claude-device.test.ts using the normal coordinator and worker startup,
+real loopback HTTP and Docker, and the existing synthetic Claude JSONL/MCP
+fixture compiled for image-owned Node. First attempt exposed relative registered
+reads being passed to the literal absolute Claude file-grant API. Fixed worker
+configuration to resolve read_files and required_reads against its registered
+workspace. The completed test publishes once, closes/reopens the worker, resumes
+and reassigns the task, reads changed PROJECT.md, and publishes a changed result
+using the same original native session UUID. Exactly two task inputs are recorded.
+
+Pinned image test: 1 pass, 0 fail, 13 assertions in 11.97s
+(/tmp/cm-claude-device-test.log), handle34774 exit0. Typecheck exit0
+(/tmp/cm-claude-device-final-types.log). This proves configured container fixture
+continuation, not real-model acceptance, History adoption or interrupted recovery.
+All current device edits remain uncommitted pending those additional gates.
+
+### Claude device retained-observation recovery
+
+Expanded the real Docker/HTTP configured test with an observation RPC failure
+after the worker retains native completion. It exposed the coordinator
+reconciliation request's OpenCode-only provider guard. Extended that guard to
+Claude without changing the existing evidence/lease/task binding checks.
+
+Both normal and interrupted cases pass: 2 tests, 0 failures, 34 assertions in
+23.39s (/tmp/cm-claude-device-recovery-test.log), handle32986 exited0. The
+interrupted task is unknown, canonical output absent, and reopening the worker
+then explicitly reconciling publishes the retained result. Identical recovery
+returns the same receipt, preserves file inode and native input bytes, and calls
+neither Bun.build nor Bun.spawn. Subsequent task continuation retains the
+original session UUID and consumes changed current context. Typecheck exit0
+(/tmp/cm-claude-device-recovery-types.log). These remain synthetic provider
+protocol tests over real Docker, not real-model or History adoption acceptance.
+
+### Configured device History adoption fixture
+
+The configured Docker test now also seeds an unmanaged native Claude JSONL,
+uses a deterministic external History CLI to refresh/search/select it through
+worker control, prepares an opaque adoption and reopens the worker before
+execution. Query does not implicitly refresh; discovery/adoption leave native
+bytes unchanged and produce no native task input. The actual container then
+resumes exactly the selected UUID, and later continues it with changed context.
+Three cases passed: 55 assertions, 35.40s; /tmp/cm-claude-device-adoption-test.log,
+handle30083 exit0. Typecheck passed before final lookup signature refinement.
+
+Removed implicit first-workspace selection from Claude source lookup: locating
+a UUID only depends on the registered native config directory; adoption still
+checks task/workspace/model/profile independently. Full pinned runtime-core gate
+started as handle25331, /tmp/cm-claude-device-full-gate.log (pending at entry).
+Real-model device qualification, real History service acceptance, communication
+and current SpecMesh device profiles remain open. No release or cutover.
+
+Full pinned runtime-core gate completed successfully: 462 pass, 0 fail,
+4918 assertions across 47 files in 155.36s; handle25331 exit0. Includes the final
+Claude source-lookup refinement and all three configured device container cases.
+Evidence: /tmp/cm-claude-device-full-gate.log. Remaining live qualification and
+full migration requirements above remain open; no release/default change.
+
+### Real History and first real Claude device attempt
+
+Actual History project CLI (isolated synthetic native data/cache) passed the
+configured Docker adoption case: 1 pass, 21 assertions, 12.76s; handle10777
+exit0, /tmp/cm-claude-device-real-history.log. Added optional CM_HISTORY_TEST_ROOT
+to run that cross-project gate without changing real History files. Typecheck
+passes. Production History retains only its three pre-existing untracked paths.
+
+One guarded real MiniMax-M3/Claude2.1.263 device attempt was then run against the
+owned original acceptance session, through real History and configured worker.
+Handle27060 exited1; accepted=false. Original input marker was not reinjected.
+Native tools read the seven current continuity files and proposed the correct
+old marker/current fact, but every write omitted expected_sha256 and was refused.
+Native result is error_max_turns (limit16), not a successful completion and not
+proven quota exhaustion. Worker retained the result, coordinator is unknown,
+recovery correctly refused provider_error, and canonical output was not created.
+Container exit0/removal does not imply task success. Do not rerun the guarded
+script or increase the limit to relabel the attempt.
+
+Evidence remains private under outputs/runtime-convergence/claude-device-native-
+acceptance.{ts,json,log}, guarded by claude-device-native-attempt.json. Next
+investigate required write-argument representation/feedback and max-turn error
+classification, preserve failed evidence, then design any explicit corrective
+continuation separately. Full migration and real device qualification stay open.
+
+### Native task-budget classification and write-tool guidance
+
+The actual tool schema already required expected_sha256; missing schema delivery
+is not established. Added a complete create-call JSON example to the write_file
+description, explicitly requiring null rather than omission and preserving the
+existing conditional-write validation. Its effect on real model behavior remains
+unverified. No implicit precondition or retry was added.
+
+Claude control now classifies error_max_turns as
+claude_native_turn_limit_exceeded with no ProviderFailure, so a task budget does
+not newly degrade provider health. Existing persisted degraded state is preserved.
+Focused control tests: 12 pass, 69 assertions, 8.43s; handle49143 exit0,
+/tmp/cm-claude-turn-budget-test.log; typecheck passed. Offline readback of the
+original failed device outcome confirms this classification without native
+execution (outputs/runtime-convergence/claude-device-failure-readback.{ts,json}).
+Original acceptance stays failed. Broader tests for changed tool guidance and a
+separate bounded corrective native continuation remain pending.
+
+### Corrective live attempt and explicit missing-file precondition
+
+Updated-description configured Docker tests passed all three paths with real
+History: 55 assertions/35.69s, handle78267 exit0. Original failed native session
+passed read-only baseline validation. A separately guarded corrective trial
+(claude-device-corrected-native-acceptance.ts) used one input and the same16-turn
+limit. Handle7585 exited1: error_max_turns; 15 write calls, zero containing
+expected_sha256. Container removed, no canonical output. Error was correctly
+classified claude_native_turn_limit_exceeded. Do not rerun either guarded attempt.
+Description alone did not solve this real-model failure; null-argument handling
+in the model/provider stack remains an inference, not an established cause.
+
+Added an additive explicit expected_sha256 string value missing for write_file.
+It means the target must not exist, exactly like existing null; omission still
+rejects. Existing-file replacement requires the actual hash. Persisted receipts
+retain original arguments, and idempotency identity is unchanged. Tool guidance
+now demonstrates the string form. File tests: 12 pass/331 assertions/1.53s,
+handle55835 exit0 (/tmp/cm-write-precondition-sentinel.log). Broader native
+receipt/container tests and real efficacy of the string form remain pending.
+
+### Missing-file sentinel native evidence compatibility
+
+The container-native protocol fixture now uses expected_sha256:"missing" for
+creation and the read hash for replacement. Local and configured device Docker
+tests pass with the actual History backend enabled: 7 pass, 94 assertions,
+55.45s (/tmp/cm-claude-missing-native-tests.log), handle40217 exit0. Covers
+original-session continuation, lost-observation model-free reconciliation,
+unmanaged adoption and missing-image fail-closed behavior.
+
+Added receipt proof regression: exact missing arguments verify, but substituting
+null only in the native evidence rejects workspace_tool_call_unproven. File
+tests 12 pass/333 assertions/1.64s, handle88924 exit0
+(/tmp/cm-missing-receipt-tests.log). Typecheck exit0
+(/tmp/cm-missing-native-types.log). No real model invocation this turn. Both
+prior real attempts remain failed; efficacy with MiniMax is still unverified.
+
+### Sentinel live failure, outbound schema diagnostic and product acceptance gap
+
+Third separately guarded trial (claude-device-sentinel-native-acceptance) exited1
+(handle18085): 12 attempted writes still omitted expected_sha256. Native ended
+with subtype success while explicitly saying it could not complete. Retained
+reconciliation therefore marked the task done with changed_paths=[]; the outer
+acceptance failed because device-sentinel-result.txt does not exist. This is NOT
+successful real task acceptance. No fourth model attempt was made. All three
+guarded reports remain failed and must not be rerun.
+
+An actual Claude CLI diagnostic using a loopback mock Anthropic endpoint and
+fake credentials captured outbound /v1/messages tools without contacting a real
+model service. It showed the field and required list intact, including the former
+[string,null] union. CLI schema deletion is not evidenced; the model's claim of
+transport stripping is not authoritative. Changed advertised write precondition
+to string with pattern ^(?:[a-f0-9]{64}|missing)$; server retains legacy null
+compatibility. Repeated offline capture confirms the plain string schema and
+required list reach the outgoing request. Evidence: private
+claude-schema-diagnostic.{ts,json,log}. File/MCP tests12pass/334assertions/1.56s,
+handle49192 exit0 (/tmp/cm-write-schema-string-tests.log). Live efficacy pending.
+
+Additional required work: structured task/SpecMesh artifact acceptance. No
+required output was declared in the existing task protocol; a successful native
+conversation is not proof of fulfilling the user's requested artifact. Add
+explicit verifiable output requirements rather than prose heuristics; preserve
+the observed done-but-no-output discrepancy and outer failed acceptance.
+
+### Plain-string live trial and offline argument round trip
+
+Plain-string schema configured tests passed3/55assertions/35.38s (86838 exit0).
+A fourth separately guarded real trial (claude-device-string-schema-native)
+exited1, handle89451. Again12 writes omitted the field; native success with
+no required output, outer file check failed. Container removed. All four
+attempts remain failed; no more prompt/schema-only live trials are justified.
+
+Offline actual CLI diagnostic now returns a synthetic Anthropic SSE tool_use
+containing expected_sha256:"missing". The real Claude CLI forwards it intact
+to the actual CM MCP client/broker as controlmesh_write_file. Backend records
+arguments and deliberately performs no write. Local endpoint/fake credentials,
+no real model request. Result: exactly one call with the expected precondition;
+exit0, private claude-argument-diagnostic.{ts,json,log}. Together with outgoing
+schema capture, this excludes field loss in the tested CM/CLI paths. Actual
+model generation versus upstream gateway transformation is not yet isolated.
+
+Documented versioned artifact completion contract requirements and acceptance
+cases in claude-continuity-design.md. Implementation remains pending, including
+identity binding and original-contract recovery; do not treat the design as a
+completed fix or retrofit historical failed results into success.
+
+### Artifact completion contract: initial local enforcement
+
+Added task-completion.schema.json using the repository2020-12 schema dialect;
+regenerated TypeScript/Python models and validators with generate:all-protocol.
+completion_requirements is a bounded versioned list of relative file paths,
+current-turn read/write modes and optional expected SHA256. Strict decode rejects
+duplicates/traversal/.git; Claude registration checks file and tool grants before
+execution. TaskIngress rejects declared contracts for unqualified providers.
+Native task digest conditionally includes the contract, preserving old digest
+bytes for undeclared tasks. Claude prompt includes declared conditions, and
+normal/recovery evidence verifies current-turn receipts and staged hashes.
+
+Device Claude explicitly rejects declared contracts until its result protocol
+and coordinator verification are wired (device_completion_contract_not_qualified).
+This temporary fail-closed boundary is incomplete work, not final device support.
+
+Verification: focused file/digest14pass351assertions1.60s; actual Docker local
+6pass49assertions35.71s (61051 exit0), including missing artifact and wrong hash
+with native success: canonical publication refused, retained recovery also
+refused, one native input each. Correct contract permits normal continuation.
+Typecheck exit0. Logs /tmp/cm-completion-{focused-tests,container-tests,final-types}.log.
+Full protocol/cross-provider/device gate and SpecMesh requirement transport remain
+pending. No real model invoked and no old acceptance report altered.
+
+### Device artifact completion contract enforcement
+
+Added device-completion-proof schema and optional native-result completion proof;
+regenerated both language models/validators. Device assignment now includes
+completion_requirements in its portable execution payload/digest. Claude worker
+returns the contract digest and ordered hashes after local receipt/content checks.
+No private file paths enter the proof. Coordinator normal completion and retained
+reconciliation validate presence, original requirements digest, count and any
+expected hashes. Removed temporary device refusal only after wiring these paths.
+
+Configured actual Docker+real History tests now declare completion contracts:
+5pass87assertions50.82s (78394 exit0), including normal/original-session resume,
+lost-observation recovery, adoption, missing output and wrong hash. Invalid
+contracts cannot publish or recover as done and do not replay native input.
+Device/OpenCode/proof regression65pass695assertions6.66s (12526 exit0); typecheck
+passed. Python protocol suite exit0. Logs /tmp/cm-device-completion-{tests,
+regression,final-types,python-protocol}.log. Proof tampering/missing/wrong hash
+unit cases reject; requirements remain bound to original execution on recovery.
+
+Full runtime gate, SpecMesh contract transport, other provider qualification and
+real-model acceptance remain pending. Historical undeclared tasks and four failed
+live reports are not retroactively changed; no model invocation this turn.
+
+### Full candidate validation before publication
+
+The complete pinned runtime gate passed471tests/5000assertions across48files
+in185.17s; handle99877 exited0, /tmp/cm-device-completion-full.log. Initial
+ownership check correctly detected regenerated protocol Python model changes;
+regenerated python-ownership.json (only generated models.py source hash changed),
+then reran the full gate. SpecMesh structural check passed against base
+e9d73aae0e7d165fcead999a6f1329fd63bd1c90 with only expected dirty-plan warnings
+(/tmp/cm-device-completion-specmesh.log). Earlier protocol9tests/typecheck pass.
+
+This source increment implements candidate Claude device execution, History
+control/adoption, retained reconciliation and explicit file completion contracts.
+It is not a release/default cutover or successful real MiniMax task acceptance.
+Four guarded real device attempts remain failed and are retained privately.
+The independent SpecMesh acceptance.json currently contains assertions only;
+it must not be silently reused as an executable task contract. Independent
+requirement transport/review and remaining migration owners stay open.

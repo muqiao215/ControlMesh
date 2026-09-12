@@ -1,3 +1,4 @@
+import { decodeTaskCompletion } from "../task-completion";
 import * as fs from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { dirname, isAbsolute, join, relative } from "node:path";
@@ -200,7 +201,8 @@ export class NativeWorkspaceFiles {
         else {
           requireThat(Object.hasOwn(input, "expected_sha256"), "workspace_tool_expected_sha256_required");
           this.config.stage!.projection();
-          requireThat(input.expected_sha256 === (current?.sha256 ?? null), "workspace_tool_content_changed");
+          const expected = tool === "controlmesh_write_file" && input.expected_sha256 === "missing" ? null : input.expected_sha256;
+          requireThat(expected === (current?.sha256 ?? null), "workspace_tool_content_changed");
           const small = (text: unknown): text is string => typeof text === "string" && Buffer.byteLength(text) <= 8192 && Buffer.from(text).toString() === text;
           if (tool === "controlmesh_write_file") { requireThat(small(input.content), "workspace_tool_content_limit"); bytes = Buffer.from(input.content); }
           else {
@@ -216,7 +218,7 @@ export class NativeWorkspaceFiles {
       } catch (error) {
         const code = error instanceof RuntimeConflict ? error.code : "workspace_tool_operation_failed";
         receipt.response = { ok: false, error: code, ...(code === "workspace_tool_expected_sha256_required" ? {
-          hint: "Include expected_sha256 explicitly: null to create a missing file, or the current full-file sha256 from read_file to replace/edit an existing file. Use a new request_id for corrected arguments."
+          hint: 'Include expected_sha256 explicitly: "missing" (or null) to create a missing file, or the current full-file sha256 from read_file to replace/edit an existing file. Use a new request_id for corrected arguments.'
         } : {}) };
         bytes = undefined; receipt.intent = null;
       }
@@ -259,6 +261,18 @@ export class NativeWorkspaceFiles {
       }
       row.state = "done"; this.save(path, row); return row.response;
     });
+  }
+  verifyCompletion(value: unknown, proof: { read_files: string[]; written_files: string[] }): Record<string, unknown> | undefined {
+    const contract = decodeTaskCompletion(value); if (!contract) return undefined;
+    this.check();
+    const files = contract.files.map(requirement => {
+      const path = join(this.config.workspace, requirement.path);
+      requireThat((requirement.mode === "write" ? proof.written_files : proof.read_files).includes(path), "task_completion_evidence_missing");
+      const target = this.location(requirement.path, requirement.mode === "write"), observed = file(target.actual);
+      requireThat(observed && (requirement.sha256 === undefined || observed.sha256 === requirement.sha256), "task_completion_content_mismatch");
+      return { path: requirement.path, mode: requirement.mode, sha256: observed.sha256 };
+    });
+    this.check(); return { requirements_digest: digest(contract), files };
   }
   verify(native: readonly { tool: string; input: Record<string, unknown>; output: string }[], requiredReads: readonly string[]): { receipts_digest: string; read_files: string[]; written_files: string[] } {
     this.check();
