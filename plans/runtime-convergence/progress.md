@@ -8,10 +8,10 @@ The 512-module/57-field ledger is an inventory, not completed parity.
 
 | Delivery area | Verified state | Remaining acceptance |
 |---|---|---|
-| Published CI baseline | 339c463; CI 34715001790 success | Current workspace input integration pending publication/CI |
+| Published CI baseline | 984b873; CI 34715947420 success | Topology automatic input issuance pending publication/CI |
 | TS runtime | Kernel, local/device execution, mailbox, topology and retained recovery; reconnectable local service/CLI with full local regression | Final CI; remaining provider/transport/store/terminal ownership and parity |
 | Native continuation | Simple direct and streamed exact recall passed; earlier topology first runs and current artifacts passed | Full worker/merger continuation and complex-context acceptance still fail |
-| Multi-device | Configured initial input HTTP transfer and pre-dispatch receiver; earlier artifact transport/publication | Topology automatic seed issuance, physical transfer and full native profiles |
+| Multi-device | Configured initial input HTTP transfer, topology source capture and pre-dispatch receiver; artifact transport/publication | Physical transfer and full native profiles |
 | SpecMesh/History | Independent integration and scoped continuity evidence exist | Reviewed closeout and remaining full integration acceptance |
 | Release/local alignment | Production still Python 0.43.0 | Full-goal acceptance, release/install, staged default switch |
 
@@ -21,6 +21,19 @@ Native read calls sent expected_sha256="missing" for existing files. The retaine
 shows invalid read arguments, not a proven concurrent file change. The attempt and session
 05a0e591-a529-4401-b28a-932b3e948f95 are guarded against replay. No new native model canary
 was launched during this correction.
+
+Current topology checkpoint adds source_files to frozen device routes. Enqueue captures
+source bytes and issues the assignment in one transaction; retry/restart keeps the original
+reference. Missing source and forced assignment failure block without queued work or
+retained snapshot rows. Changed route policy is refused on restart.
+
+Final topology/control/worker regression: 88 tests / 808 assertions / 14.35s
+(/tmp/cm-topology-seed-final.log), typecheck and diff-check passed. Real Docker integration
+with a synthetic Claude process/transcript passed both artifact modes: 2 tests / 106
+assertions / 46.39s (/tmp/cm-topology-seed-container.log). In publish_received mode, only
+the coordinator initially has PROJECT.md; source_files/bootstrap_files deliver it before
+container execution, followed by result publication and original-session fixture resume.
+This does not prove physical-host delivery or real-model context continuation.
 
 Current work connects initial inputs to configured device execution. Local
 prepare_workspace_seed returns a durable reference scoped to the task's source workspace;
@@ -40,7 +53,8 @@ renewals and complete after sharing the device request budget.
 The full runtime process completed 832 pass / 1 fail / 10511 assertions in 382.56s
 (/tmp/cm-runtime-seed-wire-full.log). It loaded the earlier worker implementation and
 reproduced the start/renew race subsequently fixed and covered by the final regression.
-Do not call that full run green; exact committed CI remains the complete post-fix gate.
+Do not call that initial full run green. Exact committed 984b873 CI 34715947420 completed
+success and establishes the complete post-fix gate.
 
 The published f1832aa checkpoint adds a persistent local service and normal `pnpm runtime` command entry.
 It reuses LocalTaskRuntime, task/event read authority and the existing native queue; clients

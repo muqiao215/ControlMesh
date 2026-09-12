@@ -1,3 +1,4 @@
+import { validateWorkspaceSeed } from "./workspace-seed";
 import { command, requireScope } from "./commands";
 import type { Principal, RuntimeKernel, Lease, TaskSnapshot } from "./kernel";
 import type { DeviceAssignment, DeviceCoordinator } from "./device-coordinator";
@@ -6,7 +7,10 @@ import type { TopologyRuntime } from "./topology-runtime";
 import { registerDeviceTopologyOwner, type TopologyExecution } from "./topology-execution";
 import { assertTopologyNativeInput } from "./topology-native-input";
 import { canonical, digest, identifier, object, requireThat, RuntimeConflict } from "./value";
-export type DeviceTopologyRoute = Omit<DeviceAssignment, "input">;
+export type DeviceTopologyRoute = Omit<DeviceAssignment, "input" | "workspace_seed"> & {
+  /** Exact initial inputs captured from the stored task repo_root when this run is enqueued. */
+  source_files?: readonly string[];
+};
 interface Row {
   run_id: string; task_id: string; principal: string; coordinator_device: string; origin: string;
   expected_revision: number; assignment_digest: string; execution_digest: string; profile_digest: string;
@@ -26,9 +30,14 @@ export class DeviceTopologyRuntime implements TopologyRuntime {
     identifier(actor.device_id); this.assertPrincipal(actor); requireScope(actor, "device:assign");
     requireThat(object(routes) && Object.keys(routes).length >= 1 && Object.keys(routes).length <= 128, "invalid_device_topology_routes");
     for (const [id, route] of Object.entries(routes)) {
-      identifier(id); requireThat(object(route) && Object.keys(route).every(key => ["workspace_id", "capability", "device_ids", "peer_tasks", "parent_task", "artifact_transfer"].includes(key)), "invalid_device_topology_route");
+      identifier(id); requireThat(object(route) && Object.keys(route).every(key => ["workspace_id", "capability", "device_ids", "peer_tasks", "parent_task", "artifact_transfer", "source_files"].includes(key)), "invalid_device_topology_route");
       requireThat(route.artifact_transfer === undefined || typeof route.artifact_transfer === "boolean", "invalid_artifact_transfer_profile");
       identifier(route.workspace_id); identifier(route.capability);
+      if (route.source_files !== undefined) {
+        requireThat(Array.isArray(route.source_files) && route.source_files.every(path => typeof path === "string"), "invalid_workspace_seed_files");
+        const shape = { schema_version: "controlmesh.workspace_seed.v1", files: route.source_files.map(path => ({ path, size: 0, sha256: "0".repeat(64) })) };
+        validateWorkspaceSeed(shape, digest(shape), route.source_files);
+      }
       requireThat(Array.isArray(route.device_ids) && route.device_ids.length > 0 && route.device_ids.length <= 128
         && new Set(route.device_ids).size === route.device_ids.length, "invalid_assignment_devices"); route.device_ids.forEach(identifier);
       requireThat(route.peer_tasks === undefined || (Array.isArray(route.peer_tasks) && route.peer_tasks.length <= 128
@@ -63,12 +72,16 @@ export class DeviceTopologyRuntime implements TopologyRuntime {
   private specification(task: TaskSnapshot): DeviceAssignment {
     const route = Object.hasOwn(this.routes, task.task.task_id) ? this.routes[task.task.task_id] : undefined;
     requireThat(route, "device_topology_route_missing");
+    const { source_files, ...assignment } = route;
+    const workspace_seed = source_files === undefined ? undefined
+      : this.coordinator.issueWorkspaceSeed(this.actor, task.task.task_id as string, task.revision, route.workspace_id, source_files);
+    const specification = { ...assignment, input: {}, ...(workspace_seed ? { workspace_seed } : {}) };
     const native = task.task.native_session;
     if (native !== undefined && native !== null) {
       requireThat(object(native) && typeof native.device_id === "string" && route.device_ids.includes(native.device_id), "native_session_device_bound");
-      return { ...route, device_ids: [native.device_id], input: {} };
+      return { ...specification, device_ids: [native.device_id] };
     }
-    return { ...route, input: {} };
+    return specification;
   }
   enqueue(requestId: string, taskId: string, revision: number): LocalRun {
     this.assertPrincipal(this.actor); const runId = digest([this.actor.id, this.actor.device_id, requestId]);

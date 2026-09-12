@@ -69,12 +69,13 @@ No claim that full TS migration or distributed coordination has completed. A sco
 
 ## Next Step
 
-Complete initial workspace distribution through topology scheduling and physical delivery.
+Complete physical input/output delivery and real topology/native continuation acceptance.
 The configured coordinator now issues a versioned snapshot reference; device assignments
 bind it, and authenticated chunk reads require the current assignment and execution lease.
 Configured workers opt in with bootstrap_files, persist interrupted receipt and publish
-verified inputs before dispatch. Controlled HTTP interruption/retry is tested; topology
-automatic issuance and actual two-device/native acceptance remain open. Do not confuse
+verified inputs before dispatch. Topology routes now opt in through source_files; enqueue captures the snapshot and assigns
+it atomically. Controlled HTTP interruption/retry and topology restart are tested; actual
+two-device/native acceptance remains open. Do not confuse
 these fixtures with physical delivery or real Agent continuity.
 
 Continue remaining native/source/artifact, provider/transport/store/terminal and CM-R0–CM-R7

@@ -15,10 +15,10 @@ The reproducer still uses a one-second lease, checks actual renewals and transfe
 1 MiB inputs; it passes without extending the lease. Read pacing belongs to the shared
 DeviceClient, not each transfer, because the server quota is per device.
 
-Topology automatic issuance remains the next seam: DeviceTopologyRuntime.specification
-currently constructs assignments from frozen routes inside its enqueue command. A future
-source-files registration must be included in that policy binding and captured atomically
-with assignment, without accepting an externally supplied source path or rereading on retry.
+Topology issuance now uses DeviceTopologyRuntime.specification inside its enqueue command.
+The source_files registration is included in the frozen policy binding; snapshot storage
+and assignment commit atomically. Source location remains the stored task repo_root.
+Retry reads the retained enqueue receipt, without capturing changed source bytes again.
 Current direct/configured HTTP tests do not prove physical-host or native acceptance.
 
 ## Terminal registration context — 2026-09-13

@@ -15,11 +15,12 @@ for (const publish of [false, true]) actual(`configured coordinator delivers art
   try {
     const state = join(root, "coordinator"), local = join(root, "worker"), workspace = join(root, "remote-project"), canonical = join(root, "canonical-project"), home = join(root, "home"), config = join(home, "config");
     for (const path of [state, local, workspace, canonical, home, config]) mkdirSync(path, { mode: 0o700 });
-    writeFileSync(join(workspace, "PROJECT.md"), "device artifact fact\n");
+    writeFileSync(join(publish ? canonical : workspace, "PROJECT.md"), "device artifact fact\n");
+    if (publish) expect(existsSync(join(workspace, "PROJECT.md"))).toBe(false);
     const built = await Bun.build({ entrypoints: [join(import.meta.dir, "helpers/claude-container-native.ts")], target: "node", format: "esm" }); expect(built.success).toBe(true);
     const executable = join(root, "claude"); writeFileSync(executable, `#!/usr/local/bin/node\n${await built.outputs[0].text()}`, { mode: 0o700 });
     const token = randomBytes(32).toString("base64url"), coordinatorPath = join(root, "coordinator.json"), workerPath = join(root, "worker.json");
-    const route = { workspace_id: "project", capability: "claude.write", device_ids: ["worker-device"], ...(publish ? { artifact_transfer: true } : {}) };
+    const route = { workspace_id: "project", capability: "claude.write", device_ids: ["worker-device"], ...(publish ? { artifact_transfer: true, source_files: ["PROJECT.md"] } : {}) };
     const profile = { schema_version: "controlmesh.device_runtime.v1", mode: "candidate", role: "coordinator", state_root: state,
       principal_id: "operator", device_id: "coordinator", devices: [{ device_id: "worker-device", principal_id: "operator", token_sha256: sha(token), capabilities: ["claude.write"], workspace_ids: ["project"] }],
       topology_scheduler: { auto_start: false, routes: { worker: route, reviewer: route },
@@ -38,7 +39,7 @@ for (const publish of [false, true]) actual(`configured coordinator delivers art
       principal_id: "operator", device_id: "worker-device", coordinator: { endpoint: started.endpoint, token },
       claude: { executable, node_executable: "/usr/local/bin/node", cli_version: "2.1.263", model: "fixture-model", home, config_directory: config, environment: {}, timeout_ms: 45000, max_turns: 16,
         container: { docker: "/usr/bin/docker", socket: realpathSync("/var/run/docker.sock"), image_id: process.env.CM_CONTAINER_TEST_IMAGE, node_executable: "/usr/local/bin/node", memory_mb: 512 } },
-      workspaces: { project: { directory: workspace, read_files: ["PROJECT.md"], required_reads: ["PROJECT.md"], write_roots: ["."] } },
+      workspaces: { project: { directory: workspace, read_files: ["PROJECT.md"], required_reads: ["PROJECT.md"], write_roots: ["."], ...(publish ? { bootstrap_files: ["PROJECT.md"] } : {}) } },
       capabilities: { "claude.write": { workspace_ids: ["project"], writable: true } } }), { mode: 0o600 });
     worker = openDeviceRuntime(workerPath);
     const completion = { schema_version: "controlmesh.task_completion.v1", files: [{ path: "result.txt", mode: "write", sha256: sha("device artifact fact\n") }] };
@@ -55,6 +56,7 @@ for (const publish of [false, true]) actual(`configured coordinator delivers art
       expect(await worker.control.handle({ id: `run-${id}`, op: "run", task_id: id, expected_revision: job.revision, assignment_digest: job.assignment_digest }))
         .toMatchObject({ ok: true, result: { status: "done" } });
     }
+    if (publish) expect(readFileSync(join(workspace, "PROJECT.md"), "utf8")).toBe("device artifact fact\n");
     const originalInputs = readFileSync(join(config, "inputs.jsonl")); expect(originalInputs.toString().trim().split("\n")).toHaveLength(2);
     expect(existsSync(join(canonical, "result.txt"))).toBe(false);
     if (!publish) {

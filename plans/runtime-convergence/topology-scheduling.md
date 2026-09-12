@@ -376,8 +376,7 @@ existing files remain unchanged; differing files are rejected. The destination i
 modified during preparation. Persist the returned stage path/reference and proposal digest
 before using existing gated promotion/recovery. This is not atomic multi-file publication.
 
-Initial distribution now has configured assignment/HTTP/worker integration described below. Topology automatic
-issuance and actual two-device delivery remain pending. Receipt occurs under a lease,
+Initial distribution now has configured assignment/HTTP/worker integration described below. Topology issuance is described below; actual two-device delivery remains pending. Receipt occurs under a lease,
 before execution dispatch; acquiring a lease does not itself start a native process.
 Never accept a remote absolute path or promote
 under caller-provided authority. Source packaging must exclude unapproved files/secrets.
@@ -459,5 +458,27 @@ Normal distributed lease limitations still apply during network partitions.
 
 Controlled tests exercise actual loopback HTTP, separate coordinator/receiver stores,
 interruption after one chunk, repeat run, snapshot retention and no premature execution.
-They do not establish physical hosts or real provider acceptance. Topology scheduler
-issuance, physical/native delivery, and retention/cleanup policy remain required.
+They do not establish physical hosts or real provider acceptance. Physical/native delivery and retention/cleanup policy remain required.
+
+
+### Topology source capture
+
+A frozen device route can specify `source_files`, for example:
+
+```json
+{"workspace_id":"project","capability":"claude.write","device_ids":["worker-device"],"source_files":["PROJECT.md"],"artifact_transfer":true}
+```
+
+Each task's stored repo_root selects the coordinator source workspace. The scheduler
+validates the relative file list with the seed contract and includes it in the persisted
+route policy binding. It captures the immutable snapshot inside the enqueue transaction,
+then binds the generated workspace_seed reference to the device assignment. Configuration
+never supplies a precomputed seed reference. Assignment/queue failure rolls back captured
+bytes as well; missing inputs block rather than producing an executable incomplete job.
+The receiving workspace still requires its own bootstrap_files permission.
+
+Each newly admitted task/run captures its own current source. An identical enqueue retry
+retains the previous reference across restart and source edits. Later pipeline stages are
+not implicitly pinned to an earlier stage's source: their own admission establishes their
+snapshot. Existing conflicting worker files are preserved and block receipt. Automatic
+merging or overwriting of changed inputs is not part of bootstrap delivery.

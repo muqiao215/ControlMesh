@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { createHash, randomBytes } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DeviceClient, DeviceCoordinator, DeviceTopologyRuntime, DeviceWorker, LocalTaskRuntime, RuntimeDatabase, RuntimeKernel,
@@ -16,7 +16,7 @@ function node(id: string, topology: ScheduleNode["topology"], nested?: string) {
     roles: [...workers, "control"].map(role => ({ role, task_id: nested && role === "a" ? nested : `${id}_${role}`,
       resume_prompt: "Continue the original task", ...(nested && role === "a" ? { aggregate: true } : {}) })) };
 }
-function fixture(kind: ScheduleNode["topology"] = "pipeline", nested?: ScheduleNode["topology"], options: { multi_device?: boolean; native?: Record<string, unknown>; provider?: string } = {}) {
+function fixture(kind: ScheduleNode["topology"] = "pipeline", nested?: ScheduleNode["topology"], options: { multi_device?: boolean; native?: Record<string, unknown>; provider?: string; source_files?: string[] } = {}) {
   const root = mkdtempSync(join(tmpdir(), "cm-device-topology-")), path = join(root, "coordinator.sqlite");
   let db: RuntimeDatabase, kernel: RuntimeKernel, coordinator: DeviceCoordinator, runtime: DeviceTopologyRuntime, scheduler: TopologyScheduler;
   let server: ReturnType<DeviceCoordinator["listen"]>, clients: DeviceClient[], workers: DeviceWorker[];
@@ -27,7 +27,9 @@ function fixture(kind: ScheduleNode["topology"] = "pipeline", nested?: ScheduleN
   const routes: Record<string, DeviceTopologyRoute> = {};
   for (const node of plan.nodes) for (const role of node.roles) if (!role.aggregate)
     routes[role.task_id] = { workspace_id: "project", capability: "fixture", device_ids: options.multi_device ? ["worker-0", "worker-1"] : [role.role === "a" ? "worker-0" : "worker-1"] };
+  let receiverDbs: RuntimeDatabase[] = [];
   const calls: { id: string; device: string; prompt: unknown }[] = [];
+  if (options.source_files) for (const route of Object.values(routes)) route.source_files = options.source_files;
   let now = Date.now();
   let output: ((id: string, turn: number, value: Record<string, unknown>) => string) | undefined;
   function open() {
@@ -35,7 +37,16 @@ function fixture(kind: ScheduleNode["topology"] = "pipeline", nested?: ScheduleN
     runtime = new DeviceTopologyRuntime(kernel, actor, coordinator, routes, () => {});
     scheduler = new TopologyScheduler(kernel, runtime, actor, { interval_ms: 100 }); server = coordinator.listen();
     clients = registrations.map((device, i) => new DeviceClient({ endpoint: server.url.origin, token: tokens[i]!, device_id: device.device_id }));
-    workers = clients.map(client => new DeviceWorker(client, { workspaces: { project: root }, adapters: { fixture: {
+    workers = clients.map((client, index) => {
+      const target = options.source_files ? join(root, `target-${index}`) : root;
+      const state = join(root, `receiver-state-${index}`);
+      let receiver: RuntimeDatabase | undefined;
+      if (options.source_files) {
+        mkdirSync(target, { recursive: true, mode: 0o700 }); mkdirSync(state, { recursive: true, mode: 0o700 });
+        receiver = new RuntimeDatabase(join(state, "runtime.sqlite")); receiverDbs.push(receiver);
+      }
+      return new DeviceWorker(client, { workspaces: { project: target },
+        ...(receiver ? { workspace_seed: { db: receiver, state_root: state, files: { project: options.source_files! } } } : {}), adapters: { fixture: {
       async execute(context) {
         const id = context.job.task_id; calls.push({ id, device: client.deviceId, prompt: context.job.execution?.prompt });
         const assignment = db.sql.query("SELECT parent_id,worker_role,substage FROM topology_tasks WHERE child_id=?").get(id) as { parent_id: string; worker_role: string; substage: string };
@@ -47,7 +58,7 @@ function fixture(kind: ScheduleNode["topology"] = "pipeline", nested?: ScheduleN
           : { topology: node.topology, worker_role: assignment.worker_role, substage: teamWorkerSubstage(node.topology, assignment.substage), status: "completed", summary: "device output" };
         const text = output ? output(id, calls.filter(call => call.id === id).length, value) : JSON.stringify(value);
         return { observation: { terminal: true }, result: { text, output_digest: digest(text) } };
-      } } } }));
+      } } } }); });
   }
   open();
   for (const id of new Set(plan.nodes.flatMap(node => [node.task_id, ...node.roles.map(role => role.task_id)])))
@@ -71,8 +82,8 @@ function fixture(kind: ScheduleNode["topology"] = "pipeline", nested?: ScheduleN
     get db() { return db; }, get kernel() { return kernel; }, get runtime() { return runtime; }, get scheduler() { return scheduler; },
     get coordinator() { return coordinator; }, get clients() { return clients; }, get workers() { return workers; },
     output(value?: typeof output) { output = value; },
-    async restart() { await scheduler.stop(); await runtime.stop(); await server.stop(true); db.close(); open(); },
-    async close() { await scheduler.stop(); await runtime.stop(); await server.stop(true); db.close(); rmSync(root, { recursive: true, force: true }); } };
+    async restart() { await scheduler.stop(); await runtime.stop(); await server.stop(true); db.close(); receiverDbs.forEach(db => db.close()); receiverDbs = []; open(); },
+    async close() { await scheduler.stop(); await runtime.stop(); await server.stop(true); db.close(); receiverDbs.forEach(db => db.close()); rmSync(root, { recursive: true, force: true }); } };
 }
 for (const kind of kinds) for (const nested of [undefined, ...kinds]) test(`device ${kind} with ${nested ?? "native"} children crosses authenticated HTTP`, async () => {
   const f = fixture(kind, nested);
@@ -280,5 +291,61 @@ for (const corrupt of [false, true]) test(`${corrupt ? "changed" : "missing lega
     expect(f.db.sql.query("SELECT COUNT(*) AS n FROM episodes").get()).toEqual({ n: 0 });
     await f.scheduler.tick();
     expect(f.scheduler.inspect("root")).toMatchObject({ mode: "blocked", reason: { code: corrupt ? "topology_native_context_changed" : "topology_native_context_unavailable" } });
+  } finally { await f.close(); }
+});
+
+
+test("topology atomically captures configured source files and delivers them on both workers after restart", async () => {
+  const f = fixture("fanout_merge", undefined, { source_files: ["PROJECT.md"] });
+  try {
+    writeFileSync(join(f.root, "PROJECT.md"), "reviewed project intent");
+    writeFileSync(join(f.root, "private.env"), "unselected fixture");
+    f.register(); await f.scheduler.tick();
+    const before = f.db.sql.query("SELECT task_id,specification FROM device_assignments ORDER BY task_id").all() as { task_id: string; specification: string }[];
+    expect(before.length).toBe(2);
+    for (const row of before) { const assigned = JSON.parse(row.specification); expect(assigned.workspace_seed.schema_version).toBe("controlmesh.device_workspace_seed.v1"); expect(assigned.source_files).toBeUndefined(); }
+    writeFileSync(join(f.root, "PROJECT.md"), "edited after workers were queued");
+    await f.restart(); await f.scheduler.tick();
+    expect(f.db.sql.query("SELECT task_id,specification FROM device_assignments ORDER BY task_id").all()).toEqual(before);
+    // Both already-queued workers retain the original source. The later controller receives
+    // the source current at its own admission, so keep that explicit input consistent here.
+    writeFileSync(join(f.root, "PROJECT.md"), "reviewed project intent");
+    await f.drain();
+    expect(f.scheduler.inspect("root").mode).toBe("completed");
+    expect(new Set(f.calls.map(call => call.device)).size).toBe(2);
+    for (const index of [0, 1]) {
+      expect(readFileSync(join(f.root, `target-${index}`, "PROJECT.md"), "utf8")).toBe("reviewed project intent");
+      expect(existsSync(join(f.root, `target-${index}`, "private.env"))).toBe(false);
+    }
+  } finally { await f.close(); }
+});
+
+test("missing topology source rolls back assignment and snapshot instead of queueing incomplete work", async () => {
+  const f = fixture("pipeline", undefined, { source_files: ["missing.md"] });
+  try {
+    f.register(); await f.scheduler.tick();
+    expect(f.scheduler.inspect("root").mode).toBe("blocked");
+    expect(f.db.sql.query("SELECT COUNT(*) AS n FROM device_assignments").get()).toEqual({ n: 0 });
+    expect(f.db.sql.query("SELECT COUNT(*) AS n FROM workspace_seed_transfers").get()).toEqual({ n: 0 });
+    expect(f.calls).toHaveLength(0);
+  } finally { await f.close(); }
+});
+
+test("assignment failure rolls back a captured topology snapshot and frozen source policy cannot change on restart", async () => {
+  const f = fixture("pipeline", undefined, { source_files: ["PROJECT.md"] });
+  try {
+    writeFileSync(join(f.root, "PROJECT.md"), "current source");
+    const changed = structuredClone(f.routes); changed.root_a!.source_files = ["other.md"];
+    expect(() => new DeviceTopologyRuntime(f.kernel, actor, f.coordinator, changed, () => {})).toThrow("device_topology_policy_changed");
+    changed.root_a!.source_files = ["../outside"];
+    expect(() => new DeviceTopologyRuntime(f.kernel, actor, f.coordinator, changed, () => {})).toThrow("workspace_seed_path_not_authorized");
+    f.db.sql.exec("CREATE TRIGGER seed_assignment_failure BEFORE INSERT ON device_assignments BEGIN SELECT RAISE(ABORT, 'fixture_assignment_failure'); END");
+    f.register(); await f.scheduler.tick();
+    expect(f.scheduler.inspect("root").mode).toBe("blocked");
+    expect(f.db.sql.query("SELECT COUNT(*) AS n FROM workspace_seed_transfers").get()).toEqual({ n: 0 });
+    expect(f.db.sql.query("SELECT COUNT(*) AS n FROM workspace_seed_files").get()).toEqual({ n: 0 });
+    expect(f.db.sql.query("SELECT COUNT(*) AS n FROM device_assignments").get()).toEqual({ n: 0 });
+    expect(f.db.sql.query("SELECT COUNT(*) AS n FROM topology_device_runs").get()).toEqual({ n: 0 });
+    expect(f.calls).toHaveLength(0);
   } finally { await f.close(); }
 });
