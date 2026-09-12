@@ -69,15 +69,14 @@ No claim that full TS migration or distributed coordination has completed. A sco
 
 ## Next Step
 
-Implement the supervised Claude control lifecycle that verifies dynamic MCP registration
-before sending user input, then wire normal execution/adoption and retained-turn recovery through
-[claude-continuity-design.md](claude-continuity-design.md). The CM workspace file owner is now
-implemented; an isolated actual native turn proved an authorized read, denied ungranted read
-and correct staged write. Native scoped Read allow rules and static MCP startup failed their
-earlier qualifications; keep those failures and existing restrictive-grant rejection explicit.
-The actual file-tool proof does not close normal worker/resume/publication/recovery integration.
-Original JSONL append verification d86745c has passing exact-SHA CI. Preserve current
-source/grants and original native identity; readiness or successful prose is not completion.
+Wire the normal Claude task adapter/worker and provider-specific retained-result manifest into
+local configuration, using the now-implemented supervised control driver and scoped file owner.
+See [claude-continuity-design.md](claude-continuity-design.md). The driver verifies dynamic MCP
+before sending one input; actual original-session resume plus current-file read and staged
+write passed independent verification. Normal task admission, publication and task-level recovery
+are still open. Keep original scoped-Read/static-MCP failures and the existing one-shot/restrictive
+flag contract explicit. Workspace owner 7c522e2 and source verifier d86745c have passing exact-SHA
+CI. Preserve current source/grants and original native identity; readiness/prose is not completion.
 Continue the other provider/transport/store/topology/product owners below; CM-R7 remains open.
 
 Local private startup, History/native adoption, native mailbox/Agent communication,

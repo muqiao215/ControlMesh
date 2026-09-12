@@ -2,6 +2,37 @@
 
 ## Current
 
+Current increment: **supervised Claude native control and actual resume**. The repository driver
+now fixes command/environment/session identity, dynamically connects and verifies only the scoped
+workspace MCP server, sends exactly one input, and retains owner-wrapped native evidence. Unknown
+native permission requests, unexpected tools/model/session, partial or repeated results reject.
+Complete pre-input aborts report input withheld; lost post-input output stays unknown.
+
+Actual pinned CLI 2.1.263/MiniMax-M3 resume restored the controlled original session and used two
+real tools to read current PROJECT.md and write the correct original-marker/current-content value
+into the stage. The new prompt did not include the marker. Original JSONL prefix remained intact,
+canonical output was absent, and independent source/control/tool/manifest readback passed with
+zero new model commands and no remaining owned processes. One shared-cache preflight and one
+resumed task input ran; no acceptance retry occurred. Normal task adapter/recovery is not yet wired.
+
+Validation: final pinned runtime gate with Docker and independent SpecMesh **423/423**, zero
+failures, 4,584 assertions, 81.03 seconds. Focused owned-process tests **9/9**, 54 assertions,
+5.47 seconds and typecheck passed. SpecMesh structural check passed all seven references with
+only expected uncommitted-task-fact warnings; semantic closeout remains pending. Logs
+`/tmp/cm-claude-control-final.log` and `/tmp/cm-claude-control-targeted.log`.
+Private evidence: `claude-control-resume-acceptance.{ts,json,log}`,
+`claude-control-resume-independent-verification.{json,log}` and `verify_claude_control_resume.ts`
+in the coordinating workspace. Raw source, prompts and runtime records remain private.
+
+Next: actual Claude task admission, dispatch manifest, observation retention and model-free
+task reconciliation through normal configuration. Keep the one-shot owner unchanged. All remaining
+provider/transport/store/topology/product and CM-R7 release/cutover gates remain part of the full
+goal. No production writer, service, release or installation changed. Workspace predecessor
+7c522e2edc493c8ec4b2ae582de034525d16fcd7 has successful exact-SHA
+[CI 34667679070](https://github.com/muqiao215/ControlMesh/actions/runs/34667679070).
+
+## Previous scoped workspace file increment
+
 Current increment: **CM-scoped native workspace file tools**. `NativeWorkspaceFiles` implements
 explicit read scope, same-revision paged-read evidence, CAS writes/exact edits inside the existing
 stage, durable pending/done receipts, idempotent reopen and inspection-only reconciliation.

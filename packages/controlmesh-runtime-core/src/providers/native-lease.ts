@@ -15,7 +15,7 @@ export class NativeSessionLease {
   private readonly path: string;
   private readonly identity: { dev: bigint; ino: bigint };
 
-  constructor(stateHome: string, storePath: string, ref: NativeSessionRef, flock = "/usr/bin/flock") {
+  constructor(stateHome: string, storePath: string, ref: Pick<NativeSessionRef, "session_id">, flock = "/usr/bin/flock") {
     requireThat(process.platform === "linux", "native_lease_platform_unsupported");
     requireThat(isAbsolute(stateHome) && isAbsolute(flock), "native_lease_path_must_be_explicit");
     const root = join(stateHome, "controlmesh/native-sessions");

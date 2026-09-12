@@ -1,5 +1,30 @@
 # Findings
 
+## Supervised native Claude resume — 2026-09-12
+
+The repository control driver passed a real explicit resume of the owned test JSONL. Its input
+omitted the original marker; two actual MCP tools read PROJECT.md and wrote the correct marker
+plus current-file contents into the stage. The original file and canonical output remained
+unchanged/absent. Independent readback matched the control envelope, native source append, tool
+receipts and original kernel observation; verification used zero model commands. One shared
+preflight model command and one resumed task input ran. Provider billing request counts were not
+measured. The private qualification task is not claimed completed by a normal task adapter.
+
+The native config directory previously created inside the owned synthetic HOME had mode 0775;
+it was narrowed to 0700 before admitting the new driver. No real user configuration directory
+was changed. An explicit session lease uses only session_id plus native store path, so its type
+now accepts both native providers without changing the lock key or locking semantics. External
+native clients still do not honor CM advisory locks.
+
+Control records alone must not become a task queue. Correlated dynamic MCP admission precedes
+the sole input frame. Separate owner envelopes prove whether input was attempted; complete
+pre-input aborts are distinguishable from lost outcome after input. Unexpected native records
+are retained and reject success. Version/executable/config-directory changes and raw environment
+injection reject before the task process. Cancellation tests reap a real owned child and its
+descendant without a replay. A source read initially used an incorrect test/history filename;
+the actual process tests are process.test.ts/supervisor.test.ts, and provider paths should be
+discovered before reading. This did not affect execution or create additional model calls.
+
 ## CM workspace tools and native MCP startup — 2026-09-12
 
 Static CLI MCP configuration repeatedly reported empty tool/server tables, including in

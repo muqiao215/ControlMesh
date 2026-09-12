@@ -119,8 +119,43 @@ zero built-in tools, and confirmed that canonical output was absent. Rechecking 
 bounded-read performance change used zero model commands. Existing credential environment
 values were passed unchanged; actual HTTP authentication headers were not inspected.
 
-The dynamic control helper is still a private qualification script. Next implement its bounded
-control lifecycle under the existing process supervisor, then connect the normal Claude task
-adapter, native adoption/resume, required-file/SpecMesh admission, durable outcome retention and
-lost-result reconciliation. Workspace tools plus this isolated native proof do not establish
-normal worker recovery, publication, container/device qualification or CM-R7 readiness.
+The original private dynamic helper established the protocol shape. Its supervised repository
+implementation and current native evidence are described below. Workspace tools plus an isolated
+native proof do not establish normal worker recovery, publication, container/device qualification
+or CM-R7 readiness.
+
+## Supervised control lifecycle
+
+`ClaudeControlRunner` now invokes the pinned CLI version and starts `claude-control-process.ts`
+inside the existing process supervisor's anchored group. Input is private structured stdin;
+prompt text never enters shell arguments. The native command fixes bare mode, disabled built-ins,
+empty static MCP configuration, explicit model and exact `--session-id`/`--resume`. Environment
+keys are limited to selected credentials/proxy/CA settings; HOME/config are explicit private
+directories outside the workspace. Executable and directory identities are rechecked with the
+enclosing synchronous lease/source/grant callback, including between version and execution.
+
+`ClaudeControlSession` correlates initialize/register/status responses, verifies the one dynamic
+workspace server's command, tool names and connected state, and only then returns one user frame.
+An empty/pending table has at most six bounded control checks. Unexpected native permission
+requests, tools, model/session/configuration, malformed or duplicate completion fail admission
+or completion. The helper wraps native rows separately from its own input/exit/abort evidence,
+so a provider row cannot impersonate the owner. Complete abort evidence distinguishes input
+withheld from input attempted; missing evidence remains unknown. `observeClaudeControl` replays
+retained evidence without native execution and classifies quota only from native error fields.
+Original JSONL, required reads, tool receipts and task completion remain separate checks.
+
+Actual explicit resume through this repository driver restored the earlier controlled session,
+read its current PROJECT.md and wrote a staged value containing both its original random marker
+and current file bytes. The new prompt did not contain the marker. A single shared-cache native
+preflight preceded one resumed task input; two real tool calls were retained. Independent source,
+control, receipt, file and private-kernel readback accepted the result with zero new model calls,
+and found no owned process or canonical output. The original pre-turn JSONL prefix, including
+the earlier failed read, remained unchanged. That failed historical turn was not rerun or
+retroactively declared successful. Its old latest-turn verifier must not be run against the
+now-longer source without selecting the appropriate retained prefix.
+
+Next connect `ClaudeTaskAdapter`/worker and normal local configuration, with trusted file-tool
+grant mapping, source-bound native store selection, a provider-specific dispatch manifest,
+original observation retention and reconciliation. Keep the existing one-shot contract and
+OpenCode-specific manifests intact. Required read-budget admission, SpecMesh lifecycle, message
+capability integration, container/device profiles and the rest of CM-R0–CM-R7 remain required.
