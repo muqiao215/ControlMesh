@@ -362,6 +362,12 @@ advances one explicit step; it does not run a background loop or create child gr
 Parent TaskHub completion, service repair budgets and device topology dispatch remain
 outside this composition. A terminal topology checkpoint alone does not finish a parent.
 
+`RuntimeFanout` composes bounded parallel admission and complete-batch result collection.
+Workers retain one parent dispatch checkpoint until every assigned result is accepted;
+their result envelopes use the Python collecting substage. Acceptance follows original
+dispatch order and commits with reduction/next-task admission. Partial batches and queue
+capacity failures roll back rather than revoking workers that are still executing.
+
 `LocalTaskRuntime` adds the private local task execution owner. SQLite schema 8 stores
 queued runs, their expected task revision and provider/profile binding, plus the claimed
 episode and terminal outcome. Two controllers sharing the configured principal/device

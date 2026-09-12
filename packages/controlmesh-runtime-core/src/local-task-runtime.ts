@@ -96,6 +96,7 @@ export class LocalTaskRuntime {
     requireThat(actor.id === this.actor.id && actor.device_id === this.actor.device_id && actor.origin === this.actor.origin, "local_principal_mismatch");
   }
   inspectTask(taskId: string): TaskSnapshot { this.current(); return this.kernel.inspect(this.actor, taskId); }
+  parallelLimit(): number { this.current(); return this.parallelism; }
   queueStatus(): { queued: number; running: number } {
     this.current(); requireScope(this.actor, "task:read");
     return { queued: this.rows("queued").length, running: this.rows("running").length };

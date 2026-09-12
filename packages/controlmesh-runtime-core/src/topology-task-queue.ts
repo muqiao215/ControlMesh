@@ -92,7 +92,10 @@ export class TopologyTaskQueue {
         .all(childId, lease.episode_id, lease.fence) as { effect_id: string }[];
       requireThat(effects.length === 1, "topology_child_result_ambiguous");
       const accepted = readTeamTaskResult(this.kernel, actor, { task_id: childId, revision: childRevision, episode_id: lease.episode_id,
-        effect_id: effects[0]!.effect_id, topology: assignment.topology, substage: assignment.substage, worker_role: assignment.worker_role });
+        effect_id: effects[0]!.effect_id, topology: assignment.topology,
+        // Fanout workers run under one stable dispatch checkpoint and report collecting results.
+        substage: assignment.topology === "fanout_merge" && assignment.substage === "dispatching" ? "collecting" : assignment.substage,
+        worker_role: assignment.worker_role });
       this.kernel.db.sql.query("UPDATE topology_tasks SET accepted=? WHERE child_id=?").run(canonical(accepted), childId);
       return accepted;
     }, value => { this.runtime.assertPrincipal(actor); requireScope(actor, "team:write"); this.kernel.inspect(actor, parentId); this.kernel.inspect(actor, childId); return value; });

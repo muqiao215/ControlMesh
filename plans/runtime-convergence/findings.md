@@ -1064,3 +1064,17 @@ CI34683858904 at e981aeb failed opencode-container's staged-runner test in
 ContainerProcessSupervisor.engine (docker info, container_engine_unavailable), before
 container launch. Later tests in that job passed. A single failed-job rerun was
 requested; no cause or successful retry is proven yet. Local pipeline full gate passed.
+
+## Stable fanout dispatch and batch acceptance
+
+Python dispatches at parent substage dispatching, but worker envelopes use collecting.
+TopologyTaskQueue now derives that expected result substage from the trusted stored
+topology/parent stage; execution leases still bind the unchanged dispatch checkpoint.
+RuntimeFanout collects the complete distinct assignment batch before advancing the
+parent. Incomplete batches roll back earlier accepted flags, preserving slower workers.
+Dispatch order controls checkpoint/evidence order independent of completion order.
+Actual configured local parallelism bounds admission; queue-capacity failure rolls
+back all workers and the dispatch checkpoint. Separate pure policy functions preserve
+Python behavior, while the queue boundary additionally enforces complete role coverage.
+The previously failing e981aeb CI container job passed its single requested rerun;
+this establishes a successful retry, not a diagnosed cause of Docker-info failure.

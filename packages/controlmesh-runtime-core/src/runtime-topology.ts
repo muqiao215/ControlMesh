@@ -1,3 +1,4 @@
+import { dispatchFanoutWorkers, collectFanoutWorkers, applyFanoutResult, resumeFanout, type FanoutResultOptions } from "./team-fanout";
 import { applyPipelineResult, dispatchPipelineWorker, resumePipeline, type PipelineResultOptions } from "./team-pipeline";
 import type { StructuredTeamResult } from "./team-result-validation";
 import { command, requireScope } from "./commands";
@@ -49,6 +50,18 @@ export class RuntimeTopology {
       this.kernel.db.sql.query("UPDATE team_topologies SET revision=?,state=? WHERE task_id=?").run(revision, canonical(state), taskId);
       return { task_id: taskId, revision, state };
     }, value => { this.authorize(actor, taskId); requireScope(actor, "team:write"); return value; });
+  }
+  dispatchFanout(actor: Principal, requestId: string, taskId: string, taskRevision: number, revision: number, roles: string[], limit: number): TopologySnapshot {
+    return this.mutate(actor, requestId, taskId, taskRevision, revision, "fanout.dispatch", { roles, limit }, (state, at) => dispatchFanoutWorkers(state, roles, limit, undefined, at));
+  }
+  fanoutWorkers(actor: Principal, requestId: string, taskId: string, taskRevision: number, revision: number, results: StructuredTeamResult[], reducerRole = "reducer"): TopologySnapshot {
+    return this.mutate(actor, requestId, taskId, taskRevision, revision, "fanout.collect", { results, reducerRole }, (state, at) => collectFanoutWorkers(state, results, reducerRole, at));
+  }
+  fanoutResult(actor: Principal, requestId: string, taskId: string, taskRevision: number, revision: number, result: StructuredTeamResult, options: FanoutResultOptions = {}): TopologySnapshot {
+    return this.mutate(actor, requestId, taskId, taskRevision, revision, "fanout.result", { result, options }, (state, at) => applyFanoutResult(state, result, options, at));
+  }
+  resumeFanout(actor: Principal, requestId: string, taskId: string, taskRevision: number, revision: number, parentInput: string): TopologySnapshot {
+    return this.mutate(actor, requestId, taskId, taskRevision, revision, "fanout.resume", { parentInput }, (state, at) => resumeFanout(state, parentInput, undefined, at));
   }
   dispatchPipeline(actor: Principal, requestId: string, taskId: string, taskRevision: number, revision: number, role: string, summary?: string): TopologySnapshot {
     return this.mutate(actor, requestId, taskId, taskRevision, revision, "pipeline.dispatch", { role, summary: summary ?? null }, (state, at) => dispatchPipelineWorker(state, role, summary, at));

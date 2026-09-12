@@ -2,6 +2,20 @@
 
 ## Current
 
+Fanout policy and queue composition implemented.127 fanout sequences match the real
+Python runtime; shared summary extraction retains all127 pipeline sequences. Parent
+checkpoint remains dispatching while native worker output uses collecting. RuntimeFanout
+requires the complete distinct role batch, collects in original dispatch order and
+commits batch acceptance/next stage/next queue admission together. A slow worker leaves
+earlier acceptance rolled back; partial failure falls back to successful evidence,
+and all-failed batches do not launch a reducer. Repair and parent-input flows reuse
+reducer identity. Focused10tests319assertions/typecheck pass; full pinned runtime
+gate507pass0fail,6577assertions across58files in196.75s.
+Next: director/judge policies, bounded service repair loops, parent finalization,
+malformed-output recovery and device topology queues. No new model runs or cutover.
+Previous e981aeb failed-job rerun34683858904 is now verified successful; the original
+Docker-info failure remains recorded without a proven root cause. Latest c4abd0b CI34684335843 is also verified successful.
+
 Pipeline state policy ported and composed with topology child queue.127 sequences
 match real Python worker/review/repair/parent-resume behavior, including Unicode
 summary truncation and reviewer evidence fallback. RuntimePipeline commits collect,
@@ -11,8 +25,8 @@ input flows retain child/native references and perform no duplicate executions.
 Focused3tests148assertions plus typecheck pass; full pinned runtime gate500pass0fail,
 6406assertions across56files in196.24s. Previouse981aeb CI34683858904 failed the
 container Docker-info check with container_engine_unavailable; later same-job container
-tests passed. Root cause unproven. One failed-job rerun requested and still needs
-verification; do not report that CI green or weaken the container gate.
+tests passed. Root cause unproven. The single failed-job rerun is now verified successful; the container gate
+was not weakened and the original failure remains unexplained.
 Next: fanout/director/judge composition, rejection/recovery of malformed output,
 service-level bounded repair scheduling, parent task finalization and device queues.
 This private interface advances one explicitly requested step. It does not add a

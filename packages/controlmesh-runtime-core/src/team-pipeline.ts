@@ -1,13 +1,10 @@
+import { compactTeamText as pipelineSummary, teamResultSummary as summary, teamReducedSummary as reducedSummary } from "./team-progress";
+export { compactTeamText as pipelineSummary } from "./team-progress";
 import { decodeTeamResult, type StructuredTeamResult } from "./team-result-validation";
-import { reducePipelineReview, reducePipelineTerminal, type TeamReducedResult } from "./team-results";
+import { reducePipelineReview, reducePipelineTerminal } from "./team-results";
 import { appendTopologyCheckpoint, decodeTopologyState, interruptTopology, resumeTopology, type TopologyState } from "./team-topology";
 import { requireThat } from "./value";
 
-export function pipelineSummary(value: string, limit = 140): string {
-  const normalized = value.split(/[\u0009-\u000d\u001c-\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/u).filter(Boolean).join(" ");
-  const chars = Array.from(normalized);
-  return chars.length <= limit ? normalized : `${chars.slice(0, limit - 3).join("").replace(/[\u0009-\u000d\u001c-\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+$/u, "")}...`;
-}
 function stateFor(state: TopologyState, substage?: string): TopologyState {
   const current = decodeTopologyState(state);
   requireThat(current.topology === "pipeline" && (!substage || current.checkpoints.at(-1)!.substage === substage), "pipeline_stage_mismatch");
@@ -15,21 +12,6 @@ function stateFor(state: TopologyState, substage?: string): TopologyState {
 }
 function planner(state: TopologyState): string { return state.checkpoints[0]!.active_roles[0] ?? "planner"; }
 function completed(state: TopologyState, role: string): string[] { return [...new Set([planner(state), ...state.checkpoints.at(-1)!.completed_roles, role])]; }
-function summary(result: StructuredTeamResult): string {
-  const parts = [`${result.worker_role}: ${pipelineSummary(result.summary, 96)}`];
-  if (result.evidence.length) parts.push(`${result.evidence.length} evidence`);
-  if (result.artifacts.length) parts.push(`${result.artifacts.length} artifacts`);
-  if (result.status === "needs_repair" && result.repair_hint !== null) parts.push(`repair: ${pipelineSummary(result.repair_hint, 40)}`);
-  else if (result.next_action !== null) parts.push(pipelineSummary(result.next_action, 40));
-  return parts.join(" | ");
-}
-function reducedSummary(result: TeamReducedResult): string {
-  const parts = [pipelineSummary(result.reduced_summary, 104)];
-  if (result.selected_evidence.length) parts.push(`${result.selected_evidence.length} evidence`);
-  if (result.selected_artifacts.length) parts.push(`${result.selected_artifacts.length} artifacts`);
-  if (result.next_action !== null) parts.push(pipelineSummary(result.next_action, 40));
-  return parts.join(" | ");
-}
 export function dispatchPipelineWorker(state: TopologyState, role = "worker", latestSummary?: string, at = new Date()): TopologyState {
   const current = stateFor(state, "planning"), cp = current.checkpoints.at(-1)!;
   return appendTopologyCheckpoint(current, { substage: "worker_running", phase_status: "in_progress", active_roles: [role], completed_roles: [planner(current)],
