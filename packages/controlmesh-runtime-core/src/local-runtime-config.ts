@@ -30,7 +30,7 @@ import type { LocalRuntimeRecovery } from "./local-runtime-control";
 import { ClaudeTaskAdapter } from "./providers/claude-task-adapter";
 import { ClaudeTaskReconciler } from "./providers/claude-task-reconciler";
 import type { ClaudeTaskConfiguration } from "./providers/claude-task-profile";
-import { LocalNativeHistory, type LocalNativeHistoryPort } from "./providers/local-native-history";
+import { LocalNativeHistory, LocalOpenCodeHistory, RegisteredLocalHistory, type LocalNativeHistoryPort } from "./providers/local-native-history";
 
 /** Explicit isolated candidate configuration. Reading task state does not inspect or probe any provider. */
 export interface LocalRuntimeDescription {
@@ -112,7 +112,16 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
         ...(selected.timeout_ms !== undefined ? { timeout_ms: selected.timeout_ms as number } : {}), ...(selected.max_turns !== undefined ? { max_turns: selected.max_turns as number } : {}) };
     };
     requireThat(config.history === undefined || (object(config.history) && typeof config.history.directory === "string" && typeof config.history.python === "string"), "invalid_native_history_profile");
-    const history = config.history === undefined ? undefined : new LocalNativeHistory(db, actor, config.history as { directory: string; python: string }, root, claudeConfiguration, current);
+    const historyPorts = new Map<string, LocalNativeHistoryPort>();
+    if (config.history !== undefined) {
+      const historyConfig = config.history as { directory: string; python: string };
+      if (config.claude !== undefined) historyPorts.set("claude", new LocalNativeHistory(db, actor, historyConfig, root, claudeConfiguration, current));
+      if (provider && environment) historyPorts.set("opencode", new LocalOpenCodeHistory(db, actor, historyConfig, () => {
+        current(); return { data_home: environment.XDG_DATA_HOME, workspace: workspace.directory as string, model: provider.model as string,
+          profile_digest: digest({ provider, environment, workspace, roots, communication: communication ?? null, workflow: specmesh?.binding_digest ?? null }) };
+      }, current));
+    }
+    const history = config.history === undefined ? undefined : new RegisteredLocalHistory(historyPorts);
     const registered = (task: TaskSnapshot) => {
       current();
       requireThat(provider && environment, "opencode_not_registered");

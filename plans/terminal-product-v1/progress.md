@@ -82,3 +82,8 @@ History tests exercise the real local registry/fixture catalog and scope/baselin
 No new live native session or real-model probe was launched. Full provider/terminal/native
 continuation matrix and production cutover remain pending. Previous `cc9123f` CI run
 34712860947 completed success; `0b521ef` CI run 34713012235 was still running when checked.
+
+The 2026-09-13 Claude-only local History limitation above is superseded by registered
+Claude/OpenCode dispatch. Existing terminal `/history opencode QUERY` and `/adopt opencode
+SESSION` now reach the OpenCode port. Real-model and full terminal acceptance stay pending;
+see runtime-convergence progress for the independent headless-CLI fixture evidence.

@@ -152,3 +152,24 @@ Durable boundaries are in [ARCHITECTURE.md](../../docs/ARCHITECTURE.md).
 ## 2026-09-13 — terminal integration checkpoint
 
 Exact baseline `3571ca33f0bca442e0bc77150f281657c975d589` CI run 34711851901 completed success. Added TS interactive socket-client prototype; evidence and limitations in `../terminal-product-v1/progress.md`. Production remains Python; full migration, physical multi-device acceptance and real Agent continuation remain open.
+
+## 2026-09-13 — OpenCode local native adoption owner
+
+Replaced the Claude-only History wiring with explicit registered-provider dispatch.
+OpenCode reuses HistoryClient, NativeSessionStore and DeviceNativeAdoptions; database path
+comes from the registered XDG data home. Adoption binds current configuration/workspace,
+provider/model, device and native content; no installed-binary/history-based readiness
+inference. A profile can now enable History with OpenCode and no Claude configuration.
+OpenCode searches the native SQLite source directly; explicit refresh is unsupported.
+
+A real independent History Viewer checkout was exercised through its headless CLI using
+an isolated synthetic SQLite source: search, prepare, restart, submit, duplicate receipt
+and model mismatch; source bytes unchanged and no provider checks/effects created by
+discovery/preparation. Command: CM_HISTORY_TEST_ROOT=/home/muqiao/桌面/Codex-Claude-History-Viewer
+bun test packages/controlmesh-runtime-core/test/local-native-history.test.ts --test-name-pattern
+OpenCode-only. Result: 1 passed, 14 assertions, 803ms; log `/tmp/cm-local-opencode-real-history.log`.
+The minimal revision fixture initially lacked catalog columns (including parent_id); added
+the fields required by the actual Viewer query to the test database, without altering
+production readers. This is cross-project protocol evidence, not a live-model resume canary.
+
+Final focused local History/control/terminal gate: 26 passed, 182 assertions, 5.05s (`/tmp/cm-opencode-history-focused.log`); typecheck and diff-check passed. Prior commits `0b521ef` and `0535bc9` CI runs 34713012235 and 34713186266 both completed success.

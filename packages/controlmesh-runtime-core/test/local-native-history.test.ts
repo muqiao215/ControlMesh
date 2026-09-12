@@ -98,3 +98,57 @@ test("History rejects source and future-cache symlink aliases before creating di
   symlinkSync(source, missing);
   await expect(catalog.search("", f.workspace, () => {})).rejects.toThrow("native_history_path_must_be_canonical");
 });
+
+test("OpenCode-only local profile adopts its registered SQLite history without Claude or provider startup", async () => {
+  const { Database } = await import("bun:sqlite");
+  const { NativeSessionStore } = await import("../src/providers/native-session");
+  const fixture = (await import("./fixtures/native-session-v2.json")).default;
+  const root = mkdtempSync(join(tmpdir(), "cm-local-opencode-history-")); cleanup.push(() => rmSync(root, { recursive: true, force: true }));
+  const state = join(root, "state"), workspace = join(root, "project"), data = join(root, "data"), viewer = join(root, "viewer");
+  for (const path of [state, workspace, data, join(data, "opencode"), viewer, join(viewer, "history_core")]) mkdirSync(path, { mode: 0o700 });
+  const nativePath = join(data, "opencode/opencode.db"), writer = new Database(nativePath);
+  writer.exec(fixture.schema);
+  for (const [table, values] of fixture.rows as [string, (string | number | null)[]][]) writer.query(`INSERT INTO ${table} VALUES (${values.map(() => "?").join(",")})`).run(...values);
+  writer.exec("ALTER TABLE session ADD COLUMN time_created INTEGER DEFAULT 1; ALTER TABLE session ADD COLUMN time_updated INTEGER DEFAULT 2; ALTER TABLE session ADD COLUMN model TEXT; ALTER TABLE session ADD COLUMN agent TEXT; ALTER TABLE session ADD COLUMN parent_id TEXT; ALTER TABLE session ADD COLUMN tokens_input INTEGER DEFAULT 0; ALTER TABLE session ADD COLUMN tokens_output INTEGER DEFAULT 0;");
+  for (const column of ["slug", "version", "share_url", "summary_additions", "summary_deletions", "summary_files", "summary_diffs", "tokens_reasoning", "tokens_cache_read", "tokens_cache_write"]) writer.exec(`ALTER TABLE session ADD COLUMN ${column} TEXT`);
+  writer.query("UPDATE session SET directory=?").run(workspace);
+  writer.query("UPDATE message SET data=? WHERE id='msg_Z'").run(JSON.stringify({ role: "assistant", providerID: "fixture", modelID: "model", finish: "stop", time: { completed: 2 } }));
+  writer.close();
+  const store = new NativeSessionStore(nativePath, "local"), reference = store.read(fixture.session_id), before = readFileSync(nativePath);
+  writeFileSync(join(viewer, "candidate.json"), JSON.stringify({ schema_version: "history.native_candidate.v2", authorization: "context_only", reference }));
+  writeFileSync(join(viewer, "history_core/__main__.py"), `import json,sys,pathlib
+c=json.loads(pathlib.Path('candidate.json').read_text())
+assert sys.argv[sys.argv.index('--source')+1]=='opencode'
+assert sys.argv[sys.argv.index('--source-path')+1]==${JSON.stringify(nativePath)}
+print(json.dumps(c if 'native-reference' in sys.argv else {'items':[{'id':c['reference']['session_id'],'cwd':c['reference']['directory'],'title':'OpenCode SpecMesh'}]}))
+`);
+  const path = join(root, "profile.json");
+  writeFileSync(path, JSON.stringify({ schema_version: "controlmesh.local_runtime.v1", mode: "candidate", state_root: state,
+    principal_id: "operator", device_id: "local", source: { command_origin: "human_request", origin: "user", source_scope: "local_foreground", transport: "terminal" },
+    opencode: { executable: "/missing/opencode", model: "fixture/model", cli_version: "1.18.29", native_configuration: {},
+      environment: { XDG_DATA_HOME: data, XDG_CACHE_HOME: join(root, "cache") },
+      container: { docker: "/missing/docker", socket: "/missing/docker.sock", image_id: `sha256:${"a".repeat(64)}`, node_executable: "/usr/local/bin/node" } },
+    workspace: { directory: workspace, read_files: [], required_reads: [] }, history: { directory: process.env.CM_HISTORY_TEST_ROOT ?? viewer, python: "/usr/bin/python3" } }), { mode: 0o600 });
+  const open = () => {
+    const owned = openLocalRuntime(path); cleanup.push(() => owned.close());
+    return { owned, control: new LocalRuntimeControl(owned.runtime, undefined, owned.submissionIdentity, undefined, undefined, owned.recovery, owned.history) };
+  };
+  const first = open();
+  expect(await first.control.handle({ id: "search", op: "history_search", provider: "opencode", query: "" })).toMatchObject({ ok: true, result: { items: [{ session_id: fixture.session_id }] } });
+  expect(await first.control.handle({ id: "claude", op: "history_search", provider: "claude", query: "" })).toMatchObject({ ok: false, error: "local_history_provider_unqualified" });
+  expect(await first.control.handle({ id: "refresh", op: "refresh_history", provider: "opencode" })).toMatchObject({ ok: false, error: "native_history_refresh_unsupported" });
+  const prepared = await first.control.handle({ id: "prepare", op: "prepare_adoption", provider: "opencode", task_id: "adopted", session_id: fixture.session_id });
+  expect(prepared).toMatchObject({ ok: true, result: { authorization: "context_only", provider: "opencode", model: "fixture/model" } });
+  expect(JSON.stringify(prepared)).not.toContain(root);
+  for (const table of ["tasks", "effects", "provider_checks"]) expect(first.owned.runtime.kernel.db.sql.query(`SELECT COUNT(*) AS n FROM ${table}`).get()).toEqual({ n: 0 });
+  expect(readFileSync(nativePath)).toEqual(before);
+  await first.owned.close();
+  const second = open(), handle = (prepared.result as Record<string, unknown>).native_session;
+  const task = { task_id: "adopted", status: "waiting", chat_id: "terminal", repo_root: workspace, provider: "opencode", model: "fixture/model", native_session: handle, prompt: "New explicit input" };
+  expect(await second.control.handle({ id: "wrong", op: "submit", task: { ...task, model: "other/model" } })).toMatchObject({ ok: false, error: "native_adoption_task_mismatch" });
+  const submitted = await second.control.handle({ id: "submit", op: "submit", task });
+  expect(submitted).toMatchObject({ ok: true, result: { task: { native_session: reference } } });
+  expect(await second.control.handle({ id: "submit", op: "submit", task })).toEqual(submitted);
+  expect(second.owned.runtime.kernel.db.sql.query("SELECT COUNT(*) AS n FROM provider_checks").get()).toEqual({ n: 0 });
+  expect(readFileSync(nativePath)).toEqual(before);
+});

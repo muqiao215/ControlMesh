@@ -140,7 +140,9 @@ context handle and shows it without submitting a task. The next plain-text input
 the new task prompt; original historical messages are not resubmitted. `/new` discards
 the selection. Model changes are refused while a prepared context is selected.
 
-The current local runtime history port qualifies Claude only; OpenCode and other provider
-names must not be advertised as supported by this TS local adoption path. Provider-native
+The local runtime history ports support explicitly registered Claude and OpenCode providers.
+OpenCode searches its registered SQLite source directly; `/refresh-history opencode` returns
+`native_history_refresh_unsupported` because that source needs no derived-cache refresh.
+Other provider names remain unqualified. Provider-native
 execution still uses the existing registry/baseline checks and enqueue preflight. Terminal
 integration tests do not establish real-model memory recall.
