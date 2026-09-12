@@ -70,6 +70,11 @@ No claim that full TS migration or distributed coordination has completed. A sco
 ## Next Step
 
 Complete physical input/output delivery and real topology/native continuation acceptance.
+The qualified ARM64 peer was confirmed offline on 2026-09-13; no remote canary started.
+While it is unavailable, continue CM-R3: the normal local runtime registration currently
+exposes only Claude/OpenCode. Existing Codex/Gemini one-shot command/observation modules
+do not provide registered persistent native-session adapters. Port that ownership without
+presenting one-shot execution as completed native continuity.
 The configured coordinator now issues a versioned snapshot reference; device assignments
 bind it, and authenticated chunk reads require the current assignment and execution lease.
 Configured workers opt in with bootstrap_files, persist interrupted receipt and publish

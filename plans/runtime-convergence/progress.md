@@ -22,6 +22,13 @@ shows invalid read arguments, not a proven concurrent file change. The attempt a
 05a0e591-a529-4401-b28a-932b3e948f95 are guarded against replay. No new native model canary
 was launched during this correction.
 
+Physical acceptance readiness was checked after a54007d. The previously qualified ARM64
+peer is offline in the local VPN inventory and bounded SSH exited 255 with connection
+timeout. No remote files/processes were created, no previous task/session was resumed,
+and no model request was made. Physical delivery remains unaccepted pending device
+availability. Continue the remaining provider/runtime ownership migration locally;
+this external dependency does not block all CM-R0–CM-R7 work.
+
 Current topology checkpoint adds source_files to frozen device routes. Enqueue captures
 source bytes and issues the assignment in one transaction; retry/restart keeps the original
 reference. Missing source and forced assignment failure block without queued work or
