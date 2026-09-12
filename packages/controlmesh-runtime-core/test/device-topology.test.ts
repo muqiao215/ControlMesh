@@ -7,6 +7,7 @@ import { DeviceClient, DeviceCoordinator, DeviceTopologyRuntime, DeviceWorker, L
   RuntimeTopology, TopologyScheduler, decodeTopologySchedulePlan, type DeviceTopologyRoute, type Principal, type ScheduleNode } from "../src";
 import { teamWorkerSubstage } from "../src/team-task-result";
 import { canonical, digest } from "../src/value";
+import { DeviceCoordinatorControl } from "../src/device-runtime-control";
 const kinds = ["pipeline", "fanout_merge", "director_worker", "debate_judge"] as const;
 const actor: Principal = { id: "owner", device_id: "coordinator", origin: "human_request", scopes: ["task:create", "task:read", "task:execute", "task:resume", "task:cancel", "task:reconcile", "task:admin", "device:assign", "device:revoke", "team:write"] };
 function node(id: string, topology: ScheduleNode["topology"], nested?: string) {
@@ -84,6 +85,31 @@ for (const kind of kinds) for (const nested of [undefined, ...kinds]) test(`devi
     expect(rows.length).toBeGreaterThan(0); expect(rows.every(row => JSON.parse(row.lease).device_id.startsWith("worker-"))).toBe(true);
     expect(f.db.sql.query("SELECT DISTINCT origin FROM events WHERE kind='device.assigned'").all()).toEqual([{ origin: "schedule" }]);
     const before = f.calls.length; await f.scheduler.drain(); expect(f.calls).toHaveLength(before);
+  } finally { await f.close(); }
+});
+
+for (const kind of kinds) for (const nested of [undefined, "pipeline"] as const) test(`device operator continues ${kind}/${nested ?? "native"} through normal controls after restart`, async () => {
+  const f = fixture(kind, nested);
+  const control = () => {
+    const value = new DeviceCoordinatorControl(f.kernel, actor, f.coordinator, f.registrations, () => {});
+    value.attachTopology(f.scheduler, f.runtime, false); return value;
+  };
+  try {
+    f.register(); await f.drain();
+    const before = f.scheduler.inspect("root"), node = before.nodes[0]!, count = f.calls.length;
+    const request = { id: "operator-continue", op: "reopen_schedule", root_task_id: "root", expected_revision: before.revision,
+      task_revision: node.task_revision, topology_revision: node.topology_revision, prompt: "Continue the original project on its registered devices." };
+    const opened = await control().handle(request); expect(opened).toMatchObject({ ok: true, result: { schedule: { mode: "active" } } });
+    expect(f.calls).toHaveLength(count);
+    await f.restart(); expect(await control().handle(request)).toEqual(opened); await f.drain();
+    expect(f.scheduler.inspect("root").mode).toBe("completed"); expect(f.calls).toHaveLength(count * 2);
+    expect(new Set(f.calls.slice(count).map(call => call.id))).toEqual(new Set(f.calls.slice(0, count).map(call => call.id)));
+    expect(f.calls.slice(count).every(call => String(call.prompt).includes("Continue the original task"))).toBe(true);
+    expect(f.db.sql.query("SELECT COUNT(*) AS n FROM local_runs").get()).toEqual({ n: 0 });
+    expect(await control().handle({ id: "archive", op: "inspect_schedule_run", root_task_id: "root", execution_id: node.execution_id }))
+      .toMatchObject({ ok: true, result: { snapshot: { topology: { state: { execution_id: node.execution_id } }, parent: { task: { status: "done" } } } } });
+    expect(await control().handle(request)).toEqual(opened); await f.drain(); expect(f.calls).toHaveLength(count * 2);
+    expect(await control().handle({ ...request, id: "foreign", device_id: "foreign" })).toMatchObject({ ok: false, error: "unexpected_device_control_field" });
   } finally { await f.close(); }
 });
 

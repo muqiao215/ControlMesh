@@ -6,12 +6,29 @@ Full CM-R0–CM-R7 remains in progress. Installed CM 0.43.0 remains the producti
 writer. No release, installation, live migration or default/service switch has occurred.
 The 512-module/57-field ledger is an inventory, not completed parity.
 
-Published 8d5dae2 matches origin/main. CI 34696701829 failed because the new protocol
-schema had not been rebuilt into controlmesh/web_static/assets/main.js. The pinned Web
-build now adds exactly that schema; isolated installed-wheel smoke verified the packaged
-result. The source increment is being finalized for direct main publication.
+Prior publication 049ebb7: exact-commit CI 34698466927 passed all required
+jobs, including both Python versions, protocol/SDK/Web, container execution and isolated
+installed-wheel smoke. It includes canonical device artifact verification and fixes the
+bundled-schema drift that made the preceding 8d5dae2 CI fail.
 
-Current work enables canonical root artifact acceptance for device-native results through
+Current implementation adds private local/coordinator reopen_schedule and
+inspect_schedule_run controls. Explicit continuation archives the verified terminal run,
+retains TaskHub/native identities and frozen roles/budgets, and activates the next normal
+scheduler pass. Schedule/task/topology revisions, ownership and idle members are checked
+transactionally. Duplicate requests return the original receipt without starting another
+run. Full runtime gate passed: 740 tests / 9683 assertions / 71 files / 264.78s, exit 0
+(/tmp/cm-schedule-reopen-full.log), with typecheck passing. Focused local/nested/device
+checks: 103 / 1143 / 14.75s. Configured container continuation: 1 / 53 / 20.40s, retaining
+both original session IDs with resume=true in second-run manifests. The native executable
+is synthetic in that fixture; real-model continuation remains open.
+
+A separate bounded native structured-output probe passed with actual Claude 2.1.263 and
+MiniMax-M3: one input, two native turns, only StructuredOutput advertised/called, correct
+schema fact and verified session/model identity. The pinned container was removed and
+temporary credentials deleted. No prior native session was replayed. This capability has
+not yet been integrated into the CM control/evidence path with workspace MCP.
+
+The published artifact increment enables canonical root acceptance for device-native results through
 normal coordinator startup. Explicit device/workspace provenance and actual completed
 run/effect evidence must match current files on the coordinator. Automatic file transfer
 and remote-only final workspaces are still pending. Also fixed snapshot/contract file order
@@ -25,8 +42,8 @@ corrected worker/merger canary has finished unsuccessfully: one preflight and on
 turn occurred. Eight required files were read, but the final response included prose and
 a Markdown fence around JSON. The scheduler blocked at team_result_invalid_json; merger
 inspection returned assignment_unavailable. No merger turn, root completion or native
-continuation occurred. Both reports are retained with do_not_replay=true. No native
-acceptance process remains running. Controlled tests do not substitute for this failed gate.
+continuation occurred. Both reports are retained with do_not_replay=true. Neither artifact
+canary remains running. Controlled tests do not substitute for this failed gate.
 
 ## Done
 
@@ -57,8 +74,10 @@ acceptance process remains running. Controlled tests do not substitute for this 
 
 ## Remaining
 
-1. Publish the verified canonical-device-artifact implementation and bundled-schema fix;
-   verify exact-commit CI. Real-model acceptance remains open after the recorded failure.
+1. Integrate the verified native structured-output capability into CM's topology
+   dispatch/evidence path, then finish genuine topology continuation and artifact acceptance.
+   Normal continuation controls passed configured/container tests; their publication CI
+   must be verified. Canonical artifact publication and its exact-commit CI passed.
 2. Complete real native topology and current-source acceptance, remote root artifact
    validation, reviewed SpecMesh closeout and pending candidate-input migration.
 3. Complete remaining provider, transport, store and terminal owners and the parity ledger.
@@ -82,9 +101,9 @@ automatic transfer and remote-only final workspaces still need implementation/ac
 
 ## Next
 
-Complete the canonical-device-artifact increment and repair the bundled-schema CI drift.
-Then close normal root-reopen controls, genuine topology continuation and remaining
-provider/transport/store/terminal owners, file transport and rollout gates.
+Publish verified normal root-reopen controls, then implement reliable structured native
+results and genuine topology continuation. Complete remaining provider/transport/store/
+terminal owners, file transport and rollout gates.
 Do not replace the full goal with this scoped recovery or mark the original canary accepted.
 
 ## Retained evidence

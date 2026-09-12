@@ -69,13 +69,13 @@ No claim that full TS migration or distributed coordination has completed. A sco
 
 ## Next Step
 
-Publish canonical device artifact verification and the bundled-schema CI fix after the
-707-test runtime gate and isolated-wheel smoke, then verify exact-commit CI. Native input
-delivery and retained read-failure recovery are already published. Real-model topology and
-continuation remain open: the latest worker read eight files but returned fenced JSON, so
-collection blocked before the merger was assigned. Preserve that failed attempt without
-replay. Then finish native/source/artifact acceptance and all remaining CM-R0–CM-R7 owners
-and rollout gates. See progress.md for exact current evidence.
+Publish verified normal local/coordinator continuation controls (740-test full gate), then
+integrate native structured outputs into CM dispatch and evidence. An isolated actual
+Claude/MiniMax probe proved the CLI capability; it is not yet wired into CM's workspace
+MCP/topology path. Canonical artifacts are published at 049ebb7 with CI 34698466927 passing.
+The prior failed fenced-JSON task remains guarded against replay. Finish genuine topology
+continuation, native/source/artifact acceptance and all remaining CM-R0–CM-R7 owners and
+rollout gates. See progress.md for exact current evidence.
 
 Current implementation and native evidence belong in progress.md and its retained archive,
 not in competing historical next-step instructions. Scoped native acceptance does not

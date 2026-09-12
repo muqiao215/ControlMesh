@@ -8,7 +8,7 @@ import { RuntimeDatabase } from "../src/database";
 const actual = process.env.CM_CONTAINER_TEST_IMAGE ? test : test.skip;
 const sha = (text: string) => createHash("sha256").update(text).digest("hex");
 
-actual("configured coordinator accepts delivered artifacts from actual container file tools after restart, without another native turn", async () => {
+actual("configured coordinator verifies delivered artifacts and explicitly continues the original native sessions after restart", async () => {
   // The Claude process/transcript are synthetic; Docker, MCP, file receipts, native verifier and startup controls are real.
   const root = mkdtempSync(join(tmpdir(), "cm-device-artifact-container-"));
   let coordinator: DeviceRuntime | undefined, worker: DeviceRuntime | undefined;
@@ -71,5 +71,40 @@ actual("configured coordinator accepts delivered artifacts from actual container
       expect(result.completion.files[0]).toMatchObject({ sha256: sha("device artifact fact\n"), witness: { source: { kind: "device", device_id: "worker-device", workspace_id: "project" } } });
       expect(db.sql.query("SELECT COUNT(*) AS n FROM local_runs").get()).toEqual({ n: 0 });
     } finally { db.close(); }
+
+    // Start a new orchestration run through the configured operator surface, retaining each native session.
+    const completed = await call("completed-schedule", "inspect_schedule", { root_task_id: "root" }), node = completed.nodes[0];
+    const continuation = { root_task_id: "root", expected_revision: completed.revision, task_revision: node.task_revision,
+      topology_revision: node.topology_revision, prompt: "Continue the same project and verify the same canonical artifact." };
+    const reopened = await call("continue-project", "reopen_schedule", continuation);
+    expect(reopened.schedule.mode).toBe("active");
+    expect(readFileSync(join(config, "inputs.jsonl"))).toEqual(originalInputs);
+    const endpoint = (await call("restart-listener", "start")).endpoint;
+    const workerProfile = JSON.parse(readFileSync(workerPath, "utf8")); workerProfile.coordinator.endpoint = endpoint;
+    writeFileSync(workerPath, JSON.stringify(workerProfile), { mode: 0o600 }); worker = openDeviceRuntime(workerPath);
+    for (const id of ["worker", "reviewer"]) {
+      await call(`continue-dispatch-${id}`, "drain_schedules");
+      const inspected = await worker.control.handle({ id: `continue-inspect-${id}`, op: "inspect_task", task_id: id }); expect(inspected.ok).toBe(true);
+      const job = inspected.result as { revision: number; assignment_digest: string };
+      writeFileSync(join(config, "fixture-result.json"), JSON.stringify({ topology: "pipeline", substage: id === "worker" ? "worker_running" : "review_running", worker_role: id, status: "completed", summary: "Verified current file on continuation" }));
+      expect(await worker.control.handle({ id: `continue-run-${id}`, op: "run", task_id: id, expected_revision: job.revision, assignment_digest: job.assignment_digest }))
+        .toMatchObject({ ok: true, result: { status: "done" } });
+    }
+    await call("continue-complete", "drain_schedules");
+    expect((await call("continued-root", "inspect_task", { task_id: "root" })).task.status).toBe("done");
+    const continuedInputs = readFileSync(join(config, "inputs.jsonl"));
+    expect(continuedInputs.subarray(0, originalInputs.length)).toEqual(originalInputs);
+    const inputRows = continuedInputs.toString().trim().split("\n").map(line => JSON.parse(line));
+    expect(inputRows).toHaveLength(4);
+    expect(inputRows.slice(2).map(row => row.session_id)).toEqual(inputRows.slice(0, 2).map(row => row.session_id));
+    const journal = new RuntimeDatabase(join(local, "runtime.sqlite"));
+    try {
+      const manifests = (journal.sql.query("SELECT manifest FROM device_execution_records ORDER BY rowid").all() as { manifest: string }[]).map(row => JSON.parse(row.manifest));
+      expect(manifests.map(manifest => manifest.input.resume)).toEqual([false, false, true, true]);
+    } finally { journal.close(); }
+    expect(await call("continue-project", "reopen_schedule", continuation)).toEqual(reopened);
+    await call("no-third-run", "drain_schedules"); expect(readFileSync(join(config, "inputs.jsonl"))).toEqual(continuedInputs);
+    expect(await call("prior-run", "inspect_schedule_run", { root_task_id: "root", execution_id: node.execution_id }))
+      .toMatchObject({ snapshot: { parent: { task: { status: "done" } }, topology: { state: { execution_id: node.execution_id } } } });
   } finally { await worker?.close(); await coordinator?.close(); rmSync(root, { recursive: true, force: true }); }
 }, 60000);

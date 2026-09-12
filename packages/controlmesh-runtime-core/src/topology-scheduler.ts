@@ -100,6 +100,7 @@ export class TopologyScheduler {
         const task = this.kernel.inspect(this.actor, node.task_id), topology = this.topology.inspect(this.actor, node.task_id);
         const cp = topology?.state.checkpoints.at(-1);
         return { task_id: node.task_id, task_revision: task.revision, status: task.task.status, topology_revision: topology?.revision ?? null,
+          execution_id: topology?.state.execution_id ?? null,
           stage: cp?.substage ?? null, summary: cp?.latest_summary ?? null, active_roles: cp?.active_roles ?? [],
           children: node.roles.map(role => {
             const child = this.kernel.inspect(this.actor, role.task_id);
@@ -116,6 +117,40 @@ export class TopologyScheduler {
       requireThat(!["completed", "failed", "cancelled"].includes(row.mode), "topology_schedule_terminal");
       this.set(row, mode, null); return this.inspect(root);
     }, () => this.inspect(root));
+  }
+  /** Explicit project continuation; a restart or an old command receipt never opens another run. */
+  reopen(requestId: string, root: string, revision: number, taskRevision: number, topologyRevision: number, prompt: string) {
+    this.authorize();
+    requireThat([revision, taskRevision, topologyRevision].every(value => Number.isSafeInteger(value) && value > 0), "revision_conflict");
+    requireThat(typeof prompt === "string" && prompt.trim().length > 0 && Buffer.byteLength(prompt) <= 32768, "invalid_resume_prompt");
+    return command(this.kernel.db, this.actor, requestId, "schedule.reopen", { root, revision, taskRevision, topologyRevision, prompt }, () => {
+      const row = this.row(root);
+      requireThat(row.revision === revision, "revision_conflict");
+      requireThat(["completed", "failed"].includes(row.mode), "topology_schedule_not_reopenable");
+      requireThat(this.topology.inspect(this.actor, root)?.revision === topologyRevision, "revision_conflict");
+      const plan = this.plan(row);
+      for (const node of plan.nodes) {
+        this.owned(node.task_id); this.checkControlPolicy(node);
+        for (const role of node.roles) this.owned(role.task_id);
+      }
+      for (const taskId of new Set(plan.nodes.flatMap(node => [node.task_id, ...node.roles.map(role => role.task_id)]))) {
+        const task = this.kernel.inspect(this.actor, taskId);
+        requireThat(!task.active_episode && !task.needs_reconciliation
+          && !this.kernel.db.sql.query("SELECT 1 FROM local_runs WHERE task_id=? AND state IN ('queued','running')").get(taskId),
+        "topology_schedule_member_not_idle");
+        const assignment = this.kernel.db.sql.query("SELECT run_id FROM topology_tasks WHERE child_id=? AND kind='native'").get(taskId) as { run_id: string } | null;
+        if (assignment) requireThat(this.runtime.inspect(assignment.run_id).state === "completed", "topology_schedule_member_not_idle");
+        else requireThat(!this.kernel.db.sql.query("SELECT 1 FROM device_assignments WHERE task_id=?").get(taskId), "topology_schedule_member_not_idle");
+      }
+      // The kernel archives verified completion; the next ordinary tick dispatches the frozen roles.
+      const result = this.kernel.reopenTopology(this.actor, `schedule-reopen-${digest(requestId)}`, root, taskRevision, topologyRevision, prompt);
+      this.set(row, "active", null);
+      return { schedule: this.inspect(root), result };
+    }, value => { this.inspect(root); return value; });
+  }
+  inspectRun(root: string, executionId: string) {
+    this.authorize(); this.row(root); this.owned(root); identifier(executionId);
+    return this.topology.inspectRun(this.actor, root, executionId);
   }
   private set(row: Row, mode: Mode, reason: Reason | null) {
     requireThat(Number.isSafeInteger(row.revision + 1) && Number.isSafeInteger(row.lease_fence + 1), "topology_schedule_revision_exhausted");

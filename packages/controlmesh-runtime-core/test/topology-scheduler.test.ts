@@ -96,6 +96,77 @@ test("a director does not start an aggregate child it never dispatches", async (
   } finally { await f.close(); }
 });
 
+for (const kind of kinds) for (const inner of [undefined, ...kinds]) test(`operator continuation preserves ${kind}/${inner ?? "native"} task identities through restart`, async () => {
+  const f = fixture(kind, inner);
+  const control = () => new LocalRuntimeControl(f.runtime, undefined, undefined, undefined, undefined, undefined, undefined, f.scheduler);
+  try {
+    f.register(); f.activate(); await f.scheduler.drain();
+    const before = f.scheduler.inspect("root"), node = before.nodes.find(node => node.task_id === "root")!;
+    const originalCalls = [...f.calls], request = { id: "operator-continue", op: "reopen_schedule", root_task_id: "root",
+      expected_revision: before.revision, task_revision: node.task_revision, topology_revision: node.topology_revision, prompt: "Continue the same project with the next milestone." };
+    const reopened = await control().handle(request);
+    expect(reopened).toMatchObject({ ok: true, result: { schedule: { mode: "active" }, result: { parent: { task: { task_id: "root", status: "waiting" } } } } });
+    expect(f.calls).toEqual(originalCalls);
+    const archiveRequest = { id: "archive", op: "inspect_schedule_run", root_task_id: "root", execution_id: node.execution_id };
+    const archive = await control().handle(archiveRequest);
+    expect(archive).toMatchObject({ ok: true, result: { snapshot: { parent: { task: { status: "done" } }, topology: { state: { execution_id: node.execution_id } } } } });
+    expect(f.scheduler.inspect("root").nodes[0]!.execution_id).not.toBe(node.execution_id);
+    expect(await control().handle(request)).toEqual(reopened);
+    await f.restart(); expect(await control().handle(request)).toEqual(reopened);
+    expect(f.calls).toEqual(originalCalls); await f.scheduler.drain();
+    expect(f.scheduler.inspect("root").mode).toBe("completed");
+    expect(f.calls).toHaveLength(originalCalls.length * 2);
+    for (const call of f.calls.slice(originalCalls.length)) expect(call.session).toEqual({ session_id: `fixture_${call.id}` });
+    const completed = f.scheduler.inspect("root");
+    expect(await control().handle(request)).toEqual(reopened);
+    await f.scheduler.drain(); expect(f.scheduler.inspect("root")).toEqual(completed);
+    expect(await control().handle(archiveRequest)).toEqual(archive);
+    expect(f.db.sql.query("SELECT origin FROM events WHERE task_id='root' AND kind='task.resumed'").all()).toEqual([{ origin: "human_request" }]);
+    expect(await control().handle({ ...request, id: "forged-continue", device_id: "foreign" })).toMatchObject({ ok: false, error: "unexpected_local_request_field" });
+  } finally { await f.close(); }
+});
+
+test("continuation rejects stale revisions and rolls archive, task and receipt back if scheduler update fails", async () => {
+  const f = fixture();
+  try {
+    f.register(); f.activate(); await f.scheduler.drain();
+    const before = f.scheduler.inspect("root"), node = before.nodes[0]!, events = f.db.sql.query("SELECT COUNT(*) AS n FROM events").get();
+    const resume = (id: string, revisions = [before.revision, node.task_revision, node.topology_revision!]) =>
+      f.scheduler.reopen(id, "root", revisions[0]!, revisions[1]!, revisions[2]!, "Continue project");
+    for (let index = 0; index < 3; index++) {
+      const revisions = [before.revision, node.task_revision, node.topology_revision!]; revisions[index]!--;
+      expect(() => resume(`stale-${index}`, revisions)).toThrow("revision_conflict");
+    }
+    f.db.sql.exec("CREATE TRIGGER reject_schedule_reopen BEFORE UPDATE OF mode ON topology_schedules WHEN NEW.mode='active' AND OLD.mode='completed' BEGIN SELECT RAISE(ABORT,'injected_schedule_reopen_failure'); END");
+    expect(() => resume("retry-after-rollback")).toThrow("injected_schedule_reopen_failure");
+    expect(f.scheduler.inspect("root")).toEqual(before);
+    expect(f.db.sql.query("SELECT COUNT(*) AS n FROM topology_runs").get()).toEqual({ n: 0 });
+    expect(f.db.sql.query("SELECT COUNT(*) AS n FROM events").get()).toEqual(events);
+    f.db.sql.exec("DROP TRIGGER reject_schedule_reopen");
+    expect(resume("retry-after-rollback").schedule.mode).toBe("active");
+    f.runtime.assertPrincipal = () => { throw new Error("revoked_runtime"); };
+    expect(() => resume("retry-after-rollback")).toThrow("revoked_runtime");
+  } finally { await f.close(); }
+});
+
+for (const mode of ["active", "blocked", "cancelled", "failed"] as const) test(`explicit continuation handles ${mode} schedules without inferring retry permission`, async () => {
+  const f = fixture();
+  try {
+    f.register(); f.activate();
+    if (mode === "blocked") f.output(() => "not JSON");
+    if (mode === "failed") f.output((_id, _turn, value) => JSON.stringify({ ...value, status: "failed" }));
+    if (mode === "cancelled") f.kernel.cancel(actor, "cancel-root", "root", 1);
+    if (mode !== "active") await f.scheduler.drain();
+    const before = f.scheduler.inspect("root"), node = before.nodes[0]!;
+    const reopen = () => f.scheduler.reopen("continue", "root", before.revision, node.task_revision, node.topology_revision ?? 1, "Continue project");
+    expect(before.mode).toBe(mode);
+    if (mode === "failed") {
+      expect(reopen().schedule.mode).toBe("active"); f.output(); await f.scheduler.drain();
+      expect(f.scheduler.inspect("root").mode).toBe("completed");
+    } else { expect(reopen).toThrow("topology_schedule_not_reopenable"); expect(f.scheduler.inspect("root")).toEqual(before); }
+  } finally { await f.close(); }
+});
+
 test("background scheduling completes without a drain command and duplicate owners do not duplicate work", async () => {
   const f = fixture("director_worker"), peerDB = new RuntimeDatabase(f.path), peerKernel = new RuntimeKernel(peerDB);
   const peerRuntime = new LocalTaskRuntime(peerKernel, actor, source, f.resolver, () => {});

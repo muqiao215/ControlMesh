@@ -424,6 +424,12 @@ The archive digest is checked by `RuntimeTopology.inspectRun`. Archiving, monoto
 and topology revisions/fence, clearing the current completion and emitting task.resumed
 commit together. Cancelled, changed, ambiguous or unaccepted work cannot be reopened.
 The event records topology_reopen as its source and does not invent a provider episode.
+Normal local/coordinator controls expose this through `reopen_schedule`, bound to the
+schedule, task and topology revisions. Archival and schedule activation commit together;
+the next normal scheduler tick dispatches the frozen roles. Current native assignments
+must be settled and owned. Repeated command receipts never reopen again, and cancelled or
+blocked schedules use no implicit continuation. `inspect_schedule` includes execution IDs;
+`inspect_schedule_run` reads their verified root archives through the same private surface.
 
 Each assignment now carries its topology execution ID. Old roles retain their child IDs
 and generation history, but cannot authorize effects, result collection or file completion

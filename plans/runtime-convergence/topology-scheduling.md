@@ -70,6 +70,8 @@ The private control operations are:
 | `register_schedule` | `plan` | Persist a paused immutable plan |
 | `inspect_schedule` | `root_task_id` | Current progress and actionable child identities |
 | `activate_schedule` / `pause_schedule` | `root_task_id`, `expected_revision` | Compare-and-set admission state |
+| `reopen_schedule` | `root_task_id`, `expected_revision`, `task_revision`, `topology_revision`, `prompt` | Explicitly continue a verified completed/failed project under the same identities |
+| `inspect_schedule_run` | `root_task_id`, `execution_id` | Read the preserved root execution archive |
 | `start_scheduler` / `scheduler_status` | none | Start or inspect the local service loop |
 | `drain_schedules` | none | Bounded foreground advance for controlled execution |
 | `answer_schedule` | `root_task_id`, `expected_revision`, `node_id`, `parent_revision`, `topology_revision`, `input` | Answer the actual waiting-parent checkpoint |
@@ -87,6 +89,24 @@ output recovery. Automatic resume prompts combine the registered continuation in
 with factual checkpoint context. They do not expand execution permissions. Their kernel
 events have `origin:schedule`, rather than appearing as new human requests. Explicit user
 answers/retries retain their control-request origin.
+
+For a completed or failed project, read `inspect_schedule` and use the root node's
+`task_revision`, `topology_revision` and `execution_id`, plus the schedule's `revision`.
+Submit `reopen_schedule` with those three current revisions and the new project instruction.
+The kernel verifies and archives the terminal result, and the scheduler becomes active in
+the same transaction. Its next ordinary tick dispatches the original registered roles.
+Task IDs, native session references, grants, device routes and frozen policy limits are
+preserved; every new child execution must still pass its normal preflight/admission checks.
+Unused roles stay unused until actually selected. Existing child work must be settled.
+
+This operation rejects active, paused, blocked and cancelled schedules; malformed-output
+recovery uses `retry_schedule_child` with its existing budget. A repeated request ID with
+identical input returns the original receipt, including after restart or completion of the
+new run, without creating another run. Changed input under that ID rejects. Root reopen
+events retain the operator's request origin; later automatic dispatch remains attributed
+to the schedule. `inspect_schedule_run` reads the old archive using the previous execution
+ID; it returns null for a run that has not been archived. The archive remains contextual
+history and does not replace the next run's current file or SpecMesh acceptance.
 
 ## Persistence and verification boundaries
 

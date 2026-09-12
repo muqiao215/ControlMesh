@@ -1,5 +1,52 @@
 # Findings
 
+## Normal project continuation controls — 2026-09-12
+
+The kernel already archived a completed topology and retained its task identity, but
+normal local/coordinator controls exposed no reopen operation. A completed scheduler
+also rejected ordinary activation. The new explicit operation verifies the existing
+schedule, task and topology revisions, archives with the existing kernel owner, then
+activates ordinary dispatch in one transaction. It does not retry blocked model output
+or resume cancelled tasks. The frozen role plan and controller budgets remain in force.
+Archived root executions are readable through the same private operator surface.
+
+Initial focused tests found a new guard incorrectly querying a state column on
+topology_device_runs. Device state is derived by the registered execution owner, unlike
+local_runs. The guard now uses runtime.inspect for existing native assignments. This
+does not introduce a duplicate state owner or change the database version.
+
+Focused local/nested/device continuation checks passed: 103 tests / 1143 assertions /
+14.75s. The configured coordinator/container fixture also passed: 1 / 53 / 20.40s. It
+completed artifacts after restart, then used reopen_schedule to dispatch a second run.
+Both native manifests used resume=true and retained the original worker/reviewer session
+IDs. The original input prefix and archive stayed unchanged; replay of the operator
+request did not create a third run. Docker, MCP, file receipts, source verification and
+configuration controls are actual; the Claude executable and transcripts are synthetic.
+This does not qualify real-model memory or physical multi-device behavior.
+Full final-source runtime gate passed: 740 tests / 9683 assertions / 71 files / 264.78s,
+exit 0, with typecheck passing. Log: /tmp/cm-schedule-reopen-full.log.
+
+Read-only inspection of the installed Claude help confirms a --json-schema option.
+Current claudeControlCommand only requests stream-json framing, and final evidence binds
+the result string to the native assistant text. Stream framing does not enforce the
+task's JSON result contract. Native structured-output behavior under the current bare/
+empty-tool grant and configured provider remains to be investigated and verified before
+integrating it; parsing a convenient substring from a failed response is not acceptance.
+The [official CLI documentation](https://code.claude.com/docs/en/headless#get-structured-output)
+also distinguishes stream framing from schema validation and the structured_output field.
+
+A bounded independent native probe now confirms Claude 2.1.263 / configured MiniMax-M3
+with stream-json plus --json-schema under bare/empty-tool/dontAsk mode. One input used
+two native turns. Init advertised only StructuredOutput, no MCP servers or plugins; the
+native transcript records that exact tool and its successful result. structured_output
+matched the random schema fact and the final text was its JSON encoding. Session/model/
+version/tool-table identity was rechecked from retained stdout without another invocation.
+The isolated pinned container was removed, the temporary credential file deleted, and
+production/native project sessions were untouched. Guarded operator artifact:
+outputs/runtime-convergence/claude-structured-output-probe-20260912.{ts,json,attempt.json}.
+This proves the installed provider capability, not CM's integration with dynamically
+registered MCP, topology schema references, completion receipts or real continuation.
+
 ## Canonical device artifacts and completion order — 2026-09-12
 
 The local artifact gate had read local_runs directly and rejected every device-native
