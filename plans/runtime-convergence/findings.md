@@ -1881,3 +1881,12 @@ adoption registry can be generalized while provider-specific readers remain inde
 LocalCodexHistory constrains lookup to the configured sessions directory and device;
 candidate JSON never supplies the source path. Reusing the JSONL catalog keeps source/cache
 separation, refresh serialization and bounded process calls identical for Claude and Codex.
+
+Codex configured admission keeps the native session source separate from the derived
+History index and CM's authoritative state. UUID lookup scans only a bounded canonical
+sessions tree and fails on multiple matching rollout files. Explicit resume follows the
+existing API contract: update the task, then enqueue. The registry resolves retained
+results without re-reading credentials; removing auth.json after a lost observation did
+not prevent model-free recovery. Required-file/workflow contracts currently refuse at
+prepare, before a probe. This is a missing capability to implement, not permission to
+remove a governed project's requirements.

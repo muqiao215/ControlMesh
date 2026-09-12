@@ -162,3 +162,35 @@ constructing shell command strings from returned JSON. Creation does not enqueue
 completed successfully. Inspect the JSON gate result for details; a transport success
 alone does not authorize continuation or prove reviewed closeout. No command loads the
 interactive renderer or depends on the Web UI.
+
+## Codex configured continuity profile
+
+The candidate profile accepts a `codex` registration alongside the other providers:
+
+```json
+"codex": {
+  "executable": "/absolute/path/to/native/codex",
+  "cli_version": "0.154.0",
+  "codex_home": "/absolute/private/codex-home",
+  "model": "selected-model",
+  "environment": {},
+  "timeout_ms": 60000
+}
+```
+
+Register the native executable, not an npm wrapper requiring an unregistered Node path.
+The existing canonical `codex_home/sessions` tree supplies explicitly selected rollout
+records; credentials come from the private auth.json snapshot or qualified API environment.
+An OPENAI_BASE_URL override uses the same explicit native backend in probe and resume.
+The shared `history` registration enables `history-search`, `history-refresh` and
+`prepare-adoption TASK --provider codex --session UUID`. Pass the returned native_session
+handle to `new TASK --provider codex --adoption JSON`, then explicitly `enqueue`.
+`resume` also requires a later enqueue. Closing/reopening the service preserves the
+adoption and execution journal; retained-result recovery does not call the model.
+
+This profile currently runs already-adopted sessions under native read-only settings.
+It does not yet fulfill configured required-file, write, communication or SpecMesh
+completion contracts; those contracts are rejected before probing and remain migration
+work. Preserve governed project requirements. The existing Python production entrypoint
+and released default are unchanged; full native sandbox/real-account qualification is
+still required by the runtime-convergence acceptance matrix.

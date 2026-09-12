@@ -2,6 +2,24 @@
 
 ## Current
 
+Ordinary controlmesh.local_runtime.v1 configuration now registers Codex through
+CodexRegistration, LocalCodexHistory, CodexTaskPreflight and CodexTaskAdapter. The
+existing control commands can prepare adoption, submit, enqueue, inspect, resume and
+reconcile. Source lookup is limited to the registered sessions tree (512 directories,
+20,000 entries), requires an exact UUID and rejects duplicate matches; symlinks are
+not candidates. Construction/status/adoption do not probe a model. Recovery uses
+retained evidence and succeeds with the auth file removed, without another probe.
+31 local/CLI tests / 249 assertions and typecheck passed
+(/tmp/cm-codex-registration-final.log). Four configured-flow tests also passed with
+the actual Viewer headless CLI (29 assertions, /tmp/cm-codex-registration-viewer.log).
+Codex model execution used supervised synthetic executables; real-account continuation
+and native sandbox qualification remain unproven by this increment.
+The registered profile currently supports adopted read-only sessions. Fresh sessions,
+file receipts, required reads, SpecMesh completion contracts, mailbox/topology and
+write profiles still require implementation; unsupported configured contracts refuse
+before preflight rather than silently dropping requirements. Full migration/release
+and production default switch remain incomplete. Prior bb9bacb CI 34724233626 passed.
+
 Codex History adoption now reuses DeviceNativeAdoptions and the existing opaque-handle
 schema/table. LocalCodexHistory connects registered source lookup, the shared bounded
 JSONL catalog and CodexHistoryClient; CM independently validates Viewer candidates and
@@ -11,8 +29,8 @@ the original reference for recovery; execution separately rejects a changed revi
 27 tests / 213 assertions and typecheck passed (/tmp/cm-codex-adoption-final.log), including
 an actual headless Viewer subprocess with synthetic Codex records and unchanged source
 bytes. Claude/OpenCode adoption regressions passed. No native model was invoked.
-The ordinary local_runtime configuration still does not register this port or the Codex
-task adapter; automatic source lookup and full native continuation remain next.
+The ordinary configuration and bounded source lookup are now connected as described
+above; full native continuation and remaining capability profiles are still open.
 Previous commits a253cfe and History 9ea53f1 have successful CI runs 34723955246 and
 34723955816 respectively. This increment does not change production defaults or releases.
 

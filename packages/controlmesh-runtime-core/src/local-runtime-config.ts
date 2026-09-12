@@ -1,3 +1,5 @@
+import { CodexRegistration } from "./providers/codex-registration";
+import { LocalCodexHistory } from "./providers/local-codex-history";
 import { TopologyScheduler } from "./topology-scheduler";
 import { TopologyArtifactGate } from "./topology-artifacts";
 import { mkdirSync, realpathSync, statSync, existsSync } from "node:fs";
@@ -35,7 +37,7 @@ import { LocalNativeHistory, LocalOpenCodeHistory, RegisteredLocalHistory, type 
 /** Explicit isolated candidate configuration. Reading task state does not inspect or probe any provider. */
 export interface LocalRuntimeDescription {
   mode: "candidate"; workspace: string;
-  providers: { provider: "opencode" | "claude"; model: string }[];
+  providers: { provider: "opencode" | "claude" | "codex"; model: string }[];
   registered_write_roots: string[];
   integrations: { history: boolean; specmesh: boolean };
 }
@@ -51,7 +53,7 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
   identifier(config.principal_id); identifier(config.device_id);
   requireThat(object(config.source) && config.source.command_origin === "human_request" && config.source.origin === "user"
     && config.source.source_scope === "local_foreground" && typeof config.source.transport === "string", "local_source_profile_unqualified");
-  requireThat(config.opencode !== undefined || config.claude !== undefined, "local_provider_required");
+  requireThat(config.opencode !== undefined || config.claude !== undefined || config.codex !== undefined, "local_provider_required");
   requireThat(config.opencode === undefined || (object(config.opencode) && typeof config.opencode.model === "string" && config.opencode.cli_version === "1.18.29"
     && object(config.opencode.native_configuration) && object(config.opencode.environment) && Object.values(config.opencode.environment).every(value => typeof value === "string")
     && object(config.opencode.container) && typeof config.opencode.executable === "string"), "invalid_local_provider_profile");
@@ -112,9 +114,11 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
         ...(selected.timeout_ms !== undefined ? { timeout_ms: selected.timeout_ms as number } : {}), ...(selected.max_turns !== undefined ? { max_turns: selected.max_turns as number } : {}) };
     };
     requireThat(config.history === undefined || (object(config.history) && typeof config.history.directory === "string" && typeof config.history.python === "string"), "invalid_native_history_profile");
+    const codex = config.codex === undefined ? undefined : new CodexRegistration(kernel, cache, actor, config.codex, root, workspace.directory as string, current);
     const historyPorts = new Map<string, LocalNativeHistoryPort>();
     if (config.history !== undefined) {
       const historyConfig = config.history as { directory: string; python: string };
+      if (codex) historyPorts.set("codex", new LocalCodexHistory(db, actor, historyConfig, root, codex.history, codex.locate, current));
       if (config.claude !== undefined) historyPorts.set("claude", new LocalNativeHistory(db, actor, historyConfig, root, claudeConfiguration, current));
       if (provider && environment) historyPorts.set("opencode", new LocalOpenCodeHistory(db, actor, historyConfig, () => {
         current(); return { data_home: environment.XDG_DATA_HOME, workspace: workspace.directory as string, model: provider.model as string,
@@ -147,6 +151,11 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
       return { runner, store, registration, worker };
     };
     const runtime = new LocalTaskRuntime(kernel, actor, { command_origin: "human_request", origin: "user", source_scope: "local_foreground", transport: config.source.transport }, task => {
+      if (task.task.provider === "codex") {
+        requireThat(codex, "codex_not_registered");
+        requireThat(!specmesh && !communication && roots.length === 0 && (workspace.read_files as string[]).length === 0 && (workspace.required_reads as string[]).length === 0, "codex_file_or_workflow_profile_unavailable");
+        return codex.adapter(task).prepare(task);
+      }
       if (task.task.provider === "claude") {
         const selected = claudeConfiguration(task.task.task_id), execution = new ClaudeTaskAdapter(kernel, cache, actor, selected, current).prepare(task);
         return specmesh ? specmesh.bind(execution, selected.required_reads) : execution;
@@ -158,12 +167,20 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
     const recovery: LocalRuntimeRecovery = {
       inspect: (taskId, revision, effectId) => {
         current(); runtime.queueStatus();
+        if (kernel.inspect(actor, taskId).task.provider === "codex") {
+          requireThat(codex, "codex_not_registered"); return codex.adapter(kernel.inspect(actor, taskId), true).inspectRecovery(taskId, revision, effectId);
+        }
         if (kernel.inspect(actor, taskId).task.provider === "claude") return new ClaudeTaskReconciler(kernel, claudeConfiguration(taskId), current).inspect(actor, taskId, revision, effectId);
         const saved = kernel.inspectReconciliation(actor, taskId, revision, effectId);
         decodeNativeManifest(saved.manifest);
         return { episode_id: saved.episode.episode_id, effect_id: effectId, manifest_digest: saved.manifest_digest, observation_digest: saved.observation_digest };
       },
       accept: async (requestId, taskId, revision, candidate) => {
+        if (kernel.inspect(actor, taskId).task.provider === "codex") {
+          current(); runtime.queueStatus(); requireThat(codex, "codex_not_registered");
+          const result = await codex.adapter(kernel.inspect(actor, taskId), true).recover(requestId, taskId, revision, candidate);
+          runtime.recover(); return result;
+        }
         if (kernel.inspect(actor, taskId).task.provider === "claude") {
           runtime.queueStatus(); const selected = claudeConfiguration(taskId);
           const result = await new ClaudeTaskReconciler(kernel, selected, () => { current(); runtime.queueStatus(); }).accept(actor, requestId, taskId, revision, candidate,
@@ -233,7 +250,7 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
     const describe = (): LocalRuntimeDescription => {
       current();
       return { mode: "candidate", workspace: workspace.directory as string,
-        providers: (["opencode", "claude"] as const).filter(name => object(config[name])).map(name => ({ provider: name, model: (config[name] as Record<string, unknown>).model as string })),
+        providers: (["opencode", "claude", "codex"] as const).filter(name => object(config[name])).map(name => ({ provider: name, model: (config[name] as Record<string, unknown>).model as string })),
         registered_write_roots: [...roots], integrations: { history: Boolean(history), specmesh: Boolean(specmesh) } };
     };
     return { runtime, recovery, describe, submissionIdentity, stop, close, ...(scheduler ? { scheduler, keep_alive: schedule!.keep_alive === true } : {}), ...(history ? { history } : {}), ...(deliveries ? { deliveries } : {}), ...(inbound ? { inbound } : {}), ...(specmesh ? { specmesh } : {}) };
