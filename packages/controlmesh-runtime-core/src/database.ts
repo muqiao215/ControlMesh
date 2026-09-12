@@ -26,7 +26,7 @@ export class RuntimeDatabase {
       this.transaction(() => {
         const version = (this.sql.query("PRAGMA user_version").get() as { user_version: number }).user_version;
         const app = (this.sql.query("PRAGMA application_id").get() as { application_id: number }).application_id;
-        requireThat(version >= 0 && version <= 26, "unsupported_database_version");
+        requireThat(version >= 0 && version <= 27, "unsupported_database_version");
         requireThat(app === 0 || app === APPLICATION_ID, "foreign_database");
         if (version === 0) {
           const tables = this.sql.query("SELECT name FROM sqlite_master WHERE type='table'").all();
@@ -383,6 +383,18 @@ export class RuntimeDatabase {
               message_id TEXT REFERENCES messages(message_id)
             );
             PRAGMA user_version = 26;
+          `);
+        }
+
+        if (version < 27) {
+          this.sql.exec(`
+            CREATE TABLE device_artifact_files (
+              effect_id TEXT NOT NULL REFERENCES effects(effect_id), path TEXT NOT NULL,
+              binding TEXT NOT NULL, sha256 TEXT NOT NULL, size INTEGER NOT NULL CHECK(size>=0 AND size<=4194304),
+              received INTEGER NOT NULL CHECK(received>=0 AND received<=size), content BLOB NOT NULL,
+              PRIMARY KEY(effect_id,path)
+            );
+            PRAGMA user_version = 27;
           `);
         }
 

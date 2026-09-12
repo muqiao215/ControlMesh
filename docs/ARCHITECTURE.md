@@ -907,6 +907,14 @@ still requires native work to stop and recovery to avoid restarting it.
 
 ## Codekit integration (v0.43.0)
 
+The private TypeScript device path supports opt-in completion-file delivery through
+`DeviceArtifactInbox` and `uploadDeviceArtifacts`. Database 27 persists bounded chunks and
+logical receipts, tied to the native manifest and assignment; accepted task output is the
+only source of read authority. Normal execution uploads under its lease; interrupted upload
+recovery uses the existing expiring reconciliation challenge, without another native turn.
+Receiving bytes is separate from canonical workspace publication. Configuration, limits and
+the local artifact read command are in the [device runbook](../plans/runtime-convergence/topology-scheduling.md).
+
 See [CODEKIT-INTEGRATION](CODEKIT-INTEGRATION.md) for the new module boundary, public invocation and limits. This local implementation does not establish deployment acceptance.
 
 The candidate readiness cache now consumes a provider-neutral report while retaining its

@@ -4,7 +4,7 @@ import { topologyNativeClaim } from "./topology-execution";
 import { verifyDeviceCompletion } from "./task-completion";
 import { assertDeviceWorkspaceGrant, verifyDeviceWorkspaceProof } from "./providers/device-workspace-proof";
 import { createHash, timingSafeEqual } from "node:crypto";
-import { assertProtocolSchema, ProtocolValidationError, type DeviceCommand, type DeviceLeaseWindow, type DeviceReconciliationReport } from "@controlmesh/protocol";
+import { assertProtocolSchema, ProtocolValidationError, type DeviceCommand, type DeviceEvidenceRef, type DeviceLeaseWindow, type DeviceReconciliationChallenge, type DeviceReconciliationReport } from "@controlmesh/protocol";
 import { command, requireScope } from "./commands";
 import { RuntimeKernel, type Lease, type Principal, type TaskSnapshot } from "./kernel";
 import { AgentMailbox, type SendMessage } from "./mailbox";
@@ -14,6 +14,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { decodeNativeAgentScope, NativeAgentJournal } from "./providers/native-agent-journal";
 import { NativeMailboxDelivery } from "./providers/native-mailbox";
 import { nativeInput } from "./providers/native-mailbox-input";
+import { DeviceArtifactInbox, type ArtifactChunk } from "./device-artifacts";
 
 const nativeProvider = (provider: unknown) => provider === "opencode" || provider === "claude";
 
@@ -25,6 +26,8 @@ export interface DeviceRegistration {
   workspace_ids: readonly string[];
 }
 export interface DeviceAssignment {
+  /** Explicit operator opt-in: deliver native completion files to the private coordinator inbox. */
+  artifact_transfer?: boolean;
   workspace_id: string;
   capability: string;
   device_ids: readonly string[];
@@ -34,6 +37,7 @@ export interface DeviceAssignment {
   parent_task?: string | null;
 }
 export interface DeviceJob {
+  artifact_transfer?: boolean;
   task_id: string;
   revision: number;
   status: string;
@@ -69,6 +73,7 @@ export class DeviceCoordinator {
   private readonly nativeDelivery: NativeMailboxDelivery;
   private readonly nativeCalls = new Map<string, { digest: string; promise: Promise<Record<string, unknown>> }>();
   readonly reconciliation: DeviceReconciliation;
+  readonly artifacts: DeviceArtifactInbox;
 
   constructor(readonly kernel: RuntimeKernel, registrations: readonly DeviceRegistration[], private readonly assertCurrent: () => void = () => {}) {
     requireThat(registrations.length > 0 && registrations.length <= 128, "invalid_device_catalog");
@@ -88,11 +93,14 @@ export class DeviceCoordinator {
     }
     this.mailbox = new AgentMailbox(kernel);
     this.nativeDelivery = new NativeMailboxDelivery(kernel);
+    this.artifacts = new DeviceArtifactInbox(kernel);
     this.reconciliation = new DeviceReconciliation(kernel, (id, principal) => {
       const device = this.devices.get(id);
       requireThat(device && device.principal_id === principal && !this.revoked(id), "device_not_authorized");
       return device;
-    }, (device, taskId) => this.assignment(device, taskId));
+    }, (device, taskId) => this.assignment(device, taskId), (device, job, manifest, result) => {
+      if (job.artifact_transfer && nativeTaskOutcome(result) === "done") this.artifacts.verify(this.actor(device), job, manifest, result.completion);
+    });
   }
 
   /** Trusted operator control; no remote device can enable itself or change its grants. */
@@ -114,6 +122,8 @@ export class DeviceCoordinator {
     requireScope(actor, "device:assign");
     requireThat(actor.origin === "human_request" || actor.origin === "internal", "assignment_requires_trusted_ingress");
     const snapshot = this.kernel.inspect(actor, taskId);
+    requireThat(specification.artifact_transfer === undefined || typeof specification.artifact_transfer === "boolean", "invalid_artifact_transfer_profile");
+    if (specification.artifact_transfer) requireThat(nativeProvider(snapshot.task.provider) && snapshot.task.completion_requirements !== undefined, "device_artifact_contract_required");
     identifier(specification.workspace_id); identifier(specification.capability);
     requireThat(object(specification.input) && Buffer.byteLength(canonical(specification.input)) <= 32_768, "invalid_device_input");
     requireThat(specification.device_ids.length > 0 && specification.device_ids.length <= 128 && new Set(specification.device_ids).size === specification.device_ids.length, "invalid_assignment_devices");
@@ -188,7 +198,8 @@ export class DeviceCoordinator {
     return { task_id: taskId, revision: task.revision, status: task.task.status, workspace_id: specification.workspace_id,
       capability: specification.capability, input: specification.input, assignment_digest: this.assignmentDigest(taskId, specification), execution, execution_digest: digest(execution),
       needs_reconciliation: task.needs_reconciliation, active_episode: task.active_episode !== null,
-      peer_tasks: specification.peer_tasks ?? [], parent_task: specification.parent_task ?? null };
+      peer_tasks: specification.peer_tasks ?? [], parent_task: specification.parent_task ?? null,
+      ...(specification.artifact_transfer === undefined ? {} : { artifact_transfer: specification.artifact_transfer }) };
   }
 
   private authenticate(request: Request): DeviceRegistration {
@@ -237,6 +248,13 @@ export class DeviceCoordinator {
     const request = input.request_id;
     if (input.operation === "reconciliation") return this.reconciliation.inspect(device, args.challenge_id as string);
     if (input.operation === "reconcile") return this.reconciliation.report(device, request, args.report as DeviceReconciliationReport);
+    if (input.operation === "artifact_reconcile_put") {
+      const pending = this.reconciliation.inspect(device, args.challenge_id as string);
+      requireThat(object(pending) && pending.state === "pending" && object(pending.challenge), "reconciliation_authority_unavailable");
+      const challenge = pending.challenge as unknown as DeviceReconciliationChallenge;
+      const { challenge_id: _id, ...chunk } = args;
+      return this.artifacts.put(actor, request, this.assignment(device, challenge.manifest.task_id), challenge.manifest, chunk as unknown as ArtifactChunk);
+    }
     // JSON Schema validates the discriminated arguments before these casts.
     if (input.operation === "queue" || input.operation === "queue_page") {
       const after = input.operation === "queue_page" ? args.after : null;
@@ -259,6 +277,11 @@ export class DeviceCoordinator {
     }
     const lease = args.lease as Lease;
     const job = this.assignment(device, lease.task_id);
+    if (input.operation === "artifact_put") return this.kernel.withLease(actor, lease, () => {
+      const manifest = this.nativeManifest(lease, args.effect_id as string);
+      const { lease: _lease, effect_id: _effect, ...chunk } = args;
+      return this.artifacts.put(actor, request, job, manifest as unknown as DeviceEvidenceRef, chunk as unknown as ArtifactChunk);
+    });
     if (input.operation === "release") {
       const result = this.kernel.releaseUnstarted(actor, request, lease, args.reason as string | undefined);
       return { task_id: result.task.task_id, status: result.task.status, revision: result.revision };
@@ -274,6 +297,7 @@ export class DeviceCoordinator {
           verifyDeviceWorkspaceProof(manifest.workspace_write, result.workspace_write);
           assertNativeFailureManifest(manifest, result);
           if (nativeTaskOutcome(result) === "done") verifyDeviceCompletion(job.execution?.completion_requirements, result.completion);
+          if (job.artifact_transfer && nativeTaskOutcome(result) === "done") this.artifacts.verify(actor, job, manifest as unknown as DeviceEvidenceRef, result.completion);
           this.evidenceMatches(manifest, result.evidence);
           requireThat(result.evidence.result_digest && result.evidence.observation_digest && digest(result.text) === result.output_digest, "device_result_evidence_missing");
           const original = this.kernel.db.sql.query("SELECT payload FROM effect_observations WHERE effect_id=?").get(args.effect_id as string) as { payload: string } | null;

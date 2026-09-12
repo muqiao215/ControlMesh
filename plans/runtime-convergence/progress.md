@@ -8,10 +8,10 @@ The 512-module/57-field ledger is an inventory, not completed parity.
 
 | Delivery area | Verified state | Remaining acceptance |
 |---|---|---|
-| Published CI baseline | 8ca5ed5; CI 34703377502 success | Verify CI for this retry/read-guidance checkpoint |
+| Published CI baseline | 2de44d0; CI 34704392823 success | Verify this artifact-transport checkpoint after publication |
 | TS runtime | Kernel, local/device execution, mailbox, topology and retained recovery have scoped implementations/tests | Complete provider/transport/store/terminal ownership and parity |
 | Native continuation | Simple direct and streamed exact recall passed; earlier topology first runs and current artifacts passed | Full worker/merger continuation and complex-context acceptance still fail |
-| Multi-device | Earlier physical ARM64/x64 bounded execution/recovery evidence retained in active plan | Full profiles, automatic file transport, rollout matrix |
+| Multi-device | Earlier physical ARM64/x64 evidence plus bounded HTTP artifact inbox/upload/recovery implementation | Canonical publication, initial workspace distribution, physical transfer acceptance and full profiles |
 | SpecMesh/History | Independent integration and scoped continuity evidence exist | Reviewed closeout and remaining full integration acceptance |
 | Release/local alignment | Production still Python 0.43.0 | Full-goal acceptance, release/install, staged default switch |
 
@@ -22,13 +22,21 @@ shows invalid read arguments, not a proven concurrent file change. The attempt a
 05a0e591-a529-4401-b28a-932b3e948f95 are guarded against replay. No new native model canary
 was launched during this correction.
 
-This checkpoint stops verified Claude system/api_retry before another native
-attempt, classify provider failure for the matching health generation, and block a second
-quota-bound task without another probe or effect. The MCP read interface now explains the
-initial omitted hash and gives correction guidance without weakening consistency checks.
-Typecheck and focused checks passed: 48 tests / 592 assertions / three files / 23.50s.
-Full runtime gate passed: 760 tests / 9815 assertions / 72 files / 285.68s, exit 0
-(/tmp/cm-api-retry-full.log). Fixtures are not new model/device acceptance.
+Current checkpoint implements opt-in native completion-file upload over the authenticated
+worker port. Database 27 stores bounded chunks; terminal acceptance independently verifies
+full bytes against the original completion evidence. Normal worker execution and explicit
+retained-result recovery use the same receipts. Local read_artifact provides current accepted
+bytes by task/effect/path. It does not overwrite canonical project files or copy native stores.
+
+Focused checks passed: 94 tests / 975 assertions / four files; additional authority/budget/
+upgrade checks: 8 tests / 31 assertions. Typecheck and nine Python protocol tests passed;
+generated protocol models and bundled Web assets were rebuilt. Full runtime regression passed:
+774 tests / 9918 assertions / 73 files / 323.71s, exit 0 (/tmp/cm-device-artifacts-full.log). Initial setup failures were an old-schema fixture
+retaining the new table and the generated Python ownership hash needing regeneration.
+Neither required weakening runtime checks. Controlled HTTP/native fixtures are not new
+physical-host or model acceptance. No new model input was launched this turn.
+
+Previously published native retry/read-guidance fixes passed 760 tests and exact-commit CI.
 
 Remote release metadata and the installed Python environment were checked: CM v0.43.0
 and local 0.43.0; History Viewer latest release v1.1.0, checkout 8070b9c (four later
@@ -69,9 +77,10 @@ Detailed evidence and guarded attempts are in findings.md; no failed result was 
 
 ## Remaining
 
-1. Verify remote CI for the bounded retry/read-guidance checkpoint; local gates passed.
-2. Finish real topology/current-source/artifact acceptance, automatic file transport and
-   reviewed SpecMesh closeout; keep previous failed attempts guarded.
+1. Verify exact-commit CI for the artifact-transport checkpoint; all local gates passed.
+2. Implement canonical artifact publication with current-workspace conflict checks, then
+   complete initial workspace distribution and physical transfer acceptance. Finish real
+   topology/current-source acceptance and reviewed SpecMesh closeout; guard failed attempts.
 3. Complete remaining provider, transport, store and terminal owners and the parity ledger.
 4. Full-goal acceptance, release, installed-version alignment and staged default switch.
 
@@ -87,16 +96,16 @@ Retained operator workspace: outputs/runtime-convergence/topology-input-native-a
 Also guarded: device-artifact[-configured]-native-acceptance-20260912 reports/scripts in
 the same operator directory. The configured attempt ended at structured-result collection;
 do not replay its worker session or relabel it as an artifact/continuation success.
-Schema 26 rollback requires a pre-upgrade backup. Legacy pending assignments without a
-frozen input block. Root artifact acceptance now supports already-delivered canonical files;
-automatic transfer and remote-only final workspaces still need implementation/acceptance.
+Schema 27 rollback requires a pre-upgrade backup. Legacy pending assignments without a
+frozen input block. Root artifact acceptance still requires already-delivered canonical files;
+the new inbox transports and retains bytes but canonical publication remains pending.
 
 ## Next
 
-Verify remote CI for this checkpoint. The full local gate passed and no extra native model
-probe was needed to reproduce or verify the fixes. Proceed through the remaining owners and
-rollout gates; do not substitute repeated similar model probes for delivery progress.
-The user has requested a clear status because the long-running task has not reached release.
+Verify remote CI for this artifact-inbox owner. All local gates passed. Then connect
+accepted inbox bytes to a durable, conflict-checked canonical publication path; initial
+workspace delivery and two-device transfer acceptance remain required. Continue the other
+runtime owners and full rollout gates. Do not return to repeated similar model probes.
 
 ## Retained evidence
 

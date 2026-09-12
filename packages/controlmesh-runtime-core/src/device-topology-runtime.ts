@@ -26,7 +26,8 @@ export class DeviceTopologyRuntime implements TopologyRuntime {
     identifier(actor.device_id); this.assertPrincipal(actor); requireScope(actor, "device:assign");
     requireThat(object(routes) && Object.keys(routes).length >= 1 && Object.keys(routes).length <= 128, "invalid_device_topology_routes");
     for (const [id, route] of Object.entries(routes)) {
-      identifier(id); requireThat(object(route) && Object.keys(route).every(key => ["workspace_id", "capability", "device_ids", "peer_tasks", "parent_task"].includes(key)), "invalid_device_topology_route");
+      identifier(id); requireThat(object(route) && Object.keys(route).every(key => ["workspace_id", "capability", "device_ids", "peer_tasks", "parent_task", "artifact_transfer"].includes(key)), "invalid_device_topology_route");
+      requireThat(route.artifact_transfer === undefined || typeof route.artifact_transfer === "boolean", "invalid_artifact_transfer_profile");
       identifier(route.workspace_id); identifier(route.capability);
       requireThat(Array.isArray(route.device_ids) && route.device_ids.length > 0 && route.device_ids.length <= 128
         && new Set(route.device_ids).size === route.device_ids.length, "invalid_assignment_devices"); route.device_ids.forEach(identifier);

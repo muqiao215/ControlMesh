@@ -4,7 +4,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DeviceClient, DeviceCoordinator, DeviceExecutionJournal, DeviceNativeAdoptions, DeviceWorker, NativeSessionStore, OpenCodeDeviceAdapter, PreflightCache,
+import { DeviceClient, DeviceCoordinator, DeviceCoordinatorControl, DeviceExecutionJournal, DeviceNativeAdoptions, DeviceWorker, NativeSessionStore, OpenCodeDeviceAdapter, PreflightCache,
   RuntimeDatabase, RuntimeKernel, TaskIngress, type Principal, type ProbeBinding, type ProcessOutcome, type ProcessSpec } from "../src";
 import { digest, canonical } from "../src/value";
 import { AgentMailbox } from "../src/mailbox";
@@ -19,10 +19,10 @@ const owner: Principal = { id: "operator", origin: "human_request", device_id: "
 const device: Principal = { id: owner.id, origin: "agent_message", device_id: "native-worker", scopes: ["provider:probe"] };
 const outcome = (stdout: string): ProcessOutcome => ({ reason: "exited", exit_code: 0, stdout, stderr: "", duration_ms: 1 });
 
-function setup(mode: "normal" | "partition" | "changed-file" | "lost-completion" | "scheduled" | "lost-before-completion" | "lost-dispatch" | "altered-native-tool" | "altered-native-input" = "normal", communicationEnabled = false, unmanagedSeed = false) {
+function setup(mode: "normal" | "partition" | "changed-file" | "lost-completion" | "scheduled" | "lost-before-completion" | "lost-dispatch" | "altered-native-tool" | "altered-native-input" = "normal", communicationEnabled = false, unmanagedSeed = false, transfer?: { content: string; drop?: "before" | "after"; omit?: boolean }) {
   const root = mkdtempSync(join(tmpdir(), "cm-native-device-test-")); cleanup.push(() => rmSync(root, { recursive: true, force: true }));
   const workspace = join(root, "project"), data = join(root, "data"); mkdirSync(workspace); mkdirSync(join(data, "opencode"), { recursive: true });
-  writeFileSync(join(workspace, "PROJECT.md"), "revision-one");
+  writeFileSync(join(workspace, "PROJECT.md"), transfer?.content ?? "revision-one");
   expect(Bun.spawnSync(["/usr/bin/git", "init", workspace], { stdout: "ignore", stderr: "ignore" }).exitCode).toBe(0);
   const nativePath = join(data, "opencode/opencode.db"), native = new Database(nativePath);
   native.exec(fixture.schema); native.exec("CREATE TABLE project (id TEXT PRIMARY KEY, worktree TEXT)");
@@ -45,12 +45,21 @@ function setup(mode: "normal" | "partition" | "changed-file" | "lost-completion"
   let lost = false;
   const hooks: { afterInput?: () => void; afterDispatch?: () => void; beforeNative?: () => void } = {};
   const completions: { request_id: string; arguments: Record<string, unknown> }[] = [];
+  const uploads: { request_id: string; arguments: Record<string, unknown> }[] = [];
   const client = new DeviceClient({ endpoint: server.url.origin, token, device_id: device.device_id!, timeout_ms: 500,
     fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
       const command = JSON.parse(String(init?.body));
       if (command.operation === "complete") completions.push(command);
+      if (command.operation === "artifact_put") {
+        uploads.push(command);
+        if (transfer?.omit) return Response.json({ schema_version: "controlmesh.device_response.v1", request_id: command.request_id, ok: true,
+          data: { path: command.arguments.path, sha256: command.arguments.sha256, size: command.arguments.size,
+            next_offset: command.arguments.offset + Buffer.from(command.arguments.content_base64, "base64").length } });
+        if (transfer?.drop === "before" && command.arguments.offset > 0 && !lost) { lost = true; throw new Error("fixture_unsent_chunk"); }
+      }
       if (mode === "lost-before-completion" && JSON.parse(String(init?.body)).operation === "complete") throw new Error("fixture_completion_not_sent");
       const response = await fetch(input, init);
+      if (transfer?.drop === "after" && command.operation === "artifact_put" && !lost) { lost = true; await response.arrayBuffer(); throw new Error("fixture_lost_chunk_ack"); }
       if (command.operation === "native_input") hooks.afterInput?.();
       if (command.operation === "dispatch") hooks.afterDispatch?.();
       if (mode === "lost-dispatch" && command.operation === "dispatch") { await response.arrayBuffer(); throw new Error("fixture_lost_dispatch_ack"); }
@@ -72,9 +81,10 @@ function setup(mode: "normal" | "partition" | "changed-file" | "lost-completion"
     : { command_origin: "human_request" as const, origin: "user" as const, source_scope: "local_foreground" as const, transport: "test" };
   const task = new TaskIngress(kernel, source, () => {}).submit({ ...owner, origin: source.command_origin }, "create", {
     task_id: "native-task", chat_id: "chat", status: "waiting", provider: "opencode", model: binding.model, prompt: "read current project", repo_root: "/coordinator/private/path",
+    ...(transfer ? { completion_requirements: { schema_version: "controlmesh.task_completion.v1", files: [{ path: "PROJECT.md", mode: "read" }] } } : {}),
   }, { chat_id: "chat" }, { tool_deny: ["bash", "edit", "write"] });
   const communication = communicationEnabled ? prepareNativeAgentConfiguration(join(root, "task-channel"), Bun.which("node")!, "native-task", ["native-parent"], "native-parent") : undefined;
-  const specification = { capability: "native.read", workspace_id: "project", device_ids: [device.device_id!], input: { execution_context: { origin: "user", source_scope: "local_foreground" } },
+  const specification = { ...(transfer ? { artifact_transfer: true } : {}), capability: "native.read", workspace_id: "project", device_ids: [device.device_id!], input: { execution_context: { origin: "user", source_scope: "local_foreground" } },
     ...(communication ? { peer_tasks: ["native-parent"], parent_task: "native-parent" } : {}) };
   coordinator.assign(owner, "assign", task.task.task_id, task.revision, specification);
   const commands: ProcessSpec[] = [];
@@ -93,7 +103,7 @@ function setup(mode: "normal" | "partition" | "changed-file" | "lost-completion"
     const writer = new Database(nativePath), session = "ses_Device";
     if (calls === 1 && !unmanagedSeed) writer.query("INSERT INTO session VALUES (?,?,?,'device fixture',NULL,0,NULL)").run(session, workspace, "project");
     else expect(spec.command[spec.command.indexOf("--session") + 1]).toBe(session);
-    const user = `user_${calls}`, assistant = `assistant_${calls}`, now = Date.now() + calls * 2, answer = readFileSync(join(workspace, "PROJECT.md"), "utf8");
+    const user = `user_${calls}`, assistant = `assistant_${calls}`, now = Date.now() + calls * 2, answer = readFileSync(join(workspace, "PROJECT.md"), "utf8").slice(0, transfer ? 128 : undefined);
     writer.query("INSERT INTO message VALUES (?,?,?,?,?)").run(user, session, now, now, JSON.stringify({ role: "user" }));
     writer.query("INSERT INTO message VALUES (?,?,?,?,?)").run(assistant, session, now + 1, now + 1, JSON.stringify({ role: "assistant", parentID: user, providerID: "fixture", modelID: "model", finish: "stop", time: { completed: now + 1 } }));
     const part = (id: string, message: string, data: object) => writer.query("INSERT INTO part VALUES (?,?,?,?,?,?)").run(id, session, message, now, now, JSON.stringify(data));
@@ -156,7 +166,7 @@ function setup(mode: "normal" | "partition" | "changed-file" | "lost-completion"
       { workspaces: { project: workspace }, adapters: { "native.read": factory(localJournal) }, journal: localJournal }) };
   };
   return { root, workspace, workerDB, coordinatorDB, kernel, coordinator, client, journal, worker, commands, binding, store, specification,
-    recover, hooks, completions, factoryJobs, adoptions, calls: () => calls, advance: (ms: number) => { offset += ms; } };
+    recover, hooks, completions, uploads, factoryJobs, adoptions, calls: () => calls, advance: (ms: number) => { offset += ms; } };
 }
 
 async function submitAdoption(f: ReturnType<typeof setup>) {
@@ -167,6 +177,54 @@ async function submitAdoption(f: ReturnType<typeof setup>) {
   f.coordinator.assign(owner, "assign-adopted", "adopted", task.revision, f.specification);
   return prepared;
 }
+
+for (const [name, content] of [["empty", ""], ["text", "current project bytes"], ["chunked", "分页\n".repeat(24000)]]) test(`normal device completion transfers ${name} bytes into the durable coordinator inbox`, async () => {
+  const f = setup("normal", false, false, { content });
+  expect((await f.worker.run("native-task", 5000)).status).toBe("done");
+  const completed = f.kernel.inspect(owner, "native-task"), effect = f.uploads[0]!.arguments.effect_id as string;
+  const control = new DeviceCoordinatorControl(f.kernel, owner, f.coordinator, [], () => {});
+  expect(await control.handle({ id: "artifact-page", op: "read_artifact", task_id: "native-task", expected_revision: completed.revision,
+    effect_id: effect, path: "PROJECT.md" })).toMatchObject({ ok: true, result: { path: "PROJECT.md", offset: 0, size: Buffer.byteLength(content) } });
+  await control.stop();
+  const rows = f.coordinatorDB.sql.query("SELECT size,received,content FROM device_artifact_files").all() as { size: number; received: number; content: Uint8Array }[];
+  expect(rows).toHaveLength(1); expect(rows[0]!.size).toBe(Buffer.byteLength(content));
+  expect(Buffer.from(rows[0]!.content).toString()).toBe(content); expect(rows[0]!.received).toBe(rows[0]!.size);
+  const reopened = f.recover(); let offset = 0, hash: string | undefined; const chunks: Buffer[] = [];
+  for (;;) {
+    const page = reopened.control.artifacts.read(owner, "native-task", completed.revision, effect, "PROJECT.md", offset, hash);
+    hash = page.sha256; chunks.push(Buffer.from(page.content_base64, "base64"));
+    if (page.eof) break; offset = page.next_offset;
+  }
+  expect(Buffer.concat(chunks).toString()).toBe(content); expect(f.calls()).toBe(1);
+  expect(() => reopened.control.artifacts.read({ ...owner, id: "foreign" }, "native-task", completed.revision, effect, "PROJECT.md", 0)).toThrow();
+  expect(() => reopened.control.artifacts.read(owner, "native-task", completed.revision, effect, "../PROJECT.md", 0)).toThrow("device_artifact_unavailable");
+  expect(() => reopened.control.artifacts.read(owner, "native-task", completed.revision, effect, "PROJECT.md", 0, "f".repeat(64))).toThrow("device_artifact_read_changed");
+  f.kernel.resume(owner, "resume-after-export", "native-task", completed.revision, "Continue original work");
+  expect(() => reopened.control.artifacts.read(owner, "native-task", completed.revision, effect, "PROJECT.md", 0)).toThrow();
+});
+
+test.each(["before", "after"] as const)("lost artifact transfer %s receipt resumes retained upload under an explicit recovery challenge, without another native run", async drop => {
+  const content = "current file\n".repeat(10000), f = setup("normal", false, false, { content, drop });
+  expect((await f.worker.run("native-task", 5000)).status).toBe("unknown");
+  const effect = f.uploads[0]!.arguments.effect_id as string, reopened = f.recover(), snapshot = reopened.control.kernel.inspect(owner, "native-task");
+  expect(() => reopened.control.artifacts.read(owner, "native-task", snapshot.revision, effect, "PROJECT.md", 0)).toThrow();
+  const before = f.coordinatorDB.sql.query("SELECT received FROM device_artifact_files").get() as { received: number };
+  expect(before.received).toBe(65536);
+  const challenge = reopened.control.reconciliation.request({ ...owner, device_id: device.device_id }, "recover-transfer", "native-task", snapshot.revision, effect, 30000);
+  expect(await reopened.worker.reconcile(challenge.challenge_id)).toMatchObject({ status: "done" });
+  expect(f.calls()).toBe(1); expect(reopened.reports()).toBe(1);
+  const after = f.coordinatorDB.sql.query("SELECT size,received,content FROM device_artifact_files").get() as { size: number; received: number; content: Uint8Array };
+  expect(after.received).toBe(Buffer.byteLength(content)); expect(Buffer.from(after.content).toString()).toBe(content);
+  await expect(reopened.transport.command("artifact_reconcile_put", { challenge_id: challenge.challenge_id,
+    path: "PROJECT.md", sha256: createHash("sha256").update(content).digest("hex"), size: after.size, offset: 0, content_base64: "" })).rejects.toThrow("reconciliation_authority_unavailable");
+});
+
+test("a forged upload receipt cannot complete a device task whose coordinator inbox is empty", async () => {
+  const f = setup("normal", false, false, { content: "retained file", omit: true });
+  expect((await f.worker.run("native-task", 5000)).status).toBe("unknown");
+  expect(f.coordinatorDB.sql.query("SELECT COUNT(*) AS n FROM device_artifact_files").get()).toEqual({ n: 0 });
+  expect(f.kernel.inspect(owner, "native-task").task.status).toBe("stale"); expect(f.calls()).toBe(1);
+});
 
 test("device adoption continues an unmanaged session, then switches to the normal completion handle", async () => {
   const f = setup("normal", false, true), original = f.store.baseline(f.store.read("ses_Device"));
@@ -517,10 +575,10 @@ test("recovery keeps an already delivered matching observation immutable", async
 test("schema six upgrade preserves completed device evidence while adding durable recovery requests", async () => {
   const f = setup(); expect((await f.worker.run("native-task", 5000)).status).toBe("done");
   const original = f.workerDB.sql.query("SELECT * FROM device_execution_records").all();
-  f.workerDB.sql.exec("DROP TABLE topology_native_inputs; DROP TABLE topology_device_runs; ALTER TABLE topology_tasks DROP COLUMN execution_source; DROP TABLE topology_schedule_members; DROP TABLE topology_schedules; ALTER TABLE topology_tasks DROP COLUMN kind; DROP TABLE topology_runs; ALTER TABLE topology_tasks DROP COLUMN execution_id; DROP TABLE topology_completions; DROP TABLE topology_controls; DROP TABLE topology_task_history; DROP TABLE topology_tasks; DROP TABLE team_topologies; DROP TABLE team_phases; DROP TABLE device_scheduled_work; DROP TABLE device_scheduler_leases; DROP TABLE device_assignment_generations; DROP TABLE device_native_adoptions; DROP TABLE command_reservations; DROP TABLE feishu_conversations; DROP TABLE feishu_event_aliases; DROP TABLE feishu_inbox; DROP TABLE transport_receipts; DROP TABLE delivery_outbox; DROP TABLE delivery_routes; DROP TABLE native_agent_deliveries; DROP TABLE native_agent_calls; DROP TABLE native_mailbox_deliveries; DROP TABLE local_runs; DROP TABLE device_reconciliations; PRAGMA user_version=6");
+  f.workerDB.sql.exec("DROP TABLE device_artifact_files; DROP TABLE topology_native_inputs; DROP TABLE topology_device_runs; ALTER TABLE topology_tasks DROP COLUMN execution_source; DROP TABLE topology_schedule_members; DROP TABLE topology_schedules; ALTER TABLE topology_tasks DROP COLUMN kind; DROP TABLE topology_runs; ALTER TABLE topology_tasks DROP COLUMN execution_id; DROP TABLE topology_completions; DROP TABLE topology_controls; DROP TABLE topology_task_history; DROP TABLE topology_tasks; DROP TABLE team_topologies; DROP TABLE team_phases; DROP TABLE device_scheduled_work; DROP TABLE device_scheduler_leases; DROP TABLE device_assignment_generations; DROP TABLE device_native_adoptions; DROP TABLE command_reservations; DROP TABLE feishu_conversations; DROP TABLE feishu_event_aliases; DROP TABLE feishu_inbox; DROP TABLE transport_receipts; DROP TABLE delivery_outbox; DROP TABLE delivery_routes; DROP TABLE native_agent_deliveries; DROP TABLE native_agent_calls; DROP TABLE native_mailbox_deliveries; DROP TABLE local_runs; DROP TABLE device_reconciliations; PRAGMA user_version=6");
   const upgraded = new RuntimeDatabase(join(f.root, "worker.sqlite"));
   try {
-    expect(upgraded.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 26 });
+    expect(upgraded.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 27 });
     expect(upgraded.sql.query("SELECT * FROM device_execution_records").all()).toEqual(original);
     expect(upgraded.sql.query("SELECT COUNT(*) AS n FROM device_reconciliations").get()).toEqual({ n: 0 });
   } finally { upgraded.close(); }

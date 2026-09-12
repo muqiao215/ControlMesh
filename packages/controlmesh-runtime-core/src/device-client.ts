@@ -100,6 +100,7 @@ export class DeviceClient {
     requireThat(object(value) && value.task_id === taskId && typeof value.status === "string" && Number.isSafeInteger(value.revision) && object(value.input), "invalid_device_job");
     for (const key of ["needs_reconciliation", "active_episode"]) requireThat(value[key] === undefined || typeof value[key] === "boolean", "invalid_device_job");
     identifier(value.workspace_id); identifier(value.capability);
+    requireThat(value.artifact_transfer === undefined || typeof value.artifact_transfer === "boolean", "invalid_device_job");
     requireThat(typeof value.assignment_digest === "string" && /^[a-f0-9]{64}$/.test(value.assignment_digest), "invalid_device_job");
     if (value.execution !== undefined || value.execution_digest !== undefined) {
       requireThat(object(value.execution) && digest(value.execution) === value.execution_digest, "device_execution_projection_changed");

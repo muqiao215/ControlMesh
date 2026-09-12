@@ -1,4 +1,5 @@
 import { nativeTaskOutcome } from "./native-task-failure";
+import { uploadDeviceArtifacts } from "./device-artifact-upload";
 import { randomUUID } from "node:crypto";
 import { lstatSync, realpathSync } from "node:fs";
 import { isAbsolute } from "node:path";
@@ -129,6 +130,11 @@ export class DeviceWorker {
     current();
     return adapter.reconcile(challenge, workspace.path, current, async report => {
       current();
+      if (job.artifact_transfer && nativeTaskOutcome(report.result as unknown as Record<string, unknown>) === "done") {
+        await uploadDeviceArtifacts(job, workspace.path, challenge.manifest.effect_id, report.result.completion, current,
+          (chunk, id) => this.client.command("artifact_reconcile_put", { challenge_id: challengeId, ...chunk }, id, this.signal));
+      }
+      current();
       const result = await this.client.command("reconcile", { report }, `device-reconcile-${challengeId}`);
       requireThat(object(result) && result.task_id === challenge.manifest.task_id && digest(result.evidence) === digest(report.result.evidence), "invalid_reconciliation_response");
       return receipt(result);
@@ -254,6 +260,11 @@ export class DeviceWorker {
       if (preparedMode) requireThat(verified && observedDigest === digest(output.observation), "device_result_not_verified");
       else await this.client.command("observe", { lease: authority.lease, effect_id: effect, observation: output.observation });
       requireThat(Buffer.byteLength(canonical(output.result)) <= 128 * 1024, "device_result_too_large");
+      if (job.artifact_transfer && nativeTaskOutcome(output.result) === "done") {
+        requireThat(preparedMode && verified, "device_artifact_native_verification_required");
+        await uploadDeviceArtifacts(job, workspace.path, effect, output.result.completion, assertCurrent,
+          (chunk, id) => this.client.command("artifact_put", { lease: authority.lease, effect_id: effect, ...chunk }, id, signal));
+      }
       // Drain renewal before terminal commit; a successful completion must not race a late renewal error.
       closed = true;
       if (timer) clearTimeout(timer);

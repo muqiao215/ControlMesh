@@ -1,5 +1,31 @@
 # Findings
 
+## Device artifact transport — 2026-09-13 checkpoint
+
+The canonical topology gate currently verifies pre-delivered files only. This iteration
+adds explicit assignment/route artifact_transfer opt-in, authenticated bounded chunk upload,
+and a private durable coordinator inbox. Native completion requires the full uploaded bytes
+to match its original completion contract and evidence. Receiving files does not authorize
+canonical workspace replacement. Local read_artifact exposes only current accepted task
+artifacts by task/effect/path and hash-bound pages, never arbitrary host files.
+
+Database 27 adds the transactional device_artifact_files table; schema 26 and older fixture
+upgrade tests remove that new table when constructing their old database. The initial
+focused run exposed one such fixture setup omission, not failed data migration. New normal
+HTTP delivery and explicit retained-result recovery cases already passed for text, empty
+and chunked files; focused integration passed 94 tests / 975 assertions; authority/budget/upgrade checks
+passed 8 / 31. Typecheck and nine Python protocol tests passed; Web rebuilt. Full
+runtime regression passed: 774 / 9918 / 73 files / 323.71s, exit 0. Exact-commit
+remote CI remains to be verified. Recovery uploads use
+the existing short-lived reconciliation challenge, so a lost upload never authorizes another
+native model run. Credentials and provider session databases remain device-local.
+
+The full gate initially stopped at generated ownership hash drift after protocol generation;
+regenerating the existing ownership ledger retained the 512-module/57-field inventory.
+
+This is a necessary file-transport owner, not completion of automatic canonical publication,
+cross-device initial workspace distribution or the full runtime goal.
+
 ## Native retry classification and first-read guidance — 2026-09-13
 
 8ca5ed5 exact-commit CI 34703377502 completed successfully. The latest ordinary canary

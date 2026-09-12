@@ -58,7 +58,8 @@ export class DeviceCoordinatorControl implements RuntimeControl {
       const value = request(input, {
         ...topologyControlFields,
         status: [], start: [], submit: ["task", "specmesh_requirements_sha256"], inspect_task: ["task_id"],
-        assign: ["task_id", "expected_revision", "workspace_id", "capability", "device_ids", "peer_tasks", "parent_task"],
+        assign: ["task_id", "expected_revision", "workspace_id", "capability", "device_ids", "peer_tasks", "parent_task", "artifact_transfer"],
+        read_artifact: ["task_id", "expected_revision", "effect_id", "path", "offset", "expected_sha256"],
         cancel: ["task_id", "expected_revision"], resume: ["task_id", "expected_revision", "prompt"],
         revoke: ["device_id"], recover_expired: [],
         request_reconciliation: ["task_id", "expected_revision", "device_id", "effect_id"],
@@ -90,6 +91,12 @@ export class DeviceCoordinatorControl implements RuntimeControl {
           const last = this.kernel.db.sql.query("SELECT result FROM episodes WHERE task_id=? ORDER BY fence DESC LIMIT 1").get(value.task_id) as { result: string | null } | null;
           result = { ...snapshot, effects, result: last?.result ? JSON.parse(last.result) : null }; break;
         }
+        case "read_artifact": {
+          identifier(value.task_id); identifier(value.effect_id);
+          requireThat(typeof value.path === "string" && (value.expected_sha256 === undefined || typeof value.expected_sha256 === "string"), "invalid_artifact_read");
+          result = this.coordinator.artifacts.read(this.actor, value.task_id, value.expected_revision as number,
+            value.effect_id, value.path, (value.offset ?? 0) as number, value.expected_sha256 as string | undefined); break;
+        }
         case "assign": {
           identifier(value.task_id); identifier(value.workspace_id); identifier(value.capability);
           requireThat(Array.isArray(value.device_ids) && value.device_ids.every(item => typeof item === "string"), "invalid_assignment_devices");
@@ -98,6 +105,7 @@ export class DeviceCoordinatorControl implements RuntimeControl {
             workspace_id: value.workspace_id, capability: value.capability, device_ids: value.device_ids as string[], input: {},
             ...(value.peer_tasks === undefined ? {} : { peer_tasks: value.peer_tasks as string[] }),
             ...(value.parent_task === undefined ? {} : { parent_task: value.parent_task as string | null }),
+            ...(value.artifact_transfer === undefined ? {} : { artifact_transfer: value.artifact_transfer as boolean }),
           }); result = { assigned: true }; break;
         }
         case "cancel": identifier(value.task_id); result = this.kernel.cancel(this.actor, key, value.task_id, value.expected_revision as number); break;

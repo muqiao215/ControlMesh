@@ -255,6 +255,44 @@ not full topology or native-continuity acceptance. Retained local report:
 workspace. Its attempt and native sessions must not be replayed automatically.
 ## Canonical artifacts from device execution
 
+### Optional device artifact inbox (database 27)
+
+Device routes and explicit coordinator `assign` requests accept `artifact_transfer: true`.
+This requires a native Claude/OpenCode task with `completion_requirements`. Example route:
+
+```json
+{"workspace_id":"project","capability":"claude.write","device_ids":["arm-worker"],"artifact_transfer":true}
+```
+
+The normal worker uploads each completion file to the coordinator's private SQLite inbox
+after native result/source verification and before terminal completion. The authenticated
+`artifact_put` operation binds every chunk to the current execution lease, effect, native
+manifest, assignment and workspace. Bytes must match the accepted completion hashes.
+Limits: 64 KiB raw chunks, 4 MiB per file, 16 MiB reserved total per execution. Sequential
+uploads are paced below the device request admission limit. Uploads are not retried silently.
+
+Lost or unsent upload responses leave the original task uncertain. The existing explicit
+reconciliation request authorizes `artifact_reconcile_put` under its expiring challenge;
+the worker verifies retained native output/current files and resends the same logical chunks.
+Identical chunks reuse durable receipts. This does not execute a provider or consume another
+model input. Revocation, cancellation, changed assignment or expired authority blocks uploads.
+
+After task acceptance, the trusted local coordinator control can read pages:
+
+```json
+{"id":"read-result-1","op":"read_artifact","task_id":"worker","expected_revision":5,"effect_id":"ACTUAL_EFFECT_ID","path":"result.md"}
+```
+
+Use the actual task revision and effect from `inspect_task`. The response contains base64
+bytes, size, SHA-256, next_offset and eof. Subsequent requests pass `offset=next_offset`
+and `expected_sha256` from the first page. Reads reject pending, failed, superseded, foreign
+or corrupt artifacts. The public read-only facade is unchanged.
+
+The inbox is a transfer destination, not permission to overwrite canonical project files.
+Automatic canonical publication with conflict detection and initial workspace distribution
+remain separate pending owners. Database 27 is additive; rollback to a binary supporting at
+most database 26 requires the pre-upgrade backup. No production database was migrated here.
+
 The device coordinator can verify already-delivered canonical files against an explicitly
 registered remote source. Add this to its `topology_scheduler` configuration:
 

@@ -20,7 +20,8 @@ export interface ReconciliationReceipt { task_id: string; status: "done" | "fail
 export class DeviceReconciliation {
   constructor(private readonly kernel: RuntimeKernel,
     private readonly registration: (deviceId: string, principalId: string) => DeviceRegistration,
-    private readonly assignment: (device: DeviceRegistration, taskId: string) => DeviceJob) {}
+    private readonly assignment: (device: DeviceRegistration, taskId: string) => DeviceJob,
+    private readonly verifyArtifacts?: (device: DeviceRegistration, job: DeviceJob, manifest: DeviceEvidenceRef, result: Record<string, unknown>) => void) {}
 
   request(actor: Principal, requestId: string, taskId: string, revision: number, effectId: string, ttlMs = 30_000): DeviceReconciliationChallenge {
     requireScope(actor, "task:reconcile");
@@ -108,6 +109,7 @@ export class DeviceReconciliation {
       verifyDeviceWorkspaceProof(challenge.manifest.workspace_write, result.workspace_write);
       assertNativeFailureManifest(challenge.manifest as unknown as Record<string, unknown>, result as unknown as Record<string, unknown>);
       if (nativeTaskOutcome(result as unknown as Record<string, unknown>) === "done") verifyDeviceCompletion(this.assignment(device, row.task_id).execution?.completion_requirements, result.completion);
+      this.verifyArtifacts?.(device, this.assignment(device, row.task_id), challenge.manifest, result as unknown as Record<string, unknown>);
       for (const ref of [observation.evidence, result.evidence]) {
         const { observation_digest: _observation, result_digest: _result, ...base } = ref;
         requireThat(digest(base) === digest(challenge.manifest), "device_evidence_reference_mismatch");

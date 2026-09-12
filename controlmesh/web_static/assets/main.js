@@ -7263,7 +7263,9 @@ var controlmeshSchemas = {
           "reconcile",
           "native_call",
           "native_input",
-          "queue_page"
+          "queue_page",
+          "artifact_put",
+          "artifact_reconcile_put"
         ]
       },
       arguments: {
@@ -7752,6 +7754,106 @@ var controlmeshSchemas = {
                     type: "null"
                   }
                 ]
+              }
+            }
+          }
+        }
+      },
+      {
+        properties: {
+          operation: {
+            const: "artifact_put"
+          },
+          arguments: {
+            type: "object",
+            additionalProperties: false,
+            required: [
+              "lease",
+              "effect_id",
+              "path",
+              "sha256",
+              "size",
+              "offset",
+              "content_base64"
+            ],
+            properties: {
+              lease: {
+                $ref: "execution-lease.schema.json"
+              },
+              effect_id: {
+                type: "string",
+                pattern: "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+              },
+              path: {
+                type: "string",
+                minLength: 1,
+                maxLength: 4096
+              },
+              sha256: {
+                type: "string",
+                pattern: "^[a-f0-9]{64}$"
+              },
+              size: {
+                type: "integer",
+                minimum: 0,
+                maximum: 4194304
+              },
+              offset: {
+                type: "integer",
+                minimum: 0,
+                maximum: 4194304
+              },
+              content_base64: {
+                type: "string",
+                maxLength: 87384
+              }
+            }
+          }
+        }
+      },
+      {
+        properties: {
+          operation: {
+            const: "artifact_reconcile_put"
+          },
+          arguments: {
+            type: "object",
+            additionalProperties: false,
+            required: [
+              "challenge_id",
+              "path",
+              "sha256",
+              "size",
+              "offset",
+              "content_base64"
+            ],
+            properties: {
+              challenge_id: {
+                type: "string",
+                pattern: "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$"
+              },
+              path: {
+                type: "string",
+                minLength: 1,
+                maxLength: 4096
+              },
+              sha256: {
+                type: "string",
+                pattern: "^[a-f0-9]{64}$"
+              },
+              size: {
+                type: "integer",
+                minimum: 0,
+                maximum: 4194304
+              },
+              offset: {
+                type: "integer",
+                minimum: 0,
+                maximum: 4194304
+              },
+              content_base64: {
+                type: "string",
+                maxLength: 87384
               }
             }
           }

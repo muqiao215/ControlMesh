@@ -69,16 +69,14 @@ No claim that full TS migration or distributed coordination has completed. A sco
 
 ## Next Step
 
-Verify remote CI for native retry/health classification and workspace read guidance; local
-full regression passed 760 tests / 9815 assertions. Structured-resume commit 8ca5ed5 is on main
-with successful CI 34703377502. Its fresh ordinary topology canary failed at the first worker:
-read requests incorrectly supplied expected_sha256="missing" for existing files. No original
-task/session may be replayed. Do not start another similar model canary before collecting and
-addressing its retained evidence; current focused checks use controlled native/MCP fixtures.
-
-Then complete the remaining native/source/artifact, provider/transport/store/terminal,
-multi-device and CM-R0–CM-R7 rollout requirements. Complex topology continuation remains
-unaccepted even though earlier first-run roots and simple direct/streamed recall passed.
+Verify exact-commit CI for the opt-in device artifact inbox/upload/recovery owner; full local
+regression passed 774 tests / 9918 assertions.
+Native retry/read-guidance commit 2de44d0 passed exact-commit CI 34704392823. The new private
+transport stores actual completion-bound bytes; root canonical publication still requires
+implementation with a current-workspace conflict check and a durable recovery journal.
+Then qualify initial workspace distribution and two physical devices. Continue remaining
+native/source/artifact, provider/transport/store/terminal and CM-R0–CM-R7 rollout requirements.
+Complex topology continuation remains unaccepted; no guarded attempt/session may be replayed.
 
 Current implementation and native evidence belong in progress.md and its retained archive,
 not in competing historical next-step instructions. Scoped native acceptance does not
