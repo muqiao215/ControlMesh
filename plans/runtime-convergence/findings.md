@@ -1,5 +1,34 @@
 # Findings
 
+## CM workspace tools and native MCP startup — 2026-09-12
+
+Static CLI MCP configuration repeatedly reported empty tool/server tables, including in
+control-only inspection. The one static model attempt returned tool-looking text with zero
+calls; preserve it as a failed trial. Native dynamic `mcp_set_servers` followed by `mcp_status`
+connected the exact private workspace server before any user input. Those discovery probes
+sent zero user messages and used no model turns. The successful isolated dynamic trial used
+one user message and retained three real calls: authorized read, denied read, staged write.
+
+Independent original JSONL verification matched all native inputs/results against private
+durable receipts and the kernel's original manifest scope. It confirmed complete current-file
+consumption, one retained denial, correct staged contents and no canonical output publication.
+The private kernel task was not promoted to completed; normal Claude worker wiring remains
+absent. A successful tool trial must not be reported as native resume or lost-result recovery.
+
+Workspace receipt ownership is separate from the existing Agent message journal. It pins a
+task/effect scope, writes intent before stage mutation and preserves unknown outcomes on lost
+receipt. Exact retries survive reopen; trusted reconciliation inspects bytes without repeating
+the write. Unrecognized journal entries reject acceptance and are preserved. Request budgets
+also survive reopen. Source metadata is rechecked at each operation, with full source hashes
+and final same-revision page coverage verified at acceptance, avoiding repeated hashing of
+every registered file for every page. Larger files can exceed the total 256-request coverage
+budget; future normal task admission must validate that aggregate bound.
+
+The last test tool output was lost during context exhaustion. No matching process remained;
+the deterministic targeted suite was rerun and passed, followed by zero-model verification of
+the retained native trial. Native execution itself was not repeated. Initial test-fixture import
+and chat_id omissions were corrected without changing runtime admission rules.
+
 ## Claude append and file-permission qualification — 2026-09-12
 
 The actual pinned CLI does not make `--allowedTools Read(//absolute/file)` a closed read scope:

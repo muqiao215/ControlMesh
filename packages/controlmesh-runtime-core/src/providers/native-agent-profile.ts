@@ -12,6 +12,7 @@ export interface NativeAgentConfiguration {
   client_digest: string;
   peer_tasks: string[];
   parent_task: string | null;
+  tool_profile?: "workspace.v1";
 }
 export function nativeAgentScope(config: NativeAgentConfiguration, lease: Pick<Lease, "task_id" | "episode_id" | "fence">): NativeAgentScope {
   requireThat(config.task_id === lease.task_id, "native_agent_task_mismatch");
@@ -20,6 +21,8 @@ export function nativeAgentScope(config: NativeAgentConfiguration, lease: Pick<L
 }
 export function assertNativeAgentConfiguration(config: NativeAgentConfiguration): string {
   identifier(config.task_id);
+  requireThat(config.tool_profile === undefined || config.tool_profile === "workspace.v1", "unsupported_native_tool_profile");
+  requireThat(config.tool_profile !== "workspace.v1" || (config.peer_tasks.length === 0 && config.parent_task === null), "workspace_client_cannot_advertise_peers");
   requireThat(isAbsolute(config.directory) && realpathSync(config.directory) === config.directory, "native_agent_directory_not_canonical");
   requireThat(isAbsolute(config.node_executable) && !/[\x00\r\n]/.test(config.node_executable), "invalid_native_agent_node");
   const directory = statSync(config.directory, { bigint: true });
@@ -35,12 +38,13 @@ export function assertNativeAgentConfiguration(config: NativeAgentConfiguration)
 }
 
 /** Trusted registration only: creates no broker, provider process or model invocation. */
-export function prepareNativeAgentConfiguration(directory: string, node: string, taskId: string, peers: string[], parent: string | null): NativeAgentConfiguration {
+export function prepareNativeAgentConfiguration(directory: string, node: string, taskId: string, peers: string[], parent: string | null, toolProfile?: "workspace.v1"): NativeAgentConfiguration {
   identifier(taskId);
   const source = readFileSync(join(import.meta.dir, "native-agent-client.ts"), "utf8");
   const compiled = new Bun.Transpiler({ loader: "ts", target: "node" }).transformSync(source);
   const config: NativeAgentConfiguration = { task_id: taskId, directory, node_executable: node,
-    client_digest: createHash("sha256").update(compiled).digest("hex"), peer_tasks: [...peers], parent_task: parent };
+    client_digest: createHash("sha256").update(compiled).digest("hex"), peer_tasks: [...peers], parent_task: parent,
+    ...(toolProfile ? { tool_profile: toolProfile } : {}) };
   nativeAgentScope(config, { task_id: taskId, episode_id: "profile-validation", fence: 1 });
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   requireThat(isAbsolute(directory) && realpathSync(directory) === directory, "native_agent_directory_not_canonical");

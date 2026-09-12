@@ -50,7 +50,7 @@ export class NativeAgentChannel {
       const socket = lstatSync(join(this.config.directory, this.socketName)); this.socketIdentity = { dev: socket.dev, ino: socket.ino };
       chmodSync(join(this.config.directory, this.socketName), 0o600);
       writeFileSync(this.configurationPath, canonical({ schema_version: "controlmesh.native_agent_client.v1", socket_name: this.socketName,
-        token: this.token, peer_tasks: this.scope.peer_tasks }), { mode: 0o600, flag: "wx" });
+        token: this.token, peer_tasks: this.scope.peer_tasks, ...(this.config.tool_profile ? { tool_profile: this.config.tool_profile } : {}) }), { mode: 0o600, flag: "wx" });
       const file = lstatSync(this.configurationPath); this.configurationIdentity = { dev: file.dev, ino: file.ino };
     } catch (error) { await this.close(); throw error; }
   }
@@ -114,6 +114,7 @@ export class NativeAgentChannel {
 export class NativeAgentBroker extends NativeAgentChannel {
   constructor(kernel: RuntimeKernel, actor: Principal, lease: Lease, effect: string,
     config: NativeAgentConfiguration, assertCurrent: () => void) {
+    requireThat(config.tool_profile === undefined, "message_broker_requires_message_profile");
     const journal = new NativeAgentJournal(kernel), scope = nativeAgentScope(config, lease);
     const identity = assertNativeAgentConfiguration(config);
     const current = () => {

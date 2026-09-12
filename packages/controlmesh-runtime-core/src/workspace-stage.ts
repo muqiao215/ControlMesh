@@ -207,6 +207,12 @@ export class WorkspaceStage {
     return [...this.record.roots.map(path => ({ source: join(this.record.stage.path, path), target: join(this.record.workspace.path, path), readonly: false })),
       ...this.record.before.protected_git.map(entry => ({ source: join(this.record.workspace.path, entry.path), target: join(this.record.workspace.path, entry.path), readonly: true }))];
   }
+  /** Read-only mapping for the scoped file owner, including retained-proposal inspection. */
+  fileScope(): { workspace: string; tree: string; roots: string[]; denied: string[] } {
+    this.assertCurrent();
+    return { workspace: this.record.workspace.path, tree: this.record.stage.path,
+      roots: this.record.roots.map(path => join(this.record.workspace.path, path)), denied: this.deniedPaths() };
+  }
   deniedPaths(): string[] {
     this.assertCurrent();
     return [...this.record.before.entries.filter(entry => entry.kind === "link"), ...this.record.before.protected_git]

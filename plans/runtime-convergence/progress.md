@@ -2,6 +2,39 @@
 
 ## Current
 
+Current increment: **CM-scoped native workspace file tools**. `NativeWorkspaceFiles` implements
+explicit read scope, same-revision paged-read evidence, CAS writes/exact edits inside the existing
+stage, durable pending/done receipts, idempotent reopen and inspection-only reconciliation.
+`workspace.v1` uses the existing private MCP channel with three file tools and no peer messages.
+The current task/effect/lease and grants remain the trusted enclosing caller's responsibility.
+
+Actual isolated Claude Code 2.1.263/MiniMax-M3 execution used dynamic MCP registration, verified
+the connected tool table before user input, and retained three native calls: read the required
+current file, reject an ungranted file, write the correct staged output. Independent original
+JSONL/receipt/manifest readback accepted all three and confirmed no canonical publication.
+The later readback after the bounded-read optimization used zero model commands. The earlier
+static-MCP model trial failed with zero actual tools; it remains recorded separately.
+
+Current validation: pinned Bun 1.3.11 focused file/broker suite **14/14**, zero failures, 352
+assertions in 1.92 seconds, and runtime-core typecheck passed. The full runtime-core gate with
+actual Docker and independent SpecMesh passed **414/414**, zero failures, 4,530 assertions in
+75.69 seconds. The repository SpecMesh structural check passed with seven references and only
+the expected uncommitted-task-fact warnings; this is structural validation, not semantic closeout.
+Logs: `/tmp/cm-workspace-files-targeted.log`, `/tmp/cm-workspace-files-full.log` and
+`/tmp/cm-workspace-native-readback.log`. Private coordinating-workspace evidence includes
+`claude-workspace-mcp-dynamic-run.json`, `claude-workspace-mcp-control-dynamic.json`, and
+`claude-workspace-mcp-independent-verification.json`; no raw native state is committed.
+
+Next: port the qualified control lifecycle into the supervised execution owner, then wire
+normal Claude task startup, adoption/resume and retained-result reconciliation. This increment
+does not close those gates. Installed production is still Python **v0.43.0**, verified locally;
+no default, service, task writer or release switch occurred. The previous source increment
+d86745c1c78b5ea735b60257479e98c262db4fb5 has exact-SHA successful
+[CI 34665276826](https://github.com/muqiao215/ControlMesh/actions/runs/34665276826).
+Full CM-R0–CM-R7 remains active.
+
+## Previous Claude append verification increment
+
 Current increment: **Claude original-transcript append verification**. `ClaudeSessionStore`
 now captures an idle, byte-bound baseline and verifies exactly one appended input, the complete
 parent/attachment/tool-result chain, selected model and final model-message output. Replaced

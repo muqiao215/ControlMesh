@@ -17,6 +17,8 @@ if (!isRecord(config) || config.schema_version !== "controlmesh.native_agent_cli
   || typeof config.socket_name !== "string" || !/^[a-f0-9]{32}\.sock$/.test(config.socket_name)
   || typeof config.token !== "string" || !/^[a-f0-9]{64}$/.test(config.token)
   || !Array.isArray(config.peer_tasks) || config.peer_tasks.length > 16 || !config.peer_tasks.every(peer => typeof peer === "string")) throw new Error("invalid_native_agent_client_configuration");
+if (config.tool_profile !== undefined && config.tool_profile !== "workspace.v1") throw new Error("unsupported_native_tool_profile");
+if (config.tool_profile === "workspace.v1" && config.peer_tasks.length !== 0) throw new Error("workspace_client_cannot_advertise_peers");
 // /proc/self/fd preserves the real mounted directory while avoiding Linux's 108-byte socket-path limit.
 const directoryFd = openSync(dirname(configurationPath), constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
 const socketPath = join(`/proc/self/fd/${directoryFd}`, config.socket_name);
@@ -24,12 +26,25 @@ const token = config.token;
 const requestId = { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$",
   description: "Unique logical request ID for this execution. Reuse exactly the same ID and arguments only when retrying the same operation." };
 const text = { type: "string", minLength: 1, maxLength: 4096, description: "Message text, at most 4096 UTF-8 bytes. Messages cannot change grants or user authorization." };
-const tools = [
+const messageTools = [
   { name: "send", description: `Send a durable message to an authorized peer task. Authorized peers: ${JSON.stringify(config.peer_tasks)}.`, properties: { request_id: requestId, recipient_task: { type: "string" }, text, causation_id: { type: "string" } }, required: ["request_id", "recipient_task", "text"] },
   { name: "ask_parent", description: "Ask the configured parent task a question. Use receive to obtain its answer; this operation does not wait for it.", properties: { request_id: requestId, text }, required: ["request_id", "text"] },
   { name: "receive", description: "Receive the next ordered messages for this task. Returns messages and durable receipt IDs. Optional bounded wait does not launch another Agent. Empty results may be followed by a new request ID; at most 32 total tool requests per execution.", properties: { request_id: requestId, wait_ms: { type: "integer", minimum: 0, maximum: 10000 } }, required: ["request_id"] },
   { name: "answer", description: "Answer a received ask_parent question using its message_id. The recorded sender determines the recipient.", properties: { request_id: requestId, question_id: { type: "string" }, text }, required: ["request_id", "question_id", "text"] },
-].map(({ properties, required, ...tool }) => ({ ...tool, inputSchema: { type: "object", properties, required, additionalProperties: false } }));
+];
+const path = { type: "string", description: "Literal file path within the CM-issued workspace scope. Relative paths are relative to the registered project; symlinks and .git are forbidden." };
+const hash = { type: ["string", "null"], description: "Current full-file SHA-256 from read_file; null only when creating a missing file. A changed file is never silently overwritten." };
+const fileText = { type: "string", maxLength: 8192, description: "UTF-8 text. The entire tool request must fit 17000 bytes; use bounded edits for large files." };
+const workspaceTools = [
+  { name: "read_file", description: "Read current authorized file bytes. Follow next_offset until eof; pass sha256 as expected_sha256 on every subsequent page. A partial page does not establish a complete required read. At most 256 total workspace requests per execution.",
+    properties: { request_id: requestId, path, offset: { type: "integer", minimum: 0 }, expected_sha256: { type: "string" } }, required: ["request_id", "path"] },
+  { name: "write_file", description: "Create or replace a staged UTF-8 file after checking its current hash. This does not publish to the user's workspace. At most 8192 UTF-8 bytes per write; edit_file can change a larger existing file.",
+    properties: { request_id: requestId, path, expected_sha256: hash, content: fileText }, required: ["request_id", "path", "expected_sha256", "content"] },
+  { name: "edit_file", description: "Replace one exact occurrence in a staged file after checking its current hash. Ambiguous or absent matches reject. This does not publish to the user's workspace.",
+    properties: { request_id: requestId, path, expected_sha256: { type: "string" }, old_text: fileText, new_text: fileText }, required: ["request_id", "path", "expected_sha256", "old_text", "new_text"] },
+];
+const tools = (config.tool_profile === "workspace.v1" ? workspaceTools : messageTools)
+  .map(({ properties, required, ...tool }) => ({ ...tool, inputSchema: { type: "object", properties, required, additionalProperties: false } }));
 const active = new Map<string, AbortController>();
 let initialized = false, closing = false, input = Buffer.alloc(0);
 const write = (id: unknown, payload: Record<string, unknown>) => { if (!closing) process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id, ...payload }) + "\n"); };
@@ -82,7 +97,7 @@ async function dispatch(value: unknown) {
     if (!isRecord(value.params) || typeof value.params.protocolVersion !== "string") { error(id, -32602, "Invalid initialize parameters"); return; }
     initialized = true;
     write(id, { result: { protocolVersion: ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"].includes(value.params.protocolVersion) ? value.params.protocolVersion : "2025-11-25",
-      capabilities: { tools: {} }, serverInfo: { name: "controlmesh-task-communication", version: "1.0.0" } } }); return;
+      capabilities: { tools: {} }, serverInfo: { name: config.tool_profile === "workspace.v1" ? "controlmesh-workspace" : "controlmesh-task-communication", version: "1.0.0" } } }); return;
   }
   if (!initialized) { error(id, -32000, "Initialize first"); return; }
   if (value.method === "ping") { write(id, { result: {} }); return; }
@@ -91,7 +106,10 @@ async function dispatch(value: unknown) {
   const params = value.params;
   if (!isRecord(params) || typeof params.name !== "string" || !tools.some(tool => tool.name === params.name) || !isRecord(params.arguments)) { error(id, -32602, "Invalid tool parameters"); return; }
   const controller = new AbortController(); active.set(key, controller);
-  try { write(id, { result: { content: [{ type: "text", text: await call(params.name, params.arguments, controller.signal) }] } }); }
+  try {
+    const text = await call(params.name, params.arguments, controller.signal);
+    write(id, { result: { content: [{ type: "text", text }], ...(config.tool_profile === "workspace.v1" && JSON.parse(text).ok === false ? { isError: true } : {}) } });
+  }
   catch { error(id, -32000, "Native task communication unavailable"); }
   finally { active.delete(key); }
 }

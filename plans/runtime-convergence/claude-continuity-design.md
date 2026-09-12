@@ -74,3 +74,53 @@ The ordinary peer-message client must not silently acquire file capabilities. Re
 path/content freshness; writes must stay staged until current authority authorizes publication.
 The configured MCP profile needs its own native qualification: safe mode used for zero-tool
 preflight disables MCP, so preflight's profile cannot be silently reused as execution proof.
+
+## Scoped workspace capability implementation
+
+`NativeWorkspaceFiles` now owns explicit file reads and staged CAS write/exact-edit operations.
+The trusted caller supplies the task/effect binding, synchronous authority callback, current
+source/grant check and existing `WorkspaceStage`. MCP arguments cannot select those owners.
+The separate `workspace.v1` private client advertises three file tools and no peer messages;
+the ordinary message broker rejects this profile. Native built-in tools must remain disabled.
+
+The scope pins workspace/journal identities, registered source snapshots, granted tool names
+and staged write roots. Reads preserve UTF-8/BOM bytes in bounded pages and require complete,
+same-current-revision coverage for every required file. CAS and unique-match edits cannot
+silently overwrite changed contents. Writes use anchored stage-directory descriptors and
+atomic replacement; existing stage seal/promotion retains publication authority.
+
+Private receipts persist intent before mutation, then the observed response. Identical retry
+returns the original durable response even after reopening. An interrupted pending write stays
+unknown; trusted reconciliation can accept already matching staged bytes without writing again.
+Acceptance independently matches native tool inputs/results to every receipt and final staged
+hash. Missing native evidence or an unrecorded final change rejects. This is file-operation
+evidence, not an automatic task completion or grant issuer.
+
+This profile bounds one execution to 256 logical requests, 2,048 read bytes per page, 8,192 text
+bytes per write/edit argument, and 4 MiB per existing file. A large required-file set may exceed
+the total request budget even though each file fits the file-size bound; the future execution
+admission must account for required read coverage. The actual native qualification used one
+small registered file and one staged output, not an unrestricted development workspace.
+
+## Actual MCP qualification and remaining integration
+
+The installed CLI's static `--mcp-config` attempts exposed no tools or servers. One model turn
+therefore produced tool-looking prose without real calls and failed qualification. Subsequent
+control-only inspections sent zero user messages: `initialize`, dynamic `mcp_set_servers`, then
+`mcp_status` established a connected workspace server with exactly the three expected tools.
+The execution owner must verify this control response before sending any user input; do not
+spend another model turn merely to discover that MCP failed to connect.
+
+One isolated actual CLI 2.1.263/MiniMax-M3 turn then read the registered current file, received
+an explicit denial for an ungranted file, and wrote the correct content into the stage. Its
+original JSONL contains all three real calls/results, including the error result. The unchanged
+append verifier and the workspace receipt verifier independently accepted that evidence, found
+zero built-in tools, and confirmed that canonical output was absent. Rechecking after the
+bounded-read performance change used zero model commands. Existing credential environment
+values were passed unchanged; actual HTTP authentication headers were not inspected.
+
+The dynamic control helper is still a private qualification script. Next implement its bounded
+control lifecycle under the existing process supervisor, then connect the normal Claude task
+adapter, native adoption/resume, required-file/SpecMesh admission, durable outcome retention and
+lost-result reconciliation. Workspace tools plus this isolated native proof do not establish
+normal worker recovery, publication, container/device qualification or CM-R7 readiness.

@@ -69,14 +69,15 @@ No claim that full TS migration or distributed coordination has completed. A sco
 
 ## Next Step
 
-Implement the CM-controlled Claude workspace tool capability, then wire actual native
-execution/adoption and retained-turn recovery through
-[claude-continuity-design.md](claude-continuity-design.md). Native scoped Read allow rules failed
-a real two-file qualification; keep restrictive-grant rejection. Original JSONL append verification
-is implemented, and actual marker recall passed, but a current-read turn hallucinated without
-calling Read and was rejected. OpenCode scheduling d93c052, Claude source fb69bdd/readiness b0bd743
-and History 61f57ad have passing exact-SHA CI. Preserve current source/grants and the original
-native session; a readiness result or successful prose cannot establish task completion.
+Implement the supervised Claude control lifecycle that verifies dynamic MCP registration
+before sending user input, then wire normal execution/adoption and retained-turn recovery through
+[claude-continuity-design.md](claude-continuity-design.md). The CM workspace file owner is now
+implemented; an isolated actual native turn proved an authorized read, denied ungranted read
+and correct staged write. Native scoped Read allow rules and static MCP startup failed their
+earlier qualifications; keep those failures and existing restrictive-grant rejection explicit.
+The actual file-tool proof does not close normal worker/resume/publication/recovery integration.
+Original JSONL append verification d86745c has passing exact-SHA CI. Preserve current
+source/grants and original native identity; readiness or successful prose is not completion.
 Continue the other provider/transport/store/topology/product owners below; CM-R7 remains open.
 
 Local private startup, History/native adoption, native mailbox/Agent communication,
