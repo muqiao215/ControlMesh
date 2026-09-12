@@ -2,6 +2,17 @@
 
 ## Current
 
+Installed-native recovery qualification now also injects failure at CM's
+recordEffectObservation after the real Codex result has been retained. On reopen,
+reconciliation succeeds with the isolated auth file absent; repeating the same recovery
+request leaves the native file byte-identical and produces zero additional HTTP requests.
+A subsequent explicit resume retains the original context. Both normal/lost-observation
+paths passed: 2 tests, 33 assertions, 24.64s; typecheck passed. This is a real CLI + real
+Viewer with a synthetic loopback model service, not a mid-process kill or real-account
+canary. Previous registration commit 4bb3e78 CI 34724757370 succeeded; structured-turn
+commit 2c8cc1d CI 34725232567 was still running at this observation.
+
+
 Installed Codex 0.154.0 + the real History Viewer now pass the isolated configured
 adoption/reopen test: seed a native session, adopt through ordinary CM configuration,
 continue, close/reopen CM, continue again with the same UUID and the original marker

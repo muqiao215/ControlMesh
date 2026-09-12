@@ -1901,3 +1901,12 @@ this fixture. The reader now accepts either representation, while duplicate mixe
 foreign turn IDs and invalid content still refuse. The real CLI + real headless Viewer
 adoption and two continuations survive CM reopen with original context in both requests.
 Synthetic loopback model responses do not establish real-account execution acceptance.
+
+## 2026-09-13 — native result reconciliation without execution
+
+The installed Codex configured test now covers a deliberately lost CM effect observation.
+The native process already exited and its outcome was retained before injected failure.
+The reopened runtime accepted the same reconciliation twice with the isolated auth file
+removed; neither the Responses request count nor rollout bytes changed. An explicit later
+resume did create the next request with original context. This qualifies persisted-result
+recovery only; interrupted native turns and physical device interruption remain distinct.

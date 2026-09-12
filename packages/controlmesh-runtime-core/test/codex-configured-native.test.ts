@@ -12,7 +12,7 @@ import { LocalRuntimeControl } from "../src/local-runtime-control";
 import { codexTextResponse } from "./helpers/codex-responses";
 
 const executable = process.env.CM_CODEX_TEST_EXECUTABLE, viewer = process.env.CM_HISTORY_TEST_ROOT;
-test.skipIf(!executable || !viewer)("installed Codex persists native context through Viewer adoption and configured runtime reopen", async () => {
+test.skipIf(!executable || !viewer).each([false, true])("installed Codex persists native context through Viewer adoption and configured runtime reopen (lost observation=%s)", async lost => {
   const root = mkdtempSync(join(tmpdir(), "cm-native-codex-flow-")), home = join(root, "home"), workspace = join(root, "project"), state = join(root, "state");
   for (const path of [home, workspace, state]) mkdirSync(path, { mode: 0o700 });
   const marker = randomUUID(), requests: { phase: string; has_seed: boolean }[] = [];
@@ -50,9 +50,25 @@ test.skipIf(!executable || !viewer)("installed Codex persists native context thr
     const adopted = await request("adopt", "prepare_adoption", { task_id: "task", provider: "codex", session_id: reference.session_id });
     expect(readFileSync(store.path)).toEqual(before); expect(requests).toHaveLength(1);
     const submitted = await request("submit", "submit", { task: { task_id: "task", chat_id: "fixture", status: "waiting", provider: "codex", model: "gpt-5.5", repo_root: workspace, prompt: "Continue the earlier conversation.", native_session: adopted.native_session } });
+    if (lost) owned.runtime.kernel.recordEffectObservation = () => { throw new Error("fixture observation loss"); };
     await request("enqueue", "enqueue", { task_id: "task", expected_revision: submitted.revision }); await owned.runtime.drain();
-    const completed = owned.runtime.inspectTask("task"); expect(completed.task.status, JSON.stringify(completed)).toBe("done");
-    await owned.close(); owned = openLocalRuntime(configPath);
+    let completed = owned.runtime.inspectTask("task"); expect(completed.task.status, JSON.stringify(completed)).toBe(lost ? "stale" : "done");
+    const effect = (owned.runtime.kernel.db.sql.query("SELECT effect_id FROM effects").get() as { effect_id: string }).effect_id;
+    const nativeBeforeRecovery = readFileSync(store.path), requestsBeforeRecovery = requests.length;
+    await owned.close();
+    const authPath = join(home, "auth.json"), auth = readFileSync(authPath);
+    if (lost) rmSync(authPath);
+    owned = openLocalRuntime(configPath);
+    if (lost) {
+      const binding = owned.recovery.inspect("task", completed.revision, effect);
+      await owned.recovery.accept("recover", "task", completed.revision, binding);
+      // Repeated reconciliation must return its original receipt without another execution.
+      await owned.recovery.accept("recover", "task", completed.revision, binding);
+      completed = owned.runtime.inspectTask("task"); expect(completed.task.status).toBe("done");
+      expect(readFileSync(store.path)).toEqual(nativeBeforeRecovery);
+      expect(requests).toHaveLength(requestsBeforeRecovery);
+      writeFileSync(authPath, auth, { mode: 0o600 });
+    }
     const resumed = await request("resume", "resume", { task_id: "task", expected_revision: completed.revision, prompt: "Continue once more." });
     await request("enqueue-again", "enqueue", { task_id: "task", expected_revision: resumed.revision }); await owned.runtime.drain();
     expect(owned.runtime.inspectTask("task").task.status).toBe("done");
