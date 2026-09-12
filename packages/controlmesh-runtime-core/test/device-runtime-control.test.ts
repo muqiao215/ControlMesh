@@ -338,3 +338,24 @@ test("normal coordinator daemon dispatches configured topology after EOF and sto
   await f.reopen();
   expect(await f.call("retained", "inspect_schedule", { root_task_id: "root" })).toMatchObject({ result: { mode: "active" } });
 });
+
+test("worker daemon exposes reconnectable local management without starting a provider for an empty queue", async () => {
+  const { startDeviceRuntimeService } = await import("../src/device-runtime-service");
+  const { requestRuntimeControl } = await import("../src/runtime-control-socket");
+  const f = fixture();
+  const started = await f.call("start", "start");
+  const config = f.workerConfig((started.result as { endpoint: string }).endpoint);
+  const socket = join(f.root, "worker-control.sock");
+  const service = await startDeviceRuntimeService(config.path, socket, true);
+  try {
+    expect(await requestRuntimeControl(socket, { id: "first", op: "status" })).toMatchObject({ ok: true });
+    expect(await requestRuntimeControl(socket, { id: "reconnected", op: "status" })).toMatchObject({ ok: true });
+    await expect(startDeviceRuntimeService(config.path, socket, true)).rejects.toThrow("local_service_already_running");
+    expect(existsSync(join(f.root, "native-data"))).toBe(false);
+    const db = new RuntimeDatabase(join(f.workerState, "runtime.sqlite"));
+    try {
+      expect(db.sql.query("SELECT COUNT(*) AS n FROM provider_checks").get()).toEqual({ n: 0 });
+      expect(db.sql.query("SELECT COUNT(*) AS n FROM device_execution_records").get()).toEqual({ n: 0 });
+    } finally { db.close(); }
+  } finally { await service.close(); }
+});

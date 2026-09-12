@@ -190,3 +190,18 @@ results. Real Agent recall, reviewed semantic closeout and complete migration/cu
 remain pending.
 
 Final gate with actual History checkout selected via CM_HISTORY_TEST_ROOT: 13 passed, 131 assertions, 11.68s (`/tmp/cm-headless-continuity-final.log`). Typecheck and diff-check passed. Web remains read-only.
+
+## 2026-09-13 — reconnectable coordinator/worker service
+
+Added private Unix-socket management to the existing device runtime entrypoint, preserving
+stdio mode and explicit daemon selection. Reuses shared lock/framing/bounds before opening
+the runtime. Existing device owner schedules work; service health checks only read status
+and listener identity. Configuration revocation terminates the owned service.
+
+Focused device-control/service gate: 18 passed, 178 assertions, 4.79s (`/tmp/cm-device-service.log`).
+Independent coordinator child processes verify management disconnect, duplicate startup
+refusal, persisted task after restart and configuration-revocation exit. Configured worker
+socket/daemon verifies reconnect and zero provider checks/execution/native files for an
+empty queue. Existing stdio/EOF/scheduler/control tests remain passing. This is local
+process evidence, not a new physical two-device/native canary. Initial workspace transfer,
+remaining provider/store/transport migration and CM-R7 cutover remain open.

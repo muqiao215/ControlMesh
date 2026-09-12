@@ -347,3 +347,20 @@ The independent plugin checks before publication and again before parent complet
 passing file check does not assert reviewed project closeout. Controlled HTTP/Docker/SpecMesh
 fixtures exercise this path; real model and physical-device acceptance remain separate in
 the active progress file.
+
+## Reconnectable local device management
+
+The device entrypoint accepts `--socket /absolute/private/device.sock` alongside its
+existing configuration path and optional `--daemon`. Socket mode survives stdin EOF and
+uses the same private Unix-socket framing, owner-only permissions and OS-held listener
+lock as the local runtime service. Lock acquisition precedes configuration opening and
+scheduler startup. Without `--daemon`, management is available but this entrypoint does
+not start persistent scheduling. With it, the existing coordinator/worker owns scheduling.
+
+Use the existing `cm-runtime --socket ... --json request --file ...` client for supported
+device-control operations, or ordinary `status`/`inspect` operations that match that
+control's protocol. This socket is host-local management, not the cross-device HTTP
+transport and not an arbitrary shell endpoint. One-second read-only health checks stop
+the service on configuration/listener identity revocation. SIGTERM closes its listener
+and owned runtime. No unit/cron/default installation is performed. Initial workspace
+distribution and physical rollout acceptance remain pending.
