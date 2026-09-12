@@ -112,3 +112,15 @@ Implement the native workspace-write path, not a read-only substitute. See
 boundary and acceptance cases. This work must ultimately wire actual OpenCode edit/write
 execution, local and device ownership, native result retention/reconciliation and SpecMesh
 freshness. A staging helper alone does not close CM-R3 or the full migration.
+
+## Team phase owner migration increment
+
+Python `controlmesh/team/phases.py` and state wrapper behavior are ported to
+`team-phases.ts`; all 320 edge/repair-bound combinations are checked against the
+live Python implementation. `RuntimeTeamPhases` supplies private transactional
+persistence, ownership, expected revision and idempotency using candidate DB v16.
+This is the phase-state owner only. Director/worker and the other topology reducers,
+task registration/dispatch, review and cancellation composition remain open. A phase
+named approve is not an authorization grant; no provider dispatch is attached here.
+Next: wire explicit topology/task ownership to this state owner and retain existing
+runtime admission at every actual side effect.

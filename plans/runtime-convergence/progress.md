@@ -2,6 +2,19 @@
 
 ## Current
 
+Final team-phase increment gate:480pass0fail,5,387assertions192.73s across49files,
+pinned Bun1.3.11 + Docker image + standalone SpecMesh. Process65158 exit0,
+/tmp/cm-team-phase-full.log. Candidate v16 migration and all prior runtime tests
+pass on this source. Team topology dispatch and production retirement remain open.
+
+Team phase migration: pure transition and lazy state wrapper match live Python across
+320 edge/repair combinations. Private RuntimeTeamPhases uses scoped ownership,
+revision checks and transactional receipts; candidate DB v16 adds team_phases.
+Storage/migration/process/device/delivery focused suite56pass718assertions4.43s.
+New phase tests3pass344assertions; typecheck passed before final export addition.
+Full pinned runtime gate in progress at /tmp/cm-team-phase-full.log.
+This does not complete topology dispatch or enable production team execution.
+
 Tool-availability instruction correction verified:12tests90assertions2.42s pass
 (workspace profile and TaskHub staged-write/recovery), typecheck passes. No model
 input; missing-LF live acceptance remains failed.

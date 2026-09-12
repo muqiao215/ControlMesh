@@ -937,3 +937,21 @@ distinction explicit. Retained recovery already validates the saved prompt/permi
 snapshot without regenerating it from current instructions, so old evidence is not
 rewritten. This explains why a patch-based retry was not justified by the retained
 catalog; it does not establish the root cause of missing LF in write arguments.
+
+## Team phase ownership — 2026-09-12
+
+Python TeamOrchestrator is a lazy persistence wrapper around phases.py, not a complete
+topology dispatcher. Its transition graph allows repair to execute/verify/complete;
+exceeding max_repair_attempts produces failed without incrementing the retained
+attempt count. Terminal transitions reject; prior transition history is preserved.
+Live differential tests cover every phase pair and five repair limit/count profiles.
+The TS persistence owner uses existing scoped commands and SQLite transactions.
+Failed writes roll back receipts and state; a stable retry after reopen returns the
+original result, while changed body/stale revision/other owner/revoked scope reject.
+
+Candidate database migration16 adds team_phases; no Python file is imported or
+modified. Older candidate binaries refuse v16. Rollback requires the pre-upgrade
+candidate backup, not hand-editing user_version or dropping populated team state.
+Released Python remains production owner. Topology execution must still compose
+this state with task admission and explicit runtime authority, not infer dispatch
+permission from an approve phase.

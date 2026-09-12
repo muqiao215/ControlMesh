@@ -26,7 +26,7 @@ export class RuntimeDatabase {
       this.transaction(() => {
         const version = (this.sql.query("PRAGMA user_version").get() as { user_version: number }).user_version;
         const app = (this.sql.query("PRAGMA application_id").get() as { application_id: number }).application_id;
-        requireThat(version >= 0 && version <= 15, "unsupported_database_version");
+        requireThat(version >= 0 && version <= 16, "unsupported_database_version");
         requireThat(app === 0 || app === APPLICATION_ID, "foreign_database");
         if (version === 0) {
           const tables = this.sql.query("SELECT name FROM sqlite_master WHERE type='table'").all();
@@ -272,6 +272,15 @@ export class RuntimeDatabase {
             );
             CREATE INDEX device_scheduled_pending ON device_scheduled_work(principal,device_id,state,created_at);
             PRAGMA user_version = 15;
+          `);
+        }
+        if (version < 16) {
+          this.sql.exec(`
+            CREATE TABLE team_phases (
+              team_id TEXT PRIMARY KEY, principal TEXT NOT NULL, revision INTEGER NOT NULL,
+              state TEXT NOT NULL
+            );
+            PRAGMA user_version = 16;
           `);
         }
       });

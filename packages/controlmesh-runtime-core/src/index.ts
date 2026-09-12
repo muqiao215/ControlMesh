@@ -48,3 +48,6 @@ export { FeishuEventAuthenticator, type FeishuEventConfiguration, type FeishuInc
 export { FeishuInbox, type FeishuTaskTemplate } from "./feishu-inbox";
 export { FeishuInboundRuntime } from "./feishu-inbound-runtime";
 export { SpecMeshPort, type SpecMeshConfiguration, type SpecMeshResult, type SpecMeshObservation, type SpecMeshOperation } from "./specmesh-port";
+
+export { RuntimeTeamPhases, type TeamPhaseSnapshot } from "./runtime-team-phases";
+export { TeamOrchestrator, initialTeamPhaseState, transitionTeamPhase, isTerminalTeamPhase, type TeamPhaseState, type TeamPhase } from "./team-phases";
