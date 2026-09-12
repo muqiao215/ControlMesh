@@ -1874,3 +1874,10 @@ refuse before version/task launch. Earlier staged supervised tests timed out eve
 unchanged source under restricted permissions; all affected supervised tests passed in
 the real checkout after permissions were restored. Do not attribute that prior failure
 to the provider extraction or silently remove its earlier failure record.
+
+Codex adoption needs no new database authority or public handle schema: its native
+reference has the same device/store/session/project/revision/model fields. The existing
+adoption registry can be generalized while provider-specific readers remain independent.
+LocalCodexHistory constrains lookup to the configured sessions directory and device;
+candidate JSON never supplies the source path. Reusing the JSONL catalog keeps source/cache
+separation, refresh serialization and bounded process calls identical for Claude and Codex.

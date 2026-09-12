@@ -1,3 +1,4 @@
+import { CodexSessionStore, type CodexSessionRef } from "./codex-session";
 import { realpathSync } from "node:fs";
 import { ProcessSupervisor, type ProcessAdmission, type ProcessSpec, type ProcessOutcome } from "../process-supervisor";
 import { object, requireThat } from "../value";
@@ -27,6 +28,25 @@ export class ClaudeHistoryClient {
       && object(candidate.reference), "unsupported_history_candidate");
     requireThat(candidate.reference.session_id === sessionId, "history_session_mismatch");
     assertCurrent(); return this.store.validate(candidate.reference as unknown as ClaudeSessionRef);
+  }
+}
+
+/** Codex selection uses the configured transcript file; candidate content cannot redirect it. */
+export class CodexHistoryClient {
+  constructor(private readonly config: HistoryConfig, private readonly store: CodexSessionStore,
+    private readonly runner: Runner = new ProcessSupervisor()) {}
+
+  async inspect(sessionId: string, assertCurrent: () => void): Promise<CodexSessionRef> {
+    assertCurrent(); this.store.read(sessionId);
+    const result = await this.runner.run({ command: [this.config.python, "-m", "history_core", "--source", "codex", "--source-path", this.store.path,
+      "native-reference", sessionId, "--device-id", this.store.deviceId], cwd: realpathSync(this.config.viewer_directory),
+      env: this.config.environment, timeout_ms: 10_000, max_output_bytes: 256 * 1024 }, { assertCurrent });
+    requireThat(result.reason === "exited" && result.exit_code === 0, "history_service_unavailable");
+    const candidate: unknown = JSON.parse(result.stdout);
+    requireThat(object(candidate) && candidate.schema_version === "history.native_candidate.v2" && candidate.authorization === "context_only"
+      && object(candidate.reference), "unsupported_history_candidate");
+    requireThat(candidate.reference.session_id === sessionId, "history_session_mismatch");
+    assertCurrent(); return this.store.validate(candidate.reference as unknown as CodexSessionRef);
   }
 }
 

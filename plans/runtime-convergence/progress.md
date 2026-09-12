@@ -2,6 +2,20 @@
 
 ## Current
 
+Codex History adoption now reuses DeviceNativeAdoptions and the existing opaque-handle
+schema/table. LocalCodexHistory connects registered source lookup, the shared bounded
+JSONL catalog and CodexHistoryClient; CM independently validates Viewer candidates and
+requires a completed native baseline before retaining an adoption. Handles remain bound
+to principal/device/task/workspace/model/profile and survive DB reopen. Resolve retains
+the original reference for recovery; execution separately rejects a changed revision.
+27 tests / 213 assertions and typecheck passed (/tmp/cm-codex-adoption-final.log), including
+an actual headless Viewer subprocess with synthetic Codex records and unchanged source
+bytes. Claude/OpenCode adoption regressions passed. No native model was invoked.
+The ordinary local_runtime configuration still does not register this port or the Codex
+task adapter; automatic source lookup and full native continuation remain next.
+Previous commits a253cfe and History 9ea53f1 have successful CI runs 34723955246 and
+34723955816 respectively. This increment does not change production defaults or releases.
+
 Permissions restored: the prepared provider-alignment patch is now applied to the
 main checkout. Codex probe and resume share codexProviderArguments; OPENAI_BASE_URL
 selects the same explicit native provider parameters before any process dispatch.

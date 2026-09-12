@@ -1,14 +1,10 @@
+import type { NativeSessionRef } from "./native-session";
 import { createHash } from "node:crypto";
 import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, realpathSync, statSync, type BigIntStats } from "node:fs";
 import { basename, isAbsolute } from "node:path";
 import { canonical, digest, identifier, object, requireThat } from "../value";
 
-export interface CodexSessionRef {
-  schema_version: "agent.native_session.v2";
-  provider: "codex";
-  device_id: string; store_id: string; session_id: string;
-  directory: string; project_id: string; revision: string; model: string; title: string;
-}
+export type CodexSessionRef = NativeSessionRef<"codex">;
 export interface CodexNativeBaseline {
   schema_version: "codex.native_baseline.v1";
   reference: CodexSessionRef;

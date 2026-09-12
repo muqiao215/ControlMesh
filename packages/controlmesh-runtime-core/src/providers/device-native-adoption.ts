@@ -9,7 +9,7 @@ import type { NativeSessionRef } from "./native-session";
 
 export interface AdoptionSelection { task_id: string; workspace_id: string; capability: string; session_id: string }
 export interface AdoptionProfile { directory: string; model: string; digest: string }
-export interface NativeAdoptionHistory<P extends "opencode" | "claude"> {
+export interface NativeAdoptionHistory<P extends "opencode" | "claude" | "codex"> {
   search(query: string, project: string | null, current: () => void): Promise<{ session_id: string; directory: string; title: string }[]>;
   inspect(sessionId: string, current: () => void): Promise<NativeSessionRef<P>>;
   refresh?(project: string, current: () => void): Promise<Record<string, unknown>>;
@@ -20,7 +20,7 @@ interface AdoptionRow {
 }
 
 /** Local context registry. Neither a candidate nor its opaque handle grants execution rights. */
-export class DeviceNativeAdoptions<P extends "opencode" | "claude" = "opencode"> {
+export class DeviceNativeAdoptions<P extends "opencode" | "claude" | "codex" = "opencode"> {
   private stopping = false;
   private readonly pending = new Set<Promise<unknown>>();
   constructor(private readonly db: RuntimeDatabase, private readonly actor: Principal,

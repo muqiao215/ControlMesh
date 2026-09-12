@@ -4,7 +4,7 @@ import { realpathSync, statSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import { canonical, digest, identifier, object, requireThat } from "../value";
 
-export interface NativeSessionRef<Provider extends "opencode" | "claude" = "opencode"> {
+export interface NativeSessionRef<Provider extends "opencode" | "claude" | "codex" = "opencode"> {
   schema_version: "agent.native_session.v2";
   provider: Provider;
   device_id: string;

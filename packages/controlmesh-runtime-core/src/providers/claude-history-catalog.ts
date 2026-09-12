@@ -1,11 +1,13 @@
+import type { CodexSessionStore } from "./codex-session";
+import type { NativeSessionRef } from "./native-session";
 import { lstatSync, mkdirSync, realpathSync, statSync } from "node:fs";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { ProcessSupervisor, type ProcessAdmission, type ProcessOutcome, type ProcessSpec } from "../process-supervisor";
 import { directoryIdentity } from "./native-manifest";
 import { contains } from "../containers/plan";
 import { digest, object, requireThat } from "../value";
-import { ClaudeHistoryClient, type HistoryConfig } from "./history-client";
-import type { ClaudeSessionStore, ClaudeSessionRef } from "./claude-session";
+import { ClaudeHistoryClient, CodexHistoryClient, type HistoryConfig } from "./history-client";
+import type { ClaudeSessionStore } from "./claude-session";
 
 interface Runner { run(spec: ProcessSpec, admission: ProcessAdmission): Promise<ProcessOutcome> }
 export interface ClaudeHistoryCatalogConfig extends HistoryConfig { source_directory: string; cache_directory: string }
@@ -25,11 +27,11 @@ function canonicalDirectory(path: string): void {
 }
 
 /** Explicit History-owned derived index; lookup paths always come from the registered native catalog. */
-export class ClaudeHistoryCatalog {
+class NativeJsonlHistoryCatalog<P extends "claude" | "codex"> {
   private refreshing = false;
   private readonly cacheIdentity: string;
-  constructor(private readonly config: ClaudeHistoryCatalogConfig, private readonly locate: (sessionId: string) => ClaudeSessionStore,
-    private readonly runner: Runner = new ProcessSupervisor()) {
+  constructor(private readonly config: ClaudeHistoryCatalogConfig, private readonly locate: (sessionId: string) => ClaudeSessionStore | CodexSessionStore,
+    private readonly runner: Runner, private readonly provider: P) {
     requireThat(isAbsolute(config.source_directory) && isAbsolute(config.cache_directory)
       && !contains(config.source_directory, config.cache_directory) && !contains(config.cache_directory, config.source_directory), "native_history_cache_overlaps_source");
     canonicalDirectory(config.source_directory); canonicalDirectory(config.cache_directory);
@@ -47,7 +49,7 @@ export class ClaudeHistoryCatalog {
       current(); requireThat(digest(directoryIdentity(this.config.source_directory)) === source
         && digest(directoryIdentity(this.config.cache_directory)) === this.cacheIdentity, "native_history_catalog_changed");
     };
-    const result = await this.runner.run({ command: [this.config.python, "-m", "history_core", "--source", "claude", "--source-path", this.config.source_directory,
+    const result = await this.runner.run({ command: [this.config.python, "-m", "history_core", "--source", this.provider, "--source-path", this.config.source_directory,
       "--data-dir", this.config.cache_directory, ...args], cwd: realpathSync(this.config.viewer_directory), env: this.config.environment,
       timeout_ms: 10000, max_output_bytes: 256 * 1024 }, { assertCurrent });
     requireThat(result.reason === "exited" && result.exit_code === 0, "history_service_unavailable"); assertCurrent();
@@ -57,8 +59,8 @@ export class ClaudeHistoryCatalog {
     requireThat(!this.refreshing, "native_history_refresh_in_progress"); this.refreshing = true;
     try {
       const result = await this.invoke(["refresh"], current);
-      requireThat(result.source === "claude" && result.status === "refreshed" && result.native_source_read_only === true, "invalid_history_refresh");
-      return { source: "claude", status: "refreshed", refresh_policy: "explicit", native_source_read_only: true };
+      requireThat(result.source === this.provider && result.status === "refreshed" && result.native_source_read_only === true, "invalid_history_refresh");
+      return { source: this.provider, status: "refreshed", refresh_policy: "explicit", native_source_read_only: true };
     } finally { this.refreshing = false; }
   }
   async search(query: string, project: string | null, current: () => void): Promise<{ session_id: string; directory: string; title: string }[]> {
@@ -68,7 +70,22 @@ export class ClaudeHistoryCatalog {
     return result.items.filter(item => object(item) && typeof item.id === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(item.id)
       && typeof item.cwd === "string").map(item => ({ session_id: item.id, directory: item.cwd, title: typeof item.title === "string" ? item.title.slice(0, 512) : "" }));
   }
-  inspect(sessionId: string, current: () => void): Promise<ClaudeSessionRef> {
-    current(); return new ClaudeHistoryClient(this.config, this.locate(sessionId), this.runner).inspect(sessionId, current);
+  inspect(sessionId: string, current: () => void): Promise<NativeSessionRef<P>> {
+    current();
+    const store = this.locate(sessionId);
+    const client = this.provider === "codex" ? new CodexHistoryClient(this.config, store as CodexSessionStore, this.runner)
+      : new ClaudeHistoryClient(this.config, store as ClaudeSessionStore, this.runner);
+    return client.inspect(sessionId, current) as Promise<NativeSessionRef<P>>;
+  }
+}
+
+export class ClaudeHistoryCatalog extends NativeJsonlHistoryCatalog<"claude"> {
+  constructor(config: ClaudeHistoryCatalogConfig, locate: (sessionId: string) => ClaudeSessionStore, runner: Runner = new ProcessSupervisor()) {
+    super(config, locate, runner, "claude");
+  }
+}
+export class CodexHistoryCatalog extends NativeJsonlHistoryCatalog<"codex"> {
+  constructor(config: ClaudeHistoryCatalogConfig, locate: (sessionId: string) => CodexSessionStore, runner: Runner = new ProcessSupervisor()) {
+    super(config, locate, runner, "codex");
   }
 }
