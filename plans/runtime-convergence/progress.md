@@ -2,6 +2,15 @@
 
 ## Current
 
+Device coordinator adoption increment: optional coordinator-local SpecMesh profile
+and shared local/device submit adopter implemented. Normal configured coordinator
+reopen and HTTP queue projection preserve requirements without absolute source paths.
+24 tests / 177 assertions / 14.31s pass (SpecMesh and device-control suites); typecheck
+passes. This verifies contract distribution, not remote code revision equality or
+real model execution. Prior full runtime gate 474 passed before this control-only
+increment. Next: commit these control changes, then remaining provider completion
+and multi-device content/revision gates.
+
 Final explicit-adoption gate: pinned Bun 1.3.11 with verified Docker image and
 independent SpecMesh checkout, 474 pass / 0 fail, 5,012 assertions in 189.16s
 (`/tmp/cm-specmesh-adoption-full.log`, process15668 exit0). No real model input

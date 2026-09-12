@@ -1,3 +1,5 @@
+import { adoptSpecMeshCompletion } from "./specmesh-completion";
+import type { SpecMeshPort } from "./specmesh-port";
 import type { DeviceClient } from "./device-client";
 import type { DeviceCoordinator, DeviceRegistration } from "./device-coordinator";
 import type { DeviceWorker, DeviceRunAdmission, DeviceRunOutcome } from "./device-worker";
@@ -31,10 +33,10 @@ export class DeviceCoordinatorControl implements RuntimeControl {
   private maintenance?: ReturnType<typeof setInterval>;
   constructor(private readonly kernel: RuntimeKernel, private readonly actor: Principal,
     private readonly coordinator: DeviceCoordinator, private readonly devices: readonly DeviceRegistration[],
-    private readonly assertCurrent: () => void, private readonly port = 0) {
+    private readonly assertCurrent: () => void, private readonly port = 0, private readonly specmesh?: SpecMeshPort) {
     this.ingress = new TaskIngress(kernel, { command_origin: "human_request", origin: "user", source_scope: "local_foreground", transport: "cm-device" }, assertCurrent);
   }
-  async stop(): Promise<void> { this.stopped = true; if (this.maintenance) clearInterval(this.maintenance); await this.server?.stop(true); this.server = undefined; }
+  async stop(): Promise<void> { this.stopped = true; if (this.maintenance) clearInterval(this.maintenance); await this.server?.stop(true); await this.specmesh?.stop(); this.server = undefined; }
   startDaemon(): void {
     this.assertCurrent(); requireThat(!this.stopped, "device_runtime_stopped");
     this.server ??= this.coordinator.listen(this.port);
@@ -46,7 +48,7 @@ export class DeviceCoordinatorControl implements RuntimeControl {
     try {
       this.assertCurrent(); requireThat(!this.stopped, "device_runtime_stopped");
       const value = request(input, {
-        status: [], start: [], submit: ["task"], inspect_task: ["task_id"],
+        status: [], start: [], submit: ["task", "specmesh_requirements_sha256"], inspect_task: ["task_id"],
         assign: ["task_id", "expected_revision", "workspace_id", "capability", "device_ids", "peer_tasks", "parent_task"],
         cancel: ["task_id", "expected_revision"], resume: ["task_id", "expected_revision", "prompt"],
         revoke: ["device_id"], recover_expired: [],
@@ -66,7 +68,9 @@ export class DeviceCoordinatorControl implements RuntimeControl {
           requireThat(object(value.task) && typeof value.task.chat_id === "string", "invalid_device_task");
           if (value.task.native_session) assertProtocolSchema(object(value.task.native_session) && value.task.native_session.schema_version === "controlmesh.device_native_adoption.v1"
             ? "device-native-adoption.schema.json" : "device-native-session.schema.json", value.task.native_session);
-          result = this.ingress.submit(this.actor, key, value.task as LegacyTask, { chat_id: value.task.chat_id }); break;
+          const adopted = await adoptSpecMeshCompletion(value.task as LegacyTask, value.specmesh_requirements_sha256, this.specmesh);
+          this.assertCurrent(); requireThat(!this.stopped, "device_runtime_stopped"); adopted.assertCurrent();
+          result = this.ingress.submit(this.actor, key, adopted.task, { chat_id: value.task.chat_id }); break;
         }
         case "inspect_task": {
           identifier(value.task_id); const snapshot = this.kernel.inspect(this.actor, value.task_id);

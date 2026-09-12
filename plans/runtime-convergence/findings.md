@@ -870,3 +870,14 @@ pass, including stable retry identity and source-record injection refusal. Devic
 control adoption and remaining provider completion gates are still separate work.
 Remote CI lookup for 34679687668 timed out at the network layer; this is not proof
 that the run stopped or failed. Packaging predecessor 34679508577 was verified success.
+
+## Coordinator-local requirement adoption — 2026-09-12
+
+A worker's private filesystem cannot be inspected as a coordinator-local path. The
+optional coordinator profile selects its own canonical checkout. Shared adoption
+logic freezes the selected requirements through normal ingress; existing assignment
+projection carries only execution fields. Normal reopen plus authenticated loopback
+queue tests prove the exact completion contract survives and the local path/source
+metadata is not transported. This is not evidence of identical worker source code;
+revision/content coordination must still be verified separately. No provider runs
+are issued by discovery or adoption.

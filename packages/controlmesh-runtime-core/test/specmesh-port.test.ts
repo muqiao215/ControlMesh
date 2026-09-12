@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LocalRuntimeControl, LocalTaskRuntime, openLocalRuntime, RuntimeDatabase, RuntimeKernel, SpecMeshPort,
+import { DeviceClient, openDeviceRuntime, LocalRuntimeControl, LocalTaskRuntime, openLocalRuntime, RuntimeDatabase, RuntimeKernel, SpecMeshPort,
   type LocalTaskExecution, type Principal, type SpecMeshResult } from "../src";
 import { ProcessSupervisor, type ProcessAdmission, type ProcessOutcome, type ProcessSpec } from "../src/process-supervisor";
 import { digest } from "../src/value";
@@ -231,4 +231,40 @@ paired("local submit explicitly adopts hashed requirements into durable ingress 
   expect(existsSync(join(f.repo, "result.txt"))).toBe(false);
   expect(await control.handle({ id: "forged", op: "submit", task: { ...task, task_id: "forged", specmesh_completion_source: {} } }))
     .toMatchObject({ ok: false, error: "task_body_cannot_issue_specmesh_source" });
+});
+
+paired("configured coordinator adopts local requirements and distributes the exact contract", async () => {
+  const f = fixture(true), manifest = "plans/task/artifacts.json", state = join(f.root, "coordinator");
+  mkdirSync(state, { mode: 0o700 });
+  writeFileSync(join(f.repo, manifest), JSON.stringify({ schema_version: "specmesh.artifact_requirements.v1",
+    files: [{ path: "result.txt", mode: "write" }] }));
+  const sha = createHash("sha256").update(readFileSync(join(f.repo, manifest))).digest("hex"), token = "fixture-token-" + "a".repeat(40);
+  const path = join(f.root, "coordinator.json");
+  writeFileSync(path, JSON.stringify({ schema_version: "controlmesh.device_runtime.v1", mode: "candidate", role: "coordinator",
+    state_root: state, principal_id: "operator", device_id: "coordinator",
+    devices: [{ device_id: "worker", principal_id: "operator", token_sha256: createHash("sha256").update(token).digest("hex"),
+      capabilities: ["native"], workspace_ids: ["project"] }],
+    specmesh: { workspace: f.repo, configuration: { ...f.config, requirements_path: manifest } } }), { mode: 0o600 });
+  let owned = openDeviceRuntime(path); cleanup.push(() => owned.close());
+  const task = { task_id: "device-adopt", status: "waiting", provider: "claude", model: "fixture/model",
+    chat_id: "fixture", prompt: "Produce the required file", repo_root: f.repo };
+  const submit = { id: "submit", op: "submit", task, specmesh_requirements_sha256: sha };
+  expect(await owned.control.handle({ ...submit, id: "stale", specmesh_requirements_sha256: "0".repeat(64) }))
+    .toMatchObject({ ok: false, error: "specmesh_requirements_changed" });
+  const accepted = await owned.control.handle(submit); expect(accepted.ok).toBe(true);
+  await owned.close(); owned = openDeviceRuntime(path);
+  expect(await owned.control.handle(submit)).toEqual(accepted);
+  const inspected = await owned.control.handle({ id: "inspect", op: "inspect_task", task_id: task.task_id });
+  expect(inspected).toMatchObject({ ok: true, result: { task: { specmesh_completion_source: { sha256: sha },
+    completion_requirements: { schema_version: "controlmesh.task_completion.v1", files: [{ path: "result.txt", mode: "write" }] } } } });
+  expect(await owned.control.handle({ id: "assign", op: "assign", task_id: task.task_id, expected_revision: 1,
+    workspace_id: "project", capability: "native", device_ids: ["worker"] })).toMatchObject({ ok: true });
+  const started = await owned.control.handle({ id: "start", op: "start" });
+  const client = new DeviceClient({ endpoint: (started.result as { endpoint: string }).endpoint, token, device_id: "worker" });
+  const queue = await client.command("queue", {}) as { execution: Record<string, unknown> }[];
+  expect(queue).toHaveLength(1);
+  expect(queue[0].execution.completion_requirements).toEqual({ schema_version: "controlmesh.task_completion.v1",
+    files: [{ path: "result.txt", mode: "write" }] });
+  expect(JSON.stringify(queue)).not.toContain(f.repo);
+  expect(existsSync(join(f.repo, "result.txt"))).toBe(false);
 });

@@ -39,3 +39,22 @@ not enqueue, probe a model, create artifacts, or enlarge permissions. Identical 
 are idempotent while the source snapshot remains current; changed source fails rather
 than silently replacing the accepted contract. This is a candidate runtime interface,
 not a Python production or public Web API change.
+
+### Device coordinator adoption
+
+The candidate coordinator accepts optional trusted configuration
+`specmesh: { workspace, configuration }`, where `workspace` is the coordinator's
+canonical project checkout and `configuration` is the independent port profile
+(including `requirements_path`). Its private `submit` accepts the same
+`specmesh_requirements_sha256` as local control. Both use one adoption implementation.
+The coordinator persists the exact contract before assignment; the existing portable
+execution projection carries it to workers without the coordinator's absolute path
+or source metadata. Workers retain their independently configured workspace mapping
+and permissions. Source requirements are frozen at submission; this does not claim
+that coordinator and worker Git revisions/content are identical. Full code-revision
+coordination remains a separate acceptance gate.
+
+The optional port is owned by coordinator shutdown. Without this trusted profile,
+explicit adoption fails; ordinary submissions retain their existing behavior. Tests
+cover reopen/idempotency, stale hashes and actual loopback queue projection, with no
+provider input or output file creation.

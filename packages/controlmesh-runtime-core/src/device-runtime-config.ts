@@ -54,7 +54,7 @@ export function openDeviceRuntime(path: string): DeviceRuntime {
   requireThat(object(config) && config.schema_version === "controlmesh.device_runtime.v1" && config.mode === "candidate"
     && ["coordinator", "worker"].includes(String(config.role)), "unsupported_device_runtime_config");
   const common = ["schema_version", "mode", "role", "state_root", "principal_id", "device_id"];
-  fields(config, [...common, ...(config.role === "coordinator" ? ["devices", "listen_port"]
+  fields(config, [...common, ...(config.role === "coordinator" ? ["devices", "listen_port", "specmesh"]
     : ["coordinator", "opencode", "claude", "workspaces", "capabilities", "communication", "history", "max_parallel", "scheduler"])], "invalid_device_runtime_config");
   identifier(config.principal_id); identifier(config.device_id);
   requireThat(typeof config.state_root === "string" && isAbsolute(config.state_root), "private_runtime_state_required");
@@ -100,7 +100,13 @@ export function openDeviceRuntime(path: string): DeviceRuntime {
       const kernel = new RuntimeKernel(database());
       const actor: Principal = { id: config.principal_id, device_id: config.device_id, origin: "human_request",
         scopes: ["task:create", "task:read", "task:resume", "task:cancel", "task:reconcile", "task:admin", "device:assign", "device:revoke"] };
-      control = new DeviceCoordinatorControl(kernel, actor, new DeviceCoordinator(kernel, devices, current), devices, current, port);
+      let specmesh: SpecMeshPort | undefined;
+      if (config.specmesh !== undefined) {
+        fields(config.specmesh, ["workspace", "configuration"], "invalid_specmesh_profile");
+        requireThat(typeof config.specmesh.workspace === "string" && object(config.specmesh.configuration), "invalid_specmesh_profile");
+        specmesh = new SpecMeshPort(config.specmesh.configuration as unknown as SpecMeshConfiguration, config.specmesh.workspace, current);
+      }
+      control = new DeviceCoordinatorControl(kernel, actor, new DeviceCoordinator(kernel, devices, current), devices, current, port, specmesh);
     } else {
       fields(config.coordinator, ["endpoint", "token"], "invalid_device_coordinator_profile");
       requireThat(typeof config.coordinator.endpoint === "string" && typeof config.coordinator.token === "string", "invalid_device_coordinator_profile");
