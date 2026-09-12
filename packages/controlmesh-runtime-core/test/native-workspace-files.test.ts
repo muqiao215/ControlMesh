@@ -172,10 +172,20 @@ test("a real Node MCP workspace client exposes only file tools and enforces the 
   const client = new NativeMcpTestClient(broker.command); cleanup.push(() => client.close()); await client.initialize();
   const listed = (await client.request("tools/list")).result?.tools;
   expect(listed?.map(tool => tool.name)).toEqual(["read_file", "write_file", "edit_file"]);
+  expect(listed?.find(tool => tool.name === "read_file")).toMatchObject({ inputSchema: {
+    required: ["request_id", "path"], properties: { expected_sha256: { type: "string", pattern: "^[a-f0-9]{64}$" } },
+  } });
   expect(listed?.find(tool => tool.name === "write_file")).toMatchObject({ inputSchema: {
     required: ["request_id", "path", "expected_sha256", "content"],
     properties: { expected_sha256: { type: "string", pattern: "^(?:[a-f0-9]{64}|missing)$" } },
   } });
+  const mistakenRead = { request_id: "first-read", path: "PROJECT.md", expected_sha256: "missing" };
+  const mistaken = await client.tool("read_file", mistakenRead);
+  const failure = JSON.parse(mistaken.result!.content![0].text);
+  expect(failure).toMatchObject({ ok: false, error: "workspace_tool_content_changed" });
+  expect(failure.hint).toContain("omit expected_sha256");
+  expect(JSON.parse((await client.tool("read_file", mistakenRead)).result!.content![0].text)).toEqual(failure);
+  expect(() => f.files.verify([], [f.allowed])).toThrow();
   const allowed = await client.tool("read_file", { request_id: "allowed", path: "PROJECT.md" });
   expect(JSON.parse(allowed.result!.content![0].text)).toMatchObject({ ok: true, content: "original current fact\n" });
   const denied = await client.tool("read_file", { request_id: "denied", path: "ungranted.txt" });

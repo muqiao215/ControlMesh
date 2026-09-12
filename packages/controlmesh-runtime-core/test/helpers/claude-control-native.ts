@@ -37,6 +37,15 @@ for await (const chunk of Bun.stdin.stream()) {
         permissionMode: "dontAsk", tools: ["mcp__workspace__edit_file", "mcp__workspace__read_file", "mcp__workspace__write_file", ...(scenario.mode === "builtin" ? ["Read"] : []),
           ...(servers.controlmesh ? ["send", "ask_parent", "receive", "answer"].map(name => `mcp__controlmesh__${name}`) : []), ...(args.includes("--json-schema") ? ["StructuredOutput"] : [])],
         mcp_servers: Object.keys(servers).map(name => ({ name, status: "connected" })), plugins: [], skills: [], slash_commands: [] });
+      if (scenario.mode.startsWith("api-retry-")) {
+        const cases: Record<string, [number | null, string]> = {
+          quota: [429, "insufficient_quota"], rate: [429, "rate_limit_error"], auth: [401, "authentication_failed"], unknown: [null, "unknown"],
+        };
+        const [error_status, error] = cases[scenario.mode.slice("api-retry-".length)];
+        emit({ type: "system", subtype: "api_retry", attempt: 1, max_retries: 10, retry_delay_ms: 1500, error_status, error,
+          session_id: session, uuid: "aaaaaaaa-0000-0000-0000-000000000002" });
+        await Bun.sleep(1500); writeFileSync(join(root, "api-retried"), "unexpected retry"); continue;
+      }
       const schema = args.includes("--json-schema") ? JSON.parse(args[args.indexOf("--json-schema") + 1]!) : undefined;
       const structured = schema ? { schema_version: 1, topology: schema.properties.topology.const, substage: schema.properties.substage.const,
         worker_role: scenario.mode === "structured-wrong-role" ? "foreign" : schema.properties.worker_role.const, status: "completed", summary: "Verified fixture",

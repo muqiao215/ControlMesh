@@ -52,6 +52,27 @@ test("native structured-output exhaustion is a task-format limit, not an account
   const observed = observeClaudeControl({ ...outcome, stdout: rows.map(row => JSON.stringify(row)).join("\n") + "\n" }, f.input);
   expect(observed).toMatchObject({ terminal: false, failure: null, invalid_reason: "claude_structured_output_limit_exceeded" });
 });
+test("native API retries stop before another attempt and classify only verified native error fields", async () => {
+  for (const [mode, code] of [["quota", "quota_exhausted"], ["rate", "rate_limited"], ["auth", "authentication_failed"], ["unknown", "provider_error"]]) {
+    const f = fixture(`api-retry-${mode}`), outcome = await new ClaudeControlRunner().run(f.input, f.environment, { assertCurrent: () => {} });
+    expect(outcome.exit_code).toBe(2);
+    expect(observeClaudeControl(outcome, f.input)).toMatchObject({ terminal: false, input_attempted: true,
+      invalid_reason: "claude_native_api_retry_refused", failure: { code, reset_at: null, retry_after_ms: null } });
+    expect(existsSync(join(f.workspace, "api-retried"))).toBe(false);
+    const original = outcome.stdout.trim().split("\n").map(line => JSON.parse(line));
+    for (const defect of ["foreign-session", "bad-counter", "bad-delay", "wrong-kind", "missing-input", "changed-registration", "trailing-native"]) {
+      const rows = structuredClone(original), retry = rows.find(row => row.row?.subtype === "api_retry");
+      if (defect === "foreign-session") retry.row.session_id = "foreign";
+      if (defect === "bad-counter") retry.row.attempt = 11;
+      if (defect === "bad-delay") retry.row.retry_delay_ms = -1;
+      if (defect === "wrong-kind") retry.row.type = "assistant";
+      if (defect === "missing-input") rows.splice(rows.findIndex(row => row.event === "input_attempted"), 1);
+      if (defect === "changed-registration") rows.find(row => row.row?.response?.request_id === "set-servers").row.response.response.errors = { workspace: "unconnected" };
+      if (defect === "trailing-native") rows.splice(rows.length - 1, 0, structuredClone(retry));
+      expect(observeClaudeControl({ ...outcome, stdout: rows.map(row => JSON.stringify(row)).join("\n") + "\n" }, f.input).failure).toBeNull();
+    }
+  }
+});
 test("terminal StructuredOutput needs matching stream call, successful receipt and value without a prose reply", async () => {
   const f = fixture("structured-terminal");
   f.input.structured_output = { schema_name: "team-structured-result.schema.json", bindings: { topology: "pipeline", substage: "worker_running", worker_role: "worker" } };

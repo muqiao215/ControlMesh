@@ -1,5 +1,34 @@
 # Findings
 
+## Native retry classification and first-read guidance — 2026-09-13
+
+8ca5ed5 exact-commit CI 34703377502 completed successfully. The latest ordinary canary
+structured-topology-resume-native-acceptance-20260912 is terminal, accepted=false, with
+one worker task input and no merger/continuation. Its native tool calls supplied
+expected_sha256="missing" on existing files, producing workspace_tool_content_changed
+and zero successful required reads. This does not prove files changed during execution.
+Original session 05a0e591-a529-4401-b28a-932b3e948f95 and the attempt remain guarded.
+
+First reads already allow an omitted hash. The MCP tool now explicitly describes that
+request, restricts the advertised hash to SHA-256, and returns actionable read-mismatch
+guidance. It does not reinterpret "missing", alter file consistency checks, reuse failed
+request IDs with changed arguments, or accept partial reads. The actual Node MCP fixture
+reproduces the mistaken request and verifies correction plus retained failed receipts.
+This is controlled interface verification, not a new real-model continuation pass.
+
+Verified Claude system/api_retry notifications now terminate the owned native child and
+classify only the initialized/session-bound native event after replaying its control prefix.
+Quota, rate-limit and authentication errors update the matching provider health generation;
+unknown errors remain provider_error. retry_delay_ms is SDK backoff, not an evidenced reset
+or Retry-After value. The ordinary local queue test confirms quota blocks a second task
+without another probe, native invocation or effect. Foreign sessions, altered registration,
+missing input, malformed retry metadata and trailing events cannot poison health state.
+
+The first focused run had one incorrectly nested test assertion (reason is inside outcome);
+the runtime already blocked the second task correctly. Corrected focused gate: 48 tests,
+592 assertions, three files, 23.50s; typecheck passed. Full runtime regression passed:
+760 tests / 9815 assertions / 72 files / 285.68s, exit 0 (/tmp/cm-api-retry-full.log).
+
 ## Structured native continuation boundaries — 2026-09-12
 
 89101ea exact-commit CI 34701984695 passed all required jobs. A fresh typed-schema real

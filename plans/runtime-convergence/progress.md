@@ -6,43 +6,39 @@ Full CM-R0–CM-R7 remains in progress. Installed CM 0.43.0 is still the product
 writer. No release, installation, live migration or default/service switch has occurred.
 The 512-module/57-field ledger is an inventory, not completed parity.
 
-Published 89101ea adds native structured topology dispatch and completion. Exact-commit
-CI 34701984695 passed all required jobs, including both Python versions, protocol/SDK/Web,
-container execution and isolated installed-wheel smoke. Previous normal continuation
-controls (c7f46ce) and canonical device artifact verification (049ebb7) also passed CI.
+| Delivery area | Verified state | Remaining acceptance |
+|---|---|---|
+| Published CI baseline | 8ca5ed5; CI 34703377502 success | Verify CI for this retry/read-guidance checkpoint |
+| TS runtime | Kernel, local/device execution, mailbox, topology and retained recovery have scoped implementations/tests | Complete provider/transport/store/terminal ownership and parity |
+| Native continuation | Simple direct and streamed exact recall passed; earlier topology first runs and current artifacts passed | Full worker/merger continuation and complex-context acceptance still fail |
+| Multi-device | Earlier physical ARM64/x64 bounded execution/recovery evidence retained in active plan | Full profiles, automatic file transport, rollout matrix |
+| SpecMesh/History | Independent integration and scoped continuity evidence exist | Reviewed closeout and remaining full integration acceptance |
+| Release/local alignment | Production still Python 0.43.0 | Full-goal acceptance, release/install, staged default switch |
 
-Current unpublished work supports the pinned native synthetic resume pair after a successful
-structured terminal, and at most five structured attempts with only actual invalid-schema
-rejections before one valid success. The configured container fixture exercises both during
-normal original-session reopen. Focused typecheck/tests: 44 / 219 / 15.45s. Full runtime gate
-passed: 758 tests / 9765 assertions / 72 files / 282.78s, exit 0
-(/tmp/cm-structured-resume-full.log). Final fixture typecheck passed.
+Latest real attempt structured-topology-resume-native-acceptance-20260912 finished with
+accepted=false after its first worker, zero successful required reads and no continuation.
+Native read calls sent expected_sha256="missing" for existing files. The retained evidence
+shows invalid read arguments, not a proven concurrent file change. The attempt and session
+05a0e591-a529-4401-b28a-932b3e948f95 are guarded against replay. No new native model canary
+was launched during this correction.
 
-The fresh typed-schema real canary completed both first-run roles, root canonical artifact
-acceptance and SpecMesh checks. Restart inspection preserved native history without replay.
-Explicit reopen reached the original worker session, whose successful native result exposed
-the two parser gaps now fixed. Read-only retained stream/source verification passes eight
-reads, one schema rejection and one valid result, with zero new model inputs and no journal
-mutation. The model omitted its private marker; the canary is therefore accepted=false,
-the worker journal remains unknown, and no merger continuation occurred. Do not replay
-structured-topology-typed-native-acceptance-20260912 or its native sessions.
+This checkpoint stops verified Claude system/api_retry before another native
+attempt, classify provider failure for the matching health generation, and block a second
+quota-bound task without another probe or effect. The MCP read interface now explains the
+initial omitted hash and gives correction guidance without weakening consistency checks.
+Typecheck and focused checks passed: 48 tests / 592 assertions / three files / 23.50s.
+Full runtime gate passed: 760 tests / 9815 assertions / 72 files / 285.68s, exit 0
+(/tmp/cm-api-retry-full.log). Fixtures are not new model/device acceptance.
 
-Direct native --resume and native stream-json initialize/user controls each passed two-input
-exact marker recall without reinjection. A first streamed diagnostic omitted Docker's
-interactive stdin flag and exited with zero native inputs/session files; it remains guarded.
-These simple controls do not qualify the failed complex topology recall. Full-path request observation then proved the original worker marker was present in
-actual continuation requests (7 and 9 messages) and absent from their new user inputs.
-That establishes context transmission for this profile, not reliable use by every model
-response. The observer's default 10-second HTTP idle limit caused a retry notification;
-CM refused the unsupported native system/api_retry record and left the worker unknown.
-The parent continuation did not complete. After all three native containers were removed,
-the still-live failed observer was stopped using its verified pidfd (exit 143). Original
-report and a separate stop record are retained; all its tasks remain guarded. No canary
-or model process remains running.
+Remote release metadata and the installed Python environment were checked: CM v0.43.0
+and local 0.43.0; History Viewer latest release v1.1.0, checkout 8070b9c (four later
+commits); SpecMesh latest release v1.2.1, checkout d393c54 (two later commits). These
+other checkouts were not modified; their latest source is not wholly in those releases.
 
-No running/green fixture or same session ID establishes the full migration. Physical
-multi-device/source/grant coverage, automatic canonical file transport, reviewed SpecMesh
-closeout, remaining runtime owners and rollout/release/install alignment stay open.
+Earlier complex-context diagnostics proved the old marker was present in actual upstream
+continuation requests but did not establish successful model recall. Their observer errors
+and the latest invalid read request must not be conflated with missing native history.
+Detailed evidence and guarded attempts are in findings.md; no failed result was relabeled.
 
 ## Done
 
@@ -73,11 +69,9 @@ closeout, remaining runtime owners and rollout/release/install alignment stay op
 
 ## Remaining
 
-1. Publish the structured-output compatibility fix after final regression, then finish
-   genuine topology continuation and artifact acceptance. Existing continuation control
-   and canonical artifact publication both have passing exact-commit CI.
-2. Complete real native topology and current-source acceptance, remote root artifact
-   validation, reviewed SpecMesh closeout and pending candidate-input migration.
+1. Verify remote CI for the bounded retry/read-guidance checkpoint; local gates passed.
+2. Finish real topology/current-source/artifact acceptance, automatic file transport and
+   reviewed SpecMesh closeout; keep previous failed attempts guarded.
 3. Complete remaining provider, transport, store and terminal owners and the parity ledger.
 4. Full-goal acceptance, release, installed-version alignment and staged default switch.
 
@@ -99,10 +93,10 @@ automatic transfer and remote-only final workspaces still need implementation/ac
 
 ## Next
 
-Publish verified normal root-reopen controls, then implement reliable structured native
-results and genuine topology continuation. Complete remaining provider/transport/store/
-terminal owners, file transport and rollout gates.
-Do not replace the full goal with this scoped recovery or mark the original canary accepted.
+Verify remote CI for this checkpoint. The full local gate passed and no extra native model
+probe was needed to reproduce or verify the fixes. Proceed through the remaining owners and
+rollout gates; do not substitute repeated similar model probes for delivery progress.
+The user has requested a clear status because the long-running task has not reached release.
 
 ## Retained evidence
 

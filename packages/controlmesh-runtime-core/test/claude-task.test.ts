@@ -36,6 +36,7 @@ const fakePreflight = new ClaudePreflight({ run: async spec => spec.command.incl
 /** Synthetic native transcript/control stream, real Node MCP IPC, real file owner and kernel. No model calls. */
 class FixtureControl {
   count = 0;
+  apiRetry?: { error_status: number | null; error: string };
   modifyRequired = false;
   skipRequired = false;
   extraStaged = false;
@@ -68,6 +69,12 @@ class FixtureControl {
       parent = id; return message;
     };
     source("user", input.prompt);
+    if (this.apiRetry) {
+      emit("native", { row: { type: "system", subtype: "api_retry", attempt: 1, max_retries: 10, retry_delay_ms: 1500,
+        ...this.apiRetry, session_id: input.session_id, uuid: randomUUID() } });
+      emit("aborted", { input_digest: digest(input), input_attempted: true, reason: "claude_native_api_retry_refused" });
+      return { ...processResult(rows), exit_code: 2 };
+    }
     const client = new NativeMcpTestClient(input.workspace_command);
     const messageClient = input.communication_command ? new NativeMcpTestClient(input.communication_command) : undefined;
     try {
@@ -130,6 +137,18 @@ test("normal local queue publishes a native Claude result, consumes attributed i
   expect(f.kernel.inspect(actor, "task").task.status).toBe("done"); expect(f.control.count).toBe(2);
   const latest = JSON.parse((f.db.sql.query("SELECT result FROM episodes ORDER BY rowid DESC LIMIT 1").get() as {result:string}).result);
   expect(latest.native_session.session_id).toBe(original.session_id);
+});
+test("native API quota failure revokes readiness and later tasks cannot silently probe or dispatch again", async () => {
+  const f = fixture(true), task = f.create(); f.control.apiRetry = { error_status: 429, error: "insufficient_quota" };
+  f.runtime.enqueue("queue", "task", task.revision); await f.runtime.drain();
+  expect(f.kernel.inspect(actor, "task")).toMatchObject({ needs_reconciliation: true, task: { status: "stale" } });
+  const second = f.runtime.submit("second", { task_id: "second", status: "waiting", provider: "claude", model: "fixture-model",
+    repo_root: f.workspace, chat_id: "fixture", prompt: "Another authorized task" }, { chat_id: "fixture" });
+  const run = f.runtime.enqueue("queue-second", "second", second.revision); await f.runtime.drain();
+  expect(f.runtime.inspect(run.run_id)).toMatchObject({ state: "blocked", outcome: { reason: "quota_exhausted", retry_after: null } });
+  expect(f.control.count).toBe(1);
+  expect(f.db.sql.query("SELECT generation,state FROM provider_checks").all()).toEqual([{ generation: 1, state: "unavailable" }]);
+  expect(f.db.sql.query("SELECT COUNT(*) AS n FROM effects").get()).toEqual({ n: 1 });
 });
 test("lost coordinator observation recovers the retained original process result after reopening, without another model/tool run", async () => {
   const f = fixture(), task = f.create();

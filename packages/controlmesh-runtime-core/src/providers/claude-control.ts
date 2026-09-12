@@ -1,5 +1,5 @@
 import { isAbsolute } from "node:path";
-import { canonical, digest, object, requireThat } from "../value";
+import { canonical, digest, object, requireThat, RuntimeConflict } from "../value";
 import type { ProcessOutcome } from "../process-supervisor";
 import { nativeFailure, type ProviderFailure } from "./opencode-events";
 import { claudeStructuredSchema, decodeClaudeStructuredOutput, verifyClaudeStructuredValue, type ClaudeStructuredOutput } from "./claude-structured-output";
@@ -7,6 +7,17 @@ import { claudeStructuredSchema, decodeClaudeStructuredOutput, verifyClaudeStruc
 export const claudeNativeVersion = "2.1.263";
 const fileTools = ["edit_file", "read_file", "write_file"];
 const messageTools = ["send", "ask_parent", "receive", "answer"];
+function claudeRetryFailure(value: unknown): ProviderFailure {
+  requireThat(object(value) && value.type === "system" && value.subtype === "api_retry"
+    && Number.isSafeInteger(value.attempt) && Number(value.attempt) >= 1
+    && Number.isSafeInteger(value.max_retries) && Number(value.max_retries) <= 10 && Number(value.attempt) <= Number(value.max_retries)
+    && Number.isSafeInteger(value.retry_delay_ms) && Number(value.retry_delay_ms) >= 0 && Number(value.retry_delay_ms) <= 300000
+    && (value.error_status === null || (Number.isInteger(value.error_status) && Number(value.error_status) >= 400 && Number(value.error_status) <= 599))
+    && typeof value.error === "string" && value.error.length > 0 && value.error.length <= 4096 && !value.error.includes("\0")
+    && typeof value.uuid === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(value.uuid), "invalid_claude_api_retry");
+  // The SDK's planned backoff is not evidence of a provider reset time or a Retry-After header.
+  return nativeFailure(`${value.error_status ?? ""} ${value.error}`);
+}
 export interface ClaudeControlInput {
   schema_version: "controlmesh.claude_control.v1";
   executable: string;
@@ -128,6 +139,9 @@ export class ClaudeControlSession {
         && names(value.mcp_servers.map(server => server.name), serverNames), "claude_native_profile_unproven");
       this.phase = "running"; return { frames: [] };
     }
+    if (value.type === "system" && value.subtype === "api_retry") {
+      claudeRetryFailure(value); throw new RuntimeConflict("claude_native_api_retry_refused");
+    }
     requireThat(["assistant", "user", "result"].includes(String(value.type)), "unsupported_claude_native_record");
     if (value.type === "assistant") {
       requireThat(object(value.message) && value.message.model === this.input.model && Array.isArray(value.message.content), "claude_native_model_unproven");
@@ -161,6 +175,27 @@ export interface ClaudeControlObservation {
   failure: ProviderFailure | null;
 }
 
+function replayRetryFailure(rows: unknown[], input: ClaudeControlInput): ProviderFailure {
+  const machine = new ClaudeControlSession(input); machine.start();
+  let expectsInput = false, attempted = false;
+  for (const [index, row] of rows.entries()) {
+    requireThat(object(row), "invalid_claude_control_output");
+    if (expectsInput) {
+      requireThat(row.event === "input_attempted" && row.input_digest === digest(input), "claude_control_input_unproven");
+      expectsInput = false; attempted = true; continue;
+    }
+    requireThat(row.event === "native", "invalid_claude_control_output");
+    if (index === rows.length - 1) {
+      let refused = false;
+      try { machine.accept(row.row); } catch (error) { refused = error instanceof RuntimeConflict && error.code === "claude_native_api_retry_refused"; }
+      requireThat(attempted && refused, "claude_api_retry_unproven");
+      return claudeRetryFailure(row.row);
+    }
+    expectsInput = machine.accept(row.row).frames.some(frame => frame.type === "user");
+  }
+  throw new RuntimeConflict("claude_api_retry_unproven");
+}
+
 /** Replay retained process evidence without another native/model invocation. Source JSONL is checked separately. */
 export function observeClaudeControl(outcome: ProcessOutcome, input: ClaudeControlInput): ClaudeControlObservation {
   let attempted: boolean | null = null;
@@ -179,7 +214,13 @@ export function observeClaudeControl(outcome: ProcessOutcome, input: ClaudeContr
       const inputRecords = rows.filter(row => (row as Record<string, unknown>).event === "input_attempted");
       requireThat(inputRecords.length <= 1 && (last.input_attempted || inputRecords.length === 0)
         && inputRecords.every(row => (row as Record<string, unknown>).input_digest === digest(input)), "claude_control_input_unproven");
-      attempted = last.input_attempted; return rejected(last.reason);
+      attempted = last.input_attempted;
+      if (last.reason === "claude_native_api_retry_refused") {
+        requireThat(attempted, "claude_api_retry_unproven");
+        const failure = replayRetryFailure(rows.slice(0, -1), input);
+        return { ...rejected(last.reason), failure };
+      }
+      return rejected(last.reason);
     }
     const machine = new ClaudeControlSession(input); machine.start();
     let expectsAttempt = false, attemptRecord = false, exited = false, nativeExit: number | null = null;

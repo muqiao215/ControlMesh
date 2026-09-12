@@ -916,6 +916,15 @@ records qualify readiness, not a historical session title or model-auth file. Th
 owns probe permits, expiry, quota reset waiting and explicit operator retry; native execution
 must still qualify its own grant/container/workspace profile before using readiness.
 
+Claude's verified `system/api_retry` event stops the owned native process before its next
+attempt. Only replay of the initialized, session-bound control stream can classify that
+failure and revoke the matching readiness generation. SDK backoff is not provider reset
+evidence; unknown errors remain provider errors. A failed or uncertain task cannot become
+completed through this health update. Workspace MCP reads advertise an initial request
+without a hash and subsequent pages bound to the returned SHA-256. A mismatched read
+returns correction guidance while retaining its failed receipt and requiring a new request
+ID for changed arguments; file consistency and full-read acceptance are unchanged.
+
 The private local candidate also registers ClaudeTaskAdapter/ClaudeTaskReconciler independently
 of OpenCode. A distinct Claude dispatch manifest binds the current task/native JSONL baseline to
 scoped file tools and the existing stage. Fsynced raw process output precedes its compact kernel

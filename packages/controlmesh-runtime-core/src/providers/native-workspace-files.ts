@@ -219,6 +219,8 @@ export class NativeWorkspaceFiles {
         const code = error instanceof RuntimeConflict ? error.code : "workspace_tool_operation_failed";
         receipt.response = { ok: false, error: code, ...(code === "workspace_tool_expected_sha256_required" ? {
           hint: 'Include expected_sha256 explicitly: "missing" (or null) to create a missing file, or the current full-file sha256 from read_file to replace/edit an existing file. Use a new request_id for corrected arguments.'
+        } : code === "workspace_tool_content_changed" && tool === "controlmesh_read_file" ? {
+          hint: 'The supplied expected_sha256 does not match the file. To begin a fresh read, use a new request_id, offset 0 and omit expected_sha256. For later pages, copy sha256 from that first response. Do not use "missing", null or a guessed hash. A new read must cover the whole file before it can satisfy a required read.'
         } : {}) };
         bytes = undefined; receipt.intent = null;
       }
