@@ -244,3 +244,27 @@ corrective adoption input completed exact old-memory/current-file output with ni
 turns. Retained recovery, including an injected post-publication task.done loss, required no model
 execution and preserved source bytes/file inode. Independent readback accepted the scoped result;
 original failed attempts and the later diagnostic-report digest error remain recorded separately.
+
+## Container and device execution owner (in progress)
+
+Reuse ContainerProcessSupervisor for verified image/mount/isolation state, bounded resources,
+in-namespace lease watchdog, exact container identity and retained cleanup recovery. Claude's
+control helper and native process must run inside that boundary. Canonical project mounts remain
+read-only: existing file MCP capabilities alone write the stage and the current owner publishes.
+Private native HOME/config persistence and task-scoped file/message IPC are separate mounts;
+provider binaries/helper code are immutable read-only resources. Never mount an entire checkout
+of CM or relax source policy merely because a container-shaped profile is configured.
+
+Fixed version/control commands, isolated preflight, native original-session reads/writes,
+MCP registration and cancellation now have concrete runner qualification. The shared preflight
+command builder rejects arbitrary commands/environment keys; its runtime digest binds the
+immutable image and canonical executable. The execution runner mounts a private hash-named Bun
+bundle of the existing control helper, image-owned Node for MCP clients, native HOME/config and
+read-only project/channel resources. Profile, binary, helper and capability changes invalidate
+dispatch. Actual Docker tests and one real native original-session continuation passed; a separate
+model-free readback verified tool receipts, current-file output and four removed containers.
+This is not normal local/device admission. Device integration must
+reuse DeviceWorker's prepared dispatch/observe/result, current authority, mailbox/nativeCall and
+publication/reconciliation interfaces; it must not create another local kernel inside a worker.
+The current device configuration is OpenCode-specific and remains unchanged until those Claude
+ports are qualified. Full provider/transport/store/topology/product and CM-R7 gates remain open.

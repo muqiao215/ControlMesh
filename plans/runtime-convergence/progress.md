@@ -2,6 +2,40 @@
 
 ## Current
 
+Current increment: **concrete Claude container preflight and original-session execution**.
+The pinned CLI and bundled control helper run through the existing ContainerProcessSupervisor.
+Only the private native HOME/config are writable; the project, binaries/helper and task-specific
+MCP directories are read-only. Existing host file capabilities stage changes and the current
+kernel owner publishes them. The isolated readiness probe has a fresh private HOME, no native
+session/project mount, fixed zero-tool command and the existing bounded readiness cache.
+
+Real CLI 2.1.263/MiniMax-M3 acceptance resumed the previously owned original session, recalled
+its original marker, read seven current continuity documents and wrote/read back the correct
+marker plus a newly changed file fact. Neither fact was injected into the new prompt. Exactly
+one model preflight and one task input ran. Ten native tools include one rejected write missing
+expected_sha256 followed by a corrected write. The original source prefix remained unchanged.
+Separate model-free verification matched all native calls to durable receipts, the confirmed
+publication and canonical file, and verified all four owned container IDs absent and no owned
+processes. Evidence: coordinating workspace outputs/runtime-convergence/
+claude-container-{native-acceptance,independent-verification}.{json,log} and verifier source.
+
+Validation: pinned full runtime gate **449/449**, zero failures, 4,784 assertions, 98.42s
+(`/tmp/cm-claude-container-full.log`); focused container/preflight **13/13**, 110 assertions,
+11.00s plus typecheck (`/tmp/cm-claude-container-final-focused.log`). Actual Docker tests cover
+read-only project mounts, granted/denied MCP reads, owned-child cancellation/cleanup and isolated
+readiness. Changed helpers, overlapping assets, arbitrary commands and environment expansion
+reject before dispatch.
+
+This qualifies the concrete runner, not normal local queue or DeviceWorker container admission.
+Next wire the profile and runtime identity into normal configuration, dispatch/evidence/recovery
+and the existing device ports. All remaining provider/transport/store/topology/product owners,
+failed-effect abandonment and semantic no-progress detection remain open. CM-R7, installed Python
+v0.43.0 and production writers/services/defaults remain unchanged. Predecessor
+c364582a395f1454445316e78db429e85561e9a5 has successful exact-SHA
+[CI 34673296092](https://github.com/muqiao215/ControlMesh/actions/runs/34673296092).
+
+## Previous local History/Claude adoption increment
+
 Current increment: **headless History/Claude adoption through the normal local task owner**.
 Explicit refresh/search/prepare use the independent History CLI and the existing persistent
 adoption registry. Preparation is context-only and cannot create tasks or probe a model; submit

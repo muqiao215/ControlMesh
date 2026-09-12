@@ -69,7 +69,11 @@ No claim that full TS migration or distributed coordination has completed. A sco
 
 ## Next Step
 
-Continue Claude's container/device execution profiles and the remaining owners below. Normal
+Wire the qualified Claude container runner into normal configuration, dispatch/evidence/recovery
+and DeviceWorker ports, then continue the remaining owners below. Concrete container readiness,
+original-session recall, seven current continuity reads, staged write/publication and cleanup
+now have actual native evidence plus independent model-free readback; normal queue/device
+container admission is still pending. The pinned full runtime suite passes 449 tests. Normal
 local History adoption now has real original-session continuation, current-file write, retained
 publication-loss recovery and independent source/control/receipt verification. The first failed
 attempt remains failed; one bounded corrective input exposed a pinned native synthetic resume

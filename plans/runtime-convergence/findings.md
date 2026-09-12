@@ -1,5 +1,30 @@
 # Findings
 
+## Claude container qualification — 2026-09-12
+
+The existing pinned Linux image provides /usr/local/bin/node, not /usr/bin/node. MCP clients
+must use the image-owned Node while the host broker runs independently; normal configuration's
+current host-Node existence check therefore needs an explicit container execution profile.
+The concrete runner mounts the canonical native executable and current Bun read-only, plus a
+private hash-named bundle of the control helper. Runtime identity pins binaries, helper/source
+revision, native directories, project and channels. Assets cannot overlap native/control state.
+No entire CM checkout is mounted. Native HOME/config are writable and project mounts read-only;
+host file capabilities and staged publication retain mutation authority.
+
+One real native preflight and one original-session input passed. A write lacking expected_sha256
+was rejected before mutation; the same native turn corrected it. All ten original native calls
+match receipts, seven current continuity references were read and the output combines a prior
+session marker with a changed file fact absent from the prompt. Independent retained readback
+confirmed one publication, unchanged original source prefix, four removed immutable container
+IDs and no owned processes, without invoking a model. The verifier's unused function-valued
+digest expression was removed before its first execution. Supervisor record.outcome excludes
+the returned container_id/cleanup envelope; comparison must remove only those envelope fields.
+
+Actual Docker tests also qualified cancellation of a hanging native descendant, MCP grant
+denial, read-only project enforcement and a disposable preflight HOME without task/native mounts.
+Normal local/device dispatch and recovery remain separate work: a configured container profile
+alone cannot relax source policy, and retained recovery must not restart the provider.
+
 ## Native max-turns resume adds a synthetic pair — 2026-09-12
 
 The bounded corrective input did succeed in the original native session: 10 turns, eight reads

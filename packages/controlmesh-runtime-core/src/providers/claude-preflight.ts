@@ -10,7 +10,14 @@ import type { ProviderProbeReport } from "./probe-report";
 export type ClaudeProbeInput = OpenCodeProbeInput;
 interface Runner { run(spec: ProcessSpec, admission: ProcessAdmission): Promise<ProcessOutcome>; runtimeDigest?(): string }
 const VERSION = "2.1.263";
-const AUTH_KEYS = new Set(["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "SSL_CERT_FILE"]);
+export const claudeProbeCredentialKeys = Object.freeze(["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "SSL_CERT_FILE"]);
+const AUTH_KEYS = new Set(claudeProbeCredentialKeys);
+export function claudeProbeCommand(executable: string, model: string): string[] {
+  requireThat(typeof model === "string" && /^[^\s\x00]{1,256}$/.test(model), "invalid_provider_model");
+  return [executable, "--print", "--output-format", "stream-json", "--verbose", "--safe-mode", "--setting-sources", "", "--settings", '{"disableAllHooks":true}',
+    "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--no-chrome", "--disable-slash-commands", "--tools", "", "--permission-mode", "dontAsk",
+    "--no-session-persistence", "--model", model, "--effort", "low", "--max-turns", "1", "--", "Reply with exactly PONG."];
+}
 
 /** Classify native error fields only. Assistant prose never supplies quota/reset evidence. */
 export function judgeClaudePreflight(outcome: ProcessOutcome, model: string): { observation: PreflightObservation; permissions: string | null } {
@@ -81,9 +88,7 @@ export class ClaudePreflight {
       const versionResult = await run(["--version"]); version = versionResult.stdout.trim().replace(/ \(Claude Code\)$/, "");
       if (versionResult.reason !== "exited" || versionResult.exit_code !== 0 || version !== VERSION) return report({ status: "unavailable", reason: "unsupported_claude_version", session_id: null, failure: null });
       invoked = true;
-      const outcome = await run(["--print", "--output-format", "stream-json", "--verbose", "--safe-mode", "--setting-sources", "", "--settings", '{"disableAllHooks":true}',
-        "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--no-chrome", "--disable-slash-commands", "--tools", "", "--permission-mode", "dontAsk",
-        "--no-session-persistence", "--model", input.model, "--effort", "low", "--max-turns", "1", "--", "Reply with exactly PONG."], true);
+      const outcome = await run(claudeProbeCommand(input.executable, input.model).slice(1), true);
       const checked = judgeClaudePreflight(outcome, input.model); return report(checked.observation, checked.permissions);
     } finally { rmSync(root, { recursive: true, force: true }); }
   }
