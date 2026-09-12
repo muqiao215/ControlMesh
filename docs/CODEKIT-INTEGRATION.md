@@ -20,3 +20,22 @@ This explicit command does not initialize TaskHub, automatically gate task submi
 
 ## Validation and continuation
 Affected cron, adapter and main CLI regressions are recorded in the workspace implementation report. Linux locking is exercised; the Windows locking branch needs platform acceptance. Next: review the local diff and reconcile any newer source HEAD before integration. Add dispatch hooks only with explicit gate semantics and tests through real TaskHub submission paths.
+
+## Candidate TS local submission: explicit requirement adoption
+
+With trusted `specmesh.requirements_path` configured, private local `submit` accepts
+`specmesh_requirements_sha256` alongside `task`. The caller supplies the source hash
+it has selected. The control reads a fresh standalone snapshot, rejects a stale hash
+or conflicting task completion requirements, then synchronously revalidates before
+normal ingress submission. It persists `completion_requirements` and an
+`asserted_candidate` source record (`specmesh_completion_source`, path/hash/snapshot).
+Caller-supplied source records are rejected by this control entrypoint. This record
+is provenance metadata, never a grant or a completed-task claim. Native task digests
+and artifact checks bind the adopted completion requirements through existing paths.
+
+Omitting the adoption field preserves ordinary submission. Unsupported completion
+providers still fail at ingress (currently only Claude is qualified). Submission does
+not enqueue, probe a model, create artifacts, or enlarge permissions. Identical retries
+are idempotent while the source snapshot remains current; changed source fails rather
+than silently replacing the accepted contract. This is a candidate runtime interface,
+not a Python production or public Web API change.

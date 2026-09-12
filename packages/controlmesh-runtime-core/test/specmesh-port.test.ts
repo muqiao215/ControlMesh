@@ -199,3 +199,36 @@ test("artifact candidates require an explicit request and a matching source refe
       ? "specmesh_requirements_unproven" : "specmesh_unrequested_requirements");
   }
 });
+
+paired("local submit explicitly adopts hashed requirements into durable ingress without execution", async () => {
+  const f = fixture(true), path = "plans/task/artifacts.json";
+  writeFileSync(join(f.repo, path), JSON.stringify({ schema_version: "specmesh.artifact_requirements.v1",
+    files: [{ path: "result.txt", mode: "write" }] }));
+  const sha = createHash("sha256").update(readFileSync(join(f.repo, path))).digest("hex");
+  const port = new SpecMeshPort({ ...f.config, requirements_path: path }, f.repo, () => {});
+  cleanup.push(() => port.stop());
+  const db = new RuntimeDatabase(join(f.root, "runtime.sqlite")); cleanup.push(() => db.close());
+  const kernel = new RuntimeKernel(db);
+  const actor: Principal = { id: "operator", device_id: "local", origin: "human_request", scopes: ["task:create", "task:read", "task:execute", "task:reconcile", "task:admin"] };
+  const runtime = new LocalTaskRuntime(kernel, actor,
+    { command_origin: "human_request", origin: "user", source_scope: "local_foreground", transport: "terminal" },
+    () => { throw new Error("must not execute"); }, () => {});
+  cleanup.push(() => runtime.stop());
+  const control = new LocalRuntimeControl(runtime, undefined, undefined, undefined, port);
+  const task = { task_id: "adopt", status: "waiting", provider: "claude", chat_id: "fixture", repo_root: f.repo };
+  expect(await control.handle({ id: "stale", op: "submit", task, specmesh_requirements_sha256: "0".repeat(64) }))
+    .toMatchObject({ ok: false, error: "specmesh_requirements_changed" });
+  expect(await control.handle({ id: "conflict", op: "submit", task: { ...task,
+    completion_requirements: { schema_version: "controlmesh.task_completion.v1", files: [{ path: "other.txt", mode: "write" }] } },
+    specmesh_requirements_sha256: sha })).toMatchObject({ ok: false, error: "specmesh_requirements_conflict" });
+  const request = { id: "adopt", op: "submit", task, specmesh_requirements_sha256: sha };
+  const accepted = await control.handle(request);
+  expect(accepted).toMatchObject({ ok: true });
+  expect(await control.handle(request)).toEqual(accepted);
+  expect(runtime.inspectTask("adopt").task).toMatchObject({
+    completion_requirements: { schema_version: "controlmesh.task_completion.v1", files: [{ path: "result.txt", mode: "write" }] },
+    specmesh_completion_source: { path, sha256: sha, authority: "asserted_candidate" } });
+  expect(existsSync(join(f.repo, "result.txt"))).toBe(false);
+  expect(await control.handle({ id: "forged", op: "submit", task: { ...task, task_id: "forged", specmesh_completion_source: {} } }))
+    .toMatchObject({ ok: false, error: "task_body_cannot_issue_specmesh_source" });
+});

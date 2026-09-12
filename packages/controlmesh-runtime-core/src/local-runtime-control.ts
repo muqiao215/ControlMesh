@@ -1,3 +1,5 @@
+import { decodeTaskCompletion } from "./task-completion";
+import { digest } from "./value";
 import { identifier, object, requireThat, RuntimeConflict, type LegacyTask } from "./value";
 import type { LocalTaskRuntime } from "./local-task-runtime";
 import type { DeliveryOutbox } from "./delivery-outbox";
@@ -24,7 +26,7 @@ export class LocalRuntimeControl {
     try {
       requireThat(object(request), "invalid_local_request"); identifier(request.id); id = request.id;
       const fields: Record<string, readonly string[]> = {
-        submit: ["task"], inspect_task: ["task_id"], enqueue: ["task_id", "expected_revision"], inspect_run: ["run_id"],
+        submit: ["task", "specmesh_requirements_sha256"], inspect_task: ["task_id"], enqueue: ["task_id", "expected_revision"], inspect_run: ["run_id"],
         resume: ["task_id", "expected_revision", "prompt"], cancel: ["task_id", "expected_revision"], tell: ["task_id", "text"], drain: [],
         inspect_message: ["task_id", "message_id"], mailbox_status: ["task_id"],
         bind_delivery: ["task_id", "expected_revision", "adapter_id", "output_policy"], deliveries: ["task_id"],
@@ -80,11 +82,31 @@ export class LocalRuntimeControl {
         case "retry_inbound": identifier(request.receipt_id); this.inbound!.retry(id, request.receipt_id); result = { retried: true }; break;
         case "submit": {
           requireThat(object(request.task) && typeof request.task.chat_id === "string", "invalid_local_task");
-          const submitted = request.task as LegacyTask;
+          let submitted = structuredClone(request.task) as LegacyTask;
+          requireThat(!Object.hasOwn(submitted, "specmesh_completion_source"), "task_body_cannot_issue_specmesh_source");
+          let assertRequirementsCurrent: (() => void) | undefined;
+          if (request.specmesh_requirements_sha256 !== undefined) {
+            requireThat(this.specmesh, "specmesh_not_configured");
+            requireThat(typeof request.specmesh_requirements_sha256 === "string"
+              && /^[a-f0-9]{64}$/.test(request.specmesh_requirements_sha256), "invalid_specmesh_requirements_hash");
+            this.specmesh.assertWorkspace(submitted.repo_root);
+            const observation = await this.specmesh.inspect("check", { assertCurrent: () => this.specmesh!.assertCurrent() });
+            const candidate = observation.result.artifact_requirements;
+            requireThat(observation.result.status === "pass" && candidate
+              && candidate.sha256 === request.specmesh_requirements_sha256, "specmesh_requirements_changed");
+            const completion = decodeTaskCompletion({ schema_version: "controlmesh.task_completion.v1", files: candidate.requirements.files })!;
+            requireThat(submitted.completion_requirements === undefined
+              || digest(submitted.completion_requirements) === digest(completion), "specmesh_requirements_conflict");
+            submitted = { ...submitted, completion_requirements: structuredClone(completion),
+              specmesh_completion_source: { path: candidate.path, sha256: candidate.sha256,
+                snapshot_digest: observation.snapshot_digest, authority: "asserted_candidate" } };
+            assertRequirementsCurrent = observation.assertCurrent;
+          }
           requireThat(this.history || !object(submitted.native_session) || submitted.native_session.schema_version !== "controlmesh.device_native_adoption.v1", "native_history_not_configured");
           const task = this.history?.resolve(submitted) ?? submitted;
           const identity = this.submissionIdentity?.(task) ?? { chat_id: request.task.chat_id };
           requireThat(identity.thread_id === undefined || task.thread_id == null || String(task.thread_id) === identity.thread_id, "task_reply_identity_mismatch");
+          assertRequirementsCurrent?.();
           result = this.runtime.submit(id, identity.thread_id ? { ...task, thread_id: identity.thread_id } : task, identity); break;
         }
         case "inspect_task": identifier(request.task_id); result = this.runtime.inspectTask(request.task_id); break;

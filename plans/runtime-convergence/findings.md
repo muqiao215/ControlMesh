@@ -857,3 +857,16 @@ entire candidate into the revalidated observation. Unrequested candidates reject
 This transport is not automatic adoption: ingress still owns issued task contracts,
 and runtime grants remain independently enforced. Paired Python/TS tests cover
 current-source mutation and missing source proof; standalone source is d393c54.
+
+## Explicit local adoption — 2026-09-12
+
+LocalRuntimeControl.submit now optionally consumes the selected manifest SHA-256,
+revalidates the configured independent port, and submits a cloned completion contract
+through existing TaskIngress. Conflicting predeclared requirements fail rather than
+being overwritten. The persisted source record remains asserted-candidate metadata;
+no permission or completion claim is derived from it. The same snapshot is checked
+again after History resolution and before synchronous submission. Ten paired tests
+pass, including stable retry identity and source-record injection refusal. Device
+control adoption and remaining provider completion gates are still separate work.
+Remote CI lookup for 34679687668 timed out at the network layer; this is not proof
+that the run stopped or failed. Packaging predecessor 34679508577 was verified success.

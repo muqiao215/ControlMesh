@@ -2,6 +2,19 @@
 
 ## Current
 
+Final explicit-adoption gate: pinned Bun 1.3.11 with verified Docker image and
+independent SpecMesh checkout, 474 pass / 0 fail, 5,012 assertions in 189.16s
+(`/tmp/cm-specmesh-adoption-full.log`, process15668 exit0). No real model input
+was issued. This verifies the local adoption increment, not full migration.
+
+Explicit local requirement adoption implemented: submit accepts the selected source
+SHA-256, rereads/revalidates SpecMesh and persists the contract through TaskIngress.
+10 paired tests pass / 44 assertions / 10.66s, including stale/conflicting sources,
+idempotent retry and source-record injection refusal. Initial missing admission
+callback and fixture scopes were corrected. Typecheck passed before the final
+fixture correction; full pinned container gate follows. Packaging CI34679508577
+is now success at 6fb218a; candidate CI34679687668 is still in progress.
+
 2026-09-12 candidate transport verification: runtime suite 443 pass / 30 skip /
 0 fail, 4,770 assertions, 52.20 seconds. Container image was not supplied, so this
 run does not requalify container paths. Paired standalone tests and typecheck pass.
