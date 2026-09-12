@@ -1,3 +1,5 @@
+import { readAggregateResult } from "./topology-aggregate";
+import { teamWorkerSubstage } from "./team-task-result";
 import { isAbsolute, join } from "node:path";
 import type { Principal, RuntimeKernel } from "./kernel";
 import type { TopologySnapshot } from "./runtime-topology";
@@ -60,15 +62,26 @@ export class TopologyArtifactGate {
     requireThat(row && row.revision === revision && Number.isSafeInteger(revision), "topology_artifact_state_changed");
     return decodeTopologyState(JSON.parse(row.state));
   }
-  private witnesses(actor: Principal, taskId: string) {
+  private witnesses(actor: Principal, taskId: string, ancestors: ReadonlySet<string> = new Set()): { values: Witness[]; digest: string } {
+    requireThat(ancestors.size < 32 && !ancestors.has(taskId), "topology_cycle_or_depth_limit");
+    const lineage = new Set(ancestors); lineage.add(taskId);
     const state = this.kernel.db.sql.query("SELECT state FROM team_topologies WHERE task_id=?").get(taskId) as { state: string };
     const executionId = decodeTopologyState(JSON.parse(state.state)).execution_id;
-    const assignments = this.kernel.db.sql.query("SELECT child_id,generation,checkpoint_id,topology,substage,worker_role,run_id FROM topology_tasks WHERE parent_id=? AND execution_id=? ORDER BY child_id").all(taskId, executionId) as {
-      child_id: string; generation: number; checkpoint_id: string; topology: string; substage: string; worker_role: string; run_id: string;
+    const assignments = this.kernel.db.sql.query("SELECT child_id,generation,checkpoint_id,topology,substage,worker_role,run_id,kind FROM topology_tasks WHERE parent_id=? AND execution_id=? ORDER BY child_id").all(taskId, executionId) as {
+      child_id: string; generation: number; checkpoint_id: string; topology: string; substage: string; worker_role: string; run_id: string; kind: string;
     }[];
     const values: Witness[] = [], stamps: unknown[] = [];
     for (const assignment of assignments) {
       const child = this.kernel.inspect(actor, assignment.child_id);
+      if (assignment.kind === "aggregate") {
+        const topology = this.kernel.db.sql.query("SELECT revision FROM team_topologies WHERE task_id=?").get(assignment.child_id) as { revision: number } | null;
+        requireThat(topology, "aggregate_topology_missing");
+        const accepted = readAggregateResult(this.kernel, actor, { source: "topology", task_id: assignment.child_id, revision: child.revision,
+          execution_id: assignment.run_id, topology_revision: topology.revision, topology: assignment.topology,
+          substage: teamWorkerSubstage(assignment.topology, assignment.substage), worker_role: assignment.worker_role }, lineage);
+        const nested = this.witnesses(actor, assignment.child_id, lineage);
+        stamps.push({ assignment, child, accepted, witness_digest: nested.digest }); values.push(...nested.values); continue;
+      }
       const run = this.kernel.db.sql.query("SELECT task_id,state,lease FROM local_runs WHERE run_id=?").get(assignment.run_id) as { task_id: string; state: string; lease: string | null } | null;
       requireThat(run?.task_id === assignment.child_id && run.state === "completed" && run.lease, "topology_artifact_child_unresolved");
       const lease = JSON.parse(run.lease);

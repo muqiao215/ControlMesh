@@ -140,6 +140,7 @@ export class LocalTaskRuntime {
       requireThat(task.task.status === "waiting" && !task.needs_reconciliation && task.active_episode === null, "task_not_admitted");
       requireThat(this.rows("queued").length < this.maxPending, "local_queue_full");
       requireThat(!this.kernel.db.sql.query("SELECT 1 FROM local_runs WHERE task_id=? AND state IN ('queued','running')").get(taskId), "task_already_queued");
+      this.kernel.assertNativeTask(this.actor, taskId);
       const execution = this.resolve(task); this.checkExecution(execution);
       this.kernel.db.sql.query("INSERT INTO local_runs (run_id,principal,device_id,origin,task_id,expected_revision,binding_digest,state,created_at) VALUES (?,?,?,?,?,?,?,'queued',?)")
         .run(runId, this.actor.id, this.actor.device_id!, this.actor.origin, taskId, expectedRevision, execution.binding_digest, this.kernel.db.now());

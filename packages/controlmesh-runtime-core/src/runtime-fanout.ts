@@ -8,7 +8,7 @@ import { TopologyTaskQueue } from "./topology-task-queue";
 import type { FanoutResultOptions } from "./team-fanout";
 import { digest, requireThat } from "./value";
 
-export interface FanoutChild { task_id: string; revision: number; role: string; resume_prompt?: string }
+export interface FanoutChild { task_id: string; revision: number; role: string; resume_prompt?: string; aggregate?: boolean }
 /** Explicit fanout steps, with whole-batch acceptance under one stable dispatch checkpoint. */
 export class RuntimeFanout {
   private readonly topology: RuntimeTopology;
@@ -26,6 +26,7 @@ export class RuntimeFanout {
     }
   }
   private enqueue(actor: Principal, requestId: string, parentRevision: number, state: TopologySnapshot, child: FanoutChild) {
+    if (child.aggregate) return this.queue.aggregate(actor, requestId, state.task_id, parentRevision, state.revision, child.task_id, child.revision, child.role, child.resume_prompt);
     if (child.resume_prompt !== undefined) return this.queue.resume(actor, requestId, state.task_id, parentRevision, state.revision,
       child.task_id, child.revision, child.role, child.resume_prompt);
     return this.queue.enqueue(actor, requestId, state.task_id, parentRevision, state.revision, child.task_id, child.revision, child.role);

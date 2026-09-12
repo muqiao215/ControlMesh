@@ -434,10 +434,33 @@ Frozen budget limits and controller identity are preserved; a new explicit execu
 fresh counters. A service restart alone never resets counters or starts a new execution.
 Legacy completion digest shape is retained during the execution-ID column migration.
 
-Nested topology completion still needs an aggregate result binding. Generic provider
-resume continues to reject completed topology roots. Older candidates reject schema 22;
-rollback requires a pre-upgrade database backup, never changing the version on populated
-state. Required semantic project closeout and full native/device acceptance remain open.
+Candidate schema 23 distinguishes native and aggregate child assignments. Trusted
+scheduling explicitly requests an aggregate; the assignment reserves the child before
+initialization and binds its execution ID when its topology is created. An already started
+child execution cannot be attached after the fact. Both kinds retain the same bounded
+one-parent/cycle checks. Orchestration tasks are refused by the local native queue and
+kernel claim before any provider input, including while an aggregate awaits initialization.
+
+`readAggregateResult` recursively validates the child's sealed topology completion and
+current descendants, with a depth/cycle bound. It maps the accepted reduction to the
+parent's assigned worker role/substage and records topology source identity; it invents
+neither a native episode nor a controller decision. Director/judge decision roles remain
+native output boundaries. Parent finalization rechecks accepted aggregate evidence, so a
+resumed descendant, changed completion or mismatched execution rolls back completion.
+The artifact gate follows aggregate executions to actual native leaf file receipts and
+rechecks current registered files. Summary text does not become file evidence.
+
+An explicit aggregate resume archives/reopens and reassigns the same child in one parent
+transaction. Assignment generations, child run history and native leaf sessions persist;
+failed reassignment restores the complete old linkage. Prepared control executions use
+`RuntimeControlTopology.dispatch` with their original frozen configuration. Parent
+cancellation blocks descendant claims/effects/publication; cleanup may retain unknown
+execution evidence instead of claiming that the work stopped successfully.
+
+Generic provider resume still refuses completed orchestration tasks. Older candidates
+reject schema 23; rollback requires a pre-upgrade database backup, never changing a
+populated database version. Automatic topology scheduling, device topology assignment,
+semantic project closeout and full native/device acceptance remain open.
 
 `LocalTaskRuntime` adds the private local task execution owner. SQLite schema 8 stores
 queued runs, their expected task revision and provider/profile binding, plus the claimed

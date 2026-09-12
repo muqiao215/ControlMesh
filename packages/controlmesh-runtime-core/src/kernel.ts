@@ -150,7 +150,7 @@ export class RuntimeKernel {
     const seen = new Set<string>([taskId]);
     for (let depth = 0; depth < 32; depth++) {
       const assignment = this.db.sql.query("SELECT * FROM topology_tasks WHERE child_id=?").get(taskId) as {
-        parent_id: string; topology: string; substage: string; worker_role: string; checkpoint_id: string; accepted: string | null; execution_id: string;
+        parent_id: string; topology: string; substage: string; worker_role: string; checkpoint_id: string; accepted: string | null; execution_id: string; kind: string; run_id: string;
       } | null;
       if (!assignment) return;
       requireThat(!seen.has(assignment.parent_id) && assignment.accepted === null, "topology_assignment_inactive");
@@ -163,9 +163,30 @@ export class RuntimeKernel {
       requireThat(state.task_id === assignment.parent_id && state.topology === assignment.topology && state.execution_id === assignment.execution_id
         && cp.checkpoint_id === assignment.checkpoint_id && cp.substage === assignment.substage
         && cp.active_roles.includes(assignment.worker_role) && cp.phase_status === "in_progress" && state.interruption.status === "idle", "topology_assignment_changed");
+      if (assignment.kind === "aggregate") {
+        const child = this.db.sql.query("SELECT state FROM team_topologies WHERE task_id=?").get(taskId) as { state: string } | null;
+        requireThat(child && decodeTopologyState(JSON.parse(child.state)).execution_id === assignment.run_id, "aggregate_execution_changed");
+      }
       taskId = assignment.parent_id;
     }
     requireThat(false, "topology_depth_exceeded");
+  }
+
+  assertNativeTask(actor: Principal, taskId: string): void {
+    this.owned(actor, this.row(taskId));
+    requireThat(!this.db.sql.query("SELECT 1 FROM team_topologies WHERE task_id=?").get(taskId)
+      && !this.db.sql.query("SELECT 1 FROM topology_tasks WHERE child_id=? AND kind='aggregate'").get(taskId), "orchestration_not_native_task");
+  }
+  bindTopologyExecution(actor: Principal, taskId: string, executionId: string): void {
+    const task = this.inspect(actor, taskId);
+    requireThat(!this.db.sql.query("SELECT 1 FROM local_runs WHERE task_id=? AND state IN ('queued','running')").get(taskId)
+      && !task.active_episode && !task.needs_reconciliation, "topology_task_execution_active");
+    const assignment = this.db.sql.query("SELECT kind,run_id FROM topology_tasks WHERE child_id=?").get(taskId) as { kind: string; run_id: string } | null;
+    if (!assignment) return;
+    this.scope(actor, "team:write"); this.scope(actor, "task:execute");
+    requireThat(assignment.kind === "aggregate" && assignment.run_id === "", "aggregate_initialization_conflict");
+    this.db.sql.query("UPDATE topology_tasks SET run_id=? WHERE child_id=?").run(executionId, taskId);
+    this.assertTopologyParents(taskId);
   }
 
   claim(actor: Principal, requestId: string, taskId: string, expectedRevision: number, ttlMs: number): Lease {
@@ -178,6 +199,7 @@ export class RuntimeKernel {
       this.owned(actor, task);
       this.revision(task, expectedRevision);
       requireThat(!terminal.has(task.status) && !task.needs_reconciliation, "task_not_admitted");
+      this.assertNativeTask(actor, taskId);
       this.assertTopologyParents(taskId);
       const now = this.db.now();
       if (task.active_episode) {
@@ -267,7 +289,9 @@ export class RuntimeKernel {
     return this.request(actor, requestId, "topology.finish", { taskId, expectedRevision, topologyRevision, ...(permit ? { completion_digest: digest(permit.evidence) } : {}) }, () => {
       const task = this.row(taskId); this.owned(actor, task); this.revision(task, expectedRevision);
       requireThat(task.principal === actor.id && task.status === "waiting" && !task.active_episode && !task.needs_reconciliation, "topology_parent_not_idle");
-      requireThat(!this.db.sql.query("SELECT 1 FROM topology_tasks WHERE child_id=?").get(taskId), "nested_topology_completion_requires_binding");
+      const assignment = this.db.sql.query("SELECT kind FROM topology_tasks WHERE child_id=?").get(taskId) as { kind: string } | null;
+      requireThat(!assignment || assignment.kind === "aggregate", "nested_topology_completion_requires_binding");
+      this.assertTopologyParents(taskId);
       requireThat(!this.db.sql.query("SELECT 1 FROM local_runs WHERE task_id=? AND state IN ('queued','running')").get(taskId), "topology_parent_queued");
       requireThat(!this.db.sql.query("SELECT 1 FROM effects WHERE task_id=? AND state!='confirmed'").get(taskId), "unresolved_effects");
       const completion = verifiedTopologyCompletion(this, actor, taskId, expectedRevision, topologyRevision), raw = JSON.parse(task.raw) as LegacyTask;

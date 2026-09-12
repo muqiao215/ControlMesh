@@ -112,9 +112,9 @@ test("schema fourteen upgrades preserve task and native adoption records without
   const f = fixture(); f.task(); const before = f.kernel.inspect(owner, "task");
   f.db.sql.query("INSERT INTO device_native_adoptions VALUES (?,?,?,?,?,?,?,?,?)").run("legacy", owner.id, "device-0", "task", "project", "synthetic", "profile", "{}", "context");
   const rows = f.db.sql.query("SELECT * FROM device_native_adoptions").all();
-  f.db.sql.exec("DROP TABLE topology_runs; ALTER TABLE topology_tasks DROP COLUMN execution_id; DROP TABLE topology_completions; DROP TABLE topology_controls; DROP TABLE topology_task_history; DROP TABLE topology_tasks; DROP TABLE team_topologies; DROP TABLE team_phases; DROP TABLE device_scheduled_work; DROP TABLE device_scheduler_leases; DROP TABLE device_assignment_generations; PRAGMA user_version=14");
+  f.db.sql.exec("ALTER TABLE topology_tasks DROP COLUMN kind; DROP TABLE topology_runs; ALTER TABLE topology_tasks DROP COLUMN execution_id; DROP TABLE topology_completions; DROP TABLE topology_controls; DROP TABLE topology_task_history; DROP TABLE topology_tasks; DROP TABLE team_topologies; DROP TABLE team_phases; DROP TABLE device_scheduled_work; DROP TABLE device_scheduler_leases; DROP TABLE device_assignment_generations; PRAGMA user_version=14");
   const restored = new RuntimeDatabase(f.path); cleanup.push(() => restored.close());
-  expect(restored.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 22 });
+  expect(restored.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 23 });
   expect(new RuntimeKernel(restored).inspect(owner, "task")).toEqual(before);
   expect(restored.sql.query("SELECT * FROM device_native_adoptions").all()).toEqual(rows);
   expect(restored.sql.query("SELECT COUNT(*) AS n FROM device_scheduled_work").get()).toEqual({ n: 0 });
@@ -259,9 +259,9 @@ test("coordinator restart preserves assignments/receipts; expired running work s
 
 test("v2 database migrates atomically without losing a task or preflight decision", () => {
   const f = fixture(); f.task();
-  f.db.sql.exec("DROP TABLE topology_runs; ALTER TABLE topology_tasks DROP COLUMN execution_id; DROP TABLE topology_completions; DROP TABLE topology_controls; DROP TABLE topology_task_history; DROP TABLE topology_tasks; DROP TABLE team_topologies; DROP TABLE team_phases; DROP TABLE device_scheduled_work; DROP TABLE device_scheduler_leases; DROP TABLE device_assignment_generations; DROP TABLE device_native_adoptions; DROP TABLE command_reservations; DROP TABLE feishu_conversations; DROP TABLE feishu_event_aliases; DROP TABLE feishu_inbox; DROP TABLE transport_receipts; DROP TABLE delivery_outbox; DROP TABLE delivery_routes; DROP TABLE native_agent_deliveries; DROP TABLE native_agent_calls; DROP TABLE native_mailbox_deliveries; DROP TABLE local_runs; DROP TABLE device_assignments; DROP TABLE device_revocations; DROP TABLE execution_manifests; DROP TABLE effect_observations; DROP TABLE device_execution_records; DROP TABLE device_reconciliations; PRAGMA user_version=2");
+  f.db.sql.exec("ALTER TABLE topology_tasks DROP COLUMN kind; DROP TABLE topology_runs; ALTER TABLE topology_tasks DROP COLUMN execution_id; DROP TABLE topology_completions; DROP TABLE topology_controls; DROP TABLE topology_task_history; DROP TABLE topology_tasks; DROP TABLE team_topologies; DROP TABLE team_phases; DROP TABLE device_scheduled_work; DROP TABLE device_scheduler_leases; DROP TABLE device_assignment_generations; DROP TABLE device_native_adoptions; DROP TABLE command_reservations; DROP TABLE feishu_conversations; DROP TABLE feishu_event_aliases; DROP TABLE feishu_inbox; DROP TABLE transport_receipts; DROP TABLE delivery_outbox; DROP TABLE delivery_routes; DROP TABLE native_agent_deliveries; DROP TABLE native_agent_calls; DROP TABLE native_mailbox_deliveries; DROP TABLE local_runs; DROP TABLE device_assignments; DROP TABLE device_revocations; DROP TABLE execution_manifests; DROP TABLE effect_observations; DROP TABLE device_execution_records; DROP TABLE device_reconciliations; PRAGMA user_version=2");
   const reopened = new RuntimeDatabase(f.path); cleanup.push(() => reopened.close());
-  expect(reopened.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 22 });
+  expect(reopened.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 23 });
   expect((reopened.sql.query("SELECT COUNT(*) AS n FROM tasks").get() as { n: number }).n).toBe(1);
   expect(reopened.sql.query("SELECT name FROM sqlite_master WHERE name='provider_checks'").get()).not.toBeNull();
 });

@@ -8,7 +8,7 @@ import { TopologyTaskQueue } from "./topology-task-queue";
 import type { PipelineResultOptions } from "./team-pipeline";
 import { digest, requireThat } from "./value";
 
-export interface PipelineChild { task_id: string; revision: number; role: string; resume_prompt?: string }
+export interface PipelineChild { task_id: string; revision: number; role: string; resume_prompt?: string; aggregate?: boolean }
 /** One explicit, transactional pipeline step; uses authorized children and never starts a polling loop. */
 export class RuntimePipeline {
   private readonly topology: RuntimeTopology;
@@ -28,6 +28,7 @@ export class RuntimePipeline {
     const cp = state.state.checkpoints.at(-1)!;
     if (cp.phase_status !== "in_progress") { requireThat(next === undefined, "pipeline_unexpected_next_child"); return null; }
     requireThat(next && cp.active_roles.length === 1 && cp.active_roles[0] === next.role, "pipeline_next_child_required");
+    if (next.aggregate) return this.queue.aggregate(actor, requestId, state.task_id, parentRevision, state.revision, next.task_id, next.revision, next.role, next.resume_prompt);
     if (next.resume_prompt !== undefined) return this.queue.resume(actor, requestId, state.task_id, parentRevision, state.revision,
       next.task_id, next.revision, next.role, next.resume_prompt);
     return this.queue.enqueue(actor, requestId, state.task_id, parentRevision, state.revision, next.task_id, next.revision, next.role);

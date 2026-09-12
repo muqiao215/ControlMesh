@@ -159,8 +159,8 @@ test("dispatch failure rolls back accepted decision and stage; canceled and unde
 test("version nineteen upgrade retains tasks and does not invent control configuration", async () => {
   const f = fixture({ topology: "director_worker" }, [complete]);
   try {
-    f.db.sql.exec("DROP TABLE topology_runs; ALTER TABLE topology_tasks DROP COLUMN execution_id; DROP TABLE topology_completions; DROP TABLE topology_controls; PRAGMA user_version=19"); await f.reopen();
-    expect(f.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 22 });
+    f.db.sql.exec("ALTER TABLE topology_tasks DROP COLUMN kind; DROP TABLE topology_runs; ALTER TABLE topology_tasks DROP COLUMN execution_id; DROP TABLE topology_completions; DROP TABLE topology_controls; PRAGMA user_version=19"); await f.reopen();
+    expect(f.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 23 });
     expect(f.db.sql.query("SELECT COUNT(*) AS n FROM tasks").get()).toEqual({ n: 5 });
     expect(f.control.inspect(actor, "parent")).toBeNull();
     f.start(); expect(f.snapshot().config.controller_task_id).toBe("control");
@@ -256,8 +256,8 @@ test("a bare terminal checkpoint cannot authorize parent completion, including a
     const forged = topology.checkpoint(actor, "checkpoint", "parent", 1, 1, { substage: "completed", phase_status: "completed", active_roles: [],
       reduced_result: { schema_version: 1, topology: "director_worker", final_status: "completed", reduced_summary: "not an accepted task result", selected_evidence: [], selected_artifacts: [], next_action: null } });
     expect(() => f.kernel.completeTopology(actor, "unsealed", "parent", 1, forged.revision)).toThrow("topology_completion_proof_missing");
-    f.db.sql.exec("DROP TABLE topology_runs; ALTER TABLE topology_tasks DROP COLUMN execution_id; DROP TABLE topology_completions; PRAGMA user_version=20"); await f.reopen();
-    expect(f.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 22 });
+    f.db.sql.exec("ALTER TABLE topology_tasks DROP COLUMN kind; DROP TABLE topology_runs; ALTER TABLE topology_tasks DROP COLUMN execution_id; DROP TABLE topology_completions; PRAGMA user_version=20"); await f.reopen();
+    expect(f.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 23 });
     expect(() => f.kernel.completeTopology(actor, "after-upgrade", "parent", 1, forged.revision)).toThrow("topology_completion_proof_missing");
     expect(f.kernel.inspect(actor, "parent").task.status).toBe("waiting"); expect(f.calls).toEqual([]);
   } finally { await f.close(); }
@@ -280,13 +280,14 @@ for (const mode of ["resumed", "missing-acceptance", "substituted-effect"] as co
   } finally { await f.close(); }
 });
 
-test("a separately queued parent cannot be completed as an idle orchestration", async () => {
+test("an orchestration parent is rejected before native queue admission or claim", async () => {
   const f = fixture({ topology: "director_worker" }, [complete]);
   try {
-    const initial = f.start().topology; await f.runtime.drain(); f.runtime.enqueue("separate-parent-run", "parent", 1);
-    expect(() => f.control.decide(actor, "finish", "parent", 1, 1, f.child("control"))).toThrow("topology_parent_queued");
-    expect(f.snapshot().topology).toEqual(initial); expect(f.calls).toEqual(["control"]);
-    expect(f.db.sql.query("SELECT COUNT(*) AS n FROM topology_completions").get()).toEqual({ n: 0 });
+    f.start(); await f.runtime.drain();
+    expect(() => f.runtime.enqueue("separate-parent-run", "parent", 1)).toThrow("orchestration_not_native_task");
+    expect(() => f.kernel.claim(actor, "separate-parent-claim", "parent", 1, 10000)).toThrow("orchestration_not_native_task");
+    expect(f.control.decide(actor, "finish", "parent", 1, 1, f.child("control")).parent?.task.status).toBe("done");
+    expect(f.calls).toEqual(["control"]);
   } finally { await f.close(); }
 });
 

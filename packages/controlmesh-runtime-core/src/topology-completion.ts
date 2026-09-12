@@ -1,3 +1,4 @@
+import { readAggregateResult, type AggregateResultBinding } from "./topology-aggregate";
 import type { TopologyArtifactGate } from "./topology-artifacts";
 import { command, requireScope } from "./commands";
 import type { Principal, RuntimeKernel, TaskSnapshot } from "./kernel";
@@ -20,7 +21,7 @@ function terminalState(kernel: RuntimeKernel, taskId: string, revision: number) 
   return { state, cp };
 }
 /** Revalidate current generations against authoritative task results; older generations remain audit history. */
-function acceptedInputs(kernel: RuntimeKernel, actor: Principal, taskId: string, revision: number) {
+function acceptedInputs(kernel: RuntimeKernel, actor: Principal, taskId: string, revision: number, ancestors: ReadonlySet<string> = new Set([taskId])) {
   const { state } = terminalState(kernel, taskId, revision);
   const rows = kernel.db.sql.query("SELECT child_id,parent_id,topology,substage,worker_role,checkpoint_id,run_id,accepted,generation FROM topology_tasks WHERE parent_id=? AND execution_id=? ORDER BY child_id").all(taskId, state.execution_id) as {
     child_id: string; parent_id: string; topology: string; substage: string; worker_role: string;
@@ -33,6 +34,13 @@ function acceptedInputs(kernel: RuntimeKernel, actor: Principal, taskId: string,
     requireThat(original && original.substage === row.substage && row.topology === state.topology
       && original.active_roles.includes(row.worker_role) && object(stored) && object(stored.binding), "topology_completion_assignment_changed");
     const binding = stored.binding;
+    const kind = (kernel.db.sql.query("SELECT kind FROM topology_tasks WHERE child_id=?").get(row.child_id) as { kind: string }).kind;
+    if (kind === "aggregate") {
+      requireThat(binding.source === "topology" && binding.task_id === row.child_id && binding.execution_id === row.run_id
+        && binding.topology === row.topology && binding.substage === teamWorkerSubstage(row.topology, row.substage) && binding.worker_role === row.worker_role, "aggregate_assignment_changed");
+      const checked = readAggregateResult(kernel, actor, binding as unknown as AggregateResultBinding, ancestors);
+      requireThat(canonical(checked) === row.accepted, "topology_completion_result_changed"); continue;
+    }
     const run = kernel.db.sql.query("SELECT state,task_id,lease FROM local_runs WHERE run_id=?").get(row.run_id) as { state: string; task_id: string; lease: string | null } | null;
     requireThat(run?.state === "completed" && run.task_id === row.child_id && run.lease, "topology_completion_run_unresolved");
     const lease = JSON.parse(run.lease);
@@ -71,12 +79,14 @@ export function completeTopologyStep(kernel: RuntimeKernel, actor: Principal, re
   }, value => { requireScope(actor, "team:write"); requireScope(actor, "task:execute"); kernel.inspect(actor, snapshot.task_id); return value; });
 }
 /** Kernel-side verification of the privately issued proof. Does not accept caller-supplied result text. */
-export function verifiedTopologyCompletion(kernel: RuntimeKernel, actor: Principal, taskId: string, parentRevision: number, revision: number) {
+export function verifiedTopologyCompletion(kernel: RuntimeKernel, actor: Principal, taskId: string, parentRevision: number, revision: number, ancestors: ReadonlySet<string> = new Set()) {
+  requireThat(ancestors.size < 32 && !ancestors.has(taskId), "topology_cycle_or_depth_limit");
+  const lineage = new Set(ancestors); lineage.add(taskId);
   const proof = kernel.db.sql.query("SELECT * FROM topology_completions WHERE task_id=?").get(taskId) as CompletionRow | null;
   requireThat(proof && proof.parent_revision === parentRevision && proof.topology_revision === revision, "topology_completion_proof_missing");
   const { state, cp } = terminalState(kernel, taskId, revision);
   requireThat(proof.checkpoint_id === cp.checkpoint_id && proof.state_digest === digest(state)
-    && proof.inputs_digest === acceptedInputs(kernel, actor, taskId, revision).digest, "topology_completion_proof_changed");
+    && proof.inputs_digest === acceptedInputs(kernel, actor, taskId, revision, lineage).digest, "topology_completion_proof_changed");
   const result = JSON.parse(proof.result);
   requireThat(object(result) && result.source === "topology_reduction" && result.state_digest === proof.state_digest && result.inputs_digest === proof.inputs_digest
     && result.schema_version === "controlmesh.topology_result.v1" && result.topology === state.topology && result.topology_revision === revision

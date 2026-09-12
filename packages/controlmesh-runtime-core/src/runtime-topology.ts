@@ -36,6 +36,7 @@ export class RuntimeTopology {
       requireThat(!declared || declared === topology, "topology_task_kind_changed");
       const state = startTopology(taskId, topology, input, new Date(this.kernel.db.now()));
       this.kernel.db.sql.query("INSERT INTO team_topologies VALUES (?,1,?)").run(taskId, canonical(state));
+      this.kernel.bindTopologyExecution(actor, taskId, state.execution_id);
       return { task_id: taskId, revision: 1, state };
     }, value => { this.authorize(actor, taskId); requireScope(actor, "team:write"); return value; });
   }

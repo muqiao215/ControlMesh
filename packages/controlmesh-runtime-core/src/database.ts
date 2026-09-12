@@ -26,7 +26,7 @@ export class RuntimeDatabase {
       this.transaction(() => {
         const version = (this.sql.query("PRAGMA user_version").get() as { user_version: number }).user_version;
         const app = (this.sql.query("PRAGMA application_id").get() as { application_id: number }).application_id;
-        requireThat(version >= 0 && version <= 22, "unsupported_database_version");
+        requireThat(version >= 0 && version <= 23, "unsupported_database_version");
         requireThat(app === 0 || app === APPLICATION_ID, "foreign_database");
         if (version === 0) {
           const tables = this.sql.query("SELECT name FROM sqlite_master WHERE type='table'").all();
@@ -342,6 +342,12 @@ export class RuntimeDatabase {
               PRIMARY KEY(task_id,execution_id), UNIQUE(task_id,topology_revision)
             );
             PRAGMA user_version = 22;
+          `);
+        }
+        if (version < 23) {
+          this.sql.exec(`
+            ALTER TABLE topology_tasks ADD COLUMN kind TEXT NOT NULL DEFAULT 'native' CHECK(kind IN ('native','aggregate'));
+            PRAGMA user_version = 23;
           `);
         }
       });

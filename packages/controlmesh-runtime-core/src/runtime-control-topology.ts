@@ -10,7 +10,7 @@ import { JudgePolicy } from "./team-judge";
 import { appendTopologyCheckpoint, decodeTopologyState, type TopologyState } from "./team-topology";
 import { canonical, digest, identifier, requireThat, terminal } from "./value";
 
-export interface ControlChild { task_id: string; revision: number; role: string; resume_prompt?: string }
+export interface ControlChild { task_id: string; revision: number; role: string; resume_prompt?: string; aggregate?: boolean }
 export type ControlSetup = { topology: "director_worker"; limits?: DirectorOptions }
   | { topology: "debate_judge"; round_limit: number; max_repair_cycles?: number; max_parent_interruptions?: number };
 interface ControlIdentity { controller_task_id: string; controller_role: string; parallel_limit: number }
@@ -62,6 +62,7 @@ export class RuntimeControlTopology {
     return current!;
   }
   private controller(config: ControlConfig, child: ControlChild): void {
+    requireThat(!child.aggregate, "aggregate_cannot_issue_control_decision");
     requireThat(child.task_id === config.controller_task_id && child.role === config.controller_role, "control_controller_identity_changed");
   }
   private save(current: TopologySnapshot, state: TopologyState): TopologySnapshot {
@@ -89,6 +90,7 @@ export class RuntimeControlTopology {
       const prior = this.kernel.db.sql.query("SELECT child_id FROM topology_tasks WHERE parent_id=? AND worker_role=?").all(topology.task_id, role) as { child_id: string }[];
       requireThat(prior.every(item => item.child_id === child.task_id), "control_role_task_changed");
       const id = `control-queue-${digest([requestId, role])}`;
+      if (child.aggregate) return this.queue.aggregate(actor, id, topology.task_id, parentRevision, topology.revision, child.task_id, child.revision, role, child.resume_prompt);
       if (child.resume_prompt !== undefined) return this.queue.resume(actor, id, topology.task_id, parentRevision, topology.revision, child.task_id, child.revision, role, child.resume_prompt);
       return this.queue.enqueue(actor, id, topology.task_id, parentRevision, topology.revision, child.task_id, child.revision, role);
     });
@@ -104,6 +106,8 @@ export class RuntimeControlTopology {
       requireThat(!this.topology.inspect(actor, parentId), "topology_exists");
       requireThat(!parent.task.topology || parent.task.topology === setup.topology, "topology_task_kind_changed");
       requireThat(controller.task_id !== parentId && !workers.some(child => child.task_id === parentId), "control_parent_is_child");
+      requireThat(!controller.aggregate, "aggregate_cannot_issue_control_decision");
+      this.kernel.assertNativeTask(actor, controller.task_id);
       const controlTask = this.kernel.inspect(actor, controller.task_id);
       requireThat(Number.isSafeInteger(controller.revision) && controlTask.revision === controller.revision && controlTask.task.status === "waiting"
         && !controlTask.active_episode && !controlTask.needs_reconciliation && controller.resume_prompt === undefined
@@ -122,9 +126,26 @@ export class RuntimeControlTopology {
       }
       this.kernel.db.sql.query("INSERT INTO team_topologies VALUES (?,1,?)").run(parentId, canonical(state));
       this.kernel.db.sql.query("INSERT INTO topology_controls VALUES (?,?)").run(parentId, canonical(config));
+      this.kernel.bindTopologyExecution(actor, parentId, state.execution_id);
       const snapshot = { topology: { task_id: parentId, revision: 1, state }, config };
       const runs = this.enqueue(actor, requestId, parentRevision, snapshot, config.topology === "director_worker" ? [controller] : workers);
       return { ...snapshot, runs };
+    }, value => { this.authorize(actor, parentId, [controller, ...workers]); return value; });
+  }
+  /** Dispatch a prepared execution, including a nested aggregate reopened by its parent. */
+  dispatch(actor: Principal, requestId: string, parentId: string, parentRevision: number, revision: number,
+    controller: ControlChild, workers: ControlChild[] = []) {
+    this.authorize(actor, parentId, [controller, ...workers]);
+    return command(this.kernel.db, actor, requestId, "control.dispatch_prepared", { parentId, parentRevision, revision, controller, workers }, () => {
+      const current = this.current(actor, parentId, parentRevision, revision);
+      this.controller(current.config, controller);
+      requireThat(current.topology.state.checkpoints.length === 1 && current.topology.state.checkpoints[0]!.substage === "planning", "control_not_prepared");
+      let topology = current.topology;
+      if (current.config.topology === "debate_judge") topology = this.save(topology,
+        new JudgePolicy(current.config.parallel_limit).candidates(topology.state, workers.map(child => child.role), undefined, new Date(this.kernel.db.now())));
+      else requireThat(workers.length === 0, "director_initial_workers_unexpected");
+      const snapshot = { topology, config: current.config };
+      return { ...snapshot, runs: this.enqueue(actor, requestId, parentRevision, snapshot, current.config.topology === "director_worker" ? [controller] : workers) };
     }, value => { this.authorize(actor, parentId, [controller, ...workers]); return value; });
   }
   reopen(actor: Principal, requestId: string, parentId: string, parentRevision: number, revision: number, prompt: string,

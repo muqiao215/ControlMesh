@@ -69,8 +69,8 @@ No claim that full TS migration or distributed coordination has completed. A sco
 
 ## Next Step
 
-Publish and verify the explicit topology reopen increment, then connect nested aggregate
-results with retained child execution authority. This is the current local
+Publish and verify the nested aggregate increment, then implement bounded automatic
+topology scheduling and explicit malformed-output recovery. This is the current local
 orchestration seam, not the full migration exit. Follow progress.md for exact verification
 and the remaining service/device/provider/store/release order.
 
@@ -109,8 +109,12 @@ results from entering a new run; native continuity uses the existing explicit re
 Frozen policy limits survive, while per-execution counters reset only on this explicit
 new run. Restart alone never reopens completed work.
 
-Next after this gate is verified and published: nested aggregate result bindings;
-complete bounded automatic service scheduling and
+Native/aggregate assignment source is explicit in schema 23. Nested topology results
+now bind their own completion and current descendant evidence; all 16 parent/child
+combinations and same-tree reopen pass focused fixtures. File requirements trace to
+actual leaf tool receipts. This does not establish automatic service or device dispatch.
+
+Next after this gate is verified and published: bounded automatic service scheduling and
 malformed-output recovery, then device topology dispatch and real native topology
 acceptance. Continue all remaining CM-R0–CM-R7 provider/transport/store, native source
 revision and release/install gates; explicit local queue tests do not narrow that scope.

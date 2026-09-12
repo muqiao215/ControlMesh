@@ -1220,3 +1220,44 @@ binding independent of local native run/episode/effect rows. Current root comple
 reopen deliberately require root identity. The automatic scheduling owner also needs to
 prevent scheduling an orchestration parent as an ordinary provider job; the existing
 terminal gate detects a separately queued parent but is not early admission enforcement.
+
+
+## Nested aggregate source and initialization authority
+
+A topology result is not a native task episode and cannot be read through a fabricated
+local_runs/episode/effect record. Schema 23 makes assignment kind explicit. New aggregate
+reservations have no bound child execution until topology creation binds it; native queue
+admission/claim refuses both reserved aggregates and initialized orchestration tasks.
+The previous late parent-queued completion check remains defense in depth. A role asking
+for a director/judge decision cannot be assigned an aggregate summarizer.
+
+Nested results carry child task revision, topology revision and execution ID plus a digest
+of the verified completion. Parent role and substage come from assignment authority.
+Recursive verification uses an explicit bounded lineage; it rechecks descendants rather
+than trusting old JSON after a leaf resume. Native digest projection stays compatible with
+schema 22, while kind selects the verifier. File verification traverses the same accepted
+aggregate tree to actual native leaf receipts; it does not turn summaries into file proof.
+
+The parent-controlled aggregate resume temporarily removes the old edge inside one SQLite
+transaction, invokes verified child reopen, then restores the new assignment generation.
+No external execution occurs between those writes. The injected reassign failure restores
+old child state, completion, assignment and history. Prepared control dispatch reuses the
+frozen controller configuration after this nested reopen.
+
+Focused evidence: 27 tests/287 assertions pass, including all 16 approved parent/child
+combinations over two runs, two-level file delivery, cancelled ancestor admission/effects,
+failed branch semantics, changed leaf/proof/identity refusal, cycle/control-role refusal and
+schema 22 upgrade. Previous affected suites passed 50 tests/411 assertions. All provider
+execution here is controlled fixture behavior, not fresh native-model acceptance. An initial
+edit-script anchor failed before the remaining mutations; work resumed at that exact
+statement. Typechecking then required narrowing a native-only test's result binding after
+introducing the aggregate union; no native episode field was added to aggregate results.
+
+
+The first full aggregate gate exposed a permission regression: assertNativeTask called
+inspect and therefore required task:read during Kernel.claim, although existing execution
+workers legitimately hold task:execute without task:read. The real process race and
+post-observation crash tests both failed before claiming. The guard now checks ownership
+through the private row and then orchestration type, retaining the old execution scope.
+No worker permission was broadened. The failed full run remains in
+/tmp/cm-aggregate-full-initial.log (588 pass, 2 fail); final verification must use the rerun.
