@@ -90,3 +90,12 @@ test("replacing a workspace at the same absolute path invalidates execution admi
   await expect(runner.run(input, ready)).rejects.toThrow("oneshot_workspace_replaced");
   expect(checked).toBe(true);
 });
+
+test("Codex process status preserves typed native errors across nonzero exits", async () => {
+  for (const [message, code] of [["401 unauthorized", "authentication_failed"], ["429 too many requests", "rate_limited"], ["model not available", "model_unavailable"], ["You've hit your usage limit", "quota_exhausted"]]) {
+    const input = launch(`console.log(JSON.stringify({type:'turn.failed',error:{message:${JSON.stringify(message)}}})); process.exit(1);`, "codex");
+    const result = await new OneShotProviderProcess().run(input, ready);
+    expect(result.process.exit_code).toBe(1);
+    expect(result.status).toBe(`error:${code}`);
+  }
+});

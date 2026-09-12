@@ -2,13 +2,22 @@
 
 ## Current
 
+Codex typed error parsing now preserves quota/auth/model/rate-limit outcomes in the
+normal one-shot process status, including nonzero CLI exit. Only native error and
+turn.failed records supply these facts; assistant/tool prose cannot. Quota reset
+authority requires an explicitly zoned timestamp. 16 targeted tests / 507 assertions
+and runtime typecheck passed (/tmp/cm-codex-failure-test.log), including the existing
+410-case Python parity fixture and supervised synthetic Codex processes. No real
+model probe ran. Actual Codex preflight driver/cache wiring and normal task-entry
+registration remain next; this change alone does not implement quota retry policy.
+
 Full CM-R0–CM-R7 remains in progress. Installed CM 0.43.0 is still the production Python
 writer. No release, installation, live migration or default/service switch has occurred.
 The 512-module/57-field ledger is an inventory, not completed parity.
 
 | Delivery area | Verified state | Remaining acceptance |
 |---|---|---|
-| Published CI baseline | 984b873; CI 34715947420 success | Topology automatic input issuance pending publication/CI |
+| Published CI baseline | 5428047; CI 34717551611 success | Subsequent Codex failure classification pending CI |
 | TS runtime | Kernel, local/device execution, mailbox, topology and retained recovery; reconnectable local service/CLI with full local regression | Final CI; remaining provider/transport/store/terminal ownership and parity |
 | Native continuation | Simple direct and streamed exact recall passed; earlier topology first runs and current artifacts passed | Full worker/merger continuation and complex-context acceptance still fail |
 | Multi-device | Configured initial input HTTP transfer, topology source capture and pre-dispatch receiver; artifact transport/publication | Physical transfer and full native profiles |

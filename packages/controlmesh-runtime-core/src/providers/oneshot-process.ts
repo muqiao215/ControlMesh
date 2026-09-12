@@ -61,7 +61,7 @@ export class OneShotProviderProcess {
       writable_roots: config.permission_mode === "read-only" ? [] : grant.writable_roots.length ? grant.writable_roots.map(root => resolve(input.workspace, root)) : [input.workspace] }, processAdmission)
       : await this.supervisor.run(processSpec, processAdmission);
     const observation = observeOneShot(config.provider, outcome.stdout, outcome.stderr);
-    const nativeError = observation.error_code === "provider_error" || observation.error_code === "quota_exhausted";
+    const nativeError = ["provider_error", "quota_exhausted", "authentication_failed", "model_unavailable", "rate_limited"].includes(observation.error_code ?? "");
     const status = outcome.reason === "deadline" ? "error:timeout"
       : outcome.reason !== "exited" && outcome.reason !== "provider_abort" ? `error:${outcome.reason}`
       : nativeError ? `error:${observation.error_code}`

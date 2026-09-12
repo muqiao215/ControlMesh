@@ -1847,3 +1847,9 @@ adapter execution; source publication should occur inside its existing current l
 authority before native dispatch, not under an unleased metadata claim. Receiver config
 must explicitly authorize bootstrap file paths, independently of result-write roots. The
 new inbox is a receiver primitive only; no transport/admission integration exists yet.
+
+Codex execution-error gap: oneshot-observation previously collapsed turn.failed to
+provider_error, while oneshot-process privileged only generic/quota errors over exit
+codes. Both now preserve typed native quota/auth/model/rate-limit failures. The shared
+codexNativeFailure helper is available for the forthcoming preflight driver. Successful
+assistant text is not failure evidence; timezone-less reset strings confer no retry date.

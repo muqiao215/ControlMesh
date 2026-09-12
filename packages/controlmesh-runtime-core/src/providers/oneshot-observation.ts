@@ -1,3 +1,4 @@
+import { codexNativeFailure } from "./codex-failure";
 import { object } from "../value";
 import { failureFromNativeStderr, nativeFailure } from "./opencode-events";
 import { oneShotProvider } from "./oneshot-command";
@@ -45,6 +46,13 @@ export function observeOneShot(provider: string, stdout: string, stderr = ""): O
     const hasError = object(nativeError) ? Object.keys(nativeError).length > 0 : Array.isArray(nativeError) ? nativeError.length > 0 : Boolean(nativeError);
     if (hasError || value.is_error || kind === "error" || kind === "turn.failed") {
       if (error !== "quota_exhausted") error = "provider_error";
+      if (provider === "codex") {
+        const failure = codexNativeFailure(value);
+        if (failure && error !== "quota_exhausted") {
+          error = failure.code;
+          if (failure.code === "quota_exhausted") reset = failure.reset_at === null ? null : new Date(failure.reset_at).toISOString();
+        }
+      }
       if (provider === "opencode" && kind === "error" && object(nativeError)) {
         const message = nativeError.message || (object(nativeError.data) ? nativeError.data.message : "");
         if (typeof message === "string") {
