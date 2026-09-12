@@ -2,6 +2,15 @@
 
 ## Current
 
+Shared team-result boundary implemented: normalized JSON Schema plus TS raw-result
+normalizer, with topology-specific substages, parent-flag/status consistency and
+required repair hints.677 raw cases match live Python models; team suite5tests
+1087assertions1.337s and Python protocol9tests0.71s pass. Generated TS/Python, Web
+bundle and ownership inventory synchronized. Initial extended coercion test exposed
+boolean/numeric/Unicode-strip differences, corrected against live Python results.
+This remains a structural boundary; execution-spine identity/evidence admission is
+not yet connected and no completed Agent claim is accepted as execution proof.
+
 Topology result reductions: pipeline review/terminal and fanout reducer/all-failed
 ported as internal normalized-data functions. Live Python comparison passes24
 selection/status combinations and2failed-batch cases,64assertions; typecheck passes.

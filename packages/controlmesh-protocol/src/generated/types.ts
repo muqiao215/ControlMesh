@@ -392,6 +392,22 @@ export interface Task {
   "last_question"?: string;
 }
 
+export interface TeamStructuredResult {
+  "schema_version": 1;
+  "status": "completed" | "failed" | "blocked" | "needs_parent_input" | "needs_repair";
+  "topology": "pipeline" | "fanout_merge" | "director_worker" | "debate_judge";
+  "substage": string;
+  "worker_role": string;
+  "result_items": Record<string, unknown>[];
+  "summary": string;
+  "evidence": Record<string, unknown>[];
+  "confidence": number | null;
+  "artifacts": Record<string, unknown>[];
+  "next_action": unknown;
+  "needs_parent_input": boolean;
+  "repair_hint": unknown;
+}
+
 export interface TerminalDelivery {
   "schema_version": "controlmesh.terminal_delivery.v1";
   "delivery_id": string;

@@ -967,3 +967,21 @@ and names the failed roles in order. These are reference-selection semantics, no
 proof verification or execution authorization. TS ports deep-copy selected references
 so consumer edits do not mutate original normalized inputs. Python private reducer
 methods are dynamically executed in the parity test, with real Pydantic result models.
+
+## Normalized team result protocol — 2026-09-12
+
+team-structured-result.schema.json defines the normalized packet and conditional
+shape rules shared by protocol validators. TS decodeTeamResult supplies defaults,
+normalizes known fields and drops unknown fields like the Python model. It enforces
+available topology/substage combinations, director/judge collecting-only results,
+parent-input consistency and repair hints. Python str.strip differs from JS trim
+for U+001C–U+001F/U+0085 and U+FEFF; the adapter preserves the observed Python behavior.
+Numeric conversion distinguishes integer version strings from floating confidence,
+rejecting hexadecimal conversion and preserving tested boolean numeric coercion.
+
+Live parity covers677 finite JSON cases, not every Pydantic coercion or Python-only
+value. Nonfinite values are outside the JSON wire contract. The normalized schema
+requires all defaulted fields; use the adapter for raw model envelopes. Neither
+structural validation nor a referenced artifact proves execution success. Actual
+TaskHub/topology identity, ownership and evidence checks must compose this boundary
+before reducers are connected to task completion.

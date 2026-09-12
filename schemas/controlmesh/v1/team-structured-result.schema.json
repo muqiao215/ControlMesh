@@ -1,0 +1,402 @@
+{
+  "description": "Schema-versioned worker result envelope for topology execution.",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "status": {
+      "enum": [
+        "completed",
+        "failed",
+        "blocked",
+        "needs_parent_input",
+        "needs_repair"
+      ]
+    },
+    "topology": {
+      "enum": [
+        "pipeline",
+        "fanout_merge",
+        "director_worker",
+        "debate_judge"
+      ]
+    },
+    "substage": {
+      "title": "Substage",
+      "type": "string",
+      "minLength": 1
+    },
+    "worker_role": {
+      "title": "Worker Role",
+      "type": "string",
+      "minLength": 1
+    },
+    "result_items": {
+      "items": {
+        "description": "Neutral runtime item reference preserved inside structured team results.",
+        "properties": {
+          "kind": {
+            "enum": [
+              "message",
+              "tool_call",
+              "tool_result",
+              "interrupt",
+              "dispatch",
+              "phase_transition",
+              "repair_note"
+            ]
+          },
+          "ref": {
+            "title": "Ref",
+            "type": "string",
+            "minLength": 1
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          }
+        },
+        "required": [
+          "kind",
+          "ref",
+          "summary"
+        ],
+        "title": "TeamResultItemRef",
+        "type": "object",
+        "additionalProperties": false
+      },
+      "title": "Result Items",
+      "type": "array"
+    },
+    "summary": {
+      "title": "Summary",
+      "type": "string",
+      "minLength": 1
+    },
+    "evidence": {
+      "items": {
+        "description": "Pointer to evidence selected from ControlMesh-owned runtime truth.",
+        "properties": {
+          "ref": {
+            "title": "Ref",
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string",
+            "minLength": 1
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          }
+        },
+        "required": [
+          "ref",
+          "kind",
+          "summary"
+        ],
+        "title": "TeamEvidenceRef",
+        "type": "object",
+        "additionalProperties": false
+      },
+      "title": "Evidence",
+      "type": "array"
+    },
+    "confidence": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "artifacts": {
+      "items": {
+        "description": "Pointer to an artifact owned by ControlMesh task/runtime storage.",
+        "properties": {
+          "ref": {
+            "title": "Ref",
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string",
+            "minLength": 1
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          }
+        },
+        "required": [
+          "ref",
+          "kind",
+          "label",
+          "summary"
+        ],
+        "title": "TeamArtifactRef",
+        "type": "object",
+        "additionalProperties": false
+      },
+      "title": "Artifacts",
+      "type": "array"
+    },
+    "next_action": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Next Action"
+    },
+    "needs_parent_input": {
+      "title": "Needs Parent Input",
+      "type": "boolean"
+    },
+    "repair_hint": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Repair Hint"
+    }
+  },
+  "required": [
+    "schema_version",
+    "status",
+    "topology",
+    "substage",
+    "worker_role",
+    "result_items",
+    "summary",
+    "evidence",
+    "confidence",
+    "artifacts",
+    "next_action",
+    "needs_parent_input",
+    "repair_hint"
+  ],
+  "title": "TeamStructuredResult",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.controlmesh.dev/controlmesh/v1/team-structured-result.schema.json",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "topology": {
+            "const": "pipeline"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "substage": {
+            "enum": [
+              "planning",
+              "worker_running",
+              "review_running",
+              "completed",
+              "failed",
+              "waiting_parent",
+              "repairing"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "topology": {
+            "const": "fanout_merge"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "substage": {
+            "enum": [
+              "planning",
+              "dispatching",
+              "collecting",
+              "reducing",
+              "completed",
+              "failed",
+              "waiting_parent",
+              "repairing"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "topology": {
+            "const": "director_worker"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "substage": {
+            "enum": [
+              "planning",
+              "dispatching",
+              "collecting",
+              "director_deciding",
+              "waiting_parent",
+              "repairing",
+              "completed",
+              "failed"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "topology": {
+            "const": "debate_judge"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "substage": {
+            "enum": [
+              "planning",
+              "candidate_round",
+              "collecting",
+              "judging",
+              "waiting_parent",
+              "repairing",
+              "completed",
+              "failed"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "topology": {
+            "enum": [
+              "director_worker",
+              "debate_judge"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "substage": {
+            "const": "collecting"
+          },
+          "status": {
+            "enum": [
+              "completed",
+              "failed",
+              "needs_repair"
+            ]
+          },
+          "needs_parent_input": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "needs_parent_input"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "needs_parent_input": {
+            "const": true
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "needs_parent_input": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "needs_repair"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "repair_hint": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  ]
+}

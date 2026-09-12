@@ -428,6 +428,23 @@ class Task(BaseModel):
     last_question: str | None = None
 
 
+class TeamStructuredResult(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    schema_version: Literal[1]
+    status: Literal["completed", "failed", "blocked", "needs_parent_input", "needs_repair"]
+    topology: Literal["pipeline", "fanout_merge", "director_worker", "debate_judge"]
+    substage: str
+    worker_role: str
+    result_items: list[dict[str, Any]]
+    summary: str
+    evidence: list[dict[str, Any]]
+    confidence: float | None
+    artifacts: list[dict[str, Any]]
+    next_action: Any
+    needs_parent_input: bool
+    repair_hint: Any
+
+
 class TerminalDelivery(BaseModel):
     model_config = ConfigDict(extra="allow")
     schema_version: Literal["controlmesh.terminal_delivery.v1"]

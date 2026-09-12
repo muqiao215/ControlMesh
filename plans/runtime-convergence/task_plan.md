@@ -135,3 +135,8 @@ dispatch tasks or finish a task. The complete execution-spine/checkpoint validat
 director/judge decisions and TaskHub lifecycle composition remain open. Next implement
 the topology execution spine and raw result boundary before attaching these reducers
 to actual task completion; never use a reduced completed status as execution evidence.
+
+Raw team-result structural boundary is now implemented in the shared schema and
+`team-result-validation.ts`;677 finite JSON cases match Python. Execution-spine
+checkpoint/state validation and TaskHub identity/evidence binding remain next, before
+routing raw Agent responses into runtime completion.
