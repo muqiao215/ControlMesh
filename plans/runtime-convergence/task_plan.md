@@ -73,9 +73,10 @@ Complete physical input/output delivery and real topology/native continuation ac
 The qualified ARM64 peer was confirmed offline on 2026-09-13; no remote canary started.
 While it is unavailable, continue CM-R3: the normal local runtime registration currently
 exposes only Claude/OpenCode. Existing Codex/Gemini one-shot command/observation modules
-do not provide registered persistent native-session adapters. CodexSessionStore now supplies private identity/baseline/turn verification; next connect
-it to persistent dispatch and recovery, exact UUID resume, current grant enforcement and
-independent History candidates. Port that ownership without presenting one-shot execution
+do not provide registered persistent native-session adapters. CodexSessionStore and CodexResumeProcess now provide private identity/baseline/turn
+verification, exact UUID supervised resume and model-free retained-output verification.
+Next wire the normal task journal/preflight and registration, qualify fresh-session
+creation and effective native sandbox behavior, and add independent History candidates. Port that ownership without presenting one-shot execution
 or a standalone transcript reader as completed native continuity.
 The configured coordinator now issues a versioned snapshot reference; device assignments
 bind it, and authenticated chunk reads require the current assignment and execution lease.

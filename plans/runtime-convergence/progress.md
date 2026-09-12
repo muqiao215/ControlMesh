@@ -22,6 +22,23 @@ shows invalid read arguments, not a proven concurrent file change. The attempt a
 05a0e591-a529-4401-b28a-932b3e948f95 are guarded against replay. No new native model canary
 was launched during this correction.
 
+Codex exact-session process owner now reuses ProcessSupervisor and NativeSessionLease.
+It validates native source, current readiness/authority and execution policy before task
+input; host-ineligible origins and unsupported grants refuse. The pinned 0.154.0 version
+is checked without a model request. Parent exec carries sandbox/config flags; resume uses
+an exact UUID and stdin, never --last. Input/baseline retention must finish synchronously
+before dispatch; all owned outcomes are retained before semantic verification. Executable,
+workspace and store identity changes stop admission. verifyRetainedCodexResume rechecks
+original dispatch/output/transcript without a process or model call.
+
+8 process/session tests passed (48 assertions, /tmp/cm-codex-resume-final.log), typecheck
+and diff-check passed. The actual installed CLI accepted the parent-sandbox/resume help
+combination; this is argument compatibility, not live sandbox enforcement or native memory
+acceptance. The supervised subprocess/transcript used isolated synthetic fixtures. Normal
+local runtime registration, durable task-journal wiring, preflight ownership, fresh-session
+creation, effective native sandbox qualification and History candidates remain pending.
+No provider was added to the normal entrypoint by these private process primitives.
+
 Codex native continuity owner is in progress. Local CLI help reports 0.154.0 and explicit
 UUID resume support; inspected local rollout structure includes session_meta, task_started,
 turn_context, user_message, final agent_message and task_complete. No native/model command
