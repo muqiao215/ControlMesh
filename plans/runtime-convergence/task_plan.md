@@ -69,11 +69,12 @@ No claim that full TS migration or distributed coordination has completed. A sco
 
 ## Next Step
 
-Verify publication/CI for schema-25 device topology integration after its full local gate
-passed (680 tests / 8884 assertions across 68 files). Authenticated
-worker dispatch, actual episode bindings, normal coordinator startup and bounded recovery
-are implemented; see progress.md for the current full gate. Continue real native topology/source-revision qualification and all remaining
-CM-R0–CM-R7 owners and rollout gates. Local background fixtures do not narrow this goal.
+Publish schema-26 native topology input after its full local gate (688 tests / 8937
+assertions across 68 files, followed by the final 33-test visibility regression gate). The real worker proved input delivery and current reads;
+the reviewer failed required-read verification, so full native topology/continuity remains
+open. Use retained evidence to implement correct contract-failure recovery without replaying
+that attempt. Then finish native/source/remote-artifact acceptance and all remaining
+CM-R0–CM-R7 owners and rollout gates. See progress.md for exact current evidence.
 
 Current implementation and native evidence belong in progress.md and its retained archive,
 not in competing historical next-step instructions. Scoped native acceptance does not
@@ -126,3 +127,10 @@ revision and release/install gates; explicit local queue tests do not narrow tha
 There is no production writer switch, release or installed-version alignment yet.
 
 Local scheduling control and limits: [topology-scheduling.md](topology-scheduling.md).
+
+
+Schema 26 closes the native-input gap by freezing assigned role/stage/output contracts and
+prior results, delivered through existing verified mailbox input. Missing/altered input
+fails before claim; oversized input blocks rather than truncates. The real topology canary
+is only partially positive and remains unaccepted; its failed reviewer and skipped reopen
+are documented in progress.md. No production writer or installed-version switch occurred.

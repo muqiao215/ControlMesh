@@ -1,3 +1,4 @@
+import { assertTopologyNativeInput } from "./topology-native-input";
 import { topologyNativeClaim } from "./topology-execution";
 import { verifyDeviceCompletion } from "./task-completion";
 import { assertDeviceWorkspaceGrant, verifyDeviceWorkspaceProof } from "./providers/device-workspace-proof";
@@ -243,7 +244,7 @@ export class DeviceCoordinator {
       let scanned = 0;
       for (const row of rows) {
         scanned++;
-        try { const job = this.assignment(device, row.task_id); topologyNativeClaim(this.kernel, actor, row.task_id); jobs.push(job); } catch (error) { if (!(error instanceof RuntimeConflict)) throw error; }
+        try { const job = this.assignment(device, row.task_id); assertTopologyNativeInput(this.kernel, row.task_id); topologyNativeClaim(this.kernel, actor, row.task_id); jobs.push(job); } catch (error) { if (!(error instanceof RuntimeConflict)) throw error; }
         if (jobs.length === 32) break;
       }
       return input.operation === "queue" ? jobs : { items: jobs,
@@ -323,6 +324,7 @@ export class DeviceCoordinator {
               && digest(scope.peer_tasks) === digest(job.peer_tasks ?? []) && scope.parent_task === (job.parent_task ?? null), "native_agent_assignment_changed");
           }
           const delivery = manifest?.mailbox_delivery ? this.nativeDelivery.resolveBinding(actor, lease.task_id, manifest.mailbox_delivery) : undefined;
+          if (nativeProvider(job.execution?.provider)) this.nativeDelivery.assertRequiredInput(actor, lease, delivery);
           if (delivery) {
             requireThat(nativeProvider(job.execution?.provider) && typeof job.execution?.prompt === "string", "native_device_input_unavailable");
             nativeInput(job.execution.prompt, delivery);

@@ -1,3 +1,4 @@
+import { ensureTopologyNativeInput } from "../topology-native-input";
 import { AgentMailbox } from "../mailbox";
 import type { RuntimeKernel, Principal, Lease, ReconciliationEvidence } from "../kernel";
 import { requireScope } from "../commands";
@@ -13,8 +14,13 @@ export class NativeMailboxDelivery {
   prepare(actor: Principal, lease: Lease, prompt: string, maxInputBytes = 65536): NativeMailboxBatch | undefined {
     requireThat(Number.isSafeInteger(maxInputBytes) && maxInputBytes > 0 && maxInputBytes <= 65536, "invalid_native_mailbox_input_limit");
     requireScope(actor, "message:ack");
-    const messages = this.mailbox.pending(actor, lease);
-    if (!messages.length) return undefined;
+    const messagesBefore = this.mailbox.pending(actor, lease);
+    const required = ensureTopologyNativeInput(this.kernel, actor, lease);
+    const messages = required ? this.mailbox.pending(actor, lease) : messagesBefore;
+    if (!messages.length) {
+      requireThat(!required, "topology_native_context_not_delivered");
+      return undefined;
+    }
     const batch: NativeMailboxBatch = { schema_version: "controlmesh.native_mailbox.v1", task_id: lease.task_id, messages: [] };
     for (const message of messages) {
       batch.messages.push(nativeMessage(message));
@@ -24,14 +30,21 @@ export class NativeMailboxDelivery {
         batch.messages.pop(); break; // Keep the fitting prefix; never truncate or skip a message.
       }
     }
+    this.assertRequiredInput(actor, lease, batch);
     this.assertUnreserved(actor, lease, batch);
     return batch;
+  }
+
+  assertRequiredInput(actor: Principal, lease: Lease, batch?: NativeMailboxBatch): void {
+    const required = ensureTopologyNativeInput(this.kernel, actor, lease);
+    requireThat(!required || batch?.messages.some(message => message.message_id === required), "topology_native_context_not_delivered");
   }
 
   private assertUnreserved(actor: Principal, lease: Lease, batch: NativeMailboxBatch): void {
     this.kernel.withLease(actor, lease, () => {
       requireThat(batch.task_id === lease.task_id, "native_mailbox_task_mismatch");
       decodeNativeMailbox(batch);
+      this.assertRequiredInput(actor, lease, batch);
       const pending = this.mailbox.pending(actor, lease, batch.messages.length);
       requireThat(digest(pending.map(nativeMessage)) === digest(batch.messages), "native_mailbox_changed");
       for (const message of batch.messages) requireThat(!this.kernel.db.sql.query("SELECT 1 FROM native_mailbox_deliveries WHERE message_id=? UNION ALL SELECT 1 FROM native_agent_deliveries WHERE message_id=?")

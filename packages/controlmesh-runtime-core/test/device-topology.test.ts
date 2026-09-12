@@ -15,7 +15,7 @@ function node(id: string, topology: ScheduleNode["topology"], nested?: string) {
     roles: [...workers, "control"].map(role => ({ role, task_id: nested && role === "a" ? nested : `${id}_${role}`,
       resume_prompt: "Continue the original task", ...(nested && role === "a" ? { aggregate: true } : {}) })) };
 }
-function fixture(kind: ScheduleNode["topology"] = "pipeline", nested?: ScheduleNode["topology"], options: { multi_device?: boolean; native?: Record<string, unknown> } = {}) {
+function fixture(kind: ScheduleNode["topology"] = "pipeline", nested?: ScheduleNode["topology"], options: { multi_device?: boolean; native?: Record<string, unknown>; provider?: string } = {}) {
   const root = mkdtempSync(join(tmpdir(), "cm-device-topology-")), path = join(root, "coordinator.sqlite");
   let db: RuntimeDatabase, kernel: RuntimeKernel, coordinator: DeviceCoordinator, runtime: DeviceTopologyRuntime, scheduler: TopologyScheduler;
   let server: ReturnType<DeviceCoordinator["listen"]>, clients: DeviceClient[], workers: DeviceWorker[];
@@ -50,7 +50,7 @@ function fixture(kind: ScheduleNode["topology"] = "pipeline", nested?: ScheduleN
   }
   open();
   for (const id of new Set(plan.nodes.flatMap(node => [node.task_id, ...node.roles.map(role => role.task_id)])))
-    kernel!.submit(actor, `create-${id}`, { task_id: id, chat_id: "fixture", status: "waiting", provider: "synthetic", prompt: "initial", repo_root: root,
+    kernel!.submit(actor, `create-${id}`, { task_id: id, chat_id: "fixture", status: "waiting", provider: options.provider ?? "synthetic", prompt: "initial", repo_root: root,
       ...(id === "root_a" && options.native ? { native_session: options.native } : {}),
       ...(plan.nodes.some(node => node.task_id === id) ? { topology: plan.nodes.find(node => node.task_id === id)!.topology } : {}) });
   const register = () => { scheduler.register("register", plan); scheduler.setMode("activate", "root", 1, "active"); };
@@ -215,5 +215,44 @@ test("completion rechecks device authorization and a missing coordinator executi
       const row = f.db.sql.query("SELECT run_id FROM topology_tasks WHERE child_id='root_a'").get() as { run_id: string };
       expect(() => topologyExecution(peerKernel, actor, "root_a", row.run_id)).toThrow("device_topology_owner_unavailable");
     } finally { peerDB.close(); }
+  } finally { await f.close(); }
+});
+
+
+test("real worker HTTP input carries the assigned topology contract and omission cannot dispatch", async () => {
+  const f = fixture("pipeline", undefined, { provider: "opencode" });
+  try {
+    f.register(); await f.scheduler.tick(); const client = f.clients[0]!, job = await client.inspect("root_a");
+    const authority = await client.claim(job.task_id, job.revision, job.assignment_digest, 3000);
+    try {
+      const batch = await client.command("native_input", { lease: authority.lease }) as { messages: { message_id: string; origin: string; payload: Record<string, unknown> }[] };
+      expect(batch.messages).toHaveLength(1); const message = batch.messages[0]!;
+      expect(message.origin).toBe("schedule"); expect(message.payload).toMatchObject({ source: "coordinator_topology", task_id: "root_a", parent_task_id: "root", worker_role: "a", substage: "worker_running",
+        output_contract: { schema_name: "team-structured-result.schema.json", required_values: { topology: "pipeline", substage: "worker_running", worker_role: "a" } } });
+      expect(await client.command("native_input", { lease: authority.lease })).toEqual(batch);
+      expect(f.db.sql.query("SELECT COUNT(*) AS n FROM messages").get()).toEqual({ n: 1 });
+      const manifest = { schema_version: "controlmesh.device_evidence.v1", device_id: client.deviceId, task_id: job.task_id,
+        episode_id: authority.lease.episode_id, effect_id: "without-context", fence: authority.lease.fence, assignment_digest: job.assignment_digest, manifest_digest: "a".repeat(64) };
+      await expect(client.command("dispatch", { lease: authority.lease, effect_id: "without-context", intent: {}, manifest })).rejects.toThrow("topology_native_context_not_delivered");
+      expect(f.db.sql.query("SELECT COUNT(*) AS n FROM effects").get()).toEqual({ n: 0 });
+      expect(f.db.sql.query("SELECT state FROM episodes").get()).toEqual({ state: "leased" });
+      f.db.sql.query("UPDATE messages SET expires_at=? WHERE message_id=?").run(f.db.now(), message.message_id);
+      await expect(client.command("native_input", { lease: authority.lease })).rejects.toThrow("topology_native_context_not_delivered");
+    } finally { authority.stop(); }
+  } finally { await f.close(); }
+});
+
+
+for (const corrupt of [false, true]) test(`${corrupt ? "changed" : "missing legacy"} topology input cannot obtain a device lease`, async () => {
+  const f = fixture();
+  try {
+    f.register(); await f.scheduler.tick(); const client = f.clients[0]!, job = await client.inspect("root_a");
+    if (corrupt) f.db.sql.query("UPDATE topology_native_inputs SET payload='{}'").run();
+    else f.db.sql.query("DELETE FROM topology_native_inputs").run();
+    expect((await client.queuePage(null)).items).toEqual([]);
+    await expect(client.claim(job.task_id, job.revision, job.assignment_digest, 3000)).rejects.toThrow(corrupt ? "topology_native_context_changed" : "topology_native_context_unavailable");
+    expect(f.db.sql.query("SELECT COUNT(*) AS n FROM episodes").get()).toEqual({ n: 0 });
+    await f.scheduler.tick();
+    expect(f.scheduler.inspect("root")).toMatchObject({ mode: "blocked", reason: { code: corrupt ? "topology_native_context_changed" : "topology_native_context_unavailable" } });
   } finally { await f.close(); }
 });

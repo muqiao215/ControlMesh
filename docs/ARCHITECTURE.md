@@ -524,6 +524,21 @@ origin. Controlled HTTP/configuration/upgrade fixtures do not establish real nat
 acceptance. Device root artifact completion remains gated pending remote current-file and
 source evidence. Older candidates reject schema 25; rollback needs the prior backup.
 
+Schema 26 adds `topology_native_inputs`: one bounded immutable context per native run.
+The topology queue freezes the assigned role/stage, output schema, registered worker roles,
+parent objective and prior checkpoint results in its dispatch transaction. The current
+checkpoint can carry the preceding worker result (notably pipeline review), so that result
+is included. Historical Agent output is explicitly distinguished from current file evidence.
+
+A live assigned child lease can obtain only its own snapshot via `NativeMailboxDelivery`.
+The derived handoff has schedule origin, no fabricated sender episode, and zero forwarding
+hops. Existing native input/manifests/receipt verification prove consumption; no new provider
+prompt or transport protocol bypass is introduced. Missing/corrupt context rejects claim;
+device discovery hides it. Omitted delivery rejects native dispatch, and oversized context
+blocks before another role is queued. Existing mailbox ordering and backpressure remain.
+Older pending candidates without an issued context remain blocked for explicit migration
+handling; completed evidence is retained. This is not authorization to reopen or replay them.
+
 `LocalTaskRuntime` adds the private local task execution owner. SQLite schema 8 stores
 queued runs, their expected task revision and provider/profile binding, plus the claimed
 episode and terminal outcome. Two controllers sharing the configured principal/device

@@ -7,8 +7,10 @@ import { RuntimeDatabase, RuntimeKernel, RuntimeTopology, LocalTaskRuntime, Topo
 import type { TopologyArtifactGate } from "../src/topology-artifacts";
 import { teamWorkerSubstage } from "../src/team-task-result";
 import { digest } from "../src/value";
+import { NativeMailboxDelivery } from "../src/providers/native-mailbox";
+import { nativeInput } from "../src/providers/native-mailbox-input";
 const kinds = ["pipeline", "fanout_merge", "director_worker", "debate_judge"] as const;
-const actor: Principal = { id: "owner", device_id: "local", origin: "human_request", scopes: ["task:create", "task:read", "task:execute", "task:resume", "task:cancel", "task:reconcile", "task:admin", "team:write"] };
+const actor: Principal = { id: "owner", device_id: "local", origin: "human_request", scopes: ["task:create", "task:read", "task:execute", "task:resume", "task:cancel", "task:reconcile", "task:admin", "team:write", "message:read", "message:ack"] };
 const source = { command_origin: "human_request" as const, origin: "user" as const, source_scope: "local_foreground" as const, transport: "terminal" };
 function node(id: string, topology: ScheduleNode["topology"], aggregate?: string) {
   const workers = topology === "pipeline" ? ["a"] : ["a", "b"];
@@ -21,6 +23,7 @@ function fixture(kind: ScheduleNode["topology"] = "pipeline", nested?: ScheduleN
   const raw = { schema_version: "controlmesh.topology_schedule.v1", root_task_id: "root", nodes: [node("root", kind, nested ? "branch" : undefined), ...(nested ? [node("branch", nested)] : [])] };
   const plan = decodeTopologySchedulePlan(raw, 2), calls: { id: string; session: unknown; prompt: unknown }[] = [];
   let db: RuntimeDatabase, kernel: RuntimeKernel, runtime: LocalTaskRuntime, scheduler: TopologyScheduler;
+  let useInput = false; const delivered: Record<string, unknown>[] = [];
   let override: ((id: string, turn: number, value: Record<string, unknown>) => string) | undefined, quota = false;
   const resolver: LocalTaskResolver = task => ({ binding_digest: digest("fixture"), assertCurrent() {},
     async ensureReady() { return quota ? { decision: "wait", reason: "quota", retry_after: null, permit: null, report: null }
@@ -28,8 +31,17 @@ function fixture(kind: ScheduleNode["topology"] = "pipeline", nested?: ScheduleN
     async execute(lease, context) {
       const id = task.task.task_id; calls.push({ id, session: task.task.native_session ?? null, prompt: task.task.prompt });
       const turn = calls.filter(call => call.id === id).length;
-      const assignment = db.sql.query("SELECT parent_id,substage,worker_role FROM topology_tasks WHERE child_id=?").get(id) as { parent_id: string; substage: string; worker_role: string };
-      const owner = plan.nodes.find(node => node.task_id === assignment.parent_id)!, state = new RuntimeTopology(kernel).inspect(actor, owner.task_id)!.state, cp = state.checkpoints.at(-1)!;
+      let assignment: { parent_id: string; substage: string; worker_role: string }, cp: { round_index: number | null }, owner: { topology: string; worker_roles: string[] };
+      if (useInput) {
+        const batch = new NativeMailboxDelivery(kernel).prepare(actor, lease, String(task.task.prompt))!;
+        const body = nativeInput(String(task.task.prompt), batch); expect(body).toContain("coordinator_topology");
+        const payload = batch.messages.at(-1)!.payload; delivered.push(payload);
+        assignment = { parent_id: payload.parent_task_id as string, substage: payload.substage as string, worker_role: payload.worker_role as string };
+        owner = { topology: payload.topology as string, worker_roles: payload.registered_worker_roles as string[] }; cp = { round_index: payload.round_index as number | null };
+      } else {
+        assignment = db.sql.query("SELECT parent_id,substage,worker_role FROM topology_tasks WHERE child_id=?").get(id) as typeof assignment;
+        owner = plan.nodes.find(node => node.task_id === assignment.parent_id)!; cp = new RuntimeTopology(kernel).inspect(actor, assignment.parent_id)!.state.checkpoints.at(-1)!;
+      }
       const control = assignment.worker_role === "control" && ["director_worker", "debate_judge"].includes(owner.topology);
       const value: Record<string, unknown> = control ? { topology: owner.topology, summary: "controller output", round_index: cp.round_index,
         ...(owner.topology === "director_worker" ? assignment.substage === "planning" ? { decision: "dispatch_workers", dispatch_roles: owner.worker_roles } : { decision: "complete" }
@@ -51,7 +63,7 @@ function fixture(kind: ScheduleNode["topology"] = "pipeline", nested?: ScheduleN
       ...(nodes.has(id) ? { topology: nodes.get(id)!.topology } : {}), ...(gate && id === "root" ? { repo_root: root, completion_requirements: { schema_version: "controlmesh.task_completion.v1", files: [{ path: "artifact.txt", mode: "write" }] } } : {}) }, { chat_id: "fixture" });
   const register = () => scheduler.register("register", raw);
   const activate = () => scheduler.setMode(`activate-${scheduler.inspect("root").revision}`, "root", scheduler.inspect("root").revision, "active");
-  return { root, path, plan, raw, calls, resolver, register, activate,
+  return { root, path, plan, raw, calls, resolver, register, activate, delivered, contextOnly() { useInput = true; },
     get db() { return db; }, get kernel() { return kernel; }, get runtime() { return runtime; }, get scheduler() { return scheduler; },
     output(fn?: typeof override) { override = fn; }, quota(value: boolean) { quota = value; },
     async restart() { await scheduler.stop(); await runtime.stop(); db.close(); open(); },
@@ -192,8 +204,8 @@ test("schema twenty-three upgrade adds empty scheduler storage without changing 
   const f = fixture();
   try {
     const before = f.kernel.inspect(actor, "root");
-    f.db.sql.exec("DROP TABLE topology_device_runs; ALTER TABLE topology_tasks DROP COLUMN execution_source; DROP TABLE topology_schedule_members; DROP TABLE topology_schedules; PRAGMA user_version=23"); await f.restart();
-    expect(f.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 25 });
+    f.db.sql.exec("DROP TABLE topology_native_inputs; DROP TABLE topology_device_runs; ALTER TABLE topology_tasks DROP COLUMN execution_source; DROP TABLE topology_schedule_members; DROP TABLE topology_schedules; PRAGMA user_version=23"); await f.restart();
+    expect(f.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 26 });
     expect(f.kernel.inspect(actor, "root")).toEqual(before);
     expect(f.db.sql.query("SELECT COUNT(*) AS n FROM topology_schedules").get()).toEqual({ n: 0 });
   } finally { await f.close(); }
@@ -206,12 +218,36 @@ for (const completed of [false, true]) test(`schema twenty-four upgrade preserve
     f.register(); if (completed) { f.activate(); await f.scheduler.drain(); }
     const schedule = f.scheduler.inspect("root"), task = f.kernel.inspect(actor, "root"), calls = [...f.calls];
     const proof = f.db.sql.query("SELECT * FROM topology_completions").all();
-    f.db.sql.exec("DROP TABLE topology_device_runs; ALTER TABLE topology_tasks DROP COLUMN execution_source; PRAGMA user_version=24");
+    f.db.sql.exec("DROP TABLE topology_native_inputs; DROP TABLE topology_device_runs; ALTER TABLE topology_tasks DROP COLUMN execution_source; PRAGMA user_version=24");
     await f.restart();
-    expect(f.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 25 });
+    expect(f.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 26 });
     expect(f.scheduler.inspect("root")).toEqual(schedule); expect(f.kernel.inspect(actor, "root")).toEqual(task);
     expect(f.db.sql.query("SELECT * FROM topology_completions").all()).toEqual(proof);
     expect(f.db.sql.query("SELECT DISTINCT execution_source FROM topology_tasks").all()).toEqual(completed ? [{ execution_source: "local" }] : []);
     await f.scheduler.drain(); expect(f.calls).toEqual(calls); expect(f.scheduler.inspect("root")).toEqual(schedule);
+  } finally { await f.close(); }
+});
+
+
+for (const kind of kinds) test(`assigned ${kind} roles obtain their stage and earlier results through native input`, async () => {
+  const f = fixture(kind);
+  try {
+    f.contextOnly(); f.register(); f.activate(); await f.scheduler.drain();
+    expect(f.scheduler.inspect("root").mode).toBe("completed"); expect(f.delivered.length).toBeGreaterThan(1);
+    expect(f.delivered.every(value => value.source === "coordinator_topology" && value.parent_task_id === "root")).toBe(true);
+    expect(f.delivered.some(value => (value.prior_results as unknown[]).length > 0)).toBe(true);
+    const contexts = f.db.sql.query("SELECT payload,digest FROM topology_native_inputs").all() as { payload: string; digest: string }[];
+    expect(contexts.every(value => digest(JSON.parse(value.payload)) === value.digest)).toBe(true);
+    expect(f.db.sql.query("SELECT DISTINCT origin,sender_task,remaining_hops FROM messages").all()).toEqual([{ origin: "schedule", sender_task: null, remaining_hops: 0 }]);
+  } finally { await f.close(); }
+});
+
+test("a context that does not fit fails before dispatch instead of truncating earlier work", async () => {
+  const f = fixture();
+  try {
+    f.output((_id, _turn, value) => JSON.stringify({ ...value, summary: "x".repeat(32768) }));
+    f.register(); f.activate(); await f.scheduler.drain();
+    expect(f.scheduler.inspect("root")).toMatchObject({ mode: "blocked", reason: { code: "topology_native_context_too_large" } });
+    expect(f.calls).toHaveLength(1);
   } finally { await f.close(); }
 });

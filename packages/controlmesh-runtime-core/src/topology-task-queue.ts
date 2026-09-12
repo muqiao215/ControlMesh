@@ -1,3 +1,4 @@
+import { issueTopologyNativeInput } from "./topology-native-input";
 import { topologyExecution } from "./topology-execution";
 import { readAggregateResult } from "./topology-aggregate";
 import { command, requireScope } from "./commands";
@@ -50,6 +51,7 @@ export class TopologyTaskQueue {
       const run = this.runtime.enqueue(`topology-run-${digest([actor.id, requestId])}`, childId, childRevision);
       this.kernel.db.sql.query("INSERT INTO topology_tasks (child_id,parent_id,topology,substage,worker_role,checkpoint_id,run_id,accepted,execution_id,execution_source) VALUES (?,?,?,?,?,?,?,NULL,?,?)")
         .run(childId, parentId, topology.state.topology, cp.substage, role, cp.checkpoint_id, run.run_id, topology.state.execution_id, this.runtime.topologySource);
+      issueTopologyNativeInput(this.kernel, actor, childId);
       return { child_id: childId, run_id: run.run_id };
     }, value => { this.runtime.assertPrincipal(actor); requireScope(actor, "team:write"); requireScope(actor, "task:execute"); this.kernel.inspect(actor, parentId); this.kernel.inspect(actor, childId); return value; });
   }

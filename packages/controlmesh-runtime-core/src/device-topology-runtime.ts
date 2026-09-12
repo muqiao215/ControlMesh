@@ -4,6 +4,7 @@ import type { DeviceAssignment, DeviceCoordinator } from "./device-coordinator";
 import type { LocalRun } from "./local-task-runtime";
 import type { TopologyRuntime } from "./topology-runtime";
 import { registerDeviceTopologyOwner, type TopologyExecution } from "./topology-execution";
+import { assertTopologyNativeInput } from "./topology-native-input";
 import { canonical, digest, identifier, object, requireThat, RuntimeConflict } from "./value";
 export type DeviceTopologyRoute = Omit<DeviceAssignment, "input">;
 interface Row {
@@ -106,6 +107,8 @@ export class DeviceTopologyRuntime implements TopologyRuntime {
       outcome: reason === null ? null : { reason, retry_after: null } });
     if (task.task.status === "cancelled") return result("cancelled", "task_cancelled");
     try {
+      const currentRun = this.kernel.db.sql.query("SELECT run_id FROM topology_tasks WHERE child_id=?").get(row.task_id) as { run_id: string } | null;
+      if (currentRun?.run_id === runId) assertTopologyNativeInput(this.kernel, row.task_id);
       const current = this.coordinator.inspectIssued(actor, row.task_id, lease?.device_id);
       requireThat(current.assignment_digest === row.assignment_digest && current.execution_digest === row.execution_digest
         && canonical(current.specification) === row.specification, "device_topology_assignment_changed");

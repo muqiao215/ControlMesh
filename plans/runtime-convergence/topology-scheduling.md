@@ -178,3 +178,36 @@ artifact gate; the device configuration has no remote artifact gate yet and ther
 blocks such completion with `topology_artifact_gate_required`. Remote current-source and
 artifact acceptance and reviewed SpecMesh closeout remain required before full rollout.
 Older candidates reject schema 25; rollback requires the pre-upgrade database backup.
+
+
+## Native role input and actual acceptance
+
+Schema 26 freezes `topology_native_inputs` at each native dispatch. The payload is ordinary
+attributed mailbox data: `controlmesh.topology_task_context.v1`, with assignment identity,
+role/stage/round, registered worker roles, frozen control limits, parent objective, actual
+result schema and previous checkpoint results. It includes results carried on the current
+checkpoint; pipeline review carries its previous worker output there. No result grants
+permission or establishes current file bytes. The Agent returns one JSON object matching
+the contract and reports the actual outcome.
+
+The context is limited to 32768 bytes and must fit the existing native prompt budget with
+older mailbox messages. Nothing is silently truncated or skipped. A child lease authorizes
+only its own stored context. Native input preparation materializes an idempotent handoff
+with schedule origin and zero forwarding hops. Existing native mailbox manifests and
+verified user-message IDs establish delivery and consumption. Missing or altered snapshots
+cannot obtain a lease; native device dispatch cannot omit the required handoff. This does
+not change public task execution fields or copy native stores between devices.
+
+Candidates upgraded from schema 25 retain completed evidence, but old pending assignments
+without a context snapshot reject new admission. Explicit pending-assignment migration
+remains required before rollout; do not synthesize an old input or replay an unknown run.
+
+A real Claude/MiniMax-M3 canary used one successful preflight and two native task inputs.
+The worker read all seven required documents, produced accepted structured output, and its
+context message was consumed with native input evidence. The reviewer received the next
+context but made zero file tool calls; `workspace_tool_required_read_missing` retained it
+as unresolved. The pipeline did not complete and the planned original-session reopen did
+not execute. This is partial positive input-delivery evidence plus a real negative gate,
+not full topology or native-continuity acceptance. Retained local report:
+`outputs/runtime-convergence/topology-input-native-acceptance-20260912.json` in the operator
+workspace. Its attempt and native sessions must not be replayed automatically.

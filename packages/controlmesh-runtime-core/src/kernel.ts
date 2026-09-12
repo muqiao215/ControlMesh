@@ -1,4 +1,5 @@
 import { topologyNativeClaim } from "./topology-execution";
+import { assertTopologyNativeInput } from "./topology-native-input";
 import { assertTopologyCompletionPermit, type TopologyCompletionPermit } from "./topology-artifacts";
 import { verifiedTopologyCompletion } from "./topology-completion";
 import { decodeTopologyState, startTopology } from "./team-topology";
@@ -215,7 +216,7 @@ export class RuntimeKernel {
       this.revision(task, expectedRevision);
       requireThat(!terminal.has(task.status) && !task.needs_reconciliation, "task_not_admitted");
       this.assertNativeTask(actor, taskId);
-      this.assertTopologyParents(taskId); topologyNativeClaim(this, actor, taskId);
+      this.assertTopologyParents(taskId); assertTopologyNativeInput(this, taskId); topologyNativeClaim(this, actor, taskId);
       const now = this.db.now();
       if (task.active_episode) {
         const previous = this.db.sql.query("SELECT * FROM episodes WHERE episode_id=?").get(task.active_episode) as EpisodeRow;

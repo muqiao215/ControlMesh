@@ -1372,3 +1372,59 @@ initially omitted the canonical v1 directory; no schema was changed.
 Remote artifact/current-source aggregation and reviewed SpecMesh project closeout remain
 unimplemented here. Root completion with required files blocks instead of accepting remote
 text as current local file evidence. Full CM-R0–CM-R7 and release/default switch remain open.
+
+
+## Native topology context gap
+
+Static trace after cd4a47f found that nativeInput only included the task prompt and pending
+mailbox. Existing topology fixtures obtained current stage/role/round by directly reading
+coordinator SQLite; a real device Agent cannot do this. Current work freezes a bounded
+host-derived input per dispatched native run, including role/stage/output schema and
+attributed prior checkpoint results. It is delivered by the existing native mailbox and
+verified using its original input receipts. Schema 26 adds topology_native_inputs.
+This is an actual execution gap, not a new user workflow or public API.
+
+Input carries schedule provenance, zero forwarding hops and no fabricated sender episode.
+The assigned child lease can obtain only its own frozen context. Real provider dispatch
+must include that message; a missing batch is refused before native side effects. Oversize
+context blocks rather than silently truncating earlier results. Native continuation still
+uses the actual provider session. Current source/artifact verification remains separate.
+
+
+Review corrected a concrete pipeline detail: the review checkpoint itself carries the
+previous worker result. Excluding the current checkpoint left reviewers without that
+result; focused tests caught the omission and now cover it and oversized-context refusal.
+Focused input gate passed 74 tests / 618 assertions (7.55s), then 33 device admission tests /
+319 assertions (3.94s). Full pinned gate passed 688 tests / 8936 assertions across 68 files
+in 219.43s, exit 0, /tmp/cm-topology-input-full.log. Inventory drift and typecheck passed.
+
+Real native canary `topology-input-native-acceptance-20260912` failed as a whole. A single
+preflight succeeded. The worker made seven workspace read calls, completed, and consumed
+its context with actual native proof. The reviewer made zero tool calls, retained its
+received context, and failed workspace_tool_required_read_missing. Both native sessions
+have exactly one user turn. No second execution/reopen ran and no replay was attempted.
+The script is terminal; its operator-workspace report is guarded with do_not_replay=true.
+Do not treat retained output or model claims as fulfilling missing reads. Future recovery
+work must distinguish this known contract failure from uncertain side effects without
+weakening required-read validation or automatically rerunning the failed attempt.
+
+
+Next recovery seam, confirmed by code inspection: ClaudeTaskEvidence.verify establishes
+terminal control output, original native session, exact native prompt, source identity and
+turn bounds before NativeWorkspaceFiles verifies required reads. A required-read miss
+throws before an evidence result is returned. ClaudeTaskAdapter and LocalTaskRuntime then
+retain the dispatched effect as unknown/stale through their generic catch paths. Correct
+recovery must not classify every RuntimeConflict as a known failure. It needs a separately
+verified task-contract failure result after native/tool-receipt verification, preserving the
+original session and missing requirements while refusing any unverified external side
+effect. The recorded reviewer is read-only with zero file calls; do not replay it to test
+this future implementation. Use retained data for inspection and controlled fault fixtures.
+
+Final review also closed expired-context fallback: a required context whose message expired
+must not become an undefined/empty mailbox input. The new negative case rejects before
+native invocation. The full gate including this guard completed: 688 pass / 8937 assertions across 68 files,
+220.41s, exit 0, /tmp/cm-topology-input-final.log. The original process is terminal.
+Afterward a final device visibility check was verified with 33 device-topology tests / 322
+assertions, 4.84s, plus typecheck (/tmp/cm-topology-input-visibility.log). Missing/corrupt
+input now visibly blocks the schedule instead of remaining queued while discovery hides it.
+The full log predates that final visibility check; remote CI binds the final published SHA.
