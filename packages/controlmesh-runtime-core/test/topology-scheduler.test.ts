@@ -242,10 +242,12 @@ test("blocked quota does not create events or automatic retries on repeated poll
 test("pausing during asynchronous artifact preparation fences the pending terminal transition", async () => {
   let entered!: () => void, release!: () => void;
   const enteredPromise = new Promise<void>(resolve => { entered = resolve; }), barrier = new Promise<void>(resolve => { release = resolve; });
-  const gate = { async prepare() { entered(); await barrier; } } as unknown as TopologyArtifactGate;
+  const step: TopologyArtifactGate["step"] = (_actor, _task, _revision, run) => run();
+  const gate = { step, async prepare() { entered(); await barrier; } } as unknown as TopologyArtifactGate;
   const f = fixture("pipeline", undefined, gate);
   try {
-    f.register(); f.activate(); const pending = f.scheduler.drain(); await enteredPromise;
+    f.register(); f.activate(); const pending = f.scheduler.drain();
+    await Promise.race([enteredPromise, pending.then(() => { throw new Error(`preparation not reached: ${JSON.stringify(f.scheduler.inspect("root"))}`); })]);
     const before = f.scheduler.inspect("root"); f.scheduler.setMode("pause", "root", before.revision, "paused"); release(); await pending;
     expect(f.scheduler.inspect("root").mode).toBe("paused"); expect(f.kernel.inspect(actor, "root").task.status).toBe("waiting");
     expect(f.db.sql.query("SELECT COUNT(*) AS n FROM topology_completions").get()).toEqual({ n: 0 });
@@ -275,8 +277,8 @@ test("schema twenty-three upgrade adds empty scheduler storage without changing 
   const f = fixture();
   try {
     const before = f.kernel.inspect(actor, "root");
-    f.db.sql.exec("DROP TABLE device_artifact_files; DROP TABLE topology_native_inputs; DROP TABLE topology_device_runs; ALTER TABLE topology_tasks DROP COLUMN execution_source; DROP TABLE topology_schedule_members; DROP TABLE topology_schedules; PRAGMA user_version=23"); await f.restart();
-    expect(f.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 27 });
+    f.db.sql.exec("DROP TABLE topology_artifact_publications; DROP TABLE device_artifact_files; DROP TABLE topology_native_inputs; DROP TABLE topology_device_runs; ALTER TABLE topology_tasks DROP COLUMN execution_source; DROP TABLE topology_schedule_members; DROP TABLE topology_schedules; PRAGMA user_version=23"); await f.restart();
+    expect(f.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 28 });
     expect(f.kernel.inspect(actor, "root")).toEqual(before);
     expect(f.db.sql.query("SELECT COUNT(*) AS n FROM topology_schedules").get()).toEqual({ n: 0 });
   } finally { await f.close(); }
@@ -289,9 +291,9 @@ for (const completed of [false, true]) test(`schema twenty-four upgrade preserve
     f.register(); if (completed) { f.activate(); await f.scheduler.drain(); }
     const schedule = f.scheduler.inspect("root"), task = f.kernel.inspect(actor, "root"), calls = [...f.calls];
     const proof = f.db.sql.query("SELECT * FROM topology_completions").all();
-    f.db.sql.exec("DROP TABLE device_artifact_files; DROP TABLE topology_native_inputs; DROP TABLE topology_device_runs; ALTER TABLE topology_tasks DROP COLUMN execution_source; PRAGMA user_version=24");
+    f.db.sql.exec("DROP TABLE topology_artifact_publications; DROP TABLE device_artifact_files; DROP TABLE topology_native_inputs; DROP TABLE topology_device_runs; ALTER TABLE topology_tasks DROP COLUMN execution_source; PRAGMA user_version=24");
     await f.restart();
-    expect(f.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 27 });
+    expect(f.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 28 });
     expect(f.scheduler.inspect("root")).toEqual(schedule); expect(f.kernel.inspect(actor, "root")).toEqual(task);
     expect(f.db.sql.query("SELECT * FROM topology_completions").all()).toEqual(proof);
     expect(f.db.sql.query("SELECT DISTINCT execution_source FROM topology_tasks").all()).toEqual(completed ? [{ execution_source: "local" }] : []);

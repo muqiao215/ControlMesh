@@ -912,8 +912,16 @@ The private TypeScript device path supports opt-in completion-file delivery thro
 logical receipts, tied to the native manifest and assignment; accepted task output is the
 only source of read authority. Normal execution uploads under its lease; interrupted upload
 recovery uses the existing expiring reconciliation challenge, without another native turn.
-Receiving bytes is separate from canonical workspace publication. Configuration, limits and
-the local artifact read command are in the [device runbook](../plans/runtime-convergence/topology-scheduling.md).
+Receiving bytes is separate from canonical workspace publication. The coordinator's optional
+`publish_received` artifact profile delegates that second authority to `TopologyPublication`.
+Before initial child dispatch, database 28 binds a sparse `WorkspaceStage` baseline to the
+parent revision, execution and profile. Accepted device evidence selects exact write files;
+the existing stage journal seals and publishes them under a current scheduler lease. Local
+changes conflict, unrelated files remain outside the snapshot, and restart resumes the same
+proposal without rerunning a provider. Each file replacement is durable; a multi-file result
+is not an atomic filesystem transaction. SpecMesh requirements are checked before and after
+publication, while reviewed project closeout remains separate. Configuration, limits and the
+local artifact read command are in the [device runbook](../plans/runtime-convergence/topology-scheduling.md).
 
 See [CODEKIT-INTEGRATION](CODEKIT-INTEGRATION.md) for the new module boundary, public invocation and limits. This local implementation does not establish deployment acceptance.
 

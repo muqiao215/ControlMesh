@@ -120,11 +120,16 @@ export function openDeviceRuntime(path: string): DeviceRuntime {
         let artifactGate: TopologyArtifactGate | undefined;
         if (schedule.artifacts !== undefined) {
           const artifacts = schedule.artifacts;
-          fields(artifacts, ["workspace", "allowed_files", "device_sources"], "invalid_device_artifact_profile");
+          fields(artifacts, ["workspace", "allowed_files", "device_sources", "publish_received"], "invalid_device_artifact_profile");
           requireThat(typeof artifacts.workspace === "string" && Array.isArray(artifacts.allowed_files) && object(artifacts.device_sources), "invalid_device_artifact_profile");
           for (const [deviceId, workspaceId] of Object.entries(artifacts.device_sources))
             requireThat(devices.some(device => device.device_id === deviceId && device.workspace_ids.includes(workspaceId as string)), "topology_artifact_device_source_not_registered");
-          artifactGate = new TopologyArtifactGate(kernel, artifacts as unknown as TopologyArtifactConfiguration, current, specmesh);
+          let publicationDirectory: string | undefined;
+          if (artifacts.publish_received === true) {
+            publicationDirectory = join(root, "topology-publications");
+            mkdirSync(publicationDirectory, { recursive: true, mode: 0o700 });
+          }
+          artifactGate = new TopologyArtifactGate(kernel, artifacts as unknown as TopologyArtifactConfiguration, current, specmesh, publicationDirectory);
         }
         const scheduler = new TopologyScheduler(kernel, runtime, actor, { interval_ms: schedule.interval_ms as number | undefined,
           lease_ms: schedule.lease_ms as number | undefined, max_steps: schedule.max_steps as number | undefined }, artifactGate);

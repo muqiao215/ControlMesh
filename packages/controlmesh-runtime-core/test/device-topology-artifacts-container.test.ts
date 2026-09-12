@@ -8,7 +8,7 @@ import { RuntimeDatabase } from "../src/database";
 const actual = process.env.CM_CONTAINER_TEST_IMAGE ? test : test.skip;
 const sha = (text: string) => createHash("sha256").update(text).digest("hex");
 
-actual("configured coordinator verifies delivered artifacts and explicitly continues the original native sessions after restart", async () => {
+for (const publish of [false, true]) actual(`configured coordinator delivers artifacts (publish_received=${publish}) and continues original sessions after restart`, async () => {
   // The Claude process/transcript are synthetic; Docker, MCP, file receipts, native verifier and startup controls are real.
   const root = mkdtempSync(join(tmpdir(), "cm-device-artifact-container-"));
   let coordinator: DeviceRuntime | undefined, worker: DeviceRuntime | undefined;
@@ -19,11 +19,11 @@ actual("configured coordinator verifies delivered artifacts and explicitly conti
     const built = await Bun.build({ entrypoints: [join(import.meta.dir, "helpers/claude-container-native.ts")], target: "node", format: "esm" }); expect(built.success).toBe(true);
     const executable = join(root, "claude"); writeFileSync(executable, `#!/usr/local/bin/node\n${await built.outputs[0].text()}`, { mode: 0o700 });
     const token = randomBytes(32).toString("base64url"), coordinatorPath = join(root, "coordinator.json"), workerPath = join(root, "worker.json");
-    const route = { workspace_id: "project", capability: "claude.write", device_ids: ["worker-device"] };
+    const route = { workspace_id: "project", capability: "claude.write", device_ids: ["worker-device"], ...(publish ? { artifact_transfer: true } : {}) };
     const profile = { schema_version: "controlmesh.device_runtime.v1", mode: "candidate", role: "coordinator", state_root: state,
       principal_id: "operator", device_id: "coordinator", devices: [{ device_id: "worker-device", principal_id: "operator", token_sha256: sha(token), capabilities: ["claude.write"], workspace_ids: ["project"] }],
       topology_scheduler: { auto_start: false, routes: { worker: route, reviewer: route },
-        artifacts: { workspace: canonical, allowed_files: ["result.txt"], device_sources: { "worker-device": "project" } } } };
+        artifacts: { workspace: canonical, allowed_files: ["result.txt"], device_sources: { "worker-device": "project" }, ...(publish ? { publish_received: true } : {}) } } };
     for (const sources of [{ "foreign-device": "project" }, { "worker-device": "foreign-workspace" }, {}]) {
       writeFileSync(coordinatorPath, JSON.stringify({ ...profile, topology_scheduler: { ...profile.topology_scheduler,
         artifacts: { ...profile.topology_scheduler.artifacts, device_sources: sources } } }), { mode: 0o600 });
@@ -57,13 +57,16 @@ actual("configured coordinator verifies delivered artifacts and explicitly conti
     }
     const originalInputs = readFileSync(join(config, "inputs.jsonl")); expect(originalInputs.toString().trim().split("\n")).toHaveLength(2);
     expect(existsSync(join(canonical, "result.txt"))).toBe(false);
-    await call("not-delivered", "drain_schedules"); expect(await call("blocked", "inspect_schedule", { root_task_id: "root" })).toMatchObject({ mode: "blocked", reason: { code: "topology_artifact_file_unavailable" } });
-    // Explicit fixture delivery; no claim that the runtime has an automatic cross-device file transport.
-    copyFileSync(join(workspace, "result.txt"), join(canonical, "result.txt"));
+    if (!publish) {
+      await call("not-delivered", "drain_schedules"); expect(await call("blocked", "inspect_schedule", { root_task_id: "root" })).toMatchObject({ mode: "blocked", reason: { code: "topology_artifact_file_unavailable" } });
+      // Legacy verifier-only mode still needs explicit external file delivery.
+      copyFileSync(join(workspace, "result.txt"), join(canonical, "result.txt"));
+    }
     await worker.close(); worker = undefined; await coordinator.close(); coordinator = openDeviceRuntime(coordinatorPath);
     const blocked = await call("after-restart", "inspect_schedule", { root_task_id: "root" });
-    await call("delivered", "activate_schedule", { root_task_id: "root", expected_revision: blocked.revision });
+    if (!publish) await call("delivered", "activate_schedule", { root_task_id: "root", expected_revision: blocked.revision });
     await call("complete", "drain_schedules"); expect((await call("root", "inspect_task", { task_id: "root" })).task.status).toBe("done");
+    expect(readFileSync(join(canonical, "result.txt"), "utf8")).toBe("device artifact fact\n");
     expect(readFileSync(join(config, "inputs.jsonl"))).toEqual(originalInputs);
     const db = new RuntimeDatabase(join(state, "runtime.sqlite"));
     try {

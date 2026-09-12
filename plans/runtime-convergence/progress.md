@@ -8,10 +8,10 @@ The 512-module/57-field ledger is an inventory, not completed parity.
 
 | Delivery area | Verified state | Remaining acceptance |
 |---|---|---|
-| Published CI baseline | 2de44d0; CI 34704392823 success | Verify this artifact-transport checkpoint after publication |
+| Published CI baseline | ad9c20c; CI 34707785916 success | Verify canonical publication checkpoint after publication |
 | TS runtime | Kernel, local/device execution, mailbox, topology and retained recovery have scoped implementations/tests | Complete provider/transport/store/terminal ownership and parity |
 | Native continuation | Simple direct and streamed exact recall passed; earlier topology first runs and current artifacts passed | Full worker/merger continuation and complex-context acceptance still fail |
-| Multi-device | Earlier physical ARM64/x64 evidence plus bounded HTTP artifact inbox/upload/recovery implementation | Canonical publication, initial workspace distribution, physical transfer acceptance and full profiles |
+| Multi-device | Earlier physical ARM64/x64 evidence; bounded HTTP artifact inbox/upload/recovery; opt-in canonical publication with focused acceptance | Final CI, initial workspace distribution, physical transfer acceptance and full profiles |
 | SpecMesh/History | Independent integration and scoped continuity evidence exist | Reviewed closeout and remaining full integration acceptance |
 | Release/local alignment | Production still Python 0.43.0 | Full-goal acceptance, release/install, staged default switch |
 
@@ -22,7 +22,21 @@ shows invalid read arguments, not a proven concurrent file change. The attempt a
 05a0e591-a529-4401-b28a-932b3e948f95 are guarded against replay. No new native model canary
 was launched during this correction.
 
-Current checkpoint implements opt-in native completion-file upload over the authenticated
+Current checkpoint connects accepted inbox bytes to optional canonical publication.
+Database 28 and a sparse WorkspaceStage capture write-file baselines before child dispatch,
+preserve unrelated local edits, reject conflicting changes and recover per-file progress.
+All writes check scheduler authority. Independent SpecMesh checks bracket publication.
+Focused tests passed: 19 stage tests / 82 assertions and 21 expanded HTTP/native-fixture
+integration tests / 264 assertions / 57.43s. Configured Docker, restart, pause and independent
+SpecMesh cases passed; typecheck passed. Log: /tmp/cm-canonical-configured.log.
+Full regression: 789 passed / one test-double timeout / 790 cases / 10075 assertions /
+73 files / 364.85s, exit 1 (/tmp/cm-canonical-full.log). The old preparation double omitted
+the new step method; its correction and early-exit reporting passed the full scheduler file:
+62 tests / 669 assertions / 25.88s (/tmp/cm-canonical-scheduler.log). Typecheck passed after
+the correction. Production code was unchanged; final exact-commit CI remains pending.
+Do not describe these separate runs as a single green full-suite result. No model input launched.
+
+The preceding checkpoint implements opt-in native completion-file upload over the authenticated
 worker port. Database 27 stores bounded chunks; terminal acceptance independently verifies
 full bytes against the original completion evidence. Normal worker execution and explicit
 retained-result recovery use the same receipts. Local read_artifact provides current accepted
@@ -77,9 +91,8 @@ Detailed evidence and guarded attempts are in findings.md; no failed result was 
 
 ## Remaining
 
-1. Verify exact-commit CI for the artifact-transport checkpoint; all local gates passed.
-2. Implement canonical artifact publication with current-workspace conflict checks, then
-   complete initial workspace distribution and physical transfer acceptance. Finish real
+1. Publish the canonical-publication checkpoint and verify final exact-commit CI, including the corrected scheduler fixture.
+2. Complete initial workspace distribution and physical transfer/publication acceptance. Finish real
    topology/current-source acceptance and reviewed SpecMesh closeout; guard failed attempts.
 3. Complete remaining provider, transport, store and terminal owners and the parity ledger.
 4. Full-goal acceptance, release, installed-version alignment and staged default switch.
@@ -96,15 +109,15 @@ Retained operator workspace: outputs/runtime-convergence/topology-input-native-a
 Also guarded: device-artifact[-configured]-native-acceptance-20260912 reports/scripts in
 the same operator directory. The configured attempt ended at structured-result collection;
 do not replay its worker session or relabel it as an artifact/continuation success.
-Schema 27 rollback requires a pre-upgrade backup. Legacy pending assignments without a
-frozen input block. Root artifact acceptance still requires already-delivered canonical files;
-the new inbox transports and retains bytes but canonical publication remains pending.
+Schema 28 rollback requires a pre-upgrade backup. Legacy pending assignments without a
+frozen input block. Automatic publication is opt-in, with a baseline captured before initial
+dispatch; earlier in-flight schedules cannot acquire that baseline retroactively. Interrupted
+multi-file publication can leave partial progress; inspect and explicitly recover its journal.
 
 ## Next
 
-Verify remote CI for this artifact-inbox owner. All local gates passed. Then connect
-accepted inbox bytes to a durable, conflict-checked canonical publication path; initial
-workspace delivery and two-device transfer acceptance remain required. Continue the other
+Commit/push canonical publication and verify its exact-commit CI, including the corrected scheduler fixture.
+Then qualify initial workspace delivery and two-device transfer/publication. Continue the other
 runtime owners and full rollout gates. Do not return to repeated similar model probes.
 
 ## Retained evidence

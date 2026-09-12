@@ -1,8 +1,37 @@
 # Findings
 
+## Canonical artifact publication — 2026-09-13 checkpoint
+
+The inbox owner at ad9c20c passed exact-commit CI 34707785916. Received bytes now have a
+separate opt-in publication owner. Database 28 records the canonical baseline before initial
+child dispatch, bound to the parent revision, execution and profile. A sparse WorkspaceStage
+reuses durable proposal/promotion recovery for only the completion contract's write files.
+Unrelated files and large trees are untouched. Already delivered matching paths need no
+second write; pending paths still check their original baseline. A conflicting current file,
+changed native witness or ambiguous device output prevents further publication.
+
+Scheduler authority is rechecked for every file mutation. SpecMesh requirements are checked
+before and after publication, remain bound to their original source hash and cannot be a
+write output. This is per-file durability with recoverable partial progress, not an atomic
+multi-file commit. No fresh native model input, live database migration or production switch
+was performed. Physical end-to-end acceptance and initial workspace distribution remain open.
+
+Focused checks passed 19 sparse-stage tests / 82 assertions. Expanded integration passed
+21 tests / 264 assertions / two files / 57.43s, including the configured Docker path before
+and after restart, pause between canonical writes, standalone SpecMesh publication checks
+and requirements changes. Log: /tmp/cm-canonical-configured.log. The added fixture initially
+widened a task status literal to string; explicit LegacyTask typing fixed typecheck without
+changing production behavior. Full gate ran 790 tests / 73 files / 364.85s: 789 passed, one
+timed out (/tmp/cm-canonical-full.log). The old asynchronous-preparation test double lacked
+the new step method, so scheduling blocked before its awaited barrier. Completing that test
+double and detecting early drain exit fixed the case; the entire scheduler file then passed
+62 tests / 669 assertions / 25.88s (/tmp/cm-canonical-scheduler.log), and typecheck passed.
+No production code changed after the full run. Exact-commit CI must still verify the final
+tree; the mixed local runs are not reported as one green full-suite run.
+
 ## Device artifact transport — 2026-09-13 checkpoint
 
-The canonical topology gate currently verifies pre-delivered files only. This iteration
+At the transport checkpoint the canonical topology gate verified pre-delivered files only. That iteration
 adds explicit assignment/route artifact_transfer opt-in, authenticated bounded chunk upload,
 and a private durable coordinator inbox. Native completion requires the full uploaded bytes
 to match its original completion contract and evidence. Receiving files does not authorize
@@ -16,7 +45,7 @@ HTTP delivery and explicit retained-result recovery cases already passed for tex
 and chunked files; focused integration passed 94 tests / 975 assertions; authority/budget/upgrade checks
 passed 8 / 31. Typecheck and nine Python protocol tests passed; Web rebuilt. Full
 runtime regression passed: 774 / 9918 / 73 files / 323.71s, exit 0. Exact-commit
-remote CI remains to be verified. Recovery uploads use
+CI 34707785916 passed for ad9c20c. Recovery uploads use
 the existing short-lived reconciliation challenge, so a lost upload never authorizes another
 native model run. Credentials and provider session databases remain device-local.
 

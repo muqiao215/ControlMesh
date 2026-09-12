@@ -289,9 +289,10 @@ and `expected_sha256` from the first page. Reads reject pending, failed, superse
 or corrupt artifacts. The public read-only facade is unchanged.
 
 The inbox is a transfer destination, not permission to overwrite canonical project files.
-Automatic canonical publication with conflict detection and initial workspace distribution
-remain separate pending owners. Database 27 is additive; rollback to a binary supporting at
-most database 26 requires the pre-upgrade backup. No production database was migrated here.
+Publication needs the separate coordinator opt-in below. Initial workspace distribution and
+physical end-to-end transfer/publication acceptance remain pending. Database 28 adds the
+publication journal; rollback to a binary supporting at most database 27 requires the
+pre-upgrade backup. No production database was migrated here.
 
 The device coordinator can verify already-delivered canonical files against an explicitly
 registered remote source. Add this to its `topology_scheduler` configuration:
@@ -316,8 +317,33 @@ Missing files report `topology_artifact_file_unavailable`; changed bytes, symlin
 resumed children, changed evidence or revoked devices block or roll back the parent step.
 A SpecMesh-derived root contract still checks its current independent source before commit.
 
-This gate neither copies a file nor starts a provider. Delivery currently needs an explicit
-existing file/Git workflow; automatic cross-device artifact transport and remote-only final
-workspaces are still pending. Controlled HTTP/file-owner tests and the normal startup
-container fixture verify this canonical-delivery profile; model acceptance is recorded
-separately in the active progress file.
+Without `publish_received`, this gate only verifies files delivered by an external workflow.
+To publish accepted inbox files automatically, add `"publish_received":true` to `artifacts`
+and enable `artifact_transfer:true` on the device route that produces each file. The canonical
+project directory must already exist; individual completion destinations may be absent.
+
+Before initial dispatch, the scheduler snapshots only the root contract's `mode:"write"`
+paths into private `state_root/topology-publications`. Each is bound to the root revision,
+topology execution and frozen profile. Files outside that selection are neither copied nor
+published; large unrelated repository trees do not consume the staging limit. Native provider
+stores and credentials remain local to their devices. Existing schedules that already
+dispatched without this baseline cannot adopt it retroactively.
+
+On completion, current accepted device witnesses choose each output hash. Competing hashes
+for the same path block with `topology_artifact_source_ambiguous`; filename agreement alone
+does not select a winner. The publisher reads full verified inbox bytes, checks the original
+canonical baseline and persists a proposal before replacement. A local edit, new target,
+symlink substitution or Git HEAD change blocks publication. Already delivered matching files
+are verified without rewriting; still-pending files must match their dispatch-time baseline.
+
+Each canonical replacement checks scheduler authority and journals progress. Pause, lease
+loss or interruption can leave a documented partial publication. Use normal schedule inspect
+and explicit activation to recover the same proposal; recovery never launches another Agent
+or silently overwrites a new local edit. Completion only follows verification of all current
+files. This provides per-file durability, not an atomic multi-file filesystem commit.
+
+Adopted SpecMesh requirements must stay unchanged and cannot themselves be a write output.
+The independent plugin checks before publication and again before parent completion. A
+passing file check does not assert reviewed project closeout. Controlled HTTP/Docker/SpecMesh
+fixtures exercise this path; real model and physical-device acceptance remain separate in
+the active progress file.

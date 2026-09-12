@@ -216,8 +216,8 @@ test("schema 22 upgrade preserves native completion proof shape before introduci
   const f = fixture("pipeline", "pipeline");
   try {
     await f.runNode("branch"); const before = f.kernel.inspect(actor, "branch"), state = f.topology.inspect(actor, "branch")!;
-    f.db.sql.exec("DROP TABLE device_artifact_files; DROP TABLE topology_native_inputs; DROP TABLE topology_device_runs; ALTER TABLE topology_tasks DROP COLUMN execution_source; DROP TABLE topology_schedule_members; DROP TABLE topology_schedules; ALTER TABLE topology_tasks DROP COLUMN kind; PRAGMA user_version=22"); await f.restart();
-    expect(f.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 27 });
+    f.db.sql.exec("DROP TABLE topology_artifact_publications; DROP TABLE device_artifact_files; DROP TABLE topology_native_inputs; DROP TABLE topology_device_runs; ALTER TABLE topology_tasks DROP COLUMN execution_source; DROP TABLE topology_schedule_members; DROP TABLE topology_schedules; ALTER TABLE topology_tasks DROP COLUMN kind; PRAGMA user_version=22"); await f.restart();
+    expect(f.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 28 });
     expect(f.kernel.inspect(actor, "branch")).toEqual(before);
     expect(f.kernel.reopenTopology(actor, "upgrade-reopen", "branch", before.revision, state.revision, "continue").parent.task.status).toBe("waiting");
   } finally { await f.close(); }

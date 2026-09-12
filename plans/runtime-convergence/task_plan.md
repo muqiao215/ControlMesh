@@ -69,11 +69,11 @@ No claim that full TS migration or distributed coordination has completed. A sco
 
 ## Next Step
 
-Verify exact-commit CI for the opt-in device artifact inbox/upload/recovery owner; full local
-regression passed 774 tests / 9918 assertions.
-Native retry/read-guidance commit 2de44d0 passed exact-commit CI 34704392823. The new private
-transport stores actual completion-bound bytes; root canonical publication still requires
-implementation with a current-workspace conflict check and a durable recovery journal.
+Publish the opt-in canonical-publication owner and verify its exact-commit CI, including the
+corrected scheduler test double. The full local run had 789 passes and one fixture timeout;
+the corrected scheduler file passed all 62 cases. The prior artifact inbox/upload/recovery owner ad9c20c passed 774 local
+tests and exact-commit CI 34707785916. Database 28 now captures exact write-file baselines
+before dispatch; publication reuses WorkspaceStage conflict checks and durable recovery.
 Then qualify initial workspace distribution and two physical devices. Continue remaining
 native/source/artifact, provider/transport/store/terminal and CM-R0–CM-R7 rollout requirements.
 Complex topology continuation remains unaccepted; no guarded attempt/session may be replayed.
@@ -129,6 +129,14 @@ revision and release/install gates; explicit local queue tests do not narrow tha
 There is no production writer switch, release or installed-version alignment yet.
 
 Local scheduling control and limits: [topology-scheduling.md](topology-scheduling.md).
+
+Schema 28 adds opt-in canonical publication of accepted device artifacts. The scheduler
+captures exact write-file baselines before dispatch and uses the existing durable staging
+journal under current lease authority. Local conflicts block; already delivered paths are
+verified without rewriting; pause/restart resumes the original proposal. Sparse snapshots
+exclude unrelated files. The standalone SpecMesh gate checks both sides of publication.
+Controlled integration is positive; physical end-to-end transfer/publication and reviewed
+closeout remain pending, alongside initial workspace distribution and the full migration.
 
 
 Schema 26 closes the native-input gap by freezing assigned role/stage/output contracts and

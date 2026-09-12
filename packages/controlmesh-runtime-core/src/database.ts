@@ -26,7 +26,7 @@ export class RuntimeDatabase {
       this.transaction(() => {
         const version = (this.sql.query("PRAGMA user_version").get() as { user_version: number }).user_version;
         const app = (this.sql.query("PRAGMA application_id").get() as { application_id: number }).application_id;
-        requireThat(version >= 0 && version <= 27, "unsupported_database_version");
+        requireThat(version >= 0 && version <= 28, "unsupported_database_version");
         requireThat(app === 0 || app === APPLICATION_ID, "foreign_database");
         if (version === 0) {
           const tables = this.sql.query("SELECT name FROM sqlite_master WHERE type='table'").all();
@@ -395,6 +395,19 @@ export class RuntimeDatabase {
               PRIMARY KEY(effect_id,path)
             );
             PRAGMA user_version = 27;
+          `);
+        }
+
+        if (version < 28) {
+          this.sql.exec(`
+            CREATE TABLE topology_artifact_publications (
+              task_id TEXT NOT NULL REFERENCES tasks(task_id), execution_id TEXT NOT NULL,
+              binding TEXT NOT NULL, stage_path TEXT NOT NULL, reference TEXT NOT NULL,
+              witness_digest TEXT, proposal_digest TEXT,
+              phase TEXT NOT NULL CHECK(phase IN ('baseline','staged','applied','satisfied')),
+              PRIMARY KEY(task_id,execution_id)
+            );
+            PRAGMA user_version = 28;
           `);
         }
 

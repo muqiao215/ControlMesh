@@ -11,13 +11,16 @@ import { decodeTaskCompletion, deviceCompletionProof, verifyDeviceCompletion, ty
 import { directoryIdentity, snapshotReads } from "./providers/native-manifest";
 import type { SpecMeshPort, SpecMeshObservation } from "./specmesh-port";
 import { canonical, digest, identifier, object, requireThat, RuntimeConflict } from "./value";
+import { TopologyPublication } from "./topology-publication";
+import { DeviceArtifactInbox } from "./device-artifacts";
 
 export interface TopologyArtifactConfiguration {
-  /** Canonical destination: files must already exist here; this verifier never transfers them. */
+  /** Canonical destination. Publication is opt-in and limited to completion files with write mode. */
   workspace: string;
   allowed_files: readonly string[];
   /** Explicit remote provenance allowed for this destination: device ID -> logical workspace ID. */
   device_sources?: Readonly<Record<string, string>>;
+  publish_received?: boolean;
 }
 interface Witness {
   child_id: string; generation: number; episode_id: string; effect_id: string; path: string; mode: "read" | "write"; sha256: string;
@@ -42,8 +45,9 @@ export class TopologyArtifactGate {
   private readonly allowed: readonly string[];
   private readonly devices: Readonly<Record<string, string>>;
   private readonly prepared = new Map<string, Prepared>();
+  private readonly publication?: TopologyPublication;
   readonly binding_digest: string;
-  constructor(readonly kernel: RuntimeKernel, config: TopologyArtifactConfiguration, private readonly authorize: () => void, private readonly specmesh?: SpecMeshPort) {
+  constructor(readonly kernel: RuntimeKernel, config: TopologyArtifactConfiguration, private readonly authorize: () => void, private readonly specmesh?: SpecMeshPort, publicationDirectory?: string) {
     requireThat(isAbsolute(config.workspace), "topology_artifact_workspace_required");
     this.workspace = directoryIdentity(config.workspace);
     requireThat(this.workspace.path === config.workspace && config.allowed_files.length > 0 && config.allowed_files.length <= 80
@@ -55,8 +59,22 @@ export class TopologyArtifactGate {
     for (const [device, workspace] of Object.entries(config.device_sources ?? {})) { identifier(device); identifier(workspace); }
     this.devices = Object.freeze({ ...config.device_sources });
     this.binding_digest = digest({ workspace: this.workspace, allowed: this.allowed, specmesh: specmesh?.binding_digest ?? null,
-      ...(config.device_sources ? { device_sources: this.devices } : {}) });
+      ...(config.device_sources ? { device_sources: this.devices } : {}), ...(config.publish_received === undefined ? {} : { publish_received: config.publish_received }) });
+    requireThat(config.publish_received === undefined || typeof config.publish_received === "boolean", "invalid_topology_publication_profile");
+    if (config.publish_received) {
+      requireThat(publicationDirectory && Object.keys(this.devices).length > 0, "topology_publication_profile_required");
+      this.publication = new TopologyPublication(kernel, this.workspace.path, publicationDirectory, this.binding_digest);
+    }
     this.current();
+  }
+  /** Scheduler-only mutation boundary: capture canonical file state before initial child dispatch. */
+  step(actor: Principal, taskId: string, revision: number, run: () => void, authorized: () => void): void {
+    if (!this.publication || this.kernel.inspect(actor, taskId).task.completion_requirements === undefined) { run(); return; }
+    const { contract } = this.parent(actor, taskId, revision);
+    const state = this.kernel.db.sql.query("SELECT state FROM team_topologies WHERE task_id=?").get(taskId) as { state: string } | null;
+    this.publication.step(actor, taskId, revision, contract, state ? decodeTopologyState(JSON.parse(state.state)).execution_id : null, run,
+      () => decodeTopologyState(JSON.parse((this.kernel.db.sql.query("SELECT state FROM team_topologies WHERE task_id=?").get(taskId) as { state: string }).state)).execution_id,
+      operation => { authorized(); this.current(); return operation(); });
   }
   private current(): void {
     const checked: unknown = this.authorize();
@@ -155,10 +173,51 @@ export class TopologyArtifactGate {
       throw error;
     }
   }
-  async prepare(actor: Principal, taskId: string, parentRevision: number, topologyRevision: number) {
+  async prepare(actor: Principal, taskId: string, parentRevision: number, topologyRevision: number, publicationAuthority?: () => void) {
     const { snapshot, contract } = this.parent(actor, taskId, parentRevision), state = this.topology(taskId, topologyRevision), parentDigest = digest(snapshot);
     requireThat(state.task_id === taskId && state.interruption.status === "idle" && state.checkpoints.at(-1)!.phase_status === "in_progress", "topology_artifact_prepare_stage");
-    const witnesses = this.witnesses(actor, taskId), files = this.capture(contract);
+    const witnesses = this.witnesses(actor, taskId);
+    const source = snapshot.task.specmesh_completion_source;
+    if (this.publication && contract.files.some(file => file.mode === "write")) {
+      requireThat(publicationAuthority, "topology_publication_authority_required");
+      const check = () => {
+        publicationAuthority();
+        requireThat(digest(this.parent(actor, taskId, parentRevision).snapshot) === parentDigest
+          && canonical(this.topology(taskId, topologyRevision)) === canonical(state)
+          && this.witnesses(actor, taskId).digest === witnesses.digest, "topology_artifact_preparation_changed");
+        if (source !== undefined) {
+          requireThat(object(source) && typeof source.path === "string" && typeof source.sha256 === "string"
+            && !contract.files.some(file => file.mode === "write" && file.path === source.path), "topology_specmesh_source_is_output");
+          requireThat(snapshotReads(this.workspace.path, [join(this.workspace.path, source.path)])[0]?.sha256 === source.sha256, "topology_specmesh_requirements_changed");
+        }
+      };
+      check();
+      if (source !== undefined) {
+        requireThat(this.specmesh && object(source) && source.authority === "asserted_candidate", "topology_specmesh_profile_required");
+        const precheck = await this.specmesh.inspect("check", { assertCurrent: check }), candidate = precheck.result.artifact_requirements;
+        requireThat(precheck.result.status === "pass" && candidate && candidate.path === source.path && candidate.sha256 === source.sha256
+          && digest(decodeTaskCompletion({ schema_version: "controlmesh.task_completion.v1", files: candidate.requirements.files })) === digest(contract), "topology_specmesh_requirements_changed");
+        check(); precheck.assertCurrent();
+      }
+      const inbox = new DeviceArtifactInbox(this.kernel);
+      const incoming = contract.files.filter(file => file.mode === "write").map(file => {
+        const matches = witnesses.values.filter(witness => witness.path === file.path && witness.mode === "write" && witness.source?.kind === "device"
+          && (file.sha256 === undefined || witness.sha256 === file.sha256));
+        requireThat(matches.length > 0 && new Set(matches.map(item => item.sha256)).size === 1, "topology_artifact_source_ambiguous");
+        const witness = matches[0]!;
+        return { path: file.path, sha256: witness.sha256, load: () => {
+          const revision = this.kernel.inspect(actor, witness.child_id).revision, chunks: Buffer[] = []; let offset = 0;
+          for (;;) {
+            const page = inbox.read(actor, witness.child_id, revision, witness.effect_id, file.path, offset, witness.sha256);
+            chunks.push(Buffer.from(page.content_base64, "base64")); if (page.eof) break; offset = page.next_offset;
+          }
+          return Buffer.concat(chunks);
+        } };
+      });
+      this.publication.publish(actor, taskId, parentRevision, state.execution_id, contract, witnesses.digest, incoming,
+        operation => this.kernel.db.transaction(() => { check(); return operation(); }));
+    }
+    const files = this.capture(contract);
     const selected = contract.files.map((file, index) => {
       const sha256 = files[index]!.sha256;
       requireThat(file.sha256 === undefined || file.sha256 === sha256, "topology_artifact_content_mismatch");
@@ -166,12 +225,12 @@ export class TopologyArtifactGate {
       requireThat(witness, "topology_artifact_native_evidence_missing"); return { ...file, sha256, witness };
     });
     const unchanged = () => {
+      publicationAuthority?.();
       requireThat(digest(this.parent(actor, taskId, parentRevision).snapshot) === parentDigest
         && canonical(this.topology(taskId, topologyRevision)) === canonical(state) && this.witnesses(actor, taskId).digest === witnesses.digest
         && canonical(this.capture(contract)) === canonical(files), "topology_artifact_preparation_changed");
     };
     let observation: SpecMeshObservation | undefined;
-    const source = snapshot.task.specmesh_completion_source;
     if (source !== undefined) {
       requireThat(this.specmesh && object(source) && source.authority === "asserted_candidate" && typeof source.path === "string"
         && typeof source.sha256 === "string" && /^[a-f0-9]{64}$/.test(source.sha256), "topology_specmesh_profile_required");

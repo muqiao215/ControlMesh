@@ -314,10 +314,11 @@ export class TopologyScheduler {
           if (!action) continue;
           if (action.terminal && this.kernel.inspect(this.actor, node.task_id).task.completion_requirements) {
             requireThat(this.gate, "topology_artifact_gate_required");
-            await this.gate.prepare(this.actor, node.task_id, action.parent_revision, action.topology_revision);
+            await this.gate.prepare(this.actor, node.task_id, action.parent_revision, action.topology_revision, () => this.lease(row));
           }
           this.kernel.db.transaction(() => {
-            this.lease(row); this.kernel.scheduledTransition(this.actor, action!.run);
+            this.lease(row); this.kernel.scheduledTransition(this.actor, () => this.gate
+              ? this.gate.step(this.actor, node.task_id, action!.parent_revision, action!.run, () => this.lease(row)) : action!.run());
             this.kernel.db.sql.query("UPDATE topology_schedules SET revision=revision+1,lease_until=? WHERE root_id=?")
               .run(this.kernel.db.now() + this.leaseMs, row.root_id);
             row.revision++; row.lease_until = this.kernel.db.now() + this.leaseMs;

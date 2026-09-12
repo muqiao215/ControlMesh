@@ -12,6 +12,7 @@ type Entry = { path: string; kind: "file" | "directory" | "link"; mode: number; 
 type Snapshot = { entries: Entry[]; protected_git: Entry[] };
 type Change = { path: string; before: Entry | null; after: Entry | null };
 interface StageRecord {
+  selection?: "files";
   schema_version: "controlmesh.workspace_stage.v1"; id: string; binding_digest: string;
   workspace: DirectoryIdentity; stage: DirectoryIdentity; roots: string[]; head: string | null; before: Snapshot; prepared: Snapshot;
   phase: "prepared" | "sealed" | "applying" | "applied";
@@ -47,7 +48,7 @@ function regular(path: string, anchored = false): { bytes: Buffer; entry: Omit<E
     return { bytes: data, entry: { kind: "file", mode: Number(before.mode) & 0o777, identity: identity(before), size: count, sha256: sha(data) } };
   } finally { fs.closeSync(fd); }
 }
-function observe(root: string, roots: string[], copy?: (entry: Entry, bytes?: Buffer) => void, excluded?: string, trustedLinks?: Map<string, string>): Snapshot {
+function observe(root: string, roots: string[], copy?: (entry: Entry, bytes?: Buffer) => void, excluded?: string, trustedLinks?: Map<string, string>, selectedFiles = false): Snapshot {
   const anchor = directoryIdentity(root), entries: Entry[] = [], protectedGit: Entry[] = []; let total = 0;
   const walk = (path: string) => {
     if (path === excluded) return;
@@ -74,7 +75,20 @@ function observe(root: string, roots: string[], copy?: (entry: Entry, bytes?: Bu
       requireThat(total <= MAX_BYTES, "workspace_stage_byte_limit"); entries.push(value); copy?.(value, read.bytes);
     }
   };
-  for (const path of roots) walk(path);
+  for (const path of roots) {
+    if (selectedFiles) {
+      let absolute = root, missing = false;
+      for (const [index, component] of path.split(sep).entries()) {
+        absolute = join(absolute, component);
+        let stat: fs.Stats;
+        try { stat = fs.lstatSync(absolute); } catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") { missing = true; break; } throw error; }
+        requireThat(!stat.isSymbolicLink() && fs.realpathSync(absolute) === absolute
+          && (index === path.split(sep).length - 1 ? stat.isFile() : stat.isDirectory()), "workspace_stage_selected_path_changed");
+      }
+      if (missing) continue;
+    }
+    walk(path);
+  }
   requireThat(digest(directoryIdentity(root)) === digest(anchor), "workspace_stage_root_changed");
   return { entries: entries.sort((a, b) => a.path.localeCompare(b.path, "en")), protected_git: protectedGit };
 }
@@ -97,9 +111,10 @@ export class WorkspaceStage {
     requireThat(this.directory.path === path && directory.uid === process.getuid?.() && (directory.mode & 0o077) === 0, "workspace_stage_private_state_required");
     const loaded = privateFile(join(path, "record.json")); this.record = JSON.parse(loaded.bytes.toString()); this.revision = loaded.revision;
     const value = this.record;
+    requireThat(value.selection === undefined || value.selection === "files", "workspace_stage_record_invalid");
     requireThat(value.schema_version === "controlmesh.workspace_stage.v1" && value.binding_digest === binding
       && /^[a-f0-9]{64}$/.test(binding) && ["prepared", "sealed", "applying", "applied"].includes(value.phase), "workspace_stage_binding_mismatch");
-    requireThat(value.stage.path === join(path, "tree") && Array.isArray(value.roots) && value.roots.length > 0 && value.roots.length <= 64
+    requireThat(value.stage.path === join(path, "tree") && Array.isArray(value.roots) && value.roots.length > 0 && value.roots.length <= (value.selection === "files" ? 80 : 64)
       && Number.isSafeInteger(value.applied) && value.applied >= 0 && value.applied <= (value.proposal?.changes.length ?? 0), "workspace_stage_record_invalid");
     value.roots.forEach(root => safeRelative(root, true));
     this.assertCurrent();
@@ -117,15 +132,26 @@ export class WorkspaceStage {
     return root;
   }
   static create(stateRoot: string, workspace: string, writeRoots: readonly string[], binding: string, authority: WorkspaceAuthority): WorkspaceStage {
+    return WorkspaceStage.createSelection(stateRoot, workspace, writeRoots, binding, authority, false);
+  }
+  /** Exact completion files, including absent destinations; unrelated repository trees are not copied. */
+  static createFiles(stateRoot: string, workspace: string, paths: readonly string[], binding: string, authority: WorkspaceAuthority): WorkspaceStage {
+    for (const path of paths) {
+      safeRelative(path); requireThat(!path.includes("\\") && path.split("/").every(part => part && part !== "."), "workspace_stage_path_invalid");
+    }
+    return WorkspaceStage.createSelection(stateRoot, workspace, paths.map(path => join(workspace, path)), binding, authority, true);
+  }
+  private static createSelection(stateRoot: string, workspace: string, writeRoots: readonly string[], binding: string, authority: WorkspaceAuthority, selectedFiles: boolean): WorkspaceStage {
     requireThat(authority.constructor.name !== "AsyncFunction", "workspace_authority_must_be_synchronous");
     requireThat(isAbsolute(stateRoot) && /^[a-f0-9]{64}$/.test(binding), "workspace_stage_binding_mismatch");
     const root = WorkspaceStage.assertLocation(stateRoot, workspace);
     const selected = [...new Set(writeRoots)].sort();
-    requireThat(selected.length > 0 && selected.length <= 64, "workspace_stage_roots_required");
+    requireThat(selected.length > 0 && selected.length <= (selectedFiles ? 80 : 64), "workspace_stage_roots_required");
     for (const path of selected) {
-      requireThat(isAbsolute(path) && contains(workspace, path) && directoryIdentity(path).path === path, "workspace_stage_root_outside_workspace");
+      requireThat(isAbsolute(path) && contains(workspace, path) && (selectedFiles || directoryIdentity(path).path === path), "workspace_stage_root_outside_workspace");
       safeRelative(relative(workspace, path), true);
     }
+    requireThat(!selectedFiles || selected.every(path => path !== workspace && !selected.some(parent => parent !== path && contains(parent, path))), "workspace_stage_overlapping_files");
     const roots = selected.filter(path => !selected.some(parent => parent !== path && contains(parent, path))).map(path => relative(workspace, path));
     let called = false;
     const created = authority(() => {
@@ -142,15 +168,15 @@ export class WorkspaceStage {
             const fd = fs.openSync(target, "wx", entry.mode);
             try { fs.writeFileSync(fd, bytes!); fs.fchmodSync(fd, entry.mode); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
           }
-        });
-        requireThat(head(workspace) === originalHead && digest(observe(workspace, roots)) === digest(before), "workspace_stage_source_changed");
+        }, undefined, undefined, selectedFiles);
+        requireThat(head(workspace) === originalHead && digest(observe(workspace, roots, undefined, undefined, undefined, selectedFiles)) === digest(before), "workspace_stage_source_changed");
         for (const entry of before.protected_git) {
           const target = join(stage, entry.path); fs.mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
           if (entry.kind === "directory") fs.mkdirSync(target, { mode: 0o700 });
           else { const fd = fs.openSync(target, "wx", 0o400); try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); } }
         }
         const prepared = observe(stage, roots, undefined, undefined,
-          new Map(before.entries.filter(entry => entry.kind === "link").map(entry => [entry.path, entry.link!])));
+          new Map(before.entries.filter(entry => entry.kind === "link").map(entry => [entry.path, entry.link!])), selectedFiles);
         const directories = new Set([stage, join(path, "blobs")]);
         for (const entry of [...prepared.entries, ...prepared.protected_git]) {
           let directory = entry.kind === "directory" ? join(stage, entry.path) : dirname(join(stage, entry.path));
@@ -158,7 +184,8 @@ export class WorkspaceStage {
         }
         for (const directory of [...directories].sort((a, b) => b.length - a.length)) syncDirectory(directory);
         const record: StageRecord = { schema_version: "controlmesh.workspace_stage.v1", id: randomUUID(), binding_digest: binding, workspace: root,
-          stage: directoryIdentity(stage), roots, head: originalHead, before, prepared, phase: "prepared", proposal: null, applied: 0, intent: null };
+          stage: directoryIdentity(stage), roots, head: originalHead, before, prepared, phase: "prepared", proposal: null, applied: 0, intent: null,
+          ...(selectedFiles ? { selection: "files" as const } : {}) };
         fs.writeFileSync(join(path, "record.json"), canonical(record), { mode: 0o600, flag: "wx" });
         const result = new WorkspaceStage(path, binding); result.persist(); syncDirectory(stateRoot); result.assertPrepared(); return result;
       } catch (error) { fs.rmSync(path, { recursive: true, force: true }); throw error; }
@@ -171,7 +198,41 @@ export class WorkspaceStage {
   }
   reference(): { binding_digest: string; basis_digest: string } {
     this.assertCurrent(); const { schema_version, id, binding_digest, workspace, stage, roots, head, before, prepared } = this.record;
-    return { binding_digest, basis_digest: digest({ schema_version, id, binding_digest, workspace, stage, roots, head, before, prepared }) };
+    return { binding_digest, basis_digest: digest({ schema_version, id, binding_digest, workspace, stage, roots, head, before, prepared,
+      ...(this.record.selection ? { selection: this.record.selection } : {}) }) };
+  }
+  publicationState() { this.assertCurrent(); return { phase: this.record.phase, proposal_digest: this.record.proposal?.digest ?? null }; }
+  /** Restrict a fresh publication to targets not already delivered by an accepted descendant. */
+  assertSelectedSourceCurrent(paths: readonly string[]): void {
+    this.assertCurrent();
+    requireThat(this.record.selection === "files" && this.record.phase === "prepared" && paths.every(path => this.record.roots.includes(path))
+      && head(this.record.workspace.path) === this.record.head, "workspace_stage_source_changed");
+    const expected = { entries: this.record.before.entries.filter(entry => paths.includes(entry.path)), protected_git: [] };
+    requireThat(digest(observe(this.record.workspace.path, [...paths], undefined, undefined, undefined, true)) === digest(expected), "workspace_stage_source_changed");
+  }
+  writeSelectedFile(authority: WorkspaceAuthority, path: string, bytes: Uint8Array): void {
+    this.gated(authority, () => {
+      requireThat(this.record.selection === "files" && this.record.phase === "prepared" && this.record.roots.includes(path)
+        && bytes.length <= MAX_FILE, "workspace_stage_file_not_selected");
+      const mode = this.record.before.entries.find(entry => entry.path === path)?.mode ?? 0o644;
+      let parent = fs.openSync(this.record.stage.path, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW);
+      try {
+        const root = fs.fstatSync(parent, { bigint: true });
+        requireThat(String(root.dev) === this.record.stage.device && String(root.ino) === this.record.stage.inode, "workspace_stage_root_changed");
+        for (const component of dirname(path).split(sep).filter(part => part && part !== ".")) {
+          const target = `/proc/self/fd/${parent}/${component}`;
+          try { fs.mkdirSync(target, { mode: 0o700 }); fs.fsyncSync(parent); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
+          const next = fs.openSync(target, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW);
+          fs.closeSync(parent); parent = next;
+        }
+        const fd = fs.openSync(`/proc/self/fd/${parent}/${path.split(sep).at(-1)}`, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK, mode);
+        try {
+          const stat = fs.fstatSync(fd); requireThat(stat.isFile() && stat.nlink === 1, "workspace_stage_path_replaced");
+          fs.writeFileSync(fd, bytes); fs.ftruncateSync(fd, bytes.length); fs.fchmodSync(fd, mode); fs.fsyncSync(fd);
+        } finally { fs.closeSync(fd); }
+        fs.fsyncSync(parent);
+      } finally { fs.closeSync(parent); }
+    });
   }
   /** Check once before attaching a fresh native runner; subsequent native writes are expected to change the tree. */
   assertPrepared(): void {
@@ -239,7 +300,7 @@ export class WorkspaceStage {
   seal(authority: WorkspaceAuthority): { stage_id: string; binding_digest: string; proposal_digest: string; changed_paths: string[] } {
     return this.gated(authority, () => {
       requireThat(this.record.phase === "prepared", "workspace_stage_not_prepared");
-      requireThat(head(this.record.workspace.path) === this.record.head && digest(observe(this.record.workspace.path, this.record.roots)) === digest(this.record.before), "workspace_stage_source_changed");
+      requireThat(head(this.record.workspace.path) === this.record.head && digest(this.source()) === digest(this.record.before), "workspace_stage_source_changed");
       const before = new Map(files(this.record.before).map(entry => [entry.path, entry]));
       const after = this.staged(), result = new Map(files(after).map(entry => [entry.path, entry]));
       const changes = [...new Set([...before.keys(), ...result.keys()])].sort().flatMap(path => {
@@ -263,11 +324,12 @@ export class WorkspaceStage {
   }
   private staged(): Snapshot {
     return observe(this.record.stage.path, this.record.roots, undefined, undefined,
-      new Map(this.record.before.entries.filter(entry => entry.kind === "link").map(entry => [entry.path, entry.link!])));
+      new Map(this.record.before.entries.filter(entry => entry.kind === "link").map(entry => [entry.path, entry.link!])), this.record.selection === "files");
   }
+  private source(): Snapshot { return observe(this.record.workspace.path, this.record.roots, undefined, this.record.intent?.temporary ?? undefined, undefined, this.record.selection === "files"); }
   private currentFiles(): Map<string, Entry> {
     requireThat(head(this.record.workspace.path) === this.record.head, "workspace_stage_head_changed");
-    return new Map(files(observe(this.record.workspace.path, this.record.roots, undefined, this.record.intent?.temporary ?? undefined)).map(entry => [entry.path, entry]));
+    return new Map(files(this.source()).map(entry => [entry.path, entry]));
   }
   private checkMixed(): void {
     const proposal = this.record.proposal!, current = this.currentFiles(), expected = new Map(files(this.record.before).map(entry => [entry.path, entry]));
@@ -325,7 +387,7 @@ export class WorkspaceStage {
       for (const change of proposal.changes) if (change.after)
         requireThat(sha(regular(join(this.path, "blobs", change.after.sha256!)).bytes) === change.after.sha256, "workspace_stage_blob_changed");
       if (this.record.phase === "sealed") {
-        requireThat(digest(observe(this.record.workspace.path, this.record.roots)) === digest(this.record.before), "workspace_stage_source_changed");
+        requireThat(digest(this.source()) === digest(this.record.before), "workspace_stage_source_changed");
         this.record.phase = "applying"; this.persist();
       }
       requireThat(["applying", "applied"].includes(this.record.phase), "workspace_stage_not_sealed"); this.checkMixed();

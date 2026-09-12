@@ -26,6 +26,40 @@ function fixture(all = false) {
 }
 const stageFile = (stage: WorkspaceStage, relative: string) => join(stage.path, "tree", relative);
 
+test("selected-file stages publish existing and absent targets while ignoring unrelated large or changing trees", () => {
+  const f = fixture(), paths = ["src/a.ts", "new/nested/result.bin"];
+  fs.writeFileSync(join(f.repo, "unrelated.bin"), Buffer.alloc(5 * 1024 * 1024));
+  const stage = WorkspaceStage.createFiles(f.state, f.repo, paths, f.binding, authority);
+  const bytes = Buffer.from([0, 255, 128, 42]);
+  stage.writeSelectedFile(authority, "src/a.ts", Buffer.from("updated\n")); stage.writeSelectedFile(authority, paths[1]!, bytes);
+  fs.writeFileSync(join(f.repo, "PROJECT.md"), "user's concurrent unrelated change");
+  const proposal = stage.seal(authority); expect(proposal.changed_paths).toEqual(["new/nested/result.bin", "src/a.ts"]);
+  stage.promote(authority, proposal.proposal_digest);
+  expect(fs.readFileSync(join(f.repo, "src/a.ts"), "utf8")).toBe("updated\n");
+  expect(fs.readFileSync(join(f.repo, paths[1]!))).toEqual(bytes);
+  expect(fs.readFileSync(join(f.repo, "PROJECT.md"), "utf8")).toBe("user's concurrent unrelated change");
+  expect(fs.existsSync(stageFile(stage, "unrelated.bin"))).toBe(false);
+});
+test.each(["existing", "absent", "parent-link"])("selected-file stages refuse %s target changes without overwriting them", mode => {
+  const f = fixture(), path = mode === "existing" ? "src/a.ts" : "new/file";
+  const stage = WorkspaceStage.createFiles(f.state, f.repo, [path], f.binding, authority);
+  stage.writeSelectedFile(authority, path, Buffer.from("agent output"));
+  if (mode === "parent-link") fs.symlinkSync(f.root, join(f.repo, "new"));
+  else { fs.mkdirSync(join(f.repo, mode === "existing" ? "src" : "new"), { recursive: true }); fs.writeFileSync(join(f.repo, path), "user change"); }
+  expect(() => stage.seal(authority)).toThrow();
+  if (mode !== "parent-link") expect(fs.readFileSync(join(f.repo, path), "utf8")).toBe("user change");
+  else expect(fs.existsSync(join(f.root, "file"))).toBe(false);
+});
+test("selected-file publication resumes the exact interrupted proposal and never rewrites an already applied file", () => {
+  const f = fixture(), stage = WorkspaceStage.createFiles(f.state, f.repo, ["src/a.ts", "new.txt"], f.binding, authority), reference = stage.reference();
+  stage.writeSelectedFile(authority, "src/a.ts", Buffer.from("new A")); stage.writeSelectedFile(authority, "new.txt", Buffer.from("new B"));
+  const proposal = stage.seal(authority); let count = 0;
+  expect(() => stage.promote(run => { if (++count === 3) throw new Error("interrupted"); return run(); }, proposal.proposal_digest)).toThrow("interrupted");
+  const first = fs.statSync(join(f.repo, "new.txt")).mtimeMs;
+  const restored = WorkspaceStage.open(stage.path, reference); restored.promote(authority, proposal.proposal_digest); restored.assertApplied(proposal.proposal_digest);
+  expect(fs.statSync(join(f.repo, "new.txt")).mtimeMs).toBe(first); expect(fs.readFileSync(join(f.repo, "src/a.ts"), "utf8")).toBe("new A");
+});
+
 test("first native attachment checks durable prepared content and identity without rejecting later owned edits", () => {
   for (const mutate of ["edit", "replace", "new"]) {
     const f = fixture(), stage = f.create(), ref = stage.reference();
