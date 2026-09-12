@@ -955,3 +955,15 @@ candidate backup, not hand-editing user_version or dropping populated team state
 Released Python remains production owner. Topology execution must still compose
 this state with task admission and explicit runtime authority, not infer dispatch
 permission from an approve phase.
+
+## Pipeline/fanout handoff selection — 2026-09-12
+
+Pipeline review independently falls back to worker evidence and worker artifacts
+when each reviewer collection is empty. Fanout fallback considers completed results
+from collecting checkpoints only; it retains first-to-last checkpoint order and
+duplicate references. Explicit reducer selections override each collection separately.
+All-failed output intentionally includes failed-worker evidence/artifacts for diagnosis
+and names the failed roles in order. These are reference-selection semantics, not
+proof verification or execution authorization. TS ports deep-copy selected references
+so consumer edits do not mutate original normalized inputs. Python private reducer
+methods are dynamically executed in the parity test, with real Pydantic result models.

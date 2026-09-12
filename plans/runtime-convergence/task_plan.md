@@ -124,3 +124,14 @@ task registration/dispatch, review and cancellation composition remain open. A p
 named approve is not an authorization grant; no provider dispatch is attached here.
 Next: wire explicit topology/task ownership to this state owner and retain existing
 runtime admission at every actual side effect.
+
+## Topology result reduction increment
+
+Internal `team-results.ts` ports pipeline review/terminal reduction and fanout
+reducer/all-failed reduction. A live Python differential test covers 24 selection/status
+combinations plus empty/nonempty failure batches. These functions consume normalized
+worker results and do not validate raw Agent envelopes, persist topology checkpoints,
+dispatch tasks or finish a task. The complete execution-spine/checkpoint validators,
+director/judge decisions and TaskHub lifecycle composition remain open. Next implement
+the topology execution spine and raw result boundary before attaching these reducers
+to actual task completion; never use a reduced completed status as execution evidence.

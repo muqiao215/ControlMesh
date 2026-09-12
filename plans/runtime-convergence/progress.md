@@ -2,6 +2,12 @@
 
 ## Current
 
+Topology result reductions: pipeline review/terminal and fanout reducer/all-failed
+ported as internal normalized-data functions. Live Python comparison passes24
+selection/status combinations and2failed-batch cases,64assertions; typecheck passes.
+Input/reference immutability checked. No task completion/dispatch path is attached;
+raw envelope validation and execution-spine migration remain next work.
+
 Final team-phase increment gate:480pass0fail,5,387assertions192.73s across49files,
 pinned Bun1.3.11 + Docker image + standalone SpecMesh. Process65158 exit0,
 /tmp/cm-team-phase-full.log. Candidate v16 migration and all prior runtime tests
