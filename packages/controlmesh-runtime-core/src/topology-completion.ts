@@ -22,7 +22,7 @@ function terminalState(kernel: RuntimeKernel, taskId: string, revision: number) 
 /** Revalidate current generations against authoritative task results; older generations remain audit history. */
 function acceptedInputs(kernel: RuntimeKernel, actor: Principal, taskId: string, revision: number) {
   const { state } = terminalState(kernel, taskId, revision);
-  const rows = kernel.db.sql.query("SELECT * FROM topology_tasks WHERE parent_id=? ORDER BY child_id").all(taskId) as {
+  const rows = kernel.db.sql.query("SELECT child_id,parent_id,topology,substage,worker_role,checkpoint_id,run_id,accepted,generation FROM topology_tasks WHERE parent_id=? AND execution_id=? ORDER BY child_id").all(taskId, state.execution_id) as {
     child_id: string; parent_id: string; topology: string; substage: string; worker_role: string;
     checkpoint_id: string; run_id: string; accepted: string | null; generation: number;
   }[];

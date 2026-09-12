@@ -1,6 +1,6 @@
 import { assertTopologyCompletionPermit, type TopologyCompletionPermit } from "./topology-artifacts";
 import { verifiedTopologyCompletion } from "./topology-completion";
-import { decodeTopologyState } from "./team-topology";
+import { decodeTopologyState, startTopology } from "./team-topology";
 import { randomUUID } from "node:crypto";
 import { RuntimeDatabase } from "./database";
 import { command, commandReceipt, requireScope, reserveCommand } from "./commands";
@@ -150,7 +150,7 @@ export class RuntimeKernel {
     const seen = new Set<string>([taskId]);
     for (let depth = 0; depth < 32; depth++) {
       const assignment = this.db.sql.query("SELECT * FROM topology_tasks WHERE child_id=?").get(taskId) as {
-        parent_id: string; topology: string; substage: string; worker_role: string; checkpoint_id: string; accepted: string | null;
+        parent_id: string; topology: string; substage: string; worker_role: string; checkpoint_id: string; accepted: string | null; execution_id: string;
       } | null;
       if (!assignment) return;
       requireThat(!seen.has(assignment.parent_id) && assignment.accepted === null, "topology_assignment_inactive");
@@ -160,7 +160,7 @@ export class RuntimeKernel {
       const row = this.db.sql.query("SELECT state FROM team_topologies WHERE task_id=?").get(assignment.parent_id) as { state: string } | null;
       requireThat(row, "topology_not_found");
       const state = decodeTopologyState(JSON.parse(row.state)), cp = state.checkpoints.at(-1)!;
-      requireThat(state.task_id === assignment.parent_id && state.topology === assignment.topology
+      requireThat(state.task_id === assignment.parent_id && state.topology === assignment.topology && state.execution_id === assignment.execution_id
         && cp.checkpoint_id === assignment.checkpoint_id && cp.substage === assignment.substage
         && cp.active_roles.includes(assignment.worker_role) && cp.phase_status === "in_progress" && state.interruption.status === "idle", "topology_assignment_changed");
       taskId = assignment.parent_id;
@@ -282,6 +282,43 @@ export class RuntimeKernel {
       this.event(actor, task, `task.${completion.outcome}`, { source: "topology_reduction", topology_revision: topologyRevision, result: completion.result });
       return this.snapshot(task);
     }, value => { this.scope(actor, "task:execute"); this.scope(actor, "team:write"); this.owned(actor, this.row(taskId)); return value; });
+  }
+
+  /** A new orchestration run retains TaskHub/native identities and archives the terminal run before changing state. */
+  reopenTopology(actor: Principal, requestId: string, taskId: string, expectedRevision: number, topologyRevision: number, prompt: string) {
+    this.scope(actor, "task:resume"); this.scope(actor, "task:execute"); this.scope(actor, "team:write"); this.scope(actor, "task:read");
+    this.owned(actor, this.row(taskId));
+    requireThat(typeof prompt === "string" && prompt.trim().length > 0 && Buffer.byteLength(prompt) <= 32_768, "invalid_resume_prompt");
+    return this.request(actor, requestId, "topology.reopen", { taskId, expectedRevision, topologyRevision, prompt }, () => {
+      const task = this.row(taskId); this.owned(actor, task); this.revision(task, expectedRevision);
+      requireThat(task.principal === actor.id && ["done", "failed"].includes(task.status) && !task.active_episode && !task.needs_reconciliation, "topology_not_reopenable");
+      requireThat(!this.db.sql.query("SELECT 1 FROM topology_tasks WHERE child_id=?").get(taskId), "nested_topology_reopen_requires_binding");
+      requireThat(!this.db.sql.query("SELECT 1 FROM local_runs WHERE task_id=? AND state IN ('queued','running')").get(taskId), "topology_parent_queued");
+      requireThat(!this.db.sql.query("SELECT 1 FROM effects WHERE task_id=? AND state!='confirmed'").get(taskId), "unresolved_effects");
+      const completion = verifiedTopologyCompletion(this, actor, taskId, expectedRevision - 1, topologyRevision);
+      requireThat(completion.outcome === task.status, "topology_completion_status_changed");
+      const current = this.db.sql.query("SELECT state FROM team_topologies WHERE task_id=?").get(taskId) as { state: string };
+      const previous = decodeTopologyState(JSON.parse(current.state));
+      const control = this.db.sql.query("SELECT config FROM topology_controls WHERE task_id=?").get(taskId) as { config: string } | null;
+      const assignments = this.db.sql.query("SELECT * FROM topology_tasks WHERE parent_id=? AND execution_id=? ORDER BY child_id").all(taskId, previous.execution_id);
+      const snapshot = { parent: this.snapshot(task), topology: { task_id: taskId, revision: topologyRevision, state: previous },
+        control: control ? JSON.parse(control.config) : null, assignments, completion: completion.result };
+      this.db.sql.query("INSERT INTO topology_runs VALUES (?,?,?,?,?)").run(taskId, previous.execution_id, topologyRevision, canonical(snapshot), digest(snapshot));
+      const first = previous.checkpoints[0]!;
+      const state = startTopology(taskId, previous.topology, { active_roles: first.active_roles, latest_summary: prompt.trim(),
+        ...(first.round_index === null ? {} : { round_index: first.round_index, round_limit: first.round_limit! }) }, new Date(this.db.now()));
+      state.execution_id = `run_${digest([taskId, topologyRevision + 1]).slice(0, 48)}`;
+      decodeTopologyState(state);
+      this.db.sql.query("DELETE FROM topology_completions WHERE task_id=?").run(taskId);
+      this.db.sql.query("UPDATE team_topologies SET revision=?,state=? WHERE task_id=?").run(topologyRevision + 1, canonical(state), taskId);
+      const raw = JSON.parse(task.raw) as LegacyTask;
+      raw.prompt = prompt; raw.completed_at = null; raw.result_preview = ""; raw.error = "";
+      task.raw = canonical(raw); task.status = "waiting"; task.fence += 1;
+      this.save(task);
+      this.event(actor, task, "task.resumed", { source: "topology_reopen", previous_execution_id: previous.execution_id,
+        execution_id: state.execution_id, previous_topology_revision: topologyRevision, archive_digest: digest(snapshot), prompt_digest: digest(prompt) });
+      return { parent: this.snapshot(task), topology: { task_id: taskId, revision: topologyRevision + 1, state } };
+    }, value => { this.scope(actor, "task:resume"); this.scope(actor, "task:execute"); this.scope(actor, "team:write"); this.owned(actor, this.row(taskId)); return value; });
   }
 
   cancel(actor: Principal, requestId: string, taskId: string, expectedRevision: number): TaskSnapshot {

@@ -3,7 +3,7 @@ import { applyPipelineResult, dispatchPipelineWorker, resumePipeline, type Pipel
 import type { StructuredTeamResult } from "./team-result-validation";
 import { command, requireScope } from "./commands";
 import { RuntimeKernel, type Principal } from "./kernel";
-import { canonical, requireThat, terminal } from "./value";
+import { canonical, digest, object, requireThat, terminal } from "./value";
 import { appendTopologyCheckpoint, decodeTopologyState, interruptTopology, resumeTopology, startTopology,
   type TopologyState, type CheckpointInput, type TopologyInterruptInput, type TopologyResumeInput } from "./team-topology";
 
@@ -32,10 +32,27 @@ export class RuntimeTopology {
     return command(this.kernel.db, actor, requestId, "topology.create", { taskId, taskRevision, topology, input }, () => {
       this.authorize(actor, taskId, taskRevision);
       requireThat(!this.inspect(actor, taskId), "topology_exists");
+      const declared = this.kernel.inspect(actor, taskId).task.topology;
+      requireThat(!declared || declared === topology, "topology_task_kind_changed");
       const state = startTopology(taskId, topology, input, new Date(this.kernel.db.now()));
       this.kernel.db.sql.query("INSERT INTO team_topologies VALUES (?,1,?)").run(taskId, canonical(state));
       return { task_id: taskId, revision: 1, state };
     }, value => { this.authorize(actor, taskId); requireScope(actor, "team:write"); return value; });
+  }
+  reopen(actor: Principal, requestId: string, taskId: string, taskRevision: number, revision: number, prompt: string) {
+    this.authorize(actor, taskId); requireScope(actor, "team:write");
+    requireThat(!this.kernel.db.sql.query("SELECT 1 FROM topology_controls WHERE task_id=?").get(taskId), "controlled_topology_requires_controller");
+    return this.kernel.reopenTopology(actor, requestId, taskId, taskRevision, revision, prompt);
+  }
+  inspectRun(actor: Principal, taskId: string, executionId: string): { digest: string; snapshot: Record<string, unknown> } | null {
+    this.authorize(actor, taskId);
+    const row = this.kernel.db.sql.query("SELECT snapshot,digest FROM topology_runs WHERE task_id=? AND execution_id=?").get(taskId, executionId) as { snapshot: string; digest: string } | null;
+    if (!row) return null;
+    const snapshot: unknown = JSON.parse(row.snapshot);
+    requireThat(object(snapshot) && digest(snapshot) === row.digest && object(snapshot.topology), "topology_archive_changed");
+    const state = decodeTopologyState(snapshot.topology.state);
+    requireThat(state.task_id === taskId && state.execution_id === executionId, "topology_archive_changed");
+    return { digest: row.digest, snapshot };
   }
   private mutate(actor: Principal, requestId: string, taskId: string, taskRevision: number, expectedRevision: number,
     operation: string, input: unknown, transform: (state: TopologyState, at: Date) => TopologyState): TopologySnapshot {

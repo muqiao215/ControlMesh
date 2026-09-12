@@ -7,7 +7,7 @@ import { canonical, digest, identifier, requireThat, terminal } from "./value";
 
 interface Assignment {
   child_id: string; parent_id: string; topology: string; substage: string;
-  worker_role: string; checkpoint_id: string; run_id: string; accepted: string | null; generation: number;
+  worker_role: string; checkpoint_id: string; run_id: string; accepted: string | null; generation: number; execution_id: string;
 }
 /** Associates already-authorized child tasks with topology roles and the existing local queue. */
 export class TopologyTaskQueue {
@@ -46,8 +46,8 @@ export class TopologyTaskQueue {
         ancestor = row?.parent_id ?? null;
       }
       const run = this.runtime.enqueue(`topology-run-${digest([actor.id, requestId])}`, childId, childRevision);
-      this.kernel.db.sql.query("INSERT INTO topology_tasks (child_id,parent_id,topology,substage,worker_role,checkpoint_id,run_id,accepted) VALUES (?,?,?,?,?,?,?,NULL)")
-        .run(childId, parentId, topology.state.topology, cp.substage, role, cp.checkpoint_id, run.run_id);
+      this.kernel.db.sql.query("INSERT INTO topology_tasks (child_id,parent_id,topology,substage,worker_role,checkpoint_id,run_id,accepted,execution_id) VALUES (?,?,?,?,?,?,?,NULL,?)")
+        .run(childId, parentId, topology.state.topology, cp.substage, role, cp.checkpoint_id, run.run_id, topology.state.execution_id);
       return { child_id: childId, run_id: run.run_id };
     }, value => { this.runtime.assertPrincipal(actor); requireScope(actor, "team:write"); requireScope(actor, "task:execute"); this.kernel.inspect(actor, parentId); this.kernel.inspect(actor, childId); return value; });
   }
@@ -59,7 +59,7 @@ export class TopologyTaskQueue {
     return command(this.kernel.db, actor, requestId, "topology.resume_child", { parentId, parentRevision, topologyRevision, childId, childRevision, role, prompt }, () => {
       const topology = this.parent(actor, parentId, parentRevision, topologyRevision);
       const prior = this.kernel.db.sql.query("SELECT * FROM topology_tasks WHERE child_id=? AND parent_id=?").get(childId, parentId) as Assignment | null;
-      requireThat(prior && prior.checkpoint_id !== topology.state.checkpoints.at(-1)!.checkpoint_id, "topology_new_checkpoint_required");
+      requireThat(prior && (prior.execution_id !== topology.state.execution_id || prior.checkpoint_id !== topology.state.checkpoints.at(-1)!.checkpoint_id), "topology_new_checkpoint_required");
       const child = this.kernel.inspect(actor, childId);
       requireThat(child.revision === childRevision && !child.needs_reconciliation && child.active_episode === null
         && (child.task.status === "failed" || (child.task.status === "done" && prior.accepted !== null)), "topology_previous_result_unresolved");
@@ -90,7 +90,7 @@ export class TopologyTaskQueue {
     return command(this.kernel.db, actor, requestId, operation, { parentId, parentRevision, topologyRevision, childId, childRevision }, () => {
       const topology = this.parent(actor, parentId, parentRevision, topologyRevision), cp = topology.state.checkpoints.at(-1)!;
       const assignment = this.kernel.db.sql.query("SELECT * FROM topology_tasks WHERE child_id=? AND parent_id=?").get(childId, parentId) as Assignment | null;
-      requireThat(assignment && assignment.accepted === null && assignment.checkpoint_id === cp.checkpoint_id
+      requireThat(assignment && assignment.execution_id === topology.state.execution_id && assignment.accepted === null && assignment.checkpoint_id === cp.checkpoint_id
         && assignment.topology === topology.state.topology && assignment.substage === cp.substage && cp.active_roles.includes(assignment.worker_role), "topology_assignment_changed");
       const run = this.runtime.inspect(assignment.run_id);
       requireThat(run.task_id === childId && run.state === "completed", "topology_child_not_completed");

@@ -1191,3 +1191,32 @@ it establishes this integration contract, not fresh native/model acceptance.
 The task plan previously accumulated contradictory historical Next statements and old
 test totals. Its current Next section now points to one active implementation seam;
 retained native history remains in the existing progress archive and design files.
+
+
+## Explicit topology reopen and execution-scoped assignments
+
+Checkpoint names restart from cp_0001 in each topology execution. Checking only parent,
+role and checkpoint could let retained work cross a reopen boundary. Schema 22 adds the
+execution ID to assignments and checks it at ancestor authority, collection, finalization
+and artifact-witness selection. Existing child rows remain reserved for explicit native
+resume; generation history is preserved. Frozen controller/limit configuration is reused;
+only an explicit new run resets its counters. Process restart does not do so.
+
+The completion digest previously hashed SELECT * assignment rows. Adding a column would
+therefore invalidate a legitimate schema 21 terminal proof after upgrade. The verifier now
+hashes the exact original column projection while separately filtering by execution ID.
+The migration fills IDs from the existing topology state and preserves old proof/history
+JSON. A completed legacy run can then be archived and reopened without re-execution.
+
+The first new fixture omitted the LocalTaskRuntime task:reconcile scope and was correctly
+rejected before dispatch. Correcting the fixture yielded 13 passing reopen tests; additional
+stale-execution, archive-integrity, control rollback and artifact tests brought the focused
+gate to 31 passing tests/242 assertions. These use controlled provider fixtures, not fresh
+native-model continuity acceptance. Early declared-topology mismatches now fail before
+queue admission rather than being detected only when finishing the parent.
+
+Remaining orchestration ownership: nested aggregate children need a completion source
+binding independent of local native run/episode/effect rows. Current root completion and
+reopen deliberately require root identity. The automatic scheduling owner also needs to
+prevent scheduling an orchestration parent as an ordinary provider job; the existing
+terminal gate detects a separately queued parent but is not early admission enforcement.

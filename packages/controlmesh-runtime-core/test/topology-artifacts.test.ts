@@ -157,3 +157,13 @@ test("JSON evidence cannot manufacture a completion capability and unregistered 
     expect(f.kernel.inspect(actor, "parent").task.status).toBe("waiting"); expect(f.calls).toEqual(["worker", "reviewer"]);
   } finally { await f.close(); }
 }, 20_000);
+
+test("reopening requires new child artifact evidence even when prior delivered files are unchanged", async () => {
+  const f = await fixture();
+  try {
+    await f.prepare(); const final = f.finish();
+    const opened = f.kernel.reopenTopology(actor, "reopen", "parent", final.parent!.revision, final.topology.revision, "Continue with the same requirements");
+    await expect(f.gate.prepare(actor, "parent", opened.parent.revision, opened.topology.revision)).rejects.toThrow("topology_artifact_witnesses_missing");
+    expect(f.calls).toEqual(["worker", "reviewer"]); expect(f.kernel.inspect(actor, "parent").task.status).toBe("waiting");
+  } finally { await f.close(); }
+});

@@ -61,7 +61,9 @@ export class TopologyArtifactGate {
     return decodeTopologyState(JSON.parse(row.state));
   }
   private witnesses(actor: Principal, taskId: string) {
-    const assignments = this.kernel.db.sql.query("SELECT child_id,generation,checkpoint_id,topology,substage,worker_role,run_id FROM topology_tasks WHERE parent_id=? ORDER BY child_id").all(taskId) as {
+    const state = this.kernel.db.sql.query("SELECT state FROM team_topologies WHERE task_id=?").get(taskId) as { state: string };
+    const executionId = decodeTopologyState(JSON.parse(state.state)).execution_id;
+    const assignments = this.kernel.db.sql.query("SELECT child_id,generation,checkpoint_id,topology,substage,worker_role,run_id FROM topology_tasks WHERE parent_id=? AND execution_id=? ORDER BY child_id").all(taskId, executionId) as {
       child_id: string; generation: number; checkpoint_id: string; topology: string; substage: string; worker_role: string; run_id: string;
     }[];
     const values: Witness[] = [], stamps: unknown[] = [];

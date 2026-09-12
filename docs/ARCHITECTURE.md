@@ -417,12 +417,27 @@ still return the exact source path/hash and requirements. This verifies the decl
 delivery source. It does not assert reviewed project closeout: `verify_closeout` retains
 `unknown` pending independent host review. A changed source invalidates preparation.
 
-Nested topology completion still needs an aggregate result binding, and reopening a
-completed topology needs an explicit new run with preserved history. Generic provider
-resume rejects such completed roots instead of starting a fresh provider execution.
-These cases remain implementation work. Candidate storage remains schema 21; older
-candidates reject it and rollback requires a pre-upgrade database backup, never changing
-the version on populated state.
+`RuntimeKernel.reopenTopology` creates an explicit new execution under the same completed
+root TaskHub ID. Candidate schema 22 stores the prior terminal state, parent snapshot,
+assignments, frozen controller configuration and completion result in `topology_runs`.
+The archive digest is checked by `RuntimeTopology.inspectRun`. Archiving, monotonic task
+and topology revisions/fence, clearing the current completion and emitting task.resumed
+commit together. Cancelled, changed, ambiguous or unaccepted work cannot be reopened.
+The event records topology_reopen as its source and does not invent a provider episode.
+
+Each assignment now carries its topology execution ID. Old roles retain their child IDs
+and generation history, but cannot authorize effects, result collection or file completion
+in a new execution, even when checkpoint names repeat. Existing explicit child resume
+continues its native session. Pipeline/fanout may reopen to planning and explicitly dispatch;
+`RuntimeControlTopology.reopen` also atomically admits the original controller/candidates.
+Frozen budget limits and controller identity are preserved; a new explicit execution starts
+fresh counters. A service restart alone never resets counters or starts a new execution.
+Legacy completion digest shape is retained during the execution-ID column migration.
+
+Nested topology completion still needs an aggregate result binding. Generic provider
+resume continues to reject completed topology roots. Older candidates reject schema 22;
+rollback requires a pre-upgrade database backup, never changing the version on populated
+state. Required semantic project closeout and full native/device acceptance remain open.
 
 `LocalTaskRuntime` adds the private local task execution owner. SQLite schema 8 stores
 queued runs, their expected task revision and provider/profile binding, plus the claimed

@@ -102,6 +102,7 @@ export class RuntimeControlTopology {
       requireThat(Number.isSafeInteger(parentRevision) && parent.revision === parentRevision, "revision_conflict");
       requireThat(!terminal.has(parent.task.status) && !parent.needs_reconciliation, "control_parent_inactive");
       requireThat(!this.topology.inspect(actor, parentId), "topology_exists");
+      requireThat(!parent.task.topology || parent.task.topology === setup.topology, "topology_task_kind_changed");
       requireThat(controller.task_id !== parentId && !workers.some(child => child.task_id === parentId), "control_parent_is_child");
       const controlTask = this.kernel.inspect(actor, controller.task_id);
       requireThat(Number.isSafeInteger(controller.revision) && controlTask.revision === controller.revision && controlTask.task.status === "waiting"
@@ -125,6 +126,23 @@ export class RuntimeControlTopology {
       const runs = this.enqueue(actor, requestId, parentRevision, snapshot, config.topology === "director_worker" ? [controller] : workers);
       return { ...snapshot, runs };
     }, value => { this.authorize(actor, parentId, [controller, ...workers]); return value; });
+  }
+  reopen(actor: Principal, requestId: string, parentId: string, parentRevision: number, revision: number, prompt: string,
+    controller: ControlChild, workers: ControlChild[] = []) {
+    this.authorize(actor, parentId, [controller, ...workers]); requireScope(actor, "task:resume");
+    return command(this.kernel.db, actor, requestId, "control.reopen_and_queue", { parentId, parentRevision, revision, prompt, controller, workers }, () => {
+      const prior = this.inspect(actor, parentId); requireThat(prior, "control_topology_missing");
+      this.controller(prior.config, controller);
+      const reopened = this.kernel.reopenTopology(actor, `control-reopen-${digest(requestId)}`, parentId, parentRevision, revision, prompt);
+      let topology = reopened.topology;
+      if (prior.config.topology === "debate_judge") {
+        const state = new JudgePolicy(prior.config.parallel_limit).candidates(topology.state, workers.map(child => child.role), undefined, new Date(this.kernel.db.now()));
+        topology = this.save(topology, state);
+      } else requireThat(workers.length === 0, "director_initial_workers_unexpected");
+      const snapshot = { topology, config: prior.config };
+      const runs = this.enqueue(actor, requestId, reopened.parent.revision, snapshot, prior.config.topology === "director_worker" ? [controller] : workers);
+      return { ...snapshot, parent: reopened.parent, runs };
+    }, value => { this.authorize(actor, parentId, [controller, ...workers]); requireScope(actor, "task:resume"); return value; });
   }
   collectWorkers(actor: Principal, requestId: string, parentId: string, parentRevision: number, revision: number, workers: ControlChild[], controller: ControlChild) {
     this.authorize(actor, parentId, [...workers, controller]);

@@ -69,8 +69,8 @@ No claim that full TS migration or distributed coordination has completed. A sco
 
 ## Next Step
 
-Publish the verified parent artifact completion gate, then connect nested aggregate
-results and explicit topology reopen with retained history. This is the current local
+Publish and verify the explicit topology reopen increment, then connect nested aggregate
+results with retained child execution authority. This is the current local
 orchestration seam, not the full migration exit. Follow progress.md for exact verification
 and the remaining service/device/provider/store/release order.
 
@@ -103,8 +103,14 @@ checks to the exact parent/topology revisions. Adopted SpecMesh requirements are
 with the independent plugin's check operation and exact source hash. This establishes file
 delivery; reviewed project closeout remains unknown/pending.
 
-Next after this gate is verified and published: nested aggregate result bindings and
-explicit topology reopen; complete bounded automatic service scheduling and
+Explicit root topology reopen now archives the terminal run and starts a new execution
+under the same TaskHub identity (schema 22). Child assignment execution IDs prevent old
+results from entering a new run; native continuity uses the existing explicit resume.
+Frozen policy limits survive, while per-execution counters reset only on this explicit
+new run. Restart alone never reopens completed work.
+
+Next after this gate is verified and published: nested aggregate result bindings;
+complete bounded automatic service scheduling and
 malformed-output recovery, then device topology dispatch and real native topology
 acceptance. Continue all remaining CM-R0–CM-R7 provider/transport/store, native source
 revision and release/install gates; explicit local queue tests do not narrow that scope.
