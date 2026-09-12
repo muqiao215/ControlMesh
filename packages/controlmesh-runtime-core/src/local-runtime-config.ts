@@ -87,11 +87,13 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
     const claudeConfiguration = (taskId: string): ClaudeTaskConfiguration => {
       current(); const selected = config.claude;
       requireThat(object(selected), "claude_not_registered");
-      requireThat(!(object(communication) && object(communication.tasks) && Object.hasOwn(communication.tasks, taskId)), "claude_peer_tools_not_qualified");
+      const peers = object(communication) && object(communication.tasks) ? communication.tasks[taskId] : undefined;
+      requireThat(peers === undefined || (object(peers) && communication!.node_executable === selected.node_executable), "claude_communication_node_mismatch");
       return { executable: selected.executable as string, node_executable: selected.node_executable as string,
         state_home: root, environment: { home: selected.home as string, config_directory: selected.config_directory as string, credentials: selected.environment as Record<string, string> },
         model: selected.model as string, workspace: workspace.directory as string, read_files: workspace.read_files as string[], required_reads: workspace.required_reads as string[],
-        write_roots: roots, ...(specmesh && roots.length ? { workflow_binding: specmesh.binding_digest } : {}),
+        write_roots: roots, ...(peers ? { communication: structuredClone(peers) as { peer_tasks: string[]; parent_task: string | null } } : {}),
+        ...(specmesh && roots.length ? { workflow_binding: specmesh.binding_digest } : {}),
         ...(selected.timeout_ms !== undefined ? { timeout_ms: selected.timeout_ms as number } : {}), ...(selected.max_turns !== undefined ? { max_turns: selected.max_turns as number } : {}) };
     };
     const registered = (task: TaskSnapshot) => {

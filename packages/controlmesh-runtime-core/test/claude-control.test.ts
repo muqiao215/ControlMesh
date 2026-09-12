@@ -40,6 +40,17 @@ test("failed registration, extra tools and native permission requests withhold a
     expect(observeClaudeControl(outcome, f.input)).toMatchObject({ terminal: false, input_attempted: false });
   }
 });
+test("explicit message capability verifies both native servers and withholds input for missing or expanded peer tools", async () => {
+  for (const mode of ["success", "missing-messages", "extra-message-tool"]) {
+    const f = fixture(mode);
+    f.input.communication_command = ["/usr/bin/node", join(f.root, "message.mjs"), join(f.root, "message.json")];
+    const outcome = await new ClaudeControlRunner().run(f.input, f.environment, { assertCurrent: () => {} });
+    expect(observeClaudeControl(outcome, f.input).terminal).toBe(mode === "success");
+    expect(f.received().filter(frame => frame.type === "user")).toHaveLength(mode === "success" ? 1 : 0);
+    const args = JSON.parse(readFileSync(join(f.workspace, "native-arguments.json"), "utf8"));
+    expect(args[args.indexOf("--allowedTools") + 1]).toBe("mcp__workspace__*,mcp__controlmesh__*");
+  }
+});
 test("an empty MCP table spends a bounded six control queries and zero task inputs", async () => {
   const f = fixture("empty"), outcome = await new ClaudeControlRunner().run(f.input, f.environment, { assertCurrent: () => {} });
   expect(outcome.exit_code).toBe(2); expect(outcome.stderr).toContain("claude_mcp_connection_unavailable");

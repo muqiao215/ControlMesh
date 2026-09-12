@@ -180,7 +180,27 @@ The strict fixture prompt did not fully pass: a first missing newline was correc
 turn, which added prose before JSON. Preserve both defects in the acceptance record; source/tool
 evidence is not automatic semantic verification of the user's requested result.
 
-Next implement the Claude peer-message capability using existing native mailbox ownership, then
-adoption/container/device profiles. Local configuration refuses unqualified Claude peer entries
-and never falls back to another provider. Keep the one-shot contract and OpenCode-specific
-manifests intact. Remaining provider/transport/store/topology/product and CM-R7 gates stay open.
+## Scoped native peer communication
+
+Optional local communication registration now supplies Claude peers/parent and the same explicitly
+configured Node executable. The adapter creates a separate NativeAgentBroker alongside the file
+channel. Native control verifies both `workspace` and `controlmesh` MCP servers, their exact
+commands/identities/tool tables and the init record before sending input. The message server gains
+no file tools; the workspace server gains no peer tools. Without communication configuration the
+old one-server command and manifest remain valid. Unsupported message grants reject at admission.
+
+The existing NativeAgentScope is persisted in the Claude dispatch and rechecked against current
+configuration, original client digest and task identity. The existing journal owns all message
+mutations, fixed sender/episode/fence, bounded waits and request deduplication. Original Claude
+tool blocks normalize into journal verification separately from file verification. Consumption
+occurs in the same kernel transaction as completion; a lost finish leaves receipt state recoverable.
+Reconciliation verifies/consumes the same original rows without a broker or model invocation.
+
+Actual two-Claude-session read-only workspace trial passed: concurrent normal queue execution,
+seven current SpecMesh documents per task, six native message calls, private marker exchange via
+question/answer/acknowledgement, three consumed messages, one preflight and two native task inputs.
+Independent raw-source/control/file/journal verification used zero native commands and found no
+owned process. Existing one-shot behavior and OpenCode-specific manifests remain intact.
+
+Next connect History candidate/adoption and container/device profiles. Remaining mixed-provider
+and write topologies, provider/transport/store/product parity and CM-R7 gates stay open.

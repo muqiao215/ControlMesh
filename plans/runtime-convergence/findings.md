@@ -1,5 +1,24 @@
 # Findings
 
+## Claude native concurrent peer tools — 2026-09-12
+
+The existing message MCP service can be registered beside Claude's workspace service; no merged
+tool owner or second mailbox is required. Fixed native control now verifies both exact servers,
+commands, tool names and init tables before one input. Missing or expanded tables withhold input.
+Configuration supplies peer/parent identities and current grants must include all four message
+capabilities. The effect manifest records the same NativeAgentScope already used by OpenCode;
+Claude's native result verifier normalizes only its actual communication tool namespace, checks
+all durable journal responses and atomically consumes delivered messages with task completion.
+Recovery reuses those original calls; no broker/provider runner is reachable from reconciliation.
+
+Actual two-session native trial passed in the normal local configuration: parent alone received
+a random marker in its prompt; child asked, received and acknowledged the marker over three
+durable agent_message records. Both original source files contain their three real communication
+calls and current seven-file reads. The original dispatch intervals overlap. A single explicitly
+admitted shared preflight preceded two task inputs, and independent raw/control/file/journal
+readback used zero native commands. No owned processes remain. This establishes the scoped local
+read-and-message profile, not concurrent writes, mixed-provider topologies or remote Claude.
+
 ## Normal Claude queue and actual parallel lineage — 2026-09-12
 
 The normal local Claude adapter and recovery port now share one provider-specific retained

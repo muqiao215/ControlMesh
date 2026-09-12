@@ -11,6 +11,7 @@ import { registeredReads, writeRoots } from "./native-workspace";
 import { assertClaudeControlEnvironment, type ClaudeControlEnvironment } from "./claude-control-runner";
 import { ClaudeSessionStore, type ClaudeSessionRef } from "./claude-session";
 import type { ProbeBinding } from "./preflight-cache";
+import { decodeNativeAgentScope, nativeAgentTools } from "./native-agent-journal";
 
 export interface ClaudeTaskConfiguration {
   executable: string;
@@ -25,6 +26,7 @@ export interface ClaudeTaskConfiguration {
   workflow_binding?: string;
   timeout_ms?: number;
   max_turns?: number;
+  communication?: { peer_tasks: string[]; parent_task: string | null };
 }
 export function claudeProbeBinding(config: ClaudeTaskConfiguration, deviceId: string): ProbeBinding {
   return { provider: "claude", device_id: deviceId, model: config.model, cli_version: "2.1.263", config_digest: digest({}),
@@ -61,6 +63,7 @@ export function findClaudeSession(config: ClaudeTaskConfiguration, deviceId: str
 /** Literal file capability comes from trusted registration plus the current portable task grant. */
 export function claudeTaskScope(config: ClaudeTaskConfiguration, task: LegacyTask, afterPublication = false): {
   reads: string[]; required: string[]; roots: string[]; tools: (typeof nativeWorkspaceTools)[number][];
+  communication?: { peer_tasks: string[]; parent_task: string | null };
 } {
   requireThat(task.provider === "claude" && task.model === config.model && typeof task.repo_root === "string"
     && realpathSync(task.repo_root) === config.workspace && directoryIdentity(config.workspace).path === config.workspace, "claude_task_registration_mismatch");
@@ -73,6 +76,11 @@ export function claudeTaskScope(config: ClaudeTaskConfiguration, task: LegacyTas
   const required = registeredReads(config.workspace, config.required_reads, roots, afterPublication);
   requireThat(required.every(path => reads.includes(path)), "required_read_not_granted");
   const allows = grant.tool_allow.map(tool => tool.toLowerCase()), denies = grant.tool_deny.map(tool => tool.toLowerCase());
+  if (config.communication) {
+    decodeNativeAgentScope({ schema_version: "controlmesh.native_agent_scope.v1", ...config.communication, task_id: task.task_id,
+      episode_id: "profile-validation", fence: 1, client_digest: "0".repeat(64) });
+    requireThat(nativeAgentTools.every(tool => !denies.includes(tool) && (!allows.length || allows.includes(tool))), "communication_conflicts_task_grant");
+  }
   const allowed = (operation: string) => !denies.includes(operation) && !denies.includes(`controlmesh_${operation}_file`)
     && (!allows.length || allows.includes(operation) || allows.includes(`controlmesh_${operation}_file`));
   const tools = nativeWorkspaceTools.filter(tool => allowed(tool.slice("controlmesh_".length, -"_file".length)) && (tool === "controlmesh_read_file" || roots.length > 0));
@@ -83,7 +91,7 @@ export function claudeTaskScope(config: ClaudeTaskConfiguration, task: LegacyTas
     const pages = required.reduce((sum, path) => sum + Math.max(1, Math.ceil(statSync(path).size / 2045)), 0);
     requireThat(pages <= 256 && (!roots.length || pages < 256), "claude_required_read_budget_exhausted");
   }
-  return { reads, required, roots, tools };
+  return { reads, required, roots, tools, ...(config.communication ? { communication: structuredClone(config.communication) } : {}) };
 }
 export function validateClaudeTaskSession(config: ClaudeTaskConfiguration, deviceId: string, reference: ClaudeSessionRef): ClaudeSessionStore {
   const store = findClaudeSession(config, deviceId, reference.session_id);

@@ -69,15 +69,17 @@ No claim that full TS migration or distributed coordination has completed. A sco
 
 ## Next Step
 
-Qualify Claude peer-message capabilities through the existing bounded task mailbox and native
-MCP owner, then connect its remaining adoption/device profiles. Normal local Claude task startup,
+Connect Claude's remaining History adoption/device profiles to its now-qualified local execution
+and peer-message path. Normal local Claude task startup,
 explicit same-session resume, staged publication and model-free retained-result recovery are now
 implemented and have scoped native evidence. See [claude-continuity-design.md](claude-continuity-design.md).
 The actual parallel-read trial exposed a strict-chain parser defect, fixed with exact pending-tool
 parent binding. Preserve the original failed trial: the first model output omitted a newline and
 the second corrected the files but added prose before JSON, so strict fixture-prompt acceptance
-remains failed even though runtime continuity/publication verification passed. The scoped local
-profile does not qualify peer tools, remote Claude execution or full provider parity. Preserve
+remains failed even though runtime continuity/publication verification passed. A separate real
+two-session concurrent communication trial passed: six native message calls, three consumed
+messages, and seven current SpecMesh references per task; one shared preflight and two native
+inputs. The scoped local profile does not qualify remote Claude execution or full provider parity. Preserve
 the existing one-shot/restrictive flag contract and current source/grant/native identity checks.
 Continue the other provider/transport/store/topology/product owners below; CM-R7 remains open.
 

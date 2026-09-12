@@ -12,6 +12,10 @@ import { ClaudeTaskAdapter } from "../src/providers/claude-task-adapter";
 import { ClaudeTaskReconciler } from "../src/providers/claude-task-reconciler";
 import { claudeTaskScope, findClaudeSession, type ClaudeTaskConfiguration } from "../src/providers/claude-task-profile";
 import type { ClaudeControlInput } from "../src/providers/claude-control";
+import { NativeAgentBroker } from "../src/providers/native-agent-broker";
+import { prepareNativeAgentConfiguration, nativeAgentScope } from "../src/providers/native-agent-profile";
+import { NativeAgentJournal, type NativeAgentToolResult } from "../src/providers/native-agent-journal";
+import { AgentMailbox } from "../src/mailbox";
 import { digest } from "../src/value";
 import type { ProcessAdmission, ProcessOutcome } from "../src/process-supervisor";
 import { NativeMcpTestClient } from "./helpers/native-mcp-client";
@@ -34,6 +38,8 @@ class FixtureControl {
   count = 0;
   modifyRequired = false;
   extraStaged = false;
+  unrecordedCommunication = false;
+  onCommunication?: (call: (name: string, args: Record<string, unknown>) => Promise<any>) => Promise<void>;
   config!: ClaudeTaskConfiguration;
   kernel!: RuntimeKernel;
   async run(input: ClaudeControlInput, _env: unknown, authority: ProcessAdmission): Promise<ProcessOutcome> {
@@ -42,12 +48,16 @@ class FixtureControl {
     emit("started", { input_digest: digest(input) });
     const control = (request_id: string, response: unknown) => emit("native", { row: { type: "control_response", response: { subtype: "success", request_id, response } } });
     control("initialize", { current_permission_mode: "dontAsk", remote_control_auto_enable: false });
-    control("set-servers", { added: ["workspace"], removed: [], errors: {} });
-    control("mcp-status-0", { mcpServers: [{ name: "workspace", status: "connected", scope: "dynamic", serverInfo: { name: "controlmesh-workspace", version: "1.0.0" },
-      config: { type: "stdio", command: input.workspace_command[0], args: input.workspace_command.slice(1) }, tools: ["edit_file", "read_file", "write_file"].map(name => ({ name })) }] });
+    const servers = [{ name: "workspace", status: "connected", scope: "dynamic", serverInfo: { name: "controlmesh-workspace", version: "1.0.0" },
+      config: { type: "stdio", command: input.workspace_command[0], args: input.workspace_command.slice(1) }, tools: ["edit_file", "read_file", "write_file"].map(name => ({ name })) },
+      ...(input.communication_command ? [{ name: "controlmesh", status: "connected", scope: "dynamic", serverInfo: { name: "controlmesh-task-communication", version: "1.0.0" },
+        config: { type: "stdio", command: input.communication_command[0], args: input.communication_command.slice(1) }, tools: ["send", "ask_parent", "receive", "answer"].map(name => ({ name })) }] : [])];
+    control("set-servers", { added: servers.map(server => server.name), removed: [], errors: {} });
+    control("mcp-status-0", { mcpServers: servers });
     emit("input_attempted", { input_digest: digest(input) });
     emit("native", { row: { type: "system", subtype: "init", cwd: input.workspace, session_id: input.session_id, model: input.model, claude_code_version: "2.1.263", permissionMode: "dontAsk",
-      tools: ["mcp__workspace__edit_file", "mcp__workspace__read_file", "mcp__workspace__write_file"], mcp_servers: [{ name: "workspace", status: "connected" }], plugins: [], skills: [], slash_commands: [] } });
+      tools: servers.flatMap(server => server.tools.map(tool => `mcp__${server.name}__${tool.name}`)),
+      mcp_servers: servers.map(server => ({ name: server.name, status: "connected" })), plugins: [], skills: [], slash_commands: [] } });
     const directory = join(this.config.environment.config_directory, "projects", "fixture"); mkdirSync(directory, { recursive: true, mode: 0o700 });
     const path = join(directory, input.session_id + ".jsonl");
     let parent = existsSync(path) ? JSON.parse(readFileSync(path, "utf8").trim().split("\n").at(-1)!).uuid : null;
@@ -58,11 +68,13 @@ class FixtureControl {
     };
     source("user", input.prompt);
     const client = new NativeMcpTestClient(input.workspace_command);
+    const messageClient = input.communication_command ? new NativeMcpTestClient(input.communication_command) : undefined;
     try {
       await client.initialize();
-      const call = async (name: string, args: Record<string, unknown>) => {
-        const id = randomUUID(); source("assistant", [{ type: "tool_use", id, name: `mcp__workspace__${name}`, input: args }], { stop_reason: "tool_use" });
-        const response = await client.tool(name, args), result = response.result!;
+      await messageClient?.initialize();
+      const call = async (name: string, args: Record<string, unknown>, peer = false) => {
+        const id = randomUUID(); source("assistant", [{ type: "tool_use", id, name: `mcp__${peer ? "controlmesh" : "workspace"}__${name}`, input: args }], { stop_reason: "tool_use" });
+        const response = await (peer ? messageClient! : client).tool(name, args), result = response.result!;
         source("user", [{ type: "tool_result", tool_use_id: id, content: result.content, ...(result.isError ? { is_error: true } : {}) }]);
         return JSON.parse(result.content![0].text);
       };
@@ -72,6 +84,8 @@ class FixtureControl {
         read = await call("read_file", { request_id: "reread", path: "PROJECT.md" });
       }
       await call("write_file", { request_id: "write", path: `result-${this.count}.txt`, expected_sha256: null, content: read.content });
+      if (messageClient && this.onCommunication) await this.onCommunication((name, args) => call(name, args, true));
+      if (messageClient && this.unrecordedCommunication) await messageClient.tool("send", { request_id: "unrecorded", recipient_task: "peer", text: "Missing native source evidence" });
       if (this.extraStaged) {
         const row = this.kernel.db.sql.query("SELECT payload FROM execution_manifests ORDER BY rowid DESC LIMIT 1").get() as { payload: string };
         const manifest = JSON.parse(row.payload), stage = WorkspaceStage.open(manifest.stage.path, manifest.stage.reference);
@@ -81,7 +95,7 @@ class FixtureControl {
       emit("native", { row: { type: "assistant", session_id: input.session_id, message: final } });
       emit("native", { row: { type: "result", session_id: input.session_id, is_error: false, subtype: "success", result: "DONE", num_turns: 3 } });
       emit("exited", { exit_code: 0 }); return processResult(rows);
-    } finally { await client.close(); }
+    } finally { await client.close(); await messageClient?.close(); }
   }
 }
 function fixture() {
@@ -190,4 +204,69 @@ test("changed or ambiguous original native history is refused before another exe
   const duplicate = join(f.config.environment.config_directory, "projects", "second-project"); mkdirSync(duplicate);
   writeFileSync(join(duplicate, session + ".jsonl"), readFileSync(store.path));
   expect(() => findClaudeSession(f.config, actor.device_id!, session)).toThrow("claude_native_session_ambiguous");
+});
+
+async function peerFixture(f: ReturnType<typeof fixture>) {
+  f.config.communication = { peer_tasks: ["peer"], parent_task: "peer" };
+  f.kernel.submit(actor, "create-peer", { task_id: "peer", status: "waiting", chat_id: "fixture" });
+  const lease = f.kernel.claim(actor, "claim-peer", "peer", 1, 30000); f.kernel.start(actor, "start-peer", lease);
+  const profile = prepareNativeAgentConfiguration(join(f.root, "peer-ipc"), Bun.which("node")!, "peer", ["task"], "task");
+  const scope = nativeAgentScope(profile, lease);
+  f.kernel.dispatchEffect(actor, "dispatch-peer", lease, "peer-effect", {}, { communication: scope });
+  const broker = new NativeAgentBroker(f.kernel, actor, lease, "peer-effect", profile, () => {}); cleanup.push(() => broker.close()); await broker.start();
+  const client = new NativeMcpTestClient(broker.command); cleanup.push(() => client.close()); await client.initialize();
+  const proof: NativeAgentToolResult[] = [];
+  const call = async (name: string, input: Record<string, unknown>): Promise<any> => {
+    const response = await client.tool(name, input); expect(response.error).toBeUndefined();
+    const output = response.result!.content![0].text; proof.push({ tool: `controlmesh_${name}`, input, output }); return JSON.parse(output);
+  };
+  return { lease, scope, broker, proof, call };
+}
+for (const loseCompletion of [false, true]) test(`Claude file and message capabilities share task completion; retained recovery=${loseCompletion}`, async () => {
+  const f = fixture(), peer = await peerFixture(f), mailbox = new AgentMailbox(f.kernel);
+  f.control.onCommunication = async call => {
+    expect((await call("send", { request_id: "denied", recipient_task: "outside", text: "No authority" })).error).toBe("peer_not_authorized");
+    // The same request ID may exist in the distinct file journal, without crossing capabilities.
+    expect((await call("send", { request_id: "read", recipient_task: "peer", text: "Current project read" })).ok).toBe(true);
+    const asked = await call("ask_parent", { request_id: "question", text: "Which gate?" });
+    const received = await peer.call("receive", { request_id: "receive", wait_ms: 0 });
+    expect(received.messages).toHaveLength(2);
+    await peer.call("answer", { request_id: "answer", question_id: asked.message.message_id, text: "Gate A" });
+    const peerQuestion = await peer.call("ask_parent", { request_id: "peer-question", text: "Did you read the project?" });
+    const reply = await call("receive", { request_id: "receive", wait_ms: 0 });
+    expect(reply.messages[0]).toMatchObject({ kind: "answer", origin: "agent_message", sender_task: "peer", payload: { text: "Gate A" } });
+    expect((await call("answer", { request_id: "answer", question_id: peerQuestion.message.message_id, text: "Read current project" })).ok).toBe(true);
+  };
+  if (loseCompletion) {
+    const finish = f.kernel.finish.bind(f.kernel);
+    f.kernel.finish = (...args) => { if (args[3] === "done") throw new Error("fixture lost completion"); return finish(...args); };
+  }
+  const task = f.create(); f.runtime.enqueue("queue", "task", task.revision); await f.runtime.drain();
+  expect(f.control.count).toBe(1);
+  const snapshot = f.kernel.inspect(actor, "task");
+  if (loseCompletion) {
+    expect(snapshot.task.status).toBe("stale");
+    expect(f.db.sql.query("SELECT COUNT(*) AS n FROM messages WHERE recipient_task='task' AND status='received'").get()).toEqual({ n: 2 });
+    const calls = f.db.sql.query("SELECT COUNT(*) AS n FROM native_agent_calls").get();
+    const reconciler = new ClaudeTaskReconciler(f.kernel, f.config, () => {}), binding = reconciler.inspect(actor, "task", snapshot.revision, f.effect());
+    const accepted = await reconciler.accept(actor, "recover-peer", "task", snapshot.revision, binding);
+    expect(accepted.task.status).toBe("done"); expect(await reconciler.accept(actor, "recover-peer", "task", snapshot.revision, binding)).toEqual(accepted);
+    expect(f.db.sql.query("SELECT COUNT(*) AS n FROM native_agent_calls").get()).toEqual(calls);
+  } else expect(snapshot.task.status).toBe("done");
+  expect(mailbox.pendingCount(actor, "task")).toBe(0); expect(f.control.count).toBe(1);
+  expect(f.db.sql.query("SELECT COUNT(*) AS n FROM messages WHERE recipient_task='task' AND status='consumed'").get()).toEqual({ n: 2 });
+  expect(readFileSync(join(f.workspace, "result-1.txt"), "utf8")).toBe("current fixture content\n");
+  await peer.broker.close(); f.db.transaction(() => new NativeAgentJournal(f.kernel).consume(actor, peer.lease, "peer-effect", peer.scope, peer.proof));
+});
+test("Claude message grants reject before preflight and unobserved sends cannot complete or recover", async () => {
+  const f = fixture(); await peerFixture(f); const task = f.create();
+  expect(() => claudeTaskScope(f.config, { ...task.task, tool_grant: { ...(task.task.tool_grant as Record<string, unknown>), tool_deny: ["controlmesh_send"] } }))
+    .toThrow("communication_conflicts_task_grant");
+  expect(f.db.sql.query("SELECT COUNT(*) AS n FROM provider_checks").get()).toEqual({ n: 0 });
+  f.control.unrecordedCommunication = true; f.runtime.enqueue("queue", "task", task.revision); await f.runtime.drain();
+  const stopped = f.kernel.inspect(actor, "task"); expect(stopped.task.status).toBe("stale");
+  expect(existsSync(join(f.workspace, "result-1.txt"))).toBe(false);
+  const reconciler = new ClaudeTaskReconciler(f.kernel, f.config, () => {}), binding = reconciler.inspect(actor, "task", stopped.revision, f.effect());
+  await expect(reconciler.accept(actor, "reject", "task", stopped.revision, binding)).rejects.toThrow("native_agent_call_unobserved");
+  expect(f.control.count).toBe(1);
 });

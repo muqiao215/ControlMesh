@@ -5,7 +5,7 @@ import { nativeFailure, type ProviderFailure } from "./opencode-events";
 
 export const claudeNativeVersion = "2.1.263";
 const fileTools = ["edit_file", "read_file", "write_file"];
-const nativeTools = fileTools.map(name => `mcp__workspace__${name}`);
+const messageTools = ["send", "ask_parent", "receive", "answer"];
 export interface ClaudeControlInput {
   schema_version: "controlmesh.claude_control.v1";
   executable: string;
@@ -16,6 +16,7 @@ export interface ClaudeControlInput {
   prompt: string;
   max_turns: number;
   workspace_command: string[];
+  communication_command?: string[];
 }
 export interface ClaudeControlAction { frames: Record<string, unknown>[]; delay_ms?: number }
 const same = (a: unknown, b: unknown) => canonical(a) === canonical(b);
@@ -23,7 +24,8 @@ const names = (value: unknown, expected: string[]): boolean => Array.isArray(val
   && value.every(name => typeof name === "string") && same([...value].sort(), [...expected].sort());
 
 export function validateClaudeControlInput(value: unknown): asserts value is ClaudeControlInput {
-  requireThat(object(value) && same(Object.keys(value).sort(), ["schema_version", "executable", "workspace", "session_id", "resume", "model", "prompt", "max_turns", "workspace_command"].sort()), "invalid_claude_control_input");
+  requireThat(object(value) && same(Object.keys(value).sort(), ["schema_version", "executable", "workspace", "session_id", "resume", "model", "prompt", "max_turns", "workspace_command",
+    ...(value.communication_command === undefined ? [] : ["communication_command"])].sort()), "invalid_claude_control_input");
   requireThat(value.schema_version === "controlmesh.claude_control.v1" && typeof value.executable === "string" && isAbsolute(value.executable)
     && typeof value.workspace === "string" && isAbsolute(value.workspace) && typeof value.session_id === "string"
     && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(value.session_id)
@@ -32,17 +34,25 @@ export function validateClaudeControlInput(value: unknown): asserts value is Cla
     && Number.isSafeInteger(value.max_turns) && Number(value.max_turns) >= 1 && Number(value.max_turns) <= 128
     && Array.isArray(value.workspace_command) && value.workspace_command.length === 3
     && value.workspace_command.every(part => typeof part === "string" && isAbsolute(part) && part.length <= 4096 && !/[\x00\r\n]/.test(part)), "invalid_claude_control_input");
+  requireThat(value.communication_command === undefined || (Array.isArray(value.communication_command) && value.communication_command.length === 3
+    && value.communication_command.every(part => typeof part === "string" && isAbsolute(part) && part.length <= 4096 && !/[\x00\r\n]/.test(part))), "invalid_claude_control_input");
   requireThat(!/[\x00\r\n]/.test(value.executable + value.workspace) && Buffer.byteLength(canonical(value)) <= 65536, "invalid_claude_control_input");
 }
 
 export function claudeWorkspaceServer(input: ClaudeControlInput): Record<string, unknown> {
   return { type: "stdio", command: input.workspace_command[0], args: input.workspace_command.slice(1) };
 }
+export function claudeServerProfiles(input: ClaudeControlInput): Record<string, { command: Record<string, unknown>; name: string; tools: string[] }> {
+  return { workspace: { command: claudeWorkspaceServer(input), name: "controlmesh-workspace", tools: fileTools },
+    ...(input.communication_command ? { controlmesh: { command: { type: "stdio", command: input.communication_command[0], args: input.communication_command.slice(1) },
+      name: "controlmesh-task-communication", tools: messageTools } } : {}) };
+}
 export function claudeControlCommand(input: ClaudeControlInput): string[] {
   validateClaudeControlInput(input);
   return [input.executable, "--bare", "--print", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
     "--setting-sources", "", "--settings", '{"disableAllHooks":true}', "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
-    "--no-chrome", "--disable-slash-commands", "--tools", "", "--permission-mode", "dontAsk", "--allowedTools", "mcp__workspace__*",
+    "--no-chrome", "--disable-slash-commands", "--tools", "", "--permission-mode", "dontAsk", "--allowedTools",
+    Object.keys(claudeServerProfiles(input)).map(name => `mcp__${name}__*`).join(","),
     "--model", input.model, "--effort", "low", "--max-turns", String(input.max_turns), input.resume ? "--resume" : "--session-id", input.session_id];
 }
 
@@ -68,6 +78,8 @@ export class ClaudeControlSession {
     requireThat(digest(this.input) === this.binding, "claude_control_input_changed");
     requireThat(object(value) && this.rows.length < 4096 && this.phase !== "new" && this.phase !== "done", "unexpected_claude_control_record");
     this.rows.push(structuredClone(value));
+    const profiles = claudeServerProfiles(this.input), serverNames = Object.keys(profiles);
+    const nativeTools = Object.entries(profiles).flatMap(([name, profile]) => profile.tools.map(tool => `mcp__${name}__${tool}`));
     requireThat(value.type !== "control_request", "claude_native_permission_request_refused");
     if (value.type === "control_response") {
       const response = value.response;
@@ -77,24 +89,27 @@ export class ClaudeControlSession {
       if (this.phase === "initialize") {
         requireThat(body.current_permission_mode === "dontAsk" && body.remote_control_auto_enable === false, "claude_control_configuration_unproven");
         this.phase = "register";
-        return this.request("set-servers", { subtype: "mcp_set_servers", servers: { workspace: claudeWorkspaceServer(this.input) } });
+        return this.request("set-servers", { subtype: "mcp_set_servers", servers: Object.fromEntries(Object.entries(profiles).map(([name, profile]) => [name, profile.command])) });
       }
       if (this.phase === "register") {
-        requireThat(names(body.added, ["workspace"]) && names(body.removed, []) && object(body.errors) && Object.keys(body.errors).length === 0, "claude_mcp_registration_failed");
+        requireThat(names(body.added, serverNames) && names(body.removed, []) && object(body.errors) && Object.keys(body.errors).length === 0, "claude_mcp_registration_failed");
         this.phase = "status"; return this.request("mcp-status-0", { subtype: "mcp_status" });
       }
-      requireThat(Array.isArray(body.mcpServers), "claude_mcp_status_unproven");
-      if (body.mcpServers.length === 0 || (body.mcpServers.length === 1 && object(body.mcpServers[0])
-        && body.mcpServers[0].name === "workspace" && body.mcpServers[0].status === "pending")) {
+      requireThat(Array.isArray(body.mcpServers) && body.mcpServers.every(server => object(server) && typeof server.name === "string"
+        && serverNames.includes(server.name) && ["pending", "connected"].includes(String(server.status)))
+        && new Set(body.mcpServers.map(server => server.name)).size === body.mcpServers.length, "claude_mcp_status_unproven");
+      if (body.mcpServers.length < serverNames.length || body.mcpServers.some(server => server.status === "pending")) {
         requireThat(++this.attempts < 6, "claude_mcp_connection_unavailable");
         return { ...this.request(`mcp-status-${this.attempts}`, { subtype: "mcp_status" }), delay_ms: 250 };
       }
-      requireThat(body.mcpServers.length === 1 && object(body.mcpServers[0]), "claude_mcp_scope_unproven");
-      const server = body.mcpServers[0];
-      requireThat(server.name === "workspace" && server.status === "connected" && server.scope === "dynamic"
-        && same(server.config, claudeWorkspaceServer(this.input)) && object(server.serverInfo)
-        && server.serverInfo.name === "controlmesh-workspace" && server.serverInfo.version === "1.0.0"
-        && Array.isArray(server.tools) && server.tools.every(object) && names(server.tools.map(tool => tool.name), fileTools), "claude_mcp_scope_unproven");
+      requireThat(body.mcpServers.length === serverNames.length, "claude_mcp_scope_unproven");
+      for (const server of body.mcpServers) {
+        const profile = profiles[String(server.name)];
+        requireThat(server.status === "connected" && server.scope === "dynamic"
+          && same(server.config, profile.command) && object(server.serverInfo)
+          && server.serverInfo.name === profile.name && server.serverInfo.version === "1.0.0"
+          && Array.isArray(server.tools) && server.tools.every(object) && names(server.tools.map((tool: Record<string, unknown>) => tool.name), profile.tools), "claude_mcp_scope_unproven");
+      }
       this.phase = "input"; this.pending = "";
       return { frames: [{ type: "user", session_id: this.input.session_id, parent_tool_use_id: null,
         message: { role: "user", content: this.input.prompt } }] };
@@ -105,7 +120,8 @@ export class ClaudeControlSession {
       requireThat(value.type === "system" && value.subtype === "init" && value.cwd === this.input.workspace
         && value.claude_code_version === claudeNativeVersion && value.model === this.input.model && value.permissionMode === "dontAsk"
         && names(value.tools, nativeTools) && names(value.plugins, []) && names(value.skills, []) && names(value.slash_commands, [])
-        && same(value.mcp_servers, [{ name: "workspace", status: "connected" }]), "claude_native_profile_unproven");
+        && Array.isArray(value.mcp_servers) && value.mcp_servers.every(server => object(server) && server.status === "connected")
+        && names(value.mcp_servers.map(server => server.name), serverNames), "claude_native_profile_unproven");
       this.phase = "running"; return { frames: [] };
     }
     requireThat(["assistant", "user", "result"].includes(String(value.type)), "unsupported_claude_native_record");

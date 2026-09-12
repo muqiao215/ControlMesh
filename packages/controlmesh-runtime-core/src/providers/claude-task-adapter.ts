@@ -9,7 +9,8 @@ import { directoryIdentity, nativeTaskDigest } from "./native-manifest";
 import { NativeSessionLease } from "./native-lease";
 import { NativeMailboxDelivery } from "./native-mailbox";
 import { nativeInput } from "./native-mailbox-input";
-import { NativeAgentChannel } from "./native-agent-broker";
+import { NativeAgentChannel, NativeAgentBroker } from "./native-agent-broker";
+import { NativeAgentJournal } from "./native-agent-journal";
 import { prepareNativeAgentConfiguration } from "./native-agent-profile";
 import { NativeWorkspaceFiles } from "./native-workspace-files";
 import { ClaudeControlRunner } from "./claude-control-runner";
@@ -80,6 +81,8 @@ export class ClaudeTaskAdapter {
     const sessionId = reference?.session_id ?? randomUUID();
     const lock = new NativeSessionLease(this.config.state_home, this.config.environment.config_directory, { session_id: sessionId });
     let channel: NativeAgentChannel | undefined;
+    let communication: NativeAgentBroker | undefined;
+    const journal = new NativeAgentJournal(this.kernel);
     try {
       const store = reference ? validateClaudeTaskSession(this.config, this.actor.device_id!, reference) : findClaudeSession(this.config, this.actor.device_id!, sessionId);
       requireThat(reference || !store, "claude_native_session_already_exists");
@@ -91,6 +94,12 @@ export class ClaudeTaskAdapter {
       const files = new NativeWorkspaceFiles({ workspace: this.config.workspace, read_files: scope.reads, tools: scope.tools,
         journal_directory: journalDirectory, binding_digest: digest({ lease, configuration: digest(this.config), task: issued }), ...(stage ? { stage } : {}) }, authority, current);
       const profile = prepareNativeAgentConfiguration(join(directory, "ipc"), this.config.node_executable, task.task_id, [], null, "workspace.v1");
+      if (scope.communication) {
+        const messageProfile = prepareNativeAgentConfiguration(join(directory, "message-ipc"), this.config.node_executable,
+          task.task_id, scope.communication.peer_tasks, scope.communication.parent_task);
+        communication = new NativeAgentBroker(this.kernel, this.actor, lease, effect, messageProfile, () => { current(); lock.assertCurrent(); });
+        await communication.start();
+      }
       let manifest: ClaudeDispatch | undefined;
       channel = new NativeAgentChannel(lease, profile, current, { assertDispatched: () => {
         current(); lock.assertCurrent();
@@ -103,12 +112,14 @@ export class ClaudeTaskAdapter {
       const delivery = mailbox.prepare(this.actor, lease, prompt, 32768);
       const input: ClaudeControlInput = { schema_version: "controlmesh.claude_control.v1", executable: this.config.executable, workspace: this.config.workspace,
         session_id: sessionId, resume: !!reference, model: this.config.model, prompt: nativeInput(prompt, delivery),
-        max_turns: this.config.max_turns ?? 128, workspace_command: channel.command };
+        max_turns: this.config.max_turns ?? 128, workspace_command: channel.command,
+        ...(communication ? { communication_command: communication.command } : {}) };
       validateClaudeControlInput(input);
       manifest = { schema_version: "controlmesh.claude_dispatch.v1", task_digest: issued, configuration_digest: digest(this.config), binding, input,
         native_directory: directoryIdentity(this.config.environment.config_directory), native_path: store?.path ?? null, baseline,
         execution_directory: directoryIdentity(directory), scope, workspace_tools: files.scope,
-        stage: stage ? { path: stage.path, reference: stage.reference() } : null, ...(delivery ? { mailbox_delivery: delivery } : {}) };
+        stage: stage ? { path: stage.path, reference: stage.reference() } : null, ...(delivery ? { mailbox_delivery: delivery } : {}),
+        ...(communication ? { communication: communication.scope } : {}) };
       current(); lock.assertCurrent(); if (reference) store!.validate(reference); this.cache.assertReady(this.actor, binding);
       this.kernel.db.transaction(() => {
         current(); this.kernel.start(this.actor, request("start"), lease);
@@ -120,18 +131,20 @@ export class ClaudeTaskAdapter {
       });
       const outcome = await this.control.run(input, this.config.environment, { signal: context.signal, remainingMs: context.remainingMs,
         assertCurrent: () => { current(); lock.assertCurrent(); } }, this.config.timeout_ms ?? 60000);
-      await channel.close();
+      await channel.close(); await communication?.close();
       // Keep the original result even if its lease expired before the coordinator can acknowledge it.
       const observation = retainClaudeOutcome(manifest, outcome), observed = observeClaudeControl(outcome, input);
       if (observed.failure) this.cache.recordExecutionFailure(this.actor, binding, generation, observed.failure);
       this.kernel.recordEffectObservation(this.actor, request("observe"), lease, effect, observation);
-      const evidence = new ClaudeTaskEvidence(this.config, this.actor.device_id!, task, manifest, observation, current);
+      const evidence = new ClaudeTaskEvidence(this.config, this.actor.device_id!, task, manifest, observation, current,
+        (scope, tools) => journal.verify(effect, scope, tools));
       evidence.verify(); publishing = true;
       const result = evidence.publish(authority);
       const publication = await context.verifyPublication?.(() => { current(); evidence.assertPublished(); }) ?? {};
       return this.kernel.db.transaction(() => {
         current(); evidence.assertPublished();
         if (delivery) mailbox.consume(this.actor, lease, effect, delivery, result);
+        if (communication) journal.consume(this.actor, lease, effect, communication.scope, evidence.communicationTools);
         const accepted = { ...publication, ...result, mailbox_pending_count: mailbox.pendingCount(this.actor, task.task_id) };
         this.kernel.confirmEffect(this.actor, request("confirm"), lease, effect, accepted);
         return this.kernel.finish(this.actor, request("finish"), lease, "done", accepted);
@@ -142,6 +155,6 @@ export class ClaudeTaskAdapter {
         try { this.kernel.markUnknown(this.actor, request("unknown"), lease, reason); } catch { /* current cancellation/new ownership remains authoritative */ }
       }
       throw error;
-    } finally { await channel?.close(); lock.close(); }
+    } finally { await Promise.allSettled([channel?.close(), communication?.close()]); lock.close(); }
   }
 }

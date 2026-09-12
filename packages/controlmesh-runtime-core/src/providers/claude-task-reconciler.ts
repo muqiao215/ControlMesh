@@ -4,6 +4,7 @@ import { NativeSessionLease } from "./native-lease";
 import { NativeMailboxDelivery } from "./native-mailbox";
 import { claudeTaskScope, type ClaudeTaskConfiguration } from "./claude-task-profile";
 import { ClaudeTaskEvidence, decodeClaudeDispatch, readClaudeOutcome } from "./claude-task-evidence";
+import { NativeAgentJournal } from "./native-agent-journal";
 
 /** Current owner may recover retained output/publication. No provider runner is reachable here. */
 export class ClaudeTaskReconciler {
@@ -35,7 +36,9 @@ export class ClaudeTaskReconciler {
         requireThat(digest(this.inspect(actor, taskId, revision, binding.effect_id)) === digest(binding), "reconciliation_evidence_changed");
       };
       const observation = target.observation ?? readClaudeOutcome(manifest).observation;
-      const verifier = new ClaudeTaskEvidence(this.config, actor.device_id!, target.task.task, manifest, observation, current);
+      const journal = new NativeAgentJournal(this.kernel);
+      const verifier = new ClaudeTaskEvidence(this.config, actor.device_id!, target.task.task, manifest, observation, current,
+        (scope, tools) => journal.verify(binding.effect_id, scope, tools));
       verifier.verify();
       if (!target.observation) this.kernel.admitReconciliationObservation(actor, taskId, revision,
         { episode_id: binding.episode_id, effect_id: binding.effect_id, manifest_digest: binding.manifest_digest }, observation, `claude-recovery-${digest(requestId)}`);
@@ -47,6 +50,7 @@ export class ClaudeTaskReconciler {
       return this.kernel.reconcileEffect(actor, requestId, taskId, revision, binding, saved => {
         assertPublished(); const mailbox = new NativeMailboxDelivery(this.kernel);
         if (manifest.mailbox_delivery) mailbox.reconcile(actor, saved, manifest.mailbox_delivery, result);
+        if (manifest.communication) journal.reconcile(actor, saved, manifest.communication, verifier.communicationTools);
         return { ...publication, ...result, mailbox_pending_count: mailbox.pendingCount(actor, taskId),
           reconciliation: { schema_version: "controlmesh.claude_reconciliation.v1", ...binding } };
       });

@@ -2,6 +2,40 @@
 
 ## Current
 
+Current increment: **Claude native peer communication through the normal local queue**. Optional
+per-task communication registration binds the existing NativeAgentBroker/Journal to each Claude
+effect. The native controller verifies two separate MCP servers and exact tool tables before
+sending input. File capabilities stay separate from messaging; grants must authorize the message
+tools, peer/parent identities come from registration, and task/tool inputs cannot choose a sender.
+Original native calls must match every durable message receipt before atomic consumption/completion.
+Explicit retained recovery uses the same journal verification and cannot send another message.
+
+Actual CLI 2.1.263/MiniMax-M3: two separate sessions executed concurrently through normal local
+configuration with independent SpecMesh checks and seven current documents required per task.
+Only the parent prompt contained a random marker; child asked, received the answer, and sent an
+acknowledgement containing that marker. Both tasks completed. Six real communication calls and
+three consumed agent_message records match both original JSONLs and kernel receipts. The two
+dispatches preceded either completion. One shared preflight and two native task inputs ran;
+the model-free independent readback found no remaining owned processes. This trial is read-only
+at the workspace layer; concurrent staged writes and external-device Claude are separate gates.
+
+Validation: pinned full runtime gate with actual Docker/independent SpecMesh **435/435**, zero
+failures, 4,671 assertions in 86.16 seconds. Focused control/task tests **20/20**, 134 assertions,
+10.69 seconds plus typecheck. Tests cover missing/expanded MCP tables withholding input, peer
+denial, distinct file/message request-ID ownership, question/answer, lost completion after
+message receipt, idempotent recovery without execution, grant refusal and unobserved sends.
+Logs `/tmp/cm-claude-peer-full.log` and `/tmp/cm-claude-peer-focused.log`; private actual evidence:
+`claude-peer-native-acceptance.{ts,json,log}`, `verify_claude_peer.ts` and
+`claude-peer-independent-verification.{json,log}` in the coordinating workspace.
+
+Next: History candidate/adoption into the Claude task owner, then remaining container/device and
+other-provider/transport/store/topology/product owners. All CM-R0–R7 requirements remain active;
+no production writer, installation, service, bot, cron or default changed. Predecessor
+20910913607a79811e3a6bd36fa0e5a657b78cea has successful exact-SHA
+[CI 34670786335](https://github.com/muqiao215/ControlMesh/actions/runs/34670786335).
+
+## Previous normal Claude queue and recovery increment
+
 Current increment: **normal Claude task startup, original-session resume and retained recovery**.
 `ClaudeTaskAdapter` uses the ordinary local queue/kernel, shared readiness cache, native session
 lock, distinct Claude dispatch manifest, private fsynced original outcome, scoped workspace tools

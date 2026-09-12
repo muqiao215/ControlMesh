@@ -680,3 +680,11 @@ exact pending call owner; they do not permit arbitrary history branches. Optiona
 and publication checks remain separate from semantic closeout. See the active
 [Claude continuity design](../plans/runtime-convergence/claude-continuity-design.md) for qualified
 profiles and the remaining peer/adoption/device boundaries. Production remains Python-owned.
+
+Claude's local candidate now composes the separate workspace MCP channel and existing task
+communication broker. Native control verifies both exact tool tables before input; each message
+call retains the fixed task/episode/fence scope and durable journal response. Original JSONL
+message calls and file calls are verified separately, then message consumption and task completion
+commit together. Retained recovery consumes only verified existing rows and never starts a broker
+or model. This local peer profile does not establish remote Claude or concurrent-write topology
+qualification; the active continuity design owns those remaining gates.
