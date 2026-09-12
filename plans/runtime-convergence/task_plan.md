@@ -69,8 +69,9 @@ No claim that full TS migration or distributed coordination has completed. A sco
 
 ## Next Step
 
-Publish the persistent local TS service and normal command entry, then verify exact-commit CI.
-Full local regression passed 803 tests / 10317 assertions. Task/event reads, independent clients, execution-time cancellation,
+Publish registered-context CLI changes, then connect the interactive terminal frontend to the
+same service. The persistent service f1832aa passed full local regression (803 tests / 10317
+assertions) and CI 34711514218. Task/event reads, independent clients, execution-time cancellation,
 SIGKILL/restart and synthetic-container session continuity have focused evidence. The next
 terminal frontend must use this same runtime, profile, grants, queue and native recovery owner.
 The e2b16e3 publication checkpoint passed CI 34709699732. Initial workspace distribution and

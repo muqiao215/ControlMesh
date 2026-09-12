@@ -12,8 +12,8 @@ export const runtimeHelp = `ControlMesh TypeScript 运行时（候选入口）
   tasks [--after ID] [--limit N]   查看任务、结果状态和阻塞原因
   inspect TASK                    查看任务及当前版本
   events TASK [--after N]         查看有来源标记的任务事件
-  new TASK --project DIR --provider PROVIDER --model MODEL --prompt TEXT
-                                  创建任务；使用 enqueue 开始执行
+  new TASK --prompt TEXT           使用已注册项目和模型创建任务
+    [--provider NAME] [--model ID] 多 Provider 时显式选择；使用 enqueue 执行
   enqueue TASK --revision N       执行已创建的任务
   resume TASK --revision N --prompt TEXT
                                   原任务续接；使用 enqueue 开始新回合
@@ -81,9 +81,10 @@ export function parseRuntimeCli(argv: string[]): RuntimeCliCommand | null {
       case "inspect": request = { op: "inspect_task", task_id: args[1] }; break;
       case "events": request = { op: "task_events", task_id: args[1], after: number("--after", 0), limit: number("--limit", 50) }; break;
       case "new": {
-        const project = text("--project"); requireThat(isAbsolute(project), "cli_project_required");
-        request = { op: "submit", task: { task_id: args[1], status: "waiting", chat_id: "terminal", repo_root: project,
-          provider: text("--provider"), model: text("--model"), prompt: prompt() } }; break;
+        const project = flags["--project"] === undefined ? undefined : text("--project");
+        requireThat(project === undefined || isAbsolute(project), "cli_project_required");
+        request = { op: "submit", task: { task_id: args[1], status: "waiting", chat_id: "terminal", ...(project ? { repo_root: project } : {}),
+          ...(flags["--provider"] ? { provider: text("--provider") } : {}), ...(flags["--model"] ? { model: text("--model") } : {}), prompt: prompt() } }; break;
       }
       case "enqueue": case "cancel": case "resume": request = { op: command, task_id: args[1], expected_revision: number("--revision"),
         ...(command === "resume" ? { prompt: prompt() } : {}) }; break;
@@ -93,6 +94,20 @@ export function parseRuntimeCli(argv: string[]): RuntimeCliCommand | null {
   }
   request.id = flags["--request-id"] ?? request.id ?? randomUUID(); identifier(request.id);
   return { ...base, request };
+}
+
+/** Resolve display defaults from the service's current registration, never from native history or guessed readiness. */
+export function resolveRuntimeNew(request: Record<string, unknown>, description: unknown): Record<string, unknown> {
+  requireThat(object(description) && description.mode === "candidate" && typeof description.workspace === "string"
+    && Array.isArray(description.providers) && description.providers.every(item => object(item) && typeof item.provider === "string" && typeof item.model === "string"), "cli_configuration_unavailable");
+  requireThat(request.op === "submit" && object(request.task), "invalid_local_request");
+  const task = request.task, providers = description.providers as { provider: string; model: string }[];
+  const matches = task.provider === undefined ? providers : providers.filter(item => item.provider === task.provider);
+  requireThat(matches.length === 1, matches.length ? "cli_provider_selection_required" : "cli_provider_not_registered");
+  const selected = matches[0]!;
+  requireThat(task.model === undefined || task.model === selected.model, "cli_model_not_registered");
+  requireThat(task.repo_root === undefined || task.repo_root === description.workspace, "cli_project_not_registered");
+  return { ...request, task: { ...task, repo_root: description.workspace, provider: selected.provider, model: selected.model } };
 }
 
 /** Provider text is data, including OSC links, cursor movement, CR and backspace. */
@@ -112,7 +127,12 @@ export function renderRuntimeReply(reply: Record<string, unknown>, json = false)
     return ["任务  状态  Provider  模型  进展/阻塞", ...rows, ...(rows.length ? [] : ["暂无任务"]),
       ...(result.next_after ? [`下一页：--after ${terminalText(result.next_after)}`] : [])].join("\n");
   }
-  if (object(result) && object(result.queue)) return `服务已连接；排队 ${terminalText(result.queue.queued)}，运行 ${terminalText(result.queue.running)}，并发容量 ${terminalText(result.parallelism)}`;
+  if (object(result) && object(result.queue)) {
+    const configuration = object(result.configuration) ? result.configuration : null;
+    const registered = configuration && Array.isArray(configuration.providers) ? configuration.providers.filter(object) : [];
+    return [...(configuration ? [`项目：${terminalText(configuration.workspace)}`, `已注册模型：${registered.map(item => `${terminalText(item.provider)}/${terminalText(item.model)}`).join("，")}（执行时预检）`] : []),
+      `服务已连接；排队 ${terminalText(result.queue.queued)}，运行 ${terminalText(result.queue.running)}，并发容量 ${terminalText(result.parallelism)}`].join("\n");
+  }
   if (object(result) && object(result.task)) return `任务 ${terminalText(result.task.task_id)}：${terminalText(result.task.status)}，版本 ${terminalText(result.revision)}${result.needs_reconciliation ? "，需要核对原执行结果" : ""}\n${printableJson(result, 2)}\n请求：${id}`;
   return `${printableJson(result, 2)}\n请求：${id}`;
 }

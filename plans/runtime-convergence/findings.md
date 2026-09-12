@@ -1,5 +1,19 @@
 # Findings
 
+## Terminal registration context — 2026-09-13
+
+f1832aa completed CI 34711514218 successfully. The terminal lacked a safe registration
+description, so new tasks required manually repeating the project, Provider and model.
+openLocalRuntime now supplies a fresh, configuration-bound display copy through status;
+credentials, environment and native storage paths are not returned. This is registration,
+not proof of readiness or remaining quota. Actual execution retains existing preflight.
+CLI new resolves its defaults from that copy; multiple Providers require explicit selection,
+while a wrong project/model/provider fails before submit. Advanced raw request operations
+retain their existing admission semantics. Typecheck plus 20 CLI/local-control tests passed
+148 assertions in 12.44s (/tmp/cm-runtime-description.log), including no-probe/no-secret,
+original request identity, client reconnect, cancellation and SIGKILL/restart. Full prior
+service regression and CI remain separately recorded below; current final CI is pending.
+
 ## Persistent local runtime entry — 2026-09-13 in progress
 
 The preceding turn changed authoritative code and pushed e2b16e3; it is progress, not a

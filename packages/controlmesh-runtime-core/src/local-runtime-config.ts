@@ -33,9 +33,15 @@ import type { ClaudeTaskConfiguration } from "./providers/claude-task-profile";
 import { LocalNativeHistory, type LocalNativeHistoryPort } from "./providers/local-native-history";
 
 /** Explicit isolated candidate configuration. Reading task state does not inspect or probe any provider. */
+export interface LocalRuntimeDescription {
+  mode: "candidate"; workspace: string;
+  providers: { provider: "opencode" | "claude"; model: string }[];
+  registered_write_roots: string[];
+  integrations: { history: boolean; specmesh: boolean };
+}
 export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; deliveries?: DeliveryOutbox; inbound?: FeishuInboundRuntime;
   scheduler?: TopologyScheduler; keep_alive?: boolean; specmesh?: SpecMeshPort; recovery: LocalRuntimeRecovery; history?: LocalNativeHistoryPort;
-  submissionIdentity: (task: LegacyTask) => SubmissionIdentity; stop: () => Promise<void>; close: () => Promise<void> } {
+  describe: () => LocalRuntimeDescription; submissionIdentity: (task: LegacyTask) => SubmissionIdentity; stop: () => Promise<void>; close: () => Promise<void> } {
   const loaded = privateFile(path), config = decodeSnapshot(loaded.bytes).source;
   requireThat(object(config) && config.schema_version === "controlmesh.local_runtime.v1" && config.mode === "candidate", "unsupported_local_runtime_config");
   requireThat(typeof config.state_root === "string" && isAbsolute(config.state_root) && realpathSync(config.state_root) === config.state_root, "private_runtime_state_required");
@@ -215,6 +221,12 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
     let stopping: Promise<void> | undefined, closing: Promise<void> | undefined;
     const stop = () => stopping ??= Promise.all([scheduler?.stop(), runtime.stop(), deliveries?.stop(), delivery?.close(), inbound?.stop(), specmesh?.stop(), history?.stop()]).then(() => {});
     const close = () => closing ??= stop().then(() => db.close());
-    return { runtime, recovery, submissionIdentity, stop, close, ...(scheduler ? { scheduler, keep_alive: schedule!.keep_alive === true } : {}), ...(history ? { history } : {}), ...(deliveries ? { deliveries } : {}), ...(inbound ? { inbound } : {}), ...(specmesh ? { specmesh } : {}) };
+    const describe = (): LocalRuntimeDescription => {
+      current();
+      return { mode: "candidate", workspace: workspace.directory as string,
+        providers: (["opencode", "claude"] as const).filter(name => object(config[name])).map(name => ({ provider: name, model: (config[name] as Record<string, unknown>).model as string })),
+        registered_write_roots: [...roots], integrations: { history: Boolean(history), specmesh: Boolean(specmesh) } };
+    };
+    return { runtime, recovery, describe, submissionIdentity, stop, close, ...(scheduler ? { scheduler, keep_alive: schedule!.keep_alive === true } : {}), ...(history ? { history } : {}), ...(deliveries ? { deliveries } : {}), ...(inbound ? { inbound } : {}), ...(specmesh ? { specmesh } : {}) };
   } catch (error) { db.close(); throw error; }
 }

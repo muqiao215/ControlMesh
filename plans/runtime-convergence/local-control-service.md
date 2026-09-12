@@ -29,12 +29,19 @@ In another terminal, use the same socket:
 ```bash
 pnpm runtime --socket "$CM_SOCKET" status
 pnpm runtime --socket "$CM_SOCKET" tasks
-pnpm runtime --socket "$CM_SOCKET" new task-1 --project /absolute/project \
-  --provider claude --model YOUR_CONFIGURED_MODEL --prompt-file /absolute/request.md
+pnpm runtime --socket "$CM_SOCKET" new task-1 --prompt-file /absolute/request.md
 pnpm runtime --socket "$CM_SOCKET" enqueue task-1 --revision 1
 pnpm runtime --socket "$CM_SOCKET" inspect task-1
 pnpm runtime --socket "$CM_SOCKET" events task-1
 ```
+
+`status` exposes a copy of the registered project, Provider/model names, registered write
+roots and integration presence. It omits credentials, environment values and native storage
+paths. Registration is not a readiness/quota report; execution still performs preflight.
+`new` reads this current registration, uses its project/model, and requires `--provider NAME`
+when more than one Provider is registered. Explicit `--model` or `--project` must match the
+selected registration. Unknown overrides fail before task creation. Configuration changes
+still revoke the service's authority; this read does not issue a grant or permit.
 
 Creation does not enqueue implicitly. Once explicitly queued, work runs in the service and
 the submitting client may exit. Inspect the current revision before `resume` or `cancel`;

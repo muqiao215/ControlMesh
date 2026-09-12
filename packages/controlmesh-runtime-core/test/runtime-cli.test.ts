@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseRuntimeCli, renderRuntimeReply, terminalText } from "../src/runtime-cli";
+import { parseRuntimeCli, renderRuntimeReply, resolveRuntimeNew, terminalText } from "../src/runtime-cli";
 import { RuntimeDatabase } from "../src/database";
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -73,6 +73,40 @@ test("service duplicate launch fails before changing live runtime state", async 
     expect(second).toMatchObject({ code: 2, value: null }); expect(JSON.parse(second.stderr)).toEqual({ error: "local_service_already_running" });
     expect((await invoke(f.socket, "status")).code).toBe(0); expect(existsSync(f.data)).toBe(false);
   } finally { await service.stop(); }
+});
+
+test("new tasks inherit the registered project/model and invalid overrides never create a task or probe", async () => {
+  const f = fixture(), config = JSON.parse(readFileSync(f.config, "utf8"));
+  config.opencode.environment.PRIVATE_FIXTURE_TOKEN = "never-export-this";
+  writeFileSync(f.config, JSON.stringify(config), { mode: 0o600 });
+  const service = await serve(f.config, f.socket);
+  try {
+    const status = await invoke(f.socket, "status");
+    expect(status.value).toMatchObject({ result: { configuration: { mode: "candidate", workspace: f.workspace,
+      providers: [{ provider: "opencode", model: "fixture/model" }], registered_write_roots: [] } } });
+    expect(JSON.stringify(status.value)).not.toContain("never-export-this");
+    expect(JSON.stringify(status.value)).not.toContain(f.data);
+    const created = await invoke(f.socket, "new", "automatic", "--prompt", "使用已注册项目", "--request-id", "automatic-original");
+    expect(created.value).toMatchObject({ ok: true, result: { task: { repo_root: f.workspace, provider: "opencode", model: "fixture/model" } } });
+    expect(await invoke(f.socket, "new", "automatic", "--prompt", "使用已注册项目", "--request-id", "automatic-original")).toEqual(created);
+    for (const [flag, value, error] of [["--provider", "foreign", "cli_provider_not_registered"], ["--model", "foreign", "cli_model_not_registered"], ["--project", f.root, "cli_project_not_registered"]]) {
+      const rejected = await invoke(f.socket, "new", "rejected", "--prompt", "must not create", flag!, value!);
+      expect(rejected.code).toBe(2); expect(JSON.parse(rejected.stderr).error).toBe(error);
+    }
+    const tasks = await invoke(f.socket, "tasks"); expect(tasks.value.result.tasks.map((task: { task_id: string }) => task.task_id)).toEqual(["automatic"]);
+    expect(existsSync(f.data)).toBe(false);
+  } finally { await service.stop(); }
+}, 15_000);
+
+test("multiple registered providers require explicit selection; configuration metadata cannot invent readiness", () => {
+  const request = { id: "new", op: "submit", task: { task_id: "a", status: "waiting", chat_id: "terminal", prompt: "work" } };
+  const description = { mode: "candidate", workspace: "/project", providers: [{ provider: "opencode", model: "m1" }, { provider: "claude", model: "m2" }] };
+  expect(() => resolveRuntimeNew(request, description)).toThrow("cli_provider_selection_required");
+  expect(resolveRuntimeNew({ ...request, task: { ...request.task, provider: "claude" } }, description))
+    .toMatchObject({ task: { provider: "claude", model: "m2", repo_root: "/project" } });
+  expect(request.task).not.toHaveProperty("provider");
+  const output = renderRuntimeReply({ id: "status", ok: true, result: { queue: { queued: 0, running: 0 }, parallelism: 2, configuration: description } });
+  expect(output).toContain("执行时预检"); expect(output).toContain("/project");
 });
 
 test("CLI validates authority-related inputs, preserves explicit request IDs and never changes source or grants", () => {

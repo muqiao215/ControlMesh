@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 import { startLocalRuntimeService } from "../src/local-runtime-service";
-import { parseRuntimeCli, renderRuntimeReply, runtimeHelp } from "../src/runtime-cli";
+import { parseRuntimeCli, renderRuntimeReply, resolveRuntimeNew, runtimeHelp } from "../src/runtime-cli";
 import { requestRuntimeControl } from "../src/runtime-control-socket";
-import { RuntimeConflict } from "../src/value";
+import { digest, object, requireThat, RuntimeConflict } from "../src/value";
 
 let requestId: unknown;
 try {
@@ -19,6 +19,12 @@ try {
     } finally { process.off("SIGINT", wake); process.off("SIGTERM", wake); await service.close(); }
   } else {
     requestId = command.request!.id;
+    if (command.command === "new") {
+      const profile = await requestRuntimeControl(command.socket, { id: digest([requestId, "configuration"]), op: "status" }, command.timeout_ms)
+        .catch(() => { throw new RuntimeConflict("cli_configuration_unavailable"); });
+      requireThat(profile.ok && object(profile.result), "cli_configuration_unavailable");
+      command.request = resolveRuntimeNew(command.request!, profile.result.configuration);
+    }
     const reply = await requestRuntimeControl(command.socket, command.request!, command.timeout_ms);
     console.log(renderRuntimeReply(reply, command.json)); if (!reply.ok) process.exitCode = 1;
   }

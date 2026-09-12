@@ -22,7 +22,7 @@ export async function startLocalRuntimeService(config: string, socket: string) {
   try {
     owned = openLocalRuntime(config);
     control = new LocalRuntimeControl(owned.runtime, owned.deliveries, owned.submissionIdentity, owned.inbound,
-      owned.specmesh, owned.recovery, owned.history, owned.scheduler);
+      owned.specmesh, owned.recovery, owned.history, owned.scheduler, owned.describe);
     let pumping: Promise<void> | undefined;
     pump = () => {
       if (closing || pumping) return;

@@ -10,6 +10,7 @@ import type { FeishuInboundRuntime } from "./feishu-inbound-runtime";
 import type { SpecMeshPort } from "./specmesh-port";
 import type { ReconciliationBinding, TaskSnapshot } from "./kernel";
 import type { LocalNativeHistoryPort } from "./providers/local-native-history";
+import type { LocalRuntimeDescription } from "./local-runtime-config";
 
 export interface LocalRuntimeRecovery {
   inspect(taskId: string, revision: number, effectId: string): ReconciliationBinding;
@@ -20,7 +21,8 @@ export interface LocalRuntimeRecovery {
 export class LocalRuntimeControl {
   constructor(private readonly runtime: LocalTaskRuntime, private readonly deliveries?: DeliveryOutbox,
     private readonly submissionIdentity?: (task: LegacyTask) => SubmissionIdentity, private readonly inbound?: FeishuInboundRuntime,
-    private readonly specmesh?: SpecMeshPort, private readonly recovery?: LocalRuntimeRecovery, private readonly history?: LocalNativeHistoryPort, private readonly scheduler?: TopologyScheduler) {}
+    private readonly specmesh?: SpecMeshPort, private readonly recovery?: LocalRuntimeRecovery, private readonly history?: LocalNativeHistoryPort, private readonly scheduler?: TopologyScheduler,
+    private readonly describe?: () => LocalRuntimeDescription) {}
 
   async handle(request: unknown): Promise<Record<string, unknown>> {
     let id: string | null = null;
@@ -48,7 +50,7 @@ export class LocalRuntimeControl {
         requireThat(this.deliveries, "delivery_not_configured");
       if (Object.hasOwn(topologyControlFields, request.op)) result = await topologyControl(this.scheduler, request, id);
       switch (request.op) {
-        case "status": result = { queue: this.runtime.queueStatus(), parallelism: this.runtime.parallelLimit() }; break;
+        case "status": result = { queue: this.runtime.queueStatus(), parallelism: this.runtime.parallelLimit(), ...(this.describe ? { configuration: this.describe() } : {}) }; break;
         case "list_tasks": result = this.runtime.listTasks(request.after as string | undefined, request.limit as number | undefined); break;
         case "task_events": identifier(request.task_id); result = this.runtime.taskEvents(request.task_id, request.after as number | undefined, request.limit as number | undefined); break;
         case "history_search":

@@ -8,7 +8,7 @@ The 512-module/57-field ledger is an inventory, not completed parity.
 
 | Delivery area | Verified state | Remaining acceptance |
 |---|---|---|
-| Published CI baseline | e2b16e3; CI 34709699732 success | Verify persistent local service checkpoint after publication |
+| Published CI baseline | f1832aa; CI 34711514218 success | Verify registered-context CLI checkpoint after publication |
 | TS runtime | Kernel, local/device execution, mailbox, topology and retained recovery; reconnectable local service/CLI with full local regression | Final CI; remaining provider/transport/store/terminal ownership and parity |
 | Native continuation | Simple direct and streamed exact recall passed; earlier topology first runs and current artifacts passed | Full worker/merger continuation and complex-context acceptance still fail |
 | Multi-device | Earlier physical ARM64/x64 evidence; bounded HTTP artifact inbox/upload/recovery; opt-in canonical publication with CI | Initial workspace distribution, physical transfer acceptance and full profiles |
@@ -22,7 +22,14 @@ shows invalid read arguments, not a proven concurrent file change. The attempt a
 05a0e591-a529-4401-b28a-932b3e948f95 are guarded against replay. No new native model canary
 was launched during this correction.
 
-Current checkpoint adds a persistent local service and normal `pnpm runtime` command entry.
+Current checkpoint exposes only safe registered context through `status`: project, selected
+Provider/model pairs, write roots and integration presence. CLI `new` uses that registration;
+multiple Providers require selection and incompatible overrides fail before creation.
+Reading configuration does not probe a model or claim quota readiness. Typecheck and focused
+CLI/local-control verification passed 20 tests / 148 assertions / 12.44s, exit 0, in
+/tmp/cm-runtime-description.log. No database/public schema or real model state changed.
+
+The published f1832aa checkpoint adds a persistent local service and normal `pnpm runtime` command entry.
 It reuses LocalTaskRuntime, task/event read authority and the existing native queue; clients
 reconnect over a private Unix socket. OS-held listener locking precedes profile startup.
 Client timeout never retries/cancels execution; another connection can cancel in-flight work.
@@ -33,8 +40,8 @@ protection, frame bounds and Chinese input. A configured Docker case passed one 
 same-native-session continuation with changed current files. Claude is synthetic in that
 case; it is not new model or physical-device acceptance. Typecheck passed. Full regression
 passed 803 tests / 10317 assertions / 75 files / 447.07s, exit 0, at
-/tmp/cm-runtime-service-full.log. Normal `pnpm runtime --help` also passed. Final commit/CI
-remain pending. This changes no database or public protocol schema. Service usage and
+/tmp/cm-runtime-service-full.log. Normal `pnpm runtime --help` also passed. Commit f1832aa
+passed CI 34711514218. This changes no database or public protocol schema. Service usage and
 limits: [local-control-service.md](local-control-service.md). No production service was changed.
 
 The published e2b16e3 checkpoint connects accepted inbox bytes to optional canonical publication.
@@ -106,7 +113,7 @@ Detailed evidence and guarded attempts are in findings.md; no failed result was 
 
 ## Remaining
 
-1. Publish the verified persistent service and check exact-commit CI; then connect the interactive terminal frontend to this owner.
+1. Publish registered-context CLI changes and check exact-commit CI; connect the interactive terminal frontend to this owner.
 2. Complete initial workspace distribution and physical transfer/publication acceptance. Finish real
    topology/current-source acceptance and reviewed SpecMesh closeout; guard failed attempts.
 3. Complete remaining provider, transport, store and terminal owners and the parity ledger.
@@ -131,7 +138,7 @@ multi-file publication can leave partial progress; inspect and explicitly recove
 
 ## Next
 
-Publish the verified persistent service and check exact-commit CI. Connect the terminal
+Publish registered-context CLI changes and check exact-commit CI. Connect the terminal
 frontend to the same owner and qualify initial workspace delivery/two-device publication. Continue the other
 runtime owners and full rollout gates. Do not return to repeated similar model probes.
 
