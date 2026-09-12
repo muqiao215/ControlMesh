@@ -80,3 +80,81 @@ account behavior or native tool permissions. Gemini persistent registration, Cod
 fresh-session creation, interrupted lineage qualification, effective native sandbox
 behavior, and Codex mailbox/topology/file-receipt integration remain. Complete these
 owners without presenting one-shot execution or a transcript reader as full continuity.
+The configured coordinator now issues a versioned snapshot reference; device assignments
+bind it, and authenticated chunk reads require the current assignment and execution lease.
+Configured workers opt in with bootstrap_files, persist interrupted receipt and publish
+verified inputs before dispatch. Topology routes now opt in through source_files; enqueue captures the snapshot and assigns
+it atomically. Controlled HTTP interruption/retry and topology restart are tested; actual
+two-device/native acceptance remains open. Do not confuse
+these fixtures with physical delivery or real Agent continuity.
+
+Continue remaining native/source/artifact, provider/transport/store/terminal and CM-R0–CM-R7
+rollout requirements. Complex topology continuation remains unaccepted; no guarded
+attempt/session may be replayed. Production Python ownership and release gates remain.
+
+Current implementation and native evidence belong in progress.md and its retained archive,
+not in competing historical next-step instructions. Scoped native acceptance does not
+qualify every provider, device, source or grant profile. Keep original failed attempts and
+perform recovery from retained output without replaying uncertain work.
+
+Relevant implementation designs:
+
+- [Native writes](native-write-design.md): staged publication, completion and reconciliation.
+- [Claude continuity](claude-continuity-design.md): task/session binding and retained output.
+- [Ownership inventory](python-ownership.json): 512 Python module owners and 57 task fields;
+  this is a baseline inventory, not a completed parity score.
+
+## Current topology checkpoint — 2026-09-12
+
+Pipeline, fanout, director and judge now have explicit transactional local queue steps.
+Director/judge bind normalized decisions to accepted controller episode/effect output,
+current checkpoint and expected round. Schema 20 freezes controller task/role and
+budgets; same-role resumes retain child identities through assignment generations.
+Judge service repair/interruption loops are capped durably (default one each), including
+after restart. Terminal queue transitions now atomically seal accepted results and finish
+idle root tasks via schema 21. The completion event is an internal topology reduction;
+it does not create a provider episode or assert real native acceptance.
+
+Parent artifact completion now requires a registered workspace/file profile, actual accepted
+child read/write completion evidence and matching current bytes. A live permit binds those
+checks to the exact parent/topology revisions. Adopted SpecMesh requirements are rechecked
+with the independent plugin's check operation and exact source hash. This establishes file
+delivery; reviewed project closeout remains unknown/pending.
+
+Explicit root topology reopen now archives the terminal run and starts a new execution
+under the same TaskHub identity (schema 22). Child assignment execution IDs prevent old
+results from entering a new run; native continuity uses the existing explicit resume.
+Frozen policy limits survive, while per-execution counters reset only on this explicit
+new run. Restart alone never reopens completed work.
+
+Native/aggregate assignment source is explicit in schema 23. Nested topology results
+now bind their own completion and current descendant evidence; all 16 parent/child
+combinations and same-tree reopen pass focused fixtures. File requirements trace to
+actual leaf tool receipts. This does not establish automatic service or device dispatch.
+
+Current recovery foundation adds read-only result preview, typed malformed-output
+classification, explicit same-session retry with a durable two-retry ceiling and optional
+pipeline/fanout repair/interruption caps. Schema 24 now adds frozen schedule registration, background local service startup/control,
+explicit recovery and origin-attributed automatic transitions. Schema 25 adds device topology
+dispatch through the existing worker lifecycle, frozen routes and atomic episode/admission
+bindings. Normal coordinator controls, restart and bounded recovery are implemented. Real
+native topology, remote artifact/current-source and reviewed closeout acceptance remain next. Continue all remaining CM-R0–CM-R7 provider/transport/store, native source
+revision and release/install gates; explicit local queue tests do not narrow that scope.
+There is no production writer switch, release or installed-version alignment yet.
+
+Local scheduling control and limits: [topology-scheduling.md](topology-scheduling.md).
+
+Schema 28 adds opt-in canonical publication of accepted device artifacts. The scheduler
+captures exact write-file baselines before dispatch and uses the existing durable staging
+journal under current lease authority. Local conflicts block; already delivered paths are
+verified without rewriting; pause/restart resumes the original proposal. Sparse snapshots
+exclude unrelated files. The standalone SpecMesh gate checks both sides of publication.
+Controlled integration is positive; physical end-to-end transfer/publication and reviewed
+closeout remain pending, alongside initial workspace distribution and the full migration.
+
+
+Schema 26 closes the native-input gap by freezing assigned role/stage/output contracts and
+prior results, delivered through existing verified mailbox input. Missing/altered input
+fails before claim; oversized input blocks rather than truncates. The real topology canary
+is only partially positive and remains unaccepted; its failed reviewer and skipped reopen
+are documented in progress.md. No production writer or installed-version switch occurred.
