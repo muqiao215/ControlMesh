@@ -561,7 +561,11 @@ is admitted only with this contract. Stream results and native JSONL tool receip
 schema validity alone cannot establish completion. A native structured_output attachment,
 its matching tool call and successful receipt can close the native turn without a final
 prose reply. This verified terminal also permits a later baseline/append on the original
-session. Other pending tools or unsupported attachments still reject. Canonical scheduler
+session, including the pinned CLI's exact non-model synthetic resume pair. A successful
+result may follow at most four invalid-schema rejections: each failed native receipt must
+actually violate the frozen contract, and only the last call may succeed. Repeated success,
+other errors, missing receipts and more than five attempts reject. Other pending tools or
+unsupported attachments still reject. Canonical scheduler
 text is derived from the verified object, retaining a digest of the CLI result text. Required
 file reads, workspace publication, SpecMesh and completion gates remain independent.
 

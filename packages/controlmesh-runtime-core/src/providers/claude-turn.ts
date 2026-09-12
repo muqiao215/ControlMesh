@@ -84,10 +84,10 @@ export function inspectClaudeChain(records: Record<string, unknown>[], sessionId
     }
     requireThat(object(row.message) && row.message.role === row.type && !row.isApiErrorMessage, "unsupported_native_content");
     const message = row.message, parts = message.content;
-    // Pinned native resume inserts this exact non-model pair after a max-turns boundary.
+    // Pinned native resume inserts this exact non-model pair after a max-turns or structured-output boundary.
     // Neither record is a submitted task input, model output or proof of completion.
     if (row.isMeta || resumePadding === "assistant") {
-      requireThat(current?.interrupted && !queued && pending.size === 0 && row.version === "2.1.263" && row.entrypoint === "sdk-cli",
+      requireThat((current?.interrupted || structuredTerminal) && !queued && pending.size === 0 && row.version === "2.1.263" && row.entrypoint === "sdk-cli",
         "unsupported_native_resume_padding");
       if (resumePadding === "assistant") {
         requireThat(row.type === "assistant" && !row.isMeta && message.model === "<synthetic>" && id(message.id) && !messageIds.has(message.id)

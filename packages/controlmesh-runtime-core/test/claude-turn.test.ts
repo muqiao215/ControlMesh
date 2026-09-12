@@ -181,11 +181,14 @@ test("an interruption marker cannot hide pending calls, invent termination, or a
   ]) { writeFileSync(s.path, s.encode([...s.rows, ...added])); expect(() => s.store.baseline(s.store.read(session))).toThrow(); }
 });
 
-test("the exact native synthetic resume pair is context padding, never a second input or model completion", () => {
+for (const boundary of ["max-turns", "structured-output"]) test(`the exact native synthetic resume pair after ${boundary} is context padding, never another input or completion`, () => {
   const s = setup();
-  const closed = [s.user(3, 2, "read"), s.assistant(4, 3, [{ type: "tool_use", id: "call", name: "read_file", input: {} }], "tool_use"),
+  const closed = boundary === "max-turns" ? [s.user(3, 2, "read"), s.assistant(4, 3, [{ type: "tool_use", id: "call", name: "read_file", input: {} }], "tool_use"),
     s.user(5, 4, [{ type: "tool_result", tool_use_id: "call", content: "current" }]),
-    s.node(6, 5, "attachment", { attachment: { type: "max_turns_reached", maxTurns: 1, turnCount: 2 } })];
+    s.node(6, 5, "attachment", { attachment: { type: "max_turns_reached", maxTurns: 1, turnCount: 2 } })]
+    : [s.user(3, 2, "read"), s.assistant(4, 3, [{ type: "tool_use", id: "call", name: "StructuredOutput", input: { result: "current" } }], "tool_use"),
+      s.node(5, 4, "attachment", { attachment: { type: "structured_output", data: { result: "current" } } }),
+      s.user(6, 5, [{ type: "tool_result", tool_use_id: "call", content: "Structured output provided successfully" }])];
   const prefix = s.encode([...s.rows, ...closed]); writeFileSync(s.path, prefix); const before = s.store.baseline(s.store.read(session));
   const meta = { ...s.user(7, 6, [s.text("Continue from where you left off.")]), isMeta: true, promptId: uuid(70), version: "2.1.263", entrypoint: "sdk-cli" };
   const syntheticMessage = { role: "assistant", id: "synthetic-message", model: "<synthetic>", stop_reason: "stop_sequence", stop_sequence: "",

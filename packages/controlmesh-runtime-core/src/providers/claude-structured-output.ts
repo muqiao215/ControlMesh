@@ -88,6 +88,14 @@ export function verifyClaudeStructuredTools(contract: ClaudeStructuredOutput, va
   tools: readonly { name: string; input: Record<string, unknown>; output: string; is_error: boolean }[]): void {
   verifyClaudeStructuredValue(contract, value);
   const calls = tools.filter(tool => tool.name === "StructuredOutput");
-  requireThat(calls.length === 1 && !calls[0]!.is_error && calls[0]!.output === "Structured output provided successfully"
-    && digest(calls[0]!.input) === digest(value), "claude_structured_native_receipt_unproven");
+  requireThat(calls.length > 0 && calls.length <= 5, "claude_structured_native_receipt_unproven");
+  for (const failed of calls.slice(0, -1)) {
+    let invalid = false;
+    try { verifyClaudeStructuredValue(contract, failed.input); } catch { invalid = true; }
+    requireThat(invalid && failed.is_error && failed.output.startsWith("Output does not match required schema:"),
+      "claude_structured_native_receipt_unproven");
+  }
+  const success = calls.at(-1)!;
+  requireThat(!success.is_error && success.output === "Structured output provided successfully"
+    && digest(success.input) === digest(value), "claude_structured_native_receipt_unproven");
 }

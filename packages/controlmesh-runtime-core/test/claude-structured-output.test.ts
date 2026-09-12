@@ -55,6 +55,15 @@ test("generation explicitly types the schema version without coercing model stri
   for (const contract of contracts) expect(claudeStructuredSchema(contract)).toMatchObject({ properties: { schema_version: { type: "integer", const: 1 } } });
   expect(() => verifyClaudeStructuredValue(worker, { ...value(), schema_version: "1" })).toThrow();
 });
+test("bounded native schema correction needs rejected invalid attempts followed by exactly one valid success", () => {
+  const output = value(), success = { name: "StructuredOutput", input: output, output: "Structured output provided successfully", is_error: false };
+  const failed = { ...success, input: { ...output, schema_version: "1" }, output: "Output does not match required schema: invalid version", is_error: true };
+  verifyClaudeStructuredTools(worker, output, [failed, success]);
+  verifyClaudeStructuredTools(worker, output, [failed, failed, failed, failed, success]);
+  for (const calls of [[failed], [success, failed], [failed, success, success], Array(5).fill(failed).concat(success),
+    [{ ...failed, input: output }, success], [{ ...failed, is_error: false }, success], [{ ...failed, output: "permission denied" }, success]])
+    expect(() => verifyClaudeStructuredTools(worker, output, calls)).toThrow("claude_structured_native_receipt_unproven");
+});
 test("controller schema binds the correct decision-dependent round without replacing frozen budgets", () => {
   const director = { schema_name: "team-director-decision.schema.json" as const, bindings: { topology: "director_worker", round_index: 2 }, dispatch_round_index: 3 };
   const dispatch = { ...decodeDirectorDecision({ topology: "director_worker", round_index: 3, decision: "dispatch_workers", dispatch_roles: ["worker"], summary: "Continue" }) };

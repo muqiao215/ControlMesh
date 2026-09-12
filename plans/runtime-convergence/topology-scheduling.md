@@ -216,6 +216,9 @@ again. The stream value must match an actual successful StructuredOutput call in
 session. The pinned CLI can end with a structured attachment and tool receipt, without
 another assistant prose message; both terminal forms retain native session identity.
 Plain JSON text and a structured field alone do not waive tool/source/file evidence.
+The exact native synthetic pair used to reopen a completed structured turn is excluded
+from task-input/model-output counts. Up to four genuinely invalid schema attempts may
+precede one successful StructuredOutput receipt; other failures or duplicate success reject.
 
 The first integration attempt rejected the schema URI before any task input. A fresh
 Draft 7 attempt then read all eight files and emitted native success, but exposed CM's

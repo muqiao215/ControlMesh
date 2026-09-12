@@ -69,14 +69,14 @@ No claim that full TS migration or distributed coordination has completed. A sco
 
 ## Next Step
 
-Publish the verified native structured-output compatibility fix and verify exact-commit
-CI. Then qualify reliable native worker/merger results before another bounded continuation
-acceptance: the latest real worker passed, but its merger exhausted the native schema
-retry limit after returning a string version. An explicit numeric generation type is now
-added; its real-model efficacy is unverified. All three structured integration attempts and
-the earlier fenced-JSON attempt remain guarded against replay. Normal continuation controls
-are published at c7f46ce with exact-commit CI 34699492179 passing. Native/source/artifact
-acceptance and remaining CM-R0–CM-R7 owners and rollout gates remain open. See progress.md.
+Publish the verified structured-resume source/receipt compatibility fixes and verify CI.
+Then complete one bounded native worker/merger continuation under the corrected parser,
+without the short-idle diagnostic transport. First-run roles/root already passed twice;
+actual upstream requests prove old context is present without reinjection. Exact-marker
+recall in the complex topology remains unaccepted, while direct and streamed native simple
+controls passed. Keep every failed attempt guarded; never retry its tasks or sessions.
+89101ea publication CI 34701984695 passed. Complete remaining native/source/artifact,
+provider/transport/store/terminal, full multi-device and CM-R0–CM-R7 rollout requirements.
 
 Current implementation and native evidence belong in progress.md and its retained archive,
 not in competing historical next-step instructions. Scoped native acceptance does not

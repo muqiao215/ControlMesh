@@ -2,74 +2,47 @@
 
 ## Current
 
-Full CM-R0–CM-R7 remains in progress. Installed CM 0.43.0 remains the production Python
+Full CM-R0–CM-R7 remains in progress. Installed CM 0.43.0 is still the production Python
 writer. No release, installation, live migration or default/service switch has occurred.
 The 512-module/57-field ledger is an inventory, not completed parity.
 
-Prior publication 049ebb7: exact-commit CI 34698466927 passed all required
-jobs, including both Python versions, protocol/SDK/Web, container execution and isolated
-installed-wheel smoke. It includes canonical device artifact verification and fixes the
-bundled-schema drift that made the preceding 8d5dae2 CI fail.
+Published 89101ea adds native structured topology dispatch and completion. Exact-commit
+CI 34701984695 passed all required jobs, including both Python versions, protocol/SDK/Web,
+container execution and isolated installed-wheel smoke. Previous normal continuation
+controls (c7f46ce) and canonical device artifact verification (049ebb7) also passed CI.
 
-Normal continuation controls are published at c7f46ce; exact-commit CI 34699492179 passed.
-Current work integrates native structured topology results into local/device Claude
-dispatch and evidence. Replacement full gate passed: 753 tests / 9722 assertions / 72 files /
-282.51s, before final CLI dialect and native terminal fixes. Draft 7 scoped checks then
-passed: 26 tests / 164 assertions / 37.20s. The native integration identified a real parser
-defect: Claude can end at a successful StructuredOutput receipt, with no prose final.
-Its JSONL also contains a structured_output attachment. The corrected stream/source parser
-now verifies the retained actual worker output and an idle original session, using zero
-new model inputs and without modifying the unknown task journal. It proves eight file
-reads and one matching successful StructuredOutput call, not full parent completion.
-Latest focused source/control/contract checks: 41 tests / 198 assertions / 15.29s; typecheck
-passed. Full final-source runtime gate passed: 755 tests / 9744 assertions / 72 files / 284.03s,
-exit 0 (/tmp/cm-structured-terminal-full.log), including configured container continuation.
+Current unpublished work supports the pinned native synthetic resume pair after a successful
+structured terminal, and at most five structured attempts with only actual invalid-schema
+rejections before one valid success. The configured container fixture exercises both during
+normal original-session reopen. Focused typecheck/tests: 44 / 219 / 15.45s. Full runtime gate
+passed: 758 tests / 9765 assertions / 72 files / 282.78s, exit 0
+(/tmp/cm-structured-resume-full.log). Final fixture typecheck passed.
 
-A fresh real terminal-shape canary then accepted the worker through the full CM device
-path (eight reads, native result/source, SpecMesh and container cleanup). The merger failed
-native structured generation after five attempts: each emitted schema_version as string
-"1", but the contract requires numeric 1. Native terminal reason was
-structured_output_retry_exhausted; this is not provider quota. Its worker journal stays
-unknown and the parent never completed; no continuation inputs occurred. Report:
-structured-topology-terminal-native-acceptance-20260912 (accepted=false, do_not_replay=true).
-No further real-model inputs are being issued in this checkpoint. Generation now explicitly
-types schema_version as integer while acceptance continues rejecting strings. The 755-test
-gate precedes this final additive schema hint; final typecheck and scoped/container checks
-passed: 48 tests / 251 assertions / 4 files / 53.83s (/tmp/cm-structured-version-final.log).
+The fresh typed-schema real canary completed both first-run roles, root canonical artifact
+acceptance and SpecMesh checks. Restart inspection preserved native history without replay.
+Explicit reopen reached the original worker session, whose successful native result exposed
+the two parser gaps now fixed. Read-only retained stream/source verification passes eight
+reads, one schema rejection and one valid result, with zero new model inputs and no journal
+mutation. The model omitted its private marker; the canary is therefore accepted=false,
+the worker journal remains unknown, and no merger continuation occurred. Do not replay
+structured-topology-typed-native-acceptance-20260912 or its native sessions.
 
-Current implementation adds private local/coordinator reopen_schedule and
-inspect_schedule_run controls. Explicit continuation archives the verified terminal run,
-retains TaskHub/native identities and frozen roles/budgets, and activates the next normal
-scheduler pass. Schedule/task/topology revisions, ownership and idle members are checked
-transactionally. Duplicate requests return the original receipt without starting another
-run. Full runtime gate passed: 740 tests / 9683 assertions / 71 files / 264.78s, exit 0
-(/tmp/cm-schedule-reopen-full.log), with typecheck passing. Focused local/nested/device
-checks: 103 / 1143 / 14.75s. Configured container continuation: 1 / 53 / 20.40s, retaining
-both original session IDs with resume=true in second-run manifests. The native executable
-is synthetic in that fixture; real-model continuation remains open.
+Direct native --resume and native stream-json initialize/user controls each passed two-input
+exact marker recall without reinjection. A first streamed diagnostic omitted Docker's
+interactive stdin flag and exited with zero native inputs/session files; it remains guarded.
+These simple controls do not qualify the failed complex topology recall. Full-path request observation then proved the original worker marker was present in
+actual continuation requests (7 and 9 messages) and absent from their new user inputs.
+That establishes context transmission for this profile, not reliable use by every model
+response. The observer's default 10-second HTTP idle limit caused a retry notification;
+CM refused the unsupported native system/api_retry record and left the worker unknown.
+The parent continuation did not complete. After all three native containers were removed,
+the still-live failed observer was stopped using its verified pidfd (exit 143). Original
+report and a separate stop record are retained; all its tasks remain guarded. No canary
+or model process remains running.
 
-A separate bounded native structured-output probe passed with actual Claude 2.1.263 and
-MiniMax-M3: one input, two native turns, only StructuredOutput advertised/called, correct
-schema fact and verified session/model identity. The pinned container was removed and
-temporary credentials deleted. No prior native session was replayed. The capability is now integrated into the candidate control/evidence path with workspace
-MCP; full real topology continuation remains unaccepted.
-
-The published artifact increment enables canonical root acceptance for device-native results through
-normal coordinator startup. Explicit device/workspace provenance and actual completed
-run/effect evidence must match current files on the coordinator. Automatic file transfer
-and remote-only final workspaces are still pending. Also fixed snapshot/contract file order
-and refused within-workspace symlink aliases. Typecheck passes. Focused local/aggregate:
-42 tests / 348 assertions / 9.12s. Device proof negatives: 9 / 65 / 2.35s. Full runtime gate
-passed: 707 / 9114 / 71 files / 249.57s, exit 0 (/tmp/cm-device-artifact-full.log), including
-the actual configured container path. Isolated-wheel Alpha smoke passed
-(/tmp/cm-device-artifact-alpha.log); the production installation was untouched.
-The first real canary stopped at schedule registration with zero native execution. The
-corrected worker/merger canary has finished unsuccessfully: one preflight and one worker
-turn occurred. Eight required files were read, but the final response included prose and
-a Markdown fence around JSON. The scheduler blocked at team_result_invalid_json; merger
-inspection returned assignment_unavailable. No merger turn, root completion or native
-continuation occurred. Both reports are retained with do_not_replay=true. Neither artifact
-canary remains running. Controlled tests do not substitute for this failed gate.
+No running/green fixture or same session ID establishes the full migration. Physical
+multi-device/source/grant coverage, automatic canonical file transport, reviewed SpecMesh
+closeout, remaining runtime owners and rollout/release/install alignment stay open.
 
 ## Done
 

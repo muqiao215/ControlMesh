@@ -1,5 +1,64 @@
 # Findings
 
+## Structured native continuation boundaries — 2026-09-12
+
+89101ea exact-commit CI 34701984695 passed all required jobs. A fresh typed-schema real
+canary completed worker, merger, canonical root artifacts and SpecMesh checks; restart
+inspection did not replay native input. Explicit reopen reached the original worker
+session but its result remained unknown. Read-only retained inspection found two parser
+gaps: the pinned native CLI inserts the exact synthetic resume pair after a successful
+structured terminal (also used after max-turns), and successful structured output may
+follow a rejected invalid schema attempt. Both source forms are now supported with their
+exact provenance/receipt checks. At most five StructuredOutput calls are accepted, with
+only preceding actually invalid schema rejections and exactly one final success; repeated
+success, valid values claimed as rejected, other errors and over-budget attempts reject.
+The container fixture now exercises both forms during normal original-session reopen.
+Focused typecheck/tests passed: 44 tests / 219 assertions / 15.45s. Full runtime gate passed: 758 / 9765 / 72 files / 282.78s, exit 0.
+
+Retained real continuation stream/source inspection now passes with eight reads, one
+schema rejection and one valid structured result; the original unknown journal is not
+modified. The native model result did not recall its private first-turn marker, so the
+canary remains accepted=false even though the first project run completed. Keep
+structured-topology-typed-native-acceptance-20260912 and its sessions
+53540576-d6d3-4b32-b5e8-5e195b5067fe / 3fc1892e-61ed-4679-a746-b129ed22d701 guarded.
+
+An independent direct native --resume control with two structured-output inputs passed
+exact marker recall without reinjection (claude-direct-structured-recall-20260912).
+This shows the native model/profile can recall a simple prior message; it does not
+identify why the complex CM topology prompt omitted it. The fresh stream-json initialize/user control also passed two-input exact recall. The first
+streamed harness omitted Docker interactive stdin and made zero native inputs; its corrected
+fresh variant retained two exact native inputs. Neither simple control identifies the cause
+of complex-context omission. Full-path wire observation retained only marker-presence
+booleans/message counts retained, no request bodies or credentials in the diagnostic report.
+Neither diagnostic modifies production or replays any guarded task.
+
+The first full-path request observer forwarded an already-decompressed response with its
+original Brotli headers. Native decoding failed during the worker, after one ready preflight;
+only first-turn requests were observed. This is a diagnostic transport failure, not evidence
+of a CM memory bug. Its unknown attempt is guarded. A fresh observer removes stale content
+encoding/length headers from the decoded upstream response; only message counts and marker
+presence booleans are retained. Full source regression passed before that operator-only
+probe correction, and final fixture typecheck also passed.
+
+The corrected wire observer completed the first root and observed worker continuation
+requests with the old private marker present in 7- and 9-message payloads, but absent
+from the newest user input. This directly proves native history transmission for the
+observed scope; it does not certify model recall or the prior failed run. Bun's default
+10-second server idle timeout later caused native system/api_retry (attempt 1, declared
+max_retries 10, delay 603ms, error_status null, error unknown). CM refused that unsupported
+record and retained unknown. This is an observer-induced transport failure, not evidence
+of quota exhaustion or missing native memory. No worker continuation result was accepted
+and no merger continuation executed. Future observation must explicitly bound upstream
+requests while disabling this unrelated short server idle timeout.
+
+The observer remained live after the task failure. All three retained native outcomes
+proved container cleanup removed; its exact Bun executable, script argument, cwd and
+start-time were checked through the host process namespace. A pidfd SIGTERM stopped only
+that diagnostic, and its original exec handle returned terminal exit 143. Keep the original
+report immutable plus structured-topology-wire-decoded-native-acceptance-20260912.stop.json.
+Guard both wire attempts and sessions c7ffe8d6-e0b1-43e1-9f74-315255b834e6 /
+7006a0c6-9d09-4e1b-a7de-fb1b16e14ef3. No native/provider/observer process remains active.
+
 ## Native structured topology output integration — 2026-09-12
 
 Claude local/device dispatch now derives an optional structured contract only from the

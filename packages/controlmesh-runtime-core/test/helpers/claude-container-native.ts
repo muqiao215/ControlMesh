@@ -22,9 +22,9 @@ const workspaceTools = ["edit_file", "read_file", "write_file"];
 const projects = join(config, "projects", "fixture"); mkdirSync(projects, { recursive: true, mode: 0o700 });
 const path = join(projects, session_id + ".jsonl");
 let parent = existsSync(path) ? JSON.parse(readFileSync(path, "utf8").trim().split("\n").at(-1)!).uuid : null;
-const source = (role: "user" | "assistant", content: unknown, stop_reason?: string) => {
-  const uuid = randomUUID(), message = { role, content, ...(role === "assistant" ? { id: randomUUID(), model, stop_reason } : {}) };
-  appendFileSync(path, JSON.stringify({ type: role, sessionId: session_id, cwd, isSidechain: false, uuid, parentUuid: parent, message }) + "\n", { mode: 0o600 });
+const source = (role: "user" | "assistant", content: unknown, stop_reason?: string, extras: Record<string, unknown> = {}, messageExtras: Record<string, unknown> = {}) => {
+  const uuid = randomUUID(), message = { role, content, ...(role === "assistant" ? { id: randomUUID(), model, stop_reason } : {}), ...messageExtras };
+  appendFileSync(path, JSON.stringify({ type: role, sessionId: session_id, cwd, isSidechain: false, uuid, parentUuid: parent, message, ...extras }) + "\n", { mode: 0o600 });
   parent = uuid; return message;
 };
 class Client {
@@ -65,6 +65,12 @@ for await (const line of createInterface({ input: process.stdin })) {
     appendFileSync(join(config, "inputs.jsonl"), JSON.stringify({ session_id, prompt: frame.message.content }) + "\n");
     let directWriteDenied = false; try { writeFileSync(join(cwd, "PROJECT.md"), "forbidden"); } catch { directWriteDenied = true; }
     if (!directWriteDenied) throw new Error("fixture requires a read-only project");
+    if (structuredSchema && args.includes("--resume")) {
+      source("user", [{ type: "text", text: "Continue from where you left off." }], undefined,
+        { isMeta: true, promptId: randomUUID(), version: "2.1.263", entrypoint: "sdk-cli" });
+      source("assistant", [{ type: "text", text: "No response requested." }], "stop_sequence",
+        { version: "2.1.263", entrypoint: "sdk-cli" }, { model: "<synthetic>", stop_sequence: "", usage: { input_tokens: 0, output_tokens: 0 } });
+    }
     source("user", frame.message.content);
     emit({ type: "system", subtype: "init", cwd, session_id, model, claude_code_version: "2.1.263", permissionMode: "dontAsk",
       tools: [...workspaceTools.map(name => `mcp__workspace__${name}`), ...(structuredSchema ? ["StructuredOutput"] : [])], mcp_servers: [{ name: "workspace", status: "connected" }], plugins: [], skills: [], slash_commands: [] });
@@ -90,6 +96,12 @@ for await (const line of createInterface({ input: process.stdin })) {
         structured = { schema_version: 1, confidence: null, evidence: [], artifacts: [], next_action: null, repair_hint: null,
           ...(structuredSchema.properties.round_index ? { stop_reason: null, ...(raw.topology === "director_worker"
             ? { dispatch_roles: [] } : { winner_role: null, next_candidate_roles: [] }) } : { result_items: [], needs_parent_input: false }), ...raw };
+        if (args.includes("--resume")) {
+          const id = randomUUID(), message = source("assistant", [{ type: "tool_use", id, name: "StructuredOutput", input: { ...structured as object, schema_version: "1" } }], "tool_use");
+          emit({ type: "assistant", session_id, message });
+          const receipt = source("user", [{ type: "tool_result", tool_use_id: id, content: "Output does not match required schema: invalid schema_version", is_error: true }]);
+          emit({ type: "user", session_id, message: receipt });
+        }
         const id = randomUUID(), message = source("assistant", [{ type: "tool_use", id, name: "StructuredOutput", input: structured }], "tool_use");
         emit({ type: "assistant", session_id, message });
         const uuid = randomUUID();
