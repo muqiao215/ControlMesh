@@ -248,3 +248,16 @@ failures were the old-version fixture downgrade omission described above; correc
 upgrade subset passed all 19 cases. Do not report this initial full run as green. Final
 inbox subset and typecheck passed after changes. Exact committed CI remains the complete
 post-fix gate. Full output: `/tmp/cm-runtime-seed29.log`.
+
+## 2026-09-13 — frozen initial-input sender
+
+Added authorized source capture into durable content storage and validated bounded reads.
+Only explicit files are captured; symlinks/traversal/revoked authority refuse. Source
+identity/content is rechecked around capture. Changed-source retries cannot change the
+original transfer binding. Two separate DBs exercise chunk delivery with repeated receiver
+reopen and original-byte publication after source edits, without copying unselected files.
+
+Source/inbox/seed tests: 8 passed, 56 assertions, 632ms (`/tmp/cm-seed-source.log`). Typecheck
+and diff-check passed. No real native session, production workspace or remote device was
+modified. Network/assignment/lease admission integration, metadata fidelity and physical
+acceptance remain open; the internal sender does not establish full distribution.

@@ -405,3 +405,19 @@ policy are still pending. Do not expose this internal class directly to untruste
 Schema 29 is additive to the private TS candidate database. Older TS candidates reject
 newer database versions; rollback requires the pre-upgrade candidate snapshot. Python
 production state is not migrated by this change.
+
+### Frozen sender snapshot
+
+`freezeWorkspaceSeed` reads only the issued relative allowlist, reusing native file
+snapshot/content/identity checks before and after capture. It persists all bytes in one
+transaction using a source-specific binding namespace. Returned manifests contain only
+relative paths, sizes and hashes; no absolute source paths or unselected files. Repeating
+freeze with a changed source under the same authority binding is rejected; transport
+reopens the retained manifest instead of silently capturing again. Inbox `read` exposes
+bounded 32 KiB chunks only after all content is complete and hashes remain correct.
+
+A two-database integration test freezes 70 KiB plus project text, changes the source,
+reopens the sender and receiver between chunks, and publishes original bytes to a separate
+target while preserving unrelated work. This is an in-process transfer driver, not device
+HTTP or physical-host acceptance. Executable permission/file metadata fidelity is not
+represented by the current content-only manifest and remains part of complete delivery.

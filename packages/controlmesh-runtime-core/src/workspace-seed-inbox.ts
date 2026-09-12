@@ -68,6 +68,22 @@ export class WorkspaceSeedInbox {
       }) };
     });
   }
+  read(path: string, offset = 0) {
+    const file = this.manifest.files.find(file => file.path === path);
+    requireThat(file && Number.isSafeInteger(offset) && offset >= 0 && offset <= file.size, "workspace_seed_read_invalid");
+    return this.gated(() => {
+      this.row();
+      for (const expected of this.manifest.files) {
+        const row = this.db.sql.query("SELECT received FROM workspace_seed_files WHERE binding=? AND path=?").get(this.binding, expected.path) as { received: number } | null;
+        requireThat(row && row.received === expected.size, "workspace_seed_incomplete");
+      }
+      const row = this.db.sql.query("SELECT content FROM workspace_seed_files WHERE binding=? AND path=?").get(this.binding, path) as { content: Uint8Array };
+      const bytes = Buffer.from(row.content);
+      requireThat(bytes.length === file.size && sha(bytes) === file.sha256, "workspace_seed_store_corrupted");
+      const chunk = bytes.subarray(offset, offset + 32 * 1024);
+      return { path, sha256: file.sha256, size: file.size, offset, next_offset: offset + chunk.length, content_base64: chunk.toString("base64") };
+    });
+  }
   prepare(stateRoot: string, workspace: string) {
     return this.gated(() => {
       const row = this.row();
