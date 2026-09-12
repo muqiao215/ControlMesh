@@ -211,11 +211,18 @@ are not appended to the next turn. Codex also accepts the existing communication
 It registers only send/ask_parent/receive/answer on one controller-owned MCP server,
 with per-tool approval and fixed task peers/parent. The broker retains task/lease checks,
 call budgets and origin attribution. Native MCP result text/arguments must match the
-existing durable journal before completion or recovery. Installed-native send and its
-recovery have passed; ask/receive/answer still need their native exchange qualification.
+existing durable journal before completion or recovery. Installed-native send/ask/receive/answer and recovery have passed against loopback
+model fixtures. Two distinct native sessions also exchanged a question concurrently and
+recovered without replay. This is local CLI qualification, not physical multi-device
+or real-account acceptance.
 No new protocol or second message store is used.
 
 Codex 0.154.0 discovers these MCP tools through native tool_search, then calls the
 mcp__controlmesh namespace. Per-tool approval configuration follows the
 [official MCP options](https://learn.chatgpt.com/docs/extend/mcp?surface=cli); permission
 is limited to the four broker-owned tools rather than a server-wide approval default.
+
+Concurrent tasks waiting on the same in-flight provider preflight observe its cached
+result within their own bounded deadline. Only the original permit launches a probe.
+Cancellation stops a waiter without abandoning the probe owner; failures and unknown
+outcomes are returned without automatic re-probing.

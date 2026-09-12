@@ -1962,3 +1962,22 @@ uses retained output and reconciles the original call journal without starting t
 or CLI. Real native send and lost-observation recovery each produced exactly one peer
 message with origin=agent_message. Live account, native ask/receive/answer exchange and
 multi-device Codex remain pending. All native fixtures use isolated loopback Responses.
+
+## 2026-09-13 — local dual Codex exchange and shared preflight wait
+
+The real CLI fixture now covers unauthorized-peer refusal, ask_parent, receive and
+answer, including received/consumed evidence through lost-observation recovery. Two
+separately seeded native Codex UUIDs were then registered under one normal local runtime
+with parallelism=2 and reciprocal peer scopes. Alpha asked beta; beta received and
+answered through native MCP; alpha received the answer. Alpha's observation was deliberately
+lost, then reconciled after runtime reopen with the isolated auth file removed.
+
+The first dual-session attempt exposed that ProviderPreflightService returned
+probe_in_progress immediately, leaving the second local run blocked while the first
+Agent waited for it. It now observes the existing durable permit at bounded intervals,
+checking cancellation, current authority, runtime identity, input immutability and its
+remaining deadline. It does not acquire another permit or replay quota/unknown outcomes.
+The successful dual-session fixture asserts exactly one model probe, two distinct
+sessions, both messages consumed with agent_message origin, and no added messages or
+model calls during repeated recovery. These are real local binaries with synthetic
+Responses; physical devices, real accounts and full migration remain separate gates.

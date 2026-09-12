@@ -1,3 +1,4 @@
+import type { Lease, Principal } from "../src/kernel";
 import { expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -13,12 +14,15 @@ import { LocalRuntimeControl } from "../src/local-runtime-control";
 import { codexSearchResponse, codexFunctionResponse, codexMessagesResponse, codexPatchResponse, codexTextResponse } from "./helpers/codex-responses";
 
 const executable = process.env.CM_CODEX_TEST_EXECUTABLE, viewer = process.env.CM_HISTORY_TEST_ROOT;
-test.skipIf(!executable || !viewer).each(["normal", "lost-observation", "readonly-patch", "commentary", "mailbox", "mailbox-recovery", "active-send", "active-send-recovery"])("installed Codex persists native context through Viewer adoption and configured runtime reopen (%s)", async mode => {
-  const active = mode.startsWith("active-send"), inbox = mode.startsWith("mailbox"), lost = mode === "lost-observation" || mode === "mailbox-recovery" || mode === "active-send-recovery", patch = mode === "readonly-patch";
+test.skipIf(!executable || !viewer).each(["normal", "lost-observation", "readonly-patch", "commentary", "mailbox", "mailbox-recovery", "active-send", "active-send-recovery", "active-exchange", "active-exchange-recovery"])("installed Codex persists native context through Viewer adoption and configured runtime reopen (%s)", async mode => {
+  const exchange = mode.startsWith("active-exchange"), active = mode.startsWith("active-"), inbox = mode.startsWith("mailbox"), lost = mode === "lost-observation" || mode === "mailbox-recovery" || mode === "active-send-recovery" || mode === "active-exchange-recovery", patch = mode === "readonly-patch";
   const root = mkdtempSync(join(tmpdir(), "cm-native-codex-flow-")), home = join(root, "home"), workspace = join(root, "project"), state = join(root, "state");
   for (const path of [home, workspace, state]) mkdirSync(path, { mode: 0o700 });
   const marker = randomUUID(), requests: { phase: string; has_seed: boolean; mailbox_input: boolean }[] = [];
   let patchIssued = false, sendIssued = false, searchIssued = false;
+  let exchangeStep = 0, peerQuestion = "";
+  let peerLease: Lease | undefined;
+  const peerActor: Principal = { id: "operator", origin: "agent_message", device_id: "desktop", scopes: ["task:read", "task:execute", "message:read", "message:send", "message:ack"] };
   const patchOutputs: string[] = [];
   const target = join(workspace, "readonly-canary.txt");
   const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
@@ -33,6 +37,30 @@ test.skipIf(!executable || !viewer).each(["normal", "lost-observation", "readonl
       const tool = namespace?.tools?.find((tool: any) => tool.name === "send");
       if (!tool && !searchIssued) { searchIssued = true; return codexSearchResponse(body.model); }
       if (!tool) throw new Error("missing MCP send after native search");
+      if (exchange) {
+        const call = (name: string, args: Record<string, unknown>) => codexFunctionResponse(body.model, name, args, namespace.name);
+        if (exchangeStep++ === 0) return call("send", { request_id: "denied", recipient_task: "outside", text: "Must be refused" });
+        if (exchangeStep === 2) {
+          expect(JSON.stringify(body.input)).toContain("peer_not_authorized");
+          return call("ask_parent", { request_id: "ask", text: "Which gate should I check?" });
+        }
+        if (exchangeStep === 3) {
+          const mailbox = new AgentMailbox(owned!.runtime.kernel);
+          const question = mailbox.pending(peerActor, peerLease!)[0];
+          expect(question.kind).toBe("ask_parent");
+          mailbox.acknowledge(peerActor, "peer-receive", peerLease!, question.message_id, "received", null);
+          mailbox.send(peerActor, "peer-answer", { recipient_task: "task", sender_lease: peerLease!, kind: "answer", payload: { text: "Check gate A" }, causation_id: question.message_id, ttl_ms: 60000 });
+          peerQuestion = mailbox.send(peerActor, "peer-question", { recipient_task: "task", sender_lease: peerLease!, kind: "ask_parent", payload: { text: "Can you confirm the gate?" }, causation_id: null, ttl_ms: 60000 }).message_id;
+          return call("receive", { request_id: "receive", wait_ms: 0 });
+        }
+        if (exchangeStep === 4) {
+          expect(JSON.stringify(body.input)).toContain(peerQuestion);
+          expect(JSON.stringify(body.input)).toContain("Check gate A");
+          return call("answer", { request_id: "answer", question_id: peerQuestion, text: "Gate A confirmed" });
+        }
+        sendIssued = true;
+        return codexTextResponse(body.model, "Context continued");
+      }
       sendIssued = true;
       return codexFunctionResponse(body.model, tool.name, { request_id: "native-send", recipient_task: "peer", text: "Native agent message" }, namespace.name);
     }
@@ -73,6 +101,7 @@ test.skipIf(!executable || !viewer).each(["normal", "lost-observation", "readonl
     expect(readFileSync(store.path)).toEqual(before); expect(requests).toHaveLength(1);
     const submitted = await request("submit", "submit", { task: { task_id: "task", chat_id: "fixture", status: "waiting", provider: "codex", model: "gpt-5.5", repo_root: workspace, prompt: "Continue the earlier conversation.", native_session: adopted.native_session } });
     if (active) await request("peer-create", "submit", { task: { task_id: "peer", chat_id: "fixture", status: "waiting", provider: "codex", model: "gpt-5.5", repo_root: workspace, prompt: "Peer fixture" } });
+    if (exchange) peerLease = owned.runtime.kernel.claim({ ...peerActor, origin: "human_request" }, "peer-claim", "peer", owned.runtime.inspectTask("peer").revision, 60000);
     if (inbox) {
       const actor = { id: "operator", origin: "human_request" as const, device_id: "desktop", scopes: ["task:create", "task:read", "task:execute", "message:send"] };
       const peer = owned.runtime.kernel.submit(actor, "peer-create", { task_id: "peer", chat_id: "fixture", status: "waiting" });
@@ -85,6 +114,7 @@ test.skipIf(!executable || !viewer).each(["normal", "lost-observation", "readonl
     await request("enqueue", "enqueue", { task_id: "task", expected_revision: submitted.revision }); await owned.runtime.drain();
     let completed = owned.runtime.inspectTask("task"); expect(completed.task.status, JSON.stringify(completed)).toBe(lost ? "stale" : "done");
     if (inbox) expect(owned.runtime.kernel.db.sql.query("SELECT status,origin,sender_task FROM messages WHERE recipient_task='task'").get()).toEqual({ status: lost ? "received" : "consumed", origin: "agent_message", sender_task: "peer" });
+    if (exchange) expect(owned.runtime.kernel.db.sql.query("SELECT status FROM messages WHERE recipient_task='task' ORDER BY sequence").all()).toEqual([{ status: lost ? "received" : "consumed" }, { status: lost ? "received" : "consumed" }]);
     const effect = (owned.runtime.kernel.db.sql.query("SELECT effect_id FROM effects").get() as { effect_id: string }).effect_id;
     const nativeBeforeRecovery = readFileSync(store.path), requestsBeforeRecovery = requests.length;
     await owned.close();
@@ -105,12 +135,17 @@ test.skipIf(!executable || !viewer).each(["normal", "lost-observation", "readonl
     const resumed = await request("resume", "resume", { task_id: "task", expected_revision: completed.revision, prompt: "Continue once more." });
     await request("enqueue-again", "enqueue", { task_id: "task", expected_revision: resumed.revision }); await owned.runtime.drain();
     expect(owned.runtime.inspectTask("task").task.status).toBe("done");
-    expect(requests.map(item => item.phase)).toEqual(active ? ["seed", "probe", "resume", "resume", "resume", "resume"] : patch ? ["seed", "probe", "resume", "resume", "resume"] : ["seed", "probe", "resume", "resume"]);
+    expect(requests.map(item => item.phase)).toEqual(exchange ? ["seed", "probe", ...Array(7).fill("resume")] : active ? ["seed", "probe", "resume", "resume", "resume", "resume"] : patch ? ["seed", "probe", "resume", "resume", "resume"] : ["seed", "probe", "resume", "resume"]);
     if (inbox) expect(requests.filter(item => item.phase === "resume").map(item => item.mailbox_input)).toEqual([true, false]);
     if (active) {
       expect(sendIssued).toBe(true);
-      expect(owned.runtime.kernel.db.sql.query("SELECT COUNT(*) AS n FROM messages WHERE recipient_task='peer'").get()).toEqual({ n: 1 });
+      expect(owned.runtime.kernel.db.sql.query("SELECT COUNT(*) AS n FROM messages WHERE recipient_task='peer'").get()).toEqual({ n: exchange ? 2 : 1 });
       expect(owned.runtime.kernel.db.sql.query("SELECT sender_task,origin FROM messages WHERE recipient_task='peer'").get()).toEqual({ sender_task: "task", origin: "agent_message" });
+    }
+    if (exchange) {
+      expect(owned.runtime.kernel.db.sql.query("SELECT status FROM messages WHERE recipient_task='task' ORDER BY sequence").all()).toEqual([{ status: "consumed" }, { status: "consumed" }]);
+      expect(owned.runtime.kernel.db.sql.query("SELECT COUNT(*) AS n FROM messages WHERE recipient_task='outside'").get()).toEqual({ n: 0 });
+      expect(owned.runtime.kernel.db.sql.query("SELECT tool FROM native_agent_calls ORDER BY seq").all()).toEqual(["controlmesh_send", "controlmesh_ask_parent", "controlmesh_receive", "controlmesh_answer"].map(tool => ({ tool })));
     }
     if (patch) {
       expect(patchIssued).toBe(true);

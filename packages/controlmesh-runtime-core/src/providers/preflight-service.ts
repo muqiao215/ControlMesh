@@ -1,3 +1,4 @@
+import { setTimeout as delay } from "node:timers/promises";
 import { CodexPreflight, codexProbeCredentialRevision, codexProbeProfile, type CodexProbeInput } from "./codex-preflight";
 import type { Principal } from "../kernel";
 import { digest, requireThat, RuntimeConflict } from "../value";
@@ -36,6 +37,33 @@ export class ProviderPreflightService {
     requireThat(binding.provider === provider && binding.model === input.model && binding.config_digest === digest(input.native_configuration), "probe_input_binding_mismatch");
     requireThat(binding.runtime_digest === driver.runtimeDigest(input), "probe_runtime_binding_mismatch");
     const decision = this.cache.begin(actor, requestId, binding);
+    if (decision.decision === "wait" && decision.reason === "probe_in_progress") {
+      const timeout = input.timeout_ms ?? 45000;
+      requireThat(Number.isSafeInteger(timeout) && timeout > 0, "invalid_probe_timeout");
+      const configuration = digest({ executable: input.executable, model: input.model, config: input.native_configuration, environment: input.environment,
+        auth: "auth_json" in input ? input.auth_json : null });
+      const current = () => {
+        const authorized: unknown = input.assertCurrent();
+        if (authorized !== undefined) { void Promise.resolve(authorized).catch(() => {}); requireThat(false, "admission_must_be_synchronous"); }
+        requireThat(!input.signal?.aborted, "provider_preflight_wait_cancelled");
+        requireThat(configuration === digest({ executable: input.executable, model: input.model, config: input.native_configuration, environment: input.environment,
+          auth: "auth_json" in input ? input.auth_json : null }), "probe_input_binding_mismatch");
+        requireThat(binding.runtime_digest === driver.runtimeDigest(input), "probe_runtime_binding_mismatch");
+      };
+      const deadline = performance.now() + Math.min(timeout, 60000);
+      let observed = decision;
+      while (observed.reason === "probe_in_progress") {
+        current();
+        const available = input.remainingMs?.();
+        requireThat(available === undefined || Number.isFinite(available), "invalid_probe_timeout");
+        const remaining = Math.min(deadline - performance.now(), available ?? Infinity);
+        if (remaining <= 0) return observed;
+        await delay(Math.min(100, remaining), undefined, { signal: input.signal });
+        observed = this.cache.inspect(actor, binding);
+      }
+      // This caller only observes the existing permit. It never acquires a replacement.
+      current(); return observed;
+    }
     if (decision.decision !== "probe") return decision;
     const permit = decision.permit!;
     try {

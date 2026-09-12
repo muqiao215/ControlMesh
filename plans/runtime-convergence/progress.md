@@ -2,6 +2,20 @@
 
 ## Current
 
+Local dual-native Codex exchange is qualified against a loopback model fixture. Two
+separately seeded native sessions run concurrently, ask/receive/answer through MCP and
+consume the attributed messages. Alpha's lost observation reconciles after reopen with
+no new model call/message. Exactly one shared provider probe is asserted. A startup race
+was fixed: concurrent callers now wait boundedly for an existing in-flight preflight,
+without acquiring another permit; cancellation/expiry do not cancel its owner.
+Validation: complete native tool exchange/recovery 2 tests, 57 assertions (27.14s);
+final dual-native test 1 test, 28 assertions (13.37s); shared preflight/three providers/
+local Codex regression 37 tests, 243 assertions (3.70s). Typecheck and diff-check passed.
+Logs: /tmp/cm-native-exchange.log, /tmp/cm-native-peer-final.log,
+/tmp/cm-preflight-concurrency-regression.log. Physical device, live-account, file/workflow,
+provider/store/transport parity and release/default-switch gates remain open.
+
+
 Codex active communication now registers the existing broker and fixed peer scope through
 normal local configuration. Native MCP receipts are matched to the durable call journal;
 completion and retained-result recovery share journal verification/consumption. Installed
