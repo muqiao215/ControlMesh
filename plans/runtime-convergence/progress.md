@@ -2,6 +2,15 @@
 
 ## Current
 
+Tool-availability instruction correction verified:12tests90assertions2.42s pass
+(workspace profile and TaskHub staged-write/recovery), typecheck passes. No model
+input; missing-LF live acceptance remains failed.
+
+Retained evidence establishes apply_patch absent from actual resolved tool catalog.
+Corrected generic workspace instructions that advertised the unavailable tool;
+permissions and actual availability are now explicitly distinguished. No live model
+retry. Existing retained snapshots stay unchanged and remain recovery inputs.
+
 Real OpenCode declared-artifact acceptance FAILED (three distinct guarded tasks,
 2026-09-12). Same original native session recalled its marker and consumed current
 project value, but every resulting file omitted final LF; fixed SHA-256 requirements

@@ -66,7 +66,7 @@ export function nativeWorkspaceInstructions(required: readonly string[], writeRo
   return nativeReadInstructions(required, communication).replace("use only the issued read permissions", "use only the issued read and staged edit permissions")
     + "\nYour file edits land in an isolated workspace at the original project paths. The controller must verify and publish the proposal after this turn."
     + `\nWritable roots (literal path data): ${JSON.stringify(writeRoots)}`
-    + "\nUse the native read, edit, write or apply_patch tools within that scope. Do not claim that staged edits have already been published to the user's workspace.";
+    + "\nUse only the native file tools actually exposed to you for this model, within that scope. Shared edit permission does not guarantee that a particular file tool is available; do not assume an unavailable tool exists. Do not claim that staged edits have already been published to the user's workspace.";
 }
 
 export function directoryIdentity(path: string): DirectoryIdentity {

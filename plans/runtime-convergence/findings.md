@@ -925,3 +925,15 @@ assertion used case-sensitive Docker error text; lowercase comparison fixed the
 verifier, without changing runtime or acceptance. These failed real runs do not
 invalidate the demonstrated rejection behavior, but do not establish successful
 artifact delivery, recovery acceptance or complete migration.
+
+## Retained OpenCode tool availability — 2026-09-12
+
+The third failed run's original permission_evidence.resolved.tools contains read,
+edit and write but no apply_patch. CM's generic workspace instructions nevertheless
+listed apply_patch as a tool to use. Shared native edit permission permits an available
+write family; it does not establish each family member's availability for a model.
+The instruction now directs execution to the actual exposed file tools and makes that
+distinction explicit. Retained recovery already validates the saved prompt/permission
+snapshot without regenerating it from current instructions, so old evidence is not
+rewritten. This explains why a patch-based retry was not justified by the retained
+catalog; it does not establish the root cause of missing LF in write arguments.
