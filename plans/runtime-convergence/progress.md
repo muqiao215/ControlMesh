@@ -2,6 +2,22 @@
 
 ## Current
 
+Pipeline state policy ported and composed with topology child queue.127 sequences
+match real Python worker/review/repair/parent-resume behavior, including Unicode
+summary truncation and reviewer evidence fallback. RuntimePipeline commits collect,
+phase transition and explicit next-child enqueue/resume atomically; a missing next
+child rolls back collection and checkpoint. Synthetic end-to-end repair and parent
+input flows retain child/native references and perform no duplicate executions.
+Focused3tests148assertions plus typecheck pass; full pinned runtime gate500pass0fail,
+6406assertions across56files in196.24s. Previouse981aeb CI34683858904 failed the
+container Docker-info check with container_engine_unavailable; later same-job container
+tests passed. Root cause unproven. One failed-job rerun requested and still needs
+verification; do not report that CI green or weaken the container gate.
+Next: fanout/director/judge composition, rejection/recovery of malformed output,
+service-level bounded repair scheduling, parent task finalization and device queues.
+This private interface advances one explicitly requested step. It does not add a
+background loop, qualify a real-model pipeline, or switch the production writer.
+
 Topology child resume now preserves task/native identity across checkpoints through
 assignment generations. Candidate schema19 adds generation and immutable prior-row
 history. Archive, Kernel.resume, re-enqueue and generation update share one command

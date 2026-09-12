@@ -1,3 +1,5 @@
+import { applyPipelineResult, dispatchPipelineWorker, resumePipeline, type PipelineResultOptions } from "./team-pipeline";
+import type { StructuredTeamResult } from "./team-result-validation";
 import { command, requireScope } from "./commands";
 import { RuntimeKernel, type Principal } from "./kernel";
 import { canonical, requireThat, terminal } from "./value";
@@ -47,6 +49,15 @@ export class RuntimeTopology {
       this.kernel.db.sql.query("UPDATE team_topologies SET revision=?,state=? WHERE task_id=?").run(revision, canonical(state), taskId);
       return { task_id: taskId, revision, state };
     }, value => { this.authorize(actor, taskId); requireScope(actor, "team:write"); return value; });
+  }
+  dispatchPipeline(actor: Principal, requestId: string, taskId: string, taskRevision: number, revision: number, role: string, summary?: string): TopologySnapshot {
+    return this.mutate(actor, requestId, taskId, taskRevision, revision, "pipeline.dispatch", { role, summary: summary ?? null }, (state, at) => dispatchPipelineWorker(state, role, summary, at));
+  }
+  pipelineResult(actor: Principal, requestId: string, taskId: string, taskRevision: number, revision: number, result: StructuredTeamResult, options: PipelineResultOptions = {}): TopologySnapshot {
+    return this.mutate(actor, requestId, taskId, taskRevision, revision, "pipeline.result", { result, options }, (state, at) => applyPipelineResult(state, result, options, at));
+  }
+  resumePipeline(actor: Principal, requestId: string, taskId: string, taskRevision: number, revision: number, parentInput: string, summary?: string): TopologySnapshot {
+    return this.mutate(actor, requestId, taskId, taskRevision, revision, "pipeline.resume", { parentInput, summary: summary ?? null }, (state, at) => resumePipeline(state, parentInput, summary, at));
   }
   checkpoint(actor: Principal, requestId: string, taskId: string, taskRevision: number, revision: number, input: CheckpointInput): TopologySnapshot {
     return this.mutate(actor, requestId, taskId, taskRevision, revision, "topology.checkpoint", input, (state, at) => appendTopologyCheckpoint(state, input, at));

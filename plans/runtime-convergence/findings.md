@@ -1046,3 +1046,21 @@ child must first have collected output; failed native tasks still require the ke
 no-unresolved-effects check. All archive/resume/queue writes roll back together.
 This supersedes the initial same-child limitation above. Malformed done output still
 needs an explicit reject/recovery path; do not reinterpret it as accepted just to resume.
+
+## Pipeline policy and queue composition
+
+Python permits completed/failed worker and repair passes; reviewer additionally
+supports needs_parent_input and needs_repair. A terminal review falls back separately
+for evidence/artifacts to the latest worker/repair result.127 live-Python sequences
+verify the TS port, including code-point-based summary truncation.
+RuntimePipeline selects the next stage from accepted output, but receives the next
+independently authorized child identity explicitly. Collection, phase change and
+queue admission share a transaction; replay returns the receipt without redispatch.
+It advances one step only. Background repair budgets and parent TaskHub terminal
+finalization remain separate owners; a completed topology is not a finished parent
+native episode. The two full synthetic queue flows do not prove live-model acceptance.
+
+CI34683858904 at e981aeb failed opencode-container's staged-runner test in
+ContainerProcessSupervisor.engine (docker info, container_engine_unavailable), before
+container launch. Later tests in that job passed. A single failed-job rerun was
+requested; no cause or successful retry is proven yet. Local pipeline full gate passed.

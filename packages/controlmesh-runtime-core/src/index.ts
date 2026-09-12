@@ -57,3 +57,4 @@ export { readTeamTaskResult, type TeamTaskResultBinding } from "./team-task-resu
 
 export { RuntimeTopology, type TopologySnapshot } from "./runtime-topology";
 export { TopologyTaskQueue } from "./topology-task-queue";
+export { RuntimePipeline, type PipelineChild } from "./runtime-pipeline";

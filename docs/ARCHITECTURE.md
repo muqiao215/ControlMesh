@@ -356,6 +356,12 @@ Candidate schema 19 adds assignment generations and prior-assignment history.
 and the local queue in one transaction, preserving child task/native identity and
 authorization across checkpoints. A new generation does not overwrite prior evidence.
 
+`RuntimePipeline` composes accepted child output, Python-parity pipeline transitions
+and local next-child enqueue/resume in a single command transaction. Each invocation
+advances one explicit step; it does not run a background loop or create child grants.
+Parent TaskHub completion, service repair budgets and device topology dispatch remain
+outside this composition. A terminal topology checkpoint alone does not finish a parent.
+
 `LocalTaskRuntime` adds the private local task execution owner. SQLite schema 8 stores
 queued runs, their expected task revision and provider/profile binding, plus the claimed
 episode and terminal outcome. Two controllers sharing the configured principal/device
