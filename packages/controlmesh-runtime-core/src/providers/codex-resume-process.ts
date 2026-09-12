@@ -1,3 +1,4 @@
+import { codexFailureLine } from "./codex-failure";
 import { decodeExecutionContext } from "../execution-context";
 import { isAbsolute } from "node:path";
 import { realpathSync, statSync } from "node:fs";
@@ -96,7 +97,8 @@ export class CodexResumeProcess {
       const process = await this.supervisor.run({ command: [input.executable, "exec", "--sandbox", input.sandbox,
         "-c", 'approval_policy="never"', ...mapped.flags, "--ignore-user-config", "--ignore-rules",
         "resume", "--json", "--model", input.model, "--skip-git-repo-check", "--", input.reference.session_id, "-"],
-        cwd: input.reference.directory, env: input.environment, stdin_text: input.prompt, timeout_ms: input.timeout_ms }, { ...admission, assertCurrent: guard });
+        cwd: input.reference.directory, env: input.environment, stdin_text: input.prompt, timeout_ms: input.timeout_ms }, { ...admission, assertCurrent: guard,
+          abortOnStdoutLine: line => codexFailureLine(line) !== null || Boolean(admission.abortOnStdoutLine?.(line)) });
       const saved: unknown = admission.retainOutcome(process);
       if (saved !== undefined) { void Promise.resolve(saved).catch(() => {}); requireThat(false, "outcome_retention_must_be_synchronous"); }
       guard();

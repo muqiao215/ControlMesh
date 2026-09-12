@@ -1853,3 +1853,16 @@ provider_error, while oneshot-process privileged only generic/quota errors over 
 codes. Both now preserve typed native quota/auth/model/rate-limit failures. The shared
 codexNativeFailure helper is available for the forthcoming preflight driver. Successful
 assistant text is not failure evidence; timezone-less reset strings confer no retry date.
+
+Codex preflight qualification (0.154.0): npm's env-node wrapper cannot run with only
+/usr/bin:/bin on this host; use a resolved/qualified native binary at registration.
+OPENAI_BASE_URL alone did not direct the default provider to loopback. Explicit
+model_provider/model_providers configuration did: the local server observed exactly the
+selected model at /v1/responses and emitted synthetic success/quota Responses payloads.
+CLI still advertises request_user_input/apply_patch/view_image with the selected feature
+profile; tool_count remains unknown rather than asserting zero available tools. Bounded
+probe readiness is not general native permission evidence. Authentication snapshot files
+are isolated 0600 and removed after the owned process finishes; no snapshot values enter
+reports or command arguments. Custom native configuration is currently refused rather
+than silently ignored. Execution failure revocation captures a cache generation per
+execution, not mutable last-generation state shared across overlapping executions.

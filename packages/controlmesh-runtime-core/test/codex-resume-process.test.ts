@@ -1,3 +1,6 @@
+import { CodexPreflight } from "../src/providers/codex-preflight";
+import { CodexTaskPreflight } from "../src/providers/codex-task-preflight";
+import { PreflightCache } from "../src/providers/preflight-cache";
 import { CodexTaskAdapter } from "../src/providers/codex-task-adapter";
 import { ProcessSupervisor } from "../src/process-supervisor";
 import { RuntimeDatabase, RuntimeKernel, LocalTaskRuntime, type Principal } from "../src";
@@ -97,7 +100,7 @@ test("Codex executable replacement after version check withholds task input", as
 
 test.each([false, true])("Codex queue owns dispatch, durable output and restart recovery (lost observation=%s)", async loseObservation => {
   const f = fixture(), path = join(f.root, "runtime.sqlite"); let db = new RuntimeDatabase(path), kernel = new RuntimeKernel(db);
-  const actor: Principal = { id: "operator", device_id: "device", origin: "human_request", scopes: ["task:create", "task:read", "task:execute", "task:resume", "task:reconcile", "task:admin", "task:cancel", "message:read"] };
+  const actor: Principal = { id: "operator", device_id: "device", origin: "human_request", scopes: ["task:create", "task:read", "task:execute", "task:resume", "task:reconcile", "task:admin", "task:cancel", "message:read", "provider:probe"] };
   const { reference, prompt, execution_context, tool_grant, ...config } = f.input;
   config.environment = { ...config.environment, FIXTURE_DISPATCH: "managed", FIXTURE_DYNAMIC_TURN: "1", PRIVATE_FIXTURE_VALUE: "not-a-real-credential" };
   let nativeRuns = 0;
@@ -107,7 +110,18 @@ test.each([false, true])("Codex queue owns dispatch, durable output and restart 
     }
     return new ProcessSupervisor().run(spec, admission);
   } });
-  const readiness = { ensure: async () => ({ decision: "cached" as const, reason: "ready", retry_after: null, permit: null, report: null }), assertReady: () => {} };
+  let probes = 0;
+  const driver = new CodexPreflight({ async run(spec, admission) {
+    admission.assertCurrent();
+    const result = { reason: "exited" as const, exit_code: 0, stdout: "codex-cli 0.154.0", stderr: "", duration_ms: 1 };
+    if (spec.command.includes("--version")) return result;
+    probes++;
+    return { ...result, stdout: [{ type: "thread.started", thread_id: reference.session_id }, { type: "turn.started" },
+      { type: "item.completed", item: { id: "answer", type: "agent_message", text: "PONG" } }, { type: "turn.completed" }].map(row => JSON.stringify(row)).join("\n") };
+  } });
+  const makeReadiness = () => new CodexTaskPreflight(new PreflightCache(db), actor,
+    { executable: config.executable, model: config.model, native_configuration: {}, environment: {} }, () => {}, driver);
+  let readiness = makeReadiness();
   let adapter = new CodexTaskAdapter(kernel, actor, config, readiness, () => {}, process);
   const source = { command_origin: "human_request" as const, origin: "user" as const, source_scope: "local_foreground" as const, transport: "terminal" };
   let runtime = new LocalTaskRuntime(kernel, actor, source, snapshot => adapter.prepare(snapshot), () => {});
@@ -122,6 +136,7 @@ test.each([false, true])("Codex queue owns dispatch, durable output and restart 
     if (loseObservation) {
       expect(snapshot.needs_reconciliation).toBe(true); expect(runtime.inspect(run.run_id).state).not.toBe("completed");
       await runtime.stop(); db.close(); db = new RuntimeDatabase(path); kernel = new RuntimeKernel(db);
+      readiness = makeReadiness();
       adapter = new CodexTaskAdapter(kernel, actor, config, readiness, () => {}, process);
       const binding = adapter.inspectRecovery("task", snapshot.revision, effect.effect_id);
       expect(adapter.recover("recover", "task", snapshot.revision, binding).task.status).toBe("done");
@@ -132,6 +147,6 @@ test.each([false, true])("Codex queue owns dispatch, durable output and restart 
     const completed = kernel.inspect(actor, "task"), resumed = kernel.resume(actor, "resume", "task", completed.revision, "Continue again");
     expect((resumed.task.native_session as { session_id: string }).session_id).toBe(reference.session_id);
     runtime.enqueue("second", "task", resumed.revision); await runtime.drain();
-    expect(kernel.inspect(actor, "task").task.status).toBe("done"); expect(nativeRuns).toBe(2);
+    expect(kernel.inspect(actor, "task").task.status).toBe("done"); expect(nativeRuns).toBe(2); expect(probes).toBe(1);
   } finally { await runtime.stop(); db.close(); }
 });

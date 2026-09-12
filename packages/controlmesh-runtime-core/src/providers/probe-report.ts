@@ -7,7 +7,8 @@ export interface ProviderProbeReport {
   observation: PreflightObservation;
   cli_version: string;
   permission_digest: string | null;
-  tool_count: number;
+  /** Native advertised count when inspected; null when the CLI does not attest it. */
+  tool_count: number | null;
   model_invoked: boolean;
   duration_ms: number;
   runtime_digest?: string;

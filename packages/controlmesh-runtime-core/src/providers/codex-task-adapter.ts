@@ -18,6 +18,7 @@ export type CodexTaskConfiguration = Omit<CodexResumeInput, "reference" | "promp
 export interface CodexTaskReadiness {
   ensure(request: string, context: LocalExecutionContext): Promise<ProbeDecision>;
   assertReady(): void;
+  captureOutcome?(): (outcome: ProcessOutcome) => void;
 }
 interface CodexTaskManifest extends Record<string, unknown> {
   schema_version: "controlmesh.codex_dispatch.v1";
@@ -86,6 +87,7 @@ export class CodexTaskAdapter {
     let manifest: CodexTaskManifest | undefined, observation: Record<string, unknown> | undefined;
     const current = () => { configured(); context.assertCurrent(); this.kernel.withLease(this.actor, lease, () => {}); };
     try {
+      const observeReadiness = this.readiness.captureOutcome?.();
       await this.process.run(input, { signal: context.signal, remainingMs: context.remainingMs, assertCurrent: current,
         assertReady: () => this.readiness.assertReady(),
         retainDispatch: dispatch => {
@@ -99,7 +101,7 @@ export class CodexTaskAdapter {
             requireThat(permit.dispatch_permitted, "native_request_already_dispatched");
           }); manifest = issued;
         },
-        retainOutcome: outcome => { requireThat(manifest, "codex_dispatch_missing"); observation = this.retain(manifest, outcome).observation; },
+        retainOutcome: outcome => { requireThat(manifest, "codex_dispatch_missing"); observation = this.retain(manifest, outcome).observation; observeReadiness?.(outcome); },
       });
       requireThat(manifest && observation, "codex_outcome_missing");
       return this.kernel.db.transaction(() => {

@@ -208,3 +208,15 @@ for (const signal of ["SIGKILL", "SIGSTOP"] as const) actual(`container lease en
     await f.runner.cleanupExpired(signal, () => {}).catch(() => {});
   }
 }, 30_000);
+
+actual("container-backed Codex stdout quota stops execution before a delayed retry", async () => {
+  const f = fixture(), executable = join(f.workspace, "native-fixture");
+  writeFileSync(executable, `#!/usr/local/bin/node\nconsole.log(JSON.stringify({type:'turn.failed',error:{message:'insufficient_quota'}})); setTimeout(()=>require('node:fs').writeFileSync('/workspace/allowed/retry','bad'),30000);`);
+  chmodSync(executable, 0o700);
+  const result = await new OneShotProviderProcess(undefined, f.runner).run({ execution_id: "codex-quota", configuration: { provider: "codex", model: "fixture-model", permission_mode: "dontAsk", reasoning_effort: "", cli_parameters: [] },
+    executable: "/workspace/native-fixture", workspace: f.workspace, environment: {}, prompt: "fixture", timeout_ms: 20000,
+    execution_context: issueExecutionContext({ origin: "user", source_scope: "local_foreground", transport: "fixture" }),
+    tool_grant: issueToolGrant({ network_policy: "no_network", writable_roots: ["allowed"] }) }, { ...ready, assertReady() {} });
+  expect(result.status).toBe("error:quota_exhausted"); expect(result.process.reason).toBe("provider_abort");
+  expect(existsSync(join(f.workspace, "allowed/retry"))).toBe(false);
+}, 30000);

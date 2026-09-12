@@ -24,6 +24,7 @@ export interface ProcessAdmission {
   remainingMs?: () => number;
   signal?: AbortSignal;
   abortOnStderrLine?: (line: string) => boolean;
+  abortOnStdoutLine?: (line: string) => boolean;
 }
 
 export class ProcessSupervisor {
@@ -102,6 +103,7 @@ export class ProcessSupervisor {
       let text = "";
       let line = "";
       const decoder = new TextDecoder();
+      const abortLine = stderr ? admission.abortOnStderrLine : admission.abortOnStdoutLine;
       try {
         while (true) {
           const { value, done } = await reader.read();
@@ -111,15 +113,15 @@ export class ProcessSupervisor {
           const chunk = decoder.decode(value.subarray(0, Math.max(0, remaining)), { stream: true });
           text += chunk;
           if (observedBytes > cap) stop("output_limit");
-          if (stderr && admission.abortOnStderrLine) {
+          if (abortLine) {
             line += chunk;
             const lines = line.split("\n");
             line = lines.pop()!;
-            for (const completed of lines) if (admission.abortOnStderrLine(completed)) stop("provider_abort");
+            for (const completed of lines) if (abortLine(completed)) stop("provider_abort");
           }
         }
-        text += decoder.decode();
-        if (stderr && line && admission.abortOnStderrLine?.(line)) stop("provider_abort");
+        const tail = decoder.decode(); text += tail; line += tail;
+        if (line && abortLine?.(line)) stop("provider_abort");
       } catch { if (!stopping) stop("anchor_failed"); }
       return text;
     };

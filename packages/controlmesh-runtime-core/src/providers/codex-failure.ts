@@ -12,3 +12,8 @@ export function codexNativeFailure(event: unknown): ProviderFailure | null {
     ? `usage limit reached; ${message}` : message;
   return nativeFailure(`${code}\n${normalized}`);
 }
+
+/** Complete JSONL records only; arbitrary stderr and partial JSON carry no authority. */
+export function codexFailureLine(line: string): ProviderFailure | null {
+  try { return codexNativeFailure(JSON.parse(line)); } catch { return null; }
+}

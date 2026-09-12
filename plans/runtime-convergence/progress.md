@@ -2,6 +2,35 @@
 
 ## Current
 
+CodexPreflight now uses the installed 0.154.0 native interface with isolated state,
+explicit authentication snapshots, ephemeral sessions, selected model and a bounded
+request. ProviderPreflightService.ensureCodex shares durable permits/cache/retry budget.
+CodexTaskPreflight binds credentials and executable identity, rechecks readiness at
+admission and captures an execution-specific generation for later failure revocation.
+CodexTaskAdapter retains process output before revoking the matching cached readiness;
+recovery remains model-free. Queue tests now use this owner instead of fabricated ready
+responses and prove one probe across two turns and a database reopen.
+
+ProcessSupervisor accepts stdout-line abort detection as well as stderr; container
+forwarding, one-shot Codex and exact resume use it. Native quota/error records stop the
+owned CLI before a later internal retry. Arbitrary prose and tool text do not qualify.
+47 focused tests / 689 assertions / 6.47s passed; typecheck/diff-check passed
+(/tmp/cm-codex-preflight-final.log). Two real Docker one-shot tests passed, six assertions
+(/tmp/cm-codex-preflight-container.log). Installed native Codex against a synthetic
+loopback Responses endpoint passed ready + quota cases, one request each (seven assertions,
+/tmp/cm-codex-preflight-native-test.log); this is real CLI protocol evidence, not a real
+model/account quota or native memory acceptance. The opt-in test is committed.
+
+Native built-ins remain advertised; tool_count is null because CLI JSONL does not attest
+the advertised count. No claim of a zero-tool native profile or general sandbox
+qualification. The npm launcher requires a Node path absent in the restricted environment;
+registration must resolve/qualify the installed native binary. OPENAI_BASE_URL is mapped
+into an explicit native provider; the initial env-only experiment failed authentication
+without reaching loopback. No user's authentication was used in these protocol tests.
+Normal configuration/History registration, effective task/probe profile equivalence and
+real-account readiness/native sandbox qualification remain pending. Production stays
+Python CM 0.43.0; no release, live migration or default switch occurred.
+
 Codex typed error parsing now preserves quota/auth/model/rate-limit outcomes in the
 normal one-shot process status, including nonzero CLI exit. Only native error and
 turn.failed records supply these facts; assistant/tool prose cannot. Quota reset
@@ -17,7 +46,7 @@ The 512-module/57-field ledger is an inventory, not completed parity.
 
 | Delivery area | Verified state | Remaining acceptance |
 |---|---|---|
-| Published CI baseline | 5428047; CI 34717551611 success | Subsequent Codex failure classification pending CI |
+| Published CI baseline | 7c4fedd; CI 34717999450 success | Codex preflight/queue integration pending publication/CI |
 | TS runtime | Kernel, local/device execution, mailbox, topology and retained recovery; reconnectable local service/CLI with full local regression | Final CI; remaining provider/transport/store/terminal ownership and parity |
 | Native continuation | Simple direct and streamed exact recall passed; earlier topology first runs and current artifacts passed | Full worker/merger continuation and complex-context acceptance still fail |
 | Multi-device | Configured initial input HTTP transfer, topology source capture and pre-dispatch receiver; artifact transport/publication | Physical transfer and full native profiles |

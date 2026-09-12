@@ -1,3 +1,4 @@
+import { CodexPreflight, codexProbeCredentialRevision, codexProbeProfile, type CodexProbeInput } from "./codex-preflight";
 import type { Principal } from "../kernel";
 import { digest, requireThat, RuntimeConflict } from "../value";
 import { OpenCodePreflight, type OpenCodeProbeInput } from "./opencode-preflight";
@@ -12,7 +13,7 @@ export class ProviderPreparationWait extends RuntimeConflict {
 
 /** One real native probe per durable permit; callers cannot submit readiness reports through this service. */
 export class ProviderPreflightService {
-  constructor(private readonly cache: PreflightCache, private readonly opencode = new OpenCodePreflight(), private readonly claude = new ClaudePreflight()) {}
+  constructor(private readonly cache: PreflightCache, private readonly opencode = new OpenCodePreflight(), private readonly claude = new ClaudePreflight(), private readonly codex = new CodexPreflight()) {}
 
   async ensure(actor: Principal, requestId: string, binding: ProbeBinding, input: OpenCodeProbeInput): Promise<ProbeDecision> {
     return this.ensureProvider(actor, requestId, binding, input, "opencode", this.opencode);
@@ -24,10 +25,16 @@ export class ProviderPreflightService {
     return this.ensureProvider(actor, requestId, binding, input, "claude", this.claude);
   }
 
-  private async ensureProvider(actor: Principal, requestId: string, binding: ProbeBinding, input: OpenCodeProbeInput, provider: "opencode" | "claude",
-    driver: { runtimeDigest(): string | undefined; probe(input: OpenCodeProbeInput): Promise<ProviderProbeReport> }): Promise<ProbeDecision> {
+  async ensureCodex(actor: Principal, requestId: string, binding: ProbeBinding, input: CodexProbeInput): Promise<ProbeDecision> {
+    requireThat(binding.permission_profile === codexProbeProfile, "probe_permission_profile_mismatch");
+    requireThat(binding.credential_revision === codexProbeCredentialRevision(input), "probe_credential_binding_mismatch");
+    return this.ensureProvider(actor, requestId, binding, input, "codex", this.codex);
+  }
+
+  private async ensureProvider<I extends OpenCodeProbeInput>(actor: Principal, requestId: string, binding: ProbeBinding, input: I, provider: "opencode" | "claude" | "codex",
+    driver: { runtimeDigest(input: I): string | undefined; probe(input: I): Promise<ProviderProbeReport> }): Promise<ProbeDecision> {
     requireThat(binding.provider === provider && binding.model === input.model && binding.config_digest === digest(input.native_configuration), "probe_input_binding_mismatch");
-    requireThat(binding.runtime_digest === driver.runtimeDigest(), "probe_runtime_binding_mismatch");
+    requireThat(binding.runtime_digest === driver.runtimeDigest(input), "probe_runtime_binding_mismatch");
     const decision = this.cache.begin(actor, requestId, binding);
     if (decision.decision !== "probe") return decision;
     const permit = decision.permit!;

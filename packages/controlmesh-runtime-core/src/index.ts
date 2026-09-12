@@ -70,3 +70,6 @@ export { DeviceTopologyRuntime, type DeviceTopologyRoute } from "./device-topolo
 export type { TopologyRuntime } from "./topology-runtime";
 export { startLocalRuntimeService } from "./local-runtime-service";
 export { listenRuntimeControl, requestRuntimeControl } from "./runtime-control-socket";
+
+export { CodexPreflight, codexProbeCredentialRevision, codexProbeProfile, codexProbeVersion, type CodexProbeInput } from "./providers/codex-preflight";
+export { CodexTaskPreflight } from "./providers/codex-task-preflight";

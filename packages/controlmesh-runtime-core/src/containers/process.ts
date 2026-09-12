@@ -183,7 +183,7 @@ export class ContainerProcessSupervisor {
       outcome = await this.supervisor.run({ command: [this.configuration.docker, "--host", `unix://${this.configuration.socket}`, "--config", join(this.configuration.state_root, "cli"), "container", "start", "--attach", "--interactive", record.container_id],
         cwd: this.configuration.state_root, env: { PATH: "/usr/bin:/bin", HOME: this.configuration.state_root, LC_ALL: "C" }, timeout_ms: Math.max(1, Math.floor(deadline - elapsedMs())),
         ...(spec.stdin_text === undefined ? {} : { stdin_text: spec.stdin_text }), ...(spec.max_output_bytes === undefined ? {} : { max_output_bytes: spec.max_output_bytes }) },
-      { ...context, abortOnStderrLine: admission.abortOnStderrLine });
+      { ...context, abortOnStderrLine: admission.abortOnStderrLine, abortOnStdoutLine: admission.abortOnStdoutLine });
       const finished = await this.inspect(record);
       if (!finished || finished.State.Running || finished.State.ExitCode !== outcome.exit_code) outcome = { ...outcome, reason: outcome.reason === "exited" ? "anchor_failed" : outcome.reason };
       if (outcome.reason === "exited") { try { current(); } catch { outcome.reason = "authority_lost"; } }
