@@ -421,3 +421,14 @@ reopens the sender and receiver between chunks, and publishes original bytes to 
 target while preserving unrelated work. This is an in-process transfer driver, not device
 HTTP or physical-host acceptance. Executable permission/file metadata fidelity is not
 represented by the current content-only manifest and remains part of complete delivery.
+
+### File permission fidelity
+
+New sender snapshots include ordinary POSIX file `mode` (0000–0777), bound into the
+manifest digest. Source descriptors must match the validated file identity. Special
+setuid/setgid/sticky bits are rejected. Receiver staging preserves declared permissions
+and rejects pre-existing files with different permissions, even if their bytes match;
+ordinary existing files are not chmodded to resolve a conflict. Legacy manifests without
+mode retain their prior content-only behavior and do not establish permission fidelity.
+Ownership, ACLs, extended attributes, symlinks and directory metadata are not transported.
+The seed represents selected regular inputs, not a filesystem image.

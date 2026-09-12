@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync, symlinkSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync, symlinkSync, chmodSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { prepareWorkspaceSeed, validateWorkspaceSeed } from "../src/workspace-seed";
@@ -53,5 +53,21 @@ test("seed cannot follow a destination symlink or overwrite a file created after
     const prepared = f.prepare(); mkdirSync(join(f.workspace, "src")); writeFileSync(join(f.workspace, "src/input.txt"), "concurrent work");
     expect(() => prepared.stage.promote(authority, prepared.proposal.proposal_digest)).toThrow();
     expect(readFileSync(join(f.workspace, "src/input.txt"), "utf8")).toBe("concurrent work");
+  } finally { rmSync(f.root, { recursive: true, force: true }); }
+});
+
+ test("seed preserves executable permissions and refuses mode conflicts or special bits", () => {
+  const f = setup();
+  try {
+    const manifest = { ...f.manifest, files: f.manifest.files.map(file => ({ ...file, mode: 0o755 })) };
+    const prepare = () => prepareWorkspaceSeed(f.state, f.workspace, manifest, digest(manifest), [...f.content.keys()], f.content, digest("mode-bound assignment"), authority);
+    writeFileSync(join(f.workspace, "PROJECT.md"), f.content.get("PROJECT.md")!); chmodSync(join(f.workspace, "PROJECT.md"), 0o644);
+    expect(prepare).toThrow("workspace_seed_existing_conflict");
+    expect(statSync(join(f.workspace, "PROJECT.md")).mode & 0o777).toBe(0o644);
+    chmodSync(join(f.workspace, "PROJECT.md"), 0o755);
+    const prepared = prepare(); prepared.stage.promote(authority, prepared.proposal.proposal_digest);
+    expect(statSync(join(f.workspace, "src/input.txt")).mode & 0o777).toBe(0o755);
+    const bad = { ...manifest, files: manifest.files.map(file => ({ ...file, mode: 0o4755 })) };
+    expect(() => validateWorkspaceSeed(bad, digest(bad), [...f.content.keys()])).toThrow("workspace_seed_mode_invalid");
   } finally { rmSync(f.root, { recursive: true, force: true }); }
 });

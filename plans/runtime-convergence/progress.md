@@ -261,3 +261,17 @@ Source/inbox/seed tests: 8 passed, 56 assertions, 632ms (`/tmp/cm-seed-source.lo
 and diff-check passed. No real native session, production workspace or remote device was
 modified. Network/assignment/lease admission integration, metadata fidelity and physical
 acceptance remain open; the internal sender does not establish full distribution.
+
+## 2026-09-13 — initial-input executable permissions
+
+New source manifests bind ordinary file mode; capture verifies descriptor identity and
+rejects special bits. Receiver validates original/staged mode and refuses conflicts, while
+WorkspaceStage's optional selected mode preserves permissions on new files. Existing
+callers without selected mode retain behavior. Tests include executable-bit survival across
+sender/receiver DBs, mode conflicts and special-bit refusal.
+
+Stage/seed/source/inbox: 28 passed, 143 assertions (1.58s, `/tmp/cm-seed-modes.log`). Final
+original-mode check: 4 passed, 19 assertions (`/tmp/cm-seed-modes-final.log`). Typecheck and
+diff-check passed. Exact schema-29 commit b697357 CI run 34714662479 completed success;
+this is the complete post-fixture-fix gate referenced in the earlier entry. Network/device
+assignment and live delivery acceptance remain pending.

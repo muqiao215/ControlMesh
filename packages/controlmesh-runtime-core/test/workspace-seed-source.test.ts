@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, symlinkSync, chmodSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { RuntimeDatabase } from "../src/database";
@@ -13,7 +13,7 @@ test("frozen source transfers across two persistent stores and excludes unselect
   let from = new RuntimeDatabase(join(root, "sender.sqlite")), to = new RuntimeDatabase(join(root, "receiver.sqlite"));
   const paths = ["PROJECT.md", "source.bin"], bytes = Buffer.alloc(70000, 42), authority = <T>(run: () => T) => run();
   try {
-    writeFileSync(join(source, "PROJECT.md"), "original intent"); writeFileSync(join(source, "source.bin"), bytes);
+    writeFileSync(join(source, "PROJECT.md"), "original intent"); writeFileSync(join(source, "source.bin"), bytes); chmodSync(join(source, "source.bin"), 0o755);
     writeFileSync(join(source, "private.env"), "unselected fixture data"); writeFileSync(join(target, "local.txt"), "preserve");
     const saved = freezeWorkspaceSeed(from, source, paths, digest("issued source"), authority);
     expect(saved.manifest.files.map(file => file.path)).toEqual(paths);
@@ -36,6 +36,7 @@ test("frozen source transfers across two persistent stores and excludes unselect
     receiver.prepare(state, target); receiver.promote();
     expect(readFileSync(join(target, "PROJECT.md"), "utf8")).toBe("original intent");
     expect(readFileSync(join(target, "source.bin"))).toEqual(bytes);
+    expect(statSync(join(target, "source.bin")).mode & 0o777).toBe(0o755);
     expect(readFileSync(join(target, "local.txt"), "utf8")).toBe("preserve");
     expect(() => sender.read("private.env")).toThrow("workspace_seed_read_invalid");
     expect(readFileSync(join(source, "PROJECT.md"), "utf8")).toBe("changed after freeze");

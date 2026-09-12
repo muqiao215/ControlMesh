@@ -210,11 +210,12 @@ export class WorkspaceStage {
     const expected = { entries: this.record.before.entries.filter(entry => paths.includes(entry.path)), protected_git: [] };
     requireThat(digest(observe(this.record.workspace.path, [...paths], undefined, undefined, undefined, true)) === digest(expected), "workspace_stage_source_changed");
   }
-  writeSelectedFile(authority: WorkspaceAuthority, path: string, bytes: Uint8Array): void {
+  writeSelectedFile(authority: WorkspaceAuthority, path: string, bytes: Uint8Array, selectedMode?: number): void {
     this.gated(authority, () => {
       requireThat(this.record.selection === "files" && this.record.phase === "prepared" && this.record.roots.includes(path)
         && bytes.length <= MAX_FILE, "workspace_stage_file_not_selected");
-      const mode = this.record.before.entries.find(entry => entry.path === path)?.mode ?? 0o644;
+      requireThat(selectedMode === undefined || (Number.isSafeInteger(selectedMode) && selectedMode >= 0 && selectedMode <= 0o777), "workspace_stage_mode_invalid");
+      const mode = selectedMode ?? this.record.before.entries.find(entry => entry.path === path)?.mode ?? 0o644;
       let parent = fs.openSync(this.record.stage.path, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW);
       try {
         const root = fs.fstatSync(parent, { bigint: true });

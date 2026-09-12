@@ -1,4 +1,4 @@
-import { constants, openSync, closeSync, readSync } from "node:fs";
+import { constants, openSync, closeSync, readSync, fstatSync } from "node:fs";
 import { join, relative } from "node:path";
 import { createHash } from "node:crypto";
 import type { RuntimeDatabase } from "./database";
@@ -21,10 +21,14 @@ export function freezeWorkspaceSeed(db: RuntimeDatabase, workspace: string, allo
       validateWorkspaceSeed(placeholder, digest(placeholder), paths);
       const root = directoryIdentity(workspace); requireThat(root.path === workspace, "workspace_seed_source_not_canonical");
       const before = snapshotReads(workspace, paths.map(path => join(workspace, path)));
-      const content = new Map<string, Buffer>();
+      const content = new Map<string, Buffer>(), modes = new Map<string, number>();
       for (const file of before) {
         const fd = openSync(file.path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
         try {
+          const stat = fstatSync(fd, { bigint: true });
+          requireThat(String(stat.dev) === file.device && String(stat.ino) === file.inode && String(stat.size) === file.size, "workspace_seed_source_changed");
+          const mode = Number(stat.mode & 0o7777n);
+          requireThat(mode <= 0o777, "workspace_seed_mode_invalid"); modes.set(file.path, mode);
           const bytes = Buffer.alloc(Number(file.size) + 1); let n = 0;
           while (n < bytes.length) { const read = readSync(fd, bytes, n, bytes.length - n, null); if (!read) break; n += read; }
           requireThat(n === Number(file.size) && createHash("sha256").update(bytes.subarray(0, n)).digest("hex") === file.sha256, "workspace_seed_source_changed");
@@ -32,7 +36,7 @@ export function freezeWorkspaceSeed(db: RuntimeDatabase, workspace: string, allo
         } finally { closeSync(fd); }
       }
       requireThat(digest(root) === digest(directoryIdentity(workspace)) && digest(before) === digest(snapshotReads(workspace, before.map(file => file.path))), "workspace_seed_source_changed");
-      const manifest: WorkspaceSeedManifest = { schema_version: "controlmesh.workspace_seed.v1", files: before.map(file => ({ path: relative(workspace, file.path), size: Number(file.size), sha256: file.sha256 })) };
+      const manifest: WorkspaceSeedManifest = { schema_version: "controlmesh.workspace_seed.v1", files: before.map(file => ({ path: relative(workspace, file.path), size: Number(file.size), sha256: file.sha256, mode: modes.get(file.path)! })) };
       const manifestDigest = digest(manifest), binding = digest({ direction: "workspace_seed_source", authority: authorityBinding });
       const store = new WorkspaceSeedInbox(db, binding, manifest, manifestDigest, paths, authority); store.begin();
       for (const file of manifest.files) {
