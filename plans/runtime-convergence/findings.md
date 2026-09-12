@@ -848,3 +848,12 @@ Headless discovery/prepare, normal task adoption, model-free reopen recovery and
 original-session recall all passed. The current trial is same-host/separate-process; previous
 physical ARM64/x64 tests cover the common device transport and staged publication path.
 No evidence is promoted to installed production rollout or reviewed SpecMesh closeout.
+
+## Explicit SpecMesh artifact candidates — 2026-09-12
+
+Trusted profile may select requirements_path. The adapter requires a matching
+source reference/hash, validates task-compatible file requirements and binds the
+entire candidate into the revalidated observation. Unrequested candidates reject.
+This transport is not automatic adoption: ingress still owns issued task contracts,
+and runtime grants remain independently enforced. Paired Python/TS tests cover
+current-source mutation and missing source proof; standalone source is d393c54.

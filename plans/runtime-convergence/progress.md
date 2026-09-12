@@ -2,6 +2,19 @@
 
 ## Current
 
+2026-09-12 candidate transport verification: runtime suite 443 pass / 30 skip /
+0 fail, 4,770 assertions, 52.20 seconds. Container image was not supplied, so this
+run does not requalify container paths. Paired standalone tests and typecheck pass.
+SpecMesh implementation pushed as d393c54 (57 standalone tests); both contract
+mirrors match its source bytes. No automatic adoption or production cutover.
+
+SpecMesh candidate integration: paired real Python/TS gate passes 9 tests / 37
+assertions, including source mutation revocation and unrequested/unreferenced
+candidate rejection. Initial new test literal widening failed TypeScript checking;
+fixed explicit literal types. Adapter/schema changes remain pending broader
+verification and independent SpecMesh documentation. Packaging correction pushed
+as 6fb218a; remote CI must be checked at that SHA.
+
 2026-09-12 update: main 7885871 passed the local 471-test runtime gate, but CI
 34679141057 failed because bundled Web validators were stale after adding artifact
 completion schemas. Rebuilt using pinned Bun 1.3.11; this corrects packaging only.

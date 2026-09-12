@@ -167,3 +167,35 @@ test("stop cancels and reaps a real plugin subprocess before resolving", async (
     expect(existsSync(`/proc/${pid}`)).toBe(false);
   } finally { await port.stop(); await pending; }
 });
+
+paired("explicit artifact requirements bind current source bytes without creating outputs", async () => {
+  const f = fixture(true), path = "plans/task/artifacts.json";
+  const requirements = { schema_version: "specmesh.artifact_requirements.v1" as const, files: [{ path: "result.txt", mode: "write" as const }] };
+  writeFileSync(join(f.repo, path), JSON.stringify(requirements));
+  const port = new SpecMeshPort({ ...f.config, requirements_path: path }, f.repo, () => {});
+  cleanup.push(() => port.stop());
+  const observation = await port.inspect("check", context());
+  expect(observation.result.artifact_requirements).toEqual({ path,
+    sha256: createHash("sha256").update(readFileSync(join(f.repo, path))).digest("hex"),
+    authority: "asserted_candidate", requirements });
+  expect(existsSync(join(f.repo, "result.txt"))).toBe(false);
+  observation.assertCurrent();
+  writeFileSync(join(f.repo, path), JSON.stringify({ ...requirements, files: [{ path: "other.txt", mode: "write" }] }));
+  expect(observation.assertCurrent).toThrow("specmesh_snapshot_changed");
+});
+
+test("artifact candidates require an explicit request and a matching source reference", async () => {
+  const f = fixture(), path = "plans/task/artifacts.json";
+  const requirements = { schema_version: "specmesh.artifact_requirements.v1" as const,
+    files: [{ path: "result.txt", mode: "write" as const }] };
+  writeFileSync(join(f.repo, path), JSON.stringify(requirements));
+  const candidate = { path, sha256: createHash("sha256").update(readFileSync(join(f.repo, path))).digest("hex"),
+    authority: "asserted_candidate" as const, requirements };
+  for (const requested of [false, true]) {
+    const port = new SpecMeshPort({ ...f.config, ...(requested ? { requirements_path: path } : {}) }, f.repo, () => {},
+      stub(f, value => ({ ...value, artifact_requirements: candidate })));
+    cleanup.push(() => port.stop());
+    await expect(port.inspect("check", context())).rejects.toThrow(requested
+      ? "specmesh_requirements_unproven" : "specmesh_unrequested_requirements");
+  }
+});

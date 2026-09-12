@@ -105,6 +105,76 @@
         "additionalProperties": false
       },
       "maxItems": 200
+    },
+    "artifact_requirements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256",
+        "authority",
+        "requirements"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "authority": {
+          "enum": [
+            "asserted_candidate"
+          ]
+        },
+        "requirements": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema_version",
+            "files"
+          ],
+          "properties": {
+            "schema_version": {
+              "enum": [
+                "specmesh.artifact_requirements.v1"
+              ]
+            },
+            "files": {
+              "type": "array",
+              "maxItems": 32,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "path",
+                  "mode"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                  },
+                  "mode": {
+                    "enum": [
+                      "read",
+                      "write"
+                    ]
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "required": [

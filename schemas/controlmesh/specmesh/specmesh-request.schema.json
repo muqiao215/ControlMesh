@@ -42,6 +42,11 @@
       "enum": [
         "read_only"
       ]
+    },
+    "requirements_path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
     }
   },
   "required": [

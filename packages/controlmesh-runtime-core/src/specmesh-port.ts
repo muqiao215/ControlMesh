@@ -1,3 +1,4 @@
+import { decodeTaskCompletion, type TaskCompletion } from "./task-completion";
 import { existsSync, lstatSync, mkdtempSync, readdirSync, realpathSync, rmSync } from "node:fs";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { tmpdir } from "node:os";
@@ -9,10 +10,11 @@ import { digest, requireThat } from "./value";
 import type { LocalTaskExecution } from "./local-task-runtime";
 
 export type SpecMeshOperation = "inspect" | "check" | "prepare_handoff" | "verify_closeout";
-export interface SpecMeshConfiguration { directory: string; python: string; task_path: string | null; timeout_ms?: number }
+export interface SpecMeshConfiguration { directory: string; python: string; task_path: string | null; requirements_path?: string; timeout_ms?: number }
 export interface SpecMeshResult {
   contract_version: "specmesh.port.v1-draft"; observed_head: string | null; status: "pass" | "blocked" | "unknown";
   references: { path: string; sha256: string; authority: "asserted_candidate" | "derived"; tracked: boolean; modified: boolean }[];
+  artifact_requirements?: { path: string; sha256: string; authority: "asserted_candidate"; requirements: { schema_version: "specmesh.artifact_requirements.v1"; files: TaskCompletion["files"] } };
   findings: { code: string; severity: "info" | "warning" | "error"; path: string | null; message: string }[];
 }
 export interface SpecMeshObservation { result: SpecMeshResult; snapshot_digest: string; assertCurrent(): void }
@@ -31,6 +33,7 @@ export class SpecMeshPort {
     requireThat(isAbsolute(config.directory) && realpathSync(config.directory) === config.directory
       && isAbsolute(config.python) && lstatSync(realpathSync(config.python)).isFile()
       && (config.task_path === null || this.relativePath(config.task_path))
+      && (config.requirements_path === undefined || this.relativePath(config.requirements_path))
       && Number.isInteger(config.timeout_ms ?? 15_000) && (config.timeout_ms ?? 15_000) >= 1000 && (config.timeout_ms ?? 15_000) <= 60_000,
       "invalid_specmesh_profile");
     this.implementation = this.codeIdentity();
@@ -107,7 +110,8 @@ export class SpecMeshPort {
       assertSpecMeshContract<{ supported: boolean }>("capabilities", capability);
       requireThat(capability.supported, "specmesh_profile_unsupported");
       const request = { contract_version: "specmesh.port.v1-draft", operation, repo_root: this.workspace.path,
-        expected_head: head, task_path: this.config.task_path, mode: "read_only" };
+        expected_head: head, task_path: this.config.task_path, mode: "read_only",
+        ...(this.config.requirements_path ? { requirements_path: this.config.requirements_path } : {}) };
       assertSpecMeshContract("request", request);
       const outcome = await run(["--allowed-root", this.workspace.path], request);
       requireThat(outcome.reason === "exited" && [0, 3].includes(outcome.exit_code!), "specmesh_process_failed");
@@ -127,6 +131,12 @@ export class SpecMeshPort {
       if (result.status === "pass") for (const path of ["AGENTS.md", "PROJECT.md", ...(this.config.task_path
         ? ["task_plan.md", "findings.md", "progress.md"].map(name => join(this.config.task_path!, name)) : [])])
         requireThat(result.references.some(item => item.path === path), "specmesh_required_reference_missing");
+      if (result.status === "pass" && this.config.requirements_path) {
+        const candidate = result.artifact_requirements;
+        requireThat(candidate && candidate.path === this.config.requirements_path
+          && result.references.some(reference => reference.path === candidate.path && reference.sha256 === candidate.sha256), "specmesh_requirements_unproven");
+        decodeTaskCompletion({ schema_version: "controlmesh.task_completion.v1", files: candidate.requirements.files });
+      } else requireThat(result.artifact_requirements === undefined, "specmesh_unrequested_requirements");
       assertCurrent();
       const resultIdentity = digest(result);
       const snapshot_digest = digest({ head, task_path: this.config.task_path, files, result });
