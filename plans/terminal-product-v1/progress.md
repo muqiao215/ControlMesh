@@ -51,3 +51,18 @@ fixture lacked task:reconcile required by LocalTaskRuntime; corrected the fixtur
 without changing runtime authorization.
 
 Final focused CLI + terminal: 11 passed, 86 assertions, 10.66s; typecheck and diff-check passed. Log: `/tmp/cm-terminal-retry-focused.log`. Baseline `1b6c716cd1bc20e781691346ba1d419d3a4ffa52` CI run 34712641985 completed success.
+
+## 2026-09-13 — continuous event view and task pagination
+
+Added `/more` for task-list pages and event catch-up. Refresh preserves the selected task
+page; event reads advance the sequence cursor, append only new sequence numbers, and
+retain at most 200 display records with an explicit older-event notice. The server history
+is untouched. Event view uses the component's sticky-bottom scrolling while preserving
+its manual-scroll behavior; input focus/draft are not changed by refresh. `/events` resets
+to the start for history review. These are durable lifecycle events, not provider-token
+streaming.
+
+Validation: terminal suite 6 passed, 33 assertions (1.74s); includes second-page persistence,
+event cursor 50 -> 55 -> 56, draft preservation and read-only polling. The initial menu
+test used `/mo`, now ambiguous between `/more` and `/model`; changed its intended model
+filter to `/mod`. Runtime protocol/schema/ownership are unchanged.

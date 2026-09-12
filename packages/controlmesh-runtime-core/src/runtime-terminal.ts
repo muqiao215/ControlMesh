@@ -4,11 +4,13 @@ import { renderRuntimeReply, resolveRuntimeNew, terminalText } from "./runtime-c
 import { object, RuntimeConflict } from "./value";
 
 export type TerminalRequest = (request: Record<string, unknown>) => Promise<Record<string, unknown>>;
-const commands = ["/tasks", "/open TASK", "/new", "/model PROVIDER", "/enqueue", "/resume TEXT", "/tell TEXT", "/events", "/cancel", "/retry", "/quit"];
+const commands = ["/tasks", "/more", "/open TASK", "/new", "/model PROVIDER", "/enqueue", "/resume TEXT", "/tell TEXT", "/events", "/cancel", "/retry", "/quit"];
 
 /** Ephemeral presentation only: task state and admission belong to the socket service. */
 export function mountRuntimeTerminal(renderer: CliRenderer, request: TerminalRequest, quit: () => void) {
   let selected: string | undefined, provider: string | undefined, configuration: unknown;
+  let taskAfter = "", taskNext: string | null = null, eventAfter = 0;
+  let eventRows: Record<string, unknown>[] = [], omittedEvents = 0;
   let pending: Record<string, unknown> | undefined;
   let viewMode: "task" | "events" = "task", generation = 0;
   let busy = false, closed = false, refreshing = false, menuIndex = 0, hiddenDraft: string | undefined, exitArmed = false;
@@ -55,6 +57,27 @@ export function mountRuntimeTerminal(renderer: CliRenderer, request: TerminalReq
     if (!object(value) || !Number.isSafeInteger(value.revision)) throw new RuntimeConflict("terminal_invalid_snapshot");
     return value;
   }
+  function resetEvents() { eventAfter = 0; eventRows = []; omittedEvents = 0; }
+  function readView() {
+    if (!selected) return call("list_tasks", { after: taskAfter, limit: 50 });
+    return viewMode === "events" ? call("task_events", { task_id: selected, after: eventAfter, limit: 50 }) : call("inspect_task", { task_id: selected });
+  }
+  function displayView(reply: Record<string, unknown>) {
+    const value = result(reply);
+    if (!selected && object(value)) taskNext = typeof value.next_after === "string" ? value.next_after : null;
+    scroll.stickyScroll = Boolean(selected && viewMode === "events");
+    if (scroll.stickyScroll) scroll.stickyStart = "bottom";
+    if (selected && viewMode === "events" && object(value) && Array.isArray(value.events)) {
+      for (const row of value.events) {
+        if (object(row) && typeof row.seq === "number" && Number.isSafeInteger(row.seq) && row.seq > eventAfter) {
+          eventRows.push(row); eventAfter = row.seq;
+        }
+      }
+      const excess = Math.max(0, eventRows.length - 200);
+      omittedEvents += excess; if (excess) eventRows.splice(0, excess);
+      body.content = `${omittedEvents ? `已收起 ${omittedEvents} 条较早事件；/events 从头查看\n` : ""}${renderRuntimeReply({ ...reply, result: { ...value, events: eventRows, next_after: eventAfter } })}`;
+    } else body.content = renderRuntimeReply(reply);
+  }
   async function refresh() {
     if (closed || refreshing || busy) return;
     refreshing = true; const selection = selected, version = generation;
@@ -63,8 +86,8 @@ export function mountRuntimeTerminal(renderer: CliRenderer, request: TerminalReq
       if (closed || busy || selection !== selected || version !== generation) return;
       configuration = object(state) ? state.configuration : undefined;
       header.content = renderRuntimeReply(status).split("\n").slice(0, 2).join("\n") + (selected ? ` · ${terminalText(selected)}` : " · 新任务") + (provider ? ` · 新任务选择 ${terminalText(provider)}` : "");
-      const reply = await call(selection ? (viewMode === "events" ? "task_events" : "inspect_task") : "list_tasks", selection ? { task_id: selection } : { limit: 50 });
-      if (!closed && !busy && selection === selected && version === generation) body.content = renderRuntimeReply(reply);
+      const reply = await readView();
+      if (!closed && !busy && selection === selected && version === generation) displayView(reply);
     } catch (error) { if (!closed) footer.content = `连接/读取失败：${terminalText(error instanceof RuntimeConflict ? error.code : "service_unavailable")}；草稿保留`; }
     finally { refreshing = false; }
   }
@@ -81,7 +104,7 @@ export function mountRuntimeTerminal(renderer: CliRenderer, request: TerminalReq
     };
     try {
       if (command === "/quit") { quit(); return; }
-      if (pending && !["/retry", "/tasks", "/open", "/events"].includes(command)) throw new RuntimeConflict("terminal_unsettled_request_use_retry");
+      if (pending && !["/retry", "/tasks", "/more", "/open", "/events"].includes(command)) throw new RuntimeConflict("terminal_unsettled_request_use_retry");
       if (command === "/retry") {
         if (!pending) throw new RuntimeConflict("terminal_no_unsettled_request");
         const packet = pending; lastId = packet.id;
@@ -94,8 +117,16 @@ export function mountRuntimeTerminal(renderer: CliRenderer, request: TerminalReq
         return;
       }
       if (command === "/new") { selected = undefined; viewMode = "task"; }
-      else if (command === "/tasks") { selected = undefined; await send("list_tasks", { limit: 50 }); }
-      else if (command === "/open") { await send("inspect_task", { task_id: argument }); selected = argument; viewMode = "task"; }
+      else if (command === "/tasks") { selected = undefined; taskAfter = ""; displayView(await readView()); }
+      else if (command === "/more") {
+        if (selected && viewMode !== "events") throw new RuntimeConflict("terminal_open_tasks_or_events_first");
+        if (!selected) {
+          if (!taskNext) throw new RuntimeConflict("terminal_no_more_tasks");
+          const previous = taskAfter; taskAfter = taskNext;
+          try { displayView(await readView()); } catch (error) { taskAfter = previous; throw error; }
+        } else displayView(await readView());
+      }
+      else if (command === "/open") { await send("inspect_task", { task_id: argument }); selected = argument; viewMode = "task"; resetEvents(); }
       else if (command === "/model") {
         if (!object(configuration) || !Array.isArray(configuration.providers) || !configuration.providers.some(p => object(p) && p.provider === argument)) throw new RuntimeConflict("cli_provider_not_registered");
         provider = argument;
@@ -114,8 +145,8 @@ export function mountRuntimeTerminal(renderer: CliRenderer, request: TerminalReq
         await send(command.slice(1), { task_id: selected, expected_revision: current.revision, ...(command === "/resume" ? { prompt: argument } : {}) });
       } else if (command === "/tell" || command === "/events") {
         if (!selected) throw new RuntimeConflict("terminal_select_task_first");
-        if (command === "/events") viewMode = "events";
-        await send(command === "/tell" ? "tell" : "task_events", { task_id: selected, ...(command === "/tell" ? { text: argument } : {}) });
+        if (command === "/events") { viewMode = "events"; resetEvents(); displayView(await readView()); }
+        else await send("tell", { task_id: selected, text: argument });
       } else throw new RuntimeConflict("unknown_cli_command");
       if (!closed) {
         if (input.plainText === draft) input.setText("");

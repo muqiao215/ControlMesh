@@ -20,7 +20,7 @@ test("Chinese bracketed paste and resize retain draft; menu selection never subm
     ui.resize(120, 36); await ui.flush();
     expect(view.input.plainText).toBe("你好🙂\n第二行\n第三行");
     expect(ui.captureCharFrame()).toContain("第二行");
-    view.input.setText("/mo"); await ui.flush();
+    view.input.setText("/mod"); await ui.flush();
     expect(ui.captureCharFrame()).toContain("/model PROVIDER");
     ui.mockInput.pressTab(); await ui.flush();
     expect(view.input.plainText).toBe("/model ");
@@ -114,4 +114,39 @@ test("lost tell reply is settled through the original socket request without a s
     view.input.setText("/retry"); await view.submit();
     expect(sent.filter(p => p.op === "tell")).toHaveLength(2);
   } finally { view.dispose(); ui.renderer.destroy(); await server.close(); db.close(); rmSync(home, { recursive: true, force: true }); }
+});
+
+test("task pages survive refresh and event refresh advances cursor without replaying mutations", async () => {
+  const ui = await createTestRenderer({ width: 120, height: 36 });
+  const calls: Record<string, unknown>[] = [];
+  let eventCount = 55;
+  const view = mountRuntimeTerminal(ui.renderer, async p => {
+    calls.push(p);
+    let result: unknown = {};
+    if (p.op === "status") result = { queue: {}, configuration: { workspace: "/project", providers: [] } };
+    if (p.op === "list_tasks") result = { tasks: [{ task_id: p.after ? "task-60" : "task-1", status: "waiting" }], next_after: p.after ? null : "task-50" };
+    if (p.op === "inspect_task") result = { revision: 1, task: { task_id: p.task_id, status: "running" } };
+    if (p.op === "task_events") {
+      const start = Number(p.after ?? 0), end = Math.min(start + 50, eventCount);
+      result = { task_id: p.task_id, events: Array.from({ length: Math.max(0, end - start) }, (_, i) => ({ seq: start + i + 1, kind: "progress", origin: "agent_message" })), next_after: end, has_more: end < eventCount };
+    }
+    return { id: p.id, ok: true, result };
+  }, () => {});
+  try {
+    await ui.flush();
+    view.input.setText("/tasks"); await view.submit();
+    view.input.setText("/more"); await view.submit();
+    await view.refresh();
+    expect(calls.filter(p => p.op === "list_tasks").at(-1)?.after).toBe("task-50");
+    view.input.setText("/open task-60"); await view.submit();
+    view.input.setText("/events"); await view.submit();
+    await view.refresh();
+    expect(calls.filter(p => p.op === "task_events").at(-1)?.after).toBe(50);
+    eventCount = 56; view.input.setText("尚未发送的草稿"); await view.refresh();
+    expect(calls.filter(p => p.op === "task_events").at(-1)?.after).toBe(55);
+    await view.refresh();
+    expect(calls.filter(p => p.op === "task_events").at(-1)?.after).toBe(56);
+    expect(view.input.plainText).toBe("尚未发送的草稿");
+    expect(calls.every(p => ["status", "list_tasks", "inspect_task", "task_events"].includes(String(p.op)))).toBe(true);
+  } finally { view.dispose(); ui.renderer.destroy(); }
 });

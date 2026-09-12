@@ -124,3 +124,9 @@ remain available. The request ID is displayed; retained packets and drafts are c
 process-local, so client restart does not restore them. `/quit` detaches without stopping
 the service. This remains an interactive prototype: full terminal-product gates, native
 borrowing, real-model acceptance and installed-entry cutover are pending.
+
+Task pages in the interactive client support `/more`; refresh keeps the current page.
+Event view advances the service sequence cursor on each refresh, showing at most 200
+records in memory and disclosing dropped display records. `/events` restarts history
+reading; `/more` catches up another bounded batch. These are lifecycle events, not
+live provider-token output.
