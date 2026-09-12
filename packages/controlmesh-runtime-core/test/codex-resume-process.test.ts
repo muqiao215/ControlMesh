@@ -1,3 +1,4 @@
+import { codexProbeCommand } from "../src/providers/codex-preflight";
 import { CodexPreflight } from "../src/providers/codex-preflight";
 import { CodexTaskPreflight } from "../src/providers/codex-task-preflight";
 import { PreflightCache } from "../src/providers/preflight-cache";
@@ -149,4 +150,31 @@ test.each([false, true])("Codex queue owns dispatch, durable output and restart 
     runtime.enqueue("second", "task", resumed.revision); await runtime.drain();
     expect(kernel.inspect(actor, "task").task.status).toBe("done"); expect(nativeRuns).toBe(2); expect(probes).toBe(1);
   } finally { await runtime.stop(); db.close(); }
+});
+
+
+test("Codex resumed task uses exactly the provider configuration exercised by preflight", async () => {
+  const f = fixture(); f.input.environment.OPENAI_BASE_URL = "https://example.invalid/v1";
+  // Supervision is covered separately; execute only this test's synthetic binary here.
+  const runner = new CodexResumeProcess({ async run(spec, admission) {
+    admission.assertCurrent();
+    const result = Bun.spawnSync(spec.command, { cwd: spec.cwd, env: spec.env, stdin: Buffer.from(spec.stdin_text ?? ""), stdout: "pipe", stderr: "pipe", timeout: 2000 });
+    return { reason: "exited" as const, exit_code: result.exitCode, stdout: result.stdout.toString(), stderr: result.stderr.toString(), duration_ms: 1 };
+  } });
+  await runner.run(f.input, f.admission);
+  const args: string[] = JSON.parse(readFileSync(join(f.root, "args.json"), "utf8"));
+  const profile = (values: string[]) => values.filter(value => value.startsWith("model_provider=") || value.startsWith("model_providers."));
+  const probe = codexProbeCommand(f.input.executable, f.input.model, f.input.environment.OPENAI_BASE_URL);
+  expect(profile(args)).toEqual(profile(probe)); expect(profile(args)).toHaveLength(6);
+  expect(args).toContain('model_providers.controlmesh_preflight.base_url="https://example.invalid/v1"');
+});
+
+test("Codex malformed backend cannot dispatch task input or a version process", async () => {
+  for (const baseUrl of ["file:///tmp/endpoint", "https://user:password@example.invalid/v1", "https://example.invalid/v1?api_key=private", "not-a-url"]) {
+    const f = fixture(); f.input.environment.OPENAI_BASE_URL = baseUrl;
+    let launched = false;
+    const process = new CodexResumeProcess({ run: async () => { launched = true; throw new Error("must not launch"); } });
+    await expect(process.run(f.input, f.admission)).rejects.toThrow("invalid_codex_probe_endpoint");
+    expect(launched).toBe(false); expect(() => readFileSync(f.dispatch)).toThrow();
+  }
 });

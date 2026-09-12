@@ -1,3 +1,4 @@
+import { codexProviderArguments } from "./codex-provider-profile";
 import { codexFailureLine } from "./codex-failure";
 import { decodeExecutionContext } from "../execution-context";
 import { isAbsolute } from "node:path";
@@ -63,6 +64,7 @@ export class CodexResumeProcess {
     requireThat(isAbsolute(input.codex_home) && realpathSync(input.codex_home) === input.codex_home
       && input.environment.CODEX_HOME === input.codex_home
       && input.rollout_path.startsWith(input.codex_home + "/sessions/"), "codex_store_not_registered");
+    const providerArguments = codexProviderArguments(input.environment.OPENAI_BASE_URL);
     const policy = enforceExecutionPolicy(decodeExecutionContext(input.execution_context), false), grant = decodeToolGrant(input.tool_grant);
     enforceProviderConfirmation("codex", grant, policy);
     const mapped = mapToolGrant("codex", grant, { config_permission_mode: input.sandbox, config_sandbox_mode: input.sandbox });
@@ -95,7 +97,7 @@ export class CodexResumeProcess {
       if (retained !== undefined) { void Promise.resolve(retained).catch(() => {}); requireThat(false, "dispatch_retention_must_be_synchronous"); }
       guard(); store.validate(input.reference);
       const process = await this.supervisor.run({ command: [input.executable, "exec", "--sandbox", input.sandbox,
-        "-c", 'approval_policy="never"', ...mapped.flags, "--ignore-user-config", "--ignore-rules",
+        "-c", 'approval_policy="never"', ...mapped.flags, ...providerArguments, "--ignore-user-config", "--ignore-rules",
         "resume", "--json", "--model", input.model, "--skip-git-repo-check", "--", input.reference.session_id, "-"],
         cwd: input.reference.directory, env: input.environment, stdin_text: input.prompt, timeout_ms: input.timeout_ms }, { ...admission, assertCurrent: guard,
           abortOnStdoutLine: line => codexFailureLine(line) !== null || Boolean(admission.abortOnStdoutLine?.(line)) });

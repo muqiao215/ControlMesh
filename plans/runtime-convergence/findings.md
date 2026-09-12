@@ -1866,3 +1866,11 @@ are isolated 0600 and removed after the owned process finishes; no snapshot valu
 reports or command arguments. Custom native configuration is currently refused rather
 than silently ignored. Execution failure revocation captures a cache generation per
 execution, not mutable last-generation state shared across overlapping executions.
+
+Codex backend alignment: environment-only OPENAI_BASE_URL is insufficient for the native
+CLI's default provider. Probe and exact resume now reuse the same explicit parameter
+builder, preserving the already-qualified native provider name. Invalid endpoint URLs
+refuse before version/task launch. Earlier staged supervised tests timed out even with
+unchanged source under restricted permissions; all affected supervised tests passed in
+the real checkout after permissions were restored. Do not attribute that prior failure
+to the provider extraction or silently remove its earlier failure record.

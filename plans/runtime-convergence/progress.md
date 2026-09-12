@@ -2,6 +2,17 @@
 
 ## Current
 
+Permissions restored: the prepared provider-alignment patch is now applied to the
+main checkout. Codex probe and resume share codexProviderArguments; OPENAI_BASE_URL
+selects the same explicit native provider parameters before any process dispatch.
+17 affected tests / 122 assertions and runtime typecheck passed in the authoritative
+checkout (/tmp/cm-restored-endpoint.log). The earlier supervised handshake failures
+no longer reproduce after permission restoration. Installed Codex 0.154.0 with the
+loopback synthetic Responses service passed ready/quota cases, seven assertions
+(/tmp/cm-restored-native.log). No real account/model acceptance is inferred.
+Viewer's new Codex native-reference matches the current TS reader; ordinary CM Codex
+registration/adoption and full CM-R0–R7 remain pending. Production has not switched.
+
 CodexPreflight now uses the installed 0.154.0 native interface with isolated state,
 explicit authentication snapshots, ephemeral sessions, selected model and a bounded
 request. ProviderPreflightService.ensureCodex shares durable permits/cache/retry budget.

@@ -1,3 +1,4 @@
+import { codexProviderArguments } from "./codex-provider-profile";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, realpathSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
@@ -23,14 +24,7 @@ const disabled = ["shell_tool", "unified_exec", "shell_snapshot", "shell_snapsho
   "browser_use", "browser_use_external", "computer_use", "in_app_browser", "image_generation", "memories", "skill_search", "code_mode", "code_mode_host", "sleep_tool"];
 export function codexProbeCommand(executable: string, model: string, baseUrl?: string): string[] {
   requireThat(typeof model === "string" && /^[^\s\x00]{1,256}$/.test(model), "invalid_provider_model");
-  const provider: string[] = [];
-  if (baseUrl !== undefined) {
-    let url: URL; try { url = new URL(baseUrl); } catch { requireThat(false, "invalid_codex_probe_endpoint"); }
-    requireThat(["http:", "https:"].includes(url!.protocol) && !url!.username && !url!.password && !url!.search && !url!.hash, "invalid_codex_probe_endpoint");
-    for (const [key, value] of Object.entries({ model_provider: "controlmesh_preflight", "model_providers.controlmesh_preflight.name": "ControlMesh preflight",
-      "model_providers.controlmesh_preflight.base_url": baseUrl, "model_providers.controlmesh_preflight.env_key": "OPENAI_API_KEY",
-      "model_providers.controlmesh_preflight.wire_api": "responses", "model_providers.controlmesh_preflight.requires_openai_auth": false })) provider.push("-c", `${key}=${JSON.stringify(value)}`);
-  }
+  const provider = codexProviderArguments(baseUrl);
   return [executable, "exec", "--json", "--ephemeral", "--ignore-user-config", "--ignore-rules", "--sandbox", "read-only",
     "-c", 'approval_policy="never"', "-c", 'web_search="disabled"', "-c", "mcp_servers={}",
     ...disabled.flatMap(feature => ["--disable", feature]), ...provider, "--model", model, "--skip-git-repo-check", "--", "-"];
