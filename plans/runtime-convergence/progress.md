@@ -22,6 +22,20 @@ shows invalid read arguments, not a proven concurrent file change. The attempt a
 05a0e591-a529-4401-b28a-932b3e948f95 are guarded against replay. No new native model canary
 was launched during this correction.
 
+Codex native continuity owner is in progress. Local CLI help reports 0.154.0 and explicit
+UUID resume support; inspected local rollout structure includes session_meta, task_started,
+turn_context, user_message, final agent_message and task_complete. No native/model command
+was dispatched. A new private CodexSessionStore reads bounded descriptor-checked rollout
+bytes, binds identity/content revisions and verifies one exact appended completed turn.
+It rejects rewritten prefix, inode/device/workspace changes, repeated turn IDs, partial
+output and mismatched prompt/model/result. It is not yet a registered task adapter or
+History candidate port. Interrupted/compacted history qualification remains pending;
+unsupported lineage currently refuses rather than implying safe execution.
+
+Session regression: 10 tests / 57 assertions / 92ms including existing Claude checks
+(/tmp/cm-codex-session-final.log), typecheck passed. Synthetic Codex fixtures do not prove
+live continuation. The earlier topology source commit a54007d passed CI 34716213071.
+
 Physical acceptance readiness was checked after a54007d. The previously qualified ARM64
 peer is offline in the local VPN inventory and bounded SSH exited 255 with connection
 timeout. No remote files/processes were created, no previous task/session was resumed,
