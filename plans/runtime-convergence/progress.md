@@ -221,3 +221,30 @@ conflicting existing content, bad bytes/path, symlink and concurrent destination
 Typecheck and diff-check passed. No production/native files or devices were modified.
 Prior `d0dab04` CI run 34713715880 completed success; `8422a1d` run 34713930764 was still
 running at the latest read.
+
+## 2026-09-13 — durable initial-input inbox
+
+Added private database 29 transfer/file tables and a bounded, runtime-authorized receiving
+owner. Retains exact manifest, byte progress and prepared publication across DB reopen;
+identical chunks are idempotent, corrupt final chunks do not advance progress, incomplete
+inputs cannot prepare, and revoked authority cannot publish. Restored stages reject
+a different target/state root. Network/assignment/scheduler integration remains open.
+
+Initial seed tests: 5 passed, 34 assertions. After destination-restoration check, final
+inbox tests: 2 passed, 20 assertions (`/tmp/cm-seed-inbox-final.log`). Full runtime suite
+started with pinned Bun and configured container/SpecMesh fixtures, output
+`/tmp/cm-runtime-seed29.log`; follow the original process handle before claiming its result.
+Existing upgrade tests retain their scenario and now assert current private version 29.
+Previous `8422a1d` and `9eb1ae6` CI runs 34713930764 and 34714128067 passed.
+
+Expanded verification found old-version fixtures retaining the new tables while resetting
+user_version, causing `workspace_seed_transfers already exists`. Fixed fixture downgrades
+to remove both version-29 tables; production migration remains strict. All 19 upgrade
+cases passed (83 assertions, `/tmp/cm-seed29-upgrades.log`). Final inbox tests now include
+empty-file receipt and declared-capacity limits: 3 passed, 24 assertions.
+
+Full runtime process completed: 815 passed / 7 failed, 10405 assertions, 350.54s. All seven
+failures were the old-version fixture downgrade omission described above; corrected
+upgrade subset passed all 19 cases. Do not report this initial full run as green. Final
+inbox subset and typecheck passed after changes. Exact committed CI remains the complete
+post-fix gate. Full output: `/tmp/cm-runtime-seed29.log`.

@@ -26,7 +26,7 @@ export class RuntimeDatabase {
       this.transaction(() => {
         const version = (this.sql.query("PRAGMA user_version").get() as { user_version: number }).user_version;
         const app = (this.sql.query("PRAGMA application_id").get() as { application_id: number }).application_id;
-        requireThat(version >= 0 && version <= 28, "unsupported_database_version");
+        requireThat(version >= 0 && version <= 29, "unsupported_database_version");
         requireThat(app === 0 || app === APPLICATION_ID, "foreign_database");
         if (version === 0) {
           const tables = this.sql.query("SELECT name FROM sqlite_master WHERE type='table'").all();
@@ -408,6 +408,22 @@ export class RuntimeDatabase {
               PRIMARY KEY(task_id,execution_id)
             );
             PRAGMA user_version = 28;
+          `);
+        }
+
+        if (version < 29) {
+          this.sql.exec(`
+            CREATE TABLE workspace_seed_transfers (
+              binding TEXT PRIMARY KEY, manifest_digest TEXT NOT NULL, manifest TEXT NOT NULL,
+              size INTEGER NOT NULL CHECK(size>=0 AND size<=16777216),
+              stage_path TEXT, reference TEXT, proposal_digest TEXT
+            );
+            CREATE TABLE workspace_seed_files (
+              binding TEXT NOT NULL REFERENCES workspace_seed_transfers(binding), path TEXT NOT NULL,
+              received INTEGER NOT NULL CHECK(received>=0 AND received<=4194304), content BLOB NOT NULL,
+              PRIMARY KEY(binding,path)
+            );
+            PRAGMA user_version = 29;
           `);
         }
 

@@ -383,3 +383,25 @@ durable receipt; persist the prepared reference before promotion; prevent claims
 execution until source verification; verify cancellation/revocation, interrupted transfer,
 restart and actual two-device delivery. Never accept a remote absolute path or promote
 under caller-provided authority. Source packaging must exclude unapproved files/secrets.
+
+### Durable receiving state (database 29)
+
+`WorkspaceSeedInbox` stores manifest binding, received bytes and prepared stage reference
+in private runtime tables. A runtime-issued opaque binding namespaces each assignment;
+changing the manifest for an existing binding is rejected. Every operation executes under
+a synchronous runtime authority callback. Chunks are at most 32 KiB, strictly contiguous,
+with identical retransmission accepted and conflicting overlap refused. Final content
+hashes must match before completion; invalid chunks roll back their progress. Empty files
+need an explicit empty chunk. Capacity is bounded to 128 transfers and 256 MiB declared
+content across the inbox; automatic eviction is not implemented.
+
+Preparation persists the stage reference/proposal before publication. Reopening uses the
+original target and stage root; caller-supplied replacements are rejected. Promotion uses
+WorkspaceStage's retained per-file protocol and checks authority again. A crash before
+recording a prepared stage may leave private staging data, but cannot publish it. The
+network operation, assignment-issued binding, sender packaging, claim barrier and cleanup
+policy are still pending. Do not expose this internal class directly to untrusted JSON.
+
+Schema 29 is additive to the private TS candidate database. Older TS candidates reject
+newer database versions; rollback requires the pre-upgrade candidate snapshot. Python
+production state is not migrated by this change.

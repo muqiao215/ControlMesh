@@ -1818,3 +1818,11 @@ Afterward a final device visibility check was verified with 33 device-topology t
 assertions, 4.84s, plus typecheck (/tmp/cm-topology-input-visibility.log). Missing/corrupt
 input now visibly blocks the schedule instead of remaining queued while discovery hides it.
 The full log predates that final visibility check; remote CI binds the final published SHA.
+
+Initial distribution integration constraints (2026-09-13): DeviceAssignment.input is capped
+at 32768 bytes; do not embed a full 16 MiB seed there. DeviceCommand is schema-owned and
+needs generated-model/golden updates for manifest/chunk reads. DeviceWorker claims before
+adapter execution; source publication should occur inside its existing current lease
+authority before native dispatch, not under an unleased metadata claim. Receiver config
+must explicitly authorize bootstrap file paths, independently of result-write roots. The
+new inbox is a receiver primitive only; no transport/admission integration exists yet.
