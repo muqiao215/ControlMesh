@@ -130,3 +130,17 @@ Event view advances the service sequence cursor on each refresh, showing at most
 records in memory and disclosing dropped display records. `/events` restarts history
 reading; `/more` catches up another bounded batch. These are lifecycle events, not
 live provider-token output.
+
+### Native history in the terminal
+
+`/history claude QUERY` searches the configured headless History catalog.
+`/refresh-history claude` explicitly refreshes that catalog; polling/search does not
+schedule refresh or execute a model. `/adopt claude SESSION_ID` prepares a task-bound
+context handle and shows it without submitting a task. The next plain-text input becomes
+the new task prompt; original historical messages are not resubmitted. `/new` discards
+the selection. Model changes are refused while a prepared context is selected.
+
+The current local runtime history port qualifies Claude only; OpenCode and other provider
+names must not be advertised as supported by this TS local adoption path. Provider-native
+execution still uses the existing registry/baseline checks and enqueue preflight. Terminal
+integration tests do not establish real-model memory recall.

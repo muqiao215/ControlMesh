@@ -4,15 +4,16 @@ import { renderRuntimeReply, resolveRuntimeNew, terminalText } from "./runtime-c
 import { object, RuntimeConflict } from "./value";
 
 export type TerminalRequest = (request: Record<string, unknown>) => Promise<Record<string, unknown>>;
-const commands = ["/tasks", "/more", "/open TASK", "/new", "/model PROVIDER", "/enqueue", "/resume TEXT", "/tell TEXT", "/events", "/cancel", "/retry", "/quit"];
+const commands = ["/tasks", "/more", "/open TASK", "/new", "/model PROVIDER", "/enqueue", "/resume TEXT", "/tell TEXT", "/events", "/history PROVIDER QUERY", "/refresh-history PROVIDER", "/adopt PROVIDER SESSION", "/cancel", "/retry", "/quit"];
 
 /** Ephemeral presentation only: task state and admission belong to the socket service. */
 export function mountRuntimeTerminal(renderer: CliRenderer, request: TerminalRequest, quit: () => void) {
   let selected: string | undefined, provider: string | undefined, configuration: unknown;
   let taskAfter = "", taskNext: string | null = null, eventAfter = 0;
   let eventRows: Record<string, unknown>[] = [], omittedEvents = 0;
+  let adoption: Record<string, unknown> | undefined;
   let pending: Record<string, unknown> | undefined;
-  let viewMode: "task" | "events" = "task", generation = 0;
+  let viewMode: "task" | "events" | "history" = "task", generation = 0;
   let busy = false, closed = false, refreshing = false, menuIndex = 0, hiddenDraft: string | undefined, exitArmed = false;
   const root = new BoxRenderable(renderer, { id: "workbench", width: "100%", height: "100%", flexDirection: "column", paddingX: 1 });
   const header = new TextRenderable(renderer, { id: "context", content: "ControlMesh · 正在连接服务", height: 2, flexShrink: 0 });
@@ -39,7 +40,7 @@ export function mountRuntimeTerminal(renderer: CliRenderer, request: TerminalReq
     return reply.result;
   }
   async function transmit(packet: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const mutating = ["submit", "enqueue", "resume", "tell", "cancel"].includes(String(packet.op));
+    const mutating = ["submit", "enqueue", "resume", "tell", "cancel", "prepare_adoption"].includes(String(packet.op));
     try {
       const reply = await request(packet);
       // A matching reply settles transport uncertainty, including explicit runtime refusal.
@@ -50,6 +51,11 @@ export function mountRuntimeTerminal(renderer: CliRenderer, request: TerminalReq
       if (mutating) pending = structuredClone(packet);
       throw error;
     }
+  }
+  function acceptAdoption(value: unknown) {
+    if (!object(value) || value.authorization !== "context_only" || typeof value.task_id !== "string" || typeof value.provider !== "string"
+      || typeof value.model !== "string" || !object(value.native_session)) throw new RuntimeConflict("terminal_invalid_adoption");
+    adoption = value; selected = undefined; viewMode = "history";
   }
   async function snapshot() {
     if (!selected) throw new RuntimeConflict("terminal_select_task_first");
@@ -85,7 +91,8 @@ export function mountRuntimeTerminal(renderer: CliRenderer, request: TerminalReq
       const status = await call("status"), state = result(status);
       if (closed || busy || selection !== selected || version !== generation) return;
       configuration = object(state) ? state.configuration : undefined;
-      header.content = renderRuntimeReply(status).split("\n").slice(0, 2).join("\n") + (selected ? ` · ${terminalText(selected)}` : " · 新任务") + (provider ? ` · 新任务选择 ${terminalText(provider)}` : "");
+      header.content = renderRuntimeReply(status).split("\n").slice(0, 2).join("\n") + (selected ? ` · ${terminalText(selected)}` : " · 新任务") + (adoption ? ` · 已选原生上下文 ${terminalText(adoption.title ?? adoption.task_id)}（未执行）` : provider ? ` · 新任务选择 ${terminalText(provider)}` : "");
+      if (viewMode === "history") return;
       const reply = await readView();
       if (!closed && !busy && selection === selected && version === generation) displayView(reply);
     } catch (error) { if (!closed) footer.content = `连接/读取失败：${terminalText(error instanceof RuntimeConflict ? error.code : "service_unavailable")}；草稿保留`; }
@@ -109,33 +116,48 @@ export function mountRuntimeTerminal(renderer: CliRenderer, request: TerminalReq
         if (!pending) throw new RuntimeConflict("terminal_no_unsettled_request");
         const packet = pending; lastId = packet.id;
         const reply = await transmit(packet); if (!closed) body.content = renderRuntimeReply(reply); result(reply);
-        const target = object(packet.task) ? packet.task.task_id : packet.task_id;
+        if (packet.op === "prepare_adoption") acceptAdoption(reply.result);
+        const target = packet.op === "prepare_adoption" ? undefined : object(packet.task) ? packet.task.task_id : packet.task_id;
         if (typeof target === "string") { selected = target; viewMode = "task"; }
         // Settling submit/resume does not silently enqueue a later step.
-        footer.content = "原请求已确认；查看当前任务后，用 /enqueue 显式开始尚未执行的回合。";
+        footer.content = packet.op === "prepare_adoption" ? "原生上下文已选定，尚未执行；输入新的任务要求继续。" : "原请求已确认；查看当前任务后，用 /enqueue 显式开始尚未执行的回合。";
         if (input.plainText === draft) input.setText("");
         return;
       }
-      if (command === "/new") { selected = undefined; viewMode = "task"; }
-      else if (command === "/tasks") { selected = undefined; taskAfter = ""; displayView(await readView()); }
+      if (command === "/new") { adoption = undefined; selected = undefined; viewMode = "task"; }
+      else if (command === "/tasks") { selected = undefined; viewMode = "task"; taskAfter = ""; displayView(await readView()); }
       else if (command === "/more") {
-        if (selected && viewMode !== "events") throw new RuntimeConflict("terminal_open_tasks_or_events_first");
+        if (viewMode === "history" || (selected && viewMode !== "events")) throw new RuntimeConflict("terminal_open_tasks_or_events_first");
         if (!selected) {
           if (!taskNext) throw new RuntimeConflict("terminal_no_more_tasks");
           const previous = taskAfter; taskAfter = taskNext;
           try { displayView(await readView()); } catch (error) { taskAfter = previous; throw error; }
         } else displayView(await readView());
       }
-      else if (command === "/open") { await send("inspect_task", { task_id: argument }); selected = argument; viewMode = "task"; resetEvents(); }
+      else if (command === "/open") { await send("inspect_task", { task_id: argument }); adoption = undefined; selected = argument; viewMode = "task"; resetEvents(); }
+      else if (command === "/history" || command === "/refresh-history" || command === "/adopt") {
+        const separator = argument.indexOf(" "), chosen = separator < 0 ? argument : argument.slice(0, separator), value = separator < 0 ? "" : argument.slice(separator + 1);
+        if (!chosen || (command === "/adopt" && !value.trim())) throw new RuntimeConflict("terminal_history_arguments_required");
+        if (command === "/history") { await send("history_search", { provider: chosen, query: value }); viewMode = "history"; }
+        else if (command === "/refresh-history") { await send("refresh_history", { provider: chosen }); viewMode = "history"; }
+        else {
+          const prepared = await send("prepare_adoption", { task_id: randomUUID(), provider: chosen, session_id: value });
+          acceptAdoption(prepared);
+          footer.content = "原生上下文已选定，尚未执行。输入新的任务要求继续；/new 放弃本次选择。";
+          if (input.plainText === draft) input.setText("");
+          return;
+        }
+      }
       else if (command === "/model") {
+        if (adoption) throw new RuntimeConflict("terminal_adoption_model_bound_use_new");
         if (!object(configuration) || !Array.isArray(configuration.providers) || !configuration.providers.some(p => object(p) && p.provider === argument)) throw new RuntimeConflict("cli_provider_not_registered");
         provider = argument;
       } else if (command === "prompt") {
         if (selected) throw new RuntimeConflict("terminal_use_resume_or_tell");
-        const taskId = randomUUID();
-        const resolved = resolveRuntimeNew({ op: "submit", task: { task_id: taskId, status: "waiting", chat_id: "terminal", prompt: draft, ...(provider ? { provider } : {}) } }, configuration);
+        const taskId = typeof adoption?.task_id === "string" ? adoption.task_id : randomUUID();
+        const resolved = resolveRuntimeNew({ op: "submit", task: { task_id: taskId, status: "waiting", chat_id: "terminal", prompt: draft, ...(adoption ? { provider: adoption.provider, model: adoption.model, native_session: adoption.native_session } : provider ? { provider } : {}) } }, configuration);
         // Even if acknowledgement is lost, preserve this target instead of creating another task.
-        selected = taskId;
+        adoption = undefined; selected = taskId; viewMode = "task";
         const created = await send("submit", { task: resolved.task });
         if (!object(created)) throw new RuntimeConflict("terminal_invalid_snapshot");
         await send("enqueue", { task_id: selected, expected_revision: created.revision });

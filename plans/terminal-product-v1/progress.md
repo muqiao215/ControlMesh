@@ -66,3 +66,19 @@ Validation: terminal suite 6 passed, 33 assertions (1.74s); includes second-page
 event cursor 50 -> 55 -> 56, draft preservation and read-only polling. The initial menu
 test used `/mo`, now ambiguous between `/more` and `/model`; changed its intended model
 filter to `/mod`. Runtime protocol/schema/ownership are unchanged.
+
+## 2026-09-13 — native History context selection
+
+Added explicit history search/refresh/adopt commands through LocalRuntimeControl. History
+results remain displayed during background polling. Preparation holds a task-bound native
+context handle; only subsequent new user input submits/enqueues, and the handle's provider
+and model remain bound. Preparation participates in uncertain-request retention/retry.
+The selection is consumed on submission attempt; `/new` or opening another task clears it.
+Local native History supports Claude only at this checkpoint; no unsupported-provider claim.
+
+Focused terminal + local native History tests: 11 passed, 79 assertions (3.38s),
+`/tmp/cm-terminal-history.log`. UI sequencing uses a controlled responder; existing native
+History tests exercise the real local registry/fixture catalog and scope/baseline checks.
+No new live native session or real-model probe was launched. Full provider/terminal/native
+continuation matrix and production cutover remain pending. Previous `cc9123f` CI run
+34712860947 completed success; `0b521ef` CI run 34713012235 was still running when checked.

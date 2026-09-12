@@ -150,3 +150,31 @@ test("task pages survive refresh and event refresh advances cursor without repla
     expect(calls.every(p => ["status", "list_tasks", "inspect_task", "task_events"].includes(String(p.op)))).toBe(true);
   } finally { view.dispose(); ui.renderer.destroy(); }
 });
+
+test("History selection prepares context only; new input submits the bound handle and never replays history", async () => {
+  const ui = await createTestRenderer({ width: 120, height: 36 });
+  const calls: Record<string, unknown>[] = [];
+  const handle = { schema_version: "controlmesh.device_native_adoption.v1", adoption_id: "bound-handle" };
+  const view = mountRuntimeTerminal(ui.renderer, async p => {
+    calls.push(p); let result: unknown = {};
+    if (p.op === "status") result = { queue: {}, configuration: { mode: "candidate", workspace: "/project", providers: [{ provider: "claude", model: "registered" }] } };
+    if (p.op === "list_tasks") result = { tasks: [] };
+    if (p.op === "history_search") result = { authorization: "context_only", items: [{ session_id: "original-session", title: "SpecMesh" }] };
+    if (p.op === "prepare_adoption") result = { authorization: "context_only", task_id: p.task_id, provider: "claude", model: "registered", native_session: handle };
+    if (p.op === "submit") result = { revision: 1 };
+    return { id: p.id, ok: true, result };
+  }, () => {});
+  try {
+    await ui.flush(); view.input.setText("/history claude SpecMesh"); await view.submit(); await view.refresh();
+    expect(calls.find(p => p.op === "history_search")).toMatchObject({ provider: "claude", query: "SpecMesh" });
+    view.input.setText("/adopt claude original-session"); await view.submit();
+    expect(calls.some(p => ["submit", "enqueue"].includes(String(p.op)))).toBe(false);
+    view.input.setText("/model claude"); await view.submit();
+    expect(view.input.plainText).toBe("/model claude");
+    view.input.setText("只处理新的明确任务"); await view.submit();
+    const prepared = calls.find(p => p.op === "prepare_adoption")!;
+    expect(calls.find(p => p.op === "submit")?.task).toMatchObject({ task_id: prepared.task_id, provider: "claude", model: "registered", native_session: handle, prompt: "只处理新的明确任务" });
+    expect(calls.filter(p => p.op === "enqueue")).toHaveLength(1);
+    expect(calls.some(p => p.op === "refresh_history")).toBe(false);
+  } finally { view.dispose(); ui.renderer.destroy(); }
+});
