@@ -108,10 +108,10 @@ test("version seventeen adds assignment storage without changing persisted topol
   const f = fixture();
   try {
     const before = f.topology.inspect(actor, "parent");
-    f.db.sql.exec("DROP TABLE topology_controls; DROP TABLE topology_task_history; DROP TABLE topology_tasks; PRAGMA user_version=17");
+    f.db.sql.exec("DROP TABLE topology_completions; DROP TABLE topology_controls; DROP TABLE topology_task_history; DROP TABLE topology_tasks; PRAGMA user_version=17");
     const upgraded = new RuntimeDatabase(f.path);
     try {
-      expect(upgraded.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 20 });
+      expect(upgraded.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 21 });
       expect(new RuntimeTopology(new RuntimeKernel(upgraded)).inspect(actor, "parent")).toEqual(before);
       expect(upgraded.sql.query("SELECT COUNT(*) AS n FROM topology_tasks").get()).toEqual({ n: 0 });
     } finally { upgraded.close(); }
@@ -175,10 +175,10 @@ test("version eighteen assignment gains a generation without losing its run or a
     f.queue.enqueue(actor, "worker-run", "parent", 1, 2, "worker", 1, "worker"); await f.runtime.drain();
     f.queue.collect(actor, "result", "parent", 1, 2, "worker", f.kernel.inspect(actor, "worker").revision);
     const before = f.db.sql.query("SELECT * FROM topology_tasks WHERE child_id='worker'").get();
-    f.db.sql.exec("DROP TABLE topology_controls; DROP TABLE topology_task_history; ALTER TABLE topology_tasks DROP COLUMN generation; PRAGMA user_version=18");
+    f.db.sql.exec("DROP TABLE topology_completions; DROP TABLE topology_controls; DROP TABLE topology_task_history; ALTER TABLE topology_tasks DROP COLUMN generation; PRAGMA user_version=18");
     const upgraded = new RuntimeDatabase(f.path);
     try {
-      expect(upgraded.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 20 });
+      expect(upgraded.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 21 });
       expect(upgraded.sql.query("SELECT * FROM topology_tasks WHERE child_id='worker'").get()).toEqual(before);
       expect(upgraded.sql.query("SELECT COUNT(*) AS n FROM topology_task_history").get()).toEqual({ n: 0 });
     } finally { upgraded.close(); }

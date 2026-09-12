@@ -1,3 +1,4 @@
+import { completeTopologyStep } from "./topology-completion";
 import { command, requireScope } from "./commands";
 import { RuntimeKernel, type Principal } from "./kernel";
 import { LocalTaskRuntime } from "./local-task-runtime";
@@ -171,7 +172,8 @@ export class RuntimeControlTopology {
         }
       }
       const topology = this.save(current.topology, state);
-      return { topology, runs: this.enqueue(actor, requestId, parentRevision, { topology, config }, next) };
+      return { topology, runs: this.enqueue(actor, requestId, parentRevision, { topology, config }, next),
+        parent: completeTopologyStep(this.kernel, actor, `control-complete-${digest(requestId)}`, parentRevision, topology) };
     }, value => { this.authorize(actor, parentId, [controller, ...next]); return value; });
   }
   resume(actor: Principal, requestId: string, parentId: string, parentRevision: number, revision: number, parentInput: string, controller: ControlChild) {

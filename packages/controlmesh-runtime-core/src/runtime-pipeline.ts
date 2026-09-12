@@ -1,3 +1,4 @@
+import { completeTopologyStep } from "./topology-completion";
 import { command, requireScope } from "./commands";
 import { RuntimeKernel, type Principal } from "./kernel";
 import { LocalTaskRuntime } from "./local-task-runtime";
@@ -45,7 +46,8 @@ export class RuntimePipeline {
       this.authorize(actor, parentId);
       const accepted = this.queue.collect(actor, `pipeline-collect-${digest(requestId)}`, parentId, parentRevision, topologyRevision, childId, childRevision);
       const state = this.topology.pipelineResult(actor, `pipeline-phase-${digest(requestId)}`, parentId, parentRevision, topologyRevision, accepted.result, options);
-      return { topology: state, next_run: this.enqueue(actor, `pipeline-queue-${digest(requestId)}`, parentRevision, state, next) };
+      return { topology: state, next_run: this.enqueue(actor, `pipeline-queue-${digest(requestId)}`, parentRevision, state, next),
+        parent: completeTopologyStep(this.kernel, actor, `pipeline-complete-${digest(requestId)}`, parentRevision, state) };
     }, value => { this.authorize(actor, parentId); this.kernel.inspect(actor, childId); return value; });
   }
   resume(actor: Principal, requestId: string, parentId: string, parentRevision: number, topologyRevision: number, parentInput: string, reviewer: PipelineChild) {

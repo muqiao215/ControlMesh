@@ -1,3 +1,4 @@
+import { verifiedTopologyCompletion } from "./topology-completion";
 import { decodeTopologyState } from "./team-topology";
 import { randomUUID } from "node:crypto";
 import { RuntimeDatabase } from "./database";
@@ -258,6 +259,29 @@ export class RuntimeKernel {
     });
   }
 
+  /** Complete a root orchestration from a sealed reduction, without inventing a provider episode. */
+  completeTopology(actor: Principal, requestId: string, taskId: string, expectedRevision: number, topologyRevision: number): TaskSnapshot {
+    this.scope(actor, "task:execute"); this.scope(actor, "team:write"); this.scope(actor, "task:read");
+    this.owned(actor, this.row(taskId));
+    return this.request(actor, requestId, "topology.finish", { taskId, expectedRevision, topologyRevision }, () => {
+      const task = this.row(taskId); this.owned(actor, task); this.revision(task, expectedRevision);
+      requireThat(task.principal === actor.id && task.status === "waiting" && !task.active_episode && !task.needs_reconciliation, "topology_parent_not_idle");
+      requireThat(!this.db.sql.query("SELECT 1 FROM topology_tasks WHERE child_id=?").get(taskId), "nested_topology_completion_requires_binding");
+      requireThat(!this.db.sql.query("SELECT 1 FROM local_runs WHERE task_id=? AND state IN ('queued','running')").get(taskId), "topology_parent_queued");
+      requireThat(!this.db.sql.query("SELECT 1 FROM effects WHERE task_id=? AND state!='confirmed'").get(taskId), "unresolved_effects");
+      const completion = verifiedTopologyCompletion(this, actor, taskId, expectedRevision, topologyRevision), raw = JSON.parse(task.raw) as LegacyTask;
+      requireThat(!raw.topology || raw.topology === completion.topology, "topology_task_kind_changed");
+      if (completion.outcome === "done") requireThat(raw.completion_requirements === undefined && raw.specmesh_completion_source === undefined, "topology_completion_gate_required");
+      task.status = completion.outcome; task.fence += 1;
+      raw.completed_at = this.db.now() / 1000; raw.topology = completion.topology;
+      raw.result_preview = completion.result.delivery_text; raw.error = completion.outcome === "failed" ? completion.result.delivery_text : "";
+      task.raw = canonical(raw);
+      this.save(task);
+      this.event(actor, task, `task.${completion.outcome}`, { source: "topology_reduction", topology_revision: topologyRevision, result: completion.result });
+      return this.snapshot(task);
+    }, value => { this.scope(actor, "task:execute"); this.scope(actor, "team:write"); this.owned(actor, this.row(taskId)); return value; });
+  }
+
   cancel(actor: Principal, requestId: string, taskId: string, expectedRevision: number): TaskSnapshot {
     this.scope(actor, "task:cancel");
     this.owned(actor, this.row(taskId));
@@ -288,6 +312,7 @@ export class RuntimeKernel {
       this.owned(actor, task);
       this.revision(task, expectedRevision);
       requireThat((task.status === "done" || task.status === "failed") && !task.needs_reconciliation, "task_not_resumable");
+      requireThat(!this.db.sql.query("SELECT 1 FROM topology_completions WHERE task_id=?").get(taskId), "topology_reopen_required");
       requireThat(!this.db.sql.query("SELECT 1 FROM effects WHERE task_id=? AND state!='confirmed'").get(taskId), "unresolved_effects");
       const episode = this.db.sql.query("SELECT episode_id,result FROM episodes WHERE task_id=? ORDER BY fence DESC LIMIT 1").get(taskId) as { episode_id: string; result: string | null } | null;
       const raw = JSON.parse(task.raw) as LegacyTask;

@@ -2,11 +2,11 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { RuntimeDatabase, RuntimeKernel, RuntimeTopology, RuntimeControlTopology, LocalTaskRuntime, type Principal, type LocalTaskResolver, type ControlSetup } from "../src";
+import { RuntimeDatabase, RuntimeKernel, RuntimeTopology, RuntimeControlTopology, LocalTaskRuntime, DeliveryOutbox, type DeliveryAdapter, type Principal, type LocalTaskResolver, type ControlSetup } from "../src";
 import { digest } from "../src/value";
 const actor: Principal = { id: "owner", device_id: "local", origin: "internal", scopes: ["task:create", "task:read", "task:execute", "task:resume", "task:cancel", "task:reconcile", "task:admin", "team:write"] };
 const source = { command_origin: "internal" as const, origin: "background" as const, source_scope: "background_task" as const, transport: "terminal" };
-function fixture(setup: ControlSetup, decisions: Record<string, unknown>[], maxPending = 128) {
+function fixture(setup: ControlSetup, decisions: Record<string, unknown>[], maxPending = 128, parentFields: Record<string, unknown> = {}) {
   const root = mkdtempSync(join(tmpdir(), "cm-control-topology-")), path = join(root, "state.sqlite");
   let db: RuntimeDatabase, kernel: RuntimeKernel, runtime: LocalTaskRuntime, control: RuntimeControlTopology;
   const calls: string[] = [], workerOverrides: Record<string, unknown> = {};
@@ -31,7 +31,7 @@ function fixture(setup: ControlSetup, decisions: Record<string, unknown>[], maxP
     control = new RuntimeControlTopology(kernel, runtime);
   }
   open();
-  for (const id of ["parent", "control", "a", "b", "c"]) runtime!.submit(`submit-${id}`, { task_id: id, chat_id: "test", status: "waiting", provider: "opencode", prompt: "initial" }, { chat_id: "test" });
+  for (const id of ["parent", "control", "a", "b", "c"]) runtime!.submit(`submit-${id}`, { task_id: id, chat_id: "test", status: "waiting", provider: "opencode", prompt: "initial", ...(id === "parent" ? parentFields : {}) }, { chat_id: "test" });
   const child = (id: string, resume_prompt?: string) => ({ task_id: id, revision: kernel.inspect(actor, id).revision,
     role: id === "control" ? controllerRole : id, ...(resume_prompt === undefined ? {} : { resume_prompt }) });
   const snapshot = () => control.inspect(actor, "parent")!;
@@ -77,7 +77,10 @@ test("director executes bound decisions and workers atomically, retaining contro
     const bound = JSON.parse(JSON.parse(history.assignment).accepted);
     expect(bound.result.decision).toBe("dispatch_workers"); expect(bound.binding.round_index).toBe(1);
     expect(bound.binding.worker_role).toBe("director"); expect(bound.binding.substage).toBe("planning");
-    expect(f.kernel.inspect(actor, "parent").task.status).toBe("waiting"); // Parent finalization is a separate owner.
+    expect(f.kernel.inspect(actor, "parent").task.status).toBe("done");
+    expect(final.parent?.task.status).toBe("done");
+    expect(f.db.sql.query("SELECT COUNT(*) AS n FROM episodes WHERE task_id='parent'").get()).toEqual({ n: 0 });
+    expect(() => f.kernel.resume(actor, "unsafe-reopen", "parent", final.parent!.revision, "continue")).toThrow("topology_reopen_required");
   } finally { await f.close(); }
 });
 
@@ -156,8 +159,8 @@ test("dispatch failure rolls back accepted decision and stage; canceled and unde
 test("version nineteen upgrade retains tasks and does not invent control configuration", async () => {
   const f = fixture({ topology: "director_worker" }, [complete]);
   try {
-    f.db.sql.exec("DROP TABLE topology_controls; PRAGMA user_version=19"); await f.reopen();
-    expect(f.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 20 });
+    f.db.sql.exec("DROP TABLE topology_completions; DROP TABLE topology_controls; PRAGMA user_version=19"); await f.reopen();
+    expect(f.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 21 });
     expect(f.db.sql.query("SELECT COUNT(*) AS n FROM tasks").get()).toEqual({ n: 5 });
     expect(f.control.inspect(actor, "parent")).toBeNull();
     f.start(); expect(f.snapshot().config.controller_task_id).toBe("control");
@@ -221,4 +224,104 @@ test("initial judge controller cannot be an already queued task or a stale revis
     expect(() => f.start()).toThrow("control_controller_not_admitted");
     expect(f.control.inspect(actor, "parent")).toBeNull(); expect(f.calls).toEqual([]);
   } finally { await f.close(); }
+});
+
+test("parent event write failure rolls back completion proof, accepted decision and topology; replay after reopen emits once", async () => {
+  const f = fixture({ topology: "director_worker" }, [complete]);
+  try {
+    const initial = f.start().topology; await f.runtime.drain(); const controller = f.child("control");
+    f.db.sql.exec("CREATE TRIGGER refuse_parent_event BEFORE INSERT ON events WHEN NEW.task_id='parent' AND NEW.kind='task.done' BEGIN SELECT RAISE(ABORT,'parent_event_failed'); END");
+    expect(() => f.control.decide(actor, "finish", "parent", 1, initial.revision, controller)).toThrow("parent_event_failed");
+    expect(f.snapshot().topology).toEqual(initial); expect(f.kernel.inspect(actor, "parent").task.status).toBe("waiting");
+    expect(f.db.sql.query("SELECT COUNT(*) AS n FROM topology_completions").get()).toEqual({ n: 0 });
+    expect(f.db.sql.query("SELECT accepted FROM topology_tasks WHERE child_id='control'").get()).toEqual({ accepted: null });
+    f.db.sql.exec("DROP TRIGGER refuse_parent_event");
+    const final = f.control.decide(actor, "finish", "parent", 1, initial.revision, controller);
+    expect(final.parent?.task.status).toBe("done"); expect(final.parent?.task.result_preview).toBe("control decision");
+    await f.reopen();
+    expect(f.control.decide(actor, "finish", "parent", 1, initial.revision, controller)).toEqual(final);
+    expect(f.db.sql.query("SELECT COUNT(*) AS n FROM events WHERE task_id='parent' AND kind='task.done'").get()).toEqual({ n: 1 });
+    expect(f.db.sql.query("SELECT COUNT(*) AS n FROM episodes WHERE task_id='parent'").get()).toEqual({ n: 0 });
+    expect(f.db.sql.query("SELECT COUNT(*) AS n FROM effects WHERE task_id='parent'").get()).toEqual({ n: 0 });
+    const event = f.db.sql.query("SELECT payload FROM events WHERE task_id='parent' AND kind='task.done'").get() as { payload: string };
+    expect(JSON.parse(event.payload).source).toBe("topology_reduction"); expect(f.calls).toEqual(["control"]);
+  } finally { await f.close(); }
+});
+
+test("a bare terminal checkpoint cannot authorize parent completion, including after a version twenty upgrade", async () => {
+  const f = fixture({ topology: "director_worker" }, [complete]);
+  try {
+    const topology = new RuntimeTopology(f.kernel);
+    topology.create(actor, "create", "parent", 1, "director_worker");
+    const forged = topology.checkpoint(actor, "checkpoint", "parent", 1, 1, { substage: "completed", phase_status: "completed", active_roles: [],
+      reduced_result: { schema_version: 1, topology: "director_worker", final_status: "completed", reduced_summary: "not an accepted task result", selected_evidence: [], selected_artifacts: [], next_action: null } });
+    expect(() => f.kernel.completeTopology(actor, "unsealed", "parent", 1, forged.revision)).toThrow("topology_completion_proof_missing");
+    f.db.sql.exec("DROP TABLE topology_completions; PRAGMA user_version=20"); await f.reopen();
+    expect(f.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 21 });
+    expect(() => f.kernel.completeTopology(actor, "after-upgrade", "parent", 1, forged.revision)).toThrow("topology_completion_proof_missing");
+    expect(f.kernel.inspect(actor, "parent").task.status).toBe("waiting"); expect(f.calls).toEqual([]);
+  } finally { await f.close(); }
+});
+
+for (const mode of ["resumed", "missing-acceptance", "substituted-effect"] as const) test(`parent completion rechecks previously accepted workers: ${mode}`, async () => {
+  const f = fixture({ topology: "director_worker" }, [dispatch(), complete]);
+  try {
+    let state = f.start().topology; await f.runtime.drain();
+    state = f.control.decide(actor, "dispatch", "parent", 1, state.revision, f.child("control"), [f.child("a"), f.child("b")]).topology; await f.runtime.drain();
+    state = f.control.collectWorkers(actor, "collect", "parent", 1, state.revision, [f.child("a"), f.child("b")], f.child("control", "decide")).topology; await f.runtime.drain();
+    if (mode === "resumed") f.kernel.resume(actor, "unrelated-resume", "a", f.child("a").revision, "different task input");
+    else if (mode === "missing-acceptance") f.db.sql.exec("UPDATE topology_tasks SET accepted=NULL WHERE child_id='a'");
+    else f.db.sql.exec("UPDATE effects SET result='{}' WHERE task_id='a'");
+    expect(() => f.control.decide(actor, "final", "parent", 1, state.revision, f.child("control"))).toThrow();
+    expect(f.snapshot().topology).toEqual(state); expect(f.kernel.inspect(actor, "parent").task.status).toBe("waiting");
+    expect(f.db.sql.query("SELECT COUNT(*) AS n FROM topology_completions").get()).toEqual({ n: 0 });
+    expect(f.db.sql.query("SELECT accepted FROM topology_tasks WHERE child_id='control'").get()).toEqual({ accepted: null });
+    expect(f.calls).toEqual(["control", "a", "b", "control"]);
+  } finally { await f.close(); }
+});
+
+test("a separately queued parent cannot be completed as an idle orchestration", async () => {
+  const f = fixture({ topology: "director_worker" }, [complete]);
+  try {
+    const initial = f.start().topology; await f.runtime.drain(); f.runtime.enqueue("separate-parent-run", "parent", 1);
+    expect(() => f.control.decide(actor, "finish", "parent", 1, 1, f.child("control"))).toThrow("topology_parent_queued");
+    expect(f.snapshot().topology).toEqual(initial); expect(f.calls).toEqual(["control"]);
+    expect(f.db.sql.query("SELECT COUNT(*) AS n FROM topology_completions").get()).toEqual({ n: 0 });
+  } finally { await f.close(); }
+});
+
+for (const outcome of ["complete", "failed"] as const) test(`artifact completion requirements cannot be bypassed by aggregate ${outcome}`, async () => {
+  const decision = outcome === "complete" ? complete : { round_index: 1, decision: "failed", stop_reason: "no_viable_path" };
+  const f = fixture({ topology: "director_worker" }, [decision], 128, {
+    completion_requirements: { schema_version: "controlmesh.task_completion.v1", files: [{ path: "required.txt", mode: "write" }] },
+  });
+  try {
+    const initial = f.start().topology; await f.runtime.drain();
+    if (outcome === "complete") {
+      expect(() => f.control.decide(actor, "finish", "parent", 1, 1, f.child("control"))).toThrow("topology_completion_gate_required");
+      expect(f.snapshot().topology).toEqual(initial); expect(f.kernel.inspect(actor, "parent").task.status).toBe("waiting");
+      expect(f.db.sql.query("SELECT COUNT(*) AS n FROM topology_completions").get()).toEqual({ n: 0 });
+    } else {
+      const final = f.control.decide(actor, "finish", "parent", 1, 1, f.child("control"));
+      expect(final.parent?.task.status).toBe("failed"); expect(final.parent?.task.error).toBe("control decision");
+      expect(f.db.sql.query("SELECT COUNT(*) AS n FROM events WHERE task_id='parent' AND kind='task.done'").get()).toEqual({ n: 0 });
+    }
+  } finally { await f.close(); }
+});
+
+test("aggregate terminal event projects once into the existing delivery outbox without a model or send call", async () => {
+  const f = fixture({ topology: "director_worker" }, [complete]);
+  const deliveryActor = { ...actor, scopes: [...actor.scopes, "delivery:read", "delivery:configure", "delivery:project"] };
+  const adapter: DeliveryAdapter = { adapter_id: "fixture-delivery", transport: "terminal", binding_digest: digest("fixture-delivery"), assertCurrent() {},
+    async prepare() { throw new Error("no_send_authorized_or_expected"); } };
+  let outbox = new DeliveryOutbox(f.kernel, deliveryActor, [adapter], () => {});
+  try {
+    outbox.bindTask("bind", "parent", 1, adapter.adapter_id);
+    f.start(); await f.runtime.drain(); f.control.decide(actor, "finish", "parent", 1, 1, f.child("control"));
+    expect(outbox.project()).toBe(1); expect(outbox.project()).toBe(0); expect(outbox.list("parent")).toHaveLength(1);
+    const row = f.db.sql.query("SELECT envelope FROM delivery_outbox WHERE task_id='parent'").get() as { envelope: string };
+    expect(JSON.parse(row.envelope)).toMatchObject({ status: "done", text: "control decision", origin: "task_result", command_origin: "internal" });
+    await outbox.stop(); await f.reopen(); outbox = new DeliveryOutbox(f.kernel, deliveryActor, [adapter], () => {});
+    expect(outbox.project()).toBe(0); expect(outbox.list("parent")).toHaveLength(1); expect(f.calls).toEqual(["control"]);
+  } finally { await outbox.stop(); await f.close(); }
 });

@@ -41,3 +41,9 @@ export function readTeamControlDecision(kernel: RuntimeKernel, actor: Principal,
   requireThat(result.topology === binding.topology && result.round_index === round, "control_decision_assignment_mismatch");
   return { binding: { ...binding }, output_digest: accepted.output_digest, result };
 }
+
+/** Worker envelope stage is independent of the stable parent dispatch checkpoint. */
+export function teamWorkerSubstage(topology: string, substage: string): string {
+  return ((topology === "fanout_merge" || topology === "director_worker") && substage === "dispatching")
+    || (topology === "debate_judge" && substage === "candidate_round") ? "collecting" : substage;
+}

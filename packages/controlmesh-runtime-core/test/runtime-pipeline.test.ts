@@ -51,7 +51,7 @@ for (const decision of ["needs_repair", "needs_parent_input"]) test(`pipeline qu
     await runtime.drain();
     const finalRevision = child("reviewer").revision;
     const final = pipeline.advance(actor, "final", "parent", 1, state.topology.revision, "reviewer", finalRevision);
-    expect(final.topology.state.checkpoints.at(-1)!.substage).toBe("completed"); expect(final.next_run).toBeNull();
+    expect(final.topology.state.checkpoints.at(-1)!.substage).toBe("completed"); expect(final.next_run).toBeNull(); expect(final.parent?.task.status).toBe("done");
     expect(final.topology.state.checkpoints.at(-1)!.reduced_result!.selected_evidence[0]!.ref).toBe(decision === "needs_repair" ? "event:repair" : "event:initial");
     expect(pipeline.advance(actor, "final", "parent", 1, state.topology.revision, "reviewer", finalRevision)).toEqual(final);
     await runtime.drain();

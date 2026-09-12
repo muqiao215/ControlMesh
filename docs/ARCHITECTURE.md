@@ -361,8 +361,9 @@ authorization across checkpoints. A new generation does not overwrite prior evid
 `RuntimePipeline` composes accepted child output, Python-parity pipeline transitions
 and local next-child enqueue/resume in a single command transaction. Each invocation
 advances one explicit step; it does not run a background loop or create child grants.
-Parent TaskHub completion, service repair budgets and device topology dispatch remain
-outside this composition. A terminal topology checkpoint alone does not finish a parent.
+Terminal queue transitions now use the sealed root-completion path below. A terminal
+checkpoint alone still does not finish a parent. Service repair budgets and device
+topology dispatch remain outside this pipeline composition.
 
 `RuntimeFanout` composes bounded parallel admission and complete-batch result collection.
 Workers retain one parent dispatch checkpoint until every assigned result is accepted;
@@ -388,9 +389,27 @@ policy's formal-round limit; exhaustion records a terminal failure without anoth
 admission. Original accepted decisions remain available in assignment history.
 
 These are explicit local steps. They do not create child grants, run a background polling
-loop, qualify a real-model topology, finalize a parent TaskHub task or dispatch device
-workers. Full topology service scheduling and those ownership gates remain open. Older
-runtime candidates reject schema 20; rollback requires a pre-upgrade database backup.
+loop, qualify a real-model topology or dispatch device workers. Full topology service
+scheduling and native/device ownership gates remain open.
+
+`topology-completion.ts` seals terminal queue reductions in candidate schema 21 and calls
+`RuntimeKernel.completeTopology` inside the original transition transaction. The proof
+binds the exact topology/checkpoint and current assignment results plus archived generation
+metadata. Every current child's original accepted episode/effect output is re-read; a
+resumed, queued, uncertain or changed child blocks closure. A bare checkpoint cannot
+issue completion. Final status, result preview, monotonic fence, proof and terminal event
+commit together; an event-write failure rolls back the topology and result collection.
+The event explicitly identifies a topology reduction, with no fabricated provider episode
+or native session. Existing DeliveryOutbox projection consumes it once after restart.
+
+This path closes idle root orchestrations whose successful outcome has no separate file
+completion contract. A required artifact/SpecMesh completion gate blocks successful closure
+until its verification owner is connected; failure can still be recorded. Nested topology
+completion needs an aggregate result binding, and reopening a completed topology needs an
+explicit new run with preserved history. Generic provider resume rejects such completed
+roots instead of starting a fresh provider execution. These cases remain implementation
+work, not completed gates. Older runtime candidates reject schema 21; rollback requires
+a pre-upgrade database backup, never changing the version on populated state.
 
 `LocalTaskRuntime` adds the private local task execution owner. SQLite schema 8 stores
 queued runs, their expected task revision and provider/profile binding, plus the claimed

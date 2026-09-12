@@ -26,7 +26,7 @@ export class RuntimeDatabase {
       this.transaction(() => {
         const version = (this.sql.query("PRAGMA user_version").get() as { user_version: number }).user_version;
         const app = (this.sql.query("PRAGMA application_id").get() as { application_id: number }).application_id;
-        requireThat(version >= 0 && version <= 20, "unsupported_database_version");
+        requireThat(version >= 0 && version <= 21, "unsupported_database_version");
         requireThat(app === 0 || app === APPLICATION_ID, "foreign_database");
         if (version === 0) {
           const tables = this.sql.query("SELECT name FROM sqlite_master WHERE type='table'").all();
@@ -320,6 +320,16 @@ export class RuntimeDatabase {
               task_id TEXT PRIMARY KEY REFERENCES team_topologies(task_id), config TEXT NOT NULL
             );
             PRAGMA user_version = 20;
+          `);
+        }
+        if (version < 21) {
+          this.sql.exec(`
+            CREATE TABLE topology_completions (
+              task_id TEXT PRIMARY KEY REFERENCES team_topologies(task_id), parent_revision INTEGER NOT NULL,
+              topology_revision INTEGER NOT NULL, checkpoint_id TEXT NOT NULL, state_digest TEXT NOT NULL,
+              inputs_digest TEXT NOT NULL, result TEXT NOT NULL
+            );
+            PRAGMA user_version = 21;
           `);
         }
       });

@@ -2,7 +2,7 @@ import { command, requireScope } from "./commands";
 import { RuntimeKernel, type Principal, type Lease } from "./kernel";
 import { LocalTaskRuntime } from "./local-task-runtime";
 import { RuntimeTopology } from "./runtime-topology";
-import { readTeamTaskResult, readTeamControlDecision, type TeamTaskResultBinding } from "./team-task-result";
+import { readTeamTaskResult, readTeamControlDecision, teamWorkerSubstage, type TeamTaskResultBinding } from "./team-task-result";
 import { canonical, digest, identifier, requireThat, terminal } from "./value";
 
 interface Assignment {
@@ -100,11 +100,9 @@ export class TopologyTaskQueue {
       const effects = this.kernel.db.sql.query("SELECT e.effect_id FROM effects e JOIN episodes p ON p.episode_id=e.episode_id WHERE e.task_id=? AND e.episode_id=? AND e.fence=? AND e.state='confirmed' AND e.result=p.result")
         .all(childId, lease.episode_id, lease.fence) as { effect_id: string }[];
       requireThat(effects.length === 1, "topology_child_result_ambiguous");
-      const workerBatch = ((assignment.topology === "fanout_merge" || assignment.topology === "director_worker") && assignment.substage === "dispatching")
-        || (assignment.topology === "debate_judge" && assignment.substage === "candidate_round");
       const accepted = read(this.kernel, actor, { task_id: childId, revision: childRevision, episode_id: lease.episode_id,
         effect_id: effects[0]!.effect_id, topology: assignment.topology,
-        substage: workerBatch ? "collecting" : assignment.substage,
+        substage: teamWorkerSubstage(assignment.topology, assignment.substage),
         worker_role: assignment.worker_role, round_index: cp.round_index ?? 0 });
       this.kernel.db.sql.query("UPDATE topology_tasks SET accepted=? WHERE child_id=?").run(canonical(accepted), childId);
       return accepted;

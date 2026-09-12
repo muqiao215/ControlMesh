@@ -55,12 +55,13 @@ for (const statuses of [["completed", "completed"], ["completed", "failed"], ["f
     expect(f.fanout.collectWorkers(actor, "collect", "parent", 1, dispatched.topology.revision, workers, reducer)).toEqual(collected);
     if (statuses.every(status => status === "failed")) {
       expect(collected.topology.state.checkpoints.at(-1)!.substage).toBe("failed"); expect(collected.next_run).toBeNull();
+      expect(collected.parent?.task.status).toBe("failed");
       await f.runtime.drain(); expect(f.calls).toEqual(["a", "b"]);
     } else {
       await f.runtime.drain();
       const final = f.fanout.advance(actor, "reducer-result", "parent", 1, collected.topology.revision, "reducer", f.child("reducer").revision);
       const cp = final.topology.state.checkpoints.at(-1)!;
-      expect(cp.substage).toBe("completed");
+      expect(cp.substage).toBe("completed"); expect(final.parent?.task.status).toBe("done");
       expect(cp.reduced_result!.selected_evidence.map(item => item.ref)).toEqual(statuses[1] === "completed" ? ["event:a", "event:b"] : ["event:a"]);
       expect(f.calls).toEqual(["a", "b", "reducer"]);
     }

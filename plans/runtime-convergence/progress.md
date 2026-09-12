@@ -11,34 +11,36 @@ switch, release or installation is performed by the current topology increment.
 
 ## Current implementation
 
-RuntimeControlTopology now connects director/judge decisions to actual local task runs,
-accepted effect output and persisted checkpoint/round identity. Schema 20 freezes the
-controller task/role, parallel limit and budgets. Worker collection, state transitions
-and next-task enqueue/resume commit atomically; same-role tasks retain their native
-identity through assignment generations. Judge repair/interruption caps survive restart.
-Generic topology mutation cannot bypass a managed controller. Malformed decisions remain
-unaccepted; there is no automatic fresh session fallback or model replay.
+All four approved local queue compositions now seal terminal reductions and finish idle
+root tasks in the same transaction. Schema 21 stores completion proof; the kernel rechecks
+current child run/episode/effect results, assignment generations and the exact checkpoint.
+Changed, unresolved or queued work prevents closure. Failure of terminal event insertion
+rolls back acceptance and topology progress. Replays after reopen produce one event.
 
-The preceding pipeline and fanout queue compositions are already on main. The new
-controller composition completes explicit local steps for all four approved topologies;
-a terminal checkpoint still does not finalize the parent TaskHub task.
+The parent result explicitly identifies an internal topology reduction. No provider episode
+or native session is invented. Existing DeliveryOutbox projects the resulting terminal event
+once, without a model call. No external message was sent during acceptance.
+
+Required artifact/SpecMesh success gates, nested aggregate bindings and explicit topology
+reopen remain pending and are refused rather than bypassed. Director/judge immutable budgets,
+controller identities and assignment generations from the previous increment remain active.
 
 ## Verification and publication
 
-- Previous main: 6146dab; CI 34685935121 verified successful.
-- Current focused gate before final admission checks: 24 pass, 0 fail, 141 assertions,
-  3 files in 1.56s; runtime typecheck passed.
-- Full pinned runtime gate after final admission checks: 523 pass, 0 fail, 7548 assertions
-  across 62 files in 223.39s (exit 0). Log: /tmp/cm-control-queue-full.log.
+- Previous main: 52c657c; CI 34686581108 verified successful.
+- Focused gate: 30 pass, 0 fail, 197 assertions across 3 files in 2.19s; runtime typecheck passed.
+- Full pinned runtime gate: 532 pass, 0 fail, 7610 assertions across 62 files in
+  229.07s (exit 0). Evidence: /tmp/cm-parent-completion-full.log.
 - Current increment remote CI is pending; a local green gate is not remote acceptance.
-- No real provider/model run was launched. Fixture native session IDs establish only
-  orchestration behavior, not real-model/native continuity acceptance.
-- Schema 20 is private candidate storage. Upgrade tests preserve older tasks/topologies;
+- No real provider/model run was launched. Fixtures establish orchestration behavior,
+  not real-model/native continuity acceptance.
+- Schema 21 is private candidate storage. Upgrade tests preserve older tasks/topologies;
   downgrade requires a pre-upgrade backup, never editing a populated database version.
 
 ## Next execution order
 
-1. Parent task lifecycle finalization from an accepted terminal topology transition.
+1. Required artifact/SpecMesh root completion gates, nested aggregate result binding
+   and explicit topology reopen with retained history.
 2. Bounded automatic service scheduling and explicit malformed-output recovery.
 3. Device topology queues with the same assignment/revision/authority boundaries.
 4. Real native topology/source-revision profiles, remaining provider/transport/store

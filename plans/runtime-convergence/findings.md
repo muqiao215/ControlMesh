@@ -1,5 +1,36 @@
 # Findings
 
+## Atomic root completion and retained evidence — 2026-09-12
+
+All four local queue compositions invoke the same terminal completion helper. Candidate
+schema 21 adds topology_completions, binding the pre-completion parent revision, topology
+revision/checkpoint, state digest, accepted inputs digest and reduced result. The kernel
+refuses a bare terminal checkpoint without that privately issued proof. Revalidation
+uses actual local run/episode/effect bindings and normalized output, not model status alone.
+Current assignment generations must all be accepted and still current; older generation
+rows remain immutable audit input. Extra queued work or unresolved effects block closure.
+
+The parent must be idle, owned by the calling principal and not itself an assigned child.
+The helper records no provider episode, effect or native session. Task status, preview,
+fence and task.done/task.failed event are updated atomically with the checkpoint, proof
+and child acceptance. The event carries source=topology_reduction; normal DeliveryOutbox
+projection preserves the originating command provenance and does not make a new request.
+Fault injection proves an event insert failure leaves no partial completion or acceptance;
+replay after database reopen emits one terminal event and triggers no extra model call.
+
+This is not yet the completion owner for a root with explicit artifact/SpecMesh requirements:
+success rejects with topology_completion_gate_required until that verification is connected.
+A declared failure still closes as failed without claiming artifacts exist. Nested aggregate
+results and explicit topology reopen are also pending; ordinary provider resume rejects an
+already completed topology. These checks preserve the missing work instead of silently
+using a reduced completed status to bypass it. Schema-20 upgrades do not manufacture proofs
+for pre-existing terminal checkpoints.
+
+Focused tests: 30 pass, 0 fail, 197 assertions across three topology composition files.
+Coverage includes successful/failing reductions, rollback/restart/replay, resumed or changed
+worker evidence, queued-parent rejection, artifact success refusal/failure reporting, and
+one durable outbox projection. The adapter never sends a message and fixtures invoke no model.
+
 ## Durable controller identity, budgets and actual local queue — 2026-09-12
 
 `RuntimeControlTopology` composes both pure policies with the existing LocalTaskRuntime.

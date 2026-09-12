@@ -148,9 +148,12 @@ Director/judge bind normalized decisions to accepted controller episode/effect o
 current checkpoint and expected round. Schema 20 freezes controller task/role and
 budgets; same-role resumes retain child identities through assignment generations.
 Judge service repair/interruption loops are capped durably (default one each), including
-after restart. Parent task finalization is not yet connected to terminal checkpoints.
+after restart. Terminal queue transitions now atomically seal accepted results and finish
+idle root tasks via schema 21. The completion event is an internal topology reduction;
+it does not create a provider episode or assert real native acceptance.
 
-Next: implement parent lifecycle finalization, bounded automatic service scheduling and
+Next: connect required artifact/SpecMesh parent completion gates, nested aggregate result
+bindings and explicit topology reopen; complete bounded automatic service scheduling and
 malformed-output recovery, then device topology dispatch and real native topology
 acceptance. Continue all remaining CM-R0–CM-R7 provider/transport/store, native source
 revision and release/install gates; explicit local queue tests do not narrow that scope.
