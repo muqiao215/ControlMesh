@@ -91,6 +91,10 @@ export class LocalTaskRuntime {
     this.kernel.inspect(this.actor, row.task_id);
     return this.view(row);
   }
+  assertPrincipal(actor: Principal): void {
+    this.current();
+    requireThat(actor.id === this.actor.id && actor.device_id === this.actor.device_id && actor.origin === this.actor.origin, "local_principal_mismatch");
+  }
   inspectTask(taskId: string): TaskSnapshot { this.current(); return this.kernel.inspect(this.actor, taskId); }
   queueStatus(): { queued: number; running: number } {
     this.current(); requireScope(this.actor, "task:read");

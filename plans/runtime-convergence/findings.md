@@ -1015,3 +1015,23 @@ validated before storage; Python model_copy can defer cross-field failures until
 its next read. Waiting-parent/current-checkpoint consistency fails immediately in TS.
 Raw result fields remain an internal composition input, not a public completion API;
 future task assignments must load accepted results through readTeamTaskResult.
+
+## Topology child execution binding
+
+LocalTaskRuntime.enqueue resolves a trusted adapter without launching a provider;
+actual probes and execution happen only in tick/drain. TopologyTaskQueue inserts a
+child assignment in the same transaction as enqueue, for existing independently
+submitted tasks owned by the same principal. It grants no additional tools or roots.
+The stored run lease supplies episode identity; a unique confirmed effect matching
+the episode output supplies effect identity. Model role labels never select a task.
+Ancestor checks also run in Kernel lease/publication and reconciliation. Cleanup is
+explicitly exempt from parent activity, but still needs the exact live child lease,
+so an interrupted effect can become unknown instead of waiting indefinitely.
+A checkpoint change invalidates outstanding assignments; retry/repair requires a new
+explicit assignment. Current one-child-per-role-per-checkpoint contract does not yet
+implement automatic topology policy, multi-device assignment, or nested grant issuance.
+
+The initial assignment table has one row per child, so cross-stage reuse of the same
+TaskHub child ID remains unsupported. Do not replace native continuity with a fresh
+conversation to work around it; add explicit assignment generations before claiming
+repair/resume orchestration complete.

@@ -1,3 +1,4 @@
+import { decodeTopologyState } from "./team-topology";
 import { randomUUID } from "node:crypto";
 import { RuntimeDatabase } from "./database";
 import { command, commandReceipt, requireScope, reserveCommand } from "./commands";
@@ -142,6 +143,29 @@ export class RuntimeKernel {
     });
   }
 
+  /** Rechecked at claim, side effects and publication, including each bounded ancestor. */
+  private assertTopologyParents(taskId: string): void {
+    const seen = new Set<string>([taskId]);
+    for (let depth = 0; depth < 32; depth++) {
+      const assignment = this.db.sql.query("SELECT * FROM topology_tasks WHERE child_id=?").get(taskId) as {
+        parent_id: string; topology: string; substage: string; worker_role: string; checkpoint_id: string; accepted: string | null;
+      } | null;
+      if (!assignment) return;
+      requireThat(!seen.has(assignment.parent_id) && assignment.accepted === null, "topology_assignment_inactive");
+      seen.add(assignment.parent_id);
+      const parent = this.row(assignment.parent_id);
+      requireThat(!terminal.has(parent.status) && !parent.needs_reconciliation, "topology_parent_inactive");
+      const row = this.db.sql.query("SELECT state FROM team_topologies WHERE task_id=?").get(assignment.parent_id) as { state: string } | null;
+      requireThat(row, "topology_not_found");
+      const state = decodeTopologyState(JSON.parse(row.state)), cp = state.checkpoints.at(-1)!;
+      requireThat(state.task_id === assignment.parent_id && state.topology === assignment.topology
+        && cp.checkpoint_id === assignment.checkpoint_id && cp.substage === assignment.substage
+        && cp.active_roles.includes(assignment.worker_role) && cp.phase_status === "in_progress" && state.interruption.status === "idle", "topology_assignment_changed");
+      taskId = assignment.parent_id;
+    }
+    requireThat(false, "topology_depth_exceeded");
+  }
+
   claim(actor: Principal, requestId: string, taskId: string, expectedRevision: number, ttlMs: number): Lease {
     this.scope(actor, "task:execute");
     this.owned(actor, this.row(taskId));
@@ -152,6 +176,7 @@ export class RuntimeKernel {
       this.owned(actor, task);
       this.revision(task, expectedRevision);
       requireThat(!terminal.has(task.status) && !task.needs_reconciliation, "task_not_admitted");
+      this.assertTopologyParents(taskId);
       const now = this.db.now();
       if (task.active_episode) {
         const previous = this.db.sql.query("SELECT * FROM episodes WHERE episode_id=?").get(task.active_episode) as EpisodeRow;
@@ -172,11 +197,12 @@ export class RuntimeKernel {
     });
   }
 
-  private lease(actor: Principal, proof: Lease): { task: TaskRow; episode: EpisodeRow } {
+  private lease(actor: Principal, proof: Lease, cleanup = false): { task: TaskRow; episode: EpisodeRow } {
     assertProtocolSchema<Lease>("execution-lease.schema.json", proof);
     requireThat(actor.device_id === proof.device_id, "device_mismatch");
     const task = this.row(proof.task_id);
     this.owned(actor, task);
+    if (!cleanup) this.assertTopologyParents(proof.task_id);
     requireThat(!terminal.has(task.status) && !task.needs_reconciliation, "task_not_executable");
     requireThat(task.active_episode === proof.episode_id && task.fence === proof.fence, "stale_fence");
     const episode = this.db.sql.query("SELECT * FROM episodes WHERE episode_id=?").get(proof.episode_id) as EpisodeRow | null;
@@ -284,7 +310,7 @@ export class RuntimeKernel {
     this.owned(actor, this.row(proof.task_id));
     requireThat(/^[a-z0-9_]{1,96}$/.test(reason), "invalid_unknown_reason");
     return this.request(actor, requestId, "outcome_unknown", { proof, reason }, () => {
-      const { task, episode } = this.lease(actor, proof);
+      const { task, episode } = this.lease(actor, proof, true);
       requireThat(episode.state === "running", "episode_not_started");
       this.db.sql.query("UPDATE episodes SET state='unknown',lease_until=0 WHERE episode_id=?").run(proof.episode_id);
       this.db.sql.query("UPDATE effects SET state='unknown' WHERE episode_id=? AND state='dispatched'").run(proof.episode_id);
@@ -303,7 +329,7 @@ export class RuntimeKernel {
     this.owned(actor, this.row(proof.task_id));
     requireThat(/^[a-z0-9_]{1,96}$/.test(reason), "invalid_admission_reason");
     return this.request(actor, requestId, "release_unstarted", { proof, reason }, () => {
-      const { task, episode } = this.lease(actor, proof);
+      const { task, episode } = this.lease(actor, proof, true);
       requireThat(episode.state === "leased" && !this.db.sql.query("SELECT 1 FROM effects WHERE episode_id=?").get(proof.episode_id), "started_episode_cannot_release");
       this.db.sql.query("UPDATE episodes SET state='released' WHERE episode_id=?").run(proof.episode_id);
       task.active_episode = null; task.status = "waiting"; task.fence += 1;
@@ -400,6 +426,7 @@ export class RuntimeKernel {
     identifier(effectId);
     return this.db.transaction(() => {
       const task = this.row(taskId);
+      this.assertTopologyParents(taskId);
       this.revision(task, expectedRevision);
       requireThat(task.status === "stale" && task.needs_reconciliation && task.active_episode, "task_not_reconcilable");
       const episode = this.db.sql.query("SELECT * FROM episodes WHERE episode_id=?").get(task.active_episode) as EpisodeRow | null;

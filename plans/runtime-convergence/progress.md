@@ -2,6 +2,21 @@
 
 ## Current
 
+TopologyTaskQueue now binds already-authorized child tasks to a persisted role and
+checkpoint, enqueues through LocalTaskRuntime, and collects only its stored run's
+accepted episode/effect output. Candidate schema18 adds topology_tasks. Registration
+and enqueue share a transaction; receipt replay never adds a run. Kernel claim,
+lease/publication and reconciliation check the bounded ancestor chain. Cancellation
+or changed checkpoints refuse further child effects; release/unknown bookkeeping
+remains possible under the original lease. Focused23tests151assertions and typecheck
+pass; expanded full runtime gate494pass0fail,6236assertions across54files in195.13s.
+No production/default change. Previous7182236 CI confirmed successful.
+Next: automatic pipeline/fanout/director/judge policy composition, same-child
+assignment generations across resume/repair, cancellation UX,
+and multi-device topology dispatch. Current queue composition is local and requires
+independently authorized children; it does not derive new child grants from a parent.
+Version18 rollback requires pre-upgrade backup; prior candidates reject the database.
+
 Topology execution state now has a canonical normalized schema, TS checkpoint/
 interruption/resume transitions, and private RuntimeTopology transactional storage.
 Four topology sequences match the real Python spine. Version17 adds team_topologies;

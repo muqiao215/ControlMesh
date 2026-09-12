@@ -56,3 +56,4 @@ export { decodeTeamResult, type StructuredTeamResult } from "./team-result-valid
 export { readTeamTaskResult, type TeamTaskResultBinding } from "./team-task-result";
 
 export { RuntimeTopology, type TopologySnapshot } from "./runtime-topology";
+export { TopologyTaskQueue } from "./topology-task-queue";

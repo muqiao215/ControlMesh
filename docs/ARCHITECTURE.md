@@ -344,6 +344,13 @@ state before persistence. These components do not yet dispatch topology workers.
 `readTeamTaskResult` decodes an explicitly bound, accepted execution result; a future
 scheduler must supply the persisted role/phase assignment, not trust model self-labels.
 
+`TopologyTaskQueue` now supplies that assignment for independently authorized local
+children, stored in candidate schema 18. It atomically associates a checkpoint role
+with a `LocalTaskRuntime` run and collects the run's accepted effect output. The kernel
+checks the ancestor chain at admission and execution/publication boundaries; changed
+checkpoints or inactive parents revoke child execution while lease-bound cleanup stays
+available. Automatic topology policies and device queue composition remain pending.
+
 `LocalTaskRuntime` adds the private local task execution owner. SQLite schema 8 stores
 queued runs, their expected task revision and provider/profile binding, plus the claimed
 episode and terminal outcome. Two controllers sharing the configured principal/device
