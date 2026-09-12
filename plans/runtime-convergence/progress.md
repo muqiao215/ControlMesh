@@ -2,6 +2,15 @@
 
 ## Current
 
+Team task-result reader connects accepted kernel output to normalized team results.
+It checks text digest and the trusted scheduler's expected topology/substage/role;
+whole-document JSON only. Normal completion and reconciliation survive database
+reopen in synthetic execution tests, with no extra episode. Focused19tests780assertions
+and typecheck pass. Full pinned runtime regression:485 pass,0 fail,6157 assertions
+across52files in193.76s. Persistent topology assignment
+and dispatch composition remain pending: this exported internal reader is not an
+authenticated public assignment API or proof that model evidence references are true.
+
 Kernel now exposes inspectCompletedEffect: scoped owner/revision checks, explicit
 episode/effect binding, terminal accepted state, latest execution fence, confirmed
 effects and equality of persisted episode/effect results, in one read transaction.

@@ -993,3 +993,12 @@ identity. Reconciliation advances task fence while retaining original episode fe
 strict equality rejects recovered results. The new reader instead rejects any newer
 episode and requires current task revision plus matching confirmed effect/episode output.
 This proves runtime acceptance lineage, not the truth of model evidence references.
+
+## Team result execution format
+
+Local Claude/OpenCode adapters and device coordinator store the same accepted result
+in effect and episode. Native text uses value.digest(text), including JSON canonical
+string encoding; do not substitute raw-file SHA hashing. readTeamTaskResult checks
+that digest before whole-document JSON parsing and role/topology/substage matching.
+Expected assignment remains a trusted scheduler input until persistent topology
+registration is wired; caller-supplied bindings must not authorize a team transition.
