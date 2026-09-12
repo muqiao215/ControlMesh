@@ -198,6 +198,7 @@ export class NativeWorkspaceFiles {
         const current = file(target.actual, write);
         if (!write) { requireThat(current, "workspace_tool_file_unavailable"); receipt.response = this.readPage(target.path, current, input); }
         else {
+          requireThat(Object.hasOwn(input, "expected_sha256"), "workspace_tool_expected_sha256_required");
           this.config.stage!.projection();
           requireThat(input.expected_sha256 === (current?.sha256 ?? null), "workspace_tool_content_changed");
           const small = (text: unknown): text is string => typeof text === "string" && Buffer.byteLength(text) <= 8192 && Buffer.from(text).toString() === text;
@@ -212,7 +213,13 @@ export class NativeWorkspaceFiles {
           receipt.intent = { path: target.path, before_sha256: current?.sha256 ?? null, after_sha256: sha(bytes), before_identity: current?.identity ?? null, size: bytes.length };
           receipt.response = { ok: true, path: target.path, sha256: sha(bytes), size: bytes.length, staged: true };
         }
-      } catch (error) { receipt.response = { ok: false, error: error instanceof RuntimeConflict ? error.code : "workspace_tool_operation_failed" }; bytes = undefined; receipt.intent = null; }
+      } catch (error) {
+        const code = error instanceof RuntimeConflict ? error.code : "workspace_tool_operation_failed";
+        receipt.response = { ok: false, error: code, ...(code === "workspace_tool_expected_sha256_required" ? {
+          hint: "Include expected_sha256 explicitly: null to create a missing file, or the current full-file sha256 from read_file to replace/edit an existing file. Use a new request_id for corrected arguments."
+        } : {}) };
+        bytes = undefined; receipt.intent = null;
+      }
       this.save(path, receipt);
       if (bytes) this.replace(target!, bytes, mode, receipt.intent!);
       receipt.state = "done"; this.save(path, receipt); return receipt.response;

@@ -69,8 +69,12 @@ No claim that full TS migration or distributed coordination has completed. A sco
 
 ## Next Step
 
-Connect Claude's remaining History adoption/device profiles to its now-qualified local execution
-and peer-message path. Normal local Claude task startup,
+Finish acceptance of the desktop worktree's Claude History adoption before publishing it. Its
+actual run found and resumed the original session, but missing write preconditions were reported
+as file conflicts and 32 failed writes exhausted the 64-turn budget. The diagnostic correction
+is covered by real MCP tests; a separately recorded bounded native acceptance remains required.
+The original failed attempt must not be rerun or relabeled successful. Then continue Claude's
+remaining device profiles and the full owners below. Normal local Claude task startup,
 explicit same-session resume, staged publication and model-free retained-result recovery are now
 implemented and have scoped native evidence. See [claude-continuity-design.md](claude-continuity-design.md).
 The actual parallel-read trial exposed a strict-chain parser defect, fixed with exact pending-tool

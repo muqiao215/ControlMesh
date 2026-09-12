@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RuntimeKernel, type Principal } from "../src/kernel";
@@ -36,6 +36,26 @@ function fixture(staged = true, content = "original current fact\n") {
   };
   return { root, workspace, state, journal, allowed, ungranted, kernel, db, lease, authority, config, files, stage, proof, call, setCheck: (fn: () => void) => { check = fn; } };
 }
+test("missing write preconditions explain corrective input without inventing a content conflict or writing", async () => {
+  const f = fixture(), config = prepareNativeAgentConfiguration(join(f.root, "ipc"), Bun.which("node")!, "task", [], null, "workspace.v1");
+  const broker = new NativeAgentChannel(f.lease, config, () => {}, { assertDispatched: () => f.kernel.withLease(actor, f.lease, () => {}), call: async (tool, input) => f.files.call(tool, input) });
+  cleanup.push(() => broker.close()); await broker.start();
+  const client = new NativeMcpTestClient(broker.command); cleanup.push(() => client.close()); await client.initialize();
+  const input = { request_id: "missing", path: "new.txt", content: "after" };
+  const response = await client.tool("write_file", input);
+  expect(response.result?.isError).toBe(true);
+  const failure = JSON.parse(response.result!.content![0].text);
+  expect(failure).toMatchObject({ ok: false, error: "workspace_tool_expected_sha256_required" });
+  expect(failure.hint).toContain("null"); expect(failure.hint).toContain("new request_id");
+  expect(existsSync(join(f.stage!.fileScope().tree, "new.txt"))).toBe(false);
+  const reopened = new NativeWorkspaceFiles(f.config, f.authority, () => {});
+  expect(reopened.call("controlmesh_write_file", input)).toEqual(failure);
+  expect(() => reopened.call("controlmesh_write_file", { ...input, expected_sha256: null })).toThrow("idempotency_conflict");
+  expect(reopened.call("controlmesh_write_file", { ...input, request_id: "corrected", expected_sha256: null })).toMatchObject({ ok: true });
+  expect(readFileSync(join(f.stage!.fileScope().tree, "new.txt"), "utf8")).toBe("after");
+  expect(reopened.call("controlmesh_write_file", { ...input, request_id: "existing", expected_sha256: null })).toMatchObject({ ok: false, error: "workspace_tool_content_changed" });
+  expect(existsSync(join(f.workspace, "new.txt"))).toBe(false);
+});
 test("explicit file scope denies ungranted reads and does not grant writes to a read-only owner", () => {
   const f = fixture(false);
   expect(f.call("read_file", { request_id: "allowed", path: "PROJECT.md" })).toMatchObject({ ok: true, content: "original current fact\n", eof: true });

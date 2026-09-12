@@ -1,5 +1,34 @@
 # Findings
 
+## Actual adoption failure: missing write precondition looked like a conflict — 2026-09-12
+
+The real History CLI successfully refreshed/searched the configured original Claude JSONL and
+prepared a context-only handle. Normal local submit resolved that handle after reopening, and
+Claude resumed the original session. However, all 32 attempted write_file calls omitted the
+schema-required expected_sha256 property. JavaScript undefined failed the comparison with null
+for a missing target and surfaced workspace_tool_content_changed. The model interpreted that
+as concurrent modification, repeatedly reread PROJECT.md and retried without repairing its input.
+Native completion was error_max_turns at the configured limit of 64 (num_turns 65). There was no
+canonical output; no actual task-completion or retained-success recovery claim is justified.
+
+The narrow correction distinguishes a missing precondition from a changed file, explains explicit
+null/current sha256 and the required new request_id, and durably retains that failure response.
+It does not infer write permission/preconditions or silently repair model arguments. A real MCP
+regression proves no write before correction, identical failure after reopening, rejection of
+changed arguments under the old request_id, successful explicit creation, and continued rejection
+of null over an existing file. Native semantic no-progress detection is a remaining runtime gap;
+the current turn/request budgets bound work but allowed many identical mistakes in this trial.
+
+## Current adoption integration seam — 2026-09-12
+
+`DeviceNativeAdoptions` already persists opaque device/task/workspace/capability-bound context
+handles in `device_native_adoptions`. The local task/control path has no adoption operations;
+ClaudeHistoryClient only validates an explicit UUID/file. History's existing headless JSONL CLI
+supports explicit refresh/search with a separate derived cache and no Web server. A fresh cache
+does not refresh during search; report explicit freshness/refresh semantics rather than silently
+claiming that empty results describe all native history. Reuse the current registry for the local
+device and provider-specific source adapters; do not create a second task/adoption store.
+
 ## Claude native concurrent peer tools — 2026-09-12
 
 The existing message MCP service can be registered beside Claude's workspace service; no merged

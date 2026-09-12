@@ -2,6 +2,31 @@
 
 ## Current
 
+Claude History adoption is implemented in the desktop worktree but **has not passed actual
+task acceptance and is not published**. Headless refresh/search found the original native UUID;
+preparation was context-only, and the handle resolved after reopening into that same session.
+The subsequent native run failed: 32 writes omitted the required `expected_sha256` argument,
+received the misleading `workspace_tool_content_changed` response, and repeated until Claude's
+64-turn limit (`error_max_turns`, reported num_turns 65). No adoption-result.txt was published.
+The original acceptance report remains failed. No new native attempt was started for diagnosis.
+
+The narrow published correction makes missing write preconditions explicit and provides a
+repair hint, while preserving CAS checks and request-id idempotency. Focused real-MCP/file tests
+passed **11/11**, 321 assertions, 1.54 seconds, and typecheck passed. Before this correction, the
+worktree including adoption passed the full pinned runtime gate **438/438**, 4,706 assertions,
+86.49 seconds. These are distinct runs; neither establishes real adoption completion.
+Logs: `/tmp/cm-workspace-precondition-focused.log`, `/tmp/cm-claude-adoption-full.log`.
+Private failed evidence: `claude-history-adoption-acceptance.{ts,json,log}` in the coordinating
+workspace. The current installed production owner remains Python ControlMesh **v0.43.0**.
+
+Next: qualify the corrected write path against retained original-session context with a separately
+bounded acceptance turn; never rerun the reserved failed script. Finish local adoption review and
+acceptance before publishing that integration. Repeated no-progress tool failures currently stop
+at execution/turn budgets; earlier semantic loop detection remains a harness gap. All remaining
+provider/transport/store/topology/product and CM-R0–R7 gates stay open.
+
+## Previous Claude peer communication increment
+
 Current increment: **Claude native peer communication through the normal local queue**. Optional
 per-task communication registration binds the existing NativeAgentBroker/Journal to each Claude
 effect. The native controller verifies two separate MCP servers and exact tool tables before
