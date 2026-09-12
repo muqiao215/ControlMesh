@@ -2,6 +2,12 @@ import { expect, test } from "bun:test";
 import { failureFromNativeStderr, judgeOpenCodePreflight, nativeFailure, observeOpenCode } from "../src/providers/opencode-events";
 import type { ProcessOutcome } from "../src";
 
+test("fractional provider reset timestamps preserve timezone evidence without guessing a missing zone", () => {
+  expect(nativeFailure("quota_exceeded resets at 2030-01-01T00:00:00.123Z").reset_at).toBe(Date.parse("2030-01-01T00:00:00.123Z"));
+  expect(nativeFailure("quota_exceeded resets at 2030-01-01T08:00:00.123+08:00").reset_at).toBe(Date.parse("2030-01-01T00:00:00.123Z"));
+  expect(nativeFailure("quota_exceeded resets at 2030-01-01 08:00:00.123").reset_at).toBeNull();
+});
+
 function result(events: unknown[], changes: Partial<ProcessOutcome> = {}): ProcessOutcome {
   return { reason: "exited", exit_code: 0, stdout: events.map(event => JSON.stringify(event)).join("\n"), stderr: "", duration_ms: 1, ...changes };
 }

@@ -9,6 +9,8 @@ export { PreflightCache, type ProbeBinding, type ProbeDecision } from "./provide
 export { ProviderPreflightService } from "./providers/preflight-service";
 export { NativeSessionStore, type NativeSessionRef } from "./providers/native-session";
 export { ClaudeSessionStore, claudeContentRevision, type ClaudeSessionRef } from "./providers/claude-session";
+export { ClaudePreflight, judgeClaudePreflight, type ClaudeProbeInput } from "./providers/claude-preflight";
+export type { ProviderProbeReport } from "./providers/probe-report";
 export { HistoryClient, ClaudeHistoryClient, type HistoryConfig } from "./providers/history-client";
 export { DeviceNativeAdoptions, type AdoptionSelection, type AdoptionProfile } from "./providers/device-native-adoption";
 export { DeviceScheduler, type DeviceSchedulerOptions, type ScheduledExecutor } from "./device-scheduler";

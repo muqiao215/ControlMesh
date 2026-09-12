@@ -3,7 +3,7 @@ import { command, requireScope } from "../commands";
 import type { RuntimeDatabase } from "../database";
 import type { Principal } from "../kernel";
 import { canonical, digest, identifier, requireThat } from "../value";
-import type { OpenCodeProbeReport } from "./opencode-preflight";
+import type { ProviderProbeReport } from "./probe-report";
 import type { ProviderFailure } from "./opencode-events";
 
 /** All bindings come from trusted config/credential discovery, not caller-supplied request JSON. */
@@ -18,7 +18,7 @@ export interface ProbeDecision {
   reason: string;
   retry_after: number | null;
   permit: ProbePermit | null;
-  report: OpenCodeProbeReport | null;
+  report: ProviderProbeReport | null;
   generation?: number;
 }
 interface CheckRow {
@@ -72,7 +72,7 @@ export class PreflightCache {
   }
 
   /** Recheck this at new process admission; a historical ready response is not an execution grant. */
-  assertReady(actor: Principal, binding: ProbeBinding): OpenCodeProbeReport {
+  assertReady(actor: Principal, binding: ProbeBinding): ProviderProbeReport {
     requireScope(actor, "provider:probe");
     const key = this.key(actor, binding);
     return this.db.transaction(() => {
@@ -113,7 +113,7 @@ export class PreflightCache {
     });
   }
 
-  complete(actor: Principal, binding: ProbeBinding, permit: ProbePermit, report: OpenCodeProbeReport): void {
+  complete(actor: Principal, binding: ProbeBinding, permit: ProbePermit, report: ProviderProbeReport): void {
     requireScope(actor, "provider:probe");
     const key = this.key(actor, binding);
     requireThat(permit.cache_key === key, "probe_binding_mismatch");
@@ -157,7 +157,7 @@ export class PreflightCache {
       const now = this.db.now(), transient = failure.code === "rate_limited" || failure.code === "provider_error";
       const retry = failure.code === "quota_exhausted" && failure.reset_at !== null && failure.reset_at > now ? failure.reset_at
         : transient ? now + Math.max(failure.retry_after_ms ?? 0, 30_000) : null;
-      const report = JSON.parse(row.report!) as OpenCodeProbeReport;
+      const report = JSON.parse(row.report!) as ProviderProbeReport;
       report.observation = { status: transient ? "degraded" : "unavailable", reason: failure.code, session_id: null, failure };
       this.db.sql.query("UPDATE provider_checks SET state=?,reason=?,valid_until=0,retry_after=?,attempts=1,report=? WHERE cache_key=?")
         .run(report.observation.status, failure.code, retry, canonical(report), key);

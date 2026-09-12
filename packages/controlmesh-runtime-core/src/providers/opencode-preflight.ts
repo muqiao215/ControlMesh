@@ -17,17 +17,8 @@ export interface OpenCodeProbeInput {
   signal?: AbortSignal;
   timeout_ms?: number;
 }
-export interface OpenCodeProbeReport {
-  model: string;
-  config_digest: string;
-  observation: PreflightObservation;
-  cli_version: string;
-  permission_digest: string | null;
-  tool_count: number;
-  model_invoked: boolean;
-  duration_ms: number;
-  runtime_digest?: string;
-}
+export type { ProviderProbeReport as OpenCodeProbeReport } from "./probe-report";
+import type { ProviderProbeReport as OpenCodeProbeReport } from "./probe-report";
 interface Runner { run(spec: ProcessSpec, admission: ProcessAdmission): Promise<ProcessOutcome>; runtimeDigest?(): string }
 
 /** Only the native tool-output directory exception may follow the last deny-all rule. */

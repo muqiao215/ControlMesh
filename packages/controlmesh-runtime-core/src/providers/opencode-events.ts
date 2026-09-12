@@ -15,7 +15,7 @@ export function nativeFailure(message: string): ProviderFailure {
   else if (/\b429\b|too many requests|rate.?limit/i.test(message)) code = "rate_limited";
   else if (/\b401\b|invalid.api.key|authentication.failed|unauthorized|invalid.access.token|token.expired/i.test(message)) code = "authentication_failed";
   else if (/model.not.found|unknown.model|model.*not (?:available|supported)|provider.not.found/i.test(message)) code = "model_unavailable";
-  const reset = /(?:will reset at|resets? at)\s+(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})?)/i.exec(message)?.[1] ?? null;
+  const reset = /(?:will reset at|resets? at)\s+(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})?)/i.exec(message)?.[1] ?? null;
   const zoned = reset && /(?:Z|[+-]\d{2}:\d{2})$/.test(reset) ? Date.parse(reset.replace(" ", "T")) : NaN;
   const retry = /retry (?:after|in)\s+(\d+(?:\.\d+)?)\s*(?:s\b|seconds?)/i.exec(message)?.[1];
   const retryMs = retry ? Math.ceil(Number(retry) * 1000) : null;

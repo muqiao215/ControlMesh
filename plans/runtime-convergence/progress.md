@@ -2,6 +2,37 @@
 
 ## Current
 
+Current increment: **Claude model preflight through the shared durable readiness budget**.
+Actual native Claude Code 2.1.263/MiniMax-M3 probe passed on 2026-09-12 00:58:59–00:59:01 UTC.
+Two native commands (version plus print) included one model probe; a second ensure operation
+reused the same generation-1 cache observation. Native init reported no tools, MCP servers or
+plugins, and the terminal sentinel matched the assistant output and selected model/session.
+Credentials came from the existing selected local profile, never repository files or task text.
+
+Independent verification reread the retained native output with the final stricter observer,
+checked the one-attempt local cache, and found no owned temporary process/directory or session
+in the user's history. No second model call was used for this revalidation. Historical readiness
+is not extended beyond normal expiry. Billing/API request counts were not measured. Evidence:
+`outputs/runtime-convergence/claude-preflight-acceptance.{ts,json,log}` and
+`claude-preflight-independent-verification.json` in the coordinating workspace.
+
+Validation: pinned CI Bun 1.3.11 with actual Docker and independent SpecMesh passed
+**394/394**, zero skipped/failed, 4,179 assertions, 74.64 seconds. Final policy-directory and
+empty-plugin evidence checks are covered by focused Claude/native-event regression **13/13**
+(97 assertions) and independent rejudging of the same retained native output; no model trial was repeated.
+Typecheck and repository SpecMesh structural check pass (seven references, expected dirty
+fact warnings). Publication/exact-SHA CI for this preflight increment is pending commit.
+
+Claude source predecessors are published: CM fb69bddebabde0fcb0b45d2746a8c18cb0f06e50 with
+[passing CI](https://github.com/muqiao215/ControlMesh/actions/runs/34663045103), History
+61f57ad33ae985b44c050787553bef507575cc5e with
+[passing CI](https://github.com/muqiao215/Codex-Claude-History-Viewer/actions/runs/34663036284).
+The complete migration remains active and CM-R7 is not activated. Actual Claude native
+execution/adoption, grants, retained-turn recovery and normal local/device integration remain
+required, followed by other providers and the original transport/store/topology/product scope.
+
+## Previous Claude native reference increment
+
 The full goal remains active; current increment adds **Claude native source identity and
 headless History revalidation**. ClaudeSessionStore hashes the complete original JSONL bytes,
 binds the canonical local file/device/session/workspace and rejects partial, changed, foreign

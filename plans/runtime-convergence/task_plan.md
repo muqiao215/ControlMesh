@@ -69,11 +69,13 @@ No claim that full TS migration or distributed coordination has completed. A sco
 
 ## Next Step
 
-Verify exact-SHA CI for published device scheduling `d93c052`, while implementing the next
-native provider through [claude-continuity-design.md](claude-continuity-design.md). Preserve the
-existing ephemeral one-shot contract and add actual Claude native identity, History revalidation,
-readiness, grants and retained-result continuation. Follow with the other provider/transport/
-store/topology/product owners below; the full goal and CM-R7 gate remain unchanged.
+Publish and verify the accepted Claude readiness increment, then implement actual Claude
+native execution/adoption and retained-turn recovery through
+[claude-continuity-design.md](claude-continuity-design.md). OpenCode scheduling d93c052,
+Claude source integration fb69bdd and History 61f57ad have passing exact-SHA CI. Real Claude
+source revalidation and one-model-call preflight now have separate evidence. Preserve current
+source/grants and the original native session; a readiness result alone cannot execute it.
+Continue the other provider/transport/store/topology/product owners below; CM-R7 remains open.
 
 Local private startup, History/native adoption, native mailbox/Agent communication,
 authenticated loopback ingress, terminal outbox, independent SpecMesh start/handoff and local

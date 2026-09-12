@@ -1,5 +1,22 @@
 # Findings
 
+## Claude shared preflight — 2026-09-12
+
+Local Claude supports safe mode while retaining the existing auth-token credential mode. Its
+bare mode documents a narrower authentication path; using bare and silently remapping the
+user's auth token to a different credential kind would change the selected native profile.
+The qualified probe instead uses an isolated HOME/config, safe mode, explicit native empty
+tools/MCP configuration and disabled persistence. Host managed settings are not assumed safe:
+unqualified managed configuration rejects. Native init exposes the actually selected model,
+tools/MCP/plugins; native result and assistant content must independently agree on the sentinel.
+
+A reset-budget regression exposed a shared parser defect: ISO timestamps with fractional
+seconds lost their timezone suffix, leaving a valid reset unknown. The native-error parser now
+retains fractional seconds and a verified zone; zoneless timestamps still never become local
+retry dates. Tests cover equivalent UTC/offset instants and the actual Claude three-probe budget.
+An initial test used the database constructor without its required path; corrected to an isolated
+in-memory database. No extra native model call was made for fixture/parser fixes.
+
 ## Claude native source identity — 2026-09-12
 
 The current one-shot Claude command disables persistence; treating successful execution as

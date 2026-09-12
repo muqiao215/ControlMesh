@@ -663,3 +663,10 @@ still requires native work to stop and recovery to avoid restarting it.
 ## Codekit integration (v0.43.0)
 
 See [CODEKIT-INTEGRATION](CODEKIT-INTEGRATION.md) for the new module boundary, public invocation and limits. This local implementation does not establish deployment acceptance.
+
+The candidate readiness cache now consumes a provider-neutral report while retaining its
+persisted shape and OpenCode compatibility type. ClaudePreflight/ensureClaude supply a separate
+qualified zero-tool native probe and credential-environment binding. Actual init/assistant/result
+records qualify readiness, not a historical session title or model-auth file. The common cache
+owns probe permits, expiry, quota reset waiting and explicit operator retry; native execution
+must still qualify its own grant/container/workspace profile before using readiness.
