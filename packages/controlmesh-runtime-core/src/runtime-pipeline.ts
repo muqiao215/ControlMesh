@@ -1,3 +1,4 @@
+import type { TopologyArtifactGate } from "./topology-artifacts";
 import { completeTopologyStep } from "./topology-completion";
 import { command, requireScope } from "./commands";
 import { RuntimeKernel, type Principal } from "./kernel";
@@ -12,7 +13,7 @@ export interface PipelineChild { task_id: string; revision: number; role: string
 export class RuntimePipeline {
   private readonly topology: RuntimeTopology;
   private readonly queue: TopologyTaskQueue;
-  constructor(private readonly kernel: RuntimeKernel, private readonly runtime: LocalTaskRuntime) {
+  constructor(private readonly kernel: RuntimeKernel, private readonly runtime: LocalTaskRuntime, private readonly completionGate?: TopologyArtifactGate) {
     this.topology = new RuntimeTopology(kernel); this.queue = new TopologyTaskQueue(kernel, runtime);
   }
   private authorize(actor: Principal, taskId: string): void {
@@ -47,7 +48,7 @@ export class RuntimePipeline {
       const accepted = this.queue.collect(actor, `pipeline-collect-${digest(requestId)}`, parentId, parentRevision, topologyRevision, childId, childRevision);
       const state = this.topology.pipelineResult(actor, `pipeline-phase-${digest(requestId)}`, parentId, parentRevision, topologyRevision, accepted.result, options);
       return { topology: state, next_run: this.enqueue(actor, `pipeline-queue-${digest(requestId)}`, parentRevision, state, next),
-        parent: completeTopologyStep(this.kernel, actor, `pipeline-complete-${digest(requestId)}`, parentRevision, state) };
+        parent: completeTopologyStep(this.kernel, actor, `pipeline-complete-${digest(requestId)}`, parentRevision, state, this.completionGate) };
     }, value => { this.authorize(actor, parentId); this.kernel.inspect(actor, childId); return value; });
   }
   resume(actor: Principal, requestId: string, parentId: string, parentRevision: number, topologyRevision: number, parentInput: string, reviewer: PipelineChild) {

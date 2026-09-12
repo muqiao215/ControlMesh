@@ -69,77 +69,22 @@ No claim that full TS migration or distributed coordination has completed. A sco
 
 ## Next Step
 
-Qualify Claude device execution with real native acceptance and independent readback, including
-communication and SpecMesh profiles, then continue all remaining owners below. Normal configured
-device execution, worker reopen/original-session continuation, lost-observation reconciliation and
-History adoption now pass synthetic-provider tests over actual Docker and coordinator HTTP;
-these tests do not replace real-model/device qualification.
-Normal local container configuration, History adoption, readiness, original-session recall,
-seven current continuity reads, staged publication and lost-completion recovery now have actual
-native evidence and independent model-free readback. Device Claude admission remains pending.
-The pinned full runtime suite passes 455 tests. Parallel tool blocks exposed a reported-turn-count
-mismatch, corrected using actual model/tool-round identities without another native input. Normal
-local History adoption now has real original-session continuation, current-file write, retained
-publication-loss recovery and independent source/control/receipt verification. The first failed
-attempt remains failed; one bounded corrective input exposed a pinned native synthetic resume
-pair, now strictly recognized. Parser repair and recovery used the same retained output with zero
-additional native commands. See progress.md for diagnostic-report limits. Normal local Claude task startup,
-explicit same-session resume, staged publication and model-free retained-result recovery are now
-implemented and have scoped native evidence. See [claude-continuity-design.md](claude-continuity-design.md).
-The actual parallel-read trial exposed a strict-chain parser defect, fixed with exact pending-tool
-parent binding. Preserve the original failed trial: the first model output omitted a newline and
-the second corrected the files but added prose before JSON, so strict fixture-prompt acceptance
-remains failed even though runtime continuity/publication verification passed. A separate real
-two-session concurrent communication trial passed: six native message calls, three consumed
-messages, and seven current SpecMesh references per task; one shared preflight and two native
-inputs. The scoped local profile does not qualify remote Claude execution or full provider parity. Preserve
-the existing one-shot/restrictive flag contract and current source/grant/native identity checks.
-Continue the other provider/transport/store/topology/product owners below; CM-R7 remains open.
+Publish the verified parent artifact completion gate, then connect nested aggregate
+results and explicit topology reopen with retained history. This is the current local
+orchestration seam, not the full migration exit. Follow progress.md for exact verification
+and the remaining service/device/provider/store/release order.
 
-Local private startup, History/native adoption, native mailbox/Agent communication,
-authenticated loopback ingress, terminal outbox, independent SpecMesh start/handoff and local
-staged write/completion/recovery have scoped acceptance. See progress.md for exact evidence;
-none is an installed production writer switch. Continue remaining providers and native tool
-profiles, group approval/rich-media/long-connection and other transports, additional native
-adoption profiles, reviewed SpecMesh closeout, other recovery/abandonment/store owners, topology and
-terminal product work. Complete the 512-module/57-field ownership parity and release/install
-alignment before activating TS over live data. CM-R0–CM-R7 remain the full goal.
+Current implementation and native evidence belong in progress.md and its retained archive,
+not in competing historical next-step instructions. Scoped native acceptance does not
+qualify every provider, device, source or grant profile. Keep original failed attempts and
+perform recovery from retained output without replaying uncertain work.
 
-## Active native-write owner
+Relevant implementation designs:
 
-Implement the native workspace-write path, not a read-only substitute. See
-[native-write-design.md](native-write-design.md) for the snapshot/projection/promotion
-boundary and acceptance cases. This work must ultimately wire actual OpenCode edit/write
-execution, local and device ownership, native result retention/reconciliation and SpecMesh
-freshness. A staging helper alone does not close CM-R3 or the full migration.
-
-## Team phase owner migration increment
-
-Python `controlmesh/team/phases.py` and state wrapper behavior are ported to
-`team-phases.ts`; all 320 edge/repair-bound combinations are checked against the
-live Python implementation. `RuntimeTeamPhases` supplies private transactional
-persistence, ownership, expected revision and idempotency using candidate DB v16.
-This is the phase-state owner only. Director/worker and the other topology reducers,
-task registration/dispatch, review and cancellation composition remain open. A phase
-named approve is not an authorization grant; no provider dispatch is attached here.
-Next: wire explicit topology/task ownership to this state owner and retain existing
-runtime admission at every actual side effect.
-
-## Topology result reduction increment
-
-Internal `team-results.ts` ports pipeline review/terminal reduction and fanout
-reducer/all-failed reduction. A live Python differential test covers 24 selection/status
-combinations plus empty/nonempty failure batches. These functions consume normalized
-worker results and do not validate raw Agent envelopes, persist topology checkpoints,
-dispatch tasks or finish a task. The complete execution-spine/checkpoint validators,
-director/judge decisions and TaskHub lifecycle composition remain open. Next implement
-the topology execution spine and raw result boundary before attaching these reducers
-to actual task completion; never use a reduced completed status as execution evidence.
-
-Raw team-result structural boundary is now implemented in the shared schema and
-`team-result-validation.ts`;677 finite JSON cases match Python. Execution-spine
-checkpoint/state validation and TaskHub identity/evidence binding remain next, before
-routing raw Agent responses into runtime completion.
+- [Native writes](native-write-design.md): staged publication, completion and reconciliation.
+- [Claude continuity](claude-continuity-design.md): task/session binding and retained output.
+- [Ownership inventory](python-ownership.json): 512 Python module owners and 57 task fields;
+  this is a baseline inventory, not a completed parity score.
 
 ## Current topology checkpoint — 2026-09-12
 
@@ -152,8 +97,14 @@ after restart. Terminal queue transitions now atomically seal accepted results a
 idle root tasks via schema 21. The completion event is an internal topology reduction;
 it does not create a provider episode or assert real native acceptance.
 
-Next: connect required artifact/SpecMesh parent completion gates, nested aggregate result
-bindings and explicit topology reopen; complete bounded automatic service scheduling and
+Parent artifact completion now requires a registered workspace/file profile, actual accepted
+child read/write completion evidence and matching current bytes. A live permit binds those
+checks to the exact parent/topology revisions. Adopted SpecMesh requirements are rechecked
+with the independent plugin's check operation and exact source hash. This establishes file
+delivery; reviewed project closeout remains unknown/pending.
+
+Next after this gate is verified and published: nested aggregate result bindings and
+explicit topology reopen; complete bounded automatic service scheduling and
 malformed-output recovery, then device topology dispatch and real native topology
 acceptance. Continue all remaining CM-R0–CM-R7 provider/transport/store, native source
 revision and release/install gates; explicit local queue tests do not narrow that scope.

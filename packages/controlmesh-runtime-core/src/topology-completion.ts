@@ -1,3 +1,4 @@
+import type { TopologyArtifactGate } from "./topology-artifacts";
 import { command, requireScope } from "./commands";
 import type { Principal, RuntimeKernel, TaskSnapshot } from "./kernel";
 import type { TopologySnapshot } from "./runtime-topology";
@@ -50,7 +51,7 @@ function acceptedInputs(kernel: RuntimeKernel, actor: Principal, taskId: string,
   return { digest: digest({ current: rows, history }), inputs: rows.map(row => ({ child_id: row.child_id, generation: row.generation, accepted_digest: digest(JSON.parse(row.accepted!)) })) };
 }
 /** Only accepted queue compositions mint this proof; the kernel refuses bare checkpoint completion. */
-export function completeTopologyStep(kernel: RuntimeKernel, actor: Principal, requestId: string, parentRevision: number, snapshot: TopologySnapshot): TaskSnapshot | null {
+export function completeTopologyStep(kernel: RuntimeKernel, actor: Principal, requestId: string, parentRevision: number, snapshot: TopologySnapshot, gate?: TopologyArtifactGate): TaskSnapshot | null {
   const cp = snapshot.state.checkpoints.at(-1)!;
   if (!["completed", "failed"].includes(cp.phase_status)) return null;
   requireScope(actor, "team:write"); requireScope(actor, "task:execute"); kernel.inspect(actor, snapshot.task_id);
@@ -58,13 +59,15 @@ export function completeTopologyStep(kernel: RuntimeKernel, actor: Principal, re
     const current = terminalState(kernel, snapshot.task_id, snapshot.revision);
     requireThat(canonical(current.state) === canonical(snapshot.state), "topology_completion_state_changed");
     const inputs = acceptedInputs(kernel, actor, snapshot.task_id, snapshot.revision);
+    requireThat(!gate || gate.kernel === kernel, "topology_artifact_kernel_mismatch");
+    const permit = current.cp.substage === "completed" ? gate?.issue(actor, parentRevision, snapshot) : undefined;
     const reduced = current.cp.reduced_result!, text = canonical(reduced);
-    const result = { schema_version: "controlmesh.topology_result.v1", source: "topology_reduction", topology: current.state.topology,
+    const result = { ...(permit ? { completion: permit.evidence } : {}), schema_version: "controlmesh.topology_result.v1", source: "topology_reduction", topology: current.state.topology,
       topology_revision: snapshot.revision, checkpoint_id: current.cp.checkpoint_id, state_digest: digest(current.state),
       inputs_digest: inputs.digest, inputs: inputs.inputs, reduced_result: reduced, text, output_digest: digest(text), delivery_text: compactTeamText(reduced.reduced_summary, 4000) };
     kernel.db.sql.query("INSERT INTO topology_completions VALUES (?,?,?,?,?,?,?)").run(snapshot.task_id, parentRevision, snapshot.revision,
       current.cp.checkpoint_id, result.state_digest, inputs.digest, canonical(result));
-    return kernel.completeTopology(actor, `topology-finish-${digest(requestId)}`, snapshot.task_id, parentRevision, snapshot.revision);
+    return kernel.completeTopology(actor, `topology-finish-${digest(requestId)}`, snapshot.task_id, parentRevision, snapshot.revision, permit);
   }, value => { requireScope(actor, "team:write"); requireScope(actor, "task:execute"); kernel.inspect(actor, snapshot.task_id); return value; });
 }
 /** Kernel-side verification of the privately issued proof. Does not accept caller-supplied result text. */

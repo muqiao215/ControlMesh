@@ -1,3 +1,4 @@
+import type { TopologyArtifactGate } from "./topology-artifacts";
 import { completeTopologyStep } from "./topology-completion";
 import { command, requireScope } from "./commands";
 import { RuntimeKernel, type Principal } from "./kernel";
@@ -12,7 +13,7 @@ export interface FanoutChild { task_id: string; revision: number; role: string; 
 export class RuntimeFanout {
   private readonly topology: RuntimeTopology;
   private readonly queue: TopologyTaskQueue;
-  constructor(private readonly kernel: RuntimeKernel, private readonly runtime: LocalTaskRuntime) {
+  constructor(private readonly kernel: RuntimeKernel, private readonly runtime: LocalTaskRuntime, private readonly completionGate?: TopologyArtifactGate) {
     this.topology = new RuntimeTopology(kernel); this.queue = new TopologyTaskQueue(kernel, runtime);
   }
   private authorize(actor: Principal, parentId: string, children: readonly FanoutChild[]): void {
@@ -61,7 +62,7 @@ export class RuntimeFanout {
       });
       const state = this.topology.fanoutWorkers(actor, `fanout-phase-${digest(requestId)}`, parentId, parentRevision, revision, results, reducer?.role ?? "reducer");
       return { topology: state, next_run: this.next(actor, `fanout-next-${digest(requestId)}`, parentRevision, state, reducer),
-        parent: completeTopologyStep(this.kernel, actor, `fanout-complete-${digest(requestId)}`, parentRevision, state) };
+        parent: completeTopologyStep(this.kernel, actor, `fanout-complete-${digest(requestId)}`, parentRevision, state, this.completionGate) };
     }, value => { this.authorize(actor, parentId, workers); if (reducer) this.authorize(actor, parentId, [reducer]); return value; });
   }
   advance(actor: Principal, requestId: string, parentId: string, parentRevision: number, revision: number,
@@ -71,7 +72,7 @@ export class RuntimeFanout {
       const accepted = this.queue.collect(actor, `fanout-collect-${digest(requestId)}`, parentId, parentRevision, revision, childId, childRevision);
       const state = this.topology.fanoutResult(actor, `fanout-phase-${digest(requestId)}`, parentId, parentRevision, revision, accepted.result, options);
       return { topology: state, next_run: this.next(actor, `fanout-next-${digest(requestId)}`, parentRevision, state, next),
-        parent: completeTopologyStep(this.kernel, actor, `fanout-complete-${digest(requestId)}`, parentRevision, state) };
+        parent: completeTopologyStep(this.kernel, actor, `fanout-complete-${digest(requestId)}`, parentRevision, state, this.completionGate) };
     }, value => { this.authorize(actor, parentId, next ? [next] : []); this.kernel.inspect(actor, childId); return value; });
   }
   resume(actor: Principal, requestId: string, parentId: string, parentRevision: number, revision: number, parentInput: string, reducer: FanoutChild) {
@@ -79,7 +80,7 @@ export class RuntimeFanout {
     return command(this.kernel.db, actor, requestId, "fanout.resume_and_queue", { parentId, parentRevision, revision, parentInput, reducer }, () => {
       const state = this.topology.resumeFanout(actor, `fanout-phase-${digest(requestId)}`, parentId, parentRevision, revision, parentInput);
       return { topology: state, next_run: this.next(actor, `fanout-next-${digest(requestId)}`, parentRevision, state, reducer),
-        parent: completeTopologyStep(this.kernel, actor, `fanout-complete-${digest(requestId)}`, parentRevision, state) };
+        parent: completeTopologyStep(this.kernel, actor, `fanout-complete-${digest(requestId)}`, parentRevision, state, this.completionGate) };
     }, value => { this.authorize(actor, parentId, [reducer]); return value; });
   }
 }

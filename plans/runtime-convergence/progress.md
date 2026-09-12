@@ -1,60 +1,71 @@
 # Runtime convergence progress
 
-## Current scope and production boundary
+## Current
 
-Full CM-R0–CM-R7 remains active: complete TS ownership, multi-device coordination,
-real native Agent continuity and release/install alignment. Read task_plan.md for the
-acceptance matrix. All 512 Python module owners and 57 persisted TaskEntry fields
-remain in the inventory; a passing candidate gate does not retire those owners.
-Installed CM 0.43.0 remains the production Python writer. No live migration, service
-switch, release or installation is performed by the current topology increment.
+Full CM-R0–CM-R7 remains in progress. This is substantial runtime development, not
+release-only work. Installed CM 0.43.0 remains the production Python writer. No live
+migration, release, installation, service switch or default cutover has occurred.
+The 512-module/57-field ledger is a source inventory, not a completed parity score.
+The phase acceptance matrix remains in task_plan.md.
 
-## Current implementation
+The current increment adds parent artifact completion verification to the four explicit
+local topology compositions. Its full pinned gate passed; verify remote publication and
+CI for the containing commit separately from this local acceptance.
+The previous main f740578 has verified successful CI 34687383281.
 
-All four approved local queue compositions now seal terminal reductions and finish idle
-root tasks in the same transaction. Schema 21 stores completion proof; the kernel rechecks
-current child run/episode/effect results, assignment generations and the exact checkpoint.
-Changed, unresolved or queued work prevents closure. Failure of terminal event insertion
-rolls back acceptance and topology progress. Replays after reopen produce one event.
+## Done
 
-The parent result explicitly identifies an internal topology reduction. No provider episode
-or native session is invented. Existing DeliveryOutbox projects the resulting terminal event
-once, without a model call. No external message was sent during acceptance.
+- Pipeline, fanout, director and judge compose accepted local child results with
+  transactional queue transitions; budgets and assignment generations survive restart.
+- Schema 21 seals current child run/episode/effect evidence with the terminal checkpoint
+  and root completion. Event failure rolls back acceptance and finalization. Delivery
+  projection consumes the topology result once, without inventing a provider episode.
+- Parent file delivery now binds registered workspace/files, accepted child read/write
+  evidence and current canonical bytes. Changed content, symlink, child revision,
+  authority or requirements prevents completion. Restart repeats verification without
+  repeating child execution; stored JSON cannot manufacture a live completion permit.
+- Adopted SpecMesh file requirements retain their exact source path/hash through the
+  independent plugin's check operation. This establishes file delivery only; reviewed
+  project closeout remains unknown pending independent host acceptance.
+- Focused artifact gate: 14 pass, 0 fail, 58 assertions in 6.19s, including real standalone
+  SpecMesh calls and actual file broker/publication fixtures. Typecheck passed. Evidence:
+  /tmp/cm-topology-artifacts-focused.log. No real model/provider turn was launched.
+- Full pinned runtime gate: 546 pass, 0 fail, 7668 assertions across 63 files in 233.28s
+  (exit 0). Ownership inventory check and runtime typecheck passed. Evidence:
+  /tmp/cm-topology-artifacts-full.log. No schema or production data migration occurred.
 
-Required artifact/SpecMesh success gates, nested aggregate bindings and explicit topology
-reopen remain pending and are refused rather than bypassed. Director/judge immutable budgets,
-controller identities and assignment generations from the previous increment remain active.
+## Remaining
 
-## Verification and publication
-
-- Previous main: 52c657c; CI 34686581108 verified successful.
-- Focused gate: 30 pass, 0 fail, 197 assertions across 3 files in 2.19s; runtime typecheck passed.
-- Full pinned runtime gate: 532 pass, 0 fail, 7610 assertions across 62 files in
-  229.07s (exit 0). Evidence: /tmp/cm-parent-completion-full.log.
-- Current increment remote CI is pending; a local green gate is not remote acceptance.
-- No real provider/model run was launched. Fixtures establish orchestration behavior,
-  not real-model/native continuity acceptance.
-- Schema 21 is private candidate storage. Upgrade tests preserve older tasks/topologies;
-  downgrade requires a pre-upgrade backup, never editing a populated database version.
-
-## Next execution order
-
-1. Required artifact/SpecMesh root completion gates, nested aggregate result binding
-   and explicit topology reopen with retained history.
+1. Nested aggregate completion bindings and explicit topology reopen with retained
+   history; reviewed SpecMesh project closeout remains separate from file delivery.
 2. Bounded automatic service scheduling and explicit malformed-output recovery.
-3. Device topology queues with the same assignment/revision/authority boundaries.
-4. Real native topology/source-revision profiles, remaining provider/transport/store
-   owners and the full ownership/parity matrix.
-5. Release/install/default rollout only after all full-goal gates are proven.
+3. Device topology queues with current assignment/revision/authority enforcement.
+4. Real native topology/source-revision profiles and all remaining provider, transport,
+   store and terminal product owners; complete ownership/parity evidence.
+5. Full-goal acceptance, release, installed-version alignment and staged default switch.
 
-Keep canceled tasks 77f04609/7738c5eb canceled. Do not replay failed native acceptance
-attempts or launch browser-account/cron/bot canaries as a convenience test. Observation
-timeout is not evidence that an existing execution ended.
+## Issues
+
+Do not replay failed native acceptance attempts or launch browser-account/cron/bot canaries
+as a convenience test. Keep canceled tasks 77f04609/7738c5eb canceled. An observation
+timeout does not establish that the original execution stopped. Candidate schema remains
+21; rollback requires a pre-upgrade backup, not changing a populated database version.
+
+Historical next-step instructions in task_plan.md were stale and competing; they have
+been replaced by one current next action. Actual native failures and scoped acceptances
+remain preserved in the linked archive rather than being relabeled as full completion.
+
+## Next
+
+Publish this verified artifact increment directly to main, then implement nested
+aggregate binding and topology reopen. Do not mark the full
+migration complete when this increment passes.
 
 ## Retained evidence
 
-Detailed preceding execution, native acceptance failures/recoveries, exact commits and
-logs are retained in [progress-through-6146dab.md](progress-through-6146dab.md). Search
-that archive for the relevant owner; it is historical evidence, not the current next-step
-list. Current durable behavior is in docs/ARCHITECTURE.md; concrete findings and links
-are in findings.md and the relevant native acceptance design files in this directory.
+Detailed earlier execution, native acceptance failures/recoveries and exact commits/logs
+remain in [progress-through-6146dab.md](progress-through-6146dab.md). Search that archive
+for the relevant owner. Durable implementation is in docs/ARCHITECTURE.md; findings and
+native design files carry the specific ownership boundaries. Previous parent completion
+gate: 532 pass, 0 fail, 7610 assertions across 62 files in 229.07s (exit 0), recorded in
+/tmp/cm-parent-completion-full.log.

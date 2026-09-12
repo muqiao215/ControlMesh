@@ -402,14 +402,27 @@ commit together; an event-write failure rolls back the topology and result colle
 The event explicitly identifies a topology reduction, with no fabricated provider episode
 or native session. Existing DeliveryOutbox projection consumes it once after restart.
 
-This path closes idle root orchestrations whose successful outcome has no separate file
-completion contract. A required artifact/SpecMesh completion gate blocks successful closure
-until its verification owner is connected; failure can still be recorded. Nested topology
-completion needs an aggregate result binding, and reopening a completed topology needs an
-explicit new run with preserved history. Generic provider resume rejects such completed
-roots instead of starting a fresh provider execution. These cases remain implementation
-work, not completed gates. Older runtime candidates reject schema 21; rollback requires
-a pre-upgrade database backup, never changing the version on populated state.
+`TopologyArtifactGate` admits successful root file delivery only within a trusted local
+workspace and exact registered file allowlist. It matches every parent requirement to a
+current child's accepted native completion contract, read/write mode and content hash,
+then checks current canonical files through the existing contained read implementation.
+Device result packets cannot act as local file witnesses. Preparation binds parent/task
+revisions, assignment generations, file metadata and profile authority; all are checked
+again inside the terminal transaction. The private live permit cannot be reconstructed
+from stored JSON, and a process restart requires read-only preparation again, without
+rerunning a child. Failure still records a terminal outcome without a success permit.
+
+For a SpecMesh-adopted file contract, the independent plugin's `check` operation must
+still return the exact source path/hash and requirements. This verifies the declared file
+delivery source. It does not assert reviewed project closeout: `verify_closeout` retains
+`unknown` pending independent host review. A changed source invalidates preparation.
+
+Nested topology completion still needs an aggregate result binding, and reopening a
+completed topology needs an explicit new run with preserved history. Generic provider
+resume rejects such completed roots instead of starting a fresh provider execution.
+These cases remain implementation work. Candidate storage remains schema 21; older
+candidates reject it and rollback requires a pre-upgrade database backup, never changing
+the version on populated state.
 
 `LocalTaskRuntime` adds the private local task execution owner. SQLite schema 8 stores
 queued runs, their expected task revision and provider/profile binding, plus the claimed

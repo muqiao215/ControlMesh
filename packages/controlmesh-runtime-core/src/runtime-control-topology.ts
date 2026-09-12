@@ -1,3 +1,4 @@
+import type { TopologyArtifactGate } from "./topology-artifacts";
 import { completeTopologyStep } from "./topology-completion";
 import { command, requireScope } from "./commands";
 import { RuntimeKernel, type Principal } from "./kernel";
@@ -20,7 +21,7 @@ interface ControlSnapshot { topology: TopologySnapshot; config: ControlConfig }
 export class RuntimeControlTopology {
   private readonly topology: RuntimeTopology;
   private readonly queue: TopologyTaskQueue;
-  constructor(private readonly kernel: RuntimeKernel, private readonly runtime: LocalTaskRuntime) {
+  constructor(private readonly kernel: RuntimeKernel, private readonly runtime: LocalTaskRuntime, private readonly completionGate?: TopologyArtifactGate) {
     this.topology = new RuntimeTopology(kernel); this.queue = new TopologyTaskQueue(kernel, runtime);
   }
   private authorize(actor: Principal, parentId: string, children: readonly ControlChild[] = []): void {
@@ -173,7 +174,7 @@ export class RuntimeControlTopology {
       }
       const topology = this.save(current.topology, state);
       return { topology, runs: this.enqueue(actor, requestId, parentRevision, { topology, config }, next),
-        parent: completeTopologyStep(this.kernel, actor, `control-complete-${digest(requestId)}`, parentRevision, topology) };
+        parent: completeTopologyStep(this.kernel, actor, `control-complete-${digest(requestId)}`, parentRevision, topology, this.completionGate) };
     }, value => { this.authorize(actor, parentId, [controller, ...next]); return value; });
   }
   resume(actor: Principal, requestId: string, parentId: string, parentRevision: number, revision: number, parentInput: string, controller: ControlChild) {

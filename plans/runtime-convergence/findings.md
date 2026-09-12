@@ -1167,3 +1167,27 @@ back all workers and the dispatch checkpoint. Separate pure policy functions pre
 Python behavior, while the queue boundary additionally enforces complete role coverage.
 The previously failing e981aeb CI container job passed its single requested rerun;
 this establishes a successful retry, not a diagnosed cause of Docker-info failure.
+
+
+## Parent artifact evidence and SpecMesh source ownership
+
+File existence cannot establish an Agent read or write. The parent gate reuses accepted
+child episode/effect results and NativeWorkspaceFiles completion proofs, including exact
+mode/path/hash, while current canonical bytes and registered workspace identity remain
+host-owned checks. It excludes remote native result packets from this local authority.
+Preparation is an ephemeral capability, not an authorization JSON document: restart
+repeats read-only verification and does not repeat a provider command. Child resume,
+changed content/symlink, revoked profile or changed SpecMesh requirements invalidates it.
+
+The standalone SpecMesh `verify_closeout` operation deliberately returns unknown even
+with an otherwise valid acceptance manifest: host independent review remains required.
+It emits no passing artifact candidate in that state. Existing `adoptSpecMeshCompletion`
+uses `check` to adopt a reviewed requirements file, so parent file delivery uses the same
+source operation and exact requirements hash. Treating verify_closeout unknown as pass
+would have conflated file-contract verification with overall project acceptance.
+The new fixture exercises actual file broker receipts and publication without a model;
+it establishes this integration contract, not fresh native/model acceptance.
+
+The task plan previously accumulated contradictory historical Next statements and old
+test totals. Its current Next section now points to one active implementation seam;
+retained native history remains in the existing progress archive and design files.
