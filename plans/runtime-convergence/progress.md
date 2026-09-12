@@ -2,6 +2,14 @@
 
 ## Current
 
+Kernel now exposes inspectCompletedEffect: scoped owner/revision checks, explicit
+episode/effect binding, terminal accepted state, latest execution fence, confirmed
+effects and equality of persisted episode/effect results, in one read transaction.
+Kernel tests:16 pass,82 assertions; runtime typecheck passes. This is a read primitive,
+not yet attached to topology dispatch. Next bind topology task registrations to this
+reader and the normalized result decoder; retain full migration/release gates.
+Latest preceding published SHA2228f92 and its two predecessors have successful CI.
+
 Shared team-result boundary implemented: normalized JSON Schema plus TS raw-result
 normalizer, with topology-specific substages, parent-flag/status consistency and
 required repair hints.677 raw cases match live Python models; team suite5tests

@@ -233,3 +233,31 @@ test("a failed event write cannot leave a completed task or an idempotency recei
   db.sql.exec("DROP TRIGGER event_failure");
   expect(kernel.finish(actor, "finish", lease, "done", { output: "synthetic" }).task.status).toBe("done");
 });
+
+test("completed output binds owner, current revision, explicit episode and confirmed effect", () => {
+  const { kernel, db } = fixture();
+  kernel.submit(actor, "create", task());
+  const lease = kernel.claim(actor, "claim", "task-1", 1, 30_000);
+  kernel.start(actor, "start", lease);
+  const read = (revision: number, principal = actor) => kernel.inspectCompletedEffect(principal, "task-1", revision, lease.episode_id, "output");
+  expect(() => read(kernel.inspect(actor, "task-1").revision)).toThrow("task_result_not_accepted");
+  kernel.dispatchEffect(actor, "dispatch", lease, "output", { operation: "native" });
+  const result = { text: "accepted output", output_digest: "test-digest" };
+  kernel.confirmEffect(actor, "confirm", lease, "output", result);
+  const done = kernel.finish(actor, "finish", lease, "done", result);
+  expect(read(done.revision).result).toEqual(result);
+  const other = { ...actor, id: "stranger", scopes: ["task:read"] };
+  expect(() => read(done.revision, other)).toThrow("task_access_denied");
+  expect(() => read(done.revision - 1)).toThrow("revision_conflict");
+  expect(() => kernel.inspectCompletedEffect(actor, "task-1", done.revision, lease.episode_id, "wrong")).toThrow("completed_effect_unavailable");
+  db.sql.query("UPDATE effects SET result=? WHERE effect_id='output'").run(JSON.stringify({ text: "unrelated" }));
+  expect(() => read(done.revision)).toThrow("completed_result_mismatch");
+  db.sql.query("UPDATE effects SET result=? WHERE effect_id='output'").run(JSON.stringify(result));
+  const owner = { ...actor, scopes: [...actor.scopes, "task:resume"] };
+  const resumed = kernel.resume(owner, "resume", "task-1", done.revision, "continue");
+  expect(() => read(resumed.revision)).toThrow("task_result_not_accepted");
+  const next = kernel.claim(owner, "claim-next", "task-1", resumed.revision, 30_000);
+  kernel.start(owner, "start-next", next);
+  const nextDone = kernel.finish(owner, "finish-next", next, "done", result);
+  expect(() => read(nextDone.revision)).toThrow("completed_episode_superseded");
+});

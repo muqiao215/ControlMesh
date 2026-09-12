@@ -74,6 +74,32 @@ export class RuntimeKernel {
     return this.snapshot(row);
   }
 
+  /** Read accepted output from an explicit terminal execution, not a caller-supplied result. */
+  inspectCompletedEffect(actor: Principal, taskId: string, expectedRevision: number,
+    episodeId: string, effectId: string): { task: TaskSnapshot; episode_id: string; effect_id: string; result: Record<string, unknown> } {
+    this.scope(actor, "task:read");
+    identifier(episodeId); identifier(effectId);
+    return this.db.transaction(() => {
+      const task = this.row(taskId);
+      this.owned(actor, task);
+      this.revision(task, expectedRevision);
+      requireThat(task.status === "done" && !task.active_episode && !task.needs_reconciliation, "task_result_not_accepted");
+      const episode = this.db.sql.query("SELECT * FROM episodes WHERE episode_id=? AND task_id=?")
+        .get(episodeId, taskId) as EpisodeRow | null;
+      requireThat(episode?.state === "done" && episode.result !== null, "completed_episode_unavailable");
+      // Reconciliation advances the task fence; equality would reject legitimate recovered output.
+      requireThat(episode.fence <= task.fence && !this.db.sql.query("SELECT 1 FROM episodes WHERE task_id=? AND fence>?")
+        .get(taskId, episode.fence), "completed_episode_superseded");
+      const effect = this.db.sql.query("SELECT state,result FROM effects WHERE effect_id=? AND task_id=? AND episode_id=? AND fence=?")
+        .get(effectId, taskId, episodeId, episode.fence) as { state: string; result: string | null } | null;
+      requireThat(effect?.state === "confirmed" && effect.result !== null, "completed_effect_unavailable");
+      requireThat(!this.db.sql.query("SELECT 1 FROM effects WHERE episode_id=? AND state!='confirmed'").get(episodeId), "unresolved_effects");
+      const result: unknown = JSON.parse(episode.result);
+      requireThat(object(result) && canonical(result) === canonical(JSON.parse(effect.result)), "completed_result_mismatch");
+      return { task: this.snapshot(task), episode_id: episodeId, effect_id: effectId, result };
+    });
+  }
+
   private request<T>(actor: Principal, requestId: string, operation: string, body: unknown, run: () => T, replay: (value: T) => T = value => value): T {
     return command(this.db, actor, requestId, operation, body, run, replay);
   }

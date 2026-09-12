@@ -985,3 +985,11 @@ requires all defaulted fields; use the adapter for raw model envelopes. Neither
 structural validation nor a referenced artifact proves execution success. Actual
 TaskHub/topology identity, ownership and evidence checks must compose this boundary
 before reducers are connected to task completion.
+
+## Terminal result provenance
+
+finish clears active_episode, so topology consumers must retain explicit episode/effect
+identity. Reconciliation advances task fence while retaining original episode fence;
+strict equality rejects recovered results. The new reader instead rejects any newer
+episode and requires current task revision plus matching confirmed effect/episode output.
+This proves runtime acceptance lineage, not the truth of model evidence references.
