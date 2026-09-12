@@ -1,10 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
-import { lstatSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { chmodSync, lstatSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { tmpdir } from "node:os";
 import { ContainerProcessSupervisor, type ContainerProcessSpec } from "../containers/process";
 import { contains, planContainer, resourceMounts, type ContainerConfiguration } from "../containers/plan";
-import type { ProcessAdmission, ProcessOutcome, ProcessSpec } from "../process-supervisor";
+import { ProcessSupervisor, type ProcessAdmission, type ProcessOutcome, type ProcessSpec } from "../process-supervisor";
 import { privateFile } from "../private-runtime-file";
 import { canonical, digest, requireThat } from "../value";
 import { assertNativeAgentConfiguration, type NativeAgentConfiguration } from "./native-agent-profile";
@@ -82,7 +82,8 @@ export class ClaudeContainerProbeRunner {
 }
 interface Containers { run(spec: ContainerProcessSpec, admission: ProcessAdmission): Promise<ProcessOutcome> }
 const helperSource = join(import.meta.dir, "claude-control-process.ts");
-const sources = [helperSource, join(import.meta.dir, "claude-control.ts"), join(import.meta.dir, "opencode-events.ts"), join(import.meta.dir, "../value.ts")];
+const sources = [helperSource, join(import.meta.dir, "claude-control.ts"), join(import.meta.dir, "claude-structured-output.ts"), join(import.meta.dir, "opencode-events.ts"), join(import.meta.dir, "../value.ts"),
+  ...["index.ts", "validation.ts", "validators/schemas.ts"].map(path => join(import.meta.dir, "../../../controlmesh-protocol/src", path)), join(import.meta.dir, "../../../../pnpm-lock.yaml")];
 const sourceDigest = () => digest(sources.map(path => createHash("sha256").update(readFileSync(path)).digest("hex")));
 
 function executableIdentity(path: string): string {
@@ -135,9 +136,20 @@ export class ClaudeContainerControlRunner {
       requireThat(channel.node_executable === profile.container.node_executable, "claude_container_client_node_mismatch");
     }
     const sourceRevision = sourceDigest();
-    const built = await Bun.build({ entrypoints: [helperSource], target: "bun", format: "esm" });
-    requireThat(built.success && built.outputs.length === 1 && sourceDigest() === sourceRevision, "claude_container_helper_build_failed");
-    const text = await built.outputs[0].text(), hash = createHash("sha256").update(text).digest("hex");
+    // Isolate bundler caches from long-lived runtime SQLite/native handles. Build before any provider dispatch.
+    const pending = join(profile.asset_directory, `build-${randomUUID()}.mjs`);
+    let text: string;
+    try {
+      writeFileSync(pending, "", { flag: "wx", mode: 0o600 });
+      const built = await new ProcessSupervisor().run({ command: [profile.bun_executable, "--no-env-file", "build", helperSource,
+        "--target=bun", "--format=esm", "--outfile", pending], cwd: profile.asset_directory,
+        env: { PATH: "/usr/bin:/bin", LANG: "C.UTF-8" }, timeout_ms: 10000, max_output_bytes: 8192 },
+      { assertCurrent: () => { requireThat(sourceDigest() === sourceRevision, "claude_container_helper_source_changed"); } });
+      requireThat(built.reason === "exited" && built.exit_code === 0 && sourceDigest() === sourceRevision, "claude_container_helper_build_failed");
+      chmodSync(pending, 0o600); text = privateFile(pending).bytes.toString();
+      requireThat(text.length > 0, "claude_container_helper_build_failed");
+    } finally { try { unlinkSync(pending); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; } }
+    const hash = createHash("sha256").update(text).digest("hex");
     const helper = join(profile.asset_directory, `${hash}.mjs`);
     try { writeFileSync(helper, text, { flag: "wx", mode: 0o600 }); }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }

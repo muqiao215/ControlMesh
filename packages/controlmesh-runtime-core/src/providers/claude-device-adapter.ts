@@ -18,6 +18,7 @@ import { ClaudeContainerControlRunner, ClaudeContainerProbeRunner } from "./clau
 import { assertClaudeTaskConfiguration, claudeContainerProfile, claudeProbeBinding, claudeTaskScope, findClaudeSession, validateClaudeTaskSession, type ClaudeTaskConfiguration } from "./claude-task-profile";
 import { ClaudeTaskEvidence, claudeTaskPrompt, decodeClaudeDispatch, retainClaudeOutcome, type ClaudeDispatch } from "./claude-task-evidence";
 import { observeClaudeControl, type ClaudeControlInput } from "./claude-control";
+import { claudeTopologyOutput } from "./claude-structured-output";
 import { directoryIdentity, nativeTaskDigest } from "./native-manifest";
 import { NativeSessionLease } from "./native-lease";
 import type { ClaudeSessionRef } from "./claude-session";
@@ -144,9 +145,10 @@ export class ClaudeDeviceAdapter implements DeviceAdapter {
       await channel.start(); await messages?.start();
       const runner = await ClaudeContainerControlRunner.create({ ...profile, workspace: this.config.workspace, bun_executable: realpathSync(process.execPath),
         asset_directory: assets, environment: this.config.environment, workspace_channel: fileProfile, ...(messageProfile ? { communication_channel: messageProfile } : {}) });
+      const structured = claudeTopologyOutput(delivery);
       const input: ClaudeControlInput = { schema_version: "controlmesh.claude_control.v1", executable: this.config.executable, workspace: this.config.workspace, model: this.config.model,
         session_id: sessionId, resume: !!reference, max_turns: this.config.max_turns ?? 128, prompt: nativeInput(claudeTaskPrompt(task, scope), delivery),
-        workspace_command: channel.command, ...(messages ? { communication_command: messages.command } : {}) };
+        workspace_command: channel.command, ...(messages ? { communication_command: messages.command } : {}), ...(structured ? { structured_output: structured } : {}) };
       const manifest: ClaudeDispatch = { schema_version: "controlmesh.claude_dispatch.v1", task_digest: nativeTaskDigest(task), configuration_digest: registration, binding, input,
         native_directory: directoryIdentity(this.config.environment.config_directory), native_path: store?.path ?? null, baseline: reference ? store!.baseline(reference) : null,
         execution_directory: directoryIdentity(directory), scope, workspace_tools: files.scope, stage: stage ? { path: stage.path, reference: stage.reference() } : null,

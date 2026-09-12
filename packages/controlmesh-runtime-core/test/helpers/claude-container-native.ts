@@ -6,6 +6,7 @@ import { createInterface } from "node:readline";
 
 // Synthetic native source with real stdio MCP; compiled for the container's own Node runtime.
 const args = process.argv.slice(2), model = args[args.indexOf("--model") + 1], cwd = process.cwd();
+const structuredSchema = args.includes("--json-schema") ? JSON.parse(args[args.indexOf("--json-schema") + 1]!) : undefined;
 const emit = (row: unknown) => process.stdout.write(JSON.stringify(row) + "\n");
 if (args.includes("--version")) { console.log("2.1.263 (Claude Code)"); process.exit(0); }
 if (args.includes("--safe-mode")) {
@@ -66,7 +67,7 @@ for await (const line of createInterface({ input: process.stdin })) {
     if (!directWriteDenied) throw new Error("fixture requires a read-only project");
     source("user", frame.message.content);
     emit({ type: "system", subtype: "init", cwd, session_id, model, claude_code_version: "2.1.263", permissionMode: "dontAsk",
-      tools: workspaceTools.map(name => `mcp__workspace__${name}`), mcp_servers: [{ name: "workspace", status: "connected" }], plugins: [], skills: [], slash_commands: [] });
+      tools: [...workspaceTools.map(name => `mcp__workspace__${name}`), ...(structuredSchema ? ["StructuredOutput"] : [])], mcp_servers: [{ name: "workspace", status: "connected" }], plugins: [], skills: [], slash_commands: [] });
     const client = new Client(servers.workspace); await client.initialize();
     const call = async (name: string, input: Record<string, unknown>) => {
       const id = randomUUID(); source("assistant", [{ type: "tool_use", id, name: `mcp__workspace__${name}`, input }], "tool_use");
@@ -82,10 +83,26 @@ for await (const line of createInterface({ input: process.stdin })) {
       if (!written.ok) throw new Error("fixture write failed");
       await call("read_file", { request_id: "readback", path: "result.txt" });
       }
-      const text = existsSync(join(config, "fixture-result.json")) ? readFileSync(join(config, "fixture-result.json"), "utf8") : "DONE";
-      const message = source("assistant", [{ type: "text", text }], "end_turn");
-      emit({ type: "assistant", session_id, message });
-      emit({ type: "result", session_id, subtype: "success", is_error: false, result: text, num_turns: 5 });
+      let text = existsSync(join(config, "fixture-result.json")) ? readFileSync(join(config, "fixture-result.json"), "utf8") : "DONE";
+      let structured: unknown;
+      if (structuredSchema) {
+        const raw = JSON.parse(text);
+        structured = { schema_version: 1, confidence: null, evidence: [], artifacts: [], next_action: null, repair_hint: null,
+          ...(structuredSchema.properties.round_index ? { stop_reason: null, ...(raw.topology === "director_worker"
+            ? { dispatch_roles: [] } : { winner_role: null, next_candidate_roles: [] }) } : { result_items: [], needs_parent_input: false }), ...raw };
+        const id = randomUUID(), message = source("assistant", [{ type: "tool_use", id, name: "StructuredOutput", input: structured }], "tool_use");
+        emit({ type: "assistant", session_id, message });
+        const uuid = randomUUID();
+        appendFileSync(path, JSON.stringify({ type: "attachment", sessionId: session_id, cwd, isSidechain: false, uuid, parentUuid: parent,
+          attachment: { type: "structured_output", data: structured } }) + "\n"); parent = uuid;
+        const receipt = source("user", [{ type: "tool_result", tool_use_id: id, content: "Structured output provided successfully" }]);
+        emit({ type: "user", session_id, message: receipt });
+        text = JSON.stringify(structured);
+      } else {
+        const message = source("assistant", [{ type: "text", text }], "end_turn");
+        emit({ type: "assistant", session_id, message });
+      }
+      emit({ type: "result", session_id, subtype: "success", is_error: false, result: text, num_turns: 5, ...(structured ? { structured_output: structured } : {}) });
     } finally { await client.close(); }
   }
 }

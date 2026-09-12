@@ -1,5 +1,82 @@
 # Findings
 
+## Native structured topology output integration — 2026-09-12
+
+Claude local/device dispatch now derives an optional structured contract only from the
+coordinator's attributed frozen topology message, matching its bundled schema and current
+role/stage/round. Ordinary Agent/history messages cannot select it. The control helper
+passes a self-contained schema to the native CLI, admits StructuredOutput only for that
+contract, and validates the returned value. Source JSONL must independently prove exactly
+one successful StructuredOutput call with identical input. Canonical result text is then
+derived from that verified value; the original native text digest is retained. File reads,
+writes, SpecMesh and completion checks remain independent. Older retained text-only
+manifests preserve their original recovery path.
+
+Initial typecheck failures were confined to new fixture shape/index signatures and were
+corrected. Contract/control tests passed: 24 tests / 107 assertions / 24.08s. A configured
+container then failed before dispatch: repeated in-process Bun.build reported SQLite
+bytes at the protocol index.ts import. The actual file remained the original 124-byte
+TypeScript export entry (no Git change). A test-only adapter wrapper exposed this hidden
+preparation exception. Bundling is now isolated in a supervised, ten-second Bun build
+process with environment-file discovery disabled, temporary output cleanup and source/
+protocol/lockfile hashes rechecked. This avoids sharing bundler state with runtime database
+handles; the exact underlying Bun cache defect is not claimed as independently proven.
+Configured/container and replacement full-gate verification subsequently passed.
+
+The configured container/continuation path passed after build isolation (1 / 53 / 26.51s).
+The first full gate exposed the same in-process bundling problem in test executables that
+had newly imported production normalizers. Those synthetic executables now emit independent
+complete fixture envelopes, without importing the production schema engine. The failed
+full run was 733 pass / 20 fail / 9513 assertions; the replacement gate passed: 753 / 9722 / 282.51s, before the subsequent dialect and native terminal corrections.
+
+The new real topology attempt stopped before any task input: the pinned native CLI rejected
+the bundled schema's Draft 2020-12 URI with "no schema with key or ref". Retained wrapper
+output contains only started/exited, no input_attempted or native rows, and there are no
+session JSONL files. One readiness preflight occurred; the dispatched runtime attempt stays
+unknown and guarded, not accepted or replayable. The CLI needs a compatible generation
+schema; CM must retain full canonical protocol validation independently. Operator record:
+outputs/runtime-convergence/structured-topology-continuation-native-acceptance-20260912.
+
+The compatible generation schema now uses Draft 7 only after verifying every schema
+keyword is in the supported common vocabulary. CM still applies the original canonical
+schema. Typecheck and scoped contract/control/configured container checks passed:
+26 tests / 164 assertions / 37.20s.
+
+A fresh Draft 7 canary completed eight actual workspace reads and one StructuredOutput
+call (native process exit 0, result subtype success, ten native turns). CM still recorded
+unknown because observeClaudeControl required a final assistant text block; the source
+parser also rejected the native structured_output attachment and receipt-only terminal.
+The synthetic fixture had incorrectly added a final prose message, hiding this behavior.
+The stream parser now requires the final structured call, matching value and success
+receipt. The source parser independently requires the matching attributed attachment and
+receipt, including an idle baseline for later same-session append. Pending tools, changed
+attachment values, missing/failed receipts, duplicate attachments and mismatched stream
+values reject. The configured fixture now emits the observed native terminal shape.
+
+Read-only inspection of the retained real stream and original JSONL passed after the fix:
+nine tools, eight required reads, matching StructuredOutput and idle native baseline;
+zero model inputs and no journal changes. Its overall report remains accepted=false and
+the worker unknown; this diagnostic is not parent completion or reconciliation. Guard
+structured-topology-draft7-native-acceptance-20260912 and original session
+d78ac3c6-990c-409c-8eb6-0c6bb858afce against replay. Latest focused tests passed:
+41 / 198 / 15.29s with typecheck; full final-source gate passed: 755 / 9744 / 72 files / 284.03s, exit 0. These are single-host
+fixtures with pre-delivered files, not automatic transfer or new physical-device evidence.
+
+Fresh terminal-shape acceptance used one preflight and two task inputs on one physical
+host. The worker completed through the actual configured CM device owner. The merger
+then exhausted the native five-attempt structured-output budget (fourteen native turns):
+all five calls supplied schema_version="1" rather than numeric 1, with additional missing/
+empty nullable fields on some attempts. The native process exited 0 with an explicit
+error result; CM did not accept its output or classify it as account quota. The merger
+remains unknown; the root never completed and the planned continuation was not executed.
+Keep this report and sessions 79692315-7869-40ad-b069-7f058075a36b and
+18440519-8f3d-4599-a7d7-916348fb38db guarded; no repeated model run in this checkpoint.
+The generation-only version field now explicitly declares integer alongside const 1;
+this preserves the schema semantics and rejects coercion. Real-model reliability of that
+additional hint is pending, not claimed from the passing worker or synthetic fixtures.
+Final typecheck and source/control/contract/container checks passed: 48 tests / 251
+assertions / 4 files / 53.83s. Remote CI will cover this final additive hint with the full suite.
+
 ## Normal project continuation controls — 2026-09-12
 
 The kernel already archived a completed topology and retained its task identity, but

@@ -553,6 +553,24 @@ blocks before another role is queued. Existing mailbox ordering and backpressure
 Older pending candidates without an issued context remain blocked for explicit migration
 handling; completed evidence is retained. This is not authorization to reopen or replay them.
 
+Claude local/device topology dispatch derives its optional native output contract only
+from that attributed coordinator snapshot. The pinned CLI receives a self-contained Draft 7
+generation schema after its vocabulary is checked for compatibility; result acceptance still
+uses the original canonical protocol schema and frozen role/stage/round. StructuredOutput
+is admitted only with this contract. Stream results and native JSONL tool receipts must agree;
+schema validity alone cannot establish completion. A native structured_output attachment,
+its matching tool call and successful receipt can close the native turn without a final
+prose reply. This verified terminal also permits a later baseline/append on the original
+session. Other pending tools or unsupported attachments still reject. Canonical scheduler
+text is derived from the verified object, retaining a digest of the CLI result text. Required
+file reads, workspace publication, SpecMesh and completion gates remain independent.
+
+Container control helpers are built in a separate supervised Bun process before provider
+dispatch, with a ten-second limit and environment-file discovery disabled. Source/protocol/
+lockfile digests are checked around the build; bounded private output is retained by hash
+and temporary output is removed. Recovery reads retained helpers/evidence without building
+or running a provider. This avoids sharing in-process bundler state with runtime SQLite.
+
 `LocalTaskRuntime` adds the private local task execution owner. SQLite schema 8 stores
 queued runs, their expected task revision and provider/profile binding, plus the claimed
 episode and terminal outcome. Two controllers sharing the configured principal/device

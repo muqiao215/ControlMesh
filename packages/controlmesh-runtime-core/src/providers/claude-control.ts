@@ -2,6 +2,7 @@ import { isAbsolute } from "node:path";
 import { canonical, digest, object, requireThat } from "../value";
 import type { ProcessOutcome } from "../process-supervisor";
 import { nativeFailure, type ProviderFailure } from "./opencode-events";
+import { claudeStructuredSchema, decodeClaudeStructuredOutput, verifyClaudeStructuredValue, type ClaudeStructuredOutput } from "./claude-structured-output";
 
 export const claudeNativeVersion = "2.1.263";
 const fileTools = ["edit_file", "read_file", "write_file"];
@@ -17,6 +18,7 @@ export interface ClaudeControlInput {
   max_turns: number;
   workspace_command: string[];
   communication_command?: string[];
+  structured_output?: ClaudeStructuredOutput;
 }
 export interface ClaudeControlAction { frames: Record<string, unknown>[]; delay_ms?: number }
 const same = (a: unknown, b: unknown) => canonical(a) === canonical(b);
@@ -25,7 +27,7 @@ const names = (value: unknown, expected: string[]): boolean => Array.isArray(val
 
 export function validateClaudeControlInput(value: unknown): asserts value is ClaudeControlInput {
   requireThat(object(value) && same(Object.keys(value).sort(), ["schema_version", "executable", "workspace", "session_id", "resume", "model", "prompt", "max_turns", "workspace_command",
-    ...(value.communication_command === undefined ? [] : ["communication_command"])].sort()), "invalid_claude_control_input");
+    ...(value.communication_command === undefined ? [] : ["communication_command"]), ...(value.structured_output === undefined ? [] : ["structured_output"])].sort()), "invalid_claude_control_input");
   requireThat(value.schema_version === "controlmesh.claude_control.v1" && typeof value.executable === "string" && isAbsolute(value.executable)
     && typeof value.workspace === "string" && isAbsolute(value.workspace) && typeof value.session_id === "string"
     && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(value.session_id)
@@ -37,6 +39,7 @@ export function validateClaudeControlInput(value: unknown): asserts value is Cla
   requireThat(value.communication_command === undefined || (Array.isArray(value.communication_command) && value.communication_command.length === 3
     && value.communication_command.every(part => typeof part === "string" && isAbsolute(part) && part.length <= 4096 && !/[\x00\r\n]/.test(part))), "invalid_claude_control_input");
   requireThat(!/[\x00\r\n]/.test(value.executable + value.workspace) && Buffer.byteLength(canonical(value)) <= 65536, "invalid_claude_control_input");
+  if (value.structured_output !== undefined) decodeClaudeStructuredOutput(value.structured_output);
 }
 
 export function claudeWorkspaceServer(input: ClaudeControlInput): Record<string, unknown> {
@@ -53,7 +56,8 @@ export function claudeControlCommand(input: ClaudeControlInput): string[] {
     "--setting-sources", "", "--settings", '{"disableAllHooks":true}', "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
     "--no-chrome", "--disable-slash-commands", "--tools", "", "--permission-mode", "dontAsk", "--allowedTools",
     Object.keys(claudeServerProfiles(input)).map(name => `mcp__${name}__*`).join(","),
-    "--model", input.model, "--effort", "low", "--max-turns", String(input.max_turns), input.resume ? "--resume" : "--session-id", input.session_id];
+    "--model", input.model, "--effort", "low", "--max-turns", String(input.max_turns),
+    ...(input.structured_output ? ["--json-schema", canonical(claudeStructuredSchema(input.structured_output))] : []), input.resume ? "--resume" : "--session-id", input.session_id];
 }
 
 /** The native control channel is not a task queue. Exactly one input follows verified MCP admission. */
@@ -79,7 +83,7 @@ export class ClaudeControlSession {
     requireThat(object(value) && this.rows.length < 4096 && this.phase !== "new" && this.phase !== "done", "unexpected_claude_control_record");
     this.rows.push(structuredClone(value));
     const profiles = claudeServerProfiles(this.input), serverNames = Object.keys(profiles);
-    const nativeTools = Object.entries(profiles).flatMap(([name, profile]) => profile.tools.map(tool => `mcp__${name}__${tool}`));
+    const nativeTools = [...Object.entries(profiles).flatMap(([name, profile]) => profile.tools.map(tool => `mcp__${name}__${tool}`)), ...(this.input.structured_output ? ["StructuredOutput"] : [])];
     requireThat(value.type !== "control_request", "claude_native_permission_request_refused");
     if (value.type === "control_response") {
       const response = value.response;
@@ -149,6 +153,7 @@ export function claudeModelTurns(messages: unknown[]): { model_turns: number; to
 }
 
 export interface ClaudeControlObservation {
+  structured_output?: Record<string, unknown>;
   terminal: boolean;
   text: string;
   input_attempted: boolean | null;
@@ -198,6 +203,7 @@ export function observeClaudeControl(outcome: ProcessOutcome, input: ClaudeContr
     if (result.is_error === true) {
       // A native task budget is not provider health or account quota evidence.
       if (result.subtype === "error_max_turns") return rejected("claude_native_turn_limit_exceeded");
+      if (result.subtype === "error_max_structured_output_retries") return rejected("claude_structured_output_limit_exceeded");
       const message = [result.error, ...(Array.isArray(result.errors) ? result.errors : []), result.result]
         .flatMap(value => typeof value === "string" ? [value] : object(value) && typeof value.message === "string" ? [value.message] : []).join("\n");
       const failure = nativeFailure(/you['’]?ve hit your limit|exceeded your current quota/i.test(message) ? `usage limit reached; ${message}` : message);
@@ -212,7 +218,21 @@ export function observeClaudeControl(outcome: ProcessOutcome, input: ClaudeContr
     requireThat(final && object(final.message) && typeof final.message.id === "string", "claude_native_final_output_unproven");
     const parts = assistants.filter(row => object(row.message) && row.message.id === (final.message as Record<string, unknown>).id)
       .flatMap(row => (row.message as { content: Record<string, unknown>[] }).content);
-    requireThat(!parts.some(part => part.type === "tool_use") && parts.filter(part => part.type === "text").map(part => part.text).join("") === result.result, "claude_native_final_output_unproven");
-    return { terminal: true, text: result.result, input_attempted: true, invalid_reason: null, failure: null };
+    requireThat(input.structured_output !== undefined || result.structured_output === undefined, "claude_structured_output_unrequested");
+    const structured = input.structured_output ? verifyClaudeStructuredValue(input.structured_output, result.structured_output) : undefined;
+    const calls = parts.filter(part => part.type === "tool_use");
+    if (structured && calls.length > 0) {
+      // Native --json-schema may terminate at the successful tool receipt, without a prose assistant turn.
+      const call = calls[0]!;
+      const receipts = machine.nativeRows.filter(row => row.type === "user" && object(row.message) && Array.isArray(row.message.content))
+        .flatMap(row => (row.message as { content: Record<string, unknown>[] }).content)
+        .filter(part => part.type === "tool_result" && part.tool_use_id === call.id);
+      requireThat(calls.length === 1 && call.name === "StructuredOutput" && digest(call.input) === digest(structured)
+        && receipts.length === 1 && receipts[0]!.is_error !== true && receipts[0]!.content === "Structured output provided successfully"
+        && digest(JSON.parse(result.result)) === digest(structured), "claude_native_final_output_unproven");
+    } else requireThat(calls.length === 0 && parts.filter(part => part.type === "text").map(part => part.text).join("") === result.result,
+      "claude_native_final_output_unproven");
+    return { terminal: true, text: result.result, input_attempted: true, invalid_reason: null, failure: null,
+      ...(structured ? { structured_output: structured } : {}) };
   } catch (error) { return rejected(error instanceof Error && /^[a-z0-9_]{1,96}$/.test(error.message) ? error.message : "invalid_claude_control_output"); }
 }

@@ -210,6 +210,25 @@ checkpoint; pipeline review carries its previous worker output there. No result 
 permission or establishes current file bytes. The Agent returns one JSON object matching
 the contract and reports the actual outcome.
 
+For Claude, that attributed contract now selects native `--json-schema` output. Generation
+uses a compatible Draft 7 view; CM validates the canonical schema and frozen assignment
+again. The stream value must match an actual successful StructuredOutput call in the native
+session. The pinned CLI can end with a structured attachment and tool receipt, without
+another assistant prose message; both terminal forms retain native session identity.
+Plain JSON text and a structured field alone do not waive tool/source/file evidence.
+
+The first integration attempt rejected the schema URI before any task input. A fresh
+Draft 7 attempt then read all eight files and emitted native success, but exposed CM's
+text-only final-message check and unsupported structured attachment. Those parsers are
+corrected; model-free inspection of the retained stream and JSONL now verifies the result
+and idle session. The original worker journal still says unknown: read-only inspection
+does not reconcile it or complete its parent. Neither attempt may be replayed. Complete
+worker/merger continuation through normal startup remains a separate acceptance gate.
+A subsequent fresh attempt accepted its worker but the merger exhausted native schema
+retries by emitting string "1" for the required numeric schema_version. The generated
+schema now explicitly types that constant as integer, without accepting string coercion.
+Its effect on real model reliability is not yet verified; no retry of that attempt is allowed.
+
 The context is limited to 32768 bytes and must fit the existing native prompt budget with
 older mailbox messages. Nothing is silently truncated or skipped. A child lease authorizes
 only its own stored context. Native input preparation materializes an idempotent handoff

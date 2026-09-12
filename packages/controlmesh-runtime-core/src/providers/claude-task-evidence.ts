@@ -1,4 +1,5 @@
 import { missingRequiredReads } from "../native-task-failure";
+import { claudeTopologyOutput, verifyClaudeStructuredTools } from "./claude-structured-output";
 import { closeSync, constants, fsyncSync, openSync, writeFileSync } from "node:fs";
 import { decodeTaskCompletion } from "../task-completion";
 import { dirname, join, relative } from "node:path";
@@ -107,6 +108,8 @@ export class ClaudeTaskEvidence {
     requireThat(m.baseline ? digest(m.baseline.reference) === digest(this.task.native_session)
       && m.input.session_id === m.baseline.reference.session_id : !this.task.native_session, "claude_original_session_changed");
     requireThat(m.input.resume === Boolean(m.baseline) && m.input.prompt === nativeInput(claudeTaskPrompt(this.task, scope), m.mailbox_delivery), "claude_native_input_changed");
+    // Older retained manifests keep their original text-only evidence path; new dispatches freeze this contract.
+    if (m.input.structured_output) requireThat(digest(m.input.structured_output) === digest(claudeTopologyOutput(m.mailbox_delivery)), "claude_structured_assignment_changed");
     requireThat(Boolean(scope.communication) === Boolean(m.communication) && Boolean(m.communication) === Boolean(m.input.communication_command), "claude_communication_scope_changed");
     if (m.communication) {
       requireThat(this.verifyCommunication && m.communication.task_id === this.task.task_id
@@ -135,7 +138,9 @@ export class ClaudeTaskEvidence {
     const files = new NativeWorkspaceFiles({ workspace: this.config.workspace, read_files: scope.reads, tools: scope.tools,
       journal_directory: join(m.execution_directory.path, "receipts"), binding_digest: String(m.workspace_tools.binding_digest),
       ...(this.stage ? { stage: this.stage } : {}), retained_scope: m.workspace_tools }, run => run(), this.current);
-    requireThat(native.tools.every(tool => tool.name.startsWith("mcp__workspace__") || (m.communication && tool.name.startsWith("mcp__controlmesh__"))), "claude_native_tool_ungranted");
+    if (m.input.structured_output) verifyClaudeStructuredTools(m.input.structured_output, observed.structured_output, native.tools);
+    requireThat(native.tools.every(tool => tool.name.startsWith("mcp__workspace__") || (m.communication && tool.name.startsWith("mcp__controlmesh__"))
+      || (m.input.structured_output && tool.name === "StructuredOutput")), "claude_native_tool_ungranted");
     const proof = files.verify(native.tools.filter(tool => tool.name.startsWith("mcp__workspace__")).map(tool => {
       return { tool: "controlmesh_" + tool.name.slice("mcp__workspace__".length), input: tool.input, output: tool.output };
     }), []);
@@ -144,8 +149,10 @@ export class ClaudeTaskEvidence {
     this.communicationTools = native.tools.filter(tool => tool.name.startsWith("mcp__controlmesh__"))
       .map(tool => ({ tool: tool.name.replace("mcp__controlmesh__", "controlmesh_"), input: tool.input, output: tool.output }));
     const communication = m.communication ? this.verifyCommunication!(m.communication, this.communicationTools) : undefined;
+    const text = observed.structured_output ? canonical(observed.structured_output) : observed.text;
     const result: Record<string, unknown> = { native_session: native.reference, user_message_id: native.user_message_id,
-      assistant_message_ids: native.assistant_message_ids, text: observed.text, output_digest: digest(observed.text), workspace_tools: proof,
+      assistant_message_ids: native.assistant_message_ids, text, output_digest: digest(text), workspace_tools: proof,
+      ...(m.input.structured_output ? { structured_output: { schema_name: m.input.structured_output.schema_name, native_text_digest: digest(observed.text), value_digest: digest(observed.structured_output) } } : {}),
       ...(taskFailure ? { task_failure: taskFailure } : {}), ...(completion ? { completion } : {}), read_files: proof.read_files, native_turns: turns, ...(communication ? { communication } : {}), ...(container ? { container } : {}),
       ...(m.mailbox_delivery ? { mailbox_delivery: nativeMailboxEvidence(m.mailbox_delivery, native.user_message_id) } : {}) };
     if (this.stage) {

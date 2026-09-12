@@ -1,4 +1,4 @@
-import { object, requireThat } from "../value";
+import { digest, object, requireThat } from "../value";
 
 export interface ClaudeToolEvidence {
   id: string;
@@ -36,6 +36,7 @@ export function inspectClaudeChain(records: Record<string, unknown>[], sessionId
   const turns: InspectedTurn[] = [];
   let current: typeof turns[number] | undefined, finalMessageId: string | undefined;
   let resumePadding: "assistant" | "input" | null = null;
+  let structuredAttachment: { id: string; data: Record<string, unknown> } | undefined, structuredTerminal = false;
   const finalText: string[] = [];
   for (const [index, row] of records.entries()) {
     requireThat(!("sessionId" in row) || row.sessionId === sessionId, "native_session_mismatch");
@@ -64,7 +65,14 @@ export function inspectClaudeChain(records: Record<string, unknown>[], sessionId
     requireThat(row.parentUuid === tip || pendingParent, "native_parent_mismatch");
     seen.add(row.uuid); tip = row.uuid;
     if (row.type === "attachment") {
-      requireThat(current && !current.interrupted && last?.role === "user" && object(row.attachment), "unsupported_native_attachment");
+      requireThat(current && !current.interrupted && object(row.attachment), "unsupported_native_attachment");
+      if (row.attachment.type === "structured_output") {
+        const call = [...pending.values()][0]?.evidence;
+        requireThat(last?.role === "assistant" && pending.size === 1 && call?.name === "StructuredOutput" && !structuredAttachment
+          && object(row.attachment.data) && digest(row.attachment.data) === digest(call.input), "invalid_native_structured_attachment");
+        structuredAttachment = { id: call.id, data: call.input }; continue;
+      }
+      requireThat(last?.role === "user", "unsupported_native_attachment");
       if (row.attachment.type === "max_turns_reached") {
         requireThat(!queued && pending.size === 0 && current.models.length > 0 && current.evidence.tools.length > 0
           && Number.isSafeInteger(row.attachment.maxTurns) && (row.attachment.maxTurns as number) > 0
@@ -109,14 +117,20 @@ export function inspectClaudeChain(records: Record<string, unknown>[], sessionId
           requireThat(row.sourceToolAssistantUUID === undefined || row.sourceToolAssistantUUID === call.owner, "native_tool_parent_mismatch");
           current.evidence.tools.push({ ...call.evidence, output: contentText(part.content), is_error: part.is_error === true });
           pending.delete(part.tool_use_id);
+          if (structuredAttachment?.id === part.tool_use_id) {
+            requireThat(pending.size === 0 && part.is_error !== true && contentText(part.content) === "Structured output provided successfully",
+              "native_structured_receipt_unproven");
+            structuredTerminal = true; current.evidence.output = JSON.stringify(structuredAttachment.data);
+          }
         }
       } else {
-        requireThat(pending.size === 0 && (!last || last.stop_reason === "end_turn" || current?.interrupted), "native_session_not_idle");
+        requireThat(pending.size === 0 && (!last || last.stop_reason === "end_turn" || current?.interrupted || structuredTerminal), "native_session_not_idle");
         current = { prompt: contentText(parts), evidence: { user_message_id: row.uuid, assistant_message_ids: [], tools: [], output: "" }, models: [], interrupted: false };
         if (index >= offset) turns.push(current);
-        finalMessageId = undefined; finalText.length = 0;
+        finalMessageId = undefined; finalText.length = 0; structuredAttachment = undefined; structuredTerminal = false;
       }
     } else {
+      structuredTerminal = false;
       requireThat(current && !current.interrupted && id(message.id) && typeof message.model === "string" && !message.model.startsWith("<") && Array.isArray(parts) && parts.length > 0, "unsupported_native_content");
       current.evidence.assistant_message_ids.push(row.uuid); current.models.push(message.model);
       if (message.id !== finalMessageId) {
@@ -138,6 +152,6 @@ export function inspectClaudeChain(records: Record<string, unknown>[], sessionId
     }
     last = message;
   }
-  requireThat(!queued && pending.size === 0 && resumePadding === null && (current?.interrupted || (last?.role === "assistant" && last.stop_reason === "end_turn")) && tip !== null, "native_session_not_idle");
+  requireThat(!queued && pending.size === 0 && resumePadding === null && (current?.interrupted || structuredTerminal || (last?.role === "assistant" && last.stop_reason === "end_turn")) && tip !== null, "native_session_not_idle");
   return { tip_uuid: tip, turns };
 }

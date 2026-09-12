@@ -11,6 +11,32 @@ jobs, including both Python versions, protocol/SDK/Web, container execution and 
 installed-wheel smoke. It includes canonical device artifact verification and fixes the
 bundled-schema drift that made the preceding 8d5dae2 CI fail.
 
+Normal continuation controls are published at c7f46ce; exact-commit CI 34699492179 passed.
+Current work integrates native structured topology results into local/device Claude
+dispatch and evidence. Replacement full gate passed: 753 tests / 9722 assertions / 72 files /
+282.51s, before final CLI dialect and native terminal fixes. Draft 7 scoped checks then
+passed: 26 tests / 164 assertions / 37.20s. The native integration identified a real parser
+defect: Claude can end at a successful StructuredOutput receipt, with no prose final.
+Its JSONL also contains a structured_output attachment. The corrected stream/source parser
+now verifies the retained actual worker output and an idle original session, using zero
+new model inputs and without modifying the unknown task journal. It proves eight file
+reads and one matching successful StructuredOutput call, not full parent completion.
+Latest focused source/control/contract checks: 41 tests / 198 assertions / 15.29s; typecheck
+passed. Full final-source runtime gate passed: 755 tests / 9744 assertions / 72 files / 284.03s,
+exit 0 (/tmp/cm-structured-terminal-full.log), including configured container continuation.
+
+A fresh real terminal-shape canary then accepted the worker through the full CM device
+path (eight reads, native result/source, SpecMesh and container cleanup). The merger failed
+native structured generation after five attempts: each emitted schema_version as string
+"1", but the contract requires numeric 1. Native terminal reason was
+structured_output_retry_exhausted; this is not provider quota. Its worker journal stays
+unknown and the parent never completed; no continuation inputs occurred. Report:
+structured-topology-terminal-native-acceptance-20260912 (accepted=false, do_not_replay=true).
+No further real-model inputs are being issued in this checkpoint. Generation now explicitly
+types schema_version as integer while acceptance continues rejecting strings. The 755-test
+gate precedes this final additive schema hint; final typecheck and scoped/container checks
+passed: 48 tests / 251 assertions / 4 files / 53.83s (/tmp/cm-structured-version-final.log).
+
 Current implementation adds private local/coordinator reopen_schedule and
 inspect_schedule_run controls. Explicit continuation archives the verified terminal run,
 retains TaskHub/native identities and frozen roles/budgets, and activates the next normal
@@ -25,8 +51,8 @@ is synthetic in that fixture; real-model continuation remains open.
 A separate bounded native structured-output probe passed with actual Claude 2.1.263 and
 MiniMax-M3: one input, two native turns, only StructuredOutput advertised/called, correct
 schema fact and verified session/model identity. The pinned container was removed and
-temporary credentials deleted. No prior native session was replayed. This capability has
-not yet been integrated into the CM control/evidence path with workspace MCP.
+temporary credentials deleted. No prior native session was replayed. The capability is now integrated into the candidate control/evidence path with workspace
+MCP; full real topology continuation remains unaccepted.
 
 The published artifact increment enables canonical root acceptance for device-native results through
 normal coordinator startup. Explicit device/workspace provenance and actual completed
@@ -74,10 +100,9 @@ canary remains running. Controlled tests do not substitute for this failed gate.
 
 ## Remaining
 
-1. Integrate the verified native structured-output capability into CM's topology
-   dispatch/evidence path, then finish genuine topology continuation and artifact acceptance.
-   Normal continuation controls passed configured/container tests; their publication CI
-   must be verified. Canonical artifact publication and its exact-commit CI passed.
+1. Publish the structured-output compatibility fix after final regression, then finish
+   genuine topology continuation and artifact acceptance. Existing continuation control
+   and canonical artifact publication both have passing exact-commit CI.
 2. Complete real native topology and current-source acceptance, remote root artifact
    validation, reviewed SpecMesh closeout and pending candidate-input migration.
 3. Complete remaining provider, transport, store and terminal owners and the parity ledger.

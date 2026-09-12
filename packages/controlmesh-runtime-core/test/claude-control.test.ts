@@ -33,6 +33,43 @@ test("the owned control process admits exactly one input after the dynamic tool 
   expect(args).toContain("--resume"); expect(args).not.toContain("--continue"); expect(args).not.toContain("--no-session-persistence");
   expect(args[args.indexOf("--tools") + 1]).toBe(""); expect(args).not.toContain(f.input.prompt);
 });
+for (const mode of ["success", "structured-missing", "structured-wrong-role", "builtin"]) test(`native schema mode with dynamic MCP validates ${mode}`, async () => {
+  const f = fixture(mode);
+  f.input.structured_output = { schema_name: "team-structured-result.schema.json", bindings: { topology: "pipeline", substage: "worker_running", worker_role: "worker" } };
+  const command = claudeControlCommand(f.input), schema = JSON.parse(command[command.indexOf("--json-schema") + 1]!);
+  expect(schema.properties.worker_role.const).toBe("worker"); expect(schema.additionalProperties).toBe(false);
+  const outcome = await new ClaudeControlRunner().run(f.input, f.environment, { assertCurrent: () => {} });
+  const observed = observeClaudeControl(outcome, f.input); expect(observed.terminal).toBe(mode === "success");
+  if (mode === "success") expect(observed).toMatchObject({ text: "DONE", structured_output: { worker_role: "worker", status: "completed" } });
+});
+test("native structured-output exhaustion is a task-format limit, not an account quota failure", async () => {
+  const f = fixture();
+  f.input.structured_output = { schema_name: "team-structured-result.schema.json", bindings: { topology: "pipeline", substage: "worker_running", worker_role: "worker" } };
+  const outcome = await new ClaudeControlRunner().run(f.input, f.environment, { assertCurrent: () => {} });
+  const rows = outcome.stdout.trim().split("\n").map(line => JSON.parse(line));
+  const result = rows.find(row => row.event === "native" && row.row.type === "result").row;
+  result.is_error = true; result.subtype = "error_max_structured_output_retries";
+  const observed = observeClaudeControl({ ...outcome, stdout: rows.map(row => JSON.stringify(row)).join("\n") + "\n" }, f.input);
+  expect(observed).toMatchObject({ terminal: false, failure: null, invalid_reason: "claude_structured_output_limit_exceeded" });
+});
+test("terminal StructuredOutput needs matching stream call, successful receipt and value without a prose reply", async () => {
+  const f = fixture("structured-terminal");
+  f.input.structured_output = { schema_name: "team-structured-result.schema.json", bindings: { topology: "pipeline", substage: "worker_running", worker_role: "worker" } };
+  const outcome = await new ClaudeControlRunner().run(f.input, f.environment, { assertCurrent: () => {} });
+  const observed = observeClaudeControl(outcome, f.input);
+  expect(observed.terminal).toBe(true); expect(JSON.parse(observed.text)).toEqual(observed.structured_output);
+  const original = outcome.stdout.trim().split("\n").map(line => JSON.parse(line));
+  for (const defect of ["missing-receipt", "error", "wrong-receipt", "wrong-value", "wrong-call", "duplicate-receipt"]) {
+    const rows = structuredClone(original), receipt = rows.find(row => row.row?.type === "user"), result = rows.find(row => row.row?.type === "result");
+    if (defect === "missing-receipt") rows.splice(rows.indexOf(receipt), 1);
+    if (defect === "error") receipt.row.message.content[0].is_error = true;
+    if (defect === "wrong-receipt") receipt.row.message.content[0].tool_use_id = "foreign";
+    if (defect === "wrong-value") result.row.result = '{"unrelated":true}';
+    if (defect === "wrong-call") rows.find(row => row.row?.type === "assistant").row.message.content[0].input.summary = "changed";
+    if (defect === "duplicate-receipt") rows.splice(rows.indexOf(receipt), 0, structuredClone(receipt));
+    expect(observeClaudeControl({ ...outcome, stdout: rows.map(row => JSON.stringify(row)).join("\n") + "\n" }, f.input).terminal).toBe(false);
+  }
+});
 test("failed registration, extra tools and native permission requests withhold all user input", async () => {
   for (const mode of ["registration-error", "extra-tool", "permission-control"]) {
     const f = fixture(mode), outcome = await new ClaudeControlRunner().run(f.input, f.environment, { assertCurrent: () => {} });

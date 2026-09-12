@@ -50,6 +50,32 @@ test("new sessions need one exact input and terminal output; prompt/model drift 
   appendFileSync(s.path, s.encode([s.user(3, 2, "next"), s.assistant(4, 3, [s.text("done")]), s.user(5, 4, "concurrent"), s.assistant(6, 5, [s.text("extra")])]));
   expect(() => s.store.verifyTurn(session, baseline, "next", "done", "fixture-model")).toThrow("native_concurrent_turn_or_missing_lineage");
 });
+test("native structured attachment and successful receipt establish an idle original session without a prose final", () => {
+  const s = setup(), baseline = s.store.baseline(s.store.read(session)), value = { summary: "current file fact", status: "completed" };
+  const added = [s.user(3, 2, "structured task"),
+    s.assistant(4, 3, [{ type: "tool_use", id: "structured", name: "StructuredOutput", input: value }], "tool_use"),
+    s.node(5, 4, "attachment", { attachment: { type: "structured_output", data: value } }),
+    s.user(6, 5, [{ type: "tool_result", tool_use_id: "structured", content: "Structured output provided successfully" }]),
+    { type: "last-prompt", sessionId: session, leafUuid: uuid(6), lastPrompt: "structured task" }];
+  appendFileSync(s.path, s.encode(added));
+  const proof = s.store.verifyTurn(session, baseline, "structured task", JSON.stringify(value), "fixture-model");
+  expect(proof.tools).toHaveLength(1); expect(proof.output).toBe(JSON.stringify(value));
+  const next = s.store.baseline(proof.reference); expect(next.tip_uuid).toBe(uuid(6));
+  appendFileSync(s.path, s.encode([s.user(7, 6, "continue"), s.assistant(8, 7, [s.text("remembered")])]));
+  expect(s.store.verifyTurn(session, next, "continue", "remembered", "fixture-model").reference.session_id).toBe(session);
+  for (const defect of ["attachment", "missing-attachment", "failed-receipt", "missing-receipt", "extra-tool", "foreign-tool", "duplicate-attachment"]) {
+    const rows = structuredClone(added) as any[];
+    if (defect === "attachment") rows[2].attachment.data = { forged: true };
+    if (defect === "missing-attachment") { rows.splice(2, 1); rows[2].parentUuid = uuid(4); }
+    if (defect === "failed-receipt") rows[3].message.content[0].is_error = true;
+    if (defect === "missing-receipt") { rows.splice(3, 1); rows[3].leafUuid = uuid(5); }
+    if (defect === "extra-tool") rows[1].message.content.push({ type: "tool_use", id: "other", name: "Read", input: {} });
+    if (defect === "foreign-tool") rows[1].message.content[0].name = "Read";
+    if (defect === "duplicate-attachment") { rows.splice(3, 0, s.node(9, 5, "attachment", { attachment: { type: "structured_output", data: value } })); rows[4].parentUuid = uuid(9); }
+    writeFileSync(s.path, s.encode([...s.rows, ...rows]));
+    expect(() => s.store.verifyTurn(session, baseline, "structured task", JSON.stringify(value), "fixture-model")).toThrow();
+  }
+});
 test("same-size old changes, metadata edits, truncation and replaced source cannot pass an append receipt", () => {
   const s = setup(), raw = s.encode([...s.rows, { type: "cost-state", sessionId: session, counter: "9007199254740993" }]);
   writeFileSync(s.path, raw); const baseline = s.store.baseline(s.store.read(session));

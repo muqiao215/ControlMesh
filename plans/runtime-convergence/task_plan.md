@@ -69,13 +69,14 @@ No claim that full TS migration or distributed coordination has completed. A sco
 
 ## Next Step
 
-Publish verified normal local/coordinator continuation controls (740-test full gate), then
-integrate native structured outputs into CM dispatch and evidence. An isolated actual
-Claude/MiniMax probe proved the CLI capability; it is not yet wired into CM's workspace
-MCP/topology path. Canonical artifacts are published at 049ebb7 with CI 34698466927 passing.
-The prior failed fenced-JSON task remains guarded against replay. Finish genuine topology
-continuation, native/source/artifact acceptance and all remaining CM-R0–CM-R7 owners and
-rollout gates. See progress.md for exact current evidence.
+Publish the verified native structured-output compatibility fix and verify exact-commit
+CI. Then qualify reliable native worker/merger results before another bounded continuation
+acceptance: the latest real worker passed, but its merger exhausted the native schema
+retry limit after returning a string version. An explicit numeric generation type is now
+added; its real-model efficacy is unverified. All three structured integration attempts and
+the earlier fenced-JSON attempt remain guarded against replay. Normal continuation controls
+are published at c7f46ce with exact-commit CI 34699492179 passing. Native/source/artifact
+acceptance and remaining CM-R0–CM-R7 owners and rollout gates remain open. See progress.md.
 
 Current implementation and native evidence belong in progress.md and its retained archive,
 not in competing historical next-step instructions. Scoped native acceptance does not

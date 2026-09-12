@@ -16,6 +16,7 @@ import { prepareNativeAgentConfiguration, type NativeAgentConfiguration } from "
 import { NativeWorkspaceFiles } from "./native-workspace-files";
 import { ClaudeControlRunner } from "./claude-control-runner";
 import { observeClaudeControl, validateClaudeControlInput, type ClaudeControlInput } from "./claude-control";
+import { claudeTopologyOutput } from "./claude-structured-output";
 import { ClaudePreflight } from "./claude-preflight";
 import { PreflightCache } from "./preflight-cache";
 import { ProviderPreflightService } from "./preflight-service";
@@ -119,9 +120,11 @@ export class ClaudeTaskAdapter {
       await channel.start();
       const mailbox = new NativeMailboxDelivery(this.kernel), prompt = claudeTaskPrompt(task, scope);
       const delivery = mailbox.prepare(this.actor, lease, prompt, 32768);
+      const structured = claudeTopologyOutput(delivery);
       const input: ClaudeControlInput = { schema_version: "controlmesh.claude_control.v1", executable: this.config.executable, workspace: this.config.workspace,
         session_id: sessionId, resume: !!reference, model: this.config.model, prompt: nativeInput(prompt, delivery),
         max_turns: this.config.max_turns ?? 128, workspace_command: channel.command,
+        ...(structured ? { structured_output: structured } : {}),
         ...(communication ? { communication_command: communication.command } : {}) };
       validateClaudeControlInput(input);
       let container: ClaudeContainerControlRunner | undefined;
