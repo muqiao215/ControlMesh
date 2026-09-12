@@ -359,3 +359,25 @@ test("worker daemon exposes reconnectable local management without starting a pr
     } finally { db.close(); }
   } finally { await service.close(); }
 });
+
+
+test("configured coordinator issues immutable seed receipts and worker bootstrap permissions are explicit", async () => {
+  const f = fixture(); writeFileSync(join(f.workspace, "PROJECT.md"), "original");
+  expect((await f.call("seed-submit", "submit", { task: { task_id: "seed", chat_id: "terminal", status: "waiting", prompt: "input", repo_root: f.workspace } })).ok).toBe(true);
+  const args = { task_id: "seed", expected_revision: 1, workspace_id: "project", files: ["PROJECT.md"] };
+  const issued = await f.call("seed-prepare", "prepare_workspace_seed", args); expect(issued.ok).toBe(true);
+  writeFileSync(join(f.workspace, "PROJECT.md"), "edited after capture");
+  await f.reopen();
+  expect(await f.call("seed-prepare", "prepare_workspace_seed", args)).toEqual(issued);
+  expect((await f.call("seed-prepare", "prepare_workspace_seed", { ...args, files: ["different.md"] })).ok).toBe(false);
+  expect((await f.call("seed-assign", "assign", { task_id: "seed", expected_revision: 1, workspace_id: "project", capability: "native", device_ids: ["worker"], workspace_seed: issued.result })).ok).toBe(true);
+  const client = await f.start(); expect(digest((await client.inspect("seed")).workspace_seed)).toBe(digest(issued.result));
+  const started = await f.call("start", "start"), profile = f.workerConfig((started.result as { endpoint: string }).endpoint);
+  const workspace = profile.value.workspaces.project as Record<string, unknown>;
+  workspace.bootstrap_files = ["PROJECT.md"];
+  writeFileSync(profile.path, JSON.stringify(profile.value), { mode: 0o600 });
+  const worker = openDeviceRuntime(profile.path); await worker.close();
+  workspace.bootstrap_files = ["../outside"];
+  writeFileSync(profile.path, JSON.stringify(profile.value), { mode: 0o600 });
+  expect(() => openDeviceRuntime(profile.path)).toThrow();
+});

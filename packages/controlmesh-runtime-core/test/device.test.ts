@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { createHash, randomBytes } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DeviceClient, DeviceCoordinator, DeviceLeaseAuthority, DeviceWorker, RuntimeDatabase, RuntimeKernel, type DeviceRegistration, type Principal } from "../src";
@@ -353,4 +353,128 @@ test("native device calls cannot forge peers, origin, another lease or revive st
   f.advance(31000);
   await expect(f.parent.call("controlmesh_receive", args)).rejects.toThrow();
   expect(f.db.sql.query("SELECT COUNT(*) AS n FROM messages").get()).toEqual({ n: 0 });
+});
+
+
+test("workspace seed transport binds task assignment and live lease, excludes private files and survives coordinator replacement", async () => {
+  const f = fixture(), client = f.clients[0];
+  writeFileSync(join(f.dir, "PROJECT.md"), "frozen project");
+  writeFileSync(join(f.dir, "private.env"), "excluded fixture");
+  const created = f.kernel.submit(owner, "seed-create", { task_id: "seed-task", chat_id: "test", status: "waiting", prompt: "read inputs", repo_root: f.dir });
+  const ref = f.coordinator.issueWorkspaceSeed(owner, "seed-task", created.revision, "project", ["PROJECT.md"]);
+  const specification = { workspace_id: "project", capability: "synthetic", device_ids: ["device-0"], input: {}, workspace_seed: ref };
+  f.coordinator.assign(owner, "seed-assign", "seed-task", created.revision, specification);
+  const job = await client.inspect("seed-task"); expect(job.workspace_seed).toEqual(ref);
+  expect(JSON.stringify(job)).not.toContain(f.dir);
+  writeFileSync(join(f.dir, "PROJECT.md"), "changed after issue");
+  const other = f.kernel.submit(owner, "seed-other", { task_id: "other", chat_id: "test", status: "waiting", prompt: "read inputs", repo_root: f.dir });
+  expect(() => f.coordinator.assign(owner, "seed-cross", "other", other.revision, specification)).toThrow("workspace_seed_reference_invalid");
+  const authority = await f.claim(client, "seed-task");
+  try {
+    const args = { lease: authority.lease, assignment_digest: job.assignment_digest };
+    const manifest = await client.command("seed_manifest", args) as { reference: unknown; manifest: { files: { path: string }[] } };
+    expect(manifest.reference).toEqual(ref); expect(manifest.manifest.files.map(file => file.path)).toEqual(["PROJECT.md"]);
+    const chunk = await client.command("seed_read", { ...args, path: "PROJECT.md", offset: 0 }) as { content_base64: string };
+    expect(Buffer.from(chunk.content_base64, "base64").toString()).toBe("frozen project");
+    await expect(client.command("seed_read", { ...args, path: "private.env", offset: 0 })).rejects.toThrow("workspace_seed_read_invalid");
+    await expect(client.command("seed_manifest", { ...args, assignment_digest: digest("wrong") })).rejects.toThrow("assignment_revision_conflict");
+    await expect(f.clients[1].command("seed_manifest", args)).rejects.toThrow("assignment_unavailable");
+    const replacement = new DeviceCoordinator(f.kernel, f.registrations), server = replacement.listen(); cleanup.push(() => server.stop(true));
+    const reconnected = new DeviceClient({ endpoint: server.url.origin, token: f.tokens[0], device_id: "device-0" });
+    expect(await reconnected.command("seed_read", { ...args, path: "PROJECT.md", offset: 0 })).toEqual(chunk);
+    f.advance(6000);
+    await expect(reconnected.command("seed_manifest", args)).rejects.toThrow();
+    f.coordinator.revoke(owner, "device-0");
+    await expect(client.command("seed_read", { ...args, path: "PROJECT.md", offset: 0 })).rejects.toThrow("unauthorized");
+  } finally { authority.stop(); }
+});
+
+test("worker refuses assigned seed before claim when receiver admission is unavailable", async () => {
+  const f = fixture(); writeFileSync(join(f.dir, "PROJECT.md"), "input");
+  const created = f.kernel.submit(owner, "seed-create", { task_id: "seed", chat_id: "test", status: "waiting", prompt: "input", repo_root: f.dir });
+  const ref = f.coordinator.issueWorkspaceSeed(owner, "seed", created.revision, "project", ["PROJECT.md"]);
+  f.coordinator.assign(owner, "seed-assign", "seed", created.revision, { workspace_id: "project", capability: "synthetic", device_ids: ["device-0"], input: {}, workspace_seed: ref });
+  let executed = false;
+  const worker = new DeviceWorker(f.clients[0], { workspaces: { project: f.dir }, adapters: { synthetic: { execute: async () => { executed = true; return { observation: {}, result: {} }; } } } });
+  await expect(worker.run("seed")).rejects.toThrow("workspace_seed_receiver_unavailable");
+  expect(executed).toBe(false); expect(f.kernel.inspect(owner, "seed").active_episode).toBeNull();
+});
+
+
+test("worker receives bounded inputs before dispatch and resumes interrupted HTTP chunks without executing early", async () => {
+  const f = fixture(), target = join(f.dir, "worker"), state = join(f.dir, "state");
+  mkdirSync(target); mkdirSync(state, { mode: 0o700 });
+  const receiver = new RuntimeDatabase(join(f.dir, "receiver.sqlite")); cleanup.push(() => receiver.close());
+  const bytes = Buffer.alloc(100000, 37); writeFileSync(join(f.dir, "input.bin"), bytes);
+  writeFileSync(join(target, "local.txt"), "preserved");
+  const created = f.kernel.submit(owner, "transfer-create", { task_id: "transfer", chat_id: "test", status: "waiting", prompt: "input", repo_root: f.dir });
+  const ref = f.coordinator.issueWorkspaceSeed(owner, "transfer", created.revision, "project", ["input.bin"]);
+  f.coordinator.assign(owner, "transfer-assign", "transfer", created.revision, { workspace_id: "project", capability: "synthetic", device_ids: ["device-0"], input: {}, workspace_seed: ref });
+  let interrupt = true, executions = 0;
+  const offsets: number[] = [];
+  const client = new DeviceClient({ endpoint: f.server.url.origin, token: f.tokens[0], device_id: "device-0", fetch: (async (url, init) => {
+    const command = JSON.parse(String(init?.body));
+    if (command.operation === "seed_read") {
+      offsets.push(command.arguments.offset);
+      if (interrupt && command.arguments.offset > 0) { interrupt = false; throw new Error("synthetic link interruption"); }
+    }
+    return fetch(url, init);
+  }) as typeof fetch });
+  const options = { workspaces: { project: target }, workspace_seed: { db: receiver, state_root: state, files: { project: ["input.bin"] } }, adapters: { synthetic: { execute: async () => {
+    executions++; expect(readFileSync(join(target, "input.bin"))).toEqual(bytes);
+    return { observation: { verified: true }, result: { accepted: true } };
+  } } } };
+  expect((await new DeviceWorker(client, options).run("transfer")).status).toBe("unavailable");
+  expect(executions).toBe(0); expect(existsSync(join(target, "input.bin"))).toBe(false);
+  expect(receiver.sql.query("SELECT received FROM workspace_seed_files").get()).toEqual({ received: 32768 });
+  expect((await new DeviceWorker(client, options).run("transfer")).status).toBe("done");
+  expect(executions).toBe(1); expect(offsets).toEqual([0, 32768, 32768, 65536, 98304]);
+  expect(readFileSync(join(target, "local.txt"), "utf8")).toBe("preserved");
+});
+
+
+test.each(["conflict", "permission"])("workspace seed %s failure preserves local work and never dispatches", async failure => {
+  const f = fixture(), target = join(f.dir, "target"), state = join(f.dir, "state"); mkdirSync(target); mkdirSync(state, { mode: 0o700 });
+  const receiver = new RuntimeDatabase(":memory:"); cleanup.push(() => receiver.close());
+  writeFileSync(join(f.dir, "PROJECT.md"), "assigned"); writeFileSync(join(target, "PROJECT.md"), "local edit");
+  const created = f.kernel.submit(owner, "seed-create", { task_id: "seed", chat_id: "test", status: "waiting", prompt: "input", repo_root: f.dir });
+  const ref = f.coordinator.issueWorkspaceSeed(owner, "seed", created.revision, "project", ["PROJECT.md"]);
+  f.coordinator.assign(owner, "seed-assign", "seed", created.revision, { workspace_id: "project", capability: "synthetic", device_ids: ["device-0"], input: {}, workspace_seed: ref });
+  let executed = false;
+  const worker = new DeviceWorker(f.clients[0], { workspaces: { project: target },
+    workspace_seed: { db: receiver, state_root: state, files: { project: [failure === "conflict" ? "PROJECT.md" : "other.md"] } },
+    adapters: { synthetic: { execute: async () => { executed = true; return { observation: {}, result: {} }; } } } });
+  expect((await worker.run("seed")).status).toBe("unavailable"); expect(executed).toBe(false);
+  expect(readFileSync(join(target, "PROJECT.md"), "utf8")).toBe("local edit");
+  expect(f.db.sql.query("SELECT COUNT(*) AS n FROM effects").get()).toEqual({ n: 0 });
+});
+
+test("concurrent input transfers share device request budget while renewing short leases", async () => {
+  const f = fixture(), receiver = new RuntimeDatabase(":memory:"); cleanup.push(() => receiver.close());
+  const bytes = Buffer.alloc(1024 * 1024, 19); writeFileSync(join(f.dir, "input.bin"), bytes);
+  const jobs = ["first", "second"];
+  for (const task_id of jobs) {
+    const created = f.kernel.submit(owner, `create-${task_id}`, { task_id, chat_id: "test", status: "waiting", prompt: "input", repo_root: f.dir });
+    const ref = f.coordinator.issueWorkspaceSeed(owner, task_id, created.revision, "project", ["input.bin"]);
+    f.coordinator.assign(owner, `assign-${task_id}`, task_id, created.revision,
+      { workspace_id: "project", capability: "synthetic", device_ids: ["device-0"], input: {}, workspace_seed: ref });
+  }
+  const errors: string[] = []; let renewals = 0;
+  const shared = new DeviceClient({ endpoint: f.server.url.origin, token: f.tokens[0], device_id: "device-0", fetch: (async (url, init) => {
+    const command = JSON.parse(String(init?.body)); if (command.operation === "renew") renewals++;
+    const response = await fetch(url, init);
+    if (!response.ok) { const body = await response.clone().json() as { error: string }; errors.push(`${command.operation}:${body.error}`); }
+    return response;
+  }) as typeof fetch });
+  const outcomes = await Promise.all(jobs.map(async taskId => {
+    const target = join(f.dir, taskId), state = join(f.dir, `${taskId}-state`); mkdirSync(target); mkdirSync(state, { mode: 0o700 });
+    return new DeviceWorker(shared, { workspaces: { project: target },
+      workspace_seed: { db: receiver, state_root: state, files: { project: ["input.bin"] } },
+      adapters: { synthetic: { execute: async () => {
+        expect(readFileSync(join(target, "input.bin"))).toEqual(bytes);
+        return { observation: { verified: true }, result: { accepted: true } };
+      } } } }).run(taskId, 1000);
+  }));
+  expect(errors).toEqual([]); expect(renewals).toBeGreaterThan(0);
+  expect(outcomes.map(value => value.status)).toEqual(["done", "done"]);
 });

@@ -69,15 +69,17 @@ No claim that full TS migration or distributed coordination has completed. A sco
 
 ## Next Step
 
-Publish registered-context CLI changes, then connect the interactive terminal frontend to the
-same service. The persistent service f1832aa passed full local regression (803 tests / 10317
-assertions) and CI 34711514218. Task/event reads, independent clients, execution-time cancellation,
-SIGKILL/restart and synthetic-container session continuity have focused evidence. The next
-terminal frontend must use this same runtime, profile, grants, queue and native recovery owner.
-The e2b16e3 publication checkpoint passed CI 34709699732. Initial workspace distribution and
-two physical devices remain required. Continue remaining
-native/source/artifact, provider/transport/store/terminal and CM-R0–CM-R7 rollout requirements.
-Complex topology continuation remains unaccepted; no guarded attempt/session may be replayed.
+Complete initial workspace distribution through topology scheduling and physical delivery.
+The configured coordinator now issues a versioned snapshot reference; device assignments
+bind it, and authenticated chunk reads require the current assignment and execution lease.
+Configured workers opt in with bootstrap_files, persist interrupted receipt and publish
+verified inputs before dispatch. Controlled HTTP interruption/retry is tested; topology
+automatic issuance and actual two-device/native acceptance remain open. Do not confuse
+these fixtures with physical delivery or real Agent continuity.
+
+Continue remaining native/source/artifact, provider/transport/store/terminal and CM-R0–CM-R7
+rollout requirements. Complex topology continuation remains unaccepted; no guarded
+attempt/session may be replayed. Production Python ownership and release gates remain.
 
 Current implementation and native evidence belong in progress.md and its retained archive,
 not in competing historical next-step instructions. Scoped native acceptance does not

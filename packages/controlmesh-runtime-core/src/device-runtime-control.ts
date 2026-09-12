@@ -4,7 +4,7 @@ import type { DeviceTopologyRuntime } from "./device-topology-runtime";
 import { adoptSpecMeshCompletion, unchangedSpecMeshCompletion } from "./specmesh-completion";
 import type { SpecMeshPort } from "./specmesh-port";
 import type { DeviceClient } from "./device-client";
-import type { DeviceCoordinator, DeviceRegistration } from "./device-coordinator";
+import type { DeviceCoordinator, DeviceRegistration, DeviceWorkspaceSeedRef } from "./device-coordinator";
 import type { DeviceWorker, DeviceRunAdmission, DeviceRunOutcome } from "./device-worker";
 import type { DeviceScheduler } from "./device-scheduler";
 import type { RuntimeDatabase } from "./database";
@@ -58,7 +58,8 @@ export class DeviceCoordinatorControl implements RuntimeControl {
       const value = request(input, {
         ...topologyControlFields,
         status: [], start: [], submit: ["task", "specmesh_requirements_sha256"], inspect_task: ["task_id"],
-        assign: ["task_id", "expected_revision", "workspace_id", "capability", "device_ids", "peer_tasks", "parent_task", "artifact_transfer"],
+        assign: ["task_id", "expected_revision", "workspace_id", "capability", "device_ids", "peer_tasks", "parent_task", "artifact_transfer", "workspace_seed"],
+        prepare_workspace_seed: ["task_id", "expected_revision", "workspace_id", "files"],
         read_artifact: ["task_id", "expected_revision", "effect_id", "path", "offset", "expected_sha256"],
         cancel: ["task_id", "expected_revision"], resume: ["task_id", "expected_revision", "prompt"],
         revoke: ["device_id"], recover_expired: [],
@@ -97,6 +98,13 @@ export class DeviceCoordinatorControl implements RuntimeControl {
           result = this.coordinator.artifacts.read(this.actor, value.task_id, value.expected_revision as number,
             value.effect_id, value.path, (value.offset ?? 0) as number, value.expected_sha256 as string | undefined); break;
         }
+        case "prepare_workspace_seed": {
+          identifier(value.task_id); identifier(value.workspace_id);
+          requireThat(Array.isArray(value.files) && value.files.every(item => typeof item === "string"), "invalid_workspace_seed_files");
+          result = command(this.kernel.db, this.actor, key, "device.control.prepare_workspace_seed", value,
+            () => this.coordinator.issueWorkspaceSeed(this.actor, value.task_id as string, value.expected_revision as number, value.workspace_id as string, value.files as string[]));
+          break;
+        }
         case "assign": {
           identifier(value.task_id); identifier(value.workspace_id); identifier(value.capability);
           requireThat(Array.isArray(value.device_ids) && value.device_ids.every(item => typeof item === "string"), "invalid_assignment_devices");
@@ -105,6 +113,7 @@ export class DeviceCoordinatorControl implements RuntimeControl {
             workspace_id: value.workspace_id, capability: value.capability, device_ids: value.device_ids as string[], input: {},
             ...(value.peer_tasks === undefined ? {} : { peer_tasks: value.peer_tasks as string[] }),
             ...(value.parent_task === undefined ? {} : { parent_task: value.parent_task as string | null }),
+            ...(value.workspace_seed === undefined ? {} : { workspace_seed: value.workspace_seed as DeviceWorkspaceSeedRef }),
             ...(value.artifact_transfer === undefined ? {} : { artifact_transfer: value.artifact_transfer as boolean }),
           }); result = { assigned: true }; break;
         }

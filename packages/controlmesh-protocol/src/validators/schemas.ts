@@ -432,7 +432,9 @@ export const controlmeshSchemas = {
         "native_input",
         "queue_page",
         "artifact_put",
-        "artifact_reconcile_put"
+        "artifact_reconcile_put",
+        "seed_manifest",
+        "seed_read"
       ]
     },
     "arguments": {
@@ -1021,6 +1023,66 @@ export const controlmeshSchemas = {
             "content_base64": {
               "type": "string",
               "maxLength": 87384
+            }
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "operation": {
+          "const": "seed_manifest"
+        },
+        "arguments": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "lease",
+            "assignment_digest"
+          ],
+          "properties": {
+            "lease": {
+              "$ref": "execution-lease.schema.json"
+            },
+            "assignment_digest": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "operation": {
+          "const": "seed_read"
+        },
+        "arguments": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "lease",
+            "assignment_digest",
+            "path",
+            "offset"
+          ],
+          "properties": {
+            "lease": {
+              "$ref": "execution-lease.schema.json"
+            },
+            "assignment_digest": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "offset": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4194304
             }
           }
         }

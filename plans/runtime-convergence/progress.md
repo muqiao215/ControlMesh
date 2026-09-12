@@ -8,10 +8,10 @@ The 512-module/57-field ledger is an inventory, not completed parity.
 
 | Delivery area | Verified state | Remaining acceptance |
 |---|---|---|
-| Published CI baseline | f1832aa; CI 34711514218 success | Verify registered-context CLI checkpoint after publication |
+| Published CI baseline | 339c463; CI 34715001790 success | Current workspace input integration pending publication/CI |
 | TS runtime | Kernel, local/device execution, mailbox, topology and retained recovery; reconnectable local service/CLI with full local regression | Final CI; remaining provider/transport/store/terminal ownership and parity |
 | Native continuation | Simple direct and streamed exact recall passed; earlier topology first runs and current artifacts passed | Full worker/merger continuation and complex-context acceptance still fail |
-| Multi-device | Earlier physical ARM64/x64 evidence; bounded HTTP artifact inbox/upload/recovery; opt-in canonical publication with CI | Initial workspace distribution, physical transfer acceptance and full profiles |
+| Multi-device | Configured initial input HTTP transfer and pre-dispatch receiver; earlier artifact transport/publication | Topology automatic seed issuance, physical transfer and full native profiles |
 | SpecMesh/History | Independent integration and scoped continuity evidence exist | Reviewed closeout and remaining full integration acceptance |
 | Release/local alignment | Production still Python 0.43.0 | Full-goal acceptance, release/install, staged default switch |
 
@@ -22,12 +22,25 @@ shows invalid read arguments, not a proven concurrent file change. The attempt a
 05a0e591-a529-4401-b28a-932b3e948f95 are guarded against replay. No new native model canary
 was launched during this correction.
 
-Current checkpoint exposes only safe registered context through `status`: project, selected
-Provider/model pairs, write roots and integration presence. CLI `new` uses that registration;
-multiple Providers require selection and incompatible overrides fail before creation.
-Reading configuration does not probe a model or claim quota readiness. Typecheck and focused
-CLI/local-control verification passed 20 tests / 148 assertions / 12.44s, exit 0, in
-/tmp/cm-runtime-description.log. No database/public schema or real model state changed.
+Current work connects initial inputs to configured device execution. Local
+prepare_workspace_seed returns a durable reference scoped to the task's source workspace;
+assign freezes that reference. Worker bootstrap_files grants are separate from native
+write grants. Leased HTTP chunk reads feed a durable receiver before any execution dispatch.
+A controlled link interruption retained 32768 bytes, executed nothing, then resumed at
+that offset and executed once after verified publication. Existing local conflicts and
+ungranted input paths block without dispatch. No real model/device canary was launched.
+
+Final corrected regression: 113 tests passed / 1156 assertions, with one external SpecMesh
+gate initially skipped (/tmp/cm-seed-final-regression.log). That exact gate was then run
+with the independent project configured and passed 1 test / 10 assertions
+(/tmp/cm-seed-specmesh-final.log). Typecheck, Web build, 9 Python protocol tests and
+diff-check passed. Two concurrent 1 MiB transfers use one-second leases, prove actual
+renewals and complete after sharing the device request budget.
+
+The full runtime process completed 832 pass / 1 fail / 10511 assertions in 382.56s
+(/tmp/cm-runtime-seed-wire-full.log). It loaded the earlier worker implementation and
+reproduced the start/renew race subsequently fixed and covered by the final regression.
+Do not call that full run green; exact committed CI remains the complete post-fix gate.
 
 The published f1832aa checkpoint adds a persistent local service and normal `pnpm runtime` command entry.
 It reuses LocalTaskRuntime, task/event read authority and the existing native queue; clients

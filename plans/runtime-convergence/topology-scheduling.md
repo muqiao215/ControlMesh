@@ -365,7 +365,7 @@ the service on configuration/listener identity revocation. SIGTERM closes its li
 and owned runtime. No unit/cron/default installation is performed. Initial workspace
 distribution and physical rollout acceptance remain pending.
 
-## Initial workspace delivery — receiver primitive in progress
+## Initial workspace delivery — configured integration in progress
 
 `src/workspace-seed.ts` prepares exact initial input files using the existing WorkspaceStage.
 Its caller must supply the authorized manifest digest, exact file allowlist, received bytes
@@ -376,12 +376,10 @@ existing files remain unchanged; differing files are rejected. The destination i
 modified during preparation. Persist the returned stage path/reference and proposal digest
 before using existing gated promotion/recovery. This is not atomic multi-file publication.
 
-This internal primitive currently has no network/control caller. Initial distribution is
-NOT implemented yet. Required next steps: bind a versioned manifest to the coordinator's
-assignment and receiver's registered workspace; authenticated bounded chunk transfer and
-durable receipt; persist the prepared reference before promotion; prevent claims/native
-execution until source verification; verify cancellation/revocation, interrupted transfer,
-restart and actual two-device delivery. Never accept a remote absolute path or promote
+Initial distribution now has configured assignment/HTTP/worker integration described below. Topology automatic
+issuance and actual two-device delivery remain pending. Receipt occurs under a lease,
+before execution dispatch; acquiring a lease does not itself start a native process.
+Never accept a remote absolute path or promote
 under caller-provided authority. Source packaging must exclude unapproved files/secrets.
 
 ### Durable receiving state (database 29)
@@ -398,9 +396,8 @@ content across the inbox; automatic eviction is not implemented.
 Preparation persists the stage reference/proposal before publication. Reopening uses the
 original target and stage root; caller-supplied replacements are rejected. Promotion uses
 WorkspaceStage's retained per-file protocol and checks authority again. A crash before
-recording a prepared stage may leave private staging data, but cannot publish it. The
-network operation, assignment-issued binding, sender packaging, claim barrier and cleanup
-policy are still pending. Do not expose this internal class directly to untrusted JSON.
+recording a prepared stage may leave private staging data, but cannot publish it. Network reads, assignment binding and pre-dispatch admission now use this state as
+described below. Automatic cleanup remains pending. Do not expose this internal class directly to untrusted JSON.
 
 Schema 29 is additive to the private TS candidate database. Older TS candidates reject
 newer database versions; rollback requires the pre-upgrade candidate snapshot. Python
@@ -419,8 +416,8 @@ bounded 32 KiB chunks only after all content is complete and hashes remain corre
 A two-database integration test freezes 70 KiB plus project text, changes the source,
 reopens the sender and receiver between chunks, and publishes original bytes to a separate
 target while preserving unrelated work. This is an in-process transfer driver, not device
-HTTP or physical-host acceptance. Executable permission/file metadata fidelity is not
-represented by the current content-only manifest and remains part of complete delivery.
+HTTP or physical-host acceptance. Permission fidelity was added in the subsequent section; metadata outside ordinary
+file modes remains excluded.
 
 ### File permission fidelity
 
@@ -432,3 +429,35 @@ ordinary existing files are not chmodded to resolve a conflict. Legacy manifests
 mode retain their prior content-only behavior and do not establish permission fidelity.
 Ownership, ACLs, extended attributes, symlinks and directory metadata are not transported.
 The seed represents selected regular inputs, not a filesystem image.
+
+
+### Configured initial input delivery
+
+Coordinator local control accepts `prepare_workspace_seed` with task_id,
+expected_revision, workspace_id and explicit relative files. Source directory is the
+stored task repo_root, never a remote-supplied absolute path. The idempotent control receipt
+retains the original snapshot after source edits or coordinator restart. Its versioned
+reference (binding + manifest_digest) is passed to `assign.workspace_seed`; changing task,
+workspace or task authority invalidates the reference. Assignments without this field
+retain existing behavior.
+
+Worker workspace configuration opts in through `bootstrap_files`. This exact allowlist
+is independent of read_files and native write_roots. The registered target directory must
+already exist and be disjoint from runtime staging state. A seed assignment without local
+receiver permission refuses before claim. With permission, receipt starts after claim,
+while the normal renewal loop is active, and completes before start/dispatch or native
+adapter execution. Existing target content or mode conflicts block, preserving local work.
+
+`seed_manifest` and `seed_read` are authenticated worker commands with the current lease
+and assignment_digest. Reads expose no source absolute path and only manifest-listed files;
+chunks are at most 32 KiB. The shared DeviceClient paces reads across concurrent tasks to leave room for renewal
+within the device request budget. It validates reference, manifest, offsets, canonical base64, size
+and content hashes, and retains byte progress in its private database. An interrupted
+transfer releases unstarted work; an explicit next run resumes retained bytes. Remote
+revocation/expiry refuses reads; local authority is rechecked before publication/dispatch.
+Normal distributed lease limitations still apply during network partitions.
+
+Controlled tests exercise actual loopback HTTP, separate coordinator/receiver stores,
+interruption after one chunk, repeat run, snapshot retention and no premature execution.
+They do not establish physical hosts or real provider acceptance. Topology scheduler
+issuance, physical/native delivery, and retention/cleanup policy remain required.

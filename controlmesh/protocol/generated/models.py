@@ -108,7 +108,7 @@ class DeviceCommand(BaseModel):
     model_config = ConfigDict(extra="allow")
     schema_version: Literal["controlmesh.device_command.v1"]
     request_id: str
-    operation: Literal["queue", "inspect", "claim", "start", "renew", "dispatch", "observe", "complete", "unknown", "messages", "send", "ack", "release", "reconciliation", "reconcile", "native_call", "native_input", "queue_page", "artifact_put", "artifact_reconcile_put"]
+    operation: Literal["queue", "inspect", "claim", "start", "renew", "dispatch", "observe", "complete", "unknown", "messages", "send", "ack", "release", "reconciliation", "reconcile", "native_call", "native_input", "queue_page", "artifact_put", "artifact_reconcile_put", "seed_manifest", "seed_read"]
     arguments: dict[str, Any]
 
 

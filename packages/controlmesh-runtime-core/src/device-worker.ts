@@ -1,3 +1,4 @@
+import { receiveDeviceWorkspaceSeed, type DeviceWorkspaceSeedReceiver } from "./device-workspace-seed";
 import { nativeTaskOutcome } from "./native-task-failure";
 import { uploadDeviceArtifacts } from "./device-artifact-upload";
 import { randomUUID } from "node:crypto";
@@ -42,6 +43,7 @@ export interface DeviceAdapter {
     report: (value: DeviceReconciliationReport) => Promise<unknown>, preparePublication?: () => Promise<void>): Promise<unknown>;
 }
 export interface DeviceWorkerOptions {
+  workspace_seed?: DeviceWorkspaceSeedReceiver;
   workspaces: Readonly<Record<string, string>>;
   adapters: Readonly<Record<string, DeviceAdapter | DeviceAdapterFactory>>;
   journal?: DeviceExecutionJournal;
@@ -56,11 +58,13 @@ export class DeviceWorker {
   private readonly adapters: DeviceWorkerOptions["adapters"];
   private readonly journal?: DeviceExecutionJournal;
   private readonly signal?: AbortSignal;
+  private readonly seed?: DeviceWorkspaceSeedReceiver;
 
   constructor(private readonly client: DeviceClient, options: DeviceWorkerOptions) {
     this.adapters = { ...options.adapters };
     this.journal = options.journal;
     this.signal = options.signal;
+    this.seed = options.workspace_seed ? { ...options.workspace_seed, files: structuredClone(options.workspace_seed.files) } : undefined;
     requireThat(!this.journal || this.journal.deviceId === client.deviceId, "device_journal_identity_mismatch");
     for (const [id, path] of Object.entries(options.workspaces)) {
       identifier(id);
@@ -151,6 +155,7 @@ export class DeviceWorker {
     const signal = this.signal && admission ? AbortSignal.any([this.signal, admission.signal]) : admission?.signal ?? this.signal;
     requireThat(!signal?.aborted, "device_worker_stopped");
     const job = await this.client.inspect(taskId), issuedJob = digest(job);
+    requireThat(job.workspace_seed === undefined || this.seed?.files[job.workspace_id], "workspace_seed_receiver_unavailable");
     requireThat(!expected || (job.revision === expected.revision && job.assignment_digest === expected.assignment_digest), "device_assignment_changed");
     const workspace = this.workspaces.get(job.workspace_id);
     requireThat(workspace, "local_capability_unavailable");
@@ -197,8 +202,16 @@ export class DeviceWorker {
       assertCurrent();
     };
     try {
-      if (!preparedMode) { attempted = true; await authority.start(); attempted = false; }
       arm();
+      if (job.workspace_seed) await receiveDeviceWorkspaceSeed(this.client, job, workspace.path, authority, assertCurrent, this.seed!, signal);
+      if (!preparedMode) {
+        // Receiving may span several renewals. Do not race start against an in-flight renewal.
+        if (timer) clearTimeout(timer);
+        await renewal;
+        if (timer) clearTimeout(timer);
+        assertCurrent();
+        attempted = true; await authority.start(); attempted = false; arm();
+      }
       assertCurrent();
       if (!preparedMode) await dispatch({ capability: job.capability, workspace_id: job.workspace_id, input_digest: digest(job.input) });
       const output = await adapter.execute({ job, workspace: workspace.path, authority, assertCurrent, effect_id: effect,

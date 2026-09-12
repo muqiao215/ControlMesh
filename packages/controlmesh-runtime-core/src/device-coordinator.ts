@@ -16,6 +16,16 @@ import { NativeMailboxDelivery } from "./providers/native-mailbox";
 import { nativeInput } from "./providers/native-mailbox-input";
 import { DeviceArtifactInbox, type ArtifactChunk } from "./device-artifacts";
 
+import { freezeWorkspaceSeed } from "./workspace-seed-source";
+import { WorkspaceSeedInbox } from "./workspace-seed-inbox";
+import { validateWorkspaceSeed, type WorkspaceSeedManifest } from "./workspace-seed";
+
+export interface DeviceWorkspaceSeedRef {
+  schema_version: "controlmesh.device_workspace_seed.v1";
+  binding: string;
+  manifest_digest: string;
+}
+
 const nativeProvider = (provider: unknown) => provider === "opencode" || provider === "claude";
 
 export interface DeviceRegistration {
@@ -26,6 +36,7 @@ export interface DeviceRegistration {
   workspace_ids: readonly string[];
 }
 export interface DeviceAssignment {
+  workspace_seed?: DeviceWorkspaceSeedRef;
   /** Explicit operator opt-in: deliver native completion files to the private coordinator inbox. */
   artifact_transfer?: boolean;
   workspace_id: string;
@@ -37,6 +48,7 @@ export interface DeviceAssignment {
   parent_task?: string | null;
 }
 export interface DeviceJob {
+  workspace_seed?: DeviceWorkspaceSeedRef;
   artifact_transfer?: boolean;
   task_id: string;
   revision: number;
@@ -118,6 +130,36 @@ export class DeviceCoordinator {
     return Boolean(this.kernel.db.sql.query("SELECT 1 FROM device_revocations WHERE device_id=?").get(deviceId));
   }
 
+  /** Trusted local ingress only: source is the task's canonical coordinator workspace. */
+  issueWorkspaceSeed(actor: Principal, taskId: string, revision: number, workspaceId: string, files: readonly string[]): DeviceWorkspaceSeedRef {
+    requireScope(actor, "device:assign");
+    requireThat(actor.origin === "human_request" || actor.origin === "internal", "assignment_requires_trusted_ingress");
+    identifier(workspaceId);
+    return this.kernel.db.transaction(() => {
+      this.assertCurrent();
+      const snapshot = this.kernel.inspect(actor, taskId);
+      requireThat(snapshot.revision === revision && snapshot.task.status === "waiting" && !snapshot.active_episode && !snapshot.needs_reconciliation, "task_not_assignable");
+      requireThat(typeof snapshot.task.repo_root === "string", "workspace_seed_source_required");
+      const scope = this.seedScope(actor, snapshot, workspaceId);
+      const source = freezeWorkspaceSeed(this.kernel.db, snapshot.task.repo_root, files, scope, run => { this.assertCurrent(); return run(); });
+      return { schema_version: "controlmesh.device_workspace_seed.v1", binding: source.binding, manifest_digest: source.manifest_digest };
+    });
+  }
+
+  private seedScope(actor: Principal, snapshot: TaskSnapshot, workspaceId: string): string {
+    return digest({ principal: actor.id, task: snapshot.task.task_id, authority: taskAuthority(snapshot), workspace_id: workspaceId });
+  }
+
+  private seedManifest(actor: Principal, snapshot: TaskSnapshot, workspaceId: string, ref: DeviceWorkspaceSeedRef): WorkspaceSeedManifest {
+    requireThat(object(ref) && Object.keys(ref).length === 3 && ref.schema_version === "controlmesh.device_workspace_seed.v1"
+      && ref.binding === digest({ direction: "workspace_seed_source", authority: this.seedScope(actor, snapshot, workspaceId) })
+      && typeof ref.manifest_digest === "string" && /^[a-f0-9]{64}$/.test(ref.manifest_digest), "workspace_seed_reference_invalid");
+    const row = this.kernel.db.sql.query("SELECT manifest,manifest_digest FROM workspace_seed_transfers WHERE binding=?").get(ref.binding) as { manifest: string; manifest_digest: string } | null;
+    requireThat(row && row.manifest_digest === ref.manifest_digest, "workspace_seed_reference_invalid");
+    const manifest = JSON.parse(row.manifest) as WorkspaceSeedManifest;
+    return validateWorkspaceSeed(manifest, ref.manifest_digest, manifest.files.map(file => file.path));
+  }
+
   assign(actor: Principal, requestId: string, taskId: string, revision: number, specification: DeviceAssignment): void {
     requireScope(actor, "device:assign");
     requireThat(actor.origin === "human_request" || actor.origin === "internal", "assignment_requires_trusted_ingress");
@@ -125,6 +167,7 @@ export class DeviceCoordinator {
     requireThat(specification.artifact_transfer === undefined || typeof specification.artifact_transfer === "boolean", "invalid_artifact_transfer_profile");
     if (specification.artifact_transfer) requireThat(nativeProvider(snapshot.task.provider) && snapshot.task.completion_requirements !== undefined, "device_artifact_contract_required");
     identifier(specification.workspace_id); identifier(specification.capability);
+    if (specification.workspace_seed !== undefined) this.seedManifest(actor, snapshot, specification.workspace_id, specification.workspace_seed);
     requireThat(object(specification.input) && Buffer.byteLength(canonical(specification.input)) <= 32_768, "invalid_device_input");
     requireThat(specification.device_ids.length > 0 && specification.device_ids.length <= 128 && new Set(specification.device_ids).size === specification.device_ids.length, "invalid_assignment_devices");
     requireThat((specification.peer_tasks?.length ?? 0) <= 128, "invalid_assignment_peers");
@@ -199,7 +242,8 @@ export class DeviceCoordinator {
       capability: specification.capability, input: specification.input, assignment_digest: this.assignmentDigest(taskId, specification), execution, execution_digest: digest(execution),
       needs_reconciliation: task.needs_reconciliation, active_episode: task.active_episode !== null,
       peer_tasks: specification.peer_tasks ?? [], parent_task: specification.parent_task ?? null,
-      ...(specification.artifact_transfer === undefined ? {} : { artifact_transfer: specification.artifact_transfer }) };
+      ...(specification.artifact_transfer === undefined ? {} : { artifact_transfer: specification.artifact_transfer }),
+      ...(specification.workspace_seed === undefined ? {} : { workspace_seed: specification.workspace_seed }) };
   }
 
   private authenticate(request: Request): DeviceRegistration {
@@ -277,6 +321,15 @@ export class DeviceCoordinator {
     }
     const lease = args.lease as Lease;
     const job = this.assignment(device, lease.task_id);
+    if (input.operation === "seed_manifest" || input.operation === "seed_read") return this.kernel.withLease(actor, lease, () => {
+      requireThat(args.assignment_digest === job.assignment_digest, "assignment_revision_conflict");
+      requireThat(job.workspace_seed, "workspace_seed_unavailable");
+      const manifest = this.seedManifest(actor, this.kernel.inspect(actor, job.task_id), job.workspace_id, job.workspace_seed);
+      if (input.operation === "seed_manifest") return { reference: job.workspace_seed, manifest };
+      const source = new WorkspaceSeedInbox(this.kernel.db, job.workspace_seed.binding, manifest, job.workspace_seed.manifest_digest,
+        manifest.files.map(file => file.path), run => this.kernel.withLease(actor, lease, () => { this.assertCurrent(); return run(); }));
+      return source.read(args.path as string, args.offset as number);
+    });
     if (input.operation === "artifact_put") return this.kernel.withLease(actor, lease, () => {
       const manifest = this.nativeManifest(lease, args.effect_id as string);
       const { lease: _lease, effect_id: _effect, ...chunk } = args;

@@ -1,3 +1,4 @@
+import { setTimeout as delay } from "node:timers/promises";
 import { randomUUID } from "node:crypto";
 import { assertProtocolSchema, type DeviceCommand, type DeviceLeaseWindow, type DeviceResponse } from "@controlmesh/protocol";
 import type { Lease } from "./kernel";
@@ -14,6 +15,7 @@ export interface DeviceClientOptions {
   fetch?: typeof fetch;
 }
 export class DeviceClient {
+  private seedReadAt = 0;
   readonly deviceId: string;
   readonly clock: () => number;
   private readonly endpoint: string;
@@ -40,6 +42,13 @@ export class DeviceClient {
   async command(operation: DeviceCommand["operation"], args: Record<string, unknown>, requestId: string = randomUUID(), signal?: AbortSignal): Promise<unknown> {
     const input: DeviceCommand = { schema_version: "controlmesh.device_command.v1", request_id: requestId, operation, arguments: args };
     assertProtocolSchema("device-command.schema.json", input);
+    if (operation === "seed_read") {
+      // All scheduled tasks share this client and the device's 64 requests/second budget.
+      const now = this.clock(), wait = Math.max(0, this.seedReadAt - now);
+      requireThat(wait <= 2000, "device_backpressure");
+      this.seedReadAt = Math.max(now, this.seedReadAt) + 40;
+      if (wait > 0) await delay(wait, undefined, { signal });
+    }
     const controller = new AbortController();
     // Native receive can wait ten seconds; authority renewals keep their independent short timeout.
     const timeout = setTimeout(() => controller.abort(), operation === "native_call" ? 15000 : this.timeout);
@@ -100,6 +109,12 @@ export class DeviceClient {
     requireThat(object(value) && value.task_id === taskId && typeof value.status === "string" && Number.isSafeInteger(value.revision) && object(value.input), "invalid_device_job");
     for (const key of ["needs_reconciliation", "active_episode"]) requireThat(value[key] === undefined || typeof value[key] === "boolean", "invalid_device_job");
     identifier(value.workspace_id); identifier(value.capability);
+    if (value.workspace_seed !== undefined) {
+      const seed = value.workspace_seed;
+      requireThat(object(seed) && Object.keys(seed).length === 3 && seed.schema_version === "controlmesh.device_workspace_seed.v1"
+        && typeof seed.binding === "string" && /^[a-f0-9]{64}$/.test(seed.binding)
+        && typeof seed.manifest_digest === "string" && /^[a-f0-9]{64}$/.test(seed.manifest_digest), "invalid_device_job");
+    }
     requireThat(value.artifact_transfer === undefined || typeof value.artifact_transfer === "boolean", "invalid_device_job");
     requireThat(typeof value.assignment_digest === "string" && /^[a-f0-9]{64}$/.test(value.assignment_digest), "invalid_device_job");
     if (value.execution !== undefined || value.execution_digest !== undefined) {

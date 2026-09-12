@@ -162,12 +162,19 @@ export function openDeviceRuntime(path: string): DeviceRuntime {
       requireThat(object(config.workspaces) && Object.keys(config.workspaces).length > 0 && Object.keys(config.workspaces).length <= 128
         && object(config.capabilities) && Object.keys(config.capabilities).length > 0 && Object.keys(config.capabilities).length <= 128, "invalid_device_catalog");
       const workspaces: Record<string, string> = {};
+      const bootstrapFiles: Record<string, string[]> = {};
       const profiles = new Map<string, { directory: string; read_files: string[]; required_reads: string[]; write_roots: string[]; specmesh?: SpecMeshConfiguration }>();
       for (const [id, source] of Object.entries(config.workspaces)) {
-        identifier(id); fields(source, ["directory", "read_files", "required_reads", "write_roots", "specmesh"], "invalid_device_workspace_profile");
+        identifier(id); fields(source, ["directory", "read_files", "required_reads", "write_roots", "specmesh", "bootstrap_files"], "invalid_device_workspace_profile");
         requireThat(typeof source.directory === "string" && isAbsolute(source.directory) && realpathSync(source.directory) === source.directory
           && lstatSync(source.directory).isDirectory(), "workspace_must_be_canonical");
         const read = relativeList(source.read_files, 80), required = relativeList(source.required_reads, 80), writes = relativeList(source.write_roots ?? [], 64);
+        if (source.bootstrap_files !== undefined) {
+          const bootstrap = relativeList(source.bootstrap_files, 80);
+          requireThat(bootstrap.length > 0, "invalid_workspace_seed_files");
+          WorkspaceStage.assertLocation(root, source.directory);
+          bootstrapFiles[id] = bootstrap;
+        }
         requireThat(required.every(file => read.includes(file)), "required_read_not_granted");
         if (writes.length) { WorkspaceStage.assertLocation(root, source.directory); writeRoots(source.directory, { roots: writes.map(item => resolve(source.directory as string, item)) }); }
         requireThat(source.specmesh === undefined || object(source.specmesh), "invalid_specmesh_profile");
@@ -271,7 +278,8 @@ export function openDeviceRuntime(path: string): DeviceRuntime {
               config_digest: digest(native), credential_revision: privateFile(join(profile.data_home, "opencode/auth.json")).revision,
               permission_profile: writes.length ? "opencode-native-workspace-v1" : "opencode-native-read-v1", runtime_digest: runner.runtimeDigest() }) }, runner);
       };
-      const worker = new DeviceWorker(client, { workspaces, adapters, journal, signal: abort.signal });
+      const worker = new DeviceWorker(client, { workspaces, adapters, journal, signal: abort.signal,
+        ...(Object.keys(bootstrapFiles).length ? { workspace_seed: { db: local, state_root: root, files: bootstrapFiles } } : {}) });
       const workerControl = new DeviceWorkerControl(local, actor, client, worker, current, () => abort.abort(), parallel, claudeHistory ?? history);
       if (config.scheduler !== undefined) fields(config.scheduler, ["parallelism", "max_pending", "poll_ms", "lease_ms", "max_backoff_ms"], "invalid_device_scheduler_profile");
       const schedulerOptions = { parallelism: parallel, ...(config.scheduler as DeviceSchedulerOptions | undefined) };

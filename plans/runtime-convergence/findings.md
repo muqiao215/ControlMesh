@@ -1,5 +1,26 @@
 # Findings
 
+## Initial input admission — 2026-09-13
+
+The sender/receiver primitives previously had no configured network/execution caller.
+They now connect through a versioned assignment reference, authenticated leased commands,
+local bootstrap_files grants and the existing worker lifecycle. A failed or incomplete
+transfer cannot start an adapter; interrupted receipt resumes the original byte offset.
+The coordinator's local preparation receipt preserves the frozen source across restart.
+
+Two concurrent transfers exposed a start/renew race: long input preparation leaves the
+renewal timer active, while DeviceLeaseAuthority deliberately rejects concurrent updates.
+The worker now drains an in-flight renewal before start and then rearms its heartbeat.
+The reproducer still uses a one-second lease, checks actual renewals and transfers two
+1 MiB inputs; it passes without extending the lease. Read pacing belongs to the shared
+DeviceClient, not each transfer, because the server quota is per device.
+
+Topology automatic issuance remains the next seam: DeviceTopologyRuntime.specification
+currently constructs assignments from frozen routes inside its enqueue command. A future
+source-files registration must be included in that policy binding and captured atomically
+with assignment, without accepting an externally supplied source path or rereading on retry.
+Current direct/configured HTTP tests do not prove physical-host or native acceptance.
+
 ## Terminal registration context — 2026-09-13
 
 f1832aa completed CI 34711514218 successfully. The terminal lacked a safe registration
