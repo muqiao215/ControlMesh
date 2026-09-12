@@ -1261,3 +1261,53 @@ post-observation crash tests both failed before claiming. The guard now checks o
 through the private row and then orchestration type, retaining the old execution scope.
 No worker permission was broadened. The failed full run remains in
 /tmp/cm-aggregate-full-initial.log (588 pass, 2 fail); final verification must use the rerun.
+
+## Automatic local topology scheduling design in progress
+
+The scheduler must use an explicit immutable mapping of already-authorized task IDs to
+roles, including aggregate child nodes. It must not mint grants, infer new task identities
+from model output or treat inspection as provider execution. It will read accepted output
+without collecting it to select the next authorized role, then call the existing atomic
+composition operation which revalidates that output and its task/checkpoint revision.
+
+Persistent schedule leases bind principal/device/origin and serialize asynchronous artifact
+preparation and transition admission. Current task and topology revisions still fence every
+actual operation. Unchanged polls do not emit prompts or notifications. A background loop
+is optional in the isolated local configuration and must stop with the existing runtime.
+Pause stops new topology transitions; admitted native work retains its existing lifecycle.
+
+Malformed confirmed output may be retried only by an explicit recovery command, preserving
+its rejected assignment/result binding and original native session. Blocked unstarted work
+also needs explicit retry; uncertain or cancelled work cannot be replayed. Pipeline/fanout
+repair and parent-interruption caps must finish from host budget policy instead of spinning
+indefinitely. Existing director/judge immutable policy bounds remain authoritative.
+
+## Explicit recovery foundation verified in isolation
+
+The initial draft caught every preview exception as malformed output. That could confuse
+execution/authority failure with a model contract failure. Recovery now admits only typed
+JSON/schema/assignment errors produced after native completion evidence validation.
+The draft also silently ignored a supplied prompt for unstarted work; that request now
+rejects explicitly. Retrying unstarted work preserves the original submitted input.
+
+The draft budget check could turn an unsupported worker request into a terminal accepted
+result. Budgets now act only at reviewer/reducer decision stages; unsupported worker
+statuses still fail the original state-machine rule. Pure transition defaults remain
+unchanged, and frozen service registration remains outstanding.
+
+Focused queue/native result gate: 23 pass / 137 assertions. Focused controller/budget gate:
+32 pass / 208 assertions. Existing Python pipeline/fanout parity and controller checks also
+passed (24 tests / 385 assertions before new cases were added). Logs are respectively
+/tmp/cm-topology-recovery-focused.log and /tmp/cm-topology-budgets-focused.log.
+These use controlled resolver fixtures, not additional live model/session prompts.
+
+During implementation, typecheck found an optional retry prompt passed without narrowing;
+that call is now guarded. One test-writing command used a repository-relative path from the
+package working directory and failed before editing; corrected package-relative paths were
+used next. The subsequent focused run includes the new cases. Full gate is recorded in
+progress.md only after its actual process finishes.
+
+Full pinned gate finished with exit 0: 612 pass, 0 fail, 8283 assertions across 66 files
+in 209.12s (/tmp/cm-topology-recovery-full.log). Python inventory and runtime typecheck
+also passed. Existing nested aggregate, terminal completion and same-tree reopen fixtures
+remain green after adding rejected-assignment history. No production version switch.

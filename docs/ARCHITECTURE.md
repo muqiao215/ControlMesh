@@ -457,6 +457,29 @@ failed reassignment restores the complete old linkage. Prepared control executio
 cancellation blocks descendant claims/effects/publication; cleanup may retain unknown
 execution evidence instead of claiming that the work stopped successfully.
 
+`TopologyTaskQueue.peek` and `peekDecision` validate the same current assignment and
+native/aggregate evidence as collection, but write neither acceptance nor command receipts.
+They are scheduler reads under existing execution ownership, not public inspection grants.
+A later transition must collect and validate again inside its own transaction.
+
+`TopologyTaskQueue.retry` is an explicit native recovery operation at the unchanged parent
+checkpoint. Verified JSON/schema/role/round failures have a distinct `TeamOutputError`;
+authority loss, corrupt execution evidence and unexpected exceptions cannot authorize a
+new attempt. The rejected assignment and proof identity are archived before atomically
+resuming/requeuing the same child. Native session, task scope and frozen controller policy
+remain intact. A fixed ceiling of two explicit retries per child/parent execution survives
+restart; ordinary accepted repair generations do not spend this recovery budget. Known
+quota deadlines block early retries. Unstarted blocked work retries its original input and
+rejects a replacement prompt; completed/failed native work requires an explicit new prompt.
+Cancelled, uncertain, aggregate and already-valid results cannot use this recovery path.
+Nothing in these helpers starts a polling loop or automatically retries a model.
+
+Pipeline/fanout result options also support finite repair and parent-interruption limits.
+They count the existing execution checkpoints and terminate from host policy with the
+actual latest result evidence. Unsupported worker control statuses remain rejected; omitted
+limits preserve Python parity. Freezing these optional limits across service instances
+belongs to the pending schedule registration owner, not the pure transition functions.
+
 Generic provider resume still refuses completed orchestration tasks. Older candidates
 reject schema 23; rollback requires a pre-upgrade database backup, never changing a
 populated database version. Automatic topology scheduling, device topology assignment,

@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { RuntimeDatabase, RuntimeKernel, RuntimeTopology, RuntimeControlTopology, LocalTaskRuntime, DeliveryOutbox, type DeliveryAdapter, type Principal, type LocalTaskResolver, type ControlSetup } from "../src";
+import { RuntimeDatabase, RuntimeKernel, RuntimeTopology, RuntimeControlTopology, TopologyTaskQueue, LocalTaskRuntime, DeliveryOutbox, type DeliveryAdapter, type Principal, type LocalTaskResolver, type ControlSetup } from "../src";
 import { digest } from "../src/value";
 const actor: Principal = { id: "owner", device_id: "local", origin: "internal", scopes: ["task:create", "task:read", "task:execute", "task:resume", "task:cancel", "task:reconcile", "task:admin", "team:write"] };
 const source = { command_origin: "internal" as const, origin: "background" as const, source_scope: "background_task" as const, transport: "terminal" };
@@ -325,4 +325,30 @@ test("aggregate terminal event projects once into the existing delivery outbox w
     await outbox.stop(); await f.reopen(); outbox = new DeliveryOutbox(f.kernel, deliveryActor, [adapter], () => {});
     expect(outbox.project()).toBe(0); expect(outbox.list("parent")).toHaveLength(1); expect(f.calls).toEqual(["control"]);
   } finally { await outbox.stop(); await f.close(); }
+});
+
+for (const [first, code] of [
+  [{ round_index: 1, decision: "invalid" }, "team_result_invalid_schema"],
+  [dispatch(9), "control_decision_assignment_mismatch"],
+] as const) test(`controller ${code} requires explicit correction in the same planning round`, async () => {
+  const f = fixture({ topology: "director_worker", limits: { max_rounds: 2 } }, [first, dispatch()]);
+  try {
+    const started = f.start(); await f.runtime.drain();
+    const queue = new TopologyTaskQueue(f.kernel, f.runtime), controller = f.child("control");
+    expect(() => queue.peekDecision(actor, "parent", 1, started.topology.revision, "control", controller.revision)).toThrow(code);
+    const recovered = queue.retry(actor, "correct", "parent", 1, started.topology.revision, "control", controller.revision, "correct decision");
+    expect(recovered.generation).toBe(2);
+    expect(f.snapshot().topology).toEqual(started.topology);
+    expect(f.snapshot().config).toEqual(started.config);
+    await f.runtime.drain();
+    const current = f.child("control");
+    const receipts = f.db.sql.query("SELECT COUNT(*) AS n FROM receipts").get();
+    expect(queue.peekDecision(actor, "parent", 1, started.topology.revision, "control", current.revision).result.decision).toBe("dispatch_workers");
+    expect(f.db.sql.query("SELECT COUNT(*) AS n FROM receipts").get()).toEqual(receipts);
+    expect(f.db.sql.query("SELECT accepted FROM topology_tasks WHERE child_id='control'").get()).toEqual({ accepted: null });
+    const next = f.control.decide(actor, "dispatch-corrected", "parent", 1, started.topology.revision, current, [f.child("a"), f.child("b")]);
+    expect(next.runs.map(run => run.child_id)).toEqual(["a", "b"]);
+    expect(f.calls).toEqual(["control", "control"]);
+    expect(f.kernel.inspect(actor, "control").task.native_session).toEqual({ session_id: "ses_synthetic_control" });
+  } finally { await f.close(); }
 });

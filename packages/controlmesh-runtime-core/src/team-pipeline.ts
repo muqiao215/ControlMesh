@@ -1,3 +1,4 @@
+import { exhaustedTeamBudget, type TeamStepBudgets } from "./team-budgets";
 import { compactTeamText as pipelineSummary, teamResultSummary as summary, teamReducedSummary as reducedSummary } from "./team-progress";
 export { compactTeamText as pipelineSummary } from "./team-progress";
 import { decodeTeamResult, type StructuredTeamResult } from "./team-result-validation";
@@ -17,11 +18,12 @@ export function dispatchPipelineWorker(state: TopologyState, role = "worker", la
   return appendTopologyCheckpoint(current, { substage: "worker_running", phase_status: "in_progress", active_roles: [role], completed_roles: [planner(current)],
     latest_summary: pipelineSummary(latestSummary || cp.latest_summary || "Planner dispatched worker."), artifact_count: cp.artifact_count }, at);
 }
-export interface PipelineResultOptions { reviewer_role?: string; repair_worker_role?: string; parent_question?: string; waiting_on?: string }
+export interface PipelineResultOptions extends TeamStepBudgets { reviewer_role?: string; repair_worker_role?: string; parent_question?: string; waiting_on?: string }
 export function applyPipelineResult(state: TopologyState, value: StructuredTeamResult, options: PipelineResultOptions = {}, at = new Date()): TopologyState {
   const current = stateFor(state), cp = current.checkpoints.at(-1)!, result = decodeTeamResult(value);
   requireThat(result.topology === "pipeline" && result.substage === cp.substage, "pipeline_result_stage_mismatch");
   requireThat(["worker_running", "repairing", "review_running"].includes(cp.substage), "pipeline_stage_mismatch");
+  const exhausted = exhaustedTeamBudget(current, result, options, at); if (exhausted) return exhausted;
   const review = cp.substage === "review_running";
   if (!review && result.status === "completed") return appendTopologyCheckpoint(current, { substage: "review_running", phase_status: "in_progress",
     active_roles: [options.reviewer_role ?? "reviewer"], completed_roles: completed(current, result.worker_role), latest_summary: summary(result), artifact_count: result.artifacts.length, result }, at);

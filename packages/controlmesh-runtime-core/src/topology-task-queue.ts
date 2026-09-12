@@ -3,7 +3,7 @@ import { command, requireScope } from "./commands";
 import { RuntimeKernel, type Principal, type Lease } from "./kernel";
 import { LocalTaskRuntime } from "./local-task-runtime";
 import { RuntimeTopology } from "./runtime-topology";
-import { readTeamTaskResult, readTeamControlDecision, teamWorkerSubstage, type TeamTaskResultBinding } from "./team-task-result";
+import { readTeamTaskResult, readTeamControlDecision, TeamOutputError, teamWorkerSubstage, type TeamTaskResultBinding } from "./team-task-result";
 import { canonical, digest, identifier, requireThat, terminal } from "./value";
 
 interface Assignment {
@@ -121,24 +121,92 @@ export class TopologyTaskQueue {
     }, value => { this.runtime.assertPrincipal(actor); requireScope(actor, "team:write"); requireScope(actor, "task:execute"); if (resumePrompt !== undefined) requireScope(actor, "task:resume"); this.kernel.inspect(actor, parentId); this.kernel.inspect(actor, childId); return value; });
   }
 
-  collect(actor: Principal, requestId: string, parentId: string, parentRevision: number, topologyRevision: number,
-    childId: string, childRevision: number): ReturnType<typeof readTeamTaskResult> | ReturnType<typeof readAggregateResult> {
+  retry(actor: Principal, requestId: string, parentId: string, parentRevision: number, topologyRevision: number,
+    childId: string, childRevision: number, prompt?: string) {
+    this.runtime.assertPrincipal(actor); requireScope(actor, "team:write"); requireScope(actor, "task:execute"); requireScope(actor, "task:resume");
+    requireThat(prompt === undefined || (typeof prompt === "string" && prompt.trim().length > 0 && Buffer.byteLength(prompt) <= 32768), "invalid_resume_prompt");
+    this.kernel.inspect(actor, parentId); this.kernel.inspect(actor, childId);
+    return command(this.kernel.db, actor, requestId, "topology.retry_result", { parentId, parentRevision, topologyRevision, childId, childRevision, prompt: prompt ?? null }, () => {
+      const topology = this.parent(actor, parentId, parentRevision, topologyRevision), cp = topology.state.checkpoints.at(-1)!;
+      const prior = this.kernel.db.sql.query("SELECT * FROM topology_tasks WHERE child_id=? AND parent_id=?").get(childId, parentId) as Assignment | null;
+      const child = this.kernel.inspect(actor, childId);
+      requireThat(prior?.kind === "native" && prior.topology === topology.state.topology && prior.substage === cp.substage && prior.execution_id === topology.state.execution_id && prior.checkpoint_id === cp.checkpoint_id
+        && prior.accepted === null && cp.active_roles.includes(prior.worker_role) && child.revision === childRevision
+        && !child.active_episode && !child.needs_reconciliation && ["done", "failed", "waiting"].includes(child.task.status), "topology_retry_not_admitted");
+      requireThat(Number.isSafeInteger(prior.generation) && prior.generation >= 1 && prior.generation < Number.MAX_SAFE_INTEGER, "invalid_assignment_generation");
+      const run = this.runtime.inspect(prior.run_id);
+      requireThat(run.task_id === childId, "topology_child_run_mismatch");
+      if (child.task.status === "waiting") requireThat(prompt === undefined, "topology_retry_prompt_not_applicable");
+      else requireThat(prompt !== undefined, "invalid_resume_prompt");
+      const rejected = this.kernel.db.sql.query("SELECT assignment FROM topology_task_history WHERE child_id=?").all(childId) as { assignment: string }[];
+      const retries = rejected.map(row => JSON.parse(row.assignment) as Assignment & { rejection?: unknown })
+        .filter(row => row.execution_id === prior.execution_id && row.rejection !== undefined).length;
+      requireThat(retries < 2, "topology_result_retry_budget_exhausted");
+      let rejection: Record<string, unknown>;
+      if (child.task.status === "done") {
+        requireThat(run.state === "completed", "topology_child_not_completed");
+        const row = this.kernel.db.sql.query("SELECT lease FROM local_runs WHERE run_id=?").get(prior.run_id) as { lease: string | null };
+        requireThat(row.lease !== null, "topology_child_execution_missing");
+        const lease = JSON.parse(row.lease) as Lease;
+        const effects = this.kernel.db.sql.query("SELECT effect_id FROM effects WHERE task_id=? AND episode_id=? AND state='confirmed'").all(childId, lease.episode_id) as { effect_id: string }[];
+        requireThat(effects.length === 1, "topology_child_result_ambiguous");
+        const proof = this.kernel.inspectCompletedEffect(actor, childId, childRevision, lease.episode_id, effects[0]!.effect_id);
+        requireThat(typeof proof.result.text === "string" && proof.result.output_digest === digest(proof.result.text), "team_result_digest_mismatch");
+        let invalid: TeamOutputError | null = null;
+        try {
+          const decision = (prior.topology === "director_worker" && ["planning", "director_deciding", "repairing"].includes(prior.substage))
+            || (prior.topology === "debate_judge" && prior.substage === "judging");
+          if (decision) this.peekDecision(actor, parentId, parentRevision, topologyRevision, childId, childRevision);
+          else this.peek(actor, parentId, parentRevision, topologyRevision, childId, childRevision);
+        } catch (error) { if (!(error instanceof TeamOutputError)) throw error; invalid = error; }
+        requireThat(invalid, "topology_result_is_valid");
+        rejection = { reason: "invalid_result", validation_code: invalid.code, task_revision: childRevision, episode_id: lease.episode_id, effect_id: effects[0]!.effect_id, result_digest: digest(proof.result) };
+      } else {
+        requireThat(child.task.status === "waiting" ? run.state === "blocked" : run.state === "completed", "topology_retry_not_admitted");
+        requireThat(!this.kernel.db.sql.query("SELECT 1 FROM effects WHERE task_id=? AND state!='confirmed'").get(childId), "unresolved_effects");
+        const retryAfter = run.outcome?.retry_after;
+        requireThat(retryAfter === null || retryAfter === undefined || (Number.isSafeInteger(retryAfter) && retryAfter <= this.kernel.db.now()), "topology_retry_not_due");
+        rejection = { reason: child.task.status === "waiting" ? "execution_blocked" : "execution_failed", task_revision: childRevision, run_id: prior.run_id, outcome: run.outcome };
+      }
+      this.kernel.db.sql.query("INSERT INTO topology_task_history VALUES (?,?,?)").run(childId, prior.generation, canonical({ ...prior, rejection }));
+      const resumed = child.task.status === "waiting" ? child : this.runtime.resume(`retry-resume-${digest(requestId)}`, childId, childRevision, prompt!);
+      this.kernel.db.sql.query("DELETE FROM topology_tasks WHERE child_id=?").run(childId);
+      const queued = this.enqueue(actor, `retry-queue-${digest(requestId)}`, parentId, parentRevision, topologyRevision, childId, resumed.revision, prior.worker_role);
+      this.kernel.db.sql.query("UPDATE topology_tasks SET generation=? WHERE child_id=?").run(prior.generation + 1, childId);
+      return { ...queued, generation: prior.generation + 1, rejection };
+    }, value => { this.runtime.assertPrincipal(actor); requireScope(actor, "team:write"); requireScope(actor, "task:execute"); requireScope(actor, "task:resume"); this.kernel.inspect(actor, parentId); this.kernel.inspect(actor, childId); return value; });
+  }
+
+  private workerResult(actor: Principal, requestId: string, parentId: string, parentRevision: number, topologyRevision: number,
+    childId: string, childRevision: number, preview = false): ReturnType<typeof readTeamTaskResult> | ReturnType<typeof readAggregateResult> {
     return this.collectBound<ReturnType<typeof readTeamTaskResult> | ReturnType<typeof readAggregateResult>>(actor, requestId, parentId, parentRevision, topologyRevision, childId, childRevision, "topology.collect", (kernel, actor, { round_index: _round, ...binding }) => readTeamTaskResult(kernel, actor, binding), assignment => {
       const topology = new RuntimeTopology(this.kernel).inspect(actor, childId); requireThat(topology, "aggregate_topology_missing");
       return readAggregateResult(this.kernel, actor, { source: "topology", task_id: childId, revision: childRevision, execution_id: assignment.run_id,
         topology_revision: topology.revision, topology: assignment.topology, substage: teamWorkerSubstage(assignment.topology, assignment.substage), worker_role: assignment.worker_role }, new Set([parentId]));
-    });
+    }, preview);
   }
-  collectDecision(actor: Principal, requestId: string, parentId: string, parentRevision: number, topologyRevision: number,
-    childId: string, childRevision: number): ReturnType<typeof readTeamControlDecision> {
-    return this.collectBound(actor, requestId, parentId, parentRevision, topologyRevision, childId, childRevision, "topology.collect_decision", readTeamControlDecision);
+  private decisionResult(actor: Principal, requestId: string, parentId: string, parentRevision: number, topologyRevision: number,
+    childId: string, childRevision: number, preview = false): ReturnType<typeof readTeamControlDecision> {
+    return this.collectBound(actor, requestId, parentId, parentRevision, topologyRevision, childId, childRevision, "topology.collect_decision", readTeamControlDecision, undefined, preview);
+  }
+  collect(actor: Principal, requestId: string, parentId: string, parentRevision: number, topologyRevision: number, childId: string, childRevision: number) {
+    return this.workerResult(actor, requestId, parentId, parentRevision, topologyRevision, childId, childRevision);
+  }
+  collectDecision(actor: Principal, requestId: string, parentId: string, parentRevision: number, topologyRevision: number, childId: string, childRevision: number) {
+    return this.decisionResult(actor, requestId, parentId, parentRevision, topologyRevision, childId, childRevision);
+  }
+  peek(actor: Principal, parentId: string, parentRevision: number, topologyRevision: number, childId: string, childRevision: number) {
+    return this.workerResult(actor, "read", parentId, parentRevision, topologyRevision, childId, childRevision, true);
+  }
+  peekDecision(actor: Principal, parentId: string, parentRevision: number, topologyRevision: number, childId: string, childRevision: number) {
+    return this.decisionResult(actor, "read", parentId, parentRevision, topologyRevision, childId, childRevision, true);
   }
   private collectBound<T>(actor: Principal, requestId: string, parentId: string, parentRevision: number, topologyRevision: number,
     childId: string, childRevision: number, operation: string,
-    read: (kernel: RuntimeKernel, actor: Principal, binding: TeamTaskResultBinding & { round_index: number }) => T, aggregate?: (assignment: Assignment) => T): T {
+    read: (kernel: RuntimeKernel, actor: Principal, binding: TeamTaskResultBinding & { round_index: number }) => T, aggregate?: (assignment: Assignment) => T, preview = false): T {
     this.runtime.assertPrincipal(actor); requireScope(actor, "team:write"); requireScope(actor, "task:execute");
     this.kernel.inspect(actor, parentId); this.kernel.inspect(actor, childId);
-    return command(this.kernel.db, actor, requestId, operation, { parentId, parentRevision, topologyRevision, childId, childRevision }, () => {
+    const perform = () => {
       const topology = this.parent(actor, parentId, parentRevision, topologyRevision), cp = topology.state.checkpoints.at(-1)!;
       const assignment = this.kernel.db.sql.query("SELECT * FROM topology_tasks WHERE child_id=? AND parent_id=?").get(childId, parentId) as Assignment | null;
       requireThat(assignment && assignment.execution_id === topology.state.execution_id && assignment.accepted === null && assignment.checkpoint_id === cp.checkpoint_id
@@ -146,7 +214,7 @@ export class TopologyTaskQueue {
       if (assignment.kind === "aggregate") {
         requireThat(aggregate, "aggregate_cannot_issue_control_decision");
         const accepted = aggregate(assignment);
-        this.kernel.db.sql.query("UPDATE topology_tasks SET accepted=? WHERE child_id=?").run(canonical(accepted), childId);
+        if (!preview) this.kernel.db.sql.query("UPDATE topology_tasks SET accepted=? WHERE child_id=?").run(canonical(accepted), childId);
         return accepted;
       }
       const run = this.runtime.inspect(assignment.run_id);
@@ -161,8 +229,11 @@ export class TopologyTaskQueue {
         effect_id: effects[0]!.effect_id, topology: assignment.topology,
         substage: teamWorkerSubstage(assignment.topology, assignment.substage),
         worker_role: assignment.worker_role, round_index: cp.round_index ?? 0 });
-      this.kernel.db.sql.query("UPDATE topology_tasks SET accepted=? WHERE child_id=?").run(canonical(accepted), childId);
+      if (!preview) this.kernel.db.sql.query("UPDATE topology_tasks SET accepted=? WHERE child_id=?").run(canonical(accepted), childId);
       return accepted;
-    }, value => { this.runtime.assertPrincipal(actor); requireScope(actor, "team:write"); this.kernel.inspect(actor, parentId); this.kernel.inspect(actor, childId); return value; });
+    };
+    return preview ? this.kernel.db.transaction(perform) : command(this.kernel.db, actor, requestId, operation,
+      { parentId, parentRevision, topologyRevision, childId, childRevision }, perform,
+      value => { this.runtime.assertPrincipal(actor); requireScope(actor, "team:write"); this.kernel.inspect(actor, parentId); this.kernel.inspect(actor, childId); return value; });
   }
 }

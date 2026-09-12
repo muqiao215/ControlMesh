@@ -1,7 +1,19 @@
+import { ProtocolValidationError } from "@controlmesh/protocol";
 import type { Principal, RuntimeKernel } from "./kernel";
 import { decodeTeamResult } from "./team-result-validation";
 import { decodeDirectorDecision, decodeJudgeDecision } from "./team-control-decision";
-import { digest, requireThat } from "./value";
+import { digest, requireThat, RuntimeConflict } from "./value";
+
+/** Only errors attributable to verified model output permit explicit regeneration. */
+export class TeamOutputError extends RuntimeConflict {}
+function decodeOutput<T>(decode: () => T): T {
+  try { return decode(); }
+  catch (error) {
+    if (error instanceof SyntaxError) throw new TeamOutputError("team_result_invalid_json");
+    if (error instanceof ProtocolValidationError) throw new TeamOutputError("team_result_invalid_schema");
+    throw error;
+  }
+}
 
 /** Supplied by trusted topology scheduling state, never inferred from model output. */
 export interface TeamTaskResultBinding {
@@ -20,13 +32,13 @@ function acceptedJSON(kernel: RuntimeKernel, actor: Principal, binding: TeamTask
   const { text, output_digest } = accepted.result;
   requireThat(typeof text === "string" && Buffer.byteLength(text) <= 4 * 1024 * 1024, "team_result_text_unavailable");
   requireThat(output_digest === digest(text), "team_result_digest_mismatch");
-  return { output_digest, raw: JSON.parse(text) as unknown };
+  return { output_digest, raw: decodeOutput(() => JSON.parse(text) as unknown) };
 }
 /** Reads accepted native output; evidence references inside it remain model assertions. */
 export function readTeamTaskResult(kernel: RuntimeKernel, actor: Principal, binding: TeamTaskResultBinding) {
-  const accepted = acceptedJSON(kernel, actor, binding), result = decodeTeamResult(accepted.raw);
-  requireThat(result.topology === binding.topology && result.substage === binding.substage
-    && result.worker_role === binding.worker_role, "team_result_assignment_mismatch");
+  const accepted = acceptedJSON(kernel, actor, binding), result = decodeOutput(() => decodeTeamResult(accepted.raw));
+  if (result.topology !== binding.topology || result.substage !== binding.substage || result.worker_role !== binding.worker_role)
+    throw new TeamOutputError("team_result_assignment_mismatch");
   return { binding: { ...binding }, output_digest: accepted.output_digest, result };
 }
 /** Round and role are supplied by the persisted assignment, not inferred from model claims. */
@@ -36,9 +48,9 @@ export function readTeamControlDecision(kernel: RuntimeKernel, actor: Principal,
   requireThat(director ? ["planning", "director_deciding", "repairing"].includes(binding.substage)
     : binding.topology === "debate_judge" && binding.substage === "judging", "control_decision_stage_mismatch");
   const accepted = acceptedJSON(kernel, actor, binding);
-  const result = director ? decodeDirectorDecision(accepted.raw) : decodeJudgeDecision(accepted.raw);
+  const result = decodeOutput(() => director ? decodeDirectorDecision(accepted.raw) : decodeJudgeDecision(accepted.raw));
   const round = binding.round_index + (director && result.decision === "dispatch_workers" && binding.substage !== "planning" ? 1 : 0);
-  requireThat(result.topology === binding.topology && result.round_index === round, "control_decision_assignment_mismatch");
+  if (result.topology !== binding.topology || result.round_index !== round) throw new TeamOutputError("control_decision_assignment_mismatch");
   return { binding: { ...binding }, output_digest: accepted.output_digest, result };
 }
 

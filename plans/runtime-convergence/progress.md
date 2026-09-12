@@ -8,12 +8,30 @@ migration, release, installation, service switch or default cutover has occurred
 The 512-module/57-field ledger is a source inventory, not a completed parity score.
 The phase acceptance matrix remains in task_plan.md.
 
-The current increment adds nested aggregate assignment, completion and same-tree reopen.
-Full pinned verification passed; confirm remote publication and CI for this containing
-commit separately from local acceptance. Previous main 73a1a26 has verified successful
-remote CI 34689320168.
+Current published main fcdc818 has verified successful CI 34690365494. The current
+increment implements read-only topology result preview, explicit bounded malformed-output
+recovery and optional pipeline/fanout repair/interruption caps. Automatic scheduler startup,
+registration and control wiring are still pending. This increment passed the full pinned
+gate: 612 tests / 8283 assertions across 66 files, 209.12s, exit 0. Code publication and
+remote CI are separate from this local acceptance; installed CM remains unchanged.
 
 ## Done
+
+- Preview and collection share assignment/proof checks; preview writes no acceptance or
+  command receipt. Result regeneration requires a typed JSON/schema/role/round failure,
+  rather than any thrown exception. Valid output and corrupt/uncertain evidence reject.
+- Explicit retry atomically archives rejected proof identity and reuses the same native
+  task/session. Two retries per child/parent execution survive restart. Quota deadlines
+  reject early retry; unstarted blocked work preserves its input. Cancelled/unknown tasks
+  remain blocked. No automatic model retry is introduced.
+- Optional pipeline/fanout repair and parent-interruption caps use persisted checkpoints;
+  unsupported worker statuses still reject. Service policy freezing is not yet wired.
+- Focused queue/result tests: 23 pass, 0 fail, 137 assertions (958ms). Controller/budget:
+  32 pass, 0 fail, 208 assertions (1473ms). Logs: /tmp/cm-topology-recovery-focused.log
+  and /tmp/cm-topology-budgets-focused.log. Typecheck passed. Controlled fixtures only.
+- Current full gate: 612 pass, 0 fail, 8283 assertions, 66 files, 209.12s (exit 0),
+  including Python owner inventory and typecheck. Log: /tmp/cm-topology-recovery-full.log.
+  These checks did not send new native-model prompts or migrate production data.
 
 - Native and aggregate children have explicit assignment sources in schema 23. A nested
   execution is bound before its work runs; orchestration tasks cannot be admitted to the
@@ -26,13 +44,13 @@ remote CI 34689320168.
 - Required parent files are verified against actual leaf broker receipts and current
   canonical bytes through nested executions. SpecMesh source check remains independent;
   file delivery does not establish reviewed project closeout.
-- Current focused gate: 27 pass, 0 fail, 287 assertions in 3.82s. Typecheck passed.
+- Previous nested aggregate focused gate: 27 pass, 0 fail, 287 assertions in 3.82s. Typecheck passed.
   Evidence: /tmp/cm-aggregate-focused.log. Affected prior suites: 50 pass, 0 fail,
   411 assertions in 3.11s (/tmp/cm-aggregate-existing.log). These are controlled fixtures.
 - The initial full run found an unintended task:read requirement at native claim. The
   guard now retains original ownership/execute semantics. Real process and aggregate
   recheck: 33 pass, 0 fail, 305 assertions in 4.93s (/tmp/cm-aggregate-recheck.log).
-- Final full pinned gate: 590 pass, 0 fail, 8139 assertions across 65 files in 210.14s
+- Previous nested aggregate full pinned gate: 590 pass, 0 fail, 8139 assertions across 65 files in 210.14s
   (exit 0), including inventory drift and typecheck. Evidence: /tmp/cm-aggregate-full.log.
   Initial failed evidence remains in /tmp/cm-aggregate-full-initial.log. No model input
   or production database migration was performed by this increment.
@@ -42,7 +60,8 @@ remote CI 34689320168.
 
 ## Remaining
 
-1. Bounded automatic service scheduling and explicit malformed-output recovery.
+1. Bounded automatic scheduling, immutable plan registration and explicit recovery controls
+   through normal isolated local runtime startup (the queue primitives are implemented).
 2. Device topology queues with current assignment/revision/authority enforcement.
 3. Reviewed SpecMesh project closeout, separate from file delivery.
 4. Real native topology/source-revision profiles and all remaining provider, transport,
@@ -62,8 +81,10 @@ remain preserved in the linked archive rather than being relabeled as full compl
 
 ## Next
 
-Publish verified nested aggregate support directly to main. Then
-implement bounded automatic scheduling/recovery and device topology integration. Do not mark the full migration complete for this increment.
+Wire automatic scheduling/recovery into normal local runtime startup/control, using the
+verified preview/retry primitives and frozen schedule registration. Continue
+device topology integration and all remaining CM-R0–CM-R7 gates; this increment does not
+complete the full migration.
 
 ## Retained evidence
 

@@ -69,8 +69,9 @@ No claim that full TS migration or distributed coordination has completed. A sco
 
 ## Next Step
 
-Publish and verify the nested aggregate increment, then implement bounded automatic
-topology scheduling and explicit malformed-output recovery. This is the current local
+Wire bounded automatic topology scheduling and explicit recovery into the isolated local
+runtime configuration/control entrypoint. Nested aggregate support is published at fcdc818
+with successful CI 34690365494; recovery/preview primitives are now implemented locally. This is the current local
 orchestration seam, not the full migration exit. Follow progress.md for exact verification
 and the remaining service/device/provider/store/release order.
 
@@ -114,8 +115,10 @@ now bind their own completion and current descendant evidence; all 16 parent/chi
 combinations and same-tree reopen pass focused fixtures. File requirements trace to
 actual leaf tool receipts. This does not establish automatic service or device dispatch.
 
-Next after this gate is verified and published: bounded automatic service scheduling and
-malformed-output recovery, then device topology dispatch and real native topology
-acceptance. Continue all remaining CM-R0–CM-R7 provider/transport/store, native source
+Current recovery foundation adds read-only result preview, typed malformed-output
+classification, explicit same-session retry with a durable two-retry ceiling and optional
+pipeline/fanout repair/interruption caps. Normal service startup/control wiring and frozen
+schedule registration remain next, followed by device topology dispatch and real native
+topology acceptance. Continue all remaining CM-R0–CM-R7 provider/transport/store, native source
 revision and release/install gates; explicit local queue tests do not narrow that scope.
 There is no production writer switch, release or installed-version alignment yet.

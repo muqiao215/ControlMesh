@@ -1,3 +1,4 @@
+import { exhaustedTeamBudget, type TeamStepBudgets } from "./team-budgets";
 import { decodeTeamResult, type StructuredTeamResult } from "./team-result-validation";
 import { compactTeamText, teamResultSummary, teamReducedSummary } from "./team-progress";
 import { reduceFailedFanout, reduceFanoutResult, type TeamReducedResult } from "./team-results";
@@ -40,11 +41,12 @@ export function collectFanoutWorkers(state: TopologyState, values: StructuredTea
     completed_roles: [...new Set([coordinator(current), ...success.map(result => result.worker_role)])], latest_summary: summary,
     artifact_count: success.reduce((total, result) => total + result.artifacts.length, 0) }, at);
 }
-export interface FanoutResultOptions { parent_question?: string; waiting_on?: string; repair_worker_role?: string; reducer_role?: string }
+export interface FanoutResultOptions extends TeamStepBudgets { parent_question?: string; waiting_on?: string; repair_worker_role?: string; reducer_role?: string }
 export function applyFanoutResult(state: TopologyState, value: StructuredTeamResult, options: FanoutResultOptions = {}, at = new Date()): TopologyState {
   const stage = state.checkpoints.at(-1)?.substage;
   requireThat(stage === "reducing" || stage === "repairing", "fanout_stage_mismatch");
   const current = stateFor(state, stage), cp = current.checkpoints.at(-1)!, result = resultFor(value, stage);
+  const exhausted = exhaustedTeamBudget(current, result, options, at); if (exhausted) return exhausted;
   if (stage === "repairing" && result.status === "completed") return appendTopologyCheckpoint(current, { substage: "reducing", phase_status: "in_progress",
     active_roles: [options.reducer_role ?? "reducer"], completed_roles: completed(current, result.worker_role), latest_summary: teamResultSummary(result),
     artifact_count: Math.max(cp.artifact_count, result.artifacts.length), result }, at);
