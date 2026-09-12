@@ -140,3 +140,17 @@ Raw team-result structural boundary is now implemented in the shared schema and
 `team-result-validation.ts`;677 finite JSON cases match Python. Execution-spine
 checkpoint/state validation and TaskHub identity/evidence binding remain next, before
 routing raw Agent responses into runtime completion.
+
+## Current topology checkpoint — 2026-09-12
+
+Pipeline/fanout policies and explicit transactional local queue steps are implemented.
+Director/judge pure policies and normalized control decision schemas are implemented;
+they are not yet connected to accepted controller task results or dispatch. Do not
+interpret their differential tests as a real native topology acceptance.
+
+Next: persist immutable per-task control budgets, bind control decisions to accepted
+execution and checkpoint/round identity, compose director/judge child queues, then
+implement bounded service repair/parent completion and device topology dispatch.
+Python judge repair now selects evidence from the latest candidate batch, not an old
+batch with the same formal round. All CM-R0–CM-R7 gates above remain authoritative;
+there is no production writer switch, release or installed-version alignment yet.

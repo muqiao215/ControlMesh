@@ -59,3 +59,4 @@ export { RuntimeTopology, type TopologySnapshot } from "./runtime-topology";
 export { TopologyTaskQueue } from "./topology-task-queue";
 export { RuntimePipeline, type PipelineChild } from "./runtime-pipeline";
 export { RuntimeFanout, type FanoutChild } from "./runtime-fanout";
+export { decodeDirectorDecision, decodeJudgeDecision, type DirectorDecision, type JudgeDecision } from "./team-control-decision";

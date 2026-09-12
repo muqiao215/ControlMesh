@@ -428,6 +428,39 @@ class Task(BaseModel):
     last_question: str | None = None
 
 
+class TeamDirectorDecision(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    schema_version: Literal[1]
+    topology: Literal["director_worker"]
+    round_index: int
+    decision: Literal["dispatch_workers", "complete", "needs_parent_input", "needs_repair", "failed"]
+    summary: str
+    evidence: list[dict[str, Any]]
+    confidence: Any
+    artifacts: list[dict[str, Any]]
+    next_action: Any
+    repair_hint: Any
+    stop_reason: Any
+    dispatch_roles: list[str]
+
+
+class TeamJudgeDecision(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    schema_version: Literal[1]
+    topology: Literal["debate_judge"]
+    round_index: int
+    decision: Literal["select_winner", "advance_round", "needs_parent_input", "needs_repair", "failed"]
+    summary: str
+    evidence: list[dict[str, Any]]
+    confidence: Any
+    artifacts: list[dict[str, Any]]
+    next_action: Any
+    repair_hint: Any
+    stop_reason: Any
+    winner_role: Any
+    next_candidate_roles: list[str]
+
+
 class TeamStructuredResult(BaseModel):
     model_config = ConfigDict(extra="allow")
     schema_version: Literal[1]

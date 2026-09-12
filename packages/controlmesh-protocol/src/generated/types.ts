@@ -392,6 +392,37 @@ export interface Task {
   "last_question"?: string;
 }
 
+export interface TeamDirectorDecision {
+  "schema_version": 1;
+  "topology": "director_worker";
+  "round_index": number;
+  "decision": "dispatch_workers" | "complete" | "needs_parent_input" | "needs_repair" | "failed";
+  "summary": string;
+  "evidence": Record<string, unknown>[];
+  "confidence": unknown;
+  "artifacts": Record<string, unknown>[];
+  "next_action": unknown;
+  "repair_hint": unknown;
+  "stop_reason": unknown;
+  "dispatch_roles": string[];
+}
+
+export interface TeamJudgeDecision {
+  "schema_version": 1;
+  "topology": "debate_judge";
+  "round_index": number;
+  "decision": "select_winner" | "advance_round" | "needs_parent_input" | "needs_repair" | "failed";
+  "summary": string;
+  "evidence": Record<string, unknown>[];
+  "confidence": unknown;
+  "artifacts": Record<string, unknown>[];
+  "next_action": unknown;
+  "repair_hint": unknown;
+  "stop_reason": unknown;
+  "winner_role": unknown;
+  "next_candidate_roles": string[];
+}
+
 export interface TeamStructuredResult {
   "schema_version": 1;
   "status": "completed" | "failed" | "blocked" | "needs_parent_input" | "needs_repair";

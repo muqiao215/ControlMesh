@@ -81,6 +81,11 @@ def _paths(tmp_path: Path) -> ControlMeshPaths:
     )
 
 
+@pytest.fixture(autouse=True)
+def _isolate_runtime_snapshot_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("controlmesh.team.runtime_control.resolve_paths", lambda: _paths(tmp_path))
+
+
 def _seed_named_session(
     path: Path,
     *,

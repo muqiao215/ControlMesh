@@ -2,6 +2,19 @@
 
 ## Current
 
+Director/judge pure policy and canonical control decision boundary implemented.
+778 raw decision cases, 64 director flows and 48 judge flows match live Python; the
+combined focused TS gate has 4 pass, 0 fail and 1578 assertions. Python judge stale candidate
+batch selection reproduced and fixed, with regression coverage. Expanded Python
+team/protocol gate: 186 pass in 3.51s after isolating snapshot paths; Ruff, generated
+protocol and Web build pass. Full pinned runtime gate: 510 pass, 0 fail, 7476 assertions
+across 61 files in 220.75s (exit 0). Evidence: /tmp/cm-director-judge-full.log and
+/tmp/cm-control-decision-python-isolated.log. Previous published c5c3660 and
+CI 34684912425 are verified successful. Current increment remote CI is pending.
+Next: persisted per-task limits, accepted controller decision binding and director/judge
+queue composition; then service budgets, parent finalization and device queues.
+No new native runs, release, install or production writer switch.
+
 Fanout policy and queue composition implemented.127 fanout sequences match the real
 Python runtime; shared summary extraction retains all127 pipeline sequences. Parent
 checkpoint remains dispatching while native worker output uses collecting. RuntimeFanout

@@ -1,5 +1,30 @@
 # Findings
 
+## Director/judge decisions and repaired candidate evidence — 2026-09-12
+
+The control-decision boundary has 778 raw JSON cases compared to real Python models;
+64 director flows cover round, parent interruption, repair and total-dispatch budgets;
+48 judge flows cover selection, next round, final-round escalation, repair and resume.
+These are pure policy checks. No model calls, provider acceptance, persisted policy
+configuration or authenticated controller-result admission is added by this increment.
+
+A real Python reproduction returned old:a after a same-round repair had produced new:a.
+`TeamDebateJudgeRuntime._round_results` gathered every collecting checkpoint in the
+formal round; winner selection then chose the first matching role. Both Python and TS
+now slice after the latest candidate_round checkpoint for that round. A regression
+checks winner evidence, failure evidence and latest-batch rollup/artifact counts.
+Older checkpoints remain intact. Legacy states without a batch marker retain the
+previous full-round lookup. Director's existing source preference is unchanged.
+
+Python judge currently has a formal-round limit but lacks a service repair/interruption
+cap. Preserve that explicit limitation until the bounded service owner is implemented.
+Director limits are immutable within one policy object, not yet durably bound to a task.
+
+The expanded Python gate initially passed 184 tests and failed two runtime-recovery
+tests because their snapshot advisor resolved the operator's real CM workspace despite
+a temporary team state root. An autouse resolver fixture isolates this test module;
+all 186 team/protocol tests now pass. No production state permission was added.
+
 ## Normal container queue and parallel-turn counting — 2026-09-12
 
 The normal Claude task adapter now selects container readiness/execution explicitly from trusted

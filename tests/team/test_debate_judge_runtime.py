@@ -608,3 +608,48 @@ def test_debate_judge_runtime_rejects_final_round_tie_stop_reason_before_final_r
             parent_question="Should the judge escalate this early tie?",
             waiting_on="parent tradeoff decision",
         )
+
+
+def test_repaired_round_uses_latest_candidate_batch_for_winner_and_failure(tmp_path: Path) -> None:
+    registry = TaskRegistry(tmp_path / "tasks.json", tmp_path / "tasks")
+    entry = registry.create(_submit(), "claude", "opus")
+    runtime = TeamDebateJudgeRuntime(TeamTopologyExecutionSpine(_hub(registry, tmp_path)))
+    runtime.start(entry.task_id, planning_summary="Plan", round_limit=2)
+    for generation in ("old", "new"):
+        runtime.start_candidate_round(entry.task_id, candidate_roles=["a", "b"])
+        state = runtime.record_candidate_results(
+            entry.task_id,
+            [
+                _candidate_result(role=role, summary=generation, evidence_suffix=generation)
+                for role in ("a", "b")
+            ],
+        )
+        if generation == "old":
+            runtime.record_judge_decision(
+                entry.task_id,
+                TeamJudgeDecision(
+                    round_index=1, decision="needs_repair", summary="Fix", repair_hint="Fix"
+                ),
+            )
+    assert state.current_checkpoint.artifact_count == 2
+    assert (
+        state.current_checkpoint.latest_summary
+        == "Round 1 collected 2 candidate envelopes. completed: a, b"
+    )
+    winner = runtime.record_judge_decision(
+        entry.task_id,
+        TeamJudgeDecision(
+            round_index=1, decision="select_winner", winner_role="a", summary="Select"
+        ),
+    )
+    reduced = winner.current_checkpoint.reduced_result
+    assert reduced is not None
+    assert [item.ref for item in reduced.selected_evidence] == ["event-a-new"]
+    latest = runtime._round_results(state, round_index=1)
+    failed = runtime._reduce_failure(
+        TeamJudgeDecision(
+            round_index=1, decision="failed", summary="Stop", stop_reason="no_viable_candidate"
+        ),
+        latest,
+    )
+    assert [item.ref for item in failed.selected_evidence] == ["event-a-new", "event-b-new"]

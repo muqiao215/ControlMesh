@@ -1926,9 +1926,20 @@ class TeamDebateJudgeRuntime:
         *,
         round_index: int,
     ) -> list[TeamStructuredResult]:
+        # Repair can restart candidates without incrementing the formal round.
+        # Only the latest batch may supply winner evidence or failure reduction.
+        start = max(
+            (
+                index
+                for index, checkpoint in enumerate(state.checkpoints)
+                if checkpoint.substage == "candidate_round"
+                and checkpoint.round_index == round_index
+            ),
+            default=-1,
+        )
         return [
             checkpoint.result
-            for checkpoint in state.checkpoints
+            for checkpoint in state.checkpoints[start + 1 :]
             if checkpoint.result is not None
             and checkpoint.topology == "debate_judge"
             and checkpoint.substage == "collecting"

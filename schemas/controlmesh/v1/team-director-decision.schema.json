@@ -1,0 +1,263 @@
+{
+  "description": "Typed director control decision for director_worker loops.",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "topology": {
+      "const": "director_worker"
+    },
+    "round_index": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "decision": {
+      "enum": [
+        "dispatch_workers",
+        "complete",
+        "needs_parent_input",
+        "needs_repair",
+        "failed"
+      ]
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "evidence": {
+      "items": {
+        "description": "Pointer to evidence selected from ControlMesh-owned runtime truth.",
+        "properties": {
+          "ref": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string",
+            "minLength": 1
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "ref",
+          "kind",
+          "summary"
+        ],
+        "type": "object",
+        "additionalProperties": false
+      },
+      "type": "array"
+    },
+    "confidence": {
+      "anyOf": [
+        {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "artifacts": {
+      "items": {
+        "description": "Pointer to an artifact owned by ControlMesh task/runtime storage.",
+        "properties": {
+          "ref": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string",
+            "minLength": 1
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "ref",
+          "kind",
+          "label",
+          "summary"
+        ],
+        "type": "object",
+        "additionalProperties": false
+      },
+      "type": "array"
+    },
+    "next_action": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "repair_hint": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "stop_reason": {
+      "anyOf": [
+        {
+          "enum": [
+            "budget_exhausted",
+            "no_viable_path",
+            "repair_exhausted",
+            "parent_decision_required"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "dispatch_roles": {
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "topology",
+    "round_index",
+    "decision",
+    "summary",
+    "evidence",
+    "confidence",
+    "artifacts",
+    "next_action",
+    "repair_hint",
+    "stop_reason",
+    "dispatch_roles"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://controlmesh.dev/schemas/v1/team-director-decision.schema.json",
+  "title": "TeamDirectorDecision",
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "decision": {
+            "const": "needs_repair"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "repair_hint": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "repair_hint": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "decision": {
+            "enum": [
+              "needs_parent_input",
+              "failed"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "stop_reason": {
+            "enum": [
+              "budget_exhausted",
+              "no_viable_path",
+              "repair_exhausted",
+              "parent_decision_required"
+            ]
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "stop_reason": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "decision": {
+            "const": "dispatch_workers"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "dispatch_roles": {
+            "minItems": 1
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "dispatch_roles": {
+            "maxItems": 0
+          }
+        }
+      }
+    }
+  ]
+}

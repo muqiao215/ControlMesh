@@ -340,16 +340,17 @@ filesystem. See the package README for implemented behavior and activation gates
 state in candidate schema 17. It checks task ownership, task revision and its own topology
 revision inside the command transaction. `team-topology.ts` owns state transitions;
 the canonical `team-topology-state` schema and cross-field checks reject inconsistent
-state before persistence. These components do not yet dispatch topology workers.
-`readTeamTaskResult` decodes an explicitly bound, accepted execution result; a future
-scheduler must supply the persisted role/phase assignment, not trust model self-labels.
+state before persistence. `readTeamTaskResult` decodes an explicitly bound, accepted
+execution result. The queue below supplies the persisted role/phase assignment;
+model self-labels cannot establish that binding.
 
 `TopologyTaskQueue` now supplies that assignment for independently authorized local
 children, stored in candidate schema 18. It atomically associates a checkpoint role
 with a `LocalTaskRuntime` run and collects the run's accepted effect output. The kernel
 checks the ancestor chain at admission and execution/publication boundaries; changed
 checkpoints or inactive parents revoke child execution while lease-bound cleanup stays
-available. Automatic topology policies and device queue composition remain pending.
+available. The pipeline and fanout compositions below drive explicit local steps;
+director/judge dispatch, automatic service loops and device queue composition remain pending.
 
 Candidate schema 19 adds assignment generations and prior-assignment history.
 `TopologyTaskQueue.resume` archives the resolved assignment and reuses Kernel.resume
@@ -367,6 +368,16 @@ Workers retain one parent dispatch checkpoint until every assigned result is acc
 their result envelopes use the Python collecting substage. Acceptance follows original
 dispatch order and commits with reduction/next-task admission. Partial batches and queue
 capacity failures roll back rather than revoking workers that are still executing.
+
+`DirectorPolicy` and `JudgePolicy` port pure decision/checkpoint behavior against the
+live Python runtimes. Canonical decision schemas normalize raw control envelopes;
+these decoders establish shape, not trusted task/round provenance. Director limits
+bound rounds, interruptions, repairs and dispatches, but must still be frozen in
+persisted task configuration before service activation. Judge repair uses the latest
+candidate batch within a formal round, retaining older checkpoints for audit. Judge
+service repair/interruption budgets and both controllers' accepted-decision binding,
+queue composition and parent finalization remain pending. These policies are internal;
+they do not issue child tasks or make native execution claims.
 
 `LocalTaskRuntime` adds the private local task execution owner. SQLite schema 8 stores
 queued runs, their expected task revision and provider/profile binding, plus the claimed

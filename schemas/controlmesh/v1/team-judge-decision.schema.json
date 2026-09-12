@@ -1,0 +1,315 @@
+{
+  "description": "Typed judge control decision for debate_judge rounds.",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "topology": {
+      "const": "debate_judge"
+    },
+    "round_index": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "decision": {
+      "enum": [
+        "select_winner",
+        "advance_round",
+        "needs_parent_input",
+        "needs_repair",
+        "failed"
+      ]
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "evidence": {
+      "items": {
+        "description": "Pointer to evidence selected from ControlMesh-owned runtime truth.",
+        "properties": {
+          "ref": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string",
+            "minLength": 1
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "ref",
+          "kind",
+          "summary"
+        ],
+        "type": "object",
+        "additionalProperties": false
+      },
+      "type": "array"
+    },
+    "confidence": {
+      "anyOf": [
+        {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "artifacts": {
+      "items": {
+        "description": "Pointer to an artifact owned by ControlMesh task/runtime storage.",
+        "properties": {
+          "ref": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string",
+            "minLength": 1
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "ref",
+          "kind",
+          "label",
+          "summary"
+        ],
+        "type": "object",
+        "additionalProperties": false
+      },
+      "type": "array"
+    },
+    "next_action": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "repair_hint": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "stop_reason": {
+      "anyOf": [
+        {
+          "enum": [
+            "final_round_tie",
+            "insufficient_evidence",
+            "no_viable_candidate",
+            "parent_decision_required"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "winner_role": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "next_candidate_roles": {
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "topology",
+    "round_index",
+    "decision",
+    "summary",
+    "evidence",
+    "confidence",
+    "artifacts",
+    "next_action",
+    "repair_hint",
+    "stop_reason",
+    "winner_role",
+    "next_candidate_roles"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://controlmesh.dev/schemas/v1/team-judge-decision.schema.json",
+  "title": "TeamJudgeDecision",
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "decision": {
+            "const": "needs_repair"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "repair_hint": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "repair_hint": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "decision": {
+            "enum": [
+              "needs_parent_input",
+              "failed"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "stop_reason": {
+            "enum": [
+              "final_round_tie",
+              "insufficient_evidence",
+              "no_viable_candidate",
+              "parent_decision_required"
+            ]
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "stop_reason": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "decision": {
+            "const": "select_winner"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "winner_role": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "winner_role": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "decision": {
+            "const": "advance_round"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "next_candidate_roles": {
+            "minItems": 1
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "next_candidate_roles": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "stop_reason": {
+            "const": "final_round_tie"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "decision": {
+            "const": "needs_parent_input"
+          }
+        }
+      }
+    }
+  ]
+}

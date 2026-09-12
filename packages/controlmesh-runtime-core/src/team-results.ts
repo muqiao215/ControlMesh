@@ -6,7 +6,7 @@ export interface TeamWorkerResult {
   evidence: TeamEvidenceRef[]; artifacts: TeamArtifactRef[]; next_action: string | null;
 }
 export interface TeamReducedResult {
-  schema_version: 1; topology: "pipeline" | "fanout_merge"; final_status: string; reduced_summary: string;
+  schema_version: 1; topology: "pipeline" | "fanout_merge" | "director_worker" | "debate_judge"; final_status: string; reduced_summary: string;
   selected_evidence: TeamEvidenceRef[]; selected_artifacts: TeamArtifactRef[]; next_action: string | null;
 }
 function reduced(topology: TeamReducedResult["topology"], result: TeamWorkerResult,
