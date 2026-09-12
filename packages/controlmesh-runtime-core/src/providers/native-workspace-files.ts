@@ -15,6 +15,8 @@ export interface WorkspaceFilesConfiguration {
   journal_directory: string;
   binding_digest: string;
   stage?: WorkspaceStage;
+  /** Trusted retained dispatch only. This creates an inspection-only owner; never send it to MCP. */
+  retained_scope?: Record<string, unknown>;
 }
 interface FileValue { bytes: Buffer; sha256: string; mode: number; identity: string }
 interface Intent { path: string; before_sha256: string | null; after_sha256: string; before_identity: string | null; size: number }
@@ -68,13 +70,20 @@ export class NativeWorkspaceFiles {
     const journal = fs.lstatSync(config.journal_directory);
     requireThat(this.root.path === config.workspace && this.journal.path === config.journal_directory && journal.uid === process.getuid?.()
       && (journal.mode & 0o077) === 0 && !contains(config.workspace, config.journal_directory) && !contains(config.journal_directory, config.workspace), "workspace_tool_private_journal_required");
-    this.reads = snapshotReads(config.workspace, config.read_files);
+    if (config.retained_scope) {
+      const reads = config.retained_scope.reads;
+      requireThat(Array.isArray(reads) && reads.length <= 80 && reads.every(read => object(read)
+        && typeof read.path === "string" && config.read_files.includes(read.path) && hash(read.sha256)
+        && [read.device, read.inode, read.size, read.modified_ns, read.changed_ns].every(value => typeof value === "string" && /^\d+$/.test(value))), "workspace_tool_retained_scope_invalid");
+      this.reads = structuredClone(reads) as ReadSnapshot[];
+    } else this.reads = snapshotReads(config.workspace, config.read_files);
     this.stageScope = config.stage?.fileScope();
     this.stageRoot = this.stageScope ? directoryIdentity(this.stageScope.tree) : undefined;
     requireThat(!this.stageScope || this.stageScope.workspace === config.workspace, "workspace_tool_stage_mismatch");
     this.scope = { schema_version: "controlmesh.workspace_tool_scope.v1", binding_digest: config.binding_digest, workspace: this.root,
       reads: this.reads, tools: this.tools, journal: this.journal, stage: config.stage ? { path: config.stage.path, reference: config.stage.reference(), files: this.stageScope } : null };
     this.scopeDigest = digest(this.scope);
+    requireThat(!config.retained_scope || digest(config.retained_scope) === this.scopeDigest, "workspace_tool_retained_scope_changed");
     this.owner(false);
   }
   private owner(create: boolean): void {
@@ -100,6 +109,7 @@ export class NativeWorkspaceFiles {
     this.owner(false);
     requireThat(digest([...this.config.read_files].sort()) === digest(this.reads.map(read => read.path).sort()), "workspace_tool_source_changed");
     for (const read of this.reads) {
+      if (this.config.retained_scope && this.stageScope?.roots.some(root => contains(root, read.path))) continue;
       const stat = fs.lstatSync(read.path, { bigint: true });
       requireThat(stat.isFile() && fs.realpathSync(read.path) === read.path && String(stat.dev) === read.device && String(stat.ino) === read.inode
         && String(stat.size) === read.size && String(stat.mtimeNs) === read.modified_ns && String(stat.ctimeNs) === read.changed_ns, "workspace_tool_source_changed");
@@ -108,7 +118,13 @@ export class NativeWorkspaceFiles {
       requireThat(digest(this.config.stage.fileScope()) === digest(this.stageScope)
         && digest(directoryIdentity(this.stageScope!.tree)) === digest(this.stageRoot)
         && digest(this.config.stage.reference()) === digest((this.scope.stage as { reference: unknown }).reference), "workspace_tool_stage_changed");
-      this.config.stage.assertSourceCurrent();
+      if (this.config.retained_scope) {
+        let proposal: ReturnType<WorkspaceStage["proposalReceipt"]> | undefined;
+        try { proposal = this.config.stage.proposalReceipt(); }
+        catch (error) { requireThat(error instanceof RuntimeConflict && error.code === "workspace_stage_not_sealed", "workspace_tool_stage_changed"); }
+        if (proposal) this.config.stage.assertProposal(proposal.proposal_digest);
+        else this.config.stage.assertSourceCurrent();
+      } else this.config.stage.assertSourceCurrent();
     }
   }
   private gated<T>(run: () => T): T {
@@ -160,10 +176,10 @@ export class NativeWorkspaceFiles {
     requireThat(Buffer.byteLength(canonical(response)) <= 16384, "workspace_tool_response_limit"); return response;
   }
   call(tool: string, input: Record<string, unknown>): Record<string, unknown> {
+    requireThat(!this.config.retained_scope, "workspace_tool_retained_owner_read_only");
     identifier(input.request_id);
     requireThat((nativeWorkspaceTools as readonly string[]).includes(tool) && Buffer.byteLength(canonical(input)) <= 16384, "invalid_workspace_tool");
     return this.gated(() => {
-      requireThat(this.tools.includes(tool), "workspace_tool_not_granted");
       this.owner(true);
       const path = this.receiptPath(input.request_id as string), previous = this.load(path);
       if (previous) {
@@ -175,6 +191,7 @@ export class NativeWorkspaceFiles {
         request_id: input.request_id as string, sequence: names.length + 1, tool, input, state: "pending", intent: null, response: {} };
       let bytes: Buffer | undefined, target: ReturnType<NativeWorkspaceFiles["location"]> | undefined, mode = 0o644;
       try {
+        requireThat(this.tools.includes(tool), "workspace_tool_not_granted");
         const write = tool !== "controlmesh_read_file", allowed = tool === "controlmesh_read_file" ? ["offset", "expected_sha256"] : tool === "controlmesh_write_file" ? ["content", "expected_sha256"] : ["old_text", "new_text", "expected_sha256"];
         requireThat(Object.keys(input).every(key => key === "request_id" || key === "path" || allowed.includes(key)), "unexpected_workspace_tool_argument");
         target = this.location(input.path, write);
@@ -225,6 +242,7 @@ export class NativeWorkspaceFiles {
   }
   /** An owner may reconcile an interrupted receipt only from the already staged result. */
   reconcile(requestId: string): Record<string, unknown> {
+    requireThat(!this.config.retained_scope, "workspace_tool_retained_owner_read_only");
     return this.gated(() => {
       const path = this.receiptPath(requestId), row = this.load(path); requireThat(row, "workspace_tool_receipt_missing");
       if (row.state === "done") return row.response;
@@ -237,7 +255,8 @@ export class NativeWorkspaceFiles {
   }
   verify(native: readonly { tool: string; input: Record<string, unknown>; output: string }[], requiredReads: readonly string[]): { receipts_digest: string; read_files: string[]; written_files: string[] } {
     this.check();
-    requireThat(digest(snapshotReads(this.config.workspace, this.config.read_files)) === digest(this.reads), "workspace_tool_source_changed");
+    const originalReads = this.reads.filter(read => !this.config.retained_scope || !this.stageScope?.roots.some(root => contains(root, read.path)));
+    requireThat(digest(snapshotReads(this.config.workspace, originalReads.map(read => read.path))) === digest(originalReads), "workspace_tool_source_changed");
     const names = this.names(); requireThat(names.length <= 256, "workspace_tool_receipts_unresolved");
     const rows = names.map(name => this.load(join(this.journal.path, name))!).sort((a, b) => a.sequence - b.sequence);
     requireThat(rows.every((row, index) => row?.state === "done" && row.sequence === index + 1), "workspace_tool_receipts_unresolved");

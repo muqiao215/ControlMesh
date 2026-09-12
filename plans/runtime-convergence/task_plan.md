@@ -69,14 +69,16 @@ No claim that full TS migration or distributed coordination has completed. A sco
 
 ## Next Step
 
-Wire the normal Claude task adapter/worker and provider-specific retained-result manifest into
-local configuration, using the now-implemented supervised control driver and scoped file owner.
-See [claude-continuity-design.md](claude-continuity-design.md). The driver verifies dynamic MCP
-before sending one input; actual original-session resume plus current-file read and staged
-write passed independent verification. Normal task admission, publication and task-level recovery
-are still open. Keep original scoped-Read/static-MCP failures and the existing one-shot/restrictive
-flag contract explicit. Workspace owner 7c522e2 and source verifier d86745c have passing exact-SHA
-CI. Preserve current source/grants and original native identity; readiness/prose is not completion.
+Qualify Claude peer-message capabilities through the existing bounded task mailbox and native
+MCP owner, then connect its remaining adoption/device profiles. Normal local Claude task startup,
+explicit same-session resume, staged publication and model-free retained-result recovery are now
+implemented and have scoped native evidence. See [claude-continuity-design.md](claude-continuity-design.md).
+The actual parallel-read trial exposed a strict-chain parser defect, fixed with exact pending-tool
+parent binding. Preserve the original failed trial: the first model output omitted a newline and
+the second corrected the files but added prose before JSON, so strict fixture-prompt acceptance
+remains failed even though runtime continuity/publication verification passed. The scoped local
+profile does not qualify peer tools, remote Claude execution or full provider parity. Preserve
+the existing one-shot/restrictive flag contract and current source/grant/native identity checks.
 Continue the other provider/transport/store/topology/product owners below; CM-R7 remains open.
 
 Local private startup, History/native adoption, native mailbox/Agent communication,

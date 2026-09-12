@@ -125,3 +125,32 @@ test("adoption refuses queued input, unknown compaction, active tool turns and u
   ];
   for (const added of variants) { writeFileSync(s.path, raw + s.encode(added)); expect(() => s.store.baseline(s.store.read(session))).toThrow(); }
 });
+
+test("parallel results retain their exact pending owners while native model chunks interleave", () => {
+  const s = setup(), baseline = s.store.baseline(s.store.read(session)), raw = s.encode(s.rows);
+  const tool = (id: string) => ({ type: "tool_use", id, name: "mcp__workspace__read_file", input: { path: id } });
+  const result = (n: number, owner: number, id: string) => ({ ...s.user(n, owner, [{ type: "tool_result", tool_use_id: id, content: id }]), sourceToolAssistantUUID: uuid(owner) });
+  const added = [s.user(3, 2, "read together"),
+    s.assistant(4, 3, [tool("first")], "tool_use", "parallel"),
+    s.assistant(5, 4, [tool("second")], "tool_use", "parallel"),
+    result(6, 4, "first"), // The result can flush before all chunks of the same API message.
+    s.assistant(7, 6, [tool("third")], "tool_use", "parallel"),
+    result(8, 7, "third"), result(9, 5, "second"),
+    s.assistant(10, 9, [s.text("done")])];
+  appendFileSync(s.path, s.encode(added));
+  const verified = s.store.verifyTurn(session, baseline, "read together", "done", "fixture-model");
+  expect(verified.tools.map(call => call.id)).toEqual(["first", "third", "second"]);
+  expect(s.store.baseline(verified.reference).tip_uuid).toBe(uuid(10));
+  const variants = [
+    { at: 3, value: { ...added[3], parentUuid: uuid(2), sourceToolAssistantUUID: uuid(2) } },
+    { at: 3, value: { ...added[3], sourceToolAssistantUUID: undefined } },
+    { at: 6, value: result(9, 4, "first") }, // Already consumed call cannot introduce a second edge.
+    { at: 4, value: s.assistant(7, 6, [tool("third")], "tool_use", "new-api-message") },
+    { at: 7, value: s.assistant(10, 4, [s.text("done")]) },
+  ];
+  for (const variant of variants) {
+    const changed = [...added]; changed[variant.at] = variant.value;
+    writeFileSync(s.path, raw + s.encode(changed));
+    expect(() => s.store.verifyTurn(session, baseline, "read together", "done", "fixture-model")).toThrow();
+  }
+});

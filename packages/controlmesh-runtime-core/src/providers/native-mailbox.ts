@@ -10,14 +10,15 @@ export class NativeMailboxDelivery {
   private readonly mailbox: AgentMailbox;
   constructor(private readonly kernel: RuntimeKernel) { this.mailbox = new AgentMailbox(kernel); }
 
-  prepare(actor: Principal, lease: Lease, prompt: string): NativeMailboxBatch | undefined {
+  prepare(actor: Principal, lease: Lease, prompt: string, maxInputBytes = 65536): NativeMailboxBatch | undefined {
+    requireThat(Number.isSafeInteger(maxInputBytes) && maxInputBytes > 0 && maxInputBytes <= 65536, "invalid_native_mailbox_input_limit");
     requireScope(actor, "message:ack");
     const messages = this.mailbox.pending(actor, lease);
     if (!messages.length) return undefined;
     const batch: NativeMailboxBatch = { schema_version: "controlmesh.native_mailbox.v1", task_id: lease.task_id, messages: [] };
     for (const message of messages) {
       batch.messages.push(nativeMessage(message));
-      try { nativeInput(prompt, batch); }
+      try { requireThat(Buffer.byteLength(nativeInput(prompt, batch)) <= maxInputBytes, "native_mailbox_input_too_large"); }
       catch (error) {
         if (!(error instanceof RuntimeConflict) || !["native_mailbox_too_large", "native_mailbox_input_too_large"].includes(error.code) || batch.messages.length === 1) throw error;
         batch.messages.pop(); break; // Keep the fitting prefix; never truncate or skip a message.

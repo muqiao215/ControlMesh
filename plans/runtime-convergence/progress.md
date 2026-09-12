@@ -2,6 +2,46 @@
 
 ## Current
 
+Current increment: **normal Claude task startup, original-session resume and retained recovery**.
+`ClaudeTaskAdapter` uses the ordinary local queue/kernel, shared readiness cache, native session
+lock, distinct Claude dispatch manifest, private fsynced original outcome, scoped workspace tools
+and existing staged publication. `ClaudeTaskReconciler` reuses that evidence without a provider
+runner. Local configuration explicitly selects registered Claude/OpenCode profiles; missing or
+unqualified capabilities reject without fallback. Required-file budget rejects before preflight.
+
+Actual CLI 2.1.263/MiniMax-M3 through `openLocalRuntime`/`LocalRuntimeControl` created one original
+session and resumed it after reopening. The second prompt omitted the marker and recalled it
+correctly; both turns consumed current SpecMesh references and published staged files. Original
+JSONL bytes remained unchanged as a prefix. Recovery and repeat acceptance did not execute another
+task input; repeat acceptance preserved native bytes and canonical inode. Two task inputs and two
+readiness generations ran: repair outlasted the first ready TTL, so second admission renewed it.
+Independent readback used zero native commands and found no owned process left running.
+
+Keep acceptance boundaries explicit: the first native run was rejected by an overly linear parent
+check when parallel tool results referenced their own calls. The verifier now accepts only exact
+pending-tool edges with matching source owner; ordinary messages still extend the current tip,
+and a new API message cannot advance while tools are pending. That retained result was recovered
+without rerunning it. Its file lacked the requested newline; the resumed turn repaired both final
+files, but prefixed the requested JSON with prose. **Scoped runtime-profile verification passed;
+strict fixture-prompt acceptance remains failed.** SpecMesh structural checks are not semantic
+task closeout. Original failed reports remain private and are not retroactively marked successful.
+
+Validation: final pinned runtime gate with Docker and independent SpecMesh **431/431**, zero
+failures, 4,624 assertions, 82.78 seconds. Focused chain/task suite **18/18**, 79 assertions and
+typecheck passed; initial normal-adapter gate was 430/430 before the real parallel-chain fix.
+Logs: `/tmp/cm-claude-normal-final.log`, `/tmp/cm-claude-parallel-focused.log`. Private evidence:
+`claude-local-runtime-{acceptance,retained-acceptance,final-acceptance,independent-verification}`
+and `verify_claude_local_runtime.ts` in the coordinating workspace. Raw input/state stays private.
+Repository SpecMesh structural check passed seven references with only expected modified-fact
+warnings (`/tmp/cm-claude-normal-specmesh.log`); semantic closeout remains pending.
+
+Next: Claude peer-message capability integration, then remaining adoption/device/provider profiles
+and all outstanding CM-R0–R7 owners. No production writer, service, release or installation changed.
+Predecessor eda10daf0529a83b4a82c1002ee6637547a3a3f5 has successful exact-SHA
+[CI 34668642661](https://github.com/muqiao215/ControlMesh/actions/runs/34668642661).
+
+## Previous supervised Claude control increment
+
 Current increment: **supervised Claude native control and actual resume**. The repository driver
 now fixes command/environment/session identity, dynamically connects and verifies only the scoped
 workspace MCP server, sends exactly one input, and retains owner-wrapped native evidence. Unknown

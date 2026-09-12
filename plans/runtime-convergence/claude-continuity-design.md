@@ -154,8 +154,33 @@ the earlier failed read, remained unchanged. That failed historical turn was not
 retroactively declared successful. Its old latest-turn verifier must not be run against the
 now-longer source without selecting the appropriate retained prefix.
 
-Next connect `ClaudeTaskAdapter`/worker and normal local configuration, with trusted file-tool
-grant mapping, source-bound native store selection, a provider-specific dispatch manifest,
-original observation retention and reconciliation. Keep the existing one-shot contract and
-OpenCode-specific manifests intact. Required read-budget admission, SpecMesh lifecycle, message
-capability integration, container/device profiles and the rest of CM-R0–CM-R7 remain required.
+## Normal local task and recovery ownership
+
+`ClaudeTaskAdapter` now connects normal configuration and `LocalTaskRuntime` to the qualified
+driver. Registration intersects current task grants with literal reads/staged write roots, rejects
+unsupported source/network/confirmation profiles, and checks required-read page budget before
+preflight. Session lookup uses the configured private native catalog; duplicate UUIDs across
+project directories reject. No transcript path or historical permission becomes authority.
+
+`controlmesh.claude_dispatch.v1` binds the task/configuration, original source baseline, input,
+workspace scope and stage. Original process output is stored once in a private fsynced file;
+the kernel keeps a bounded digest/reference observation. `ClaudeTaskEvidence` checks that raw
+outcome, native JSONL, current publication authority and durable file receipts. The retained file
+owner cannot execute tools. `ClaudeTaskReconciler` can admit already-retained output after loss
+of kernel observation and reuse a sealed/applied stage; no native runner exists in that path.
+The optional independent SpecMesh port checks start/publication and retains closeout=false.
+
+Real normal-startup validation qualified native parallel-tool edges: result parents may be their
+exact pending tool owner with matching sourceToolAssistantUUID. Ordinary rows retain the linear
+tip rule, and API message transitions require pending tools to be resolved. This handles native
+parallel flush order without accepting arbitrary branches or relaxing original-prefix identity.
+
+Actual same-session recall/current-file publication and retained recovery passed scoped readback.
+The strict fixture prompt did not fully pass: a first missing newline was corrected in the second
+turn, which added prose before JSON. Preserve both defects in the acceptance record; source/tool
+evidence is not automatic semantic verification of the user's requested result.
+
+Next implement the Claude peer-message capability using existing native mailbox ownership, then
+adoption/container/device profiles. Local configuration refuses unqualified Claude peer entries
+and never falls back to another provider. Keep the one-shot contract and OpenCode-specific
+manifests intact. Remaining provider/transport/store/topology/product and CM-R7 gates stay open.

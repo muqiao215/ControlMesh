@@ -670,3 +670,13 @@ qualified zero-tool native probe and credential-environment binding. Actual init
 records qualify readiness, not a historical session title or model-auth file. The common cache
 owns probe permits, expiry, quota reset waiting and explicit operator retry; native execution
 must still qualify its own grant/container/workspace profile before using readiness.
+
+The private local candidate also registers ClaudeTaskAdapter/ClaudeTaskReconciler independently
+of OpenCode. A distinct Claude dispatch manifest binds the current task/native JSONL baseline to
+scoped file tools and the existing stage. Fsynced raw process output precedes its compact kernel
+observation; normal completion and explicit recovery share the same source/tool/publication
+verifier. Recovery never invokes a provider. Claude parallel tool-result edges must bind to the
+exact pending call owner; they do not permit arbitrary history branches. Optional SpecMesh start
+and publication checks remain separate from semantic closeout. See the active
+[Claude continuity design](../plans/runtime-convergence/claude-continuity-design.md) for qualified
+profiles and the remaining peer/adoption/device boundaries. Production remains Python-owned.

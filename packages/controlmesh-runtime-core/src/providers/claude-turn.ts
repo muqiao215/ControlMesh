@@ -53,7 +53,13 @@ export function inspectClaudeChain(records: Record<string, unknown>[], sessionId
     requireThat(["user", "assistant", "attachment"].includes(String(row.type)), "unsupported_native_lineage");
     requireThat(row.sessionId === sessionId && row.cwd === directory && row.isSidechain === false, "unsupported_native_lineage");
     requireThat(typeof row.uuid === "string" && uuid.test(row.uuid) && !seen.has(row.uuid), "native_duplicate_or_invalid_message");
-    requireThat(row.parentUuid === tip, "native_parent_mismatch");
+    // Parallel native results point back to their own tool block, not the last flushed row.
+    // Accept only that proved pending edge; ordinary messages still extend the physical tip.
+    const resultParts = row.type === "user" && object(row.message) ? row.message.content : undefined;
+    const pendingParent = Array.isArray(resultParts) && resultParts.length > 0 && resultParts.every(part =>
+      object(part) && part.type === "tool_result" && id(part.tool_use_id)
+      && pending.get(part.tool_use_id)?.owner === row.parentUuid && row.sourceToolAssistantUUID === row.parentUuid);
+    requireThat(row.parentUuid === tip || pendingParent, "native_parent_mismatch");
     seen.add(row.uuid); tip = row.uuid;
     if (row.type === "attachment") {
       requireThat(current && last?.role === "user" && object(row.attachment) && row.attachment.type === "total_tokens_reminder", "unsupported_native_attachment");
@@ -82,6 +88,7 @@ export function inspectClaudeChain(records: Record<string, unknown>[], sessionId
       requireThat(current && id(message.id) && typeof message.model === "string" && !message.model.startsWith("<") && Array.isArray(parts) && parts.length > 0, "unsupported_native_content");
       current.evidence.assistant_message_ids.push(row.uuid); current.models.push(message.model);
       if (message.id !== finalMessageId) {
+        requireThat(pending.size === 0, "native_model_advanced_with_pending_tools");
         requireThat(!messageIds.has(message.id), "native_reused_model_message"); messageIds.add(message.id);
         finalMessageId = message.id; finalText.length = 0;
       }

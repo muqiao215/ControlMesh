@@ -12,6 +12,15 @@ export interface ClaudeControlEnvironment {
   credentials: Record<string, string>;
 }
 const credentialKeys = new Set(["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "SSL_CERT_FILE"]);
+export function assertClaudeControlEnvironment(workspace: string, environment: ClaudeControlEnvironment): void {
+  requireThat(Object.keys(environment.credentials).every(key => credentialKeys.has(key))
+    && Object.values(environment.credentials).every(value => typeof value === "string" && !value.includes("\0")), "unqualified_claude_control_environment");
+  for (const path of [environment.home, environment.config_directory]) {
+    requireThat(realpathSync(path) === path && !contains(workspace, path) && !contains(path, workspace), "claude_control_state_overlaps_workspace");
+    const stat = statSync(path); requireThat(stat.isDirectory() && stat.uid === process.getuid?.() && (stat.mode & 0o077) === 0, "claude_control_private_directory_required");
+  }
+  requireThat(!existsSync("/etc/claude-code"), "claude_control_configuration_changed");
+}
 
 /** Explicit native environment and fixed command shape; the task owner still supplies current authorization. */
 export class ClaudeControlRunner {
@@ -19,8 +28,7 @@ export class ClaudeControlRunner {
   async run(input: ClaudeControlInput, environment: ClaudeControlEnvironment, admission: ProcessAdmission, timeoutMs = 60000): Promise<ProcessOutcome> {
     validateClaudeControlInput(input);
     requireThat(Number.isSafeInteger(timeoutMs) && timeoutMs >= 1000 && timeoutMs <= 300000, "invalid_claude_control_timeout");
-    requireThat(Object.keys(environment.credentials).every(key => credentialKeys.has(key))
-      && Object.values(environment.credentials).every(value => typeof value === "string" && !value.includes("\0")), "unqualified_claude_control_environment");
+    assertClaudeControlEnvironment(input.workspace, environment);
     const binding = digest({ input, environment }), directories = [input.workspace, environment.home, environment.config_directory];
     requireThat(!contains(input.workspace, environment.home) && !contains(input.workspace, environment.config_directory)
       && !contains(environment.home, input.workspace) && !contains(environment.config_directory, input.workspace), "claude_control_state_overlaps_workspace");

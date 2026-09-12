@@ -40,7 +40,7 @@ test("explicit file scope denies ungranted reads and does not grant writes to a 
   const f = fixture(false);
   expect(f.call("read_file", { request_id: "allowed", path: "PROJECT.md" })).toMatchObject({ ok: true, content: "original current fact\n", eof: true });
   expect(f.call("read_file", { request_id: "denied", path: "ungranted.txt" })).toMatchObject({ ok: false, error: "workspace_tool_path_not_granted" });
-  expect(() => f.call("write_file", { request_id: "write", path: "PROJECT.md", expected_sha256: null, content: "bad" })).toThrow("workspace_tool_not_granted");
+  expect(f.call("write_file", { request_id: "write", path: "PROJECT.md", expected_sha256: null, content: "bad" })).toMatchObject({ ok: false, error: "workspace_tool_not_granted" });
   expect(f.files.verify(f.proof, [f.allowed]).read_files).toEqual([f.allowed]);
   expect(readFileSync(f.allowed, "utf8")).toBe("original current fact\n");
 });

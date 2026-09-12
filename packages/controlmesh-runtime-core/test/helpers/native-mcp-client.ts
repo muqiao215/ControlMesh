@@ -1,7 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { once } from "node:events";
 
-export interface McpResponse { result?: { tools?: { name: string }[]; content?: { type: string; text: string }[] }; error?: { code: number; message: string } }
+export interface McpResponse { result?: { tools?: { name: string }[]; content?: { type: string; text: string }[]; isError?: boolean }; error?: { code: number; message: string } }
 /** Actual Node stdio client process, used without a model in transport/owner tests. */
 export class NativeMcpTestClient {
   private readonly child: ChildProcessWithoutNullStreams;

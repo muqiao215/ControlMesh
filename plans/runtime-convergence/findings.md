@@ -1,5 +1,33 @@
 # Findings
 
+## Normal Claude queue and actual parallel lineage — 2026-09-12
+
+The normal local Claude adapter and recovery port now share one provider-specific retained
+dispatch/evidence path. Raw process output is kept privately and fsynced before the compact kernel
+observation. Explicit reconciliation can admit that existing output after observation loss, then
+verify/publish without starting any model or replaying tools. Retained file scopes are read-only
+and preserve the original dispatch snapshots while verifying already-applied staged publication.
+
+Real CLI 2.1.263 emitted multiple tool-use chunks with the same API message ID, interleaved with
+parallel results. Each result's parentUuid/sourceToolAssistantUUID points to its own pending tool
+chunk, not necessarily the last flushed record. A universal linear-parent check falsely rejected
+the first ordinary seven-file trial. The narrow fix recognizes only exact pending-tool edges;
+other messages still require the current tip, duplicate/unowned results reject, and new API
+message IDs cannot appear before existing pending tools resolve. Original raw bytes were retained;
+repair/recovery used those same bytes, not another first-turn model call.
+
+Scoped real startup/resume/recovery/publication evidence passed independent model-free readback.
+Two task inputs ran in one original native session, with seven continuity documents required;
+the second read nine files including the two result artifacts. Native tool counts were 10 and 14.
+Two ready generations ran because the repair interval exceeded readiness TTL. This differs from
+a failed probe retry: successful readiness expired before the second task was admitted.
+
+Content acceptance remains separate. The first native write omitted the requested newline.
+The second original-session turn repaired exact file bytes and recalled the marker absent from
+its new prompt, but included prose before JSON despite the JSON-only request. Preserve the failed
+strict fixture reports; runtime completion/SpecMesh structural pass cannot prove semantic adherence
+to every prompt constraint. No production service, default, installed package or writer changed.
+
 ## Supervised native Claude resume — 2026-09-12
 
 The repository control driver passed a real explicit resume of the owned test JSONL. Its input
