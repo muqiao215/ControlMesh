@@ -1,0 +1,6 @@
+{
+  "session_id": "11111111-2222-3333-4444-555555555555",
+  "store_id": "fixture-store",
+  "raw": "{\"type\":\"user\",\"sessionId\":\"11111111-2222-3333-4444-555555555555\",\"uuid\":\"aaaaaaaa-0000-0000-0000-000000000001\",\"parentUuid\":null,\"isSidechain\":false,\"cwd\":\"@directory\",\"message\":{\"role\":\"user\",\"content\":\"remember 雪🌱\"},\"future\":{\"counter\":9007199254740993,\"ratio\":1.25}}\n{\"type\":\"assistant\",\"sessionId\":\"11111111-2222-3333-4444-555555555555\",\"uuid\":\"aaaaaaaa-0000-0000-0000-000000000002\",\"parentUuid\":\"aaaaaaaa-0000-0000-0000-000000000001\",\"isSidechain\":false,\"cwd\":\"@directory\",\"message\":{\"role\":\"assistant\",\"id\":\"msg_fixture\",\"model\":\"fixture-model\",\"stop_reason\":\"end_turn\",\"content\":[{\"type\":\"text\",\"text\":\"remembered 雪🌱\"}]}}\n{\"type\":\"custom-title\",\"sessionId\":\"11111111-2222-3333-4444-555555555555\",\"customTitle\":\"continuity 雪🌱\"}\n",
+  "revision": "2ee25e82e27b307761e79ba2c47d16944c5b601aa8a2d252e1ac004ba5273f57"
+}

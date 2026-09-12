@@ -1,5 +1,17 @@
 # Findings
 
+## Claude native source identity — 2026-09-12
+
+The current one-shot Claude command disables persistence; treating successful execution as
+native memory continuity would be false. Local Claude Code 2.1.263 uses main-session JSONL
+with messages, attachments, system and metadata rows. Added a distinct content-bound reference
+and an independently implemented History reader, without changing the one-shot contract.
+The full raw-byte digest detects historical edits and avoids Python/JS large-number rounding.
+Mixed sessions/projects, sidechains and partial/changed input reject continuity inspection.
+Real readback agreed in 197 ms with unchanged bytes/mtime and zero provider calls. The first
+TypeScript test run caught an over-broad unknown type in a fixture; narrowing that fixture
+fixed the typecheck. Runtime execution and model readiness remain explicitly unproven here.
+
 ## Persistent device scheduling — 2026-09-12
 
 - A fixed first page can starve later assignments: the protocol now scans at most 1024 candidates

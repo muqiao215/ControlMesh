@@ -554,6 +554,12 @@ verifies the original appended turn without replacing its baseline. Completion t
 to the existing result-ledger handle. Neither discovery nor selection starts the Web UI or
 spends a model call. Normal runtime setup and operations are documented in `DEVICE-RUNTIME.md`.
 
+ClaudeSessionStore/ClaudeHistoryClient add a separate JSONL identity and headless candidate
+revalidation seam. They bind original file/device/session/workspace and hash all raw bytes,
+including metadata and unknown fields. This strict continuation reader is independent of
+History's tolerant display parser. The existing one-shot Claude profile still disables
+persistence; native runtime execution/preflight/recovery integration remains under migration.
+
 Unstarted preparation failures can release an effect-free lease and return a typed reason;
 expired unstarted admissions return to waiting. Started/uncertain effects cannot use this
 release path. Original device observations are persisted before transport even if connectivity

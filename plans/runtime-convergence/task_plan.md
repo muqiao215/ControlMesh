@@ -69,13 +69,11 @@ No claim that full TS migration or distributed coordination has completed. A sco
 
 ## Next Step
 
-Publish the accepted **persistent device scheduling** increment and check its exact-SHA CI;
-see [device-scheduling-design.md](device-scheduling-design.md) and progress.md. Native adoption
-`c2f1705` and normal startup `950f8aa` are published with passing CI. The normal daemon now
-owns paginated discovery, bounded concurrent runs, persisted pause and typed preflight waiting.
-Real ARM64/x64 acceptance covers parallel native exchange, lost-observation recovery and original
-session continuation. Preserve coordinator task authority and worker-local native/session/file
-ownership; the installed production writer is not switched by this increment.
+Verify exact-SHA CI for published device scheduling `d93c052`, while implementing the next
+native provider through [claude-continuity-design.md](claude-continuity-design.md). Preserve the
+existing ephemeral one-shot contract and add actual Claude native identity, History revalidation,
+readiness, grants and retained-result continuation. Follow with the other provider/transport/
+store/topology/product owners below; the full goal and CM-R7 gate remain unchanged.
 
 Local private startup, History/native adoption, native mailbox/Agent communication,
 authenticated loopback ingress, terminal outbox, independent SpecMesh start/handoff and local

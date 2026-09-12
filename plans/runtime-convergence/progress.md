@@ -2,6 +2,28 @@
 
 ## Current
 
+The full goal remains active; current increment adds **Claude native source identity and
+headless History revalidation**. ClaudeSessionStore hashes the complete original JSONL bytes,
+binds the canonical local file/device/session/workspace and rejects partial, changed, foreign
+or sidechain records. ClaudeHistoryClient independently revalidates the context-only candidate.
+Existing one-shot Claude execution remains ephemeral; this source layer does not claim native
+execution, preflight or retained-turn recovery. See claude-continuity-design.md for those gates.
+
+Real existing-source inspection agreed with History's independent Python implementation in
+197 ms; original bytes/mtime were unchanged and model calls were zero. Private evidence:
+`outputs/runtime-convergence/claude-native-reference-readback.json` in the coordinating workspace.
+Shared raw-byte fixtures include unknown fields and integers beyond JS precision. Typecheck,
+focused native/History regression **39/39** (318 assertions) and History's full **201-test**
+Python suite passed. The final change only escapes fixture paths for portability; source logic
+and real-readback evidence are unchanged.
+
+Scheduler predecessor `d93c052a94637da2b9d7c48e14de456c7a7ba0e8` is published with
+[passing exact-SHA CI](https://github.com/muqiao215/ControlMesh/actions/runs/34662249501).
+No installed runtime/default/service changed. Next: finish the actual Claude native execution
+and readiness owner, then remaining providers and the original CM-R0–CM-R7 scope.
+
+## Previous persistent scheduler increment
+
 Full goal remains active. This increment implements **persistent device scheduling** through
 normal headless startup; CM-R7 is unactivated and installed production remains Python 0.43.0.
 Native adoption predecessor `c2f170519fea20286eaa1df5bc735772dbe9c1e7` is published with
@@ -36,7 +58,7 @@ passed **21/21**, 181 assertions. Source typecheck and Python protocol tests **9
 those changes. Protocol outputs, ownership inventory and packaged Web assets are synchronized.
 The independent repository SpecMesh check passed with seven references and expected warnings
 for uncommitted project facts; it does not constitute reviewed semantic closeout.
-Publication and exact-SHA CI for this increment remain to be recorded after commit.
+Published at d93c052 with passing exact-SHA CI 34662249501; see Current above.
 
 Private evidence in the coordinating workspace: `outputs/runtime-convergence/device-scheduler-acceptance.{ts,json,log}`,
 `verify_device_scheduler.py`, and `device-scheduler-independent-verification.json`. No provider

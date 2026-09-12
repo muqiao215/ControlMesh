@@ -2,12 +2,32 @@ import { realpathSync } from "node:fs";
 import { ProcessSupervisor, type ProcessAdmission, type ProcessSpec, type ProcessOutcome } from "../process-supervisor";
 import { object, requireThat } from "../value";
 import { NativeSessionStore, type NativeSessionRef } from "./native-session";
+import { ClaudeSessionStore, type ClaudeSessionRef } from "./claude-session";
 
 interface Runner { run(spec: ProcessSpec, admission: ProcessAdmission): Promise<ProcessOutcome> }
 export interface HistoryConfig {
   python: string;
   viewer_directory: string;
   environment: Record<string, string>;
+}
+
+/** Claude selection uses the configured transcript file; candidate content cannot redirect it. */
+export class ClaudeHistoryClient {
+  constructor(private readonly config: HistoryConfig, private readonly store: ClaudeSessionStore,
+    private readonly runner: Runner = new ProcessSupervisor()) {}
+
+  async inspect(sessionId: string, assertCurrent: () => void): Promise<ClaudeSessionRef> {
+    assertCurrent(); this.store.read(sessionId);
+    const result = await this.runner.run({ command: [this.config.python, "-m", "history_core", "--source", "claude", "--source-path", this.store.path,
+      "native-reference", sessionId, "--device-id", this.store.deviceId], cwd: realpathSync(this.config.viewer_directory),
+      env: this.config.environment, timeout_ms: 10_000, max_output_bytes: 256 * 1024 }, { assertCurrent });
+    requireThat(result.reason === "exited" && result.exit_code === 0, "history_service_unavailable");
+    const candidate: unknown = JSON.parse(result.stdout);
+    requireThat(object(candidate) && candidate.schema_version === "history.native_candidate.v2" && candidate.authorization === "context_only"
+      && object(candidate.reference), "unsupported_history_candidate");
+    requireThat(candidate.reference.session_id === sessionId, "history_session_mismatch");
+    assertCurrent(); return this.store.validate(candidate.reference as unknown as ClaudeSessionRef);
+  }
 }
 
 /** Local, bounded CLI integration; does not require the Viewer Web server or a transcript export. */
