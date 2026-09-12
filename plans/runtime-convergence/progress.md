@@ -2,6 +2,46 @@
 
 ## Current
 
+Current increment: **normal local Claude container dispatch and retained recovery**. Optional
+trusted `claude.container` selects the concrete probe/control runners; host driver overrides are
+refused. Image-owned Node no longer needs a host counterpart. Dispatch binds the runtime digest,
+immutable retained helper and exact version/task execution IDs. Evidence checks both removed
+supervisor records before publication. Recovery reads the original helper/result; it neither
+rebuilds helpers nor starts Docker/model execution.
+
+Normal startup tests cover two same-session Docker runs with one cached probe, changed current
+files, unavailable-image refusal before task input, dropped observations, mutated image records
+and idempotent recovery/publication. Final pinned full runtime gate **455/455**, zero failures,
+4,832 assertions, 119.57s (`/tmp/cm-claude-container-queue-source-final.log`). Container/task focused
+gate **20/20**, 150 assertions, 33.97s; turn/control/task gate **21/21**, 138 assertions, 10.98s
+plus typecheck. The final source-reference stability check also passed **11/11**, 76 assertions,
+3.61s and typecheck. Earlier full gates passed before the parallel/source-turn regressions.
+
+One real CLI 2.1.263/MiniMax-M3 input used normal History refresh/search/adoption, normal queue,
+isolated container readiness and independent SpecMesh checks. It recalled the original marker,
+read seven current documents and wrote/read back the exact new current-file value. The initial
+verifier wrongly compared reported num_turns=19 with max_turns=16. Original source/control show
+13 model responses, 12 tool-use rounds and 18 tools (including nine rejected missing-hash writes).
+Parallel content blocks share message IDs; reported num_turns is not the tool-round limit.
+The corrected verifier checks actual model/tool rounds in both control and original JSONL.
+
+The original failed attempt/report stays failed. Model-free recovery of that retained output
+published the file; injected task.done loss, reopen and repeated acceptance then passed with
+unchanged native bytes, container records and canonical inode. Independent verification accepted
+all 18 matched receipts, one probe/one input, current SpecMesh reads, four absent container IDs
+and no owned processes. Private evidence: coordinating workspace outputs/runtime-convergence/
+claude-container-queue-{native,retained}-acceptance.{ts,json,log},
+verify_claude_container_queue.ts and claude-container-queue-independent-verification.{json,log}.
+
+Next: Claude DeviceWorker execution/adoption/publication/reconciliation using the existing device
+ports, then remaining provider/transport/store/topology/product owners and CM-R7. Repeated semantic
+tool failures still need no-progress detection; this trial did not fix that separate gap. Python
+v0.43.0 remains production owner. No release/install/service/default switch. Predecessor
+47f643ff72fb5898bccbd13725cf1df7b908bd9a has all required exact-SHA
+[CI 34675060439](https://github.com/muqiao215/ControlMesh/actions/runs/34675060439) jobs successful.
+
+## Previous concrete container qualification
+
 Current increment: **concrete Claude container preflight and original-session execution**.
 The pinned CLI and bundled control helper run through the existing ContainerProcessSupervisor.
 Only the private native HOME/config are writable; the project, binaries/helper and task-specific

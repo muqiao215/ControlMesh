@@ -1,6 +1,6 @@
 import { existsSync, lstatSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
-import { contains } from "../containers/plan";
+import { contains, type ContainerConfiguration } from "../containers/plan";
 import { decodeToolGrant, enforceProviderConfirmation } from "../execution-grants";
 import { enforceNativeReadSource } from "../execution-policy";
 import { digest, requireThat, type LegacyTask } from "../value";
@@ -12,6 +12,7 @@ import { assertClaudeControlEnvironment, type ClaudeControlEnvironment } from ".
 import { ClaudeSessionStore, type ClaudeSessionRef } from "./claude-session";
 import type { ProbeBinding } from "./preflight-cache";
 import { decodeNativeAgentScope, nativeAgentTools } from "./native-agent-journal";
+import { ClaudeContainerProbeRunner } from "./claude-container";
 
 export interface ClaudeTaskConfiguration {
   executable: string;
@@ -27,10 +28,16 @@ export interface ClaudeTaskConfiguration {
   timeout_ms?: number;
   max_turns?: number;
   communication?: { peer_tasks: string[]; parent_task: string | null };
+  container?: Omit<ContainerConfiguration, "state_root" | "resources" | "workspace_layout">;
+}
+export function claudeContainerProfile(config: ClaudeTaskConfiguration) {
+  requireThat(config.container !== undefined, "claude_container_not_registered");
+  return { executable: config.executable, container: { ...config.container, state_root: join(config.state_home, "claude-containers") } };
 }
 export function claudeProbeBinding(config: ClaudeTaskConfiguration, deviceId: string): ProbeBinding {
   return { provider: "claude", device_id: deviceId, model: config.model, cli_version: "2.1.263", config_digest: digest({}),
-    credential_revision: digest(config.environment.credentials), permission_profile: "claude-native-none-v1" };
+    credential_revision: digest(config.environment.credentials), permission_profile: "claude-native-none-v1",
+    ...(config.container ? { runtime_digest: new ClaudeContainerProbeRunner(claudeContainerProfile(config)).runtimeDigest() } : {}) };
 }
 export function assertClaudeTaskConfiguration(config: ClaudeTaskConfiguration): void {
   requireThat(typeof config.model === "string" && /^[^\s\x00]{1,256}$/.test(config.model)
@@ -38,7 +45,10 @@ export function assertClaudeTaskConfiguration(config: ClaudeTaskConfiguration): 
     && Number.isSafeInteger(config.timeout_ms ?? 60000) && (config.timeout_ms ?? 60000) >= 1000 && (config.timeout_ms ?? 60000) <= 300000,
   "invalid_claude_task_configuration");
   assertClaudeControlEnvironment(config.workspace, config.environment);
-  for (const path of [config.executable, config.node_executable]) {
+  requireThat(isAbsolute(config.node_executable) && !/[\x00\r\n]/.test(config.node_executable), "invalid_claude_task_executable");
+  if (config.container) requireThat(config.node_executable === config.container.node_executable
+    && Object.keys(config.container).every(key => ["docker", "socket", "image_id", "node_executable", "memory_mb", "pids", "cpus"].includes(key)), "invalid_claude_container_profile");
+  for (const path of [config.executable, ...(config.container ? [] : [config.node_executable])]) {
     requireThat(isAbsolute(path) && !/[\x00\r\n]/.test(path), "invalid_claude_task_executable");
     const stat = statSync(path); requireThat(stat.isFile() && (stat.mode & 0o111) !== 0, "invalid_claude_task_executable");
   }

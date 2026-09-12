@@ -50,7 +50,8 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
   requireThat(config.claude === undefined || (object(config.claude) && typeof config.claude.model === "string" && config.claude.cli_version === "2.1.263"
     && typeof config.claude.executable === "string" && typeof config.claude.node_executable === "string"
     && typeof config.claude.home === "string" && typeof config.claude.config_directory === "string"
-    && object(config.claude.environment) && Object.values(config.claude.environment).every(value => typeof value === "string")), "invalid_local_claude_profile");
+    && object(config.claude.environment) && Object.values(config.claude.environment).every(value => typeof value === "string")
+    && (config.claude.container === undefined || object(config.claude.container))), "invalid_local_claude_profile");
   requireThat(object(config.workspace) && typeof config.workspace.directory === "string" && Array.isArray(config.workspace.read_files)
     && config.workspace.read_files.every(value => typeof value === "string") && Array.isArray(config.workspace.required_reads)
     && config.workspace.required_reads.every(value => typeof value === "string"), "invalid_local_workspace_profile");
@@ -94,6 +95,7 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
         state_home: root, environment: { home: selected.home as string, config_directory: selected.config_directory as string, credentials: selected.environment as Record<string, string> },
         model: selected.model as string, workspace: workspace.directory as string, read_files: workspace.read_files as string[], required_reads: workspace.required_reads as string[],
         write_roots: roots, ...(peers ? { communication: structuredClone(peers) as { peer_tasks: string[]; parent_task: string | null } } : {}),
+        ...(selected.container ? { container: structuredClone(selected.container) as ClaudeTaskConfiguration["container"] } : {}),
         ...(specmesh && roots.length ? { workflow_binding: specmesh.binding_digest } : {}),
         ...(selected.timeout_ms !== undefined ? { timeout_ms: selected.timeout_ms as number } : {}), ...(selected.max_turns !== undefined ? { max_turns: selected.max_turns as number } : {}) };
     };

@@ -263,7 +263,24 @@ bundle of the existing control helper, image-owned Node for MCP clients, native 
 read-only project/channel resources. Profile, binary, helper and capability changes invalidate
 dispatch. Actual Docker tests and one real native original-session continuation passed; a separate
 model-free readback verified tool receipts, current-file output and four removed containers.
-This is not normal local/device admission. Device integration must
+Normal local startup now exposes optional trusted `claude.container`, with state_root/resources/
+workspace_layout retained by CM. Example provider fragment (other required Claude fields remain):
+
+```json
+{"node_executable":"/usr/local/bin/node","container":{"docker":"/usr/bin/docker","socket":"/run/docker.sock","image_id":"sha256:<locally available immutable image digest>","node_executable":"/usr/local/bin/node"}}
+```
+
+The image Node path need not exist on the host. Container mode rejects host runner overrides.
+Readiness binds the container probe digest; the normal dispatch additionally pins the actual
+control runtime, original helper and exact version/task execution IDs. Completion/recovery must
+read the original supervisor records and find matching removed-container outcomes. Old helper
+bytes remain valid across source updates; recovery does not build or launch anything.
+
+Normal History adoption, queue, native current-file write and model-free publication-loss recovery
+have real CLI evidence. The source/control verifier counts unique model responses and tool-use
+rounds: parallel content blocks share message IDs, while num_turns can count more than maxTurns.
+Missing/revisited identities or actual excess rounds reject. This does not establish device
+Claude admission. Device integration must
 reuse DeviceWorker's prepared dispatch/observe/result, current authority, mailbox/nativeCall and
 publication/reconciliation interfaces; it must not create another local kernel inside a worker.
 The current device configuration is OpenCode-specific and remains unchanged until those Claude

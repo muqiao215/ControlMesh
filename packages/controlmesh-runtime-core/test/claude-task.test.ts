@@ -178,6 +178,17 @@ test("a required read that cannot fit the durable tool budget rejects before pre
   expect(() => claudeTaskScope(f.config, task.task)).toThrow("claude_required_read_budget_exhausted");
   expect(f.control.count).toBe(0); expect(f.db.sql.query("SELECT COUNT(*) AS n FROM provider_checks").get()).toEqual({ n: 0 });
 });
+test("original JSONL independently rejects excess tool rounds hidden from the retained control stream", async () => {
+  const f = fixture(); f.config.max_turns = 1;
+  const task = f.create(); f.runtime.enqueue("queue", "task", task.revision); await f.runtime.drain();
+  expect(f.kernel.inspect(actor, "task").task.status).toBe("stale");
+  expect(existsSync(join(f.workspace, "result-1.txt"))).toBe(false);
+  expect(f.control.count).toBe(1);
+  const current = f.kernel.inspect(actor, "task"), recovery = new ClaudeTaskReconciler(f.kernel, f.config, () => {});
+  const candidate = recovery.inspect(actor, "task", current.revision, f.effect());
+  await expect(recovery.accept(actor, "recover-excess", "task", current.revision, candidate)).rejects.toThrow("claude_native_turn_limit_exceeded");
+  expect(f.control.count).toBe(1);
+});
 test("normal startup selects a registered Claude profile without OpenCode, and never falls back to another provider", async () => {
   const f = fixture(); await f.runtime.stop();
   const path = join(f.root, "startup.json");

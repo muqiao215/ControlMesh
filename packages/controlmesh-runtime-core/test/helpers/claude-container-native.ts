@@ -1,0 +1,86 @@
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
+import { createInterface } from "node:readline";
+
+// Synthetic native source with real stdio MCP; compiled for the container's own Node runtime.
+const args = process.argv.slice(2), model = args[args.indexOf("--model") + 1], cwd = process.cwd();
+const emit = (row: unknown) => process.stdout.write(JSON.stringify(row) + "\n");
+if (args.includes("--version")) { console.log("2.1.263 (Claude Code)"); process.exit(0); }
+if (args.includes("--safe-mode")) {
+  const session_id = randomUUID();
+  emit({ type: "system", subtype: "init", session_id, model, tools: [], mcp_servers: [], plugins: [] });
+  emit({ type: "assistant", session_id, message: { model, content: [{ type: "text", text: "PONG" }] } });
+  emit({ type: "result", session_id, subtype: "success", is_error: false, result: "PONG", num_turns: 1 });
+  process.exit(0);
+}
+const config = process.env.CLAUDE_CONFIG_DIR!, session_id = args[args.indexOf(args.includes("--resume") ? "--resume" : "--session-id") + 1];
+const projects = join(config, "projects", "fixture"); mkdirSync(projects, { recursive: true, mode: 0o700 });
+const path = join(projects, session_id + ".jsonl");
+let parent = existsSync(path) ? JSON.parse(readFileSync(path, "utf8").trim().split("\n").at(-1)!).uuid : null;
+const source = (role: "user" | "assistant", content: unknown, stop_reason?: string) => {
+  const uuid = randomUUID(), message = { role, content, ...(role === "assistant" ? { id: randomUUID(), model, stop_reason } : {}) };
+  appendFileSync(path, JSON.stringify({ type: role, sessionId: session_id, cwd, isSidechain: false, uuid, parentUuid: parent, message }) + "\n", { mode: 0o600 });
+  parent = uuid; return message;
+};
+class Client {
+  readonly child;
+  private sequence = 0;
+  private pending = new Map<number, { resolve: (row: any) => void; reject: (error: Error) => void }>();
+  private readonly done: Promise<void>;
+  constructor(command: { command: string; args: string[] }) {
+    this.child = spawn(command.command, command.args, { stdio: ["pipe", "pipe", "inherit"] });
+    createInterface({ input: this.child.stdout }).on("line", line => { const row = JSON.parse(line), waiter = this.pending.get(row.id); if (waiter) { this.pending.delete(row.id); waiter.resolve(row); } });
+    this.done = new Promise((resolve, reject) => {
+      this.child.once("error", reject); this.child.once("close", () => { for (const waiter of this.pending.values()) waiter.reject(new Error("fixture MCP closed")); resolve(); });
+    });
+  }
+  request(method: string, params: unknown): Promise<any> {
+    const id = ++this.sequence;
+    return new Promise((resolve, reject) => { this.pending.set(id, { resolve, reject }); this.child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n"); });
+  }
+  async initialize() {
+    await this.request("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "fixture", version: "1" } });
+    this.child.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
+  }
+  async close() { this.child.stdin.end(); await this.done; }
+}
+let servers: Record<string, { command: string; args: string[] }> = {};
+for await (const line of createInterface({ input: process.stdin })) {
+  const frame = JSON.parse(line);
+  if (frame.type === "control_request") {
+    const type = frame.request.subtype;
+    if (type === "mcp_set_servers") servers = frame.request.servers;
+    const response = type === "initialize" ? { current_permission_mode: "dontAsk", remote_control_auto_enable: false }
+      : type === "mcp_set_servers" ? { added: Object.keys(servers), removed: [], errors: {} }
+      : { mcpServers: Object.entries(servers).map(([name, config]) => ({ name, config, status: "connected", scope: "dynamic",
+        serverInfo: { name: name === "workspace" ? "controlmesh-workspace" : "controlmesh-task-communication", version: "1.0.0" },
+        tools: (name === "workspace" ? ["edit_file", "read_file", "write_file"] : ["send", "ask_parent", "receive", "answer"]).map(name => ({ name })) })) };
+    emit({ type: "control_response", response: { subtype: "success", request_id: frame.request_id, response } });
+  } else if (frame.type === "user") {
+    appendFileSync(join(config, "inputs.jsonl"), JSON.stringify({ session_id, prompt: frame.message.content }) + "\n");
+    let directWriteDenied = false; try { writeFileSync(join(cwd, "PROJECT.md"), "forbidden"); } catch { directWriteDenied = true; }
+    if (!directWriteDenied) throw new Error("fixture requires a read-only project");
+    source("user", frame.message.content);
+    emit({ type: "system", subtype: "init", cwd, session_id, model, claude_code_version: "2.1.263", permissionMode: "dontAsk",
+      tools: ["edit_file", "read_file", "write_file"].map(name => `mcp__workspace__${name}`), mcp_servers: [{ name: "workspace", status: "connected" }], plugins: [], skills: [], slash_commands: [] });
+    const client = new Client(servers.workspace); await client.initialize();
+    const call = async (name: string, input: Record<string, unknown>) => {
+      const id = randomUUID(); source("assistant", [{ type: "tool_use", id, name: `mcp__workspace__${name}`, input }], "tool_use");
+      const row = await client.request("tools/call", { name, arguments: input });
+      source("user", [{ type: "tool_result", tool_use_id: id, content: row.result.content, ...(row.result.isError ? { is_error: true } : {}) }]);
+      return JSON.parse(row.result.content[0].text);
+    };
+    try {
+      const read = await call("read_file", { request_id: "read", path: "PROJECT.md" });
+      const result = await call("read_file", { request_id: "existing", path: "result.txt" });
+      const written = await call("write_file", { request_id: "write", path: "result.txt", expected_sha256: result.ok ? result.sha256 : null, content: read.content });
+      if (!written.ok) throw new Error("fixture write failed");
+      await call("read_file", { request_id: "readback", path: "result.txt" });
+      const message = source("assistant", [{ type: "text", text: "DONE" }], "end_turn");
+      emit({ type: "assistant", session_id, message });
+      emit({ type: "result", session_id, subtype: "success", is_error: false, result: "DONE", num_turns: 5 });
+    } finally { await client.close(); }
+  }
+}

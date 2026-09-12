@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { RuntimeKernel, Principal, TaskSnapshot, Lease } from "../kernel";
@@ -11,7 +11,7 @@ import { NativeMailboxDelivery } from "./native-mailbox";
 import { nativeInput } from "./native-mailbox-input";
 import { NativeAgentChannel, NativeAgentBroker } from "./native-agent-broker";
 import { NativeAgentJournal } from "./native-agent-journal";
-import { prepareNativeAgentConfiguration } from "./native-agent-profile";
+import { prepareNativeAgentConfiguration, type NativeAgentConfiguration } from "./native-agent-profile";
 import { NativeWorkspaceFiles } from "./native-workspace-files";
 import { ClaudeControlRunner } from "./claude-control-runner";
 import { observeClaudeControl, validateClaudeControlInput, type ClaudeControlInput } from "./claude-control";
@@ -19,17 +19,19 @@ import { ClaudePreflight } from "./claude-preflight";
 import { PreflightCache } from "./preflight-cache";
 import { ProviderPreflightService } from "./preflight-service";
 import type { ClaudeNativeBaseline, ClaudeSessionRef } from "./claude-session";
-import { assertClaudeTaskConfiguration, claudeProbeBinding, claudeTaskScope, findClaudeSession, validateClaudeTaskSession, type ClaudeTaskConfiguration } from "./claude-task-profile";
+import { assertClaudeTaskConfiguration, claudeContainerProfile, claudeProbeBinding, claudeTaskScope, findClaudeSession, validateClaudeTaskSession, type ClaudeTaskConfiguration } from "./claude-task-profile";
 import { ClaudeTaskEvidence, claudeTaskPrompt, retainClaudeOutcome, type ClaudeDispatch } from "./claude-task-evidence";
+import { ClaudeContainerProbeRunner, ClaudeContainerControlRunner } from "./claude-container";
 
 /** Normal local queue adapter. Native history is a context source, never an alternate task writer. */
 export class ClaudeTaskAdapter {
   constructor(private readonly kernel: RuntimeKernel, private readonly cache: PreflightCache, private readonly actor: Principal,
     private readonly config: ClaudeTaskConfiguration, private readonly authorize: () => void,
-    private readonly control: Pick<ClaudeControlRunner, "run"> = new ClaudeControlRunner(), private readonly preflight = new ClaudePreflight()) {}
+    private readonly control?: Pick<ClaudeControlRunner, "run">, private readonly preflight?: ClaudePreflight) {}
 
   prepare(snapshot: TaskSnapshot): LocalTaskExecution {
     assertClaudeTaskConfiguration(this.config);
+    requireThat(!this.config.container || (!this.control && !this.preflight), "claude_container_driver_override_forbidden");
     requireThat(this.actor.origin === "human_request" && typeof this.actor.device_id === "string", "source_execution_floor_unavailable");
     const task = snapshot.task, issued = nativeTaskDigest(task), configuration = digest(this.config);
     const binding = claudeProbeBinding(this.config, this.actor.device_id!);
@@ -54,7 +56,12 @@ export class ClaudeTaskAdapter {
       assertCurrent: current, assertPublicationAuthority: () => current(true),
       ensureReady: async (requestId, context) => {
         current(); checkSession();
-        const ready = await new ProviderPreflightService(this.cache, undefined, this.preflight).ensureClaude(this.actor, requestId, binding,
+        let preflight = this.preflight;
+        if (this.config.container) {
+          const profile = claudeContainerProfile(this.config); mkdirSync(profile.container.state_root, { recursive: true, mode: 0o700 });
+          preflight = new ClaudePreflight(new ClaudeContainerProbeRunner(profile));
+        }
+        const ready = await new ProviderPreflightService(this.cache, undefined, preflight).ensureClaude(this.actor, requestId, binding,
           { executable: this.config.executable, model: this.config.model, native_configuration: {}, environment: this.config.environment.credentials,
             signal: context.signal, remainingMs: context.remainingMs, assertCurrent: () => { context.assertCurrent(); checkSession(); } });
         context.assertCurrent(); checkSession(); return ready;
@@ -94,8 +101,9 @@ export class ClaudeTaskAdapter {
       const files = new NativeWorkspaceFiles({ workspace: this.config.workspace, read_files: scope.reads, tools: scope.tools,
         journal_directory: journalDirectory, binding_digest: digest({ lease, configuration: digest(this.config), task: issued }), ...(stage ? { stage } : {}) }, authority, current);
       const profile = prepareNativeAgentConfiguration(join(directory, "ipc"), this.config.node_executable, task.task_id, [], null, "workspace.v1");
+      let messageProfile: NativeAgentConfiguration | undefined;
       if (scope.communication) {
-        const messageProfile = prepareNativeAgentConfiguration(join(directory, "message-ipc"), this.config.node_executable,
+        messageProfile = prepareNativeAgentConfiguration(join(directory, "message-ipc"), this.config.node_executable,
           task.task_id, scope.communication.peer_tasks, scope.communication.parent_task);
         communication = new NativeAgentBroker(this.kernel, this.actor, lease, effect, messageProfile, () => { current(); lock.assertCurrent(); });
         await communication.start();
@@ -115,11 +123,18 @@ export class ClaudeTaskAdapter {
         max_turns: this.config.max_turns ?? 128, workspace_command: channel.command,
         ...(communication ? { communication_command: communication.command } : {}) };
       validateClaudeControlInput(input);
+      let container: ClaudeContainerControlRunner | undefined;
+      if (this.config.container) {
+        const assets = join(directory, "assets"); mkdirSync(assets, { mode: 0o700 });
+        container = await ClaudeContainerControlRunner.create({ ...claudeContainerProfile(this.config), workspace: this.config.workspace,
+          bun_executable: realpathSync(process.execPath), asset_directory: assets, environment: this.config.environment,
+          workspace_channel: profile, ...(messageProfile ? { communication_channel: messageProfile } : {}) });
+      }
       manifest = { schema_version: "controlmesh.claude_dispatch.v1", task_digest: issued, configuration_digest: digest(this.config), binding, input,
         native_directory: directoryIdentity(this.config.environment.config_directory), native_path: store?.path ?? null, baseline,
         execution_directory: directoryIdentity(directory), scope, workspace_tools: files.scope,
         stage: stage ? { path: stage.path, reference: stage.reference() } : null, ...(delivery ? { mailbox_delivery: delivery } : {}),
-        ...(communication ? { communication: communication.scope } : {}) };
+        ...(communication ? { communication: communication.scope } : {}), ...(container ? { container: container.execution() } : {}) };
       current(); lock.assertCurrent(); if (reference) store!.validate(reference); this.cache.assertReady(this.actor, binding);
       this.kernel.db.transaction(() => {
         current(); this.kernel.start(this.actor, request("start"), lease);
@@ -129,7 +144,7 @@ export class ClaudeTaskAdapter {
         if (delivery) mailbox.reserve(this.actor, lease, effect, delivery);
         dispatched = true;
       });
-      const outcome = await this.control.run(input, this.config.environment, { signal: context.signal, remainingMs: context.remainingMs,
+      const outcome = await (container ?? this.control ?? new ClaudeControlRunner()).run(input, this.config.environment, { signal: context.signal, remainingMs: context.remainingMs,
         assertCurrent: () => { current(); lock.assertCurrent(); } }, this.config.timeout_ms ?? 60000);
       await channel.close(); await communication?.close();
       // Keep the original result even if its lease expired before the coordinator can acknowledge it.

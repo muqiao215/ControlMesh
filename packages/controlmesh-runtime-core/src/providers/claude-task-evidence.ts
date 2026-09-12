@@ -4,15 +4,17 @@ import type { ProcessOutcome } from "../process-supervisor";
 import { privateFile } from "../private-runtime-file";
 import { canonical, digest, object, requireThat, RuntimeConflict, type LegacyTask } from "../value";
 import { WorkspaceStage, type WorkspaceAuthority } from "../workspace-stage";
-import { observeClaudeControl, validateClaudeControlInput, type ClaudeControlInput } from "./claude-control";
+import { claudeModelTurns, observeClaudeControl, validateClaudeControlInput, type ClaudeControlInput } from "./claude-control";
 import type { ClaudeNativeBaseline } from "./claude-session";
-import { claudeTaskScope, claudeProbeBinding, findClaudeSession, type ClaudeTaskConfiguration } from "./claude-task-profile";
+import { claudeTaskScope, claudeContainerProfile, claudeProbeBinding, findClaudeSession, type ClaudeTaskConfiguration } from "./claude-task-profile";
 import { directoryIdentity, nativeTaskDigest, type DirectoryIdentity } from "./native-manifest";
 import { NativeWorkspaceFiles } from "./native-workspace-files";
 import { decodeNativeMailbox, nativeInput, nativeMailboxEvidence, type NativeMailboxBatch } from "./native-mailbox-input";
 import type { ProbeBinding } from "./preflight-cache";
 import { decodeNativeAgentScope, type NativeAgentScope, type NativeAgentToolResult } from "./native-agent-journal";
 import { assertNativeAgentConfiguration } from "./native-agent-profile";
+import type { ClaudeContainerExecution } from "./claude-container";
+import { decodeClaudeContainerExecution, verifyClaudeContainerExecution } from "./claude-container-evidence";
 
 export interface ClaudeDispatch extends Record<string, unknown> {
   schema_version: "controlmesh.claude_dispatch.v1";
@@ -29,6 +31,7 @@ export interface ClaudeDispatch extends Record<string, unknown> {
   stage: { path: string; reference: ReturnType<WorkspaceStage["reference"]> } | null;
   mailbox_delivery?: NativeMailboxBatch;
   communication?: NativeAgentScope;
+  container?: ClaudeContainerExecution;
 }
 export function claudeTaskPrompt(task: LegacyTask, scope: ReturnType<typeof claudeTaskScope>): string {
   requireThat(typeof task.prompt === "string" && task.prompt.length > 0, "invalid_native_task");
@@ -46,6 +49,7 @@ export function decodeClaudeDispatch(value: unknown): ClaudeDispatch {
   validateClaudeControlInput(value.input);
   if (value.mailbox_delivery !== undefined) decodeNativeMailbox(value.mailbox_delivery);
   if (value.communication !== undefined) decodeNativeAgentScope(value.communication);
+  if (value.container !== undefined) decodeClaudeContainerExecution(value.container);
   return value as unknown as ClaudeDispatch;
 }
 const recordPath = (manifest: ClaudeDispatch) => join(manifest.execution_directory.path, "outcome.json");
@@ -105,12 +109,20 @@ export class ClaudeTaskEvidence {
         client_digest: m.communication.client_digest, peer_tasks: m.communication.peer_tasks, parent_task: m.communication.parent_task });
     }
     const retained = readClaudeOutcome(m); requireThat(digest(retained.observation) === digest(this.observation), "claude_observation_changed");
+    requireThat(Boolean(this.config.container) === Boolean(m.container), "claude_container_execution_required");
+    const container = m.container ? verifyClaudeContainerExecution(m.container, claudeContainerProfile(this.config).container,
+      m.execution_directory.path, retained.outcome) : undefined;
     const observed = observeClaudeControl(retained.outcome, m.input);
     requireThat(observed.terminal, observed.failure?.code ?? observed.invalid_reason ?? "claude_completion_unproven");
     const store = findClaudeSession(this.config, this.deviceId, m.input.session_id);
     requireThat(store && (m.native_path === null || store.path === m.native_path), "claude_native_source_changed");
     const native = store.verifyTurn(m.input.session_id, m.baseline, m.input.prompt, observed.text, m.input.model);
     requireThat(native.reference.directory === this.config.workspace, "claude_native_workspace_changed");
+    const ids = new Set(native.assistant_message_ids);
+    const snapshot = store.snapshot(m.input.session_id);
+    requireThat(digest(snapshot.reference) === digest(native.reference), "claude_native_source_changed");
+    const turns = claudeModelTurns(snapshot.records.filter(row => ids.has(String(row.uuid))).map(row => row.message));
+    requireThat(turns.tool_turns <= m.input.max_turns && turns.model_turns <= m.input.max_turns + 1, "claude_native_turn_limit_exceeded");
     const files = new NativeWorkspaceFiles({ workspace: this.config.workspace, read_files: scope.reads, tools: scope.tools,
       journal_directory: join(m.execution_directory.path, "receipts"), binding_digest: String(m.workspace_tools.binding_digest),
       ...(this.stage ? { stage: this.stage } : {}), retained_scope: m.workspace_tools }, run => run(), this.current);
@@ -123,7 +135,7 @@ export class ClaudeTaskEvidence {
     const communication = m.communication ? this.verifyCommunication!(m.communication, this.communicationTools) : undefined;
     const result: Record<string, unknown> = { native_session: native.reference, user_message_id: native.user_message_id,
       assistant_message_ids: native.assistant_message_ids, text: observed.text, output_digest: digest(observed.text), workspace_tools: proof,
-      read_files: proof.read_files, ...(communication ? { communication } : {}),
+      read_files: proof.read_files, native_turns: turns, ...(communication ? { communication } : {}), ...(container ? { container } : {}),
       ...(m.mailbox_delivery ? { mailbox_delivery: nativeMailboxEvidence(m.mailbox_delivery, native.user_message_id) } : {}) };
     if (this.stage) {
       let receipt: ReturnType<WorkspaceStage["proposalReceipt"]> | undefined;

@@ -697,3 +697,11 @@ message calls and file calls are verified separately, then message consumption a
 commit together. Retained recovery consumes only verified existing rows and never starts a broker
 or model. This local peer profile does not establish remote Claude or concurrent-write topology
 qualification; the active continuity design owns those remaining gates.
+
+Optional local `claude.container` selects the concrete container readiness/control owner without
+host fallback. The normal task manifest pins the retained control helper and exact supervisor
+execution identities. Completion and recovery verify removed-container outcomes before staged
+publication; recovery reads original helper bytes without rebuilding from current source.
+Claude turn limits count actual model/tool-use rounds in both streamed blocks and original JSONL,
+not the provider's reported num_turns counter. This local container path has native continuation
+and publication-loss recovery evidence; device Claude admission remains in the active plan.

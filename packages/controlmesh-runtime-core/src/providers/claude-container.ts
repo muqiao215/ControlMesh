@@ -8,7 +8,7 @@ import type { ProcessAdmission, ProcessOutcome, ProcessSpec } from "../process-s
 import { privateFile } from "../private-runtime-file";
 import { canonical, digest, requireThat } from "../value";
 import { assertNativeAgentConfiguration, type NativeAgentConfiguration } from "./native-agent-profile";
-import { directoryIdentity } from "./native-manifest";
+import { directoryIdentity, type DirectoryIdentity } from "./native-manifest";
 import { ClaudeControlRunner, assertClaudeControlEnvironment, type ClaudeControlEnvironment } from "./claude-control-runner";
 import { validateClaudeControlInput, type ClaudeControlInput } from "./claude-control";
 import { claudeProbeCommand, claudeProbeCredentialKeys } from "./claude-preflight";
@@ -24,6 +24,14 @@ export interface ClaudeContainerControlProfile extends ClaudeContainerProbeProfi
   environment: ClaudeControlEnvironment;
   workspace_channel: NativeAgentConfiguration;
   communication_channel?: NativeAgentConfiguration;
+}
+export interface ClaudeContainerExecution {
+  schema_version: "controlmesh.claude_container_execution.v1";
+  runtime_digest: string;
+  state: DirectoryIdentity;
+  helper: { path: string; revision: string };
+  version_execution: string;
+  task_execution: string;
 }
 
 /** Only ClaudePreflight's fresh private HOME is writable; no task workspace/native session is mounted. */
@@ -81,6 +89,8 @@ export class ClaudeContainerControlRunner {
   private readonly configuration: ContainerConfiguration;
   private readonly initial: string;
   private readonly containers: Containers;
+  private readonly versionExecution = `claude-version-${randomUUID()}`;
+  private readonly taskExecution = `claude-task-${randomUUID()}`;
 
   private constructor(private readonly profile: ClaudeContainerControlProfile, private readonly helper: string,
     private readonly helperRevision: string, private readonly sourceRevision: string, containers?: Containers) {
@@ -138,6 +148,12 @@ export class ClaudeContainerControlRunner {
         ...(this.profile.communication_channel ? [assertNativeAgentConfiguration(this.profile.communication_channel)] : [])] });
   }
 
+  execution(): ClaudeContainerExecution {
+    return { schema_version: "controlmesh.claude_container_execution.v1", runtime_digest: this.runtimeDigest(),
+      state: directoryIdentity(this.profile.container.state_root), helper: { path: this.helper, revision: this.helperRevision },
+      version_execution: this.versionExecution, task_execution: this.taskExecution };
+  }
+
   async run(input: ClaudeControlInput, environment: ClaudeControlEnvironment, admission: ProcessAdmission, timeoutMs = 60000): Promise<ProcessOutcome> {
     validateClaudeControlInput(input);
     requireThat(input.workspace === this.profile.workspace && input.executable === this.profile.executable
@@ -160,7 +176,7 @@ export class ClaudeContainerControlRunner {
       const version = canonical(spec.command) === canonical([this.profile.executable, "--version"]);
       requireThat(version || canonical(spec.command) === canonical([process.execPath, helperSource]), "claude_container_command_unqualified");
       return this.containers.run({ ...spec, command: version ? spec.command : [this.profile.bun_executable, this.helper],
-        execution_id: `claude-${randomUUID()}`, writable_roots: [], no_network: false }, authority);
+        execution_id: version ? this.versionExecution : this.taskExecution, writable_roots: [], no_network: false }, authority);
     } });
     return runner.run(input, environment, { ...admission, assertCurrent: current }, timeoutMs);
   }

@@ -1,5 +1,35 @@
 # Findings
 
+## Normal container queue and parallel-turn counting — 2026-09-12
+
+The normal Claude task adapter now selects container readiness/execution explicitly from trusted
+local configuration. Concrete container mode rejects injected host/probe drivers. State and
+helper assets are runtime-owned; the task manifest binds the original helper and two exact
+container execution IDs. Retained recovery verifies the original removed-container records and
+helper without rebuilding from current source or invoking a provider. A missing image blocks
+before a task input and never falls back to host. Image Node may be absent on the host.
+
+Real native normal-queue execution succeeded at the provider but exposed an incorrect CM budget
+comparison: --max-turns=16, reported num_turns=19, 21 streamed assistant blocks, 13 distinct model
+message IDs and 12 tool-use rounds. The first model response supplied seven parallel read blocks
+sharing one ID. There were 18 tools: eight reads and ten write attempts, nine rejected for missing
+expected_sha256 before a correct explicit-null creation. No file was published while evidence
+was rejected. Native success and a final DONE alone did not establish CM completion.
+
+The [official loop documentation](https://code.claude.com/docs/en/agent-sdk/agent-loop) distinguishes
+content blocks sharing a message ID from tool-use turns counted by maxTurns. CM now counts actual
+model/tool rounds in the control stream and independently in the verified original source.
+Missing/revisited IDs and actual excess rounds reject; reported num_turns remains bounded metadata.
+The saved original source/control evidence established 13/12 rounds, within the existing limit.
+No limit was increased and no extra native input was sent.
+
+After parser correction, the retained result was published through normal reconciliation.
+Deliberate task.done loss, reopening and repeating the same acceptance request did not change
+native bytes, container records or the canonical inode. Independent raw-source/receipt/state/file
+readback verified one preflight generation/input, all 18 calls, seven current docs and four absent
+container IDs. Preserve the original failed report; the recovered and independently verified
+reports are separate. Repeated same-shape tool failures remain a concrete no-progress-detection gap.
+
 ## Claude container qualification — 2026-09-12
 
 The existing pinned Linux image provides /usr/local/bin/node, not /usr/bin/node. MCP clients

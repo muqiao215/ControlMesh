@@ -135,6 +135,19 @@ export class ClaudeControlSession {
   }
 }
 
+/** Streaming content blocks share one API message ID; parallel calls are not separate model turns. */
+export function claudeModelTurns(messages: unknown[]): { model_turns: number; tool_turns: number } {
+  const seen = new Set<string>(), tools = new Set<string>(); let previous: string | undefined;
+  for (const message of messages) {
+    requireThat(object(message) && typeof message.id === "string" && message.id.length > 0 && message.id.length <= 256
+      && Array.isArray(message.content), "claude_native_turn_identity_unproven");
+    requireThat(message.id === previous || !seen.has(message.id), "claude_native_turn_identity_reused");
+    seen.add(message.id); previous = message.id;
+    if (message.content.some(part => object(part) && part.type === "tool_use")) tools.add(message.id);
+  }
+  return { model_turns: seen.size, tool_turns: tools.size };
+}
+
 export interface ClaudeControlObservation {
   terminal: boolean;
   text: string;
@@ -190,8 +203,10 @@ export function observeClaudeControl(outcome: ProcessOutcome, input: ClaudeContr
     }
     requireThat(outcome.reason === "exited" && outcome.exit_code === 0 && nativeExit === 0 && result.is_error === false && result.subtype === "success"
       && typeof result.result === "string" && Number.isSafeInteger(result.num_turns) && Number(result.num_turns) > 0
-      && Number(result.num_turns) <= input.max_turns, "claude_native_completion_unproven");
+      && Number(result.num_turns) <= 4100, "claude_native_completion_unproven");
     const assistants = machine.nativeRows.filter(row => row.type === "assistant"), final = assistants.at(-1);
+    const turns = claudeModelTurns(assistants.map(row => row.message));
+    requireThat(turns.tool_turns <= input.max_turns && turns.model_turns <= input.max_turns + 1, "claude_native_turn_limit_exceeded");
     requireThat(final && object(final.message) && typeof final.message.id === "string", "claude_native_final_output_unproven");
     const parts = assistants.filter(row => object(row.message) && row.message.id === (final.message as Record<string, unknown>).id)
       .flatMap(row => (row.message as { content: Record<string, unknown>[] }).content);

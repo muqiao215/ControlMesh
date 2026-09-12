@@ -78,6 +78,24 @@ test("retained native quota is classified, and changed input or truncated wrappe
   expect(observeClaudeControl(outcome, { ...f.input, prompt: "another task" })).toMatchObject({ terminal: false, input_attempted: null });
   expect(observeClaudeControl({ ...outcome, stdout: "" }, f.input)).toMatchObject({ terminal: false, input_attempted: null });
 });
+test("parallel tool blocks count as one model turn; reused identities and extra actual turns still reject", async () => {
+  const f = fixture(), input = { ...f.input, max_turns: 1 };
+  const outcome = await new ClaudeControlRunner().run(input, f.environment, { assertCurrent() {} });
+  const rows = outcome.stdout.trim().split("\n").map(line => JSON.parse(line));
+  const index = rows.findIndex(row => row.event === "native" && row.row?.type === "assistant");
+  const tool = (id: string, number: number) => ({ type: "controlmesh.claude_control", event: "native", row: { type: "assistant", session_id: input.session_id,
+    message: { id, model: input.model, content: [{ type: "tool_use", id: `call-${number}`, name: "mcp__workspace__read_file", input: { path: `file-${number}` } }] } } });
+  rows.splice(index, 0, ...Array.from({ length: 7 }, (_, number) => tool("one-model-response", number)));
+  rows.find(row => row.row?.type === "result").row.num_turns = 8;
+  const observe = () => observeClaudeControl({ ...outcome, stdout: rows.map(row => JSON.stringify(row)).join("\n") + "\n" }, input);
+  expect(observe().terminal).toBe(true);
+  rows.splice(index + 7, 0, tool("second-model-response", 8));
+  expect(observe()).toMatchObject({ terminal: false, invalid_reason: "claude_native_turn_limit_exceeded" });
+  rows.splice(index + 8, 0, tool("one-model-response", 9));
+  expect(observe()).toMatchObject({ terminal: false, invalid_reason: "claude_native_turn_identity_reused" });
+  rows.splice(index + 7, 2); delete rows[index].row.message.id;
+  expect(observe()).toMatchObject({ terminal: false, invalid_reason: "claude_native_turn_identity_unproven" });
+});
 test("cancel after input reaps the owned native child and descendant; lost output remains unknown without a replay", async () => {
   const f = fixture("hang"), controller = new AbortController();
   const run = new ClaudeControlRunner().run(f.input, f.environment, { assertCurrent: () => {}, signal: controller.signal });
