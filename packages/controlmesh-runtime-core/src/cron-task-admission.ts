@@ -2,6 +2,7 @@ import { CronStore, type CronExecutionAttemptRecord } from "./cron-store";
 import type { Principal, RuntimeKernel, TaskSnapshot } from "./kernel";
 import { TaskIngress } from "./task-ingress";
 import { resolveCronTimezone } from "./cron-schedule";
+import type { LocalTaskRuntime } from "./local-task-runtime";
 import { requireScope } from "./commands";
 import { canonical, digest, identifier, object, requireThat, RuntimeConflict } from "./value";
 
@@ -18,7 +19,8 @@ export class CronTaskAdmission {
   private readonly quietTimezone: string;
 
   constructor(private readonly kernel: RuntimeKernel, actor: Principal, private readonly generation: number,
-    timezone: { userTimezone?: string; hostTimezone?: string } = {}) {
+    timezone: { userTimezone?: string; hostTimezone?: string } = {}, private readonly runtime?: LocalTaskRuntime) {
+    requireThat(!runtime || runtime.kernel === kernel, "cron_queue_kernel_mismatch");
     identifier(actor.id); identifier(actor.device_id);
     requireThat(actor.origin === "schedule" && Number.isSafeInteger(generation) && generation > 0, "invalid_cron_controller");
     this.actor = Object.freeze({ ...actor, scopes: Object.freeze([...actor.scopes]) });
@@ -107,6 +109,7 @@ export class CronTaskAdmission {
       }, { source_id: job.id, chat_id: chatId, ...(job.topic_id != null ? { topic_id: String(job.topic_id) } : {}) });
       const attempt = this.store.createAttempt(occurrenceId, { coordinatorId: this.actor.id,
         executorDeviceId: this.actor.device_id!, fencingGeneration: this.generation, taskId });
+      this.runtime?.enqueue(`cron-enqueue-${occurrenceId}`, taskId, task.revision);
       if (job.dependency != null) {
         requireThat(typeof job.dependency === "string" && this.store.acquireDependencyLock(job.dependency,
           occurrenceId, attempt.attempt_id, 60_000), "cron_dependency_busy");

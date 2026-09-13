@@ -689,3 +689,14 @@ Combined cron suite 248 pass/1136 assertions (1070ms) and typecheck pass;
 /tmp/cm-cron-scheduler-{suite,typecheck}.log. Runtime service startup, worker execution,
 quota circuits, real terminal reconciliation and delivery remain open. No production
 service, OS cron, external account or model invocation was started for these tests.
+
+CronScheduler/CronTaskAdmission now accept an optional existing LocalTaskRuntime bound
+to the exact same kernel. New admissions enqueue within the task/attempt transaction;
+queue-full rolls back task, attempt and queue insertion while retaining the scheduler's
+pending occurrence for retry. Existing submissions remain observations, without replay.
+Fourteen scheduler/admission tests pass (70 assertions), plus typecheck and diff check;
+logs /tmp/cm-cron-queue-{tests,typecheck}.log. Test uses the actual SQLite local queue
+with a nonexecuting resolver, not a real provider. Runtime startup wiring and terminal
+reconciliation remain pending. A suspected equal-generation cross-coordinator issue
+was disproven by singleton registration and generation-incrementing takeover; that
+experimental patch and test were removed rather than claiming a reproduced defect.

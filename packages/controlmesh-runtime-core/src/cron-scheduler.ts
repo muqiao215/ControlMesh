@@ -2,6 +2,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { requireScope } from "./commands";
 import { CronStore } from "./cron-store";
 import { CronTaskAdmission } from "./cron-task-admission";
+import type { LocalTaskRuntime } from "./local-task-runtime";
 import { CronScheduleError, nextCronOccurrence, resolveCronTimezone } from "./cron-schedule";
 import type { Principal, RuntimeKernel } from "./kernel";
 import { canonical, digest, object, requireThat, RuntimeConflict } from "./value";
@@ -22,13 +23,13 @@ export class CronScheduler {
   private readonly actor: Principal;
   private readonly settings: { userTimezone?: string; hostTimezone?: string; maxJobs: number; intervalMs: number };
   constructor(private readonly kernel: RuntimeKernel, actor: Principal, private readonly generation: number,
-    options: { userTimezone?: string; hostTimezone?: string; maxJobs?: number; intervalMs?: number } = {}) {
+    options: { userTimezone?: string; hostTimezone?: string; maxJobs?: number; intervalMs?: number } = {}, runtime?: LocalTaskRuntime) {
     this.actor = Object.freeze({ ...actor, scopes: Object.freeze([...actor.scopes]) });
     this.settings = Object.freeze({ ...options, maxJobs: options.maxJobs ?? 256, intervalMs: options.intervalMs ?? 1000 });
     requireThat(Number.isSafeInteger(this.settings.maxJobs) && this.settings.maxJobs > 0 && this.settings.maxJobs <= 4096
       && Number.isSafeInteger(this.settings.intervalMs) && this.settings.intervalMs >= 100 && this.settings.intervalMs <= 60000, "invalid_cron_scheduler_limits");
     this.store = new CronStore(kernel.db);
-    this.admission = new CronTaskAdmission(kernel, this.actor, generation, this.settings);
+    this.admission = new CronTaskAdmission(kernel, this.actor, generation, this.settings, runtime);
   }
   private current(): void {
     requireScope(this.actor, "task:create");
@@ -75,7 +76,7 @@ export class CronScheduler {
             this.store.skipUnstartedOccurrence(occurrence.occurrence_id,
               reason === "cron_quiet_hours" ? "skipped_quiet" : "skipped_duplicate", { coordinatorId: this.actor.id, fence: this.generation });
             cursor.pending = null; cursor.next_at = next(); cursor.reason = reason;
-          } else if (["cron_dependency_busy", "cron_attempt_requires_reconciliation", "cron_taskhub_mode_required",
+          } else if (["local_queue_full", "cron_dependency_busy", "cron_attempt_requires_reconciliation", "cron_taskhub_mode_required",
             "cron_taskhub_requires_summarized_only", "cron_taskhub_requires_foreground", "cron_provider_not_configured"].includes(reason)) cursor.reason = reason;
           else throw error;
         }
