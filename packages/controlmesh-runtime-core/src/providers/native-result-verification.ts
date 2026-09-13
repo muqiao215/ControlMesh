@@ -33,6 +33,7 @@ export class NativeResultVerification {
     requireThat(admission.source_scope === source.source_scope, "source_execution_floor_unavailable");
     // Recheck current caller authorization even for an existing acceptance receipt.
     const issuedAdmission = () => digest({ source_scope: admission.source_scope, read_files: admission.read_files,
+      controller_approval: admission.controller_approval ?? null,
       required_reads: admission.required_reads, workspace_write: admission.workspace_write ?? null });
     const admissionDigest = issuedAdmission();
     const authorize = () => {
@@ -63,7 +64,7 @@ export class NativeResultVerification {
       const required = roots.length ? registeredReads(manifest.directory.path, admission.required_reads, roots, true) : readFileGrant(manifest.directory.path, admission.required_reads);
       requireThat(digest(files) === digest(manifest.files.map(file => file.path)) && digest(required) === digest(manifest.required_reads), "reconciliation_grant_changed");
       const communicationTools = manifest.communication ? nativeAgentTools : [];
-      assertReadGrantSnapshot(task.tool_grant, files, communicationTools);
+      assertReadGrantSnapshot(task.tool_grant, files, communicationTools, admission.controller_approval ? { permit: admission.controller_approval, task_id: task.task_id } : undefined);
       const saved = manifest.permission_evidence;
       requireThat(realpathSync(join(saved.data_home, "opencode/opencode.db")) === realpathSync(this.store.path), "native_environment_store_mismatch");
       const write = manifest.workspace_write;
@@ -82,7 +83,7 @@ export class NativeResultVerification {
         && this.store.worktree(verified.reference) === manifest.worktree.path, "native_result_binding_mismatch");
       let fileProof = { read_files: verified.read_files.map(file => realpathSync(file)), written_files: [] as string[] };
       if (write) {
-        this.stage = openWorkspace(manifest, this.config.state_home, admission.workspace_write!, task.tool_grant);
+        this.stage = openWorkspace(manifest, this.config.state_home, admission.workspace_write!, task.tool_grant, admission.controller_approval ? { permit: admission.controller_approval, task_id: task.task_id } : undefined);
         this.proposal = observation.workspace_write as NativeWriteReceipt;
         fileProof = verifyWorkspaceTools(manifest, this.stage, verified, this.proposal);
       } else {
@@ -98,7 +99,7 @@ export class NativeResultVerification {
         authorize(); this.lock!.assertCurrent(); assertWorkspaceManifest(manifest, true, Boolean(write)); this.store.validate(verified.reference);
         if (write) {
           requireThat(runner?.runtimeDigest?.() === binding.runtime_digest, "native_write_owner_required");
-          openWorkspace(manifest, this.config.state_home, admission.workspace_write!, task.tool_grant);
+          openWorkspace(manifest, this.config.state_home, admission.workspace_write!, task.tool_grant, admission.controller_approval ? { permit: admission.controller_approval, task_id: task.task_id } : undefined);
           this.stage!.assertProposal(this.proposal!.proposal_digest);
         }
         if (communicationIdentity) requireThat(this.config.communication && assertNativeAgentConfiguration(this.config.communication) === communicationIdentity, "native_agent_profile_changed");

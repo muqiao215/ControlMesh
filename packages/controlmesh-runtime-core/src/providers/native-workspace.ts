@@ -41,13 +41,14 @@ export function workspacePatterns(worktree: string, files: readonly string[], ro
   return { read_patterns, edit_patterns, denied_patterns };
 }
 
-export function openWorkspace(manifest: NativeManifest, stateHome: string, issued: IssuedWorkspaceWrite, grant: unknown): WorkspaceStage {
+export function openWorkspace(manifest: NativeManifest, stateHome: string, issued: IssuedWorkspaceWrite, grant: unknown,
+  approval?: import("./opencode-profile").OpenCodeControllerApproval): WorkspaceStage {
   const saved = manifest.workspace_write;
   requireThat(saved && dirname(saved.stage_path) === realpathSync(stateHome), "native_workspace_stage_state_mismatch");
   const roots = writeRoots(manifest.directory.path, issued);
   requireThat(saved.workflow_binding === (issued.workflow_binding ?? null), "native_workflow_binding_changed");
   requireThat(digest(roots.map(directoryIdentity)) === digest(saved.roots), "native_write_grant_changed");
-  assertWorkspaceGrantSnapshot(grant, manifest.directory.path, roots, manifest.communication ? ["controlmesh_send", "controlmesh_ask_parent", "controlmesh_receive", "controlmesh_answer"] : []);
+  assertWorkspaceGrantSnapshot(grant, manifest.directory.path, roots, manifest.communication ? ["controlmesh_send", "controlmesh_ask_parent", "controlmesh_receive", "controlmesh_answer"] : [], approval);
   const stage = WorkspaceStage.open(saved.stage_path, saved.stage_reference);
   requireThat(digest(workspacePatterns(manifest.worktree.path, manifest.files.map(file => file.path), roots, stage))
     === digest({ read_patterns: saved.read_patterns, edit_patterns: saved.edit_patterns, denied_patterns: saved.denied_patterns }), "native_write_permission_scope_changed");

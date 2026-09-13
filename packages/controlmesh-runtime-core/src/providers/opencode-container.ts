@@ -54,7 +54,8 @@ class OpenCodeContainerRunner implements NativeRunner {
   assertSource(context: ExecutionContext): void {
     requireThat(this.runtimeDigest() === this.initialDigest, "native_container_profile_changed");
     enforceExecutionPolicy(context, true);
-    requireThat(context.origin === "user" && ["local_foreground", "direct_message", "group_message"].includes(context.source_scope), "source_execution_floor_unavailable");
+    requireThat((context.origin === "user" && ["local_foreground", "direct_message", "group_message"].includes(context.source_scope))
+      || (context.origin === "cron" && context.source_scope === "cron"), "source_execution_floor_unavailable");
     // Every run below goes through ContainerProcessSupervisor; Docker failure never selects a host runner.
   }
 

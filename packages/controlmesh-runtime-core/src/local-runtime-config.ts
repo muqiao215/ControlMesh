@@ -169,7 +169,9 @@ export function openLocalRuntime(path: string, options: { host_worker?: boolean 
     const registered = (task: TaskSnapshot) => {
       current();
       requireThat(provider && environment, "opencode_not_registered");
-      enforceProviderConfirmation("opencode", decodeToolGrant(task.task.tool_grant));
+      const controllerApproval = task.task.cron_occurrence_id ? cronApprovals?.forTask(actor, task.task) : undefined;
+      enforceProviderConfirmation("opencode", decodeToolGrant(task.task.tool_grant), undefined,
+        controllerApproval ? { permit: controllerApproval, task_id: task.task.task_id } : undefined);
       const control = join(root, "containers"); mkdirSync(control, { recursive: true, mode: 0o700 });
       const taskId = task.task.task_id;
       const peers = object(communication) && object(communication.tasks) && Object.hasOwn(communication.tasks, taskId) ? communication.tasks[taskId] as Record<string, unknown> : undefined;
@@ -185,6 +187,7 @@ export function openLocalRuntime(path: string, options: { host_worker?: boolean 
           config_digest: digest(native), credential_revision: privateFile(join(profile.data_home, "opencode/auth.json")).revision,
           permission_profile: roots.length ? "opencode-native-workspace-v1" : "opencode-native-read-v1", runtime_digest: runner.runtimeDigest() }),
         admission: { source_scope: decodeExecutionContext(task.task.execution_context).source_scope as IssuedReadAdmission["source_scope"],
+          ...(controllerApproval ? { controller_approval: controllerApproval } : {}),
           read_files: workspace.read_files as string[], required_reads: workspace.required_reads as string[], assertCurrent: current,
           ...(roots.length ? { workspace_write: { roots, ...(specmesh ? { workflow_binding: specmesh.binding_digest } : {}) } } : {}) } };
       const worker = { executable: profile.executable, native_configuration: native, environment, state_home: root, ...(channel ? { communication: channel } : {}) };

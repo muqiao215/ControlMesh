@@ -51,12 +51,12 @@ export class OpenCodeTaskAdapter {
       const files = roots.length ? registeredReads(identity.path, this.registration.admission.read_files, roots, afterWrites)
         : readFileGrant(identity.path, this.registration.admission.read_files);
       assertOpenCodeCompletionScope(task.task.completion_requirements, identity.path, files, roots);
-      assertReadGrantSnapshot(task.task.tool_grant, files, this.config.communication ? nativeAgentTools : []);
+      assertReadGrantSnapshot(task.task.tool_grant, files, this.config.communication ? nativeAgentTools : [], this.registration.admission.controller_approval ? { permit: this.registration.admission.controller_approval, task_id: task.task.task_id } : undefined);
       if (roots.length) {
         WorkspaceStage.assertLocation(this.config.state_home, identity.path);
         requireThat(this.runner.forStage && this.registration.admission.workspace_write
           && digest(writeRoots(identity.path, this.registration.admission.workspace_write)) === digest(roots), "native_write_owner_required");
-        assertWorkspaceGrantSnapshot(task.task.tool_grant, identity.path, roots, this.config.communication ? nativeAgentTools : []);
+        assertWorkspaceGrantSnapshot(task.task.tool_grant, identity.path, roots, this.config.communication ? nativeAgentTools : [], this.registration.admission.controller_approval ? { permit: this.registration.admission.controller_approval, task_id: task.task.task_id } : undefined);
       }
       if (this.config.communication) {
         requireThat(this.config.communication.task_id === task.task.task_id, "native_agent_task_mismatch");
@@ -70,6 +70,7 @@ export class OpenCodeTaskAdapter {
     };
     check();
     const issuedGrantValue = () => ({ files: this.registration.admission.read_files, required: this.registration.admission.required_reads,
+      controller_approval: this.registration.admission.controller_approval ?? null,
       ...(this.registration.admission.workspace_write ? { workspace_write: this.registration.admission.workspace_write } : {}) });
     const grant = digest(issuedGrantValue());
     const current = (afterWrites = false) => {

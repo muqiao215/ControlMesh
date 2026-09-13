@@ -35,7 +35,8 @@ export interface OpenCodeWorkerConfig {
 }
 export interface IssuedReadAdmission {
   // Issued by trusted local ingress. Never derive these values from transcript text or a remote body.
-  source_scope: "local_foreground" | "direct_message" | "group_message";
+  source_scope: "local_foreground" | "direct_message" | "group_message" | "cron";
+  controller_approval?: import("../controller-approval-permit").ControllerApprovalPermit;
   read_files: readonly string[];
   required_reads: readonly string[];
   assertCurrent: () => void;
@@ -65,7 +66,7 @@ export class OpenCodeExecution {
     private readonly runner: NativeRunner = new ProcessSupervisor()) {}
 
   async execute<T>(task: LegacyTask, binding: ProbeBinding, admission: IssuedReadAdmission, hooks: NativeExecutionHooks<T>, timeoutMs = 60_000): Promise<T> {
-    requireThat(["local_foreground", "direct_message", "group_message"].includes(admission.source_scope), "source_execution_floor_unavailable");
+    requireThat(["local_foreground", "direct_message", "group_message", "cron"].includes(admission.source_scope), "source_execution_floor_unavailable");
     requireThat(binding.cli_version === "1.18.29", "native_permission_profile_unverified");
     requireThat(binding.runtime_digest === this.runner.runtimeDigest?.(), "worker_runtime_binding_mismatch");
     requireThat(Number.isSafeInteger(timeoutMs) && timeoutMs >= 1000 && timeoutMs <= 300_000, "invalid_native_timeout");
@@ -90,8 +91,8 @@ export class OpenCodeExecution {
       requireThat(communication.scope.task_id === task.task_id && digest(nativeAgentScope(this.config.communication!, communication.scope)) === digest(communication.scope), "native_agent_scope_changed");
     }
     const communicationTools = communication ? nativeAgentTools : [];
-    assertReadGrantSnapshot(task.tool_grant, files, communicationTools);
-    if (roots.length) assertWorkspaceGrantSnapshot(task.tool_grant, cwd, roots, communicationTools);
+    assertReadGrantSnapshot(task.tool_grant, files, communicationTools, admission.controller_approval ? { permit: admission.controller_approval, task_id: task.task_id } : undefined);
+    if (roots.length) assertWorkspaceGrantSnapshot(task.tool_grant, cwd, roots, communicationTools, admission.controller_approval ? { permit: admission.controller_approval, task_id: task.task_id } : undefined);
     requireThat(required.every(file => files.includes(file)), "required_read_not_granted");
     const ref = task.native_session === undefined || task.native_session === null ? null : task.native_session as NativeSessionRef;
     if (ref) requireThat(ref.directory === cwd, "native_workspace_mismatch");

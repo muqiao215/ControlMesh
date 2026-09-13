@@ -4,10 +4,11 @@ import { homedir } from "node:os";
 import { digest, object, requireThat } from "../value";
 import { decodeToolGrant, enforceProviderConfirmation } from "../execution-grants";
 import { nativeAgentTools } from "./native-agent-journal";
+export type OpenCodeControllerApproval = Parameters<typeof enforceProviderConfirmation>[3];
 
-export function assertReadGrantSnapshot(value: unknown, files: readonly string[], communication: readonly string[] = []): void {
+export function assertReadGrantSnapshot(value: unknown, files: readonly string[], communication: readonly string[] = [], approval?: OpenCodeControllerApproval): void {
   const grant = decodeToolGrant(value);
-  enforceProviderConfirmation("opencode", grant);
+  enforceProviderConfirmation("opencode", grant, undefined, approval);
   requireThat(grant.network_policy === "sandbox_default", "no_network_unenforceable");
   const allows = grant.tool_allow.map(tool => tool.toLowerCase()), denies = grant.tool_deny.map(tool => tool.toLowerCase());
   requireThat(!files.length || (!denies.includes("read") && (!allows.length || allows.includes("read"))), "read_conflicts_task_grant");
@@ -88,8 +89,8 @@ export function assertSharedEditGrant(value: unknown): void {
   requireThat(["edit", "write", "apply_patch"].every(tool => !denies.includes(tool) && (!allows.length || allows.includes(tool))), "native_shared_edit_permission_conflicts_grant");
 }
 
-export function assertWorkspaceGrantSnapshot(value: unknown, workspace: string, roots: readonly string[], communication: readonly string[] = []): void {
-  assertReadGrantSnapshot(value, roots, communication);
+export function assertWorkspaceGrantSnapshot(value: unknown, workspace: string, roots: readonly string[], communication: readonly string[] = [], approval?: OpenCodeControllerApproval): void {
+  assertReadGrantSnapshot(value, roots, communication, approval);
   const grant = decodeToolGrant(value);
   requireThat(roots.length > 0 && roots.every(root => isAbsolute(root) && realpathSync(root) === root && statSync(root).isDirectory()
     && !/[?*\x00]/.test(root) && relative(workspace, root) !== ".." && !relative(workspace, root).startsWith("../") && !isAbsolute(relative(workspace, root))

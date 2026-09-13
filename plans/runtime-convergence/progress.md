@@ -799,3 +799,20 @@ Logs /tmp/cm-cron-{permit-tests,claude-regression,authority-regression,permit-ty
 This proves the configured execution mechanism with a synthetic CLI, not real model
 continuation or full migration. OpenCode/Codex approvals, quota circuits, delivery and
 physical-device acceptance remain open; no production service/account was changed.
+
+OpenCode approvals now flow through configured registration, read/write grant checks,
+execution, result verification and workspace reopening. Admission digests include the
+permit binding; source allowlists admit cron only through concrete container runners,
+while missing/forged/revoked permits remain denied. Initial live canary stopped before
+task execution at an overlooked execution-layer source allowlist; after correcting it,
+explicitly requeued the same waiting/unstarted task (no reconciliation needed), without
+creating another occurrence or task. Actual OpenCode MiniMax-M3 read a random marker
+from the isolated PROJECT.md, produced a verified native result, completed cron and
+released its dependency. Native session ses_f64bd003affem8Xao0oFD9FfpQ retained; restart
+kept user message count 1 -> 1 with no redispatch. Evidence under
+/home/muqiao/Documents/Codex/2026-09-06/new-chat/work/runtime-convergence-acceptance/cron-opencode-1789311123859/
+in report.json (initial nonacceptance), recovery-report.json (accepted) and restart-report.json.
+No original project files or production cron changed. This is a real new-session cron
+canary plus no-replay recovery, not native multi-turn resume or physical-device acceptance.
+OpenCode regressions 30 pass/4 skip/275 assertions, approval tests 8 pass/47 assertions;
+typecheck and diff check pass. Logs /tmp/cm-opencode-cron-{regressions,approval-tests,typecheck}.log.

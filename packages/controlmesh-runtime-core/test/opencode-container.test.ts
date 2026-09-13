@@ -64,7 +64,8 @@ test("only the concrete container runner admits remote message sources; host run
     expect(() => enforceNativeReadSource(context, {})).toThrow();
   }
   const scheduled = issueExecutionContext({ origin: "cron", source_scope: "cron", transport: "fs" });
-  expect(() => enforceNativeReadSource(scheduled, f.runner)).toThrow("source_execution_floor_unavailable");
+  expect(enforceNativeReadSource(scheduled, f.runner)).toEqual(scheduled);
+  expect(() => enforceNativeReadSource(scheduled, {})).toThrow();
   renameSync(f.auth, `${f.auth}.old`); writeFileSync(f.auth, '{"fixture":"replaced"}', { mode: 0o600 });
   expect(() => enforceNativeReadSource(issueExecutionContext({ origin: "user", source_scope: "direct_message", transport: "fs" }), f.runner))
     .toThrow("native_container_profile_changed");
