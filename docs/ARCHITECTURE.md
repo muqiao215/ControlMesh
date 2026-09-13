@@ -101,6 +101,15 @@ pre-execution evidence: normal Gemini task registration, protected process confi
 session/result recovery and account-backed acceptance remain open. The generic Gemini
 restrictive grant mapping remains refused until those execution owners are connected.
 
+`GeminiResumeProcess` now reuses ProcessSupervisor and the native-session flock for
+explicitly adopted local compatibility sessions. It runs the joined settings/policy
+check, checks the CLI version, retains dispatch before stdin and preserves owned outcomes
+before checking success. Completion requires an unchanged transcript prefix and matching
+stream/persisted text; retained verification launches no process. Native quota envelopes
+abort retries, and cancellation retains the process outcome. Restrictive grants remain
+refused. This process primitive is not yet normal TaskHub registration, protected runtime
+isolation, a tool-bearing receipt path or an account-backed acceptance result.
+
 Responsibilities:
 
 - discover and authenticate official provider CLIs;

@@ -2447,3 +2447,11 @@ This remains a version-specific projection, not proof of the entire CLI executio
 The resume command previously omitted --ignore-env while the probe required it; command
 construction now matches this admission assumption. Full dispatch still needs protected
 configuration and native process/session integration.
+
+
+Gemini now has a process-level continuation owner, but its successful exit still needs
+strict native transcript-prefix and appended-message verification. The process owner
+retains output before semantic/currentness failure, so quota, cancellation and mismatched
+text remain available for the task receipt owner. Its current host compatibility path
+requires local user source and preserves existing restrictive-grant refusals. A deny-tool
+policy check does not itself prove filesystem/network isolation or the full CLI graph.

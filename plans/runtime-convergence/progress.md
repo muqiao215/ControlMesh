@@ -1404,3 +1404,25 @@ Remaining/Next: normal Gemini task registration, exact CLI execution-graph quali
 protected same-configuration process dispatch and native session/outcome recovery remain
 open. Do not relax grant mapping from preflight evidence alone. Full CM-R0–R7 scope,
 other providers/transports/devices, production migration and release remain unfinished.
+
+
+## 2026-09-13 — Gemini supervised resume and retained verification
+
+Current/Done: GeminiResumeProcess connects the joined settings-policy probe to the
+existing process supervisor, explicit prior-byte adoption, native flock, CLI version
+check, pre-input dispatch retention and all-outcome retention. Exact-session text
+completion cross-checks stream and appended native records. Retained verification is
+model-free; native quota aborts retries; cancellation preserves the owned outcome.
+
+Verification: Gemini regression with installed settings/recording modules: 22 pass,
+0 fail, 159 assertions, 7.62s (/tmp/cm-gemini-resume-regression.log). After final early
+timeout/qualified-policy checks, process suite: 4 pass, 0 fail, 19 assertions, 1.41s.
+Typecheck and diff check passed. New process tests use real supervised fixture CLI
+processes with an injected settings runner; they are not real Gemini account tests.
+Initial fixture failures (execution-context call shape, missing mock policy, extra
+JSONL blank line) were corrected; no production configuration was changed.
+
+Remaining/Next: connect normal task receipts/readiness/config registration and recovery;
+qualify actual CLI execution dependencies and protected configuration, tools/workspace
+receipts and account-backed same-session continuation. Restrictive grants still refuse.
+Full CM-R0–R7 migration, multi-device/transport acceptance and release remain open.

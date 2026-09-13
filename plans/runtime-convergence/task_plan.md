@@ -386,3 +386,10 @@ from the same merged settings and checks registered policy sources, configuratio
 and the exact requested tool set. Resume argv matches the probe's --ignore-env profile.
 Next is actual same-configuration process/session dispatch and normal task registration;
 this checkpoint does not complete Gemini, the full migration or production rollout.
+
+
+Gemini execution checkpoint: explicit-session supervised local compatibility execution
+and model-free retained text verification are implemented, with quota-abort/cancel and
+changed-adoption fixture coverage. Next is normal TaskHub/readiness/receipt registration
+and protected real CLI qualification, then native account and full device/profile matrix.
+No default runtime switch or full migration completion is established by this primitive.
