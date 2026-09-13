@@ -31,11 +31,24 @@ export function reconcileCronTaskResults(kernel: RuntimeKernel, actor: Principal
         continue;
       }
       const status = task.task.status;
-      if (status !== "done" && status !== "failed") continue;
-      const episode = kernel.db.sql.query("SELECT episode_id,state,device_id FROM episodes WHERE task_id=? AND fence=?")
-        .get(attempt.task_id!, task.fence) as { episode_id: string; state: string; device_id: string } | null;
-      requireThat(episode && episode.state === status && episode.device_id === attempt.executor_device_id
-        && !kernel.db.sql.query("SELECT 1 FROM effects WHERE task_id=? AND state!='confirmed'").get(attempt.task_id!), "cron_terminal_evidence_unconfirmed");
+      if (status !== "done" && status !== "failed" && status !== "cancelled") continue;
+      const unresolved = kernel.db.sql.query("SELECT 1 FROM effects WHERE task_id=? AND state!='confirmed'").get(attempt.task_id!);
+      if (status === "cancelled") {
+        // Cancellation revokes execution authority but cannot retract dispatched effects.
+        if (unresolved) {
+          if (attempt.state !== "uncertain") {
+            store.updateAttemptState(attempt.attempt_id, authority, { state: "uncertain", resultStatus: "cancelled" }); changed++;
+          }
+          continue;
+        }
+        requireThat(!kernel.db.sql.query("SELECT 1 FROM episodes WHERE task_id=? AND state IN ('leased','running')")
+          .get(attempt.task_id!), "cron_cancellation_not_quiescent");
+      } else {
+        const episode = kernel.db.sql.query("SELECT episode_id,state,device_id FROM episodes WHERE task_id=? AND fence=?")
+          .get(attempt.task_id!, task.fence) as { episode_id: string; state: string; device_id: string } | null;
+        requireThat(episode && episode.state === status && episode.device_id === attempt.executor_device_id
+          && !unresolved, "cron_terminal_evidence_unconfirmed");
+      }
       const state = status === "done" ? "completed" : "failed";
       const locks = kernel.db.sql.query("SELECT dependency,status FROM cron_dependency_locks WHERE active_attempt_id=?")
         .all(attempt.attempt_id) as { dependency: string; status: string }[];
@@ -48,7 +61,7 @@ export function reconcileCronTaskResults(kernel: RuntimeKernel, actor: Principal
         if (locks[0]) store.releaseDependencyLock(locks[0].dependency, { ...authority, attemptId: attempt.attempt_id });
       }
       const occurrence = store.getOccurrence(attempt.occurrence_id)!;
-      if (store.getJob(occurrence.job_id)) store.recordRunStatus(occurrence.job_id, status === "done" ? "success" : "failed");
+      if (store.getJob(occurrence.job_id)) store.recordRunStatus(occurrence.job_id, status === "done" ? "success" : status);
       changed++;
     }
     return changed;

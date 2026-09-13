@@ -720,3 +720,13 @@ unchanged/terminal attempts are not repeatedly written. Four result/service test
 actual kernel claim/start/effect/finish/expiry APIs, not a real CLI/model. Cross-generation
 takeover, cancelled task projection, quota circuits and end-to-end native/delivery
 acceptance remain open. No production cron or external account was operated.
+
+Cancellation projection now distinguishes revoked work with confirmed/no effects from
+cancelled work whose dispatched effects remain unknown. The former records terminal
+attempt state failed with result_status cancelled (existing storage vocabulary), releases
+its dependency and records cancelled job status. The latter retains the dependency and
+records uncertain/cancelled. No leased/running episode may survive terminal projection.
+Six result/service tests pass (52 assertions) and typecheck/diff check pass; logs
+/tmp/cm-cron-cancellation-{tests,typecheck}.log. Cross-generation takeover and native
+termination/reconciliation acceptance remain pending; cancellation alone is not proof
+that an external process terminated.
