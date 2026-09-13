@@ -1264,3 +1264,21 @@ Targeted live tests: 2 pass, 15 filtered, 0 fail, 25 assertions, 4.40s
 (/tmp/cm-offline-plan-regression.log). Typecheck/diff check passed. Previous full regression
 is for b1de06f, not claimed to cover this later change. Full runtime/provider/transport/
 device/release matrix remains open; no production configuration changed.
+
+
+## 2026-09-13 — Gemini loaded-rule qualification
+
+Added Gemini 0.59 effective administrator rule validation against the native engine's
+loaded rules: unconditional wildcard denial at priority 5.998, exact allows at 5.999,
+expected Admin source, no competing same/higher rules or predicate-bearing fallback.
+Installed engine test now verifies generated deny/allow policy acceptance and rejection
+when system TOML suppresses the supplied administrator policy. Adversarial conditional,
+missing, duplicate and widened rules covered. Initial fixture used priority 999 for the
+deny fallback; changed it to the production policy generator's 998 before qualification.
+
+4 pass, 0 fail, 44 assertions, 3 files, 537ms (/tmp/cm-gemini-effective-policy.log), using
+the installed 0.59 module with isolated policy directories and no account/model calls.
+Typecheck/diff check passed. The function validates loaded rules only, not CLI identity,
+immutable config or execution grants. It is not yet wired to the normal Gemini runtime;
+existing restrictive-grant refusal remains. Next integration must bind exact native code,
+configuration snapshots, current session baseline and supervised process lifetime.

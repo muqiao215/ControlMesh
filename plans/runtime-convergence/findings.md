@@ -2376,3 +2376,12 @@ or job-name similarity. The existing plan runner verifies the canonical run rece
 successful predecessor observations; a scoped scan can reuse that authority. Queue claim
 filtering is also necessary: restricting plan creation alone still leaves unrelated queued
 work available to a generic drain. Both scan and selection now share the approval scope.
+
+
+Gemini installed engine transforms admin TOML priority as tier 5 + priority/1000. Generated
+fallback 998 and exact allow 999 appear as 5.998/5.999. The loader attaches Admin: filename
+source and undefined predicate fields. Loaded-rule qualification refuses defined predicate
+fields and all competing rules at/above the fallback. Lower-priority rules remain shadowed.
+This is a version-specific rule proof, not permission to trust a caller-supplied rule list
+or skip config immutability. System TOML suppression is detected as missing effective admin
+rules in the actual installed engine test.

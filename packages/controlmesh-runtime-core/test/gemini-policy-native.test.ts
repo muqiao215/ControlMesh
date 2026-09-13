@@ -1,3 +1,4 @@
+import { verifyGeminiEffectivePolicy } from "../src/providers/gemini-effective-policy";
 import { geminiToolPolicy } from "../src/providers/gemini-profile";
 import { expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
@@ -17,20 +18,23 @@ test.skipIf(!process.env.CM_GEMINI_RECORDING_MODULE)("installed Gemini enforces 
     native.Storage.getSystemPoliciesDir = () => system;
     native.Storage.getUserPoliciesDir = () => user;
     writeFileSync(join(user, "allow.toml"), rule("allow", 999));
-    writeFileSync(join(admin, "deny.toml"), rule("deny", 999));
+    writeFileSync(join(admin, "deny.toml"), geminiToolPolicy([]));
     const settings = { adminPolicyPaths: [admin], policyPaths: [user] };
     const enforced = new native.PolicyEngine(await native.createPolicyEngineConfig(settings, "default", defaults, false));
+    expect(verifyGeminiEffectivePolicy(enforced.getRules(), [], "deny.toml").allowed_tools).toEqual([]);
     for (const name of ["read_file", "write_file", "unknown_future_tool"]) {
       expect((await enforced.check({ name, args: {} })).decision).toBe("deny");
     }
     writeFileSync(join(admin, "deny.toml"), geminiToolPolicy(["read_file"]));
     const scoped = new native.PolicyEngine(await native.createPolicyEngineConfig(settings, "default", defaults, false));
+    expect(verifyGeminiEffectivePolicy(scoped.getRules(), ["read_file"], "deny.toml").allowed_tools).toEqual(["read_file"]);
     expect((await scoped.check({ name: "read_file", args: {} })).decision).toBe("allow");
     for (const name of ["write_file", "read_file_other", "unknown_future_tool"]) expect((await scoped.check({ name, args: {} })).decision).toBe("deny");
     writeFileSync(join(admin, "deny.toml"), geminiToolPolicy([]));
     // File presence suppresses the CLI admin path before system-directory trust filtering.
     writeFileSync(join(system, "unrelated.toml"), '[[rule]]\ntoolName = "unrelated_tool"\ndecision = "deny"\npriority = 1\n');
     const ignored = new native.PolicyEngine(await native.createPolicyEngineConfig(settings, "default", defaults, false));
+    expect(() => verifyGeminiEffectivePolicy(ignored.getRules(), [], "deny.toml")).toThrow("gemini_admin_policy_not_effective");
     expect((await ignored.check({ name: "read_file", args: {} })).decision).toBe("allow");
 
   } finally {

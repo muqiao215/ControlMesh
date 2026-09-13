@@ -340,3 +340,9 @@ isolation tests; see the newer progress entry. Continue the remaining host/sourc
 provider/transport/device ownership matrix before any default runtime switch.
 This next action does not supersede remaining provider/transport/device/migration/release
 requirements or the CM-R7 production writer cutover gate.
+
+
+Gemini checkpoint: loaded-rule validation now detects the installed 0.59 system-policy
+suppression path with native engine evidence. Normal runtime registration/preflight,
+configuration immutability, process/session integration and full account qualification
+remain required. No grant mapping or default provider admission has been relaxed.
