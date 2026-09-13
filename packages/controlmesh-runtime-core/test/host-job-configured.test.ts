@@ -107,3 +107,44 @@ for (const mode of ["repair", "invalid-start", "pass"]) (specmeshRoot ? test : t
     }
   } finally { await owned.close(); rmSync(root, { recursive: true, force: true }); }
 }, 20000);
+
+test("normal task cancellation retains the owned outcome and synchronizes the running host step", async () => {
+  const root = mkdtempSync(join(tmpdir(), "cm-host-cancel-"));
+  const state = join(root, "state"), workspace = join(root, "workspace"), path = join(root, "config.json");
+  mkdirSync(state, { mode: 0o700 }); mkdirSync(workspace);
+  writeFileSync(path, JSON.stringify({ schema_version: "controlmesh.local_runtime.v1", mode: "candidate", state_root: state,
+    principal_id: "owner", device_id: "local", source: { command_origin: "human_request", origin: "user", source_scope: "local_foreground", transport: "terminal" },
+    host: { shell: realpathSync("/bin/bash") }, workspace: { directory: workspace, read_files: [], required_reads: [] } }), { mode: 0o600 });
+  const actor: Principal = { id: "owner", device_id: "local", origin: "human_request", scopes: ["task:admin", "task:read"] };
+  let owned = openLocalRuntime(path);
+  try {
+    new HostJobStore(owned.runtime.kernel.db, () => {}).put(actor, "create", 0, { job_id: "job", repo: workspace,
+      created_at: "2026-09-13", updated_at: "2026-09-13", steps: [{ id: "step", command: "printf 'started\\n' >> marker; sleep 10; printf 'finished\\n' >> marker", approval_required: true }] });
+    const approval = owned.runtime.approveHostStep("approve", "job", 1, "step");
+    owned.runtime.submit("submit", { task_id: "task", chat_id: "test", status: "waiting", provider: "host",
+      host_job: { job_id: "job", revision: 1, step_id: "step", approval } }, { chat_id: "test" });
+    const run = owned.runtime.enqueue("enqueue", "task", 1);
+    const draining = owned.runtime.drain();
+    try {
+      const until = Date.now() + 5000;
+      while (Date.now() < until) {
+        try { if (readFileSync(join(workspace, "marker"), "utf8") === "started\n") break; } catch {}
+        await Bun.sleep(10);
+      }
+      expect(readFileSync(join(workspace, "marker"), "utf8")).toBe("started\n");
+      const revision = owned.runtime.inspectTask("task").revision;
+      const control = new LocalRuntimeControl(owned.runtime);
+      expect(await control.handle({ id: "cancel", op: "cancel", task_id: "task", expected_revision: revision })).toMatchObject({ ok: true });
+    } finally { await draining; }
+    expect(owned.runtime.inspect(run.run_id).state).toBe("cancelled");
+    expect(owned.runtime.inspectHostJob("job")!.job).toMatchObject({ state: "cancelled", steps: [{ state: "cancelled", detail: "cancelled" }] });
+    const row = owned.runtime.kernel.db.sql.query("SELECT state,result FROM effects").get() as { state: string; result: string };
+    expect(row.state).toBe("unknown");
+    expect(["cancelled", "authority_lost"]).toContain(JSON.parse(row.result).reason);
+    expect(owned.runtime.kernel.db.sql.query("SELECT COUNT(*) AS n FROM effect_observations").get()).toEqual({ n: 1 });
+    await owned.close(); owned = openLocalRuntime(path); owned.runtime.recover();
+    expect(owned.runtime.inspectHostJob("job")!.job.state).toBe("cancelled");
+    expect(readFileSync(join(workspace, "marker"), "utf8")).toBe("started\n");
+    expect(() => owned.runtime.enqueue("retry", "task", owned.runtime.inspectTask("task").revision)).toThrow("task_not_admitted");
+  } finally { await owned.close(); rmSync(root, { recursive: true, force: true }); }
+});

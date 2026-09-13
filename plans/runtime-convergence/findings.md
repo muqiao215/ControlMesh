@@ -2252,3 +2252,23 @@ legitimately change project documents. Enforce the start snapshot immediately be
 dispatch, keep plugin identity current during execution, then verify the fresh end snapshot
 in the completion transaction. Failed post-check retains actual execution evidence and
 requires reconciliation. Never label this Agent context consumption or reviewed closeout.
+
+Host parity revalidation at b361e0a corrects the previously proposed next step. Python
+HostJobRunner is intentionally host-only (tasks/hub.py preview and launch both enforce
+sandbox_available=False). Missing parity is concrete: task workunit routing/create,
+automatic step advancement, cancellation-to-job synchronization, durable streamed logs,
+long-running ownership/environment, and detail/last_error projection. TS process anchor
+stops on IPC disconnect, so retained-result recovery is not detached-process continuation.
+See host-parity.md for owners and acceptance requirements.
+
+Concrete cancellation race: RuntimeKernel.cancel changes dispatched effects to unknown,
+but HostJobProcess retained-outcome SQL only accepts dispatched state. Cancelling through
+LocalTaskRuntime can therefore reject the actual supervised outcome before insertion.
+The direct AbortSignal fixture does not cover kernel cancellation. Add normal-control
+cancellation coverage and allow only same-task/episode/fence owned evidence retention;
+job cancellation needs proven process termination and must not confirm side effects.
+
+Cancellation outcome retention may accept unknown effect state only with the original
+task/episode/fence and empty result. Cancellation projection uses current cancelled task,
+exactly incremented fence, matching cancelled episode and unchanged host revision. It
+changes HostJob reporting, never confirms an effect or reactivates a revoked lease.

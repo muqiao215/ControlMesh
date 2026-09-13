@@ -274,3 +274,17 @@ Host workflow checkpoint: independent start/end checks and same-profile recovery
 are wired and qualified against the actual standalone plugin. Next: complete remaining
 host execution source/container/device profiles against Python behavior, then continue
 all unresolved provider/transport/terminal and rollout owners in CM-R0–R7.
+
+### Host parity revalidation
+
+Use [host-parity.md](host-parity.md) for the remaining host owners and exit evidence.
+The Python host runner intentionally refuses isolation-required sources; creating a
+container-host variant is not a prerequisite for matching that owner. Next implementation
+priority is explicit cancellation/job-state convergence, followed by normal workunit
+creation/advancement and durable long-running execution/logs. Full provider/device and
+production rollout gates remain unchanged.
+
+Running host cancellation checkpoint: normal control cancellation retains actual process
+outcome and projects cancelled job/step without confirming effects. Next: queued-step
+cancellation and crash-window reconciliation, then the remaining host-parity.md owners.
+Full baseline at b361e0a passed 918/30/0; later cancellation fix has focused regression.

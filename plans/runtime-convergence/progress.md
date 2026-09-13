@@ -979,3 +979,32 @@ start documents with zero effects, and command-induced missing documentation fol
 blocked recovery, repair and acceptance without re-execution. Regression: 37 pass;  0 fail;  261 expect() calls; Ran 37 tests across 4 files. [21.72s]
 Typecheck and diff check passed. Remaining host owners include source/container/device
 profiles and full Python runner parity; original migration/release matrix remains open.
+
+## Current — host parity and broad regression revalidation
+
+Reviewed Python host routing/runner and TS anchor/queue against real source. Added
+host-parity.md to replace the unsupported assumption that adding a container host runner
+is the next parity requirement. This changes ordering, not the full CM-R0–R7 goal.
+Broad runtime regression first started with a mistyped test image digest, was explicitly
+terminated (session 46042, exit 130), and restarted with the correct digest in session
+65851, log /tmp/cm-runtime-host-full-corrected.log. Do not use the aborted run as evidence.
+
+## 2026-09-13 — full host baseline and normal cancellation race fix
+
+At b361e0a the complete runtime-core gate passed: 918 pass, 30 skip, 0 fail, 11145
+assertions; 948 tests/105 files, 360.72s. Ownership check and typecheck passed. Log:
+/tmp/cm-runtime-host-full-corrected.log. Optional unconfigured native fixtures remain
+skips; this is not full release/device/account qualification.
+
+Fixed normal kernel cancellation losing HostJob outcome: retention accepts dispatched
+or unknown only for the original task/episode/fence with no prior result. Once the owned
+supervisor returns, the original cancelled episode/current task and unchanged running
+job revision authorize cancelled job/step projection. Effects remain unknown, not confirmed;
+prior side effects are not declared undone. No lease authority is resurrected.
+
+Normal-control actual bash cancellation, runtime close/reopen and no-requeue test passes.
+Host/kernel/local-queue plus actual SpecMesh regression: 35 passed, 217 assertions,
+7.73s (/tmp/cm-host-cancel-regression.log); typecheck/diff-check passed. This focused
+post-change regression is distinct from the earlier full baseline. Queued cancellation,
+crash-window reconciliation, durable detached execution and other host-parity.md owners
+remain next; full CM-R0–R7 scope stays open.

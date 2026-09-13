@@ -62,11 +62,30 @@ export class HostJobProcess {
         env: { PATH: "/usr/bin:/bin", LANG: "C.UTF-8" }, timeout_ms: 300000, max_output_bytes: 262144 }, { ...admission, assertCurrent: guard });
       // Retain the owned process outcome even after lease loss; it cannot authorize completion alone.
       this.kernel.db.transaction(() => {
-        const changed = this.kernel.db.sql.query("UPDATE effects SET result=? WHERE effect_id=? AND task_id=? AND episode_id=? AND fence=? AND state='dispatched' AND result IS NULL")
+        const changed = this.kernel.db.sql.query("UPDATE effects SET result=? WHERE effect_id=? AND task_id=? AND episode_id=? AND fence=? AND state IN ('dispatched','unknown') AND result IS NULL")
           .run(canonical(outcome), effect, lease.task_id, lease.episode_id, lease.fence);
         requireThat(changed.changes === 1, "host_job_outcome_retention_conflict");
         this.kernel.db.sql.query("INSERT INTO effect_observations VALUES(?,?,?)").run(effect, digest(outcome), canonical(outcome));
       });
+      // Cancellation revokes the lease before the supervised process reports its end.
+      // Record cancellation only for that same task/episode and the unchanged running job.
+      const cancelled = this.kernel.inspect(actor, lease.task_id);
+      if (cancelled.task.status === "cancelled" && ["cancelled", "authority_lost", "exited"].includes(outcome.reason)) {
+        this.kernel.db.transaction(() => {
+          const current = this.kernel.inspect(actor, lease.task_id);
+          const episode = this.kernel.db.sql.query("SELECT state FROM episodes WHERE episode_id=? AND task_id=? AND fence=?")
+            .get(lease.episode_id, lease.task_id, lease.fence) as { state: string } | null;
+          requireThat(current.task.status === "cancelled" && current.fence === lease.fence + 1 && episode?.state === "cancelled"
+            && canonical(current.task.host_job) === canonical(binding), "host_job_cancellation_binding_changed");
+          const saved = store.get(actor, approval.job_id);
+          requireThat(saved?.revision === runningRevision && saved.job.steps.find(item => item.id === step.id)?.state === "running", "host_job_revision_conflict");
+          const finished = new Date(this.kernel.db.now()).toISOString();
+          store.put(actor, `${effect}-cancelled`, runningRevision, { ...saved.job, state: "cancelled", updated_at: finished, completed_at: finished,
+            steps: saved.job.steps.map(item => item.id === step.id ? { ...item, state: "cancelled", detail: "cancelled",
+              exit_code: outcome.exit_code, finished_at: finished, completed_at: finished } : item) });
+        });
+        requireThat(false, "host_job_cancelled");
+      }
       guard(); requireThat(outcome.reason === "exited" && outcome.exit_code !== null, "host_job_outcome_uncertain");
       const workflowEnd = this.workflow ? await this.workflow.inspect("check", { ...admission, assertCurrent: guard }) : undefined;
       if (workflowEnd) requireThat(workflowEnd.result.status === "pass", "specmesh_publication_gate_blocked");
