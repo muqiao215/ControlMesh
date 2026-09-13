@@ -1350,3 +1350,19 @@ including final assertRuntimeCurrent naming. This check intentionally does not a
 settings-file freshness. Registration still must discover/pin the complete dependency
 closure and settings sources and join this with policy/session execution. No account call,
 production configuration or provider admission changed.
+
+
+## 2026-09-13 — observed settings dependencies and pre-evaluation registration
+
+The private Node probe uses synchronous registerHooks to record actual file modules loaded
+by the native settings path. In registered mode it reads a bounded path list from stdin
+and refuses an unregistered file before nextLoad/evaluation. The supervised runner requires
+registered mode, verifies the observed list is covered, and retains runtime-file identity
+checks. Unsupported non-file/non-builtin module sources refuse. Discovery-only output does
+not authorize registered execution or cover future provider paths.
+
+Installed settings plus controlled unregistered-dependency test: 1 pass, 0 fail, 17
+assertions, 2.39s (/tmp/cm-gemini-dependency-admission.log). The unregistered module's output
+marker was never emitted; typed refusal received instead. Typecheck passed before final
+fixture-only addition; diff check passed. Native API checked against Node 22.23.2 docs.
+Full CLI execution dependency/configuration and settings-file binding remain open.

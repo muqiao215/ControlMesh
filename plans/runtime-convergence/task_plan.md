@@ -368,3 +368,8 @@ Gemini settings runner checkpoint: supervised read-only loading with explicit en
 and registered runtime-file identity checks is implemented. Next registration requirements
 remain complete native dependency/settings source discovery and joint effective-policy /
 session/process binding; full Gemini execution and account qualification are still open.
+
+
+Gemini settings dependency checkpoint: actual loaded-file discovery and pre-evaluation
+registered-list refusal now pass on installed Node/Gemini. Continue source settings-file
+binding and joint native policy/session execution registration; no full Provider acceptance.

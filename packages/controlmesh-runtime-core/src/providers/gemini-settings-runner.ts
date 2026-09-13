@@ -34,15 +34,20 @@ export class GeminiSettingsRunner {
     };
     assertCurrent();
     const result = await new ProcessSupervisor().run({ command: [input.node_executable, "--experimental-permission", "--allow-fs-read=*",
-      helper, input.settings_module, input.workspace, "--ignore-env"], cwd: input.workspace,
+      helper, input.settings_module, input.workspace, "--ignore-env", "--registered-runtime"], stdin_text: JSON.stringify(input.runtime_files), cwd: input.workspace,
       env: { PATH: "/usr/bin:/bin", LANG: "C.UTF-8", ...input.environment }, timeout_ms: 10000, max_output_bytes: 65536 }, { ...admission, assertCurrent });
     assertCurrent();
+    if (result.reason === "exited" && result.exit_code === 2 && result.stdout.trim() === JSON.stringify({ error: "gemini_unregistered_runtime_dependency" }))
+      requireThat(false, "gemini_unregistered_runtime_dependency");
     requireThat(result.reason === "exited" && result.exit_code === 0, "gemini_settings_probe_failed");
     let parsed: unknown;
     try { parsed = JSON.parse(result.stdout); } catch { requireThat(false, "gemini_settings_probe_invalid_output"); }
-    requireThat(object(parsed) && parsed.schema_version === "gemini.settings_probe.v1"
+    requireThat(object(parsed) && parsed.registration_checked === true && parsed.schema_version === "gemini.settings_probe.v1"
       && typeof parsed.settings_digest === "string" && /^[a-f0-9]{64}$/.test(parsed.settings_digest)
       && Array.isArray(parsed.sources) && parsed.sources.length <= 4 && parsed.sources.every(path => typeof path === "string" && isAbsolute(path)), "gemini_settings_probe_invalid_output");
-    return { schema_version: parsed.schema_version, settings_digest: parsed.settings_digest, sources: parsed.sources as string[], runtime_digest: runtime, assertRuntimeCurrent: assertCurrent };
+    requireThat(Array.isArray(parsed.loaded_runtime_files) && parsed.loaded_runtime_files.length > 0 && parsed.loaded_runtime_files.length <= 256
+      && parsed.loaded_runtime_files.every(path => typeof path === "string" && input.runtime_files.includes(path))
+      && parsed.loaded_runtime_files.includes(input.settings_module), "gemini_unregistered_runtime_dependency");
+    return { schema_version: parsed.schema_version, settings_digest: parsed.settings_digest, sources: parsed.sources as string[], loaded_runtime_files: parsed.loaded_runtime_files as string[], runtime_digest: runtime, assertRuntimeCurrent: assertCurrent };
   }
 }

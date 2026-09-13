@@ -2419,3 +2419,11 @@ checks and bounded output are shared runtime behavior, not duplicated timers in 
 wrapper. Its identity list must be supplied by trusted registration; checking only the
 entry chunk would not prove transitive imports unchanged. The returned assertRuntimeCurrent
 name explicitly excludes settings-file freshness, which requires separate source binding.
+
+
+Node 22.23.2 provides synchronous registerHooks for actual module loading. Reference:
+https://nodejs.org/download/release/v22.23.2/docs/api/module.html#moduleregisterhooksoptions
+A discovered graph is workload-specific; settings-loader dependencies are not the entire
+Gemini execution graph. Registered probe mode checks membership before evaluation rather
+than merely comparing a list after imported code has already run. Builtin modules stay
+covered by the Node executable identity; helper code is independently pinned by the runner.
