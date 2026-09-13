@@ -2,12 +2,13 @@ import { CronStore, type CronExecutionAttemptRecord } from "./cron-store";
 import type { Principal, RuntimeKernel, TaskSnapshot } from "./kernel";
 import { TaskIngress } from "./task-ingress";
 import { resolveCronTimezone } from "./cron-schedule";
-import { identifier, requireThat } from "./value";
+import { requireScope } from "./commands";
+import { canonical, digest, identifier, object, requireThat, RuntimeConflict } from "./value";
 
 const foregroundCapabilities = new Set(["repo_write", "git_write", "network_write", "github_release", "publish"]);
 
 /** Trusted scheduler seam for TaskHub-mode occurrences. No timer or provider is started.
- * The scheduler must establish dependency eligibility before calling this seam;
+ * Dependency wait order is persisted in bounded versioned metadata;
  * native execution still requires the existing queue, source, grant and sandbox checks.
  */
 export class CronTaskAdmission {
@@ -35,8 +36,9 @@ export class CronTaskAdmission {
 
   submit(occurrenceId: string): { task: TaskSnapshot; attempt: CronExecutionAttemptRecord } {
     identifier(occurrenceId);
-    return this.kernel.db.transaction(() => {
+    const result = this.kernel.db.transaction(() => {
       this.current();
+      requireScope(this.actor, "task:create");
       const occurrence = this.store.getOccurrence(occurrenceId);
       requireThat(occurrence, "occurrence_not_found");
       const attempts = this.store.listAttempts(occurrenceId);
@@ -66,6 +68,36 @@ export class CronTaskAdmission {
       const kind = String(job.workunit_kind ?? "").trim().toLowerCase();
       requireThat(["low", "medium"].includes(risk) && !foregroundCapabilities.has(kind), "cron_taskhub_requires_foreground");
       requireThat(typeof job.provider === "string" && job.provider.length > 0, "cron_provider_not_configured");
+      requireThat(this.kernel.db.sql.query("SELECT 1 FROM cron_jobs WHERE job_id=? AND archived=0 AND enabled=1 AND version=? AND spec_digest=?")
+        .get(job.id, occurrence.schedule_revision, occurrence.definition_digest), "cron_definition_not_active");
+      let queueKey: string | undefined;
+      let queue: string[] = [];
+      if (job.dependency != null) {
+        requireThat(typeof job.dependency === "string" && job.dependency.trim().length > 0, "invalid_dependency_key");
+        queueKey = `cron_dependency_queue:${digest(job.dependency)}`;
+        const saved = this.kernel.db.sql.query("SELECT value FROM meta WHERE key=?").get(queueKey) as { value: string } | null;
+        if (saved) {
+          const value: unknown = JSON.parse(saved.value);
+          requireThat(object(value) && value.version === 1 && value.dependency === job.dependency
+            && Array.isArray(value.entries) && value.entries.length <= 256 && value.entries.every(id => typeof id === "string")
+            && new Set(value.entries).size === value.entries.length, "invalid_cron_dependency_queue");
+          queue = value.entries as string[];
+        }
+        // Definition removal/replacement cannot strand a waiting head forever.
+        // Active/uncertain execution remains guarded independently by the lock.
+        queue = queue.filter(id => Boolean(this.kernel.db.sql.query(`SELECT 1 FROM cron_occurrences o JOIN cron_jobs j ON j.job_id=o.job_id
+          WHERE o.occurrence_id=? AND o.state='scheduled' AND j.archived=0 AND j.enabled=1
+          AND j.version=o.schedule_revision AND j.spec_digest=o.definition_digest AND j.dependency=?`).get(id, job.dependency)));
+        if (!queue.includes(occurrenceId)) {
+          requireThat(queue.length < 256, "cron_dependency_queue_full");
+          queue.push(occurrenceId);
+        }
+        this.kernel.db.sql.query("INSERT INTO meta(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+          .run(queueKey, canonical({ version: 1, dependency: job.dependency, entries: queue }));
+        if (queue[0] !== occurrenceId || this.store.getDependencyLock(job.dependency)) {
+          return { blocked: true as const }; // Commit waiting order, not a task/attempt.
+        }
+      }
       const taskId = `cron-${occurrenceId}`;
       const chatId = String(job.chat_id ?? 0);
       const task = this.ingress.submit(this.actor, `cron-submit-${occurrenceId}`, {
@@ -80,7 +112,15 @@ export class CronTaskAdmission {
           occurrenceId, attempt.attempt_id, 60_000), "cron_dependency_busy");
       }
       if (job.job_kind === "monitor") this.store.setEnabled(job.id, false);
+      if (queueKey) {
+        const remaining = queue.slice(1);
+        if (remaining.length) this.kernel.db.sql.query("UPDATE meta SET value=? WHERE key=?")
+          .run(canonical({ version: 1, dependency: job.dependency, entries: remaining }), queueKey);
+        else this.kernel.db.sql.query("DELETE FROM meta WHERE key=?").run(queueKey);
+      }
       return { task, attempt };
     });
+    if ("blocked" in result) throw new RuntimeConflict("cron_dependency_busy");
+    return result;
   }
 }

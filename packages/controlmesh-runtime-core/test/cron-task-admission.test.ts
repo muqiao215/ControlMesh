@@ -3,10 +3,13 @@ import { RuntimeDatabase } from "../src/database";
 import { RuntimeKernel, type Principal } from "../src/kernel";
 import { CronStore } from "../src/cron-store";
 import { CronTaskAdmission } from "../src/cron-task-admission";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const actor: Principal = { id: "scheduler", origin: "schedule", device_id: "device", scopes: ["task:create", "task:read"] };
-function fixture(clock: () => number = Date.now) {
-  const db = new RuntimeDatabase(":memory:", clock), kernel = new RuntimeKernel(db), store = new CronStore(db);
+function fixture(clock: () => number = Date.now, path = ":memory:") {
+  const db = new RuntimeDatabase(path, clock), kernel = new RuntimeKernel(db), store = new CronStore(db);
   store.putJob({ id: "scheduled", title: "Scheduled", schedule: "* * * * *", task_folder: "scheduled", agent_instruction: "Inspect current files",
     execution_mode: "taskhub", output_policy: "summarized_only", provider: "opencode", model: "configured-model", chat_id: 123 });
   store.registerCoordinator(actor.id);
@@ -128,4 +131,33 @@ test("shared dependency rejects competing task atomically even after the lock de
     f.store.incrementCoordinatorEpoch(actor.id, 1);
     expect(() => f.store.acquireDependencyLock("shared-resource", first.occurrence_id, submitted.attempt.attempt_id, 60000)).toThrow("stale_coordinator_fence");
   } finally { f.db.close(); }
+});
+
+test("new database connection preserves FIFO request order independently of planned time", () => {
+  const root = mkdtempSync(join(tmpdir(), "cron-fifo-")), path = join(root, "runtime.sqlite");
+  const now = Date.parse("2026-06-01T13:00:00Z"), f = fixture(() => now, path);
+  let reopened: RuntimeDatabase | undefined;
+  try {
+    const template = f.store.getJob("scheduled")!.raw_metadata;
+    for (const id of ["scheduled", "second", "third"]) f.store.putJob({ ...template, id, dependency: "shared" } as Parameters<CronStore["putJob"]>[0]);
+    const first = f.store.createOccurrence("scheduled", now - 1000);
+    const second = f.store.createOccurrence("second", now - 2000);
+    const third = f.store.createOccurrence("third", now - 3000); // Older plan, later request.
+    const admission = new CronTaskAdmission(f.kernel, actor, 1);
+    const active = admission.submit(first.occurrence_id);
+    expect(() => admission.submit(second.occurrence_id)).toThrow("cron_dependency_busy");
+    expect(() => admission.submit(third.occurrence_id)).toThrow("cron_dependency_busy");
+    f.store.updateAttemptState(active.attempt.attempt_id, { coordinatorId: actor.id, fence: 1 }, { state: "completed" });
+    f.store.releaseDependencyLock("shared", { attemptId: active.attempt.attempt_id, coordinatorId: actor.id, fence: 1 });
+    reopened = new RuntimeDatabase(path, () => now);
+    const resumed = new CronTaskAdmission(new RuntimeKernel(reopened), actor, 1);
+    expect(() => resumed.submit(third.occurrence_id)).toThrow("cron_dependency_busy");
+    const next = resumed.submit(second.occurrence_id);
+    expect(next.task.task.cron_job_id).toBe("second");
+    expect(() => resumed.submit(third.occurrence_id)).toThrow("cron_dependency_busy");
+    const store = new CronStore(reopened);
+    store.updateAttemptState(next.attempt.attempt_id, { coordinatorId: actor.id, fence: 1 }, { state: "completed" });
+    store.releaseDependencyLock("shared", { attemptId: next.attempt.attempt_id, coordinatorId: actor.id, fence: 1 });
+    expect(resumed.submit(third.occurrence_id).task.task.cron_job_id).toBe("third");
+  } finally { reopened?.close(); f.db.close(); rmSync(root, { recursive: true, force: true }); }
 });

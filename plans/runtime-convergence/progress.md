@@ -660,3 +660,13 @@ Test verifies a competitor remains blocked after deadline without replay and sta
 coordinator renewal is rejected. Twenty tests pass/148 assertions and typecheck passes;
 /tmp/cm-cron-dependency-admission-{tests,typecheck}.log. FIFO admission ordering and
 verified terminal release still need scheduler/execution integration; no claim they are done.
+
+Added bounded FIFO admission metadata (version 1, at most 256 unique occurrence IDs per
+dependency) in the existing transactional meta store. Busy requests commit only queue
+position; task/attempt creation waits for both queue head and free lock. Invalidated
+waiting definitions are pruned, while active/uncertain execution stays protected by its
+separate lock. Successful admission removes its waiting entry in the same transaction.
+New connection test confirms request order survives connection replacement and cannot
+be bypassed by older planned timestamps. Typecheck and nine admission tests pass; logs
+/tmp/cm-cron-fifo-admission-{tests,typecheck}.log. Actual process completion/release,
+timer/cursor owner and broader provider/device acceptance remain pending.
