@@ -877,3 +877,20 @@ Migration/import/store tests: 4 passed, 42 assertions, 595ms
 (`/tmp/cm-host-import-cli.log`); typecheck and diff-check passed. No operator history was
 imported. Actual runner approval, process identity/reconciliation and normal controls
 remain open; imported running status is not dispatch permission.
+
+## 2026-09-13 — runtime-issued host step approvals
+
+Added HostJobApprovals using existing transactional command receipts. Only human_request
+with task:admin and current read access may approve the next pending/awaiting step.
+Receipt binds principal, issuer device, job revision and exact command/cwd/kind/project/
+source/approval policy definition. Verification requires task:execute/read and matches
+the persisted receipt; imported approved_at/approved_by fields are never permission.
+Terminal jobs, failed dependencies, out-of-order steps and running steps are refused.
+A changed revision invalidates the approval. This is an internal decision owner, not
+a process execution capability or a single-use dispatch reservation.
+
+Approval/store/model tests: 6 passed, 35 assertions, 372ms
+(`/tmp/cm-host-approval.log`); typecheck and diff-check passed. Tests cover forged receipt,
+changed approval time, wrong owner/scope, nonhuman issuer, stale revision, request reuse
+and imported running PID refusal with no receipt written. Actual control/UI issuance,
+kernel-bound dispatch, process supervision and retained-result reconciliation remain open.

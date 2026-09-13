@@ -2215,3 +2215,9 @@ validates before target open; apply revalidates the source within the import own
 The operator explicitly chooses the destination principal for offline migration; no
 network endpoint accepts that override. Digest-bound import cannot update a live record
 or derive execution authority from imported state.
+
+Python runner checks imported step.approved_at for permission. TS must separate historical
+approval metadata from a current runtime decision. HostJobApprovals verifies a persisted
+human-request receipt bound to the current version/next-step definition. Approval does
+not itself reserve execution; future dispatch must combine it with the existing kernel
+lease/effect ownership so repeated approvals cannot launch duplicate processes.

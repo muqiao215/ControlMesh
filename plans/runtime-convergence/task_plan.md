@@ -244,3 +244,8 @@ Host-job operational import checkpoint: preview/digest-bound apply CLI is implem
 and subprocess tested. Pending owners remain runner approval, native process identity,
 interruption reconciliation and configured runtime controls. No real jobs are restarted
 by migration or by reading an imported running status.
+
+Host approval checkpoint: current-version, exact-next-step human decision receipts and
+verification implemented. Imported approval metadata cannot satisfy them. Remaining
+work: actual control issuance, existing-kernel dispatch binding, supervised execution
+and interrupted-result reconciliation; approvals alone never launch commands.
