@@ -10,9 +10,9 @@ export function reconcileCronTaskResults(kernel: RuntimeKernel, actor: Principal
   return kernel.db.transaction(() => {
     requireThat(store.getCoordinatorEpoch(actor.id).current_generation === generation, "stale_coordinator_fence");
     const rows = kernel.db.sql.query(`SELECT attempt_id FROM cron_execution_attempts
-      WHERE coordinator_id=? AND fencing_generation<=? AND executor_device_id=? AND task_id IS NOT NULL
+      WHERE coordinator_id=? AND fencing_generation<=? AND task_id IS NOT NULL
       AND state IN ('initiated','running','cancelling','uncertain') ORDER BY attempt_id LIMIT 4097`)
-      .all(actor.id, generation, actor.device_id!) as { attempt_id: string }[];
+      .all(actor.id, generation) as { attempt_id: string }[];
     requireThat(rows.length <= 4096, "cron_result_scan_limit");
     let changed = 0;
     for (const row of rows) {

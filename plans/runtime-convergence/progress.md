@@ -740,3 +740,12 @@ tests pass (192 assertions), typecheck/diff check pass; logs
 /tmp/cm-cron-generation-{tests,typecheck}.log. Tests include current authority rejecting
 the stale caller, waiting for old work, successful/failed terminal projection and original
 fence retention. This is not cross-device or changed-principal takeover acceptance.
+
+Result projection now scans coordinator-owned attempts across executor devices. Original
+episode device must still match the persisted attempt executor, so a replacement device
+can accept old-device results without rewriting execution identity. Added success/failure
+device-change cases and corrupted episode-device rejection retaining locks. Nine result
+tests pass (117 assertions), typecheck/diff check pass;
+/tmp/cm-cron-device-results-{tests,typecheck}.log. This shared-database identity test is
+not a two-physical-device network/partition acceptance. Prior remote SHA 79628c9 CI
+34762813061 was observed in_progress; avoid cancelling it with another immediate push.
