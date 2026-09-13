@@ -12,15 +12,17 @@ const cleanup: (() => void)[] = [];
 afterEach(() => cleanup.splice(0).reverse().forEach(close => close()));
 const actor: Principal = { id: "owner", device_id: "controller", origin: "human_request", scopes: ["task:create", "task:read", "task:execute",
   "delivery:read", "delivery:configure", "delivery:project", "delivery:send", "delivery:reconcile"] };
-function setup(options: { lost?: boolean; lostAt?: number; text?: string; mutate?: (message: any) => void; error?: boolean; long?: boolean; profile?: boolean; chatSource?: boolean } = {}) {
+function setup(options: { lost?: boolean; lostAt?: number; text?: string; mutate?: (message: any) => void; error?: boolean; long?: boolean; profile?: boolean; chatSource?: boolean; clock?: () => number; rateLimit?: (attempt: number) => number | null } = {}) {
   const root = mkdtempSync(join(tmpdir(), "cm-telegram-")); cleanup.push(() => rmSync(root, { recursive: true, force: true }));
-  const path = join(root, "runtime.sqlite"), db = new RuntimeDatabase(path); cleanup.push(() => db.close());
+  const path = join(root, "runtime.sqlite"), db = new RuntimeDatabase(path, options.clock); cleanup.push(() => db.close());
   const kernel = new RuntimeKernel(db); let posts = 0, valid = true;
   const bodies: any[] = [], hooks: { response?: () => void | Promise<void> } = {};
   const token = "123456:fixture_credential_only";
   const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
     posts++; expect(request.method).toBe("POST"); expect(new URL(request.url).pathname).toBe(`/bot${token}/sendMessage`);
     const body = await request.json(); bodies.push(body);
+    const delay = options.rateLimit?.(posts);
+    if (delay !== undefined && delay !== null) return Response.json({ ok: false, error_code: 429, parameters: { retry_after: delay } }, { status: 429 });
     const message = { message_id: posts, date: Math.floor(Date.now() / 1000), chat: { id: Number(body.chat_id) },
       from: { id: 123456, is_bot: true }, text: body.text, ...(body.reply_markup ? { reply_markup: body.reply_markup } : {}) };
     options.mutate?.(message); await hooks.response?.();
@@ -46,7 +48,7 @@ function setup(options: { lost?: boolean; lostAt?: number; text?: string; mutate
   outbox.bindTask("bind", "task", 1, adapter.adapter_id);
   const agent = { ...actor, origin: "agent_message" as const }, lease = kernel.claim(agent, "claim", "task", kernel.inspect(actor, "task").revision, 5000);
   kernel.start(agent, "start", lease); kernel.finish(agent, "finish", lease, "done", { text: "PRIVATE LOG", delivery_text: options.text ?? (options.long ? "x".repeat(4096) : "Reviewed result") });
-  const reopen = () => { const opened = new RuntimeDatabase(path); cleanup.push(() => opened.close());
+  const reopen = () => { const opened = new RuntimeDatabase(path, options.clock); cleanup.push(() => opened.close());
     return new DeliveryOutbox(new RuntimeKernel(opened), actor, [adapter], () => {}, 1000); };
   return { path, endpoint: server.url.origin, db, kernel, adapter, outbox, reopen, writeCredentials, bodies, hooks, config, count: () => posts, revoke: () => { valid = false; } };
 }
@@ -163,9 +165,9 @@ test("schema 33 receipts gain chat namespaces without rewriting delivery evidenc
     adapter_digest TEXT NOT NULL, remote_message_id TEXT NOT NULL,
     delivery_id TEXT NOT NULL UNIQUE REFERENCES delivery_outbox(delivery_id), PRIMARY KEY(adapter_digest,remote_message_id));
     INSERT INTO old_receipts SELECT adapter_digest,remote_message_id,delivery_id FROM transport_receipts;
-    DROP TABLE transport_receipts; ALTER TABLE old_receipts RENAME TO transport_receipts; DROP TABLE IF EXISTS telegram_conversations; DROP TABLE IF EXISTS telegram_event_aliases; DROP TABLE IF EXISTS telegram_inbox; DROP TABLE IF EXISTS telegram_callbacks; DROP TABLE IF EXISTS telegram_poll_updates; DROP TABLE IF EXISTS telegram_polling; PRAGMA user_version=33;`);
+    DROP TABLE transport_receipts; ALTER TABLE old_receipts RENAME TO transport_receipts; DROP TABLE IF EXISTS telegram_conversations; DROP TABLE IF EXISTS telegram_event_aliases; DROP TABLE IF EXISTS telegram_inbox; DROP TABLE IF EXISTS delivery_retry_after; DROP TABLE IF EXISTS telegram_callbacks; DROP TABLE IF EXISTS telegram_poll_updates; DROP TABLE IF EXISTS telegram_polling; PRAGMA user_version=33;`);
   const reopened = f.reopen(); expect(reopened.inspect(before.delivery_id)).toEqual(before);
-  expect(f.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 38 });
+  expect(f.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 39 });
   expect(f.db.sql.query("SELECT target_transport,target_chat,remote_message_id FROM transport_receipts").get())
     .toEqual({ target_transport: "telegram", target_chat: "-1001234567890", remote_message_id: "1" });
   await reopened.drain(); expect(f.count()).toBe(1);
@@ -178,7 +180,7 @@ test("schema upgrade refuses corrupted delivery evidence and rolls back its DDL"
     adapter_digest TEXT NOT NULL, remote_message_id TEXT NOT NULL,
     delivery_id TEXT NOT NULL UNIQUE REFERENCES delivery_outbox(delivery_id), PRIMARY KEY(adapter_digest,remote_message_id));
     INSERT INTO old_receipts SELECT adapter_digest,remote_message_id,delivery_id FROM transport_receipts;
-    DROP TABLE transport_receipts; ALTER TABLE old_receipts RENAME TO transport_receipts; DROP TABLE IF EXISTS telegram_conversations; DROP TABLE IF EXISTS telegram_event_aliases; DROP TABLE IF EXISTS telegram_inbox; DROP TABLE IF EXISTS telegram_callbacks; DROP TABLE IF EXISTS telegram_poll_updates; DROP TABLE IF EXISTS telegram_polling; PRAGMA user_version=33;
+    DROP TABLE transport_receipts; ALTER TABLE old_receipts RENAME TO transport_receipts; DROP TABLE IF EXISTS telegram_conversations; DROP TABLE IF EXISTS telegram_event_aliases; DROP TABLE IF EXISTS telegram_inbox; DROP TABLE IF EXISTS delivery_retry_after; DROP TABLE IF EXISTS telegram_callbacks; DROP TABLE IF EXISTS telegram_poll_updates; DROP TABLE IF EXISTS telegram_polling; PRAGMA user_version=33;
     UPDATE delivery_outbox SET envelope_digest='corrupted';`);
   expect(() => f.reopen()).toThrow("delivery_migration_evidence_corrupted");
   expect(f.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 33 });
@@ -254,7 +256,7 @@ for (const attempted of [false, true]) test(`schema 34 only expands never-attemp
   envelope.text = "x".repeat(10000);
   f.db.sql.query("UPDATE delivery_outbox SET envelope=?,envelope_digest=?,state=?,attempt_id=? WHERE delivery_id=?")
     .run(JSON.stringify(envelope), digest(envelope), attempted ? "unknown" : "pending", attempted ? "old-attempt" : null, old.delivery_id);
-  f.db.sql.exec("DROP TABLE IF EXISTS telegram_conversations; DROP TABLE IF EXISTS telegram_event_aliases; DROP TABLE IF EXISTS telegram_inbox; DROP TABLE IF EXISTS telegram_callbacks; DROP TABLE IF EXISTS telegram_poll_updates; DROP TABLE IF EXISTS telegram_polling; PRAGMA user_version=34");
+  f.db.sql.exec("DROP TABLE IF EXISTS telegram_conversations; DROP TABLE IF EXISTS telegram_event_aliases; DROP TABLE IF EXISTS telegram_inbox; DROP TABLE IF EXISTS delivery_retry_after; DROP TABLE IF EXISTS telegram_callbacks; DROP TABLE IF EXISTS telegram_poll_updates; DROP TABLE IF EXISTS telegram_polling; PRAGMA user_version=34");
   const reopened = f.reopen(), parts = reopened.list("task");
   expect(parts[0].delivery_id).toBe(old.delivery_id);
   if (attempted) { expect(parts).toHaveLength(1); await reopened.drain(); expect(f.count()).toBe(0); }
@@ -314,4 +316,67 @@ test("Telegram choice parser preserves unequal fences and multiline backtick cod
   expect(f.bodies[0].text).toContain("[button:code2|danger]");
   expect(f.bodies[0].reply_markup.inline_keyboard).toHaveLength(1);
   expect(f.bodies[0].reply_markup.inline_keyboard[0][0].text).toBe("Proceed");
+});
+
+
+test("explicit Telegram rate rejection persists a cooldown and retries only after it expires", async () => {
+  let now = Date.now(); const f = setup({ clock: () => now, rateLimit: attempt => attempt === 1 ? 1 : null });
+  await f.outbox.drain(); expect(f.outbox.list("task")[0]).toMatchObject({ state: "pending", reason: "delivery_rate_limited" });
+  await f.outbox.stop(); const reopened = f.reopen(); await reopened.drain(); expect(f.count()).toBe(1);
+  now += 999; await reopened.drain(); expect(f.count()).toBe(1);
+  now++; await reopened.drain(); expect(f.count()).toBe(2); expect(reopened.list("task")[0].state).toBe("sent");
+  await reopened.stop();
+});
+
+test("three explicit rate refusals latch delivery instead of creating an endless retry loop", async () => {
+  let now = Date.now(); const f = setup({ clock: () => now, rateLimit: () => 1 });
+  for (let i = 0; i < 3; i++) { await f.outbox.drain(); now += 1000; }
+  expect(f.count()).toBe(3); expect(f.outbox.list("task")[0]).toMatchObject({ state: "blocked", reason: "delivery_rate_limit_exhausted" });
+  await f.outbox.drain(); expect(f.count()).toBe(3); await f.outbox.stop();
+});
+
+for (const retryAfter of [0, -1, 0.5, 86401]) test(`invalid Telegram retry delay ${retryAfter} never authorizes resend`, async () => {
+  const f = setup({ rateLimit: () => retryAfter }); await f.outbox.drain(); await f.outbox.drain();
+  expect(f.count()).toBe(1); expect(f.outbox.list("task")[0].state).toBe("unknown");
+});
+
+test("a bot-wide cooldown also holds a different task before its first HTTP attempt", async () => {
+  let now = Date.now(); const f = setup({ clock: () => now, rateLimit: attempt => attempt === 1 ? 1 : null });
+  new TaskIngress(f.kernel, { command_origin: "human_request", origin: "user", source_scope: "local_foreground", transport: "telegram" }, () => {})
+    .submit(actor, "create-second", { task_id: "second", chat_id: "888", status: "waiting", prompt: "second" }, { chat_id: "888" });
+  f.outbox.bindTask("bind-second", "second", 1, f.adapter.adapter_id);
+  const agent = { ...actor, origin: "agent_message" as const }, lease = f.kernel.claim(agent, "claim-second", "second", 1, 5000);
+  f.kernel.start(agent, "start-second", lease); f.kernel.finish(agent, "finish-second", lease, "done", { delivery_text: "second" });
+  await f.outbox.drain(); expect(f.count()).toBe(1); expect(f.outbox.list("second")[0].state).toBe("pending");
+  now += 1000; await f.outbox.drain(); expect(f.count()).toBe(3);
+  expect(f.outbox.list("task")[0].state).toBe("sent"); expect(f.outbox.list("second")[0].state).toBe("sent"); await f.outbox.stop();
+});
+
+test("owned delivery wakeup retries after the persisted deadline without another incoming message", async () => {
+  const f = setup({ rateLimit: attempt => attempt === 1 ? 1 : null }); await f.outbox.drain();
+  const deadline = performance.now() + 3000;
+  while (f.outbox.list("task")[0].state !== "sent" && performance.now() < deadline) await Bun.sleep(25);
+  expect(f.outbox.list("task")[0].state).toBe("sent"); expect(f.count()).toBe(2); await f.outbox.stop();
+});
+
+test("stopping the delivery owner cancels its rate-limit wakeup", async () => {
+  const f = setup({ rateLimit: attempt => attempt === 1 ? 1 : null }); await f.outbox.drain(); await f.outbox.stop();
+  await Bun.sleep(1100); expect(f.count()).toBe(1);
+  expect(f.db.sql.query("SELECT state FROM delivery_outbox").get()).toEqual({ state: "pending" });
+});
+
+test("a revoked route blocks the scheduled retry before another HTTP request", async () => {
+  const f = setup({ rateLimit: attempt => attempt === 1 ? 1 : null }); await f.outbox.drain();
+  f.outbox.revokeTask("revoke-before-wakeup", "task");
+  const deadline = performance.now() + 3000;
+  while (f.outbox.list("task")[0].state === "pending" && performance.now() < deadline) await Bun.sleep(25);
+  expect(f.count()).toBe(1); expect(f.outbox.list("task")[0].state).toBe("blocked"); await f.outbox.stop();
+});
+
+test("concurrent reopened delivery owners share one post-cooldown attempt", async () => {
+  let now = Date.now(); const f = setup({ clock: () => now, rateLimit: attempt => attempt === 1 ? 1 : null });
+  await f.outbox.drain(); await f.outbox.stop(); const left = f.reopen(), right = f.reopen(); now += 1000;
+  await Promise.all([left.drain(), right.drain()]);
+  expect(f.count()).toBe(2); expect(left.list("task")[0].state).toBe("sent");
+  await Promise.all([left.stop(), right.stop()]);
 });

@@ -1,3 +1,4 @@
+import { DeliveryRetryAfter } from "./delivery-retry";
 import type { TelegramIncomingCallback } from "./telegram-event-auth";
 import { telegramChoices } from "./telegram-choices";
 import { deliveryTextParts } from "./delivery-text-parts";
@@ -49,6 +50,7 @@ export class DeliveryOutbox {
   private readonly actor: Principal;
   private readonly adapters = new Map<string, DeliveryAdapter>();
   private stopping = false;
+  private retryTimer?: ReturnType<typeof setTimeout>;
   private readonly active = new Map<AbortController, Promise<void>>();
   constructor(readonly kernel: RuntimeKernel, actor: Principal, adapters: readonly DeliveryAdapter[],
     private readonly authorize: () => void, private readonly timeoutMs = 30_000) {
@@ -75,6 +77,7 @@ export class DeliveryOutbox {
   }
   async stop(): Promise<void> {
     this.stopping = true;
+    if (this.retryTimer) clearTimeout(this.retryTimer);
     const active = [...this.active];
     for (const [controller] of active) controller.abort();
     await Promise.all(active.map(([, done]) => done));
@@ -294,6 +297,12 @@ export class DeliveryOutbox {
     const prior = () => this.kernel.db.sql.query("SELECT 1 FROM delivery_outbox WHERE task_id=? AND (event_seq<? OR (event_seq=? AND part_index<?)) AND state!='sent' LIMIT 1")
       .get(original.task_id, original.event_seq, original.event_seq, original.part_index);
     const capacity = () => (this.kernel.db.sql.query("SELECT COUNT(*) AS n FROM delivery_outbox WHERE state='dispatching'").get() as { n: number }).n < 4;
+    const cooling = () => {
+      const { adapter } = this.evidence(this.row(id));
+      const gate = this.kernel.db.sql.query("SELECT MAX(not_before) AS at FROM delivery_retry_after WHERE adapter_digest=?")
+        .get(adapter.binding_digest) as { at: number | null };
+      return gate.at !== null && gate.at > this.kernel.db.now();
+    };
     if (prior() || !capacity()) return this.inspect(id);
     let attempted = false;
     let started = 0;
@@ -302,10 +311,10 @@ export class DeliveryOutbox {
     const current = () => { this.current("delivery:send"); requireThat(!abort.signal.aborted, "delivery_interrupted"); this.evidence(this.row(id)); };
     const timer = setInterval(() => { try { current(); } catch { abort.abort(); } }, 50);
     try {
-      current(); const { envelope, adapter } = this.evidence(original);
+      current(); if (cooling()) return this.inspect(id); const { envelope, adapter } = this.evidence(original);
       const prepared = await adapter.prepare(structuredClone(envelope), { signal: abort.signal, assertCurrent: current });
       const admitted = this.kernel.db.transaction(() => {
-        current(); if (this.row(id).state !== "pending" || prior() || !capacity()) return false;
+        current(); if (this.row(id).state !== "pending" || prior() || !capacity() || cooling()) return false;
         started = this.kernel.db.now();
         this.kernel.db.sql.query("UPDATE delivery_outbox SET state='dispatching',attempt_id=?,attempt_started=?,attempt_until=?,reason=NULL WHERE delivery_id=?")
           .run(attempt, started, started + this.timeoutMs, id); return true;
@@ -321,10 +330,27 @@ export class DeliveryOutbox {
         .run(canonical(receipt), id, attempt);
       this.kernel.db.transaction(() => { current(); const row = this.row(id); requireThat(row.attempt_id === attempt, "delivery_attempt_changed"); this.accept(row, receipt); });
     } catch (error) {
+      if (error instanceof DeliveryRetryAfter && attempted) {
+        this.kernel.db.transaction(() => {
+          current(); const row = this.row(id), { adapter } = this.evidence(row);
+          requireThat(row.attempt_id === attempt && row.state === "dispatching" && !row.observation && !row.receipt, "delivery_retry_evidence_conflict");
+          const previous = this.kernel.db.sql.query("SELECT refusal_count,envelope_digest FROM delivery_retry_after WHERE delivery_id=?")
+            .get(id) as { refusal_count: number; envelope_digest: string } | null;
+          requireThat(!previous || previous.envelope_digest === row.envelope_digest, "delivery_retry_evidence_conflict");
+          const count = (previous?.refusal_count ?? 0) + 1, until = this.kernel.db.now() + error.delay_ms;
+          requireThat(Number.isSafeInteger(until), "delivery_retry_delay_invalid");
+          this.kernel.db.sql.query(`INSERT INTO delivery_retry_after VALUES (?,?,?,?,?,?) ON CONFLICT(delivery_id) DO UPDATE SET
+            refusal_count=excluded.refusal_count,not_before=excluded.not_before,last_attempt_id=excluded.last_attempt_id`)
+            .run(id, adapter.binding_digest, count, until, attempt, row.envelope_digest);
+          this.kernel.db.sql.query("UPDATE delivery_outbox SET state=?,reason=?,attempt_id=NULL,attempt_started=NULL,attempt_until=NULL WHERE delivery_id=?")
+            .run(count < 3 ? "pending" : "blocked", count < 3 ? "delivery_rate_limited" : "delivery_rate_limit_exhausted", id);
+        });
+      } else {
       const reason = error instanceof RuntimeConflict ? error.code : "delivery_unavailable";
       this.kernel.db.sql.query(`UPDATE delivery_outbox SET state=?,reason=? WHERE delivery_id=? AND principal=?
         AND ${attempted ? "state IN ('dispatching','unknown') AND attempt_id=?" : "state='pending'"}`)
         .run(attempted ? "unknown" : "blocked", reason, id, this.actor.id, ...(attempted ? [attempt] : []));
+      }
     } finally { clearTimeout(timeout); clearInterval(timer); finished(); }
     return this.inspect(id);
   }
@@ -333,6 +359,16 @@ export class DeliveryOutbox {
     const rows = this.kernel.db.sql.query("SELECT delivery_id FROM delivery_outbox WHERE principal=? AND state='pending' ORDER BY event_seq,part_index LIMIT 32")
       .all(this.actor.id) as { delivery_id: string }[];
     for (const row of rows) await this.deliver(row.delivery_id);
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    const next = this.kernel.db.sql.query(`SELECT MIN(gate.at) AS at FROM delivery_outbox o
+      JOIN delivery_routes r ON r.task_id=o.task_id JOIN
+      (SELECT adapter_digest,MAX(not_before) AS at FROM delivery_retry_after GROUP BY adapter_digest) gate ON gate.adapter_digest=r.adapter_digest
+      WHERE o.principal=? AND o.state='pending' AND gate.at>?`).get(this.actor.id, this.kernel.db.now()) as { at: number | null };
+    if (next.at !== null && !this.stopping) {
+      this.retryTimer = setTimeout(() => { this.retryTimer = undefined; if (!this.stopping) void this.drain().catch(() => {}); },
+        Math.max(1, Math.min(86400000, next.at - this.kernel.db.now())));
+      this.retryTimer.unref();
+    }
   }
   retryBlocked(requestId: string, id: string): DeliveryView {
     this.current("delivery:send");

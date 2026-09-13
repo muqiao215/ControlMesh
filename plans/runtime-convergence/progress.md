@@ -187,11 +187,12 @@ acceptance item has matching evidence, release and local alignment.
   management selectors, rate limits and streaming behavior within CM-R3. Retain the
   separate operational acceptance and CM-R7 cutover gates.
 
-## Outbound rate-limit checkpoint (schema 39, uncommitted)
+## Outbound rate-limit checkpoint (schema 39)
 
 - Callback commit 607f69e remote CI 34744841392 passed runtime tests, but failed
   bundled dashboard synchronization: its embedded generated schema lacked `choices`.
-  The canonical Web build regenerated only the matching 29-line schema addition.
+  The canonical Web build regenerated only the matching 29-line schema addition,
+  committed/pushed as f4ed2ad; replacement remote CI 34745080876 succeeded.
 - Explicit HTTP 429 + validated Telegram negative response + bounded positive integer
   retry_after now issues a typed refusal. Other malformed/API/network outcomes remain
   unknown and cannot authorize a retry. Schema 39 retains refusal count, adapter,
@@ -199,9 +200,20 @@ acceptance item has matching evidence, release and local alignment.
   before preparation and again at dispatch admission; three refusals latch blocked.
 - Owned wakeup resumes pending delivery after the persisted deadline, without an
   incoming message; stop clears the timer. Reopen reuses the original deadline. No
-  Agent is rerun by delivery retry. These changes are not committed or accepted yet.
+  Agent is rerun by delivery retry. Automated retries stop after three explicit refusals;
+  an operator retry still observes the shared cooldown.
 - Focused outbox/Telegram baseline: 72 pass, 0 fail, 615 assertions, 3.69s
   (`/tmp/cm-telegram-rate.log`). Additional shared-bot and actual timer checks:
   47 pass, 0 fail, 382 assertions, 3.10s (`/tmp/cm-rate-wakeup.log`). Typecheck passes.
-- Still verify the schema 39 broad regression and stop/concurrent wakeup/revocation
-  boundaries before publishing this owner. No actual account/production service changed.
+- Schema 39 full regression: 1078 pass, 34 optional skips, 0 fail, 12462 assertions,
+  1112 tests/123 files, 396.06s, exit 0 (`/tmp/cm-runtime-rate-full.log`), Docker and
+  standalone SpecMesh enabled. Exec session 82869 is terminal.
+- Final stop/revocation/concurrent-reopen checks plus shared delivery regression:
+  77 pass, 0 fail, 664 assertions, 7.17s (`/tmp/cm-rate-final-boundaries.log`).
+  Typecheck/diff check pass. No actual account/production service changed.
+- Next check this commit's CI and port transport media/rich output. Python
+  `controlmesh/messenger/telegram/sender.py` dispatches `<file:...>` tags through
+  allowed roots and type-aware upload; TS currently projects only text. Media migration
+  must bind permitted bytes/identity and remote receipts rather than directly trusting
+  an Agent-supplied filesystem path. Full supported transport and operational matrix,
+  TS default switch and release/local-version alignment remain incomplete.

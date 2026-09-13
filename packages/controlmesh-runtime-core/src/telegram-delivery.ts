@@ -1,3 +1,4 @@
+import { DeliveryRetryAfter } from "./delivery-retry";
 import { telegramDeliveryText } from "./delivery-text-parts";
 export { telegramDeliveryText } from "./delivery-text-parts";
 import { assertProtocolSchema, type DeliveryReceipt, type TerminalDelivery } from "@controlmesh/protocol";
@@ -107,6 +108,10 @@ export class TelegramTextDelivery implements DeliveryAdapter {
         current(control);
         let data: unknown; try { data = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks))); }
         catch { requireThat(false, "telegram_delivery_response_unproven"); }
+        if (response.status === 429 && object(data) && data.ok === false && data.error_code === 429 && data.result === undefined
+          && object(data.parameters) && Number.isSafeInteger(data.parameters.retry_after)
+          && Number(data.parameters.retry_after) > 0 && Number(data.parameters.retry_after) <= 86400)
+          throw new DeliveryRetryAfter(Number(data.parameters.retry_after) * 1000);
         requireThat(response.ok && object(data) && data.ok === true && object(data.result), "telegram_delivery_api_rejected");
         const value = data.result;
         requireThat(Number.isSafeInteger(value.message_id) && Number(value.message_id) > 0 && object(value.chat)
