@@ -1,22 +1,30 @@
 import { isAbsolute } from "node:path";
 import { object, requireThat } from "../value";
+import { nativeWorkspaceTools } from "./native-workspace-files";
 import { nativeAgentTools, type NativeAgentToolResult } from "./native-agent-journal";
 
 /** Controller-owned stdio servers; no caller-selected server map or shell command. */
-export function codexCommunicationArguments(command?: readonly string[], workspace?: readonly string[]): string[] {
+export function codexCommunicationArguments(command?: readonly string[], workspace?: readonly string[], workspaceTools: readonly string[] = ["controlmesh_read_file"]): string[] {
   if (!command && !workspace) return [];
   const validate = (command: readonly string[]) => {
     requireThat(command.length === 3 && command.every(part => typeof part === "string" && isAbsolute(part) && part.length <= 4096 && !/[\x00\r\n]/.test(part)), "invalid_codex_communication_command");
   };
   const entries: string[] = [];
   if (command) { validate(command); entries.push(`controlmesh={command=${JSON.stringify(command[0])},args=${JSON.stringify(command.slice(1))},required=true,enabled_tools=["send","ask_parent","receive","answer"],tools={send={approval_mode="approve"},ask_parent={approval_mode="approve"},receive={approval_mode="approve"},answer={approval_mode="approve"}}}`); }
-  if (workspace) { validate(workspace); entries.push(`controlmesh_workspace={command=${JSON.stringify(workspace[0])},args=${JSON.stringify(workspace.slice(1))},required=true,enabled_tools=["read_file"],tools={read_file={approval_mode="approve"}}}`); }
+  if (workspace) {
+    validate(workspace);
+    requireThat(workspaceTools.length > 0 && workspaceTools.length <= nativeWorkspaceTools.length
+      && new Set(workspaceTools).size === workspaceTools.length
+      && workspaceTools.every(tool => (nativeWorkspaceTools as readonly string[]).includes(tool)), "invalid_codex_workspace_tools");
+    const names = workspaceTools.map(tool => tool.slice("controlmesh_".length));
+    entries.push(`controlmesh_workspace={command=${JSON.stringify(workspace[0])},args=${JSON.stringify(workspace.slice(1))},required=true,enabled_tools=${JSON.stringify(names)},tools={${names.map(name => `${name}={approval_mode="approve"}`).join(",")}}}`);
+  }
   return ["-c", `mcp_servers={${entries.join(",")}}`];
 }
 
 /** Native tool outcomes must also match the controller journal before acceptance. */
 export function codexCommunicationTools(stdout: string): NativeAgentToolResult[] { return codexTools(stdout, "controlmesh", nativeAgentTools, 32); }
-export function codexWorkspaceTools(stdout: string): NativeAgentToolResult[] { return codexTools(stdout, "controlmesh_workspace", ["controlmesh_read_file"], 256); }
+export function codexWorkspaceTools(stdout: string, allowed: readonly string[] = ["controlmesh_read_file"]): NativeAgentToolResult[] { return codexTools(stdout, "controlmesh_workspace", allowed, 256); }
 function codexTools(stdout: string, server: string, allowed: readonly string[], limit: number): NativeAgentToolResult[] {
   const tools: NativeAgentToolResult[] = [];
   for (const line of stdout.trim().split("\n").filter(Boolean)) {

@@ -2002,3 +2002,15 @@ Real installed CLI + Viewer tests passed native read/second-turn reread, lost ob
 recovery without model calls, and combined messaging/read. Responses are synthetic loopback
 fixtures. Physical ARM64 SSH was rechecked and still timed out; no remote canary was started.
 Previous bd642d2 and 5d0dcae CI completed successfully; e3a26fb was running when checked.
+
+
+### Codex staged write owner integration
+
+The existing NativeWorkspaceFiles owner accepts WorkspaceStage and already retains exact
+read/write/edit receipts. Codex's verifier now accepts that controller-held stage and
+selects the corresponding receipt tools; omitting it preserves the read-only behavior.
+MCP argument generation allows only the existing three workspace tool names, retaining
+separate messaging and workspace servers. The direct owner test proves unchanged source
+before promotion and retained verification after promotion/reopen. The normal Codex
+adapter still rejects write completion and local configuration still rejects write roots;
+remove those gates only with transaction-bound publication and recovery implemented.

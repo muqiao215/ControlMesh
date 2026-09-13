@@ -2,6 +2,17 @@
 
 ## Current
 
+Codex staged workspace verification now reuses NativeWorkspaceFiles and WorkspaceStage.
+Controller-owned staged profiles can select read/write/edit MCP tools; default profiles
+remain read-only. A focused test writes a private staged PROJECT.md, verifies the native
+receipt/required write hash, promotes through WorkspaceStage, reopens and verifies the
+same evidence without another write. Missing stage and unregistered tool scope are refused.
+Validation: Codex workspace/communication 5 tests, 32 assertions; shared workspace files/
+staging regression 32 tests, 432 assertions (2.77s). Typecheck and diff-check passed.
+Evidence: /tmp/cm-codex-stage-foundation.log. This is the write-owner integration foundation,
+not normal Codex task publication: adapter transaction/reconciliation, registered write
+profile, installed native write fixture and SpecMesh closeout still need integration.
+
 Codex controlled current-file reads are now qualified through a separately scoped MCP
 server and the existing NativeWorkspaceFiles receipt owner. Native output must match
 retained receipts, required current reads and read-only task completion contracts.
