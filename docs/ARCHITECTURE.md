@@ -1195,3 +1195,11 @@ its Feishu class alias remains compatible. The schema 37 polling owner shares no
 and offsets before confirmation. A local lease/generation fences late replies; stop aborts
 long polling. Remote webhook presence/auth conflicts pause rather than trigger mode takeover.
 Non-text profiles and cross-device ingress rollout remain open.
+
+### Host command source policy
+
+Approved HostJob routing, launch and recovery use `enforceHostJobSource`, the host-only
+Python-compatible execution policy. Native-provider capability floors are separate. A
+source requiring isolation is rejected because this launcher has no sandbox. Passing
+that decision does not replace issued provenance, explicit step approval, tool grants,
+workspace identity, lease fencing or imported-task reconciliation.

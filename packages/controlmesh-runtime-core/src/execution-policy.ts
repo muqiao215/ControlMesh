@@ -39,6 +39,13 @@ export function enforceExecutionPolicy(context: ExecutionContext, sandboxAvailab
   return decision;
 }
 
+/** Approved host commands use the Python HostJob source policy, independently of native provider profiles. */
+export function enforceHostJobSource(raw: unknown): ExecutionContext {
+  const context = decodeExecutionContext(raw);
+  enforceExecutionPolicy(context, false);
+  return context;
+}
+
 /** Current concrete native launcher has a local foreground host profile only, regardless of worker identity. */
 export function enforceLocalReadSource(raw: unknown): ExecutionContext {
   const context = decodeExecutionContext(raw);

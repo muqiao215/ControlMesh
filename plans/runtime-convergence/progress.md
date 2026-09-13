@@ -399,3 +399,21 @@ was preserved. This checkpoint is not final release/local-alignment acceptance.
   reconciliation, other stores and writer transfer remain open.
 - Latest export fix CI `34749203765` was verified queued; prior cancellation CI
   `34749102599` was in progress. No completion claim for either pending run.
+
+## Host source policy parity
+
+- Cancellation commit `e33952b` CI `34749102599` completed successfully. Python export
+  rehearsal `75b641f` CI `34749242744` was verified running; not yet accepted.
+- Host routing, execution adapter, process launch and retained-result recovery now use
+  a dedicated `enforceHostJobSource`, matching Python's host sandbox decision. Previously
+  they incorrectly borrowed the local-foreground-only native-provider profile.
+- Real temporary-directory shell tests execute approved direct_message/background_task/
+  task_result/legacy_compat contexts. Group, bot handoff, API, cron, webhook and heartbeat
+  fail before effects because the host launcher has no sandbox. Native provider source
+  restrictions are unchanged. Issued context, approval, grant, workspace and lease checks
+  remain mandatory; imported task metadata alone cannot authorize execution.
+- Host suite/local queue/live Python authorization matrix: **68 pass, 3 skip, 0 fail**,
+  1311 assertions, 10.18s (`/tmp/cm-host-source-full.log`). The three optional independent
+  SpecMesh cases were subsequently exercised with the configured local repository:
+  **12 pass, 0 fail**, 136 assertions, 7.82s (`/tmp/cm-host-source-specmesh.log`). Runtime
+  typecheck passed. Full source ingress/deployment matrix and production cutover remain.

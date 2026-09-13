@@ -7,15 +7,15 @@ import { RuntimeKernel, type Principal } from "../src/kernel";
 import { HostJobStore } from "../src/host-job-store";
 import { HostJobApprovals } from "../src/host-job-approval";
 import { HostJobProcess } from "../src/host-job-process";
-import { issueExecutionContext } from "../src/execution-context";
+import { issueExecutionContext, type SourceScope } from "../src/execution-context";
 import { issueToolGrant } from "../src/execution-grants";
 const actor: Principal = { id: "owner", device_id: "local", origin: "human_request", scopes: ["task:read", "task:create", "task:execute", "task:admin"] };
-function fixture(command: string, restricted = false, previousError = "") {
+function fixture(command: string, restricted = false, previousError = "", source: SourceScope = "local_foreground") {
   const root = mkdtempSync(join(tmpdir(), "cm-host-process-")), db = new RuntimeDatabase(join(root, "runtime.sqlite")), kernel = new RuntimeKernel(db), store = new HostJobStore(db, () => {});
   const saved = store.put(actor, "create-job", 0, { job_id: "job", repo: root, last_error: previousError, created_at: "2026-09-13", updated_at: "2026-09-13", steps: [{ id: "one", command, approval_required: true }] });
   const approval = new HostJobApprovals(db, () => {}).approve(actor, "approve", "job", saved.revision, "one");
   kernel.submit(actor, "create-task", { task_id: "host-task", chat_id: "main", status: "waiting", provider: "host",
-    execution_context: issueExecutionContext({ origin: "user", source_scope: "local_foreground", transport: "terminal" }),
+    execution_context: issueExecutionContext({ origin: source === "background_task" ? "background" : source === "task_result" ? "task_result" : source === "cron" ? "cron" : source === "heartbeat" ? "heartbeat" : source === "api" ? "api" : source === "webhook" ? "webhook_wake" : source === "bot_handoff" ? "interagent" : "user", source_scope: source, transport: "terminal" }),
     tool_grant: issueToolGrant(restricted ? { network_policy: "no_network" } : {}),
     host_job: { job_id: "job", revision: 1, step_id: "one", approval } });
   const lease = kernel.claim(actor, "claim", "host-task", 1, 10000);
@@ -98,3 +98,25 @@ for (const code of [0, 7]) test(`retained host exit ${code} recovers after reope
     expect(readFileSync(join(f.root, "marker"), "utf8")).toBe("once\n");
   } finally { reopened?.close(); f.close(); }
 });
+
+
+for (const scope of ["direct_message", "background_task", "task_result", "legacy_compat"] as const) {
+  test(`approved host command accepts Python-compatible source ${scope}`, async () => {
+    const f = fixture("printf accepted > marker", false, "", scope);
+    try {
+      const result = await f.runner.execute(f.lease, { assertCurrent() {}, remainingMs: () => 5000 });
+      expect(result.task.status).toBe("done");
+      expect(readFileSync(join(f.root, "marker"), "utf8")).toBe("accepted");
+    } finally { f.close(); }
+  });
+}
+for (const scope of ["group_message", "bot_handoff", "api", "cron", "webhook", "heartbeat"] as const) {
+  test(`approved host command refuses isolation-required source ${scope} before effects`, async () => {
+    const f = fixture("touch marker", false, "", scope);
+    try {
+      await expect(f.runner.execute(f.lease, { assertCurrent() {} })).rejects.toThrow("sandbox_required_unavailable");
+      expect(existsSync(join(f.root, "marker"))).toBe(false);
+      expect(f.db.sql.query("SELECT COUNT(*) AS n FROM effects").get()).toEqual({ n: 0 });
+    } finally { f.close(); }
+  });
+}

@@ -1,7 +1,7 @@
 import { readHostLog } from "./host-job-log";
 import { classifyHostExecution } from "./host-execution-policy";
 import { issueExecutionContext } from "./execution-context";
-import { enforceLocalReadSource } from "./execution-policy";
+import { enforceHostJobSource } from "./execution-policy";
 import { decodeToolGrant, restrictiveGrant } from "./execution-grants";
 import { HostJobPlanRunner, hostStepTaskId } from "./host-job-plan-runner";
 import { readHostOutput, type HostOutputPageRequest } from "./host-job-output";
@@ -202,7 +202,7 @@ export class LocalTaskRuntime {
     const decision = this.hostWorkspace ? classifyHostExecution({ workunit_kind: task.workunit_kind, command: task.command }) : undefined;
     if (!this.hostWorkspace || task.host_job !== undefined || !decision?.route_to_host || typeof task.command !== "string" || !task.command.trim())
       return this.ingress.submit(this.actor, requestId, task, identity, restrictions);
-    enforceLocalReadSource(issueExecutionContext(this.sourceProfile));
+    enforceHostJobSource(issueExecutionContext(this.sourceProfile));
     requireThat(task.repo_root === undefined || task.repo_root === this.hostWorkspace, "host_job_workspace_mismatch");
     return command(this.kernel.db, this.actor, requestId, "local.submit_host_workunit", { task, identity, restrictions: restrictions ?? {}, workspace: this.hostWorkspace }, () => {
       this.current();

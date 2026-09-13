@@ -6,7 +6,7 @@ import { HostJobApprovals } from "./host-job-approval";
 import { HostJobProcess } from "./host-job-process";
 import { HostJobStore } from "./host-job-store";
 import { decodeToolGrant, restrictiveGrant } from "./execution-grants";
-import { enforceLocalReadSource } from "./execution-policy";
+import { enforceHostJobSource } from "./execution-policy";
 import type { Principal, RuntimeKernel, TaskSnapshot } from "./kernel";
 import type { LocalTaskExecution } from "./local-task-runtime";
 import { directoryIdentity } from "./providers/native-manifest";
@@ -24,7 +24,7 @@ export class HostJobAdapter {
       if (checked !== undefined) { void Promise.resolve(checked).catch(() => {}); requireThat(false, "admission_must_be_synchronous"); }
       this.workflow?.assertCurrent();
       requireThat(task.provider === "host" && object(task.host_job), "host_job_task_binding_required");
-      enforceLocalReadSource(task.execution_context);
+      enforceHostJobSource(task.execution_context);
       const grant = decodeToolGrant(task.tool_grant);
       requireThat(!restrictiveGrant(grant) && grant.confirmation_policy === "provider_runtime", "host_job_grant_unenforceable");
       const approval = new HostJobApprovals(this.kernel.db, this.authorize).inspectReceipt(this.actor, task.host_job.approval);

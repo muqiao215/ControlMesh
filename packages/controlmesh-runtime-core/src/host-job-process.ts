@@ -9,11 +9,11 @@ import { HostJobStore } from "./host-job-store";
 import { RuntimeKernel, type Principal, type Lease, type ReconciliationBinding } from "./kernel";
 import { ProcessSupervisor, type ProcessAdmission } from "./process-supervisor";
 import { decodeToolGrant, restrictiveGrant } from "./execution-grants";
-import { enforceLocalReadSource } from "./execution-policy";
+import { enforceHostJobSource } from "./execution-policy";
 import { directoryIdentity } from "./providers/native-manifest";
 import { canonical, digest, object, requireThat } from "./value";
 
-/** Approved local-foreground step with retained-result recovery and optional independent workflow checks. */
+/** Approved host-policy step with retained-result recovery and optional independent workflow checks. */
 export class HostJobProcess {
   private readonly environment: Readonly<Record<string, string>>;
   private readonly actor: Principal;
@@ -23,7 +23,7 @@ export class HostJobProcess {
     const actor = this.actor, task = this.kernel.inspect(actor, lease.task_id).task;
     requireThat(object(task.host_job) && task.provider === "host", "host_job_task_binding_required");
     const binding = structuredClone(task.host_job);
-    const context = enforceLocalReadSource(task.execution_context), grant = decodeToolGrant(task.tool_grant);
+    const context = enforceHostJobSource(task.execution_context), grant = decodeToolGrant(task.tool_grant);
     requireThat(!restrictiveGrant(grant) && grant.confirmation_policy === "provider_runtime", "host_job_grant_unenforceable");
     const workspace = directoryIdentity(this.workspace);
     requireThat(isAbsolute(this.shell) && realpathSync(this.shell) === this.shell, "host_job_shell_not_canonical");
@@ -142,7 +142,7 @@ export class HostJobProcess {
       requireThat(task.provider === "host" && object(task.host_job) && task.host_job.job_id === approval.job_id
         && task.host_job.step_id === approval.step_id && task.host_job.revision === approval.revision
         && canonical(task.host_job.approval) === canonical(approval), "host_job_task_binding_changed");
-      enforceLocalReadSource(task.execution_context);
+      enforceHostJobSource(task.execution_context);
       const grant = decodeToolGrant(task.tool_grant);
       requireThat(!restrictiveGrant(grant) && grant.confirmation_policy === "provider_runtime", "host_job_grant_unenforceable");
       requireThat(canonical(directoryIdentity(this.workspace)) === canonical(manifest.workspace), "host_job_execution_configuration_changed");
