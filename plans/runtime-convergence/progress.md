@@ -1298,3 +1298,20 @@ The trusted caller must still discover every effective source from the exact nat
 settings/environment. This observer detects drift; it does not provide immutable mounts
 or eliminate a race between checks and native use. Normal Gemini registration/preflight,
 protected execution configuration and actual session/process integration remain open.
+
+
+## 2026-09-13 — native Gemini policy-source resolution
+
+qualifyGeminiPolicySources now invokes the trusted native module's getPolicyDirectories
+and createPolicyEngineConfig rather than accepting a hand-maintained directory inventory.
+It snapshots discovered sources around native loading and binds merged settings/source
+resolution to the currentness check. Native tests cover settings mutation and explicit
+policyPaths replacing the default user directory, not appending it. Changes in the effective
+custom directory invalidate qualification; ignored user-directory changes do not.
+
+7 pass, 0 fail, 34 assertions, 3 files, 793ms (/tmp/cm-gemini-native-sources-final.log),
+with installed 0.59 module, isolated directories and no model/account calls. Typecheck and
+diff check passed. Registration must still pin native module/executable identity, obtain
+merged settings from the actual CLI loader, bind its source files/environment and protect
+configuration through execution. No normal Gemini execution or broader grant admission
+was enabled by this helper.

@@ -351,3 +351,9 @@ remain required. No grant mapping or default provider admission has been relaxed
 Gemini source-binding follow-up: bounded directory/file observation now wraps loaded-rule
 qualification and catches configuration drift. Complete native settings/source discovery
 and protected execution binding before changing the existing provider admission refusal.
+
+
+Gemini native resolution checkpoint: policy source discovery and loading now use native
+exports with settings/source drift checks. Next registration work must use an isolated,
+version-bound CLI settings loader and protected execution configuration; this helper is
+not yet a runnable Provider adapter or evidence of account-backed continuation.

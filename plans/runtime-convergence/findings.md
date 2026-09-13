@@ -2393,3 +2393,11 @@ observer records absence against canonical ancestor identity and snapshots bound
 members with no symlink authority. It wraps loaded-rule qualification but does not discover
 sources, watch arbitrary settings or make mutable directories immutable. Preserve that
 boundary when integrating the provider rather than treating a snapshot digest as a grant.
+
+
+Native Gemini exports getPolicyDirectories and DEFAULT_CORE_POLICIES_DIR. An explicit,
+nonempty policyPaths replaces the default user directory while system, admin, workspace
+and default sources retain their own precedence. Reusing that native resolver avoids a
+second diverging directory-discovery implementation. CLI merged settings load separately
+and are cached by workspace; importing its loader into a long-lived controller without
+isolated environment/cache handling remains inappropriate for admission.
