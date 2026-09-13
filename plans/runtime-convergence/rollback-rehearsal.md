@@ -26,5 +26,9 @@ rows; it does not restore those other stores or authorize a production rollback.
 `test/legacy-export.test.ts` exercises the command in another OS process with a real
 Python serializer fixture, adds a TS-created task, verifies retained fields and source
 bytes, then imports the artifact into a fresh candidate. It also verifies output privacy,
-overwrite/symlink refusal, and missing-source/task failures. Python startup and multi-store
-rollback still require a separate rehearsal before CM-R7.
+overwrite/symlink refusal, and missing-source/task failures. A real Python subprocess now parses the export through TaskEntry and loads an isolated
+TaskRegistry with task folders explicitly remapped into a temporary directory. It verifies
+status projection and reproduces removal of a record whose folder is missing. No production
+registry is instantiated. Unknown fields survive the export but are not claimed to survive
+Python reserialization. Production folder mapping, original artifacts/native references,
+writer fencing and multi-store rollback still require separate acceptance before CM-R7.

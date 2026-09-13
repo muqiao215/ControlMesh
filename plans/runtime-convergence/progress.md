@@ -384,3 +384,18 @@ was preserved. This checkpoint is not final release/local-alignment acceptance.
   export commit was pushed before that failure stopped publication; corrected the test
   to the literal status and reran typecheck successfully. Use the follow-up commit CI,
   not the superseded commit, for acceptance.
+
+## Python rollback reader evidence
+
+- Extended the offline export rehearsal with a real `uv run python` process using current
+  `TaskEntry.from_dict` and `TaskRegistry`. After parsing actual exported rows, directory
+  references are explicitly remapped to temporary folders before registry initialization.
+  No real task directories or account runtime are opened.
+- Confirmed current Python startup semantics: running/recovering become stale; an entry
+  with no folder is removed. JSON-only restore is consequently insufficient. Exported
+  unknown fields are retained as artifact bytes, not promised through Python reserialization.
+- Export tests: **2 pass, 0 fail**, 18 assertions, 831ms (`/tmp/cm-python-rollback.log`).
+  This adds actual Python reader evidence; production directory restoration, execution
+  reconciliation, other stores and writer transfer remain open.
+- Latest export fix CI `34749203765` was verified queued; prior cancellation CI
+  `34749102599` was in progress. No completion claim for either pending run.

@@ -24,6 +24,38 @@ test("offline compatibility export preserves Python fields plus new TS tasks wit
     expect(result.code).toBe(0); expect(readFileSync(path)).toEqual(before);
     const exported = JSON.parse(readFileSync(output, "utf8"));
     expect(exported).toEqual({ ...fixture, tasks: [...fixture.tasks, created] });
+    const python = Bun.spawnSync(["uv", "run", "python", "-c", `
+import json, sys, tempfile
+from pathlib import Path
+from controlmesh.tasks.models import TaskEntry
+from controlmesh.tasks.registry import TaskRegistry
+source = json.load(sys.stdin)
+# Decode the actual export before isolating the registry's destructive directory cleanup.
+entries = [TaskEntry.from_dict(row) for row in source["tasks"]]
+with tempfile.TemporaryDirectory(prefix="cm-python-rollback-") as scratch:
+    root = Path(scratch)
+    folders = root / "tasks"
+    folders.mkdir()
+    rows = []
+    for entry in entries:
+        entry.tasks_dir = str(folders)
+        (folders / entry.task_id).mkdir()
+        rows.append(entry.to_dict())
+    registry_file = root / "tasks.json"
+    registry_file.write_text(json.dumps({"tasks": rows}))
+    registry = TaskRegistry(registry_file, folders)
+    result = {key: value.status for key, value in registry._entries.items()}
+    # Missing folder behavior is part of the rollback gate, not permission to use it.
+    missing = rows[0]["task_id"]
+    (folders / missing).rmdir()
+    reloaded = TaskRegistry(registry_file, folders)
+    print(json.dumps({"statuses": result, "missing_removed": missing not in reloaded._entries}))
+`], { cwd: join(import.meta.dir, "../../.."), stdin: Buffer.from(JSON.stringify(exported)), stdout: "pipe", stderr: "pipe", timeout: 30_000 });
+    expect(python.exitCode).toBe(0);
+    const accepted = JSON.parse(python.stdout.toString());
+    expect(accepted.statuses).toEqual(Object.fromEntries(exported.tasks.map((row: { task_id: string; status: string }) =>
+      [row.task_id, ["running", "recovering"].includes(row.status) ? "stale" : row.status])));
+    expect(accepted.missing_removed).toBe(true);
     expect(statSync(output).mode & 0o777).toBe(0o600);
     expect(JSON.parse(result.stdout).writer_authority).toBe("not_transferred");
     // Rehearse loading the artifact into an empty candidate, retaining cancelled status.
