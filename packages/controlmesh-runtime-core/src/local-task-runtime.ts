@@ -314,15 +314,21 @@ export class LocalTaskRuntime {
   }
 
   /** One bounded queue pass; callers can tick a service loop without repeating blocked model probes. */
-  tick(): void {
+  tick(): void { this.tickQueue(); }
+  private tickQueue(approvalId?: string): void {
     this.current(); this.recover();
-    if (this.hostWorkspace) this.hostPlanCursor = this.hostPlanRunner().advance(this.hostPlanCursor);
+    if (this.hostWorkspace) this.hostPlanCursor = this.hostPlanRunner().advance(this.hostPlanCursor, approvalId);
     for (let scanned = 0; scanned < this.maxPending && this.active.size < this.parallelism; scanned++) {
       let prepared: { row: RunRow; lease: Lease; execution: LocalTaskExecution } | null = null;
       let skipped = false;
       this.kernel.db.transaction(() => {
         if (this.rows("running").length >= this.parallelism) return;
-        const row = this.rows("queued")[0]; if (!row) return;
+        const row = this.rows("queued").find(candidate => {
+          if (!approvalId) return true;
+          const task = this.kernel.inspect(this.actor, candidate.task_id).task;
+          return task.provider === "host" && object(task.host_job) && object(task.host_job.approval)
+            && task.host_job.approval.plan_request_id === approvalId;
+        }); if (!row) return;
         try {
           this.kernel.db.transaction(() => {
           this.current(); requireThat(row.origin === this.actor.origin, "local_origin_changed");
@@ -391,6 +397,19 @@ export class LocalTaskRuntime {
     const promise = this.perform(claimed.row, claimed.lease, claimed.execution, controller.signal);
     this.active.set(claimed.row.run_id, { controller, promise });
     try { await promise; } finally { this.active.delete(claimed.row.run_id); }
+    const completed = this.kernel.inspect(this.actor, claimed.row.task_id);
+    if (completed.task.status === "done" && object(completed.task.host_job)) {
+      const proof = new HostJobApprovals(this.kernel.db, this.authorize).inspectReceipt(this.actor, completed.task.host_job.approval);
+      if (proof.plan_request_id) {
+        this.hostPlanCursor = "";
+        this.tickQueue(proof.plan_request_id);
+        while (this.active.size) {
+          await Promise.all([...this.active.values()].map(item => item.promise));
+          this.tickQueue(proof.plan_request_id);
+        }
+        if (this.persistenceFailure) throw this.persistenceFailure;
+      }
+    }
   }
   private async perform(row: RunRow, lease: Lease, execution: LocalTaskExecution, signal: AbortSignal): Promise<void> {
     let state: LocalRun["state"] = "interrupted", reason = "local_execution_failed", retryAfter: number | null = null;

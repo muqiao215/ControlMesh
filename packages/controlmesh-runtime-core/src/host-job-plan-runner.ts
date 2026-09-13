@@ -74,12 +74,12 @@ export class HostJobPlanRunner {
     }
     return { ...summary, state: job.job.state === "completed" ? "completed" : "blocked", reason: job.job.state === "completed" ? "all_steps_confirmed" : "host_plan_terminal_unproven", next_step: null };
   }
-  advance(after = ""): string {
+  advance(after = "", approvalId?: string): string {
     this.current();
     const rows = this.kernel.db.sql.query(`SELECT r.request_id FROM receipts r JOIN host_jobs j ON j.principal=r.principal AND j.job_id=json_extract(r.response,'$.job_id')
       WHERE r.principal=? AND json_extract(r.response,'$.schema_version')='controlmesh.host_plan_run.v1'
-      AND json_extract(r.response,'$.device_id')=? AND j.state NOT IN ('completed','failed','cancelled') AND r.request_id>?
-      ORDER BY r.request_id LIMIT 128`).all(this.actor.id, this.actor.device_id!, after) as { request_id: string }[];
+      AND json_extract(r.response,'$.device_id')=? AND (? IS NULL OR json_extract(r.response,'$.plan.request_id')=?) AND j.state NOT IN ('completed','failed','cancelled') AND r.request_id>?
+      ORDER BY r.request_id LIMIT 128`).all(this.actor.id, this.actor.device_id!, approvalId ?? null, approvalId ?? null, after) as { request_id: string }[];
     for (const row of rows) {
       try { this.kernel.db.transaction(() => {
         const status = this.inspect(row.request_id); if (status.state !== "ready" || !("step_index" in status)) return;

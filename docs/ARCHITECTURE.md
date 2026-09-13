@@ -1069,3 +1069,11 @@ revokes their authority. The ordinary anchor disconnect rule stays intact if the
 itself dies. Unknown worker-launch outcomes are left leased for recovery, never retried
 blindly. A manager drain does not await another process's active map: inspect the durable
 run/task for completion. Full worker-death/launch-gap and deployment gates remain open.
+
+
+After a detached host run finishes successfully, an authenticated plan-derived approval
+permits scoped queue advancement for that exact plan approval ID. Plan receipt verification,
+predecessor effect confirmation and expected revisions remain mandatory. The owner runs
+only queued host steps bearing that approval ID and does not drain unrelated work.
+An active management service can race the same queue; transactional claim and deterministic
+step IDs retain one owner per execution. Other task/provider scheduling stays management-owned.

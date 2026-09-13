@@ -335,8 +335,8 @@ remaining environment/source parity, then full CM-R0–R7 native/device/terminal
 
 At b1de06f, the configured Docker/SpecMesh runtime regression passed 960 tests with 30
 optional skips (990 total); see progress for limits. Independent host execution survives
-management loss and obeys cancellation, expiry and owner-death handling. Next: continue
-only the remaining steps of its already-approved host plan while management is offline,
-without taking unrelated queued work or relaxing per-step approval/version checks.
+management loss and obeys cancellation, expiry and owner-death handling. Same-approved-plan offline continuation now passes real success/failure and unrelated-queue
+isolation tests; see the newer progress entry. Continue the remaining host/source and
+provider/transport/device ownership matrix before any default runtime switch.
 This next action does not supersede remaining provider/transport/device/migration/release
 requirements or the CM-R7 production writer cutover gate.

@@ -1250,3 +1250,17 @@ Remote CI independently confirmed a986fed success (run 34736519797); b1de06f CI 
 running when queried and is not asserted complete here. Worktree was clean at completion.
 Next implementation seam is same-approved-plan advancement while management stays offline;
 current independent owner finishes only its current step. Full CM-R0..R7 remains open.
+
+
+## 2026-09-13 — same-approved-plan offline advancement
+
+The detached owner now continues successful plan-derived work using an approval-ID-scoped
+plan scan and queue selection. It reuses existing receipt/definition/revision/predecessor
+checks and cannot select unrelated queued tasks. Failure stops the plan. Actual service
+SIGKILL plus downtime longer than the initial lease: two-step success completed entirely
+offline; exit-7 predecessor prevented step two; unrelated queued command stayed untouched.
+Targeted live tests: 2 pass, 15 filtered, 0 fail, 25 assertions, 4.40s
+(/tmp/cm-offline-plan.log). Plan/local regression: 15 pass, 0 fail, 89 assertions, 1.43s
+(/tmp/cm-offline-plan-regression.log). Typecheck/diff check passed. Previous full regression
+is for b1de06f, not claimed to cover this later change. Full runtime/provider/transport/
+device/release matrix remains open; no production configuration changed.

@@ -2369,3 +2369,10 @@ could leave an unadmitted process alive; bounded incremental input and pre-admis
 close that window. Actual worker death differs from management death: anchor cleanup stops
 the command, but no surviving observer can certify its result. Current recovery deliberately
 retains uncertainty and a single execution instead of blindly retrying.
+
+
+Offline advancement must filter by the original plan approval request ID, not directory
+or job-name similarity. The existing plan runner verifies the canonical run receipt and
+successful predecessor observations; a scoped scan can reuse that authority. Queue claim
+filtering is also necessary: restricting plan creation alone still leaves unrelated queued
+work available to a generic drain. Both scan and selection now share the approval scope.

@@ -274,3 +274,38 @@ test("killing the actual detached owner stops its command and never replays it",
     } finally { db.close(); }
   } finally { await service.stop(); }
 }, 15000);
+
+for (const failure of [false, true]) test(`detached approved plan advances offline without taking unrelated queue work, failure=${failure}`, async () => {
+  const f = fixture(), config = JSON.parse(readFileSync(f.config, "utf8")); delete config.opencode;
+  config.host = { shell: realpathSync("/bin/bash"), timeout_ms: 10000, detached: true };
+  config.limits = { lease_ms: 1000, parallelism: 1 };
+  writeFileSync(f.config, JSON.stringify(config), { mode: 0o600 });
+  const service = await serve(f.config, f.socket);
+  const call = (id: string, op: string, fields = {}) => requestRuntimeControl(f.socket, { id, op, ...fields });
+  const until = async (condition: () => boolean | Promise<boolean>) => {
+    const end = Date.now() + 5000;
+    while (!(await condition())) { if (Date.now() >= end) throw new Error("offline plan timed out"); await Bun.sleep(25); }
+  };
+  try {
+    expect(await call("create-plan", "create_host_job", { job: { job_id: "plan", steps: [
+      { id: "one", command: `printf one >> started; while [ ! -f release ]; do sleep 0.05; done; exit ${failure ? 7 : 0}` },
+      { id: "two", command: "printf two >> finished" },
+    ] } })).toMatchObject({ ok: true });
+    expect(await call("run-plan", "run_host_job", { job_id: "plan", expected_revision: 1 })).toMatchObject({ ok: true });
+    await until(() => existsSync(join(f.workspace, "started")));
+    expect(await call("unrelated", "submit", { task: { task_id: "unrelated", chat_id: "test", status: "waiting", workunit_kind: "long_shell", command: "touch unrelated" } })).toMatchObject({ ok: true });
+    expect(await call("queue-unrelated", "enqueue", { task_id: "unrelated", expected_revision: 1 })).toMatchObject({ ok: true });
+    await service.stop("SIGKILL"); await Bun.sleep(1200);
+    writeFileSync(join(f.workspace, "release"), "release");
+    const db = new RuntimeDatabase(join(f.state, "runtime.sqlite"));
+    try {
+      await until(() => (db.sql.query("SELECT state FROM host_jobs WHERE job_id='plan'").get() as { state: string }).state === (failure ? "failed" : "completed"));
+      expect(existsSync(join(f.workspace, "finished"))).toBe(!failure);
+      if (!failure) expect(readFileSync(join(f.workspace, "finished"), "utf8")).toBe("two");
+      expect(readFileSync(join(f.workspace, "started"), "utf8")).toBe("one");
+      expect(existsSync(join(f.workspace, "unrelated"))).toBe(false);
+      expect(db.sql.query("SELECT state FROM local_runs WHERE task_id='unrelated'").get()).toEqual({ state: "queued" });
+      expect(db.sql.query("SELECT COUNT(*) AS n FROM episodes").get()).toEqual({ n: failure ? 1 : 2 });
+    } finally { db.close(); }
+  } finally { await service.stop(); }
+}, 15000);

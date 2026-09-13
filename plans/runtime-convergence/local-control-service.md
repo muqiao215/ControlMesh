@@ -479,7 +479,8 @@ Set host.detached to true to give each claimed host step an independent executio
 Control service stop/restart no longer cancels that step; explicit task cancellation does.
 Use host.timeout_ms for the total budget and limits.lease_ms for renewable ownership.
 Default detached is false. Management drain may return while a detached run is active;
-inspect its durable state and logs. Only the claimed host step is transferred: advancing
-later plan steps still requires a running management service. Worker death and launch
+inspect its durable state and logs. After a confirmed successful step, the independent owner can advance remaining steps
+under the same plan approval while management is offline. Unrelated queued tasks remain
+untouched, and failure or unproven predecessor state prevents advancement. Worker death and launch
 uncertainty do not authorize command replay. This candidate has not been enabled in
 production or qualified for all source/device/provider profiles.
