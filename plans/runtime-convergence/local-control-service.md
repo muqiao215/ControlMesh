@@ -312,3 +312,9 @@ principal's session summaries (maximum 100). The result contains session_key, co
 JSONL, preserving imported large integers without lossy public JSON number conversion.
 Valid-source task lifecycle changes write bounded summaries transactionally. Legacy
 partial-context tasks remain available through task events; no session is inferred.
+
+Session history pages also return `has_more` and `next_before`. To continue into older
+history, pass `--before NEXT_BEFORE` with the same session. Each page is chronological
+and contains at most 100 events / 2 MiB JSONL; newer writes do not shift older cursors.
+The initial page covers newest events. A null next_before means there are no older
+records in that principal/session at query time.

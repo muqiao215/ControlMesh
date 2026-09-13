@@ -72,7 +72,28 @@ test("event codec refuses unproven rounded numbers and excessive nesting", async
 
 test("session history CLI preserves typed identifiers and has no principal override", async () => {
   const { parseRuntimeCli } = await import("../src/runtime-cli");
-  expect(parseRuntimeCli(["session-events", "--socket", "/tmp/cm.sock", "--session", "v2:terminal:s:main%3Atopic", "--limit", "5"])?.request)
-    .toMatchObject({ op: "session_events", session_key: "v2:terminal:s:main%3Atopic", limit: 5 });
+  expect(parseRuntimeCli(["session-events", "--socket", "/tmp/cm.sock", "--session", "v2:terminal:s:main%3Atopic", "--limit", "5", "--before", "50"])?.request)
+    .toMatchObject({ op: "session_events", session_key: "v2:terminal:s:main%3Atopic", limit: 5, before: 50 });
   expect(() => parseRuntimeCli(["session-events", "--socket", "/tmp/cm.sock", "--session", "tg:1", "--principal", "other"])).toThrow("unknown_cli_option");
+});
+
+test("session pages bound response bytes and preserve older history when new events arrive", () => {
+  const db = new RuntimeDatabase(":memory:"), store = new RuntimeEventStore(db);
+  try {
+    const event = { event_id: "", session_key: "tg:123", event_type: "progress", payload: { text: '"\\'.repeat(200000) }, created_at: "2026-09-13", transport: "tg", chat_id: 123, topic_id: null };
+    for (let i = 1; i <= 4; i++) store.append("owner", { ...event, event_id: String(i) });
+    store.append("foreign", { ...event, event_id: "private" });
+    const first = store.readPage("owner", "123", 100);
+    const ids = (page: { jsonl: string }) => page.jsonl.trim().split("\n").map(line => JSON.parse(line).event_id);
+    expect(ids(first)).toEqual(["3", "4"]); expect(first.has_more).toBe(true);
+    expect(Buffer.byteLength(first.jsonl)).toBeLessThanOrEqual(2 * 1024 * 1024);
+    expect(Buffer.byteLength(JSON.stringify(first))).toBeLessThan(8 * 1024 * 1024);
+    store.append("owner", { ...event, event_id: "new" });
+    const second = store.readPage("owner", "tg:123", 100, first.next_before!);
+    expect(ids(second)).toEqual(["1", "2"]); expect(second.has_more).toBe(false); expect(second.next_before).toBeNull();
+    const single = store.readPage("owner", "123", 1); expect(ids(single)).toEqual(["new"]); expect(single.has_more).toBe(true);
+    expect(store.readPage("empty", "123")).toMatchObject({ count: 0, jsonl: "", has_more: false, next_before: null });
+    expect(() => store.readPage("owner", "123", 20, 0)).toThrow("invalid_runtime_event_cursor");
+    expect(() => store.readPage("owner", "123", 101)).toThrow("invalid_local_event_limit");
+  } finally { db.close(); }
 });

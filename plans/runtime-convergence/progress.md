@@ -791,3 +791,18 @@ regressions: 61 passed, 351 assertions, 7.70s (`/tmp/cm-session-events-final.log
 event/CLI: 13 passed, 101 assertions, 8.02s (`/tmp/cm-session-events-cli.log`); typecheck
 and diff-check passed. This wires TS lifecycle production and reads; Python frontstage
 events, route-candidate/inbox producers and operational default switch remain pending.
+
+## 2026-09-13 — bounded session history pages
+
+Session control/CLI now accepts exclusive before cursor and returns has_more/next_before.
+Pages cap records at 100 and JSONL bytes at 2 MiB, using sequential database iteration
+instead of loading up to 100 MiB before truncating. Each page remains chronological;
+cursor traversal walks older events and is stable when newer events arrive. Dedicated
+prepared statements are explicitly finalized: early termination of a cached Bun SQLite
+query iterator reproduced API-misuse on its next use, fixed by private statement lifetime.
+
+Event/CLI/local-control tests: 29 passed, 217 assertions, 10.74s
+(`/tmp/cm-session-page-final.log`); typecheck and diff-check passed. Large escaped payloads
+verify both raw page and 8 MiB outer response bounds, repeated pages, new inserts,
+principal isolation and cursor refusal. Full legacy export retains its explicit whole-
+stream semantics; the interactive control path is now bounded.

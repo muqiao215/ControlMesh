@@ -219,3 +219,8 @@ Backstage producer checkpoint: TS kernel task.* summaries and authenticated loca
 session-events query/CLI are wired and tested. Remaining Python frontstage/orchestrator
 and route-candidate/inbox producer parity must still be implemented before full cutover.
 Legacy partial-context tasks retain task events without inferred session projection.
+
+Session-history operational checkpoint: record/byte-bounded cursor paging is wired
+through local control and CLI, with large-payload and concurrent-insert regression
+coverage. This supports lightweight history retrieval; remaining event producers and
+full runtime migration gates stay open.

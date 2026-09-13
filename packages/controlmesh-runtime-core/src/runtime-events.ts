@@ -49,6 +49,27 @@ export class RuntimeEventStore {
   exportJsonl(principal: string, session: string): string {
     return this.readRecent(principal, session, 0).map(event => runtimeEventJson(event) + "\n").join("");
   }
+  /** Bounded controller page; before is exclusive and stable when newer events arrive. */
+  readPage(principal: string, session: string, limit = 20, before?: number) {
+    identifier(principal); const key = runtimeSessionStorageKey(session);
+    requireThat(Number.isSafeInteger(limit) && limit >= 1 && limit <= 100, "invalid_local_event_limit");
+    requireThat(before === undefined || (Number.isSafeInteger(before) && before > 0), "invalid_runtime_event_cursor");
+    const selected: { seq: number; line: string }[] = [];
+    let bytes = 0, has_more = false;
+    const statement = this.db.sql.prepare("SELECT seq,payload FROM backstage_events WHERE principal=? AND session_key=? AND (? IS NULL OR seq<?) ORDER BY seq DESC LIMIT ?");
+    try {
+      const rows = statement.iterate(principal, key, before ?? null, before ?? null, limit + 1) as Iterable<{ seq: number; payload: string }>;
+      for (const row of rows) {
+        if (selected.length === limit) { has_more = true; break; }
+        requireThat(Number.isSafeInteger(row.seq) && row.seq > 0 && Buffer.byteLength(row.payload) <= 1024 * 1024, "invalid_runtime_event_row");
+        const line = runtimeEventJson(decode(parseRuntimeEventJson(row.payload))) + "\n", size = Buffer.byteLength(line);
+        if (bytes + size > 2 * 1024 * 1024) { has_more = true; break; }
+        selected.push({ seq: row.seq, line }); bytes += size;
+      }
+    } finally { statement.finalize(); }
+    const next_before = has_more ? selected.at(-1)!.seq : null;
+    return { session_key: key, count: selected.length, jsonl: selected.reverse().map(row => row.line).join(""), has_more, next_before };
+  }
   readRecent(principal: string, session: string, limit = 20): BackstageEvent[] {
     identifier(principal); requireThat(Number.isSafeInteger(limit), "invalid_runtime_event_limit");
     const key = runtimeSessionStorageKey(session);

@@ -2183,3 +2183,9 @@ legacy fixtures/records may carry incomplete context, which is insufficient to c
 a session but must not invalidate existing task operations. Transport address encoding
 accepts the existing execution-context transport alphabet. Event IDs bind a persisted
 source UUID so unrelated databases do not collide on local sequence numbers.
+
+A record-count limit alone allowed imported session history to exceed the socket's
+8 MiB response cap. The query now uses a 2 MiB raw JSONL budget; outer JSON string
+escaping stays below the socket cap. Bun SQLite cached query iterators fail on reuse
+after an early break in this profile; a per-page prepared/finalized statement avoids
+shared iterator state while retaining bounded memory.

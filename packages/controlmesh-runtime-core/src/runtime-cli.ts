@@ -61,7 +61,7 @@ export function parseRuntimeCli(argv: string[]): RuntimeCliCommand | null {
     else { const next = argv[++i]; requireThat(next !== undefined && !next.startsWith("--"), "missing_cli_option_value"); flags[arg] = next; }
   }
   const command = args[0]!, options: Record<string, string[]> = {
-    "history-search": ["--provider", "--query"], "history-refresh": ["--provider"], "session-events": ["--session", "--limit"],
+    "history-search": ["--provider", "--query"], "history-refresh": ["--provider"], "session-events": ["--session", "--limit", "--before"],
     "prepare-adoption": ["--provider", "--session"], handoff: [], verify: [],
     ui: [], serve: ["--config"], status: [], tasks: ["--after", "--limit"], inspect: [], events: ["--after", "--limit"],
     new: ["--project", "--provider", "--model", "--prompt", "--prompt-file", "--adoption"], enqueue: ["--revision"],
@@ -97,7 +97,7 @@ export function parseRuntimeCli(argv: string[]): RuntimeCliCommand | null {
       case "status": request = { op: "status" }; break;
       case "tasks": request = { op: "list_tasks", after: flags["--after"] ?? "", limit: number("--limit", 50) }; break;
       case "inspect": request = { op: "inspect_task", task_id: args[1] }; break;
-      case "session-events": request = { op: "session_events", session_key: runtimeSessionStorageKey(text("--session")), limit: number("--limit", 20) }; break;
+      case "session-events": request = { op: "session_events", session_key: runtimeSessionStorageKey(text("--session")), limit: number("--limit", 20), ...(flags["--before"] === undefined ? {} : { before: number("--before") }) }; break;
       case "events": request = { op: "task_events", task_id: args[1], after: number("--after", 0), limit: number("--limit", 50) }; break;
       case "new": {
         let adoption: unknown;
