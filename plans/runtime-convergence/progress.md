@@ -590,3 +590,36 @@ Regeneration changes only the host_job_bridge.py SHA in python-ownership.json; i
 remains 514 modules/57 fields. No gate relaxed. b6d9ddb was pushed with 217 recurrence
 tests passing; its run 34759251799 was still active when inspected. AGY recovery remains
 live and has begun updating archive/restore code; its final evidence is not available yet.
+
+Remote verification: CI run 34759345008 for exact SHA
+58a143eb22e4c7d1031c64dac8ccb9c32d36e5af completed SUCCESS; all required jobs passed.
+This verifies the committed bridge fix, refreshed ownership digest and recurrence module.
+The uncommitted AGY persistence candidate was excluded and remains unaccepted.
+
+AGY handle 57638 returned terminal process exit 0 at 13:23:34Z, but stderr states print
+timeout after 20m with turn in progress. Native JSON SUCCESS response only says tests
+were launched and awaited. No Bun/pytest/tsc process or new AGY log was found; no restart.
+Primary then ran focused persistence tests (12 pass/114 assertions) and package typecheck
+(exit 0); logs /tmp/cm-primary-persistence-recovery-{test,typecheck}.log. Fresh in-memory
+counterexamples now pass: seven colliding user keys retained, replacement removes obsolete
+field, archive hides definition/export while retaining attempt, restoration preserves
+attempt and increments revision. These fixes still need committed regressions plus actual
+snapshot contention/publication-failure and rollback coverage requested in review 4.
+
+Primary added cron-registry-recovery.test.ts: colliding raw keys across replacement and
+50 status updates, archive/restore with retained active attempt and replay rejection,
+rollback of earlier writes/archives/snapshot metadata when a later job is invalid, actual
+overlapping WAL reader/writer transactions, and injected publication collision exercising
+real filesystem EEXIST after temp fsync with preserved winner and no temp leak. Five new
+tests pass (38 assertions). Combined cron suite: 234 pass/1069 assertions, 696ms; package
+typecheck exit 0. Logs /tmp/cm-primary-cron-combined.log and
+/tmp/cm-primary-persistence-recovery-typecheck.log. Runtime package suite launched once
+because migration 43 affects all database consumers; completion evidence still pending.
+
+Full package handle 3531 completed: 1368 pass/70 skip/2 fail in 191.55s. Both failures
+were legacy-export rejecting schema 43 due to its old upper bound 42. Primary updated
+the read-only export bound and added version-44 refusal without output/database mutation.
+Legacy export plus persistence/recovery follow-up: 20 pass/174 assertions. See
+delegation/primary-cron-persistence-result.md for scoped source acceptance and remaining
+runtime integration. This records a failed full run and successful targeted correction,
+not a fabricated all-green full rerun.

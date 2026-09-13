@@ -28,7 +28,7 @@ export class RuntimeDatabase {
       this.transaction(() => {
         const version = (this.sql.query("PRAGMA user_version").get() as { user_version: number }).user_version;
         const app = (this.sql.query("PRAGMA application_id").get() as { application_id: number }).application_id;
-        requireThat(version >= 0 && version <= 42, "unsupported_database_version");
+        requireThat(version >= 0 && version <= 43, "unsupported_database_version");
         requireThat(app === 0 || app === APPLICATION_ID, "foreign_database");
         if (version === 0) {
           const tables = this.sql.query("SELECT name FROM sqlite_master WHERE type='table'").all();
@@ -605,6 +605,104 @@ export class RuntimeDatabase {
         }
         if (version < 42) {
           this.sql.exec("ALTER TABLE telegram_inbox ADD COLUMN control_kind TEXT; PRAGMA user_version=42;");
+        }
+        if (version < 43) {
+          this.sql.exec(`
+            CREATE TABLE IF NOT EXISTS cron_jobs (
+              job_id TEXT PRIMARY KEY,
+              title TEXT NOT NULL,
+              description TEXT NOT NULL DEFAULT '',
+              schedule TEXT NOT NULL,
+              task_folder TEXT NOT NULL,
+              agent_instruction TEXT NOT NULL,
+              enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0, 1)),
+              timezone TEXT NOT NULL DEFAULT '',
+              created_at TEXT NOT NULL,
+              last_run_at TEXT,
+              last_run_status TEXT,
+              manual_run_at TEXT,
+              manual_run_status TEXT,
+              provider TEXT,
+              model TEXT,
+              reasoning_effort TEXT,
+              cli_parameters TEXT NOT NULL DEFAULT '[]',
+              quiet_start INTEGER CHECK(quiet_start IS NULL OR (quiet_start >= 0 AND quiet_start <= 23)),
+              quiet_end INTEGER CHECK(quiet_end IS NULL OR (quiet_end >= 0 AND quiet_end <= 23)),
+              dependency TEXT,
+              job_kind TEXT NOT NULL DEFAULT 'recurring' CHECK(job_kind IN ('recurring', 'monitor')),
+              execution_mode TEXT NOT NULL DEFAULT 'oneshot' CHECK(execution_mode IN ('oneshot', 'taskhub')),
+              workunit_kind TEXT,
+              risk TEXT,
+              output_policy TEXT,
+              chat_id INTEGER NOT NULL DEFAULT 0,
+              topic_id INTEGER,
+              transport TEXT NOT NULL DEFAULT 'tg',
+              spec_digest TEXT NOT NULL,
+              controller_grant TEXT,
+              version INTEGER NOT NULL DEFAULT 1,
+              raw TEXT NOT NULL,
+              archived INTEGER NOT NULL DEFAULT 0 CHECK(archived IN (0, 1)),
+              archived_at INTEGER
+            );
+            CREATE INDEX IF NOT EXISTS cron_jobs_enabled ON cron_jobs(enabled, job_id);
+            CREATE INDEX IF NOT EXISTS cron_jobs_active ON cron_jobs(archived, enabled, job_id);
+
+            CREATE TABLE IF NOT EXISTS cron_occurrences (
+              occurrence_id TEXT PRIMARY KEY,
+              job_id TEXT NOT NULL REFERENCES cron_jobs(job_id) ON DELETE RESTRICT,
+              schedule_revision INTEGER NOT NULL,
+              scheduled_at INTEGER NOT NULL,
+              definition_digest TEXT NOT NULL,
+              state TEXT NOT NULL CHECK(state IN (
+                'scheduled', 'enqueued', 'running', 'cancelling', 'completed',
+                'failed', 'skipped_quiet', 'skipped_duplicate', 'circuit_broken',
+                'blocked_unknown'
+              )),
+              created_at INTEGER NOT NULL,
+              UNIQUE(job_id, scheduled_at)
+            );
+            CREATE INDEX IF NOT EXISTS cron_occurrences_lookup ON cron_occurrences(job_id, scheduled_at);
+            CREATE INDEX IF NOT EXISTS cron_occurrences_state ON cron_occurrences(state, scheduled_at);
+
+            CREATE TABLE IF NOT EXISTS cron_execution_attempts (
+              attempt_id TEXT PRIMARY KEY,
+              occurrence_id TEXT NOT NULL REFERENCES cron_occurrences(occurrence_id) ON DELETE RESTRICT,
+              attempt_number INTEGER NOT NULL DEFAULT 1,
+              fencing_generation INTEGER NOT NULL,
+              coordinator_id TEXT NOT NULL,
+              executor_device_id TEXT NOT NULL,
+              state TEXT NOT NULL CHECK(state IN (
+                'initiated', 'running', 'cancelling', 'completed', 'failed', 'uncertain'
+              )),
+              task_id TEXT REFERENCES tasks(task_id),
+              started_at INTEGER NOT NULL,
+              finished_at INTEGER,
+              result_status TEXT,
+              result_summary TEXT,
+              error_details TEXT,
+              UNIQUE(occurrence_id, attempt_number)
+            );
+            CREATE INDEX IF NOT EXISTS cron_attempts_occurrence ON cron_execution_attempts(occurrence_id);
+            CREATE INDEX IF NOT EXISTS cron_attempts_fence ON cron_execution_attempts(fencing_generation, state);
+
+            CREATE TABLE IF NOT EXISTS cron_dependency_locks (
+              dependency TEXT PRIMARY KEY,
+              active_occurrence_id TEXT NOT NULL REFERENCES cron_occurrences(occurrence_id),
+              active_attempt_id TEXT NOT NULL REFERENCES cron_execution_attempts(attempt_id),
+              acquired_at INTEGER NOT NULL,
+              lease_deadline INTEGER NOT NULL,
+              status TEXT NOT NULL DEFAULT 'locked' CHECK(status IN ('locked', 'uncertain'))
+            );
+
+            CREATE TABLE IF NOT EXISTS cron_coordinator_epochs (
+              coordinator_id TEXT PRIMARY KEY,
+              current_generation INTEGER NOT NULL DEFAULT 1,
+              fence_token TEXT NOT NULL,
+              updated_at INTEGER NOT NULL
+            );
+
+            PRAGMA user_version = 43;
+          `);
         }
       });
       this.sql.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;");

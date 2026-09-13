@@ -1222,3 +1222,19 @@ or prove scheduled-source isolation. CM's internal parent name `main` is not an 
 Codex desktop task. An active controller must retain a run/wait return channel: artifacts
 on disk do not wake an idle conversation. Run controllers from a fixed installed version
 or frozen snapshot while workers modify the framework checkout.
+
+### TypeScript cron persistence and recurrence
+
+Runtime schema 43 adds CronStore definitions, archival state, logical occurrences,
+execution attempts, dependency locks and coordinator epochs. Archived definitions retain
+execution lineage; restoration advances definition revision. Raw imported user JSON is
+stored separately from internal revision/fence metadata. Cron migration is offline and
+transactional; it is not a production synchronization writer. Snapshot export reads one
+SQLite transaction and publishes with an exclusive sibling-temp link.
+
+cron-schedule.ts computes bounded civil-time occurrences without timers or provider calls.
+Repeated civil slots bind to fold 0 to prevent fixed-job replay after restart; the Python
+oracle records original timer behavior separately from this TS policy. Five-field grammar
+is currently supported; six-field legacy inputs require explicit migration resolution.
+The scheduler execution owner, scheduled-source sandbox/grants, quota circuit and delivery
+integration remain pending. Python remains the live cron owner until rollout acceptance.

@@ -84,3 +84,25 @@ export { TelegramInbox, type TelegramTaskTemplate } from "./telegram-inbox";
 export { WebhookInboundRuntime } from "./feishu-inbound-runtime";
 
 export { TelegramPollingRuntime, type TelegramPollingCredentials } from "./telegram-polling";
+
+export {
+  CronStore,
+  computeJobSpecDigest,
+  parseLosslessJson,
+  losslessJsonStringify,
+  type CronJobInput,
+  type CronJobRecord,
+  type CronOccurrenceRecord,
+  type CronOccurrenceState,
+  type CronExecutionAttemptRecord,
+  type CronAttemptState,
+  type CronDependencyLockRecord,
+  type CoordinatorEpochRecord,
+} from "./cron-store";
+export {
+  importCronRegistry,
+  exportCronRegistry,
+  MAX_REGISTRY_BYTES,
+  type ImportResult,
+  type ExportResult,
+} from "./cron-migration";

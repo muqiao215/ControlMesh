@@ -17,7 +17,7 @@ try {
   db.exec("PRAGMA query_only=ON; PRAGMA busy_timeout=5000; BEGIN;");
   const app = db.query("PRAGMA application_id").get() as { application_id: number };
   const version = db.query("PRAGMA user_version").get() as { user_version: number };
-  requireThat(app.application_id === 0x434d5254 && version.user_version >= 1 && version.user_version <= 42, "unsupported_runtime_database");
+  requireThat(app.application_id === 0x434d5254 && version.user_version >= 1 && version.user_version <= 43, "unsupported_runtime_database");
   const imported = db.query("SELECT snapshot,digest,task_count FROM migrations WHERE source_id=?").get(values["source-id"]!) as
     { snapshot: string; digest: string; task_count: number } | null;
   requireThat(imported, "migration_not_found");

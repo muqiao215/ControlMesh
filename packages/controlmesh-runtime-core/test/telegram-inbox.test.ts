@@ -218,7 +218,7 @@ test("task pages use selected bot and topic routes, with a bounded cursor", asyn
 test("schema 41 pending task-view input is classified after upgrade without launching an Agent", async () => {
   const f = fixture(), view = event(); view.message.text = "/tasks"; const receipt = f.receive(f.inbox, view);
   f.db.sql.exec("ALTER TABLE telegram_inbox DROP COLUMN control_kind; PRAGMA user_version=41"); await f.close();
-  const next = f.open(); expect(next.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 42 });
+  const next = f.open(); expect(next.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 43 });
   expect(next.db.sql.query("SELECT control_kind FROM telegram_inbox WHERE id=?").get(receipt.receipt_id)).toEqual({ control_kind: null });
   await next.inbound.drain(); expect(f.seen).toHaveLength(0); expect(f.posts[0].text).toContain("No tasks on this page.");
   expect(next.db.sql.query("SELECT control_kind,state FROM telegram_inbox WHERE id=?").get(receipt.receipt_id)).toEqual({ control_kind: "tasks", state: "applied" });
@@ -297,7 +297,7 @@ test("schema 40 upgrade preserves accepted input and task identity while adding 
   const f = fixture(), input = event(); f.receive(f.inbox, input); await f.inbound.drain();
   const tasks = f.db.sql.query("SELECT * FROM tasks").all(), inbox = f.db.sql.query("SELECT * FROM telegram_inbox").all();
   f.db.sql.exec("DROP TABLE telegram_control_replies; ALTER TABLE telegram_inbox DROP COLUMN control_kind; PRAGMA user_version=40"); await f.close();
-  const next = f.open(); expect(next.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 42 });
+  const next = f.open(); expect(next.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 43 });
   expect(next.db.sql.query("SELECT * FROM tasks").all()).toEqual(tasks);
   expect(next.db.sql.query("SELECT * FROM telegram_inbox").all()).toEqual(inbox);
   expect(next.inbox.controlReplyStatus()).toEqual({ pending: 0, sent: 0, unknown: 0, blocked: 0 });

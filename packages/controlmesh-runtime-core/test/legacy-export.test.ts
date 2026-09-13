@@ -13,6 +13,21 @@ async function run(database: string, output: string) {
   return { code, stdout, stderr };
 }
 
+test("compatibility export refuses unknown schema versions without output or migration", async () => {
+  const root = mkdtempSync(join(tmpdir(), "cm-export-future-")), path = join(root, "runtime.sqlite"), output = join(root, "rollback.json");
+  try {
+    const db = new RuntimeDatabase(path);
+    db.sql.exec("PRAGMA user_version=44;");
+    db.close();
+    const before = readFileSync(path);
+    const result = await run(path, output);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("unsupported_runtime_database");
+    expect(await Bun.file(output).exists()).toBe(false);
+    expect(readFileSync(path)).toEqual(before);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test("offline compatibility export preserves Python fields plus new TS tasks without mutating its source", async () => {
   const root = mkdtempSync(join(tmpdir(), "cm-export-")), path = join(root, "runtime.sqlite"), output = join(root, "rollback.json");
   try {
