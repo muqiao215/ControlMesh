@@ -754,6 +754,18 @@ export class CronStore {
     return row ? this.hydrateOccurrence(row) : null;
   }
 
+  skipUnstartedOccurrence(occurrenceId: string, state: "skipped_quiet" | "skipped_duplicate",
+    authority: { coordinatorId: string; fence: number }): CronOccurrenceRecord {
+    return this.db.transaction(() => {
+      requireThat(this.getCoordinatorEpoch(authority.coordinatorId).current_generation === authority.fence, "stale_coordinator_fence");
+      requireThat(state === "skipped_quiet" || state === "skipped_duplicate", "invalid_cron_skip_state");
+      const occurrence = this.getOccurrence(occurrenceId);
+      requireThat(occurrence?.state === "scheduled" && this.listAttempts(occurrenceId).length === 0, "cron_occurrence_already_started");
+      this.updateOccurrenceStateInternal(occurrenceId, state);
+      return this.getOccurrence(occurrenceId)!;
+    });
+  }
+
   getOccurrenceBySlot(jobId: string, scheduledAt: number): CronOccurrenceRecord | null {
     identifier(jobId);
     const row = this.db.sql.query("SELECT * FROM cron_occurrences WHERE job_id = ? AND scheduled_at = ?").get(jobId, scheduledAt) as any | null;

@@ -76,8 +76,9 @@ No claim that full TS migration or distributed coordination has completed. A sco
    Python ownership inventory includes this new owner. See delegation/README.md for
    native identities and current handles; do not restart terminal attempts.
    Continue cron owner parity: recurrence and offline persistence are committed; primary
-   is integrating transactional TaskIngress admission. Due/quiet/dependency scheduling,
-   quota circuits, real execution and delivery remain pending. CBC is quota-blocked and
+   has integrated transactional TaskIngress admission plus persisted cursors, due/quiet
+   checks and FIFO dependency waits. Runtime startup wiring, quota circuits, real worker
+   execution and delivery remain pending. CBC is quota-blocked and
    AGY returned partial timeout output; current attempt facts belong in delegation/README.md.
    The actual Python owners and adversarial evidence remain authoritative over the proposal.
 2. Complete the remaining ownership/acceptance matrix below. Prioritize normal execution,

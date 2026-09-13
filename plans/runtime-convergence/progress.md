@@ -678,3 +678,14 @@ of the same job. Updated regression explicitly rejects a later slot while the fi
 unknown, then simulates trusted reconciliation before admitting the next slot. Twenty-seven
 tests pass/199 assertions and typecheck passes; /tmp/cm-cron-job-overlap-{tests,typecheck}.log.
 This closes a persistence admission gap required for the upcoming recurring timer owner.
+
+Implemented exported CronScheduler tick/run: bounded enabled-job scan, versioned cursor
+binding to definition/timezone, forward initial planning, one-slot recovery without full
+backfill, stable pending occurrence while dependency-busy, unchanged-state detection,
+explicit quiet/duplicate skip records and abortable model-free delay loop. Uses existing
+CronTaskAdmission; does not invoke providers. Four scheduler tests cover disk reopen,
+overlap/no-backfill, quiet skip, dependency wait reuse/release, abort and stale coordinator.
+Combined cron suite 248 pass/1136 assertions (1070ms) and typecheck pass;
+/tmp/cm-cron-scheduler-{suite,typecheck}.log. Runtime service startup, worker execution,
+quota circuits, real terminal reconciliation and delivery remain open. No production
+service, OS cron, external account or model invocation was started for these tests.

@@ -1238,3 +1238,12 @@ oracle records original timer behavior separately from this TS policy. Five-fiel
 is currently supported; six-field legacy inputs require explicit migration resolution.
 The scheduler execution owner, scheduled-source sandbox/grants, quota circuit and delivery
 integration remain pending. Python remains the live cron owner until rollout acceptance.
+
+CronScheduler now provides an explicitly started, abortable model-free loop over bounded
+enabled jobs. Versioned per-job cursor metadata binds definition revision/digest and
+resolved timezone. It plans forward on initial activation, retains one pending occurrence
+while a dependency is busy, and limits recovery to one saved slot per job per tick before
+planning from current time. Quiet and overlapping slots are retained as skipped records.
+CronTaskAdmission submits through TaskIngress with schedule/cron provenance and bounded
+persisted FIFO dependency waits; it does not launch a provider. Worker queue/startup,
+native result reconciliation and delivery must be wired before enabling production cron.

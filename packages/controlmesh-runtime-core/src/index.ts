@@ -107,3 +107,4 @@ export {
   type ExportResult,
 } from "./cron-migration";
 export { CronTaskAdmission } from "./cron-task-admission";
+export { CronScheduler, type CronTickResult } from "./cron-scheduler";
