@@ -7,7 +7,7 @@ import { AgentMailbox, type AgentMessage } from "./mailbox";
 import { RuntimeKernel, type Lease, type Principal, type TaskSnapshot } from "./kernel";
 import type { ProbeDecision } from "./providers/preflight-cache";
 import { TaskIngress, type IngressSource, type SubmissionIdentity, type SubmissionRestrictions } from "./task-ingress";
-import { canonical, digest, identifier, requireThat, RuntimeConflict, type LegacyTask } from "./value";
+import { canonical, digest, identifier, object, requireThat, RuntimeConflict, type LegacyTask } from "./value";
 
 export interface LocalExecutionContext {
   signal: AbortSignal; assertCurrent: () => void; remainingMs: () => number;
@@ -163,7 +163,26 @@ export class LocalTaskRuntime {
   cancel(requestId: string, taskId: string, expectedRevision: number): TaskSnapshot {
     this.current();
     const task = this.kernel.db.transaction(() => {
+      const before = this.kernel.inspect(this.actor, taskId);
       const cancelled = this.kernel.cancel(this.actor, requestId, taskId, expectedRevision);
+      if (before.task.provider === "host" && before.task.status === "waiting" && before.active_episode === null
+        && !before.needs_reconciliation && object(before.task.host_job)
+        && !this.kernel.db.sql.query("SELECT 1 FROM effects WHERE task_id=?").get(taskId)) {
+        const binding = before.task.host_job;
+        let approval: ReturnType<HostJobApprovals["assertApproved"]> | undefined;
+        try { approval = new HostJobApprovals(this.kernel.db, () => this.current()).assertApproved(this.actor, binding.approval); }
+        catch (error) {
+          if (!(error instanceof RuntimeConflict) || !["host_job_", "invalid_host_job_", "invalid_identifier", "idempotency_conflict"].some(prefix => error.code.startsWith(prefix))) throw error;
+        }
+        if (approval && binding.job_id === approval.job_id && binding.step_id === approval.step_id && binding.revision === approval.revision) {
+          const store = new HostJobStore(this.kernel.db, () => this.current()), job = store.get(this.actor, approval.job_id)!;
+          const finished = new Date(this.kernel.db.now()).toISOString();
+          store.put(this.actor, `host-cancel-pending-${digest([requestId, taskId])}`, job.revision,
+            { ...job.job, state: "cancelled", updated_at: finished, completed_at: finished,
+              steps: job.job.steps.map(step => step.id === approval!.step_id ? { ...step, state: "cancelled", detail: "cancelled before execution",
+                finished_at: finished, completed_at: finished } : step) });
+        }
+      }
       this.kernel.db.sql.query("UPDATE local_runs SET state='cancelled',outcome=? WHERE task_id=? AND state='queued'")
         .run(canonical({ reason: "task_cancelled", retry_after: null }), taskId);
       return cancelled;

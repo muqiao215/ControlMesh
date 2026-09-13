@@ -288,3 +288,8 @@ Running host cancellation checkpoint: normal control cancellation retains actual
 outcome and projects cancelled job/step without confirming effects. Next: queued-step
 cancellation and crash-window reconciliation, then the remaining host-parity.md owners.
 Full baseline at b361e0a passed 918/30/0; later cancellation fix has focused regression.
+
+Pending host cancellation checkpoint: cancellation of an unclaimed waiting task now
+atomically updates its currently approved pending step and queue; stale/forged references
+cannot affect other execution. Next: claimed-but-unstarted and retained-outcome cancellation
+recovery windows, then remaining host-parity.md owners and full CM-R0–R7 acceptance.

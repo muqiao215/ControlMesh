@@ -2272,3 +2272,9 @@ Cancellation outcome retention may accept unknown effect state only with the ori
 task/episode/fence and empty result. Cancellation projection uses current cancelled task,
 exactly incremented fence, matching cancelled episode and unchanged host revision. It
 changes HostJob reporting, never confirms an effect or reactivates a revoked lease.
+
+Pending HostJob cancellation must prove the current approval before projecting state.
+A duplicate task can carry an authentic but now-stale approval while another task owns
+the running step; canceling that duplicate must not cancel the job. The pending projection
+runs in the kernel cancellation transaction, with only invalid/stale approval conflicts
+skipped. Authorization/configuration failures are not swallowed.

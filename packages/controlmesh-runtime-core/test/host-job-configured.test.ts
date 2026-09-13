@@ -123,6 +123,8 @@ test("normal task cancellation retains the owned outcome and synchronizes the ru
     const approval = owned.runtime.approveHostStep("approve", "job", 1, "step");
     owned.runtime.submit("submit", { task_id: "task", chat_id: "test", status: "waiting", provider: "host",
       host_job: { job_id: "job", revision: 1, step_id: "step", approval } }, { chat_id: "test" });
+    owned.runtime.submit("shadow-submit", { task_id: "shadow", chat_id: "test", status: "waiting", provider: "host",
+      host_job: { job_id: "job", revision: 1, step_id: "step", approval } }, { chat_id: "test" });
     const run = owned.runtime.enqueue("enqueue", "task", 1);
     const draining = owned.runtime.drain();
     try {
@@ -132,6 +134,8 @@ test("normal task cancellation retains the owned outcome and synchronizes the ru
         await Bun.sleep(10);
       }
       expect(readFileSync(join(workspace, "marker"), "utf8")).toBe("started\n");
+      owned.runtime.cancel("cancel-shadow", "shadow", 1);
+      expect(owned.runtime.inspectHostJob("job")!.job.state).toBe("running");
       const revision = owned.runtime.inspectTask("task").revision;
       const control = new LocalRuntimeControl(owned.runtime);
       expect(await control.handle({ id: "cancel", op: "cancel", task_id: "task", expected_revision: revision })).toMatchObject({ ok: true });
@@ -146,5 +150,40 @@ test("normal task cancellation retains the owned outcome and synchronizes the ru
     expect(owned.runtime.inspectHostJob("job")!.job.state).toBe("cancelled");
     expect(readFileSync(join(workspace, "marker"), "utf8")).toBe("started\n");
     expect(() => owned.runtime.enqueue("retry", "task", owned.runtime.inspectTask("task").revision)).toThrow("task_not_admitted");
+  } finally { await owned.close(); rmSync(root, { recursive: true, force: true }); }
+});
+
+for (const mode of ["queued", "stale", "forged"]) test(`pending host cancellation is atomic and scoped to current approval: ${mode}`, async () => {
+  const root = mkdtempSync(join(tmpdir(), "cm-pending-host-cancel-"));
+  const state = join(root, "state"), workspace = join(root, "workspace"), path = join(root, "config.json");
+  mkdirSync(state, { mode: 0o700 }); mkdirSync(workspace);
+  writeFileSync(path, JSON.stringify({ schema_version: "controlmesh.local_runtime.v1", mode: "candidate", state_root: state,
+    principal_id: "owner", device_id: "local", source: { command_origin: "human_request", origin: "user", source_scope: "local_foreground", transport: "terminal" },
+    host: { shell: realpathSync("/bin/bash") }, workspace: { directory: workspace, read_files: [], required_reads: [] } }), { mode: 0o600 });
+  const actor: Principal = { id: "owner", device_id: "local", origin: "human_request", scopes: ["task:admin", "task:read"] };
+  const owned = openLocalRuntime(path);
+  try {
+    const db = owned.runtime.kernel.db, store = new HostJobStore(db, () => {});
+    const initial = store.put(actor, "create", 0, { job_id: "job", repo: workspace, created_at: "2026-09-13", updated_at: "2026-09-13",
+      steps: [{ id: "step", command: "touch marker", approval_required: true }] });
+    const approval = owned.runtime.approveHostStep("approve", "job", 1, "step");
+    owned.runtime.submit("submit", { task_id: "task", chat_id: "test", status: "waiting", provider: "host",
+      host_job: { job_id: "job", revision: 1, step_id: "step", approval: mode === "forged" ? { ...approval, approved_at: "forged" } : approval } }, { chat_id: "test" });
+    if (mode === "stale") store.put(actor, "update", initial.revision, { ...initial.job, summary: "newer version" });
+    if (mode === "queued") {
+      const run = owned.runtime.enqueue("enqueue", "task", 1);
+      db.sql.exec("CREATE TRIGGER fail_pending_cancel BEFORE UPDATE ON host_jobs WHEN NEW.state='cancelled' BEGIN SELECT RAISE(ABORT,'injected cancel failure'); END;");
+      expect(() => owned.runtime.cancel("cancel", "task", 1)).toThrow("injected cancel failure");
+      expect(owned.runtime.inspectTask("task").task.status).toBe("waiting");
+      expect(owned.runtime.inspect(run.run_id).state).toBe("queued");
+      expect(owned.runtime.inspectHostJob("job")!.revision).toBe(1);
+      db.sql.exec("DROP TRIGGER fail_pending_cancel;");
+    }
+    const result = owned.runtime.cancel("cancel", "task", 1);
+    expect(result.task.status).toBe("cancelled");
+    expect(owned.runtime.cancel("cancel", "task", 1)).toEqual(result);
+    expect(owned.runtime.inspectHostJob("job")!.job.state).toBe(mode === "queued" ? "cancelled" : "pending");
+    await owned.runtime.drain();
+    expect(db.sql.query("SELECT COUNT(*) AS n FROM effects").get()).toEqual({ n: 0 });
   } finally { await owned.close(); rmSync(root, { recursive: true, force: true }); }
 });

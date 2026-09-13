@@ -1008,3 +1008,18 @@ Host/kernel/local-queue plus actual SpecMesh regression: 35 passed, 217 assertio
 post-change regression is distinct from the earlier full baseline. Queued cancellation,
 crash-window reconciliation, durable detached execution and other host-parity.md owners
 remain next; full CM-R0–R7 scope stays open.
+
+## 2026-09-13 — atomic pending host cancellation
+
+Local task cancellation now projects the currently approved pending host step inside the
+same transaction as kernel cancellation and queued-run update. Projection requires waiting
+status, no active episode/effects/reconciliation, and the exact current issued approval.
+Stale/forged references cancel only their task; they cannot modify newer or running jobs.
+Configuration and scope failures still propagate. Receipt replay cannot repeat mutation.
+
+Fault injection after kernel cancellation proves task/queue/job rollback and same-request
+retry. Normal running-process test also cancels a duplicate waiting task first and verifies
+the running HostJob is unaffected. Local control/queue/configured-host (with actual SpecMesh)
+regression: 33 pass, 220 assertions, 8.68s (/tmp/cm-pending-host-cancel.log); typecheck and
+diff-check passed. Claimed-but-not-started and post-outcome crash-window convergence remain;
+full host/runtime migration and release gates are not closed.
