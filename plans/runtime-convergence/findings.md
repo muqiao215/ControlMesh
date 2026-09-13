@@ -2462,3 +2462,11 @@ that result reference into the task before its next dispatch. The Gemini adapter
 this existing lifecycle instead of rewriting task state itself. A settings probe and a
 fixture cached readiness decision do not prove account availability: production registration
 still needs an actual version/config/credential-bound preflight owner.
+
+
+Gemini preflight can use the existing stream-json command profile without --resume to
+create a separate native probe session. It must verify the selected model, exact sentinel
+input/output and absence of tools, not merely exit 0. Registered credential-file identity
+needs independent checking when cached readiness is reused or another in-flight probe
+is awaited; environment hashes alone do not detect an OAuth file replacement. Native
+auth refresh may invalidate this conservative registration and requires requalification.

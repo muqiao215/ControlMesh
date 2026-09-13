@@ -73,3 +73,5 @@ export { listenRuntimeControl, requestRuntimeControl } from "./runtime-control-s
 
 export { CodexPreflight, codexProbeCredentialRevision, codexProbeProfile, codexProbeVersion, type CodexProbeInput } from "./providers/codex-preflight";
 export { CodexTaskPreflight } from "./providers/codex-task-preflight";
+export { GeminiPreflight, geminiProbeCredentialRevision, geminiProbeProfile, geminiProbeVersion, type GeminiProbeInput } from "./providers/gemini-preflight";
+export { GeminiTaskPreflight } from "./providers/gemini-task-preflight";

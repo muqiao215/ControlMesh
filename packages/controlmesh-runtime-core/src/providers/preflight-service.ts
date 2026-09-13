@@ -6,6 +6,7 @@ import { OpenCodePreflight, type OpenCodeProbeInput } from "./opencode-preflight
 import { PreflightCache, type ProbeBinding, type ProbeDecision } from "./preflight-cache";
 import { ClaudePreflight, type ClaudeProbeInput } from "./claude-preflight";
 import type { ProviderProbeReport } from "./probe-report";
+import { GeminiPreflight, geminiProbeCredentialRevision, geminiProbeProfile, type GeminiProbeInput } from "./gemini-preflight";
 
 /** A retry date is evidence from the local preflight owner, not a scheduler guess. */
 export class ProviderPreparationWait extends RuntimeConflict {
@@ -14,7 +15,19 @@ export class ProviderPreparationWait extends RuntimeConflict {
 
 /** One real native probe per durable permit; callers cannot submit readiness reports through this service. */
 export class ProviderPreflightService {
-  constructor(private readonly cache: PreflightCache, private readonly opencode = new OpenCodePreflight(), private readonly claude = new ClaudePreflight(), private readonly codex = new CodexPreflight()) {}
+  constructor(private readonly cache: PreflightCache, private readonly opencode = new OpenCodePreflight(), private readonly claude = new ClaudePreflight(), private readonly codex = new CodexPreflight(), private readonly gemini = new GeminiPreflight()) {}
+
+  async ensureGemini(actor: Principal, requestId: string, binding: ProbeBinding, input: GeminiProbeInput): Promise<ProbeDecision> {
+    requireThat(binding.permission_profile === geminiProbeProfile, "probe_permission_profile_mismatch");
+    const current = () => {
+      const value: unknown = input.assertCurrent();
+      if (value !== undefined) { void Promise.resolve(value).catch(() => {}); requireThat(false, "admission_must_be_synchronous"); }
+      requireThat(binding.credential_revision === geminiProbeCredentialRevision(input), "probe_credential_binding_mismatch");
+    };
+    current();
+    const decision = await this.ensureProvider(actor, requestId, binding, { ...input, assertCurrent: current }, "gemini", this.gemini);
+    current(); return decision;
+  }
 
   async ensure(actor: Principal, requestId: string, binding: ProbeBinding, input: OpenCodeProbeInput): Promise<ProbeDecision> {
     return this.ensureProvider(actor, requestId, binding, input, "opencode", this.opencode);
@@ -32,7 +45,7 @@ export class ProviderPreflightService {
     return this.ensureProvider(actor, requestId, binding, input, "codex", this.codex);
   }
 
-  private async ensureProvider<I extends OpenCodeProbeInput>(actor: Principal, requestId: string, binding: ProbeBinding, input: I, provider: "opencode" | "claude" | "codex",
+  private async ensureProvider<I extends OpenCodeProbeInput>(actor: Principal, requestId: string, binding: ProbeBinding, input: I, provider: "opencode" | "claude" | "codex" | "gemini",
     driver: { runtimeDigest(input: I): string | undefined; probe(input: I): Promise<ProviderProbeReport> }): Promise<ProbeDecision> {
     requireThat(binding.provider === provider && binding.model === input.model && binding.config_digest === digest(input.native_configuration), "probe_input_binding_mismatch");
     requireThat(binding.runtime_digest === driver.runtimeDigest(input), "probe_runtime_binding_mismatch");

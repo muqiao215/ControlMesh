@@ -1447,3 +1447,25 @@ addition. Initial fixture readiness shape and pre-resume-reference assumptions w
 Remaining/Next: concrete model/credential preflight, ordinary registration and actual CLI
 qualification; native tool/workspace/mailbox receipt profiles and real account/device
 acceptance. No production writer switch or release; full CM-R0–R7 scope remains active.
+
+
+## 2026-09-13 — Gemini concrete readiness and persistent quota control
+
+Current/Done: GeminiPreflight invokes a fresh-session sentinel after joined native
+settings/policy and version qualification. GeminiTaskPreflight integrates the shared
+durable preflight service/cache, binding runtime/settings/policy and registered credential
+identities. Matching execution quota/auth/model failures invalidate readiness; cached and
+waiting paths recheck credentials. No task session is resumed by the probe.
+
+Verification: shared provider preflight plus Gemini regression: 60 pass, 0 fail, 407
+assertions, 9.84s (/tmp/cm-gemini-readiness-regression.log). After final credential guard,
+6 targeted tests pass with 35 assertions; typecheck and diff check pass. New preflight
+tests inject process/settings runners and cover exact model/input/no-tool sentinel,
+cache reopen without repeat dispatch, execution quota invalidation and credential drift.
+Installed native settings/recording tests ran in the broader regression; no real Gemini
+account was called. Initial credential-helper type mismatch was corrected.
+
+Remaining/Next: ordinary configuration registration must bind this readiness object to
+the actual task adapter/configuration and enumerate qualified runtime/auth sources.
+Full native execution/isolation, account continuation, tool/workspace/mailbox and device
+profiles remain open, as do the complete migration/transport/terminal/release gates.

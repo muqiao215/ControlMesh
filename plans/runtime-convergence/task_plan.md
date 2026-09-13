@@ -400,3 +400,9 @@ recovery are now wired through GeminiTaskAdapter. A second same-session fixture 
 wrong-evidence/idempotency checks pass. Next: concrete readiness and ordinary configured
 registration, real CLI/account qualification, then native receipt and multi-device profiles.
 Full migration, physical transport/terminal acceptance and rollout remain open.
+
+
+Gemini readiness checkpoint: concrete fresh-session probe and durable cache integration
+are implemented, including matching-generation execution failure invalidation. Next:
+ordinary configuration/task-adapter binding, qualified runtime/auth discovery and real
+account acceptance. No full Gemini, TS migration, multi-device rollout or release closure.

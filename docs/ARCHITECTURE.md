@@ -120,6 +120,16 @@ trusted provider owner; ordinary configuration registration and account qualific
 remain open. Workspace-completion and mailbox/topology tasks explicitly refuse until
 their native receipt paths are implemented.
 
+`GeminiTaskPreflight` now supplies the concrete readiness owner through the shared
+durable ProviderPreflightService/PreflightCache. GeminiPreflight checks registered
+settings/effective denial policy and CLI version before a fresh-session PONG request;
+it never resumes the user's task session. Readiness binds model, runtime/settings/policy
+identities and explicitly registered credential sources. Native quota/auth/model errors
+invalidate the matching cache generation; no reset evidence means no automatic retry.
+This is a registered host probe, not an isolated sandbox or proof that registration has
+enumerated every possible native auth/execution branch. Ordinary configuration wiring,
+complete native registration and account-backed acceptance remain open.
+
 Responsibilities:
 
 - discover and authenticate official provider CLIs;
