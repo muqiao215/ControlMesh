@@ -264,3 +264,8 @@ re-execution, with historical approval/current running-snapshot validation and r
 fault injection. Next action: wire approved host execution and recovery into configured
 local task dispatch, then multi-step progression. Production cutover and full migration
 remain open; no Python writer replacement is claimed.
+
+Configured host checkpoint: normal submit/enqueue and recovery controls now support
+explicit host registration and individually approved multistep progression. Next owner:
+command-specific SpecMesh admission/completion evidence, then remaining host source and
+device profiles. The existing native SpecMesh read verifier is not host command evidence.

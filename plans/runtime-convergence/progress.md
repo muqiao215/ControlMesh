@@ -951,3 +951,17 @@ Host/kernel/Codex/Claude recovery regression: 54 passed, 333 assertions, 8.86s
 (`/tmp/cm-host-recovery-regression.log`). Typecheck and diff check passed. Normal configured
 host dispatch/recovery controls and multistep progression remain next; full CM-R0–R7
 provider/device/transport and release gates remain open.
+
+## 2026-09-13 — configured host queue and recovery controls
+
+Explicit host registration now routes normal submit/enqueue and reconciliation controls
+to HostJobAdapter/HostJobProcess. Host-only runtime requires no model provider. Two-step
+actual bash tests exercise control-issued approvals and queue dispatch, plus completion
+failure, runtime close/reopen and same-result recovery before the next approved step.
+Markers prove each command runs once; no provider_checks are created. Full control/socket/
+queue/host regression: 39 passed, 264 assertions, 4.59s before adding out-of-order approval
+assertions; final focused result recorded below. Typecheck/diff check passed.
+Remaining: host SpecMesh workflow integration, nonforeground/container/device profiles,
+full Python host parity and the original CM-R0–R7 acceptance/cutover scope.
+
+Final configured-host test (including out-of-order approval refusal): 2 pass;  0 fail;  33 expect() calls; Ran 2 tests across 1 file. [980.00ms]

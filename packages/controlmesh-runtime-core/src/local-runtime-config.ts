@@ -1,3 +1,5 @@
+import { HostJobAdapter } from "./host-job-adapter";
+import { HostJobProcess } from "./host-job-process";
 import { CodexRegistration } from "./providers/codex-registration";
 import { LocalCodexHistory } from "./providers/local-codex-history";
 import { TopologyScheduler } from "./topology-scheduler";
@@ -37,7 +39,7 @@ import { LocalNativeHistory, LocalOpenCodeHistory, RegisteredLocalHistory, type 
 /** Explicit isolated candidate configuration. Reading task state does not inspect or probe any provider. */
 export interface LocalRuntimeDescription {
   mode: "candidate"; workspace: string;
-  providers: { provider: "opencode" | "claude" | "codex"; model: string }[];
+  providers: { provider: "opencode" | "claude" | "codex" | "host"; model: string }[];
   registered_write_roots: string[];
   integrations: { history: boolean; specmesh: boolean };
 }
@@ -53,7 +55,9 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
   identifier(config.principal_id); identifier(config.device_id);
   requireThat(object(config.source) && config.source.command_origin === "human_request" && config.source.origin === "user"
     && config.source.source_scope === "local_foreground" && typeof config.source.transport === "string", "local_source_profile_unqualified");
-  requireThat(config.opencode !== undefined || config.claude !== undefined || config.codex !== undefined, "local_provider_required");
+  requireThat(config.opencode !== undefined || config.claude !== undefined || config.codex !== undefined || config.host !== undefined, "local_provider_required");
+  requireThat(config.host === undefined || (object(config.host) && Object.keys(config.host).every(key => key === "shell")
+    && typeof config.host.shell === "string" && isAbsolute(config.host.shell) && realpathSync(config.host.shell) === config.host.shell), "invalid_local_host_profile");
   requireThat(config.opencode === undefined || (object(config.opencode) && typeof config.opencode.model === "string" && config.opencode.cli_version === "1.18.29"
     && object(config.opencode.native_configuration) && object(config.opencode.environment) && Object.values(config.opencode.environment).every(value => typeof value === "string")
     && object(config.opencode.container) && typeof config.opencode.executable === "string"), "invalid_local_provider_profile");
@@ -158,6 +162,11 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
       return { runner, store, registration, worker };
     };
     const runtime = new LocalTaskRuntime(kernel, actor, { command_origin: "human_request", origin: "user", source_scope: "local_foreground", transport: config.source.transport }, task => {
+      if (task.task.provider === "host") {
+        requireThat(object(config.host), "host_not_registered");
+        requireThat(!specmesh, "host_specmesh_profile_unqualified");
+        return new HostJobAdapter(kernel, actor, workspace.directory as string, config.host.shell as string, current).prepare(task);
+      }
       if (task.task.provider === "codex") {
         requireThat(codex, "codex_not_registered");
         const execution = codex.adapter(task).prepare(task);
@@ -174,6 +183,12 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
     const recovery: LocalRuntimeRecovery = {
       inspect: (taskId, revision, effectId) => {
         current(); runtime.queueStatus();
+        if (kernel.inspect(actor, taskId).task.provider === "host") {
+          requireThat(object(config.host), "host_not_registered");
+          const saved = kernel.inspectReconciliation(actor, taskId, revision, effectId);
+          requireThat(saved.manifest.schema_version === "controlmesh.host_step_execution.v1", "host_job_manifest_unproven");
+          return { episode_id: saved.episode.episode_id, effect_id: effectId, manifest_digest: saved.manifest_digest, observation_digest: saved.observation_digest };
+        }
         if (kernel.inspect(actor, taskId).task.provider === "codex") {
           requireThat(codex, "codex_not_registered"); return codex.adapter(kernel.inspect(actor, taskId), true).inspectRecovery(taskId, revision, effectId);
         }
@@ -183,6 +198,13 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
         return { episode_id: saved.episode.episode_id, effect_id: effectId, manifest_digest: saved.manifest_digest, observation_digest: saved.observation_digest };
       },
       accept: async (requestId, taskId, revision, candidate) => {
+        if (kernel.inspect(actor, taskId).task.provider === "host") {
+          current(); runtime.queueStatus(); requireThat(object(config.host), "host_not_registered");
+          requireThat(!specmesh, "host_specmesh_profile_unqualified");
+          const result = new HostJobProcess(kernel, actor, workspace.directory as string, config.host.shell as string,
+            () => { current(); runtime.queueStatus(); }).reconcile(requestId, taskId, revision, candidate);
+          runtime.recover(); return result;
+        }
         if (kernel.inspect(actor, taskId).task.provider === "codex") {
           current(); runtime.queueStatus(); requireThat(codex, "codex_not_registered");
           const result = await codex.adapter(kernel.inspect(actor, taskId), true).recover(requestId, taskId, revision, candidate,
@@ -263,7 +285,7 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
     const describe = (): LocalRuntimeDescription => {
       current();
       return { mode: "candidate", workspace: workspace.directory as string,
-        providers: (["opencode", "claude", "codex"] as const).filter(name => object(config[name])).map(name => ({ provider: name, model: (config[name] as Record<string, unknown>).model as string })),
+        providers: (["opencode", "claude", "codex", "host"] as const).filter(name => object(config[name])).map(name => ({ provider: name, model: name === "host" ? "" : (config[name] as Record<string, unknown>).model as string })),
         registered_write_roots: [...roots], integrations: { history: Boolean(history), specmesh: Boolean(specmesh) } };
     };
     return { runtime, recovery, describe, submissionIdentity, stop, close, ...(scheduler ? { scheduler, keep_alive: schedule!.keep_alive === true } : {}), ...(history ? { history } : {}), ...(deliveries ? { deliveries } : {}), ...(inbound ? { inbound } : {}), ...(specmesh ? { specmesh } : {}) };

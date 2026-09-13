@@ -2240,3 +2240,9 @@ then require the exact dispatched running snapshot and retained outcome. Kernel 
 must classify host nonzero exits separately from native provider result objects; finding
 an observation never implies success. Injected failure after host-state update confirms
 outer reconciliation transaction rolls that update and its receipt back.
+
+Configured HostJob execution reuses LocalTaskExecution and the existing queue/recovery
+controls. Readiness checks current pending approval, while the execution binding checks
+static workspace/shell/task authority without invalidating itself when the step becomes
+running. No model readiness probe is needed. SpecMesh host execution remains explicitly
+unqualified; native file-read evidence cannot be assumed for arbitrary shell commands.

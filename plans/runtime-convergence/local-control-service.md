@@ -338,3 +338,21 @@ the configured principal; approval uses the configured human-request origin and 
 version/definition. Request bodies cannot select an issuer or another principal. These
 commands inspect/approve only; they do not run imported commands. Approval output is a
 persisted decision receipt, not a process dispatch capability.
+
+### Configured host execution
+
+An explicit `host: { "shell": "/canonical/path/to/bash" }` registration enables the
+local-foreground host profile; host-only configuration needs no model provider. The shell
+must support bash `--noprofile --norc -c`. Commands run in the registered workspace with
+fixed PATH/LANG and bounded supervision; this profile does not implement sandbox grants.
+
+After explicit import and `approve_host_step`, submit a task with `provider: "host"` and
+`host_job: { job_id, revision, step_id, approval }`, where approval is the returned receipt.
+Use the normal submit/enqueue/inspect controls. Approve each next step at its current
+HostJob revision; a completed step task does not automatically approve later commands.
+Use inspect_reconciliation/reconcile_task for retained exit outcomes; restart alone never
+re-executes an uncertain command. No native session or model probe is created for host jobs.
+
+Host SpecMesh execution is currently refused with `host_specmesh_profile_unqualified`
+when a SpecMesh port is configured, until command-specific workflow evidence is wired.
+This is an explicit remaining integration gate, not completion of full host runner parity.
