@@ -29,6 +29,7 @@ export interface CodexResumeInput {
   timeout_ms: number;
   communication_command?: readonly string[];
   workspace_command?: readonly string[];
+  workspace_tool_names?: readonly string[];
 }
 export interface CodexResumeAdmission extends ProcessAdmission {
   assertReady(): void;
@@ -75,7 +76,7 @@ export class CodexResumeProcess {
       && input.environment.CODEX_HOME === input.codex_home
       && input.rollout_path.startsWith(input.codex_home + "/sessions/"), "codex_store_not_registered");
     const providerArguments = codexProviderArguments(input.environment.OPENAI_BASE_URL);
-    const communicationArguments = codexCommunicationArguments(input.communication_command, input.workspace_command);
+    const communicationArguments = codexCommunicationArguments(input.communication_command, input.workspace_command, input.workspace_tool_names);
     const policy = enforceExecutionPolicy(decodeExecutionContext(input.execution_context), false), grant = decodeToolGrant(input.tool_grant);
     enforceProviderConfirmation("codex", grant, policy);
     const mapped = mapToolGrant("codex", grant, { config_permission_mode: input.sandbox, config_sandbox_mode: input.sandbox });

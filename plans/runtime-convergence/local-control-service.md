@@ -191,8 +191,9 @@ adoption and execution journal; retained-result recovery does not call the model
 This profile currently runs already-adopted sessions under native read-only settings.
 Configured read_files and required_reads are supported when codex.node_executable
 is an explicit absolute Node/Bun executable for the private MCP client. Read completion
-contracts require exact native receipts and current file hashes. Write and SpecMesh
-completion profiles remain migration work and are refused. Preserve governed project requirements. The existing Python production entrypoint
+contracts require exact native receipts and current file hashes. Registered workspace.write_roots
+also enables staged write/edit through that client. Native shell settings remain read-only;
+the controller owns promotion. SpecMesh completion profiles remain migration work and are refused. Preserve governed project requirements. The existing Python production entrypoint
 and released default are unchanged; full native sandbox/real-account qualification is
 still required by the runtime-convergence acceptance matrix.
 
@@ -228,7 +229,7 @@ result within their own bounded deadline. Only the original permit launches a pr
 Cancellation stops a waiter without abandoning the probe owner; failures and unknown
 outcomes are returned without automatic re-probing.
 
-Codex exposes the separate controlmesh_workspace MCP server with read_file only. The
+Codex exposes the separate controlmesh_workspace MCP server, defaulting to read_file. The
 controller configures its allowed file list and required complete reads; task input names
 these requirements as literal data. The private workspace journal and original source
 snapshot are retained in the dispatch manifest. Every tool call checks the current
@@ -236,3 +237,14 @@ lease and matching dispatch digest. Native result content must match journal rec
 and required reads must cover all current bytes before task completion or reconciliation.
 A changed source blocks acceptance. This read profile composes with active messaging;
 read_file is not a write or reviewed SpecMesh closeout capability.
+
+
+With explicit registered write_roots, the workspace MCP server also exposes write_file
+and edit_file. They operate on a private WorkspaceStage and require the expected content
+hash. The execution manifest binds the stage reference and tool scope. CM verifies native
+receipts and completion requirements, seals the proposal, retains the process observation,
+then promotes under the current lease and native session lock. Only an applied proposal
+can finish the task. Recovery persists its reservation before promotion and consumes the
+retained proposal without a model call, including an already-published proposal whose task
+confirmation was lost. Concurrent source changes block promotion/recovery rather than being
+overwritten. This does not yet enable reviewed SpecMesh closeout or topology participation.

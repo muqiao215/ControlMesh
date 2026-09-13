@@ -4,17 +4,17 @@ import type { Lease } from "../kernel";
 import { digest, object, requireThat } from "../value";
 import { NativeAgentChannel } from "./native-agent-broker";
 import { prepareNativeAgentConfiguration } from "./native-agent-profile";
-import type { WorkspaceStage } from "../workspace-stage";
+import type { WorkspaceStage, WorkspaceAuthority } from "../workspace-stage";
 import { nativeWorkspaceTools, NativeWorkspaceFiles } from "./native-workspace-files";
 import { codexWorkspaceTools } from "./codex-communication";
 
-export interface CodexWorkspaceConfiguration { node_executable: string; read_files: string[]; required_reads: string[] }
+export interface CodexWorkspaceConfiguration { node_executable: string; read_files: string[]; required_reads: string[]; write_roots?: string[] }
 export function createCodexWorkspace(config: CodexWorkspaceConfiguration, workspace: string, directory: string, binding: string,
-  lease: Lease, current: () => void, assertDispatched: () => void, stage?: WorkspaceStage) {
+  lease: Lease, current: () => void, assertDispatched: () => void, stage?: WorkspaceStage, authority?: WorkspaceAuthority) {
   const journal = join(directory, "receipts"); mkdirSync(journal, { mode: 0o700 });
   const tools = stage ? nativeWorkspaceTools : ["controlmesh_read_file"] as const;
   const files = new NativeWorkspaceFiles({ workspace, read_files: config.read_files, tools, journal_directory: journal, binding_digest: binding, stage },
-    operation => { current(); return operation(); }, current);
+    authority ?? (operation => { current(); return operation(); }), current);
   const profile = prepareNativeAgentConfiguration(join(directory, "ipc"), config.node_executable, lease.task_id, [], null, "workspace.v1");
   const channel = new NativeAgentChannel(lease, profile, current, { assertDispatched, call: async (tool, input) => files.call(tool, input) });
   return { channel, scope: files.scope, tools };

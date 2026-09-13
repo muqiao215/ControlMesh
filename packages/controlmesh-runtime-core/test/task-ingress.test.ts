@@ -95,10 +95,10 @@ test("resume preserves the issued source/grant and pinned result-delivery identi
   expect(() => validateReplyTarget(grant, { transport: "terminal", chat_id: "other", topic_id: "topic", thread_id: "thread" })).toThrow("reply_target_mismatch:reply_chat");
 });
 
-test("Codex admits read completion contracts but refuses unimplemented writes", () => {
+test("Codex admits read and write contracts for registered adapter enforcement", () => {
   const f = fixture(), identity = { chat_id: "chat", source_id: "fixture" };
   const requirements = (mode: string) => ({ schema_version: "controlmesh.task_completion.v1", files: [{ path: "PROJECT.md", mode }] });
   expect(f.ingress.submit(actor, "read", { ...task, provider: "codex", completion_requirements: requirements("read") }, identity).task.completion_requirements).toEqual(requirements("read"));
-  expect(() => f.ingress.submit(actor, "write", { ...task, task_id: "write", provider: "codex", completion_requirements: requirements("write") }, identity)).toThrow("completion_provider_unsupported");
-  expect(f.db.sql.query("SELECT COUNT(*) AS n FROM tasks").get()).toEqual({ n: 1 });
+  expect(f.ingress.submit(actor, "write", { ...task, task_id: "write", provider: "codex", completion_requirements: requirements("write") }, identity).task.completion_requirements).toEqual(requirements("write"));
+  expect(f.db.sql.query("SELECT COUNT(*) AS n FROM tasks").get()).toEqual({ n: 2 });
 });

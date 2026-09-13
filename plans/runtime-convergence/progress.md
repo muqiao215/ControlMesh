@@ -2,6 +2,22 @@
 
 ## Current
 
+Codex normal local configuration now registers staged writes through workspace.write_roots
+and codex.node_executable. Write/edit MCP calls use the current lease transaction; native
+shell remains read-only. The manifest binds stage/tool scope, observation precedes promotion,
+and publication holds the native session lock. Recovery persists its reservation before
+filesystem work and verifies/reuses the retained proposal with no new model call.
+Read-only prompt composition is preserved for existing retained dispatches.
+Validation: installed Codex + real Viewer + loopback model write/observation-loss/
+postpublication-confirmation-loss/source-conflict matrix 4 tests, 92 assertions (62.67s).
+The observation-loss injection occurs after native completion and proposal seal, before
+recordEffectObservation; it is not a pre-native-dispatch failure. Conflict leaves concurrent
+user bytes intact and refuses recovery. Codex local/workspace/communication/process/ingress
+regression 24 tests, 172 assertions (5.56s); final typecheck and diff-check passed.
+Evidence: /tmp/cm-codex-native-write-final.log, /tmp/cm-codex-write-regression.log.
+No real account or existing session was used. SpecMesh lifecycle, native topology, physical
+peer/real-account qualification and full CM-R0–R7 release/default-switch gates remain open.
+
 Codex staged workspace verification now reuses NativeWorkspaceFiles and WorkspaceStage.
 Controller-owned staged profiles can select read/write/edit MCP tools; default profiles
 remain read-only. A focused test writes a private staged PROJECT.md, verifies the native

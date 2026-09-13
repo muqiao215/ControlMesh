@@ -114,14 +114,14 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
         ...(selected.timeout_ms !== undefined ? { timeout_ms: selected.timeout_ms as number } : {}), ...(selected.max_turns !== undefined ? { max_turns: selected.max_turns as number } : {}) };
     };
     requireThat(config.history === undefined || (object(config.history) && typeof config.history.directory === "string" && typeof config.history.python === "string"), "invalid_native_history_profile");
-    const codexReads = config.codex !== undefined && ((workspace.read_files as string[]).length > 0 || (workspace.required_reads as string[]).length > 0);
+    const codexReads = config.codex !== undefined && (roots.length > 0 || (workspace.read_files as string[]).length > 0 || (workspace.required_reads as string[]).length > 0);
     if (codexReads) requireThat(object(config.codex) && typeof config.codex.node_executable === "string"
       && (workspace.required_reads as string[]).every(path => (workspace.read_files as string[]).includes(path)), "invalid_codex_workspace_profile");
     const codex = config.codex === undefined ? undefined : new CodexRegistration(kernel, cache, actor, config.codex, root, workspace.directory as string, current, taskId => {
       const peers = object(communication) && object(communication.tasks) && Object.hasOwn(communication.tasks, taskId) ? communication.tasks[taskId] : undefined;
       return object(peers) ? prepareNativeAgentConfiguration(join(root, "codex-agent", taskId), communication!.node_executable as string,
         taskId, peers.peer_tasks as string[], peers.parent_task as string | null) : undefined;
-    }, codexReads ? { node_executable: (config.codex as Record<string, unknown>).node_executable as string, read_files: [...workspace.read_files as string[]], required_reads: [...workspace.required_reads as string[]] } : undefined);
+    }, codexReads ? { node_executable: (config.codex as Record<string, unknown>).node_executable as string, read_files: [...workspace.read_files as string[]], required_reads: [...workspace.required_reads as string[]], ...(roots.length ? { write_roots: roots } : {}) } : undefined);
     const historyPorts = new Map<string, LocalNativeHistoryPort>();
     if (config.history !== undefined) {
       const historyConfig = config.history as { directory: string; python: string };
@@ -160,7 +160,7 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
     const runtime = new LocalTaskRuntime(kernel, actor, { command_origin: "human_request", origin: "user", source_scope: "local_foreground", transport: config.source.transport }, task => {
       if (task.task.provider === "codex") {
         requireThat(codex, "codex_not_registered");
-        requireThat(!specmesh && roots.length === 0, "codex_file_or_workflow_profile_unavailable");
+        requireThat(!specmesh, "codex_file_or_workflow_profile_unavailable");
         return codex.adapter(task).prepare(task);
       }
       if (task.task.provider === "claude") {

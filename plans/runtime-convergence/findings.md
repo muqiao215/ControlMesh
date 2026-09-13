@@ -2014,3 +2014,20 @@ separate messaging and workspace servers. The direct owner test proves unchanged
 before promotion and retained verification after promotion/reopen. The normal Codex
 adapter still rejects write completion and local configuration still rejects write roots;
 remove those gates only with transaction-bound publication and recovery implemented.
+
+
+### Codex registered staged publication and recovery
+
+The normal adapter now accepts write completion only within registered write roots.
+createCodexWorkspace receives the enclosing kernel lease authority and stage; the native
+process input/retained manifest bind the explicit MCP tool names and stage reference.
+After native receipt verification the controller seals and records observation before
+promotion. A separate NativeSessionLease protects publication after the process releases
+its execution lock. Completion requires WorkspaceStage.assertApplied; recovery retains
+its reconciliation reservation before filesystem mutation and can accept an already-applied
+proposal. Existing read-only prompt bytes remain unchanged for old recovery digests.
+Installed-native fixtures cover normal writes, lost observation before promotion, lost
+confirmation after promotion, and a conflicting external source edit. Authentication is
+removed for successful recovery fixtures; native history/request counts remain unchanged.
+The conflict test preserves the external edit during both execution and recovery refusal.
+SpecMesh and topology registration gates remain; full migration is not complete.

@@ -101,3 +101,13 @@ test("configured Codex refuses required reads without a registered workspace too
   const f = fixture(); f.config.workspace.required_reads.push(join(f.workspace, "PROJECT.md")); f.save();
   expect(() => f.open()).toThrow("invalid_codex_workspace_profile");
 });
+
+test("Codex write completion without a registered write owner fails before probing", async () => {
+  const f = fixture(), current = f.open();
+  const submitted = await f.request(current.control, "create-write", "submit", { task: { task_id: "write", chat_id: "test", status: "waiting", provider: "codex", model: "fixture-model", repo_root: f.workspace, prompt: "Write", native_session: f.reference,
+    completion_requirements: { schema_version: "controlmesh.task_completion.v1", files: [{ path: "PROJECT.md", mode: "write" }] } } });
+  const reply = await current.control.handle({ id: "enqueue-write", op: "enqueue", task_id: "write", expected_revision: submitted.revision });
+  expect(reply.ok).toBe(false);
+  expect(JSON.stringify(reply)).toContain("codex_completion_profile_unavailable");
+  expect(current.owned.runtime.kernel.db.sql.query("SELECT COUNT(*) AS n FROM provider_checks").get()).toEqual({ n: 0 });
+});
