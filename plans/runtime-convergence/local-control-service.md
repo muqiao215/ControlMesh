@@ -280,3 +280,12 @@ merger; the merger's frozen context includes both accepted worker summaries. The
 asserts two simultaneously running tasks, no replay during recovery, three distinct session
 IDs and consumed schedule inputs. It uses a local synthetic model endpoint and supplies no
 physical-device or real-account evidence.
+
+
+The same three-session native fixture also drives the normal TopologyScheduler for
+director_worker and debate_judge. The director resumes its original session after the
+workers and returns an explicit complete decision; the judge selects a registered worker.
+Each decision is built against the frozen output contract's round/role requirements and
+is parsed by the production scheduler. Both workers still communicate through scoped MCP.
+A completed scheduler drains again without new native requests. This qualifies these
+local happy paths, not every repair/round/error branch or physical-device combination.

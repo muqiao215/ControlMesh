@@ -1,4 +1,4 @@
-import { RuntimeTopology, RuntimeFanout, type Principal } from "../src";
+import { RuntimeTopology, RuntimeFanout, TopologyScheduler, type Principal } from "../src";
 import { expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -12,8 +12,10 @@ import { LocalRuntimeControl } from "../src/local-runtime-control";
 import { codexFunctionResponse, codexSearchResponse, codexTextResponse } from "./helpers/codex-responses";
 
 const executable = process.env.CM_CODEX_TEST_EXECUTABLE, viewer = process.env.CM_HISTORY_TEST_ROOT;
-test.skipIf(!executable || !viewer).each(["exchange", "fanout"])("installed Codex sessions exchange concurrently and recover without replay (%s)", async mode => {
-  const fanout = mode === "fanout", roles = fanout ? ["alpha", "beta", "merger"] : ["alpha", "beta"];
+test.skipIf(!executable || !viewer).each(["exchange", "fanout", "director", "judge"])("installed Codex sessions exchange concurrently and recover without replay (%s)", async mode => {
+  const fanout = mode === "fanout", controlled = mode === "director" || mode === "judge", coordinated = fanout || controlled;
+  const topology = mode === "director" ? "director_worker" : mode === "judge" ? "debate_judge" : "fanout_merge";
+  const roles = coordinated ? ["alpha", "beta", "merger"] : ["alpha", "beta"];
   let maxRunning = 0;
   const root = mkdtempSync(join(tmpdir(), "cm-native-codex-peers-")), home = join(root, "home"), workspace = join(root, "project"), state = join(root, "state");
   for (const path of [home, workspace, state]) mkdirSync(path, { mode: 0o700 });
@@ -28,21 +30,24 @@ test.skipIf(!executable || !viewer).each(["exchange", "fanout"])("installed Code
     requests.push(task); expect(all).toContain(marker);
     maxRunning = Math.max(maxRunning, Number((owned!.runtime.kernel.db.sql.query("SELECT COUNT(*) AS n FROM local_runs WHERE state='running'").get() as { n: number }).n));
     let required: Record<string, unknown> | undefined;
-    if (fanout) {
+    if (coordinated) {
       const user = (body.input ?? []).filter((item: any) => item.role === "user").at(-1);
       const input = typeof user.content === "string" ? user.content : user.content.map((part: any) => part.text ?? "").join("");
       const batch = JSON.parse(input.slice(input.lastIndexOf("\n") + 1));
       const assigned = batch.messages.find((item: any) => item.kind === "handoff").payload;
-      expect(assigned.worker_role).toBe(task); expect(assigned.topology).toBe("fanout_merge");
+      expect(assigned.worker_role).toBe(task); expect(assigned.topology).toBe(topology);
       required = assigned.output_contract.required_values;
       if (task === "merger") {
+        if (mode === "director" && assigned.substage === "planning") return codexTextResponse(body.model, JSON.stringify({ topology, round_index: assigned.output_contract.dispatch_round_index, decision: "dispatch_workers", dispatch_roles: ["alpha", "beta"], summary: "Dispatch two registered workers" }));
         expect(JSON.stringify(assigned.prior_results)).toContain("alpha verified");
         expect(JSON.stringify(assigned.prior_results)).toContain("beta verified");
+        if (controlled) return codexTextResponse(body.model, JSON.stringify({ topology, round_index: required!.round_index,
+          ...(mode === "director" ? { decision: "complete" } : { decision: "select_winner", winner_role: "alpha" }), summary: "Accepted verified worker results" }));
         return codexTextResponse(body.model, JSON.stringify({ ...required, status: "completed", summary: "Merged verified worker results" }));
       }
     }
     if (task === "merger") throw new Error("unexpected merger");
-    const reply = (text: string) => codexTextResponse(body.model, fanout ? JSON.stringify({ ...required, status: "completed", summary: `${task} verified` }) : text);
+    const reply = (text: string) => codexTextResponse(body.model, coordinated ? JSON.stringify({ ...required, status: "completed", summary: `${task} verified` }) : text);
     const namespace = (body.input ?? []).filter((item: any) => item.type === "tool_search_output").flatMap((item: any) => item.tools ?? []).find((item: any) => item.name === "mcp__controlmesh");
     if (!namespace) return codexSearchResponse(body.model);
     const call = (name: string, args: Record<string, unknown>) => codexFunctionResponse(body.model, name, args, namespace.name);
@@ -87,8 +92,27 @@ test.skipIf(!executable || !viewer).each(["exchange", "fanout"])("installed Code
       await request(`submit-${task}`, "submit", { task: { task_id: task, chat_id: "fixture", provider: "codex", model: "gpt-5.5", repo_root: workspace, status: "waiting", prompt: `Peer ${task}: coordinate the continuity gate.`, native_session: adopted.native_session } });
     }
     const record = owned.runtime.kernel.recordEffectObservation.bind(owned.runtime.kernel);
-    owned.runtime.kernel.recordEffectObservation = (...args) => { if (args[2].task_id === "alpha") throw new Error("fixture lost alpha observation"); return record(...args); };
+    if (!controlled) owned.runtime.kernel.recordEffectObservation = (...args) => { if (args[2].task_id === "alpha") throw new Error("fixture lost alpha observation"); return record(...args); };
     const actor: Principal = { id: "operator", device_id: "desktop", origin: "human_request", scopes: ["task:create", "task:read", "task:execute", "task:resume", "task:reconcile", "task:admin", "team:write", "message:read", "message:ack"] };
+    if (controlled) {
+      await request("parent", "submit", { task: { task_id: "parent", chat_id: "fixture", status: "waiting", provider: "codex", model: "gpt-5.5", repo_root: workspace, prompt: "Coordinate registered workers and decide the result" } });
+      const scheduler = new TopologyScheduler(owned.runtime.kernel, owned.runtime, actor, { interval_ms: 100 });
+      try {
+        const registered = scheduler.register("register", { schema_version: "controlmesh.topology_schedule.v1", root_task_id: "parent", nodes: [{ task_id: "parent", topology, worker_roles: ["alpha", "beta"], controller_role: "merger",
+          roles: roles.map(role => ({ role, task_id: role, resume_prompt: `Peer ${role}: continue the assigned topology work.` })) }] });
+        expect(registered.mode).toBe("paused");
+        scheduler.setMode("activate", "parent", registered.revision, "active");
+        await scheduler.drain();
+        expect(scheduler.inspect("parent"), JSON.stringify(owned.runtime.queueStatus())).toMatchObject({ mode: "completed" });
+        expect(owned.runtime.inspectTask("parent").task.status).toBe("done");
+        expect(maxRunning).toBe(2); expect(new Set(Object.values(sessions)).size).toBe(3);
+        expect(requests.filter(value => value === "merger")).toHaveLength(mode === "director" ? 2 : 1);
+        expect(requests.filter(value => value === "probe")).toHaveLength(1);
+        expect(owned.runtime.kernel.db.sql.query("SELECT status FROM messages WHERE origin='schedule'").all()).toEqual(Array(mode === "director" ? 4 : 3).fill({ status: "consumed" }));
+        const count = requests.length; await scheduler.drain(); expect(requests.length).toBe(count);
+      } finally { await scheduler.stop(); }
+      return;
+    }
     let dispatched: ReturnType<RuntimeFanout["dispatch"]> | undefined;
     if (fanout) {
       await request("parent", "submit", { task: { task_id: "parent", chat_id: "fixture", status: "waiting", provider: "codex", model: "gpt-5.5", repo_root: workspace, prompt: "Coordinate two workers and merge their results" } });

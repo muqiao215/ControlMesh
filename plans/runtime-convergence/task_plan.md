@@ -81,7 +81,8 @@ fresh-session creation, interrupted lineage qualification, effective native sand
 behavior, and broader Codex topology qualification remain. Local native Codex pipeline
 worker/reviewer execution and parent artifact acceptance after reopen, plus concurrent
 fanout workers with lost-observation recovery and a third native merger, are qualified
-against loopback model fixtures. Director/judge modes and physical devices remain. Codex current-file read receipts,
+against loopback model fixtures. Native director/judge happy paths now pass through the
+normal scheduler; repair/error branches and physical-device combinations remain. Codex current-file read receipts,
 staged write publication and retained publication recovery are now registered. SpecMesh
 start/post-publication checks and recovery checks are registered; reviewed closeout remains
 a separate gate. Installed-native fixtures do not qualify real-account or cross-device write behavior.

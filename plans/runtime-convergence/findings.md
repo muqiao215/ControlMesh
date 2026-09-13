@@ -2073,3 +2073,16 @@ receives both accepted worker summaries from the coordinator and completes the p
 No runtime change was necessary beyond the already-registered topology input path.
 Native command/version/session behavior is real; the model endpoint remains synthetic.
 The physical peer still times out, so this evidence cannot close the multi-device gate.
+
+
+### Native director and judge scheduler qualification
+
+The existing native peer fixture now invokes TopologyScheduler for director_worker and
+debate_judge. Coordinator output is parsed from its native response and checked against
+the frozen contract rather than injected directly into topology state. Director planning
+uses dispatch_round_index, then resumes to complete after both accepted worker summaries.
+Judge selection names a registered worker. Two concurrent worker runs and three distinct
+native sessions are asserted. A completed drain performs no further native requests.
+Both happy paths pass without runtime modifications. Physical devices and non-happy
+branches remain unqualified by these fixtures. GitHub connection reset now affects API
+reads as well as Git push, so local qualification must not be reported as published CI.

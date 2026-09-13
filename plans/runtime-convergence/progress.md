@@ -2,6 +2,21 @@
 
 ## Current
 
+Normal TopologyScheduler director_worker and debate_judge execution now has installed
+Codex qualification. Three distinct native sessions run the two peer workers and controller.
+The director dispatches registered roles and resumes its original session to complete;
+the judge selects a registered winner. Frozen context supplies the exact round/role
+contract, both workers exchange MCP messages, and two running tasks are observed.
+Completed schedules drain again without new model requests.
+Validation: 2 native modes, 113 assertions (85.49s), actual CLI + Viewer with synthetic
+loopback model endpoint. Typecheck and diff-check passed. Evidence:
+/tmp/cm-codex-control-native.log. These are local happy paths; repair/error branches,
+physical devices and real-account coverage remain distinct, as do all open CM-R0–R7 gates.
+GitHub API currently also fails with connection reset; previous 279181a remains locally
+committed with its push unconfirmed. Native tests and this qualification are local progress.
+Gemini executable is present at /home/muqiao/.local/bin/gemini, but no persistent Gemini
+provider module was found under runtime-core/src/providers; registration remains work.
+
 Installed Codex concurrent fanout is now qualified on the loopback model fixture.
 Three distinct sessions represent alpha, beta and merger. Alpha/beta overlap (two running
 local tasks observed) and exchange a native MCP question/answer. Alpha's lost observation
