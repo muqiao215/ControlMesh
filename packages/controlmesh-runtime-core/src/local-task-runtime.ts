@@ -1,3 +1,5 @@
+import { HostJobStore } from "./host-job-store";
+import { HostJobApprovals } from "./host-job-approval";
 import { RuntimeEventStore } from "./runtime-events";
 import { randomUUID } from "node:crypto";
 import { command, requireScope } from "./commands";
@@ -114,6 +116,15 @@ export class LocalTaskRuntime {
         run: run ? { run_id: run.run_id, state: run.state, outcome: run.outcome ? JSON.parse(run.outcome) : null } : null };
     });
     return { tasks, next_after: rows.length > limit ? tasks.at(-1)!.task_id : null };
+  }
+  hostJobs(after = "", limit = 20) {
+    this.current(); return new HostJobStore(this.kernel.db, () => this.current()).list(this.actor, after, limit);
+  }
+  inspectHostJob(jobId: string) {
+    this.current(); return new HostJobStore(this.kernel.db, () => this.current()).get(this.actor, jobId);
+  }
+  approveHostStep(requestId: string, jobId: string, revision: number, stepId: string) {
+    this.current(); return new HostJobApprovals(this.kernel.db, () => this.current()).approve(this.actor, requestId, jobId, revision, stepId);
   }
   sessionEvents(session: string, limit = 20, before?: number) {
     this.current(); requireScope(this.actor, "task:read");

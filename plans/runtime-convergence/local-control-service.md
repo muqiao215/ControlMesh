@@ -329,3 +329,12 @@ Without --apply it previews the selected source and leaves the target unopened. 
 existing live records are not overwritten. Replaying the same import returns the same
 revision. The command reports `execution_authorized: false` even for historical running
 or completed jobs; it never starts a command or attaches to an imported PID.
+
+### Host-job control commands
+
+Use the regular cm-runtime.ts CLI and configured `--socket` with `host-jobs`,
+`inspect-host-job JOB`, or `approve-host-step JOB --step STEP --revision N`. Reads use
+the configured principal; approval uses the configured human-request origin and current
+version/definition. Request bodies cannot select an issuer or another principal. These
+commands inspect/approve only; they do not run imported commands. Approval output is a
+persisted decision receipt, not a process dispatch capability.

@@ -2221,3 +2221,8 @@ approval metadata from a current runtime decision. HostJobApprovals verifies a p
 human-request receipt bound to the current version/next-step definition. Approval does
 not itself reserve execution; future dispatch must combine it with the existing kernel
 lease/effect ownership so repeated approvals cannot launch duplicate processes.
+
+Host-job control identity comes from LocalTaskRuntime's configured actor, not request
+fields. Human-request-only approval policy remains in HostJobApprovals. This uses the
+existing private local control channel's trust boundary; it is not a new end-user
+authentication mechanism. Approval/read requests do not enqueue a native provider.

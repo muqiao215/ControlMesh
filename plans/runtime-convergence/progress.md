@@ -894,3 +894,20 @@ Approval/store/model tests: 6 passed, 35 assertions, 372ms
 changed approval time, wrong owner/scope, nonhuman issuer, stale revision, request reuse
 and imported running PID refusal with no receipt written. Actual control/UI issuance,
 kernel-bound dispatch, process supervision and retained-result reconciliation remain open.
+
+## 2026-09-13 — configured host-job queries and approval controls
+
+LocalTaskRuntime/LocalRuntimeControl now expose host_jobs, inspect_host_job and
+approve_host_step using the configured actor and current configuration guard. CLI
+commands host-jobs, inspect-host-job and approve-host-step route to these operations.
+Approval requires explicit step ID and current revision; issuer/principal fields are
+not accepted from requests. No arbitrary host-job mutation or execution endpoint added.
+
+Normal-control tests seed imported jobs for two principals, verify scoped list/detail,
+reject forged issuer fields, issue/validate a real persisted approval receipt, reopen
+and replay it, and reject stale revision. No local run or native state is created.
+Control/approval/CLI tests: 27 passed, 199 assertions, 10.27s
+(`/tmp/cm-host-controls.log`); typecheck passed after correcting a test assertion's
+unknown/typed comparison; diff-check passed. The interface inherits existing private
+local-control socket trust and configured origin, not independent proof of human UI
+presence. Kernel dispatch/process ownership and reconciliation remain pending.

@@ -249,3 +249,7 @@ Host approval checkpoint: current-version, exact-next-step human decision receip
 verification implemented. Imported approval metadata cannot satisfy them. Remaining
 work: actual control issuance, existing-kernel dispatch binding, supervised execution
 and interrupted-result reconciliation; approvals alone never launch commands.
+
+Host control checkpoint: configured list/detail/step-approval operations and CLI wired
+with principal isolation, restart/replay and revision tests. Remaining execution owners
+are kernel-bound dispatch, native process supervision and uncertain-result reconciliation.

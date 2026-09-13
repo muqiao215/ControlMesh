@@ -321,3 +321,29 @@ test("normal task controls produce bounded session history atomically and refuse
     expect((await control.handle(query)).result).toEqual(after);
   } finally { await owned.close(); }
 });
+
+test("configured controls inspect and approve imported host jobs without dispatch or caller identity fields", async () => {
+  const { HostJobStore } = await import("../src/host-job-store");
+  const { HostJobApprovals } = await import("../src/host-job-approval");
+  const f = fixture(); let owned = openLocalRuntime(f.path);
+  const actor: Principal = { id: "operator", device_id: "local", origin: "human_request", scopes: ["task:admin", "task:read", "task:execute"] };
+  try {
+    const job = { job_id: "imported", created_at: "2026-09-13", updated_at: "2026-09-13", steps: [{ id: "one", command: "echo fixture", approval_required: true }] };
+    const store = new HostJobStore(owned.runtime.kernel.db, () => {}); store.put(actor, "seed-host", 0, job);
+    store.put({ ...actor, id: "foreign" }, "seed-other", 0, { ...job, job_id: "hidden" });
+    let control = new LocalRuntimeControl(owned.runtime, undefined, owned.submissionIdentity);
+    expect(await control.handle({ id: "list-host", op: "host_jobs" })).toMatchObject({ ok: true, result: { jobs: [{ job_id: "imported", revision: 1 }] } });
+    expect(await control.handle({ id: "inspect-host", op: "inspect_host_job", job_id: "hidden" })).toMatchObject({ ok: true, result: null });
+    expect(await control.handle({ id: "inspect-own", op: "inspect_host_job", job_id: "imported" })).toMatchObject({ ok: true, result: { revision: 1, job: { job_id: "imported" } } });
+    const request = { id: "approve-host", op: "approve_host_step", job_id: "imported", expected_revision: 1, step_id: "one" };
+    expect(await control.handle({ ...request, approved_by: "user" })).toMatchObject({ ok: false, error: "unexpected_local_request_field" });
+    expect(await control.handle({ ...request, principal: "foreign" })).toMatchObject({ ok: false, error: "unexpected_local_request_field" });
+    const approved = await control.handle(request); expect(approved).toMatchObject({ ok: true, result: { principal: "operator", device_id: "local", revision: 1 } });
+    expect(approved.result).toEqual(new HostJobApprovals(owned.runtime.kernel.db, () => {}).assertApproved(actor, approved.result));
+    expect(owned.runtime.kernel.db.sql.query("SELECT COUNT(*) AS n FROM local_runs").get()).toEqual({ n: 0 });
+    expect(existsSync(f.data)).toBe(false);
+    await owned.close(); owned = openLocalRuntime(f.path); control = new LocalRuntimeControl(owned.runtime, undefined, owned.submissionIdentity);
+    expect(await control.handle(request)).toEqual(approved);
+    expect(await control.handle({ ...request, id: "stale-host", expected_revision: 2 })).toMatchObject({ ok: false, error: "host_job_revision_conflict" });
+  } finally { await owned.close(); }
+});

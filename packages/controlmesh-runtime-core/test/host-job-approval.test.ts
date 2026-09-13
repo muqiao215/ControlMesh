@@ -33,3 +33,12 @@ test("imported running step requires reconciliation even when approval metadata 
     expect(db.sql.query("SELECT COUNT(*) AS n FROM receipts WHERE request_id='approve'").get()).toEqual({ n: 0 });
   } finally { db.close(); }
 });
+
+test("host-job CLI names the current step and revision without accepting issuer fields", async () => {
+  const { parseRuntimeCli } = await import("../src/runtime-cli");
+  expect(parseRuntimeCli(["host-jobs", "--socket", "/tmp/cm.sock"])?.request).toMatchObject({ op: "host_jobs", limit: 20 });
+  expect(parseRuntimeCli(["inspect-host-job", "job", "--socket", "/tmp/cm.sock"])?.request).toMatchObject({ op: "inspect_host_job", job_id: "job" });
+  expect(parseRuntimeCli(["approve-host-step", "job", "--socket", "/tmp/cm.sock", "--step", "one", "--revision", "3"])?.request).toMatchObject({ op: "approve_host_step", job_id: "job", step_id: "one", expected_revision: 3 });
+  expect(() => parseRuntimeCli(["approve-host-step", "job", "--socket", "/tmp/cm.sock", "--step", "one"])).toThrow("missing_cli_option");
+  expect(() => parseRuntimeCli(["approve-host-step", "job", "--socket", "/tmp/cm.sock", "--approved-by", "user"])).toThrow("unknown_cli_option");
+});
