@@ -8,6 +8,13 @@ a terminal or chat, continue work in the background, coordinate multiple agents,
 missing information, recover after interruption, and deliver results back to the original
 conversation.
 
+Google CLI direction (confirmed 2026-09-13): AGY is the user's forward Google runtime.
+Keep historical Gemini IDs/session formats as explicit compatibility profiles; do not
+alias AGY to the old executable or retry retired personal-account CLI endpoints. Routine
+implementation/testing is delegated to locally configured CBC/AGY; the primary Codex
+controller owns task dispatch and acceptance. Preserve actual native session IDs, durable
+results and distinct scheduled/agent/human provenance through CM's parent/task mechanisms.
+
 ## User Intent
 
 The product should let a user move naturally between local terminal work and long-running
@@ -19,7 +26,7 @@ The important user outcomes are:
 - `cm` must offer a polished terminal workbench comparable in interaction quality to
   Codex: discoverable commands, editable input, visible execution, interruption and
   session recovery; a line-oriented chat shell is not an accepted finished product;
-- official Claude, Codex, Gemini, OpenCode, and configured provider CLIs remain the actual
+- official Claude, Codex, AGY, OpenCode, CBC, and configured provider CLIs remain the actual
   execution engines;
 - tasks have stable identities, persistent state, artifacts, interruption, resume, and
   result-delivery behavior;

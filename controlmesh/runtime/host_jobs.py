@@ -7,7 +7,10 @@ import contextlib
 import hashlib
 import os
 import shlex
+import sys
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -357,6 +360,48 @@ class HostJobStore:
         job_dir = self.job_dir(job_id)
         return job_dir / "HOST_JOB.json", job_dir / "STEPS.json", job_dir / "TOOL_RESULT.json"
 
+    def lock_path(self, job_id: str) -> Path:
+        """Sidecar ownership lock for one job id (created on demand, never unlinked)."""
+        return self._jobs_dir / f"{job_id}.lock"
+
+    @contextmanager
+    def lock(self, job_id: str) -> Iterator[None]:
+        """Durable OS-level exclusive ownership for one job id.
+
+        Uses POSIX ``flock`` (Windows: byte-range ``msvcrt`` locking). The kernel
+        releases the lock when the owning process dies, so a crashed dispatcher
+        cannot deadlock later callers, and the lock is never advisory-only state
+        inside the payload. A fresh descriptor per call also serializes threads.
+        """
+        self._jobs_dir.mkdir(parents=True, exist_ok=True)
+        lock_path = self.lock_path(job_id)
+        if lock_path.is_symlink():
+            raise ValueError("symlink_lock_not_supported")
+        flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(lock_path, flags, 0o600)
+        try:
+            if sys.platform == "win32":
+                import msvcrt
+
+                if os.fstat(fd).st_size == 0:
+                    os.write(fd, b"\0")
+                os.lseek(fd, 0, os.SEEK_SET)
+                msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(fd, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                if sys.platform == "win32":
+                    os.lseek(fd, 0, os.SEEK_SET)
+                    msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+                else:
+                    fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
+
     def exit_code_path(self, job_id: str, step_id: str) -> Path:
         return self._artifacts_dir(job_id, step_id) / "exit_code.txt"
 
@@ -549,6 +594,23 @@ class HostJobRunner:
         job.updated_at = _now_iso()
         self._store.append_event(job.job_id, "host_job.cancelled", {"current_step_id": job.current_step_id})
         return self._store.put(job)
+
+    async def detach(self, job_id: str) -> bool:
+        """Release this process's ownership of a job without touching the worker.
+
+        The worker keeps running in its own session and the durable job record
+        stays authoritative, so another process can reconcile it later. This is
+        required before a short-lived process exits: leaving the owning asyncio
+        task pending blocks interpreter shutdown.
+        """
+        task = self._tasks.pop(job_id, None)
+        if task is None:
+            return False
+        if not task.done():
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        return True
 
     async def shutdown(self, *, cancel_running: bool = False) -> None:
         tasks = list(self._tasks.items())

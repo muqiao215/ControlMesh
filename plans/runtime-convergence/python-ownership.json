@@ -1,9 +1,10 @@
 {
   "areas": {
     "events_inbox_and_host_jobs": {
-      "controlmesh/runtime/__init__.py": "a8d89aaf284d974d17c3fe6c19f7f86b842cf7bd3fe75a3ca874be39fc0e6774",
+      "controlmesh/runtime/__init__.py": "9fd6f23ea57f38001683c8878077d1c9b3bd8db534084c06b4e91faee65baa81",
       "controlmesh/runtime/agent_inbox.py": "d435983a3c62f66a49bdc4ed9c017ab0a4b9dc1b1538736baf1302a1fa80b01b",
-      "controlmesh/runtime/host_jobs.py": "147386a91d99801a387e74ca446a1d4b70614e93ce3c9d65ef9c2e7f44fc0944",
+      "controlmesh/runtime/host_job_bridge.py": "5ffa2c4e072515ca4cf2101a1beae86ce5cc5a15f3e132cae867465712f6ce70",
+      "controlmesh/runtime/host_jobs.py": "7ce83bf50d33f8b9849153258704bc3a38b4bbdcba71773f2f8307d0acf273b1",
       "controlmesh/runtime/models.py": "7b7f6713d5746630e8ee5c96db2403393cada4e260ffa92f9a29e87fae0d8e7a",
       "controlmesh/runtime/registry.py": "de1f15abe98e42aaa141d63ba45027ec4aba0a03017be8afe35b8daec2d25462",
       "controlmesh/runtime/store.py": "0fc07584de0dcc23af2a3af0106b0396a76dd789de5db9c3b92a18fc364cf495"
@@ -109,7 +110,7 @@
     },
     "other_python_owners": {
       "controlmesh/__init__.py": "016088cd98dc44afdf39e237ce71636c0a4a063c708ffa2cc432dc5bef67a96c",
-      "controlmesh/__main__.py": "83483a92b1105e87259ce20575ffae54f9c2533f0e899caf1b7447c1e77855a8",
+      "controlmesh/__main__.py": "0cd3d3bc08d6f80457cfb2307fd773d29944cd24257b83ecfe0b65b7149a63d4",
       "controlmesh/_home_defaults/workspace/skills/skill-creator/scripts/init_skill.py": "cd66be5c472c1950575c470c7f6e39846ae25b1ec437f4850221056ad3ed861b",
       "controlmesh/_home_defaults/workspace/skills/skill-creator/scripts/package_skill.py": "485df85efe0fb9304b989d8bbfdac55807d584dd5666d9754cc53ac41d52dfdd",
       "controlmesh/_home_defaults/workspace/skills/skill-creator/scripts/quick_validate.py": "5295344e4a18bc25503c2f52541ff33bf2bf09604f5baa0f5ead4ff2f94689cd",
@@ -207,12 +208,13 @@
       "controlmesh/cli_commands/docker.py": "cfa82c97a52bd9edcda632fd2c4dc3d69d1649ec27a3f59420ef5a8de20df973",
       "controlmesh/cli_commands/feishu.py": "05be6d80526d950b05bffd1264276cfc0a6e688b0e903e8c92f5059eeb864309",
       "controlmesh/cli_commands/feishu_bind.py": "673ec55d375faa1ed7039ce319c07531030a4ed4dc559308d07303a83cde8cde",
+      "controlmesh/cli_commands/hostjob.py": "84b6855096db0a908b85110a1377f330fb60c1cbb569ea238a95b5d5b81c84bd",
       "controlmesh/cli_commands/install.py": "bec520b53f7d7cf66d8e00c0e5e87300237ef342f82ad996425d58de553c5cd3",
       "controlmesh/cli_commands/lifecycle.py": "4f9f8db74ec3e13f44e232f4cf1d45cf84408380a412d1ea82d8a92567964dbd",
       "controlmesh/cli_commands/runtime.py": "e3cdc171b15664dbf0ca9ce5054f455e9e9c61936c5368bdba31037c3506c2bb",
       "controlmesh/cli_commands/service.py": "ac7e09bd519f112d200e86e3672910c8c0d41a3aa90fab9e882e94fe97654e5c",
       "controlmesh/cli_commands/specmesh.py": "f0978546d187a7fe70edc8f8ea38a2b3805ba8c440ad2da305f1626fc09b737a",
-      "controlmesh/cli_commands/status.py": "5d741935b599d6d7f6bf7a5bfd97f1069c0f978615ef03b882b86fd0d675ff5a",
+      "controlmesh/cli_commands/status.py": "55b69e3e1e89dd26c4a086fe61e30304cb4a2b01b34a32e4e9a10305c2da8f5a",
       "controlmesh/cli_commands/tasks.py": "d2417844496fc8b2e1b02299ff506b8db37989e41f14b6a68eeda50d28a84ce6",
       "controlmesh/cli_commands/terminal.py": "18a7cca1f4fa86799564bd86c2a88fe82f2b3a408f8d4cd3063a44e703acca9f",
       "controlmesh/command_registry.py": "f6ceb2b3f751e243e6b4cb7ff30e87ae5402159ced9bd5ac8bfc36444850deeb",

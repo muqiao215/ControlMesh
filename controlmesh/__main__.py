@@ -22,6 +22,7 @@ from controlmesh.cli_commands.auth import cmd_auth as _cmd_auth
 from controlmesh.cli_commands.cron import cmd_cron as _cmd_cron
 from controlmesh.cli_commands.docker import cmd_docker as _cmd_docker
 from controlmesh.cli_commands.feishu import cmd_feishu as _cmd_feishu
+from controlmesh.cli_commands.hostjob import cmd_hostjob as _cmd_hostjob
 from controlmesh.cli_commands.install import cmd_install as _cmd_install
 from controlmesh.cli_commands.lifecycle import (
     cmd_restart as _cmd_restart,
@@ -625,6 +626,7 @@ _COMMANDS: dict[str, str] = {
     "auth": "auth",
     "runtime": "runtime",
     "tasks": "tasks",
+    "hostjob": "hostjob",
     "terminal": "terminal",
     "term": "terminal",
     "bot": "bot",
@@ -673,6 +675,7 @@ def main() -> None:
         "auth": lambda: _cmd_auth(args),
         "runtime": lambda: _cmd_runtime(args),
         "tasks": lambda: _cmd_tasks(args),
+        "hostjob": lambda: _cmd_hostjob(args),
         "terminal": lambda: _cmd_terminal(args),
         "bot": lambda: _cmd_bot(verbose),
         "feishu": lambda: _cmd_feishu(args),

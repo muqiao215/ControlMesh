@@ -311,6 +311,10 @@ def print_usage() -> None:
     table.add_row("controlmesh service", t_rich("help.service"))
     table.add_row("controlmesh tasks list", "List background tasks from the local task runtime.")
     table.add_row("controlmesh tasks doctor", "Show task runtime health, policy, and primitive endpoints.")
+    table.add_row(
+        "controlmesh hostjob run|wait|consume",
+        "Supervise one external CLI attempt and retrieve its single terminal event.",
+    )
     table.add_row("controlmesh agents", t_rich("help.agents"))
     table.add_row("controlmesh docker", t_rich("help.docker"))
     table.add_row("controlmesh api", t_rich("help.api"))

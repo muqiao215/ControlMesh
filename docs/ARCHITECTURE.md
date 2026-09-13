@@ -1203,3 +1203,22 @@ Python-compatible execution policy. Native-provider capability floors are separa
 source requiring isolation is rejected because this launcher has no sandbox. Passing
 that decision does not replace issued provenance, explicit step approval, tool grants,
 workspace identity, lease fencing or imported-task reconciliation.
+
+### Local external-controller host jobs
+
+Python `runtime/host_job_bridge.py` and `cli_commands/hostjob.py` expose local
+`hostjob run|wait|consume|status` over the existing HostJobRunner and AgentInboxStore.
+One attempt has an explicit parent, command/workspace/provenance binding and dispatch
+intent. A per-job OS lock serializes cooperating same-host bridge callers. Corrupt or
+missing bindings beside prior job records or execution artifacts reject implicit
+adoption. This is not cross-device election or an authenticated remote shell endpoint.
+
+Wait reconciles exit evidence without relaunching. Unknown worker fate returns a review
+status; a vanished wrapper preserves unknown child-process quiescence. Terminal event
+consumption is locally at-most-once (mark before return), not the full Agent mailbox's
+at-least-once delivery requirement. Status snapshots distinguish running from terminal.
+The bridge issues only local-foreground provenance; it does not grant native tool access
+or prove scheduled-source isolation. CM's internal parent name `main` is not an external
+Codex desktop task. An active controller must retain a run/wait return channel: artifacts
+on disk do not wake an idle conversation. Run controllers from a fixed installed version
+or frozen snapshot while workers modify the framework checkout.

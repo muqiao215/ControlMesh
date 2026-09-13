@@ -431,3 +431,79 @@ was preserved. This checkpoint is not final release/local-alignment acceptance.
   not introduce a second scheduler or assume CM main is this Codex conversation.
 - CBC bridge process handle 51930; output /tmp/cm-cbc-taskhub-parent.json, diagnostics
   /tmp/cm-cbc-taskhub-parent.err. Poll handle before restarting. No periodic model job.
+
+## Missed handoff correction and real CM launch
+
+CBC bridge and AGY review 1 had both exited successfully, but the primary ended its turn
+before collecting them. Their output files did not wake the desktop controller. This was
+a workflow failure; do not describe it as an active callback or as a provider quota issue.
+
+Primary bridge review found missing concurrent cold-start/consume protection and missing
+parent/definition binding. CBC native session `01a09a29-a069-7afe-9ab4-909d055fa089` is
+now resumed through source CM hostjob `cbc-parent-bridge-r2`, explicit logical parent
+`codex-runtime-convergence`, isolated CM home under outputs/runtime-convergence/parent-supervision.
+Launch detached after 1s; authoritative CM status is running. A separate non-model CM
+wait process (unified exec 45057, no wait timeout) is active in the primary tool channel.
+`cbc ps --json` confirmed matching native session heartbeat and its JSONL events advance.
+This proves actual launch/continuation, not yet terminal result acceptance or installed
+0.43.0 alignment. See delegation/README.md for paths and handles.
+
+AGY revised plan's native conversation ID from CLI JSON:
+`def64a8d-18c9-49eb-abd4-82488284d15f`. Six review concerns were addressed in its design;
+primary further corrected fold wording to first/second ordering rather than universal
+DST classification. Cron SQL and provider integration remain proposed, not implemented.
+
+## Parent result received; cron persistence and CI parallel work
+
+- CM's active wait returned CBC r2 completed/exit 0 at 2026-09-13T11:49:50Z. This is
+  actual receipt by the primary tool turn, not an idle desktop callback.
+- Primary's small scratch-state acceptance reproduced a binding bypass: corrupt intent
+  followed by another parent and command returned the old completed event and allowed
+  a second consume. Returned to the same CBC native session as CM job
+  cbc-parent-bridge-r3 (handle 92783). Wrapper disappearance uncertainty also remains a
+  review concern. Bridge is not accepted or published yet.
+- AGY same-native-session batch 1 implements TS cron persistence/offline migration;
+  CM job agy-cron-batch1, handle 61893. Code is in progress, not accepted. No runtime
+  switch, production cron writes, model-polling loop or release.
+- User authorized CI settings review. Of the latest 12 main runs, 11 now succeed;
+  earlier d5734e1 failed a genuine TS literal type check, fixed at 8651820. Latest
+  93fb734 failed one Docker info preflight; its failed-job rerun succeeded unchanged.
+  CBC job cbc-ci-stability (handle 64503) is implementing bounded read-only readiness
+  and superseded-run cancellation while retaining required checks. Raw initial failed
+  log: /tmp/cm-ci-34750299686-failed.log. Acceptance pending.
+
+## Accepted CI stability change and controller version boundary
+
+CI-only commit `5cab0c9` is pushed to main. Remote run 34756010064 succeeded, including
+both Python versions, Ruff, mypy, packaged Alpha smoke, product layer, real containers
+and the explicit aggregate. Required checks remain. Manual dispatch has a unique run-ID
+concurrency group; push/PR superseded checks can cancel. Docker readiness retries only
+bounded read-only probes; runtime execution and assertion failures are not retried.
+
+AGY batch 1 worker itself completed with exit 0 and native SUCCESS, but its supervising
+CM command (61893) exited 1 with `_clear_review_locked` NameError: it imported an
+intermediate Python module while CBC was editing that module. Do not rerun AGY batch 1
+or equate controller failure to worker failure. Both native result and exit artifact
+were read. Primary review found unsafe future fencing, uncertain-attempt replay and
+lossy/non-exclusive export despite passing happy-path tests; revision 2 is required.
+
+New controller launches use a frozen copy under outputs/runtime-convergence/parent-supervision/
+controller-r3-snapshot (477 Python files, manifest.json with SHA-256 digests), not the
+editable checkout. The snapshot passed an actual run/wait completed/exit-0 smoke.
+AGY revision 2 uses CM job agy-cron-batch1-r2, active handle 93495, same native conversation.
+Its task is delegation/agy-cron-batch-1-review-2.md. This operational snapshot is not an
+installed release or accepted final runtime version. Preserve it while that job runs.
+
+## Local parent bridge acceptance
+
+CBC r3 completed/exit 0 and was collected through CM at 2026-09-13T12:11:27Z.
+Primary verified corruption refusal, explicit provenance binding, concurrent start and
+consume, review-required unknown worker state and child-alive wrapper loss coverage.
+Primary corrected running status snapshots inheriting terminal=true and orphan execution
+artifacts allowing recreation. Final targeted bridge suite: 23 passed in 17.25s
+(`/tmp/cm-parent-bridge-primary-tests.log`); changed-file Ruff and diff whitespace passed.
+CBC also reported 231 runtime/task and 992 multiagent/CLI regressions passed; primary did
+not rerun these broad suites. New files have no mypy errors; 12 pre-existing host_jobs.py
+errors remain. Ownership generator refreshed: 514 Python modules / 57 persisted TaskEntry
+fields, golden fixture unchanged. This records an added Python owner still requiring TS
+port; neither full migration nor installed 0.43.0 alignment is complete.

@@ -69,26 +69,23 @@ No claim that full TS migration or distributed coordination has completed. A sco
 
 ## Next Step
 
-1. Schema 38 ordinary Telegram choices and schema 39 bounded rate retries are pushed;
-   rate-limit CI 34745426070 passed. Schema 40 configured local media now passes the
-   full runtime regression (1117 pass, 34 skips, 0 fail) and CI 34746981469 passed
-   for d86373c. Device artifact capture now connects accepted transferred files to the
-   Telegram outbox (105 focused passes); 232b7ad CI 34747306589 passed. Runtime stop
-   now bypasses queued/active Agent work (52 related regression passes). Verify its
-   commit's CI, then continue management selectors, rich formatting and streaming parity, plus remaining provider
-   and physical-device artifact profiles.
-   Preserve separate real-account and cross-device ingress acceptance requirements.
-   Schema 41 management replies are pushed at c6cefd7; CI 34748541257 passed.
-   Schema 42 read-only task pages, cursors and independent control response delivery pass
-   76 related tests, 33 migration tests and typecheck. CI 34748841147 passed for 4e27457. Task cancellation buttons now pass 79 focused
-   regression tests; verify their committed CI. Continue remaining ownership/acceptance
-   gaps and management response rate-refusal parity without treating menus as cutover proof.
+1. Use the verified local CM parent bridge with an active non-model run/wait channel and
+   a frozen controller version. CBC r3 returned a real completion; 23 targeted tests
+   pass after primary status/orphan-artifact corrections. Local bridge publication is
+   separate from its future TS owner port and from an idle desktop callback. The updated
+   Python ownership inventory includes this new owner. See delegation/README.md for
+   native identities and current handles; do not restart terminal attempts.
+   Continue cron owner parity: AGY batch 1 is rejected pending its revision 2 fixes for
+   fencing, uncertain-attempt replay and migration preservation. The actual Python owners
+   and adversarial evidence remain authoritative over the design proposal.
 2. Complete the remaining ownership/acceptance matrix below. Prioritize normal execution,
    transport delivery and recovery across supported providers/devices over disconnected
    helper additions. Do not waive an original requirement to obtain a release.
-3. Keep the current Gemini OAuth/client eligibility failure classified as
-   `native_client_unsupported`. Do not repeat an identical account probe without changed
-   runtime/auth eligibility. This does not block progress on other migration owners.
+3. Prioritize native AGY integration for the user's Google CLI workflow. Official personal
+   Gemini CLI service retired on June 18, 2026; stop treating its account rejection as a
+   temporary blocker for a forward legacy port. Preserve explicit enterprise/API legacy
+   compatibility without renaming persisted session references. CBC/AGY process completion
+   and their native conversation continuity require separate acceptance.
 4. Rehearse data migration/rollback and clean installation before CM-R7. Production remains
    Python until its writer is fenced and the TS cutover gates actually pass.
 

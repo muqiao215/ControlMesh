@@ -11,6 +11,20 @@ from controlmesh.runtime.host_jobs import (
     single_step_host_job_spec,
     task_host_job_id,
 )
+from controlmesh.runtime.host_job_bridge import (
+    AttemptBindingError,
+    DispatchIntentError,
+    HostJobBridgeError,
+    UncertainDispatchError,
+    await_terminal_event,
+    consume_terminal_event,
+    external_tool_use_id,
+    process_state,
+    read_attempt,
+    read_dispatch_intent,
+    run_attempt,
+    terminal_event_payload,
+)
 from controlmesh.runtime.models import AgentInboxItem, RuntimeEvent
 from controlmesh.runtime.registry import (
     ProcessLeaseStore,
@@ -25,7 +39,10 @@ from controlmesh.runtime.store import RuntimeEventStore
 __all__ = [
     "AgentInboxItem",
     "AgentInboxStore",
+    "AttemptBindingError",
+    "DispatchIntentError",
     "HostJob",
+    "HostJobBridgeError",
     "HostJobRunner",
     "HostJobSpec",
     "HostJobStep",
@@ -37,8 +54,17 @@ __all__ = [
     "RuntimeEventStore",
     "RuntimeRegistry",
     "SlotManager",
+    "UncertainDispatchError",
     "append_task_event",
+    "await_terminal_event",
+    "consume_terminal_event",
     "default_test_execution_steps",
+    "external_tool_use_id",
+    "process_state",
+    "read_attempt",
+    "read_dispatch_intent",
+    "run_attempt",
     "single_step_host_job_spec",
     "task_host_job_id",
+    "terminal_event_payload",
 ]
