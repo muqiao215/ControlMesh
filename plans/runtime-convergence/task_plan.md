@@ -304,3 +304,8 @@ Retained host-output checkpoint: normal control/CLI can read bounded per-stream 
 with strict principal isolation and execution-bound cursors. Remaining log owner is
 durable streaming during execution and long-job persistence, alongside normal workunit
 creation/automatic advancement and the unchanged full migration/release matrix.
+
+New host workflow checkpoint: normal controls/CLI create fresh definitions and atomically
+start an explicitly approved step. Legacy import is no longer required for this path.
+Next: automatic advancement for authorized steps and parity for Python workunit routing,
+plus durable long-running execution/logs; original full migration matrix stays open.

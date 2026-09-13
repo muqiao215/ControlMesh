@@ -1057,3 +1057,19 @@ The revised regression covers real shell Unicode/stderr, recovery, owner/field r
 invalid/corrupt evidence, bound cursors and CLI parsing. Result: 36 pass;  0 fail;  318 expect() calls; Ran 36 tests across 3 files. [16.55s]
 Typecheck/diff check passed. This is post-process retained output; durable streaming,
 workunit creation/advancement and all remaining host/full runtime parity remain open.
+
+## 2026-09-13 — normal host creation and approved-step startup
+
+create_host_job/create-host-job now creates fresh definitions in the registered workspace
+without importing runtime history. Input cannot set runtime fields or skip approval.
+start_host_step/start-host-step verifies the current receipt and atomically creates and
+enqueues a deterministic principal/job/revision/step task. Replays inspect the original
+task/run even after completion and runtime reopen. No duplicate task is created.
+
+Real bash two-step control tests cover no-import creation, definition field refusal,
+approval requirements, injected enqueue failure rolling back task creation, replay and
+reopen; file-backed CLI parsing preserves definitions/receipts. Regression with real
+SpecMesh: 37 pass;  0 fail;  311 expect() calls; Ran 37 tests across 4 files. [9.22s]
+Typecheck and diff check passed. Python heuristic workunit routing, automatic authorized
+advancement and durable long-running logs/process ownership remain; no full migration
+or production cutover claim.

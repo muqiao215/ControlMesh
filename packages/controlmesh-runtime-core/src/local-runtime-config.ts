@@ -178,7 +178,7 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
       const { runner, store, registration, worker } = registered(task);
       const execution = new OpenCodeTaskAdapter(kernel, cache, actor, store, worker, runner, registration).prepare(task);
       return specmesh ? specmesh.bind(execution, registration.admission.required_reads) : execution;
-    }, current, object(config.limits) ? config.limits : {});
+    }, current, object(config.limits) ? config.limits : {}, object(config.host) ? workspace.directory as string : undefined);
     const recovery: LocalRuntimeRecovery = {
       inspect: (taskId, revision, effectId) => {
         current(); runtime.queueStatus();

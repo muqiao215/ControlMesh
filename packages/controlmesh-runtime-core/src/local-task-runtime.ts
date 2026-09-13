@@ -52,7 +52,7 @@ export class LocalTaskRuntime {
   private hostCancellationCursor = "";
 
   constructor(readonly kernel: RuntimeKernel, actor: Principal, source: IngressSource,
-    private readonly resolve: LocalTaskResolver, private readonly authorize: () => void, options: LocalRuntimeOptions = {}) {
+    private readonly resolve: LocalTaskResolver, private readonly authorize: () => void, options: LocalRuntimeOptions = {}, private readonly hostWorkspace?: string) {
     this.actor = structuredClone(actor);
     identifier(actor.device_id);
     for (const scope of ["task:read", "task:execute", "task:reconcile", "task:admin"]) requireScope(actor, scope);
@@ -119,6 +119,36 @@ export class LocalTaskRuntime {
         run: run ? { run_id: run.run_id, state: run.state, outcome: run.outcome ? JSON.parse(run.outcome) : null } : null };
     });
     return { tasks, next_after: rows.length > limit ? tasks.at(-1)!.task_id : null };
+  }
+  createHostJob(requestId: string, raw: unknown) {
+    this.current(); requireScope(this.actor, "task:admin");
+    requireThat(this.hostWorkspace && this.actor.origin === "human_request", "host_creation_not_registered");
+    requireThat(object(raw) && Object.keys(raw).every(key => ["job_id", "summary", "plan_id", "job_kind", "steps"].includes(key))
+      && Array.isArray(raw.steps) && raw.steps.length >= 1 && raw.steps.length <= 256, "invalid_host_job_definition");
+    for (const step of raw.steps) requireThat(object(step) && Object.keys(step).every(key => ["id", "title", "command", "kind", "side_effect"].includes(key))
+      && typeof step.command === "string" && step.command.trim().length > 0, "invalid_host_step_definition");
+    return command(this.kernel.db, this.actor, requestId, "local.create_host_job", { definition: raw, workspace: this.hostWorkspace }, () => {
+      this.current(); const at = new Date(this.kernel.db.now()).toISOString();
+      return new HostJobStore(this.kernel.db, () => this.current()).put(this.actor, `host-create-${digest(requestId)}`, 0,
+        { ...raw, repo: this.hostWorkspace, created_at: at, updated_at: at,
+          steps: (raw.steps as Record<string, unknown>[]).map(step => ({ ...step, cwd: this.hostWorkspace, approval_required: true })) });
+    }, value => { this.current(); return value; });
+  }
+  startHostStep(requestId: string, approval: unknown) {
+    this.current(); requireThat(this.hostWorkspace && this.actor.origin === "human_request", "host_creation_not_registered");
+    requireScope(this.actor, "task:execute"); requireScope(this.actor, "task:create");
+    const result = command(this.kernel.db, this.actor, requestId, "local.start_host_step", { approval, workspace: this.hostWorkspace }, () => {
+      this.current();
+      const verified = new HostJobApprovals(this.kernel.db, () => this.current()).assertApproved(this.actor, approval);
+      const job = new HostJobStore(this.kernel.db, () => this.current()).get(this.actor, verified.job_id)!;
+      requireThat(job.job.repo === this.hostWorkspace, "host_job_workspace_mismatch");
+      const taskId = `host-step-${digest([this.actor.id, verified.job_id, verified.revision, verified.step_id]).slice(0, 40)}`;
+      const submitted = this.submit(`host-submit-${digest(requestId)}`, { task_id: taskId, chat_id: "host-jobs", status: "waiting", provider: "host",
+        repo_root: this.hostWorkspace, title: job.job.summary, host_job: { job_id: verified.job_id, revision: verified.revision, step_id: verified.step_id, approval: verified } }, { chat_id: "host-jobs" });
+      const queued = this.enqueue(`host-enqueue-${digest(requestId)}`, taskId, submitted.revision);
+      return { task_id: taskId, run_id: queued.run_id };
+    }, value => { this.current(); return value; });
+    return { task: this.inspectTask(result.task_id), run: this.inspect(result.run_id) };
   }
   hostOutput(taskId: string, request: HostOutputPageRequest = {}) {
     this.current(); return readHostOutput(this.kernel, this.actor, taskId, request);

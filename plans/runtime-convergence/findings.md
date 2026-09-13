@@ -2289,3 +2289,9 @@ RuntimeKernel.inspect allows administrative cross-principal inspection. Host out
 not inherit that as transcript permission: readHostOutput explicitly checks the stored
 task principal before reading effects. Continuation pages bind effect ID and observation
 digest so a newer execution cannot silently replace the page source.
+
+Fresh host definitions and legacy import need separate authority surfaces. New definitions
+accept only command graph metadata and receive workspace/timestamps/approval requirements
+from registered runtime configuration. Approved-step startup wraps ingress plus enqueue
+in one transaction; deterministic task identity includes principal to avoid cross-owner
+collisions. A normal task requires no direct HostJobStore access or migrated JSON files.

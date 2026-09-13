@@ -372,3 +372,26 @@ configured principal even if that principal has general task-admin inspection ri
 task/effect state and actual process reason remain separate. This endpoint reads database
 observations only; it does not open stored stdout_path/stderr_path. Output arrives after
 process supervision returns; durable real-time streaming and long-job logs remain pending.
+
+### Create a new host job without legacy import
+
+With an explicit host registration, `create-host-job --file job.json` accepts this shape:
+
+```json
+{"job_id":"build","summary":"Build and validate","steps":[{"id":"build","command":"make"},{"id":"test","command":"make test"}]}
+```
+
+Allowed job fields are job_id, summary, plan_id, job_kind and steps. Each step accepts id,
+title, command, kind and side_effect. The runtime supplies the registered workspace,
+timestamps and approval_required=true. Creating a job does not execute it.
+
+Approve the next step with `approve-host-step build --step build --revision 1`. Save the
+returned receipt object (the JSON result field, not the whole response envelope), then run
+`start-host-step --file approval.json`. Use `--socket` on all commands and retain explicit
+`--request-id` values when retrying uncertain responses. Starting atomically creates and
+enqueues a task; the response includes its task and run IDs. Read that task with inspect
+or host-output. After completion, inspect-host-job gives the revision for the next approval.
+
+Current workflow requires explicit approval/start for each step. It is not automatic
+advancement or Python workunit heuristic routing. New command definitions cannot import
+PID/state/approval metadata or select a different filesystem root.
