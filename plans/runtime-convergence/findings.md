@@ -2495,3 +2495,22 @@ quota exhaustion. Initial OAuth refresh changed a registered credential identity
 currentness correctly refused; requalification exposed the actual eligibility failure.
 Only the anchored native startup envelope with nonzero exit and empty stdout gets this
 classification; assistant text or a success exit cannot assert it.
+
+
+## 2026-09-13 — continuity consolidation and next transport owner
+
+The accumulated progress file had 1,522 lines and its Current section still claimed
+Gemini had no registered task/process integration. Host parity also retained a superseded
+management-loss gap. Current plan/progress/host-parity were consolidated against current
+implementation and scoped evidence; historical text remains in Git at 3a56eed. This
+changes handoff accuracy, not acceptance scope.
+
+TS runtime has Feishu inbound/delivery modules and the generic durable DeliveryOutbox,
+but no Telegram transport module was found in src. Python's Telegram owner includes
+sender.py, inbound_spool.py, streaming/edit_streaming, callbacks and dedup.py. In particular
+sender._with_telegram_send_retries retries TelegramNetworkError and TelegramRetryAfter
+up to three attempts; send result uncertainty must be handled explicitly when porting
+into the durable outbox, rather than accidentally duplicating external messages. DedupeCache
+is an in-memory TTL/LRU and does not by itself provide cross-restart delivery authority.
+Next implementation should connect normal Telegram delivery/outcome handling, followed by
+its remaining ingress/file/streaming behavior. No real message was sent in this audit.

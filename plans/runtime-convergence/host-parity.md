@@ -1,6 +1,6 @@
 # Host execution parity — remaining owners
 
-Status: in_progress. Evidence inspected at b361e0a; no production writer switch.
+Status: in_progress. Updated through 3a56eed; no production writer switch.
 
 The Python HostJobRunner is deliberately host-only: tasks/hub.py validates source policy
 with sandbox_available=False both at preview and actual host dispatch. A new container
@@ -27,36 +27,19 @@ The preceding configured-host and SpecMesh tests prove those particular paths; t
 not establish this matrix, full TS migration, or release readiness.
 
 
-## Durable execution owner: implementation boundary
+## Durable execution owner — current boundary
 
-Live cm-runtime service/host tests now distinguish client disconnect from service loss.
-Closed request sockets leave execution running to completion. SIGKILL of the execution
-service kills the anchored command; reopen retains one episode/effect, no terminal
-observation and reconciliation required. This is a verified gap, not detached acceptance.
+`host.detached` now launches an independent execution owner; the historical management-
+loss gap described in earlier revisions is implemented. The owner retains supervision,
+lease renewal, current authority and local-run projection. Management reconnect does not
+re-enqueue it. Same-approved-plan continuation is scoped to the original approval and
+leaves unrelated queued work untouched.
 
-Next implementation must split management connection lifetime from an independently
-running host execution owner. The owner, not a reconnecting controller, must retain the
-ProcessSupervisor, current episode/fence, environment/workflow/config binding, output sink
-and immutable total deadline. It must perform current-authority renewal and atomically
-persist final outcome even when the management service is absent. A controller restarting
-must inspect that persisted ownership and avoid re-enqueueing or revoking a still-current
-owner solely because its own in-memory active map is empty.
+Actual tests cover management SIGKILL beyond the initial short lease, cancellation from
+a reopened manager, execution-owner SIGKILL, launch acknowledgement loss and bounded
+pre-admission input. A killed execution owner leaves uncertainty and no automatic replay;
+the process anchor still kills commands when its owner disappears.
 
-The current LocalTaskRuntime.perform owns renewal and final local_runs projection. Those
-operations must move together for detached host work; a subprocess that only runs shell
-would lose cancellation/config/fencing checks. LocalTaskRuntime.recover already leaves
-leased/running episodes alone, but expired recovery and explicit stop must distinguish
-management shutdown from task cancellation. Keep the shared process-anchor disconnect
-kill behavior: the anchor's parent becomes the independent execution owner.
-
-Before enabling this path: kill/restart the management service mid-command and prove the
-same execution finishes exactly once; cancel from the restarted service and prove stop;
-kill the execution owner and retain uncertainty without replay; reject stale owner after
-fence change; preserve output and workflow gate checks; exercise launch-before-ack crash.
-Do not adopt a legacy imported PID or expose command/environment via process arguments.
-
-
-Detached owner fault evidence now covers actual owner SIGKILL (command stops, one execution,
-unknown result), bounded pre-admission input and simulated launch-ack loss (no redispatch).
-This does not establish every instruction-level launch crash window or offline whole-plan
-advancement. The management process still owns admission of subsequent approved steps.
+These tests do not establish every instruction-level crash window, all host source and
+operator environment parity or production deployment. Keep the remaining table items open
+until their exact required evidence is present. See progress.md for current broad results.
