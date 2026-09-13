@@ -1,5 +1,5 @@
 import { command, requireScope } from "./commands";
-import type { TelegramControlReply } from "./telegram-control-reply";
+import type { TelegramControlReply, TelegramTaskCancelAction } from "./telegram-control-reply";
 import { TelegramEventAuthenticator, assertTelegramIncoming, type TelegramIncomingMessage, type TelegramIncomingCallback } from "./telegram-event-auth";
 import { TaskIngress } from "./task-ingress";
 import type { LocalTaskRuntime } from "./local-task-runtime";
@@ -119,9 +119,9 @@ export class TelegramInbox {
       "telegram_callback_corrupted");
     return callback;
   }
-  private applyCallbacks(runtime: LocalTaskRuntime, deliveries: DeliveryOutbox, adapterId: string, limit: number): number {
-    const rows = this.kernel.db.sql.query("SELECT * FROM telegram_callbacks WHERE bot_id=? AND principal=? AND state='pending' ORDER BY received_at,rowid LIMIT ?")
-      .all(this.bot_id, this.actor.id, limit) as CallbackRow[];
+  private applyCallbacks(runtime: LocalTaskRuntime, deliveries: DeliveryOutbox, adapterId: string, limit: number, managementOnly = false): number {
+    const rows = this.kernel.db.sql.query("SELECT * FROM telegram_callbacks WHERE bot_id=? AND principal=? AND state='pending' AND (?=0 OR json_extract(payload,'$.choice_id') LIKE 'cmg:%') ORDER BY received_at,rowid LIMIT ?")
+      .all(this.bot_id, this.actor.id, managementOnly ? 1 : 0, limit) as CallbackRow[];
     let applied = 0;
     for (const original of rows) {
       try {
@@ -132,6 +132,13 @@ export class TelegramInbox {
           const callback = this.loadCallback(row);
           requireThat(!this.auth.policy({ ...callback, schema_version: "controlmesh.telegram_incoming.v1", text: callback.choice_id,
             created_at: row.received_at, mentions_local_bot: true }), "telegram_event_policy_changed");
+          if (callback.choice_id.startsWith("cmg:")) {
+            const action = this.managementAction(adapterId, callback);
+            deliveries.assertTelegramTaskAction(adapterId, callback, action);
+            runtime.cancel(`tg-management-cancel-${row.id}`, action.task_id, action.revision);
+            this.kernel.db.sql.query("UPDATE telegram_callbacks SET state='applied',task_id=?,reason=NULL WHERE id=?").run(action.task_id, row.id);
+            return true;
+          }
           if (this.kernel.db.sql.query(`SELECT 1 FROM telegram_inbox WHERE bot_id=? AND principal=? AND chat_id=?
             AND json_extract(payload,'$.thread_id')=? AND state!='applied' AND COALESCE(control_kind,'')!='tasks'
             AND (reason IS NULL OR reason NOT IN ('telegram_event_order_requires_review','telegram_input_predates_cancellation'))
@@ -152,6 +159,25 @@ export class TelegramInbox {
       }
     }
     return applied;
+  }
+  private managementAction(adapterId: string, callback: TelegramIncomingCallback): TelegramTaskCancelAction {
+    const adapter = digest({ adapter: "telegram_text.v1", adapter_id: adapterId, bot_id: this.bot_id, transport: "telegram" });
+    const row = this.kernel.db.sql.query("SELECT inbox_id,payload,payload_digest,receipt FROM telegram_control_replies WHERE principal=? AND bot_id=? AND adapter_digest=? AND chat_id=? AND remote_message_id=? AND state='sent'")
+      .get(this.actor.id, this.bot_id, adapter, callback.chat_id, callback.message_id) as { inbox_id: string; payload: string; payload_digest: string; receipt: string } | null;
+    requireThat(row, "telegram_management_reply_unconfirmed");
+    const reply = JSON.parse(row.payload) as TelegramControlReply, receipt = JSON.parse(row.receipt);
+    const source = this.kernel.db.sql.query("SELECT * FROM telegram_inbox WHERE id=?").get(row.inbox_id) as InboxRow | null;
+    requireThat(source?.state === "applied" && source.control_kind === "tasks", "telegram_management_source_changed");
+    const original = this.load(source);
+    requireThat(!this.auth.policy(original) && digest(reply) === row.payload_digest && receipt.reply_digest === row.payload_digest
+      && receipt.adapter_digest === adapter && receipt.remote_message_id === callback.message_id && reply.request_id === source.id
+      && reply.bot_id === callback.bot_id && reply.chat_id === callback.chat_id && reply.thread_id === callback.thread_id,
+      "telegram_management_reply_changed");
+    requireThat(!this.kernel.db.sql.query("SELECT 1 FROM telegram_callbacks WHERE principal=? AND bot_id=? AND state='applied' AND json_extract(payload,'$.choice_id')=? LIMIT 1")
+      .get(this.actor.id, this.bot_id, callback.choice_id), "telegram_management_action_consumed");
+    const action = reply.actions?.find(action => action.id === callback.choice_id);
+    requireThat(action?.operation === "cancel", "telegram_management_action_unavailable");
+    return action;
   }
   /** UI acknowledgement is independent of execution; unknown HTTP outcomes never requeue an Agent. */
   async confirmCallbacks(deliveries: DeliveryOutbox, adapterId: string): Promise<boolean> {
@@ -247,7 +273,9 @@ export class TelegramInbox {
     this.check("telegram:process");
     this.classifyPendingControls();
     const stopped = this.applyStops(runtime, 16);
-    return stopped + (deliveries && adapterId ? this.applyTaskViews(deliveries, adapterId, 16 - stopped) : 0);
+    if (!deliveries || !adapterId) return stopped;
+    const managed = this.applyCallbacks(runtime, deliveries, adapterId, 16 - stopped, true);
+    return stopped + managed + this.applyTaskViews(deliveries, adapterId, 16 - stopped - managed);
   }
   private classifyPendingControls(): void {
     const rows = this.kernel.db.sql.query("SELECT * FROM telegram_inbox WHERE principal=? AND bot_id=? AND state='pending' AND control_kind IS NULL ORDER BY rowid LIMIT 129")
@@ -278,6 +306,14 @@ export class TelegramInbox {
             ...(page.tasks.length ? [] : ["No tasks on this page."]), ...(page.next ? ["", `Next page: /tasks after ${page.next}`] : [])].join("\n")
             : "Usage: /tasks or /tasks after <task_id>. Other task management commands are not available in this runtime yet.";
           const reply: TelegramControlReply = { request_id: row.id, bot_id: this.bot_id, chat_id: message.chat_id, thread_id: message.thread_id, text };
+          if (page) {
+            const actions = page.tasks.filter(task => ["waiting", "running"].includes(task.status)).map(task => ({
+              id: `cmg:${digest([row.id, this.actor.id, task.task_id, task.revision, task.route_digest, "cancel"]).slice(0, 48)}`,
+              label: Array.from(`Cancel ${task.name || task.task_id}`).slice(0, 64).join(""), operation: "cancel" as const,
+              task_id: task.task_id, revision: task.revision, route_digest: task.route_digest,
+            }));
+            if (actions.length) reply.actions = actions;
+          }
           requireThat(text.length <= 4096, "telegram_task_page_too_large");
           this.kernel.db.sql.query(`INSERT INTO telegram_control_replies (inbox_id,principal,bot_id,payload,payload_digest,state,chat_id)
             VALUES (?,?,?,?,?,'pending',?)`).run(row.id, this.actor.id, this.bot_id, canonical(reply), digest(reply), message.chat_id);

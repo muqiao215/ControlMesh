@@ -348,3 +348,18 @@ GitHub latest releases remain CM `v0.43.0`, Viewer `v1.1.0`, SpecMesh `v1.2.1`; 
 occurred. Viewer HEAD is `9ea53f1`, SpecMesh HEAD `d393c54`; their respective handoff-service
 and independent-port plans retain open acceptance phases. Unrelated Viewer untracked work
 was preserved. This checkpoint is not final release/local-alignment acceptance.
+
+## Task management cancellation
+
+- Schema 42 task-page commit `4e27457` CI `34748841147` completed successfully.
+- Task pages now issue private `cmg:` cancellation actions bound to the current task
+  revision and reply-route digest. Consumption requires an accepted management message
+  receipt, matching bot/chat/topic, current source policy and task authority. The existing
+  callback journal atomically records cancellation and one-time consumption; ordinary
+  `cmc:` Agent continuation remains separate.
+- Control processing and callback acknowledgement run outside the active native work
+  queue. Task pages select authorized reply routes even for non-chat execution origins.
+- Focused Telegram inbox/polling/control and shared Feishu checks: **79 pass, 0 fail**,
+  719 assertions, 3.47s (`/tmp/cm-management-cancel-final.log`). Added quota, active
+  cancellation, duplicate/reopen, wrong-parent and stale-version cases. No real account
+  was contacted. Full migration, production switch and release remain incomplete.

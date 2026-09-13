@@ -450,3 +450,51 @@ test("callback retained before policy revocation cannot execute after reopen", a
   expect(f.seen).toHaveLength(1);
   expect(reopened.inbox.listBlocked()).toContainEqual(expect.objectContaining({ reason: "telegram_event_policy_changed" }));
 });
+
+function managementClick(data: string, update = 100, parent = 1) {
+  return { update_id: update, callback_query: { id: `management_${update}`, data, from: { id: 777, is_bot: false },
+    message: { message_id: parent, date: Math.floor(Date.now() / 1000), from: { id: 123456, is_bot: true }, chat: { id: 777, type: "private" } } } };
+}
+
+test("management cancel bypasses quota and consumes the issued action across reopen", async () => {
+  const f = fixture(); f.quota(); f.receive(f.inbox, event()); await f.inbound.drain();
+  const view = event(2); view.message.text = "/tasks"; f.receive(f.inbox, view); await f.inbound.drain();
+  const choice = f.posts[0].reply_markup.inline_keyboard[0][0].callback_data;
+  expect(choice).toMatch(/^cmg:/);
+  const task = f.db.sql.query("SELECT task_id FROM tasks").get() as { task_id: string };
+  const click = managementClick(choice); f.receive(f.inbox, click); await f.inbound.drain();
+  expect(f.kernel.inspect(actor, task.task_id).task.status).toBe("cancelled"); expect(f.seen).toHaveLength(0);
+  const revision = f.kernel.inspect(actor, task.task_id).revision;
+  await f.close(); const next = f.open(); f.receive(next.inbox, click); await next.inbound.drain();
+  expect(next.kernel.inspect(actor, task.task_id).revision).toBe(revision);
+  f.receive(next.inbox, managementClick(choice, 101)); await next.inbound.drain();
+  expect(next.inbox.listBlocked()).toContainEqual(expect.objectContaining({ reason: "telegram_management_action_consumed" }));
+});
+
+test("management cancel rejects wrong parent and stale task revision", async () => {
+  const f = fixture(); f.quota(); f.receive(f.inbox, event()); await f.inbound.drain();
+  const view = event(2); view.message.text = "/tasks"; f.receive(f.inbox, view); await f.inbound.drain();
+  const choice = f.posts[0].reply_markup.inline_keyboard[0][0].callback_data;
+  f.receive(f.inbox, managementClick(choice, 100, 999)); await f.inbound.drain();
+  expect(f.inbox.listBlocked()).toContainEqual(expect.objectContaining({ reason: "telegram_management_reply_unconfirmed" }));
+  f.quota(false); const task = f.db.sql.query("SELECT task_id FROM tasks").get() as { task_id: string };
+  f.runtime.enqueue("release-for-stale-test", task.task_id, f.kernel.inspect(actor, task.task_id).revision); await f.inbound.drain();
+  f.receive(f.inbox, managementClick(choice, 101)); await f.inbound.drain();
+  expect(f.kernel.inspect(actor, task.task_id).task.status).toBe("done");
+  expect(f.inbox.listBlocked()).toContainEqual(expect.objectContaining({ reason: "telegram_management_task_stale" }));
+});
+
+
+test("management cancel interrupts active execution without waiting for its work queue", async () => {
+  const f = fixture("not finished", true), address = f.inbound.start();
+  const post = (body: unknown) => fetch(`http://${address.hostname}:${address.port}${address.path}`, { method: "POST", headers: headers(), body: JSON.stringify(body) });
+  await post(event()); await f.executionStarted;
+  const view = event(2); view.message.text = "/tasks"; await post(view); await f.taskViewSent;
+  // The transport has received the page; wait for its durable acknowledgement before clicking.
+  for (let attempt = 0; attempt < 100 && f.inbox.controlReplyStatus().sent === 0; attempt++) await Bun.sleep(5);
+  expect(f.inbox.controlReplyStatus().sent).toBe(1);
+  await post(managementClick(f.posts[0].reply_markup.inline_keyboard[0][0].callback_data));
+  await f.inbound.drain();
+  expect(f.kernel.inspect(actor, f.seen[0].task_id).task.status).toBe("cancelled");
+  expect(f.seen).toHaveLength(1); expect(f.acks).toHaveLength(1);
+});

@@ -3,12 +3,20 @@ import type { TelegramDeliveryConfiguration } from "./telegram-delivery";
 import { digest, object, requireThat } from "./value";
 
 /** Private runtime response, bound to an authenticated inbox request rather than a task. */
-export interface TelegramControlReply { request_id: string; bot_id: string; chat_id: string; thread_id: string; text: string }
+export interface TelegramTaskCancelAction { id: string; label: string; operation: "cancel"; task_id: string; revision: number; route_digest: string }
+export interface TelegramControlReply { request_id: string; bot_id: string; chat_id: string; thread_id: string; text: string; actions?: TelegramTaskCancelAction[] }
 export interface TelegramControlReceipt { reply_digest: string; adapter_digest: string; remote_message_id: string }
 
 export async function sendTelegramControlReply(config: TelegramDeliveryConfiguration, adapterDigest: string, request: typeof fetch,
   reply: TelegramControlReply, context: DeliveryContext, beforeDispatch: () => void): Promise<TelegramControlReceipt> {
   const issued = digest(reply), target = structuredClone(reply);
+  requireThat(reply.actions === undefined || Array.isArray(reply.actions) && reply.actions.length <= 10
+    && reply.actions.every(action => object(action) && /^cmg:[a-f0-9]{48}$/.test(action.id) && action.operation === "cancel"
+      && typeof action.label === "string" && Array.from(action.label).length >= 1 && Array.from(action.label).length <= 64
+      && /^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}$/.test(action.task_id) && Number.isSafeInteger(action.revision) && action.revision >= 1
+      && /^[a-f0-9]{64}$/.test(action.route_digest))
+    && new Set(reply.actions.map(action => action.id)).size === reply.actions.length, "telegram_control_actions_invalid");
+  const markup = reply.actions?.length ? { inline_keyboard: reply.actions.map(action => [{ text: action.label, callback_data: action.id }]) } : undefined;
   requireThat(/^[a-f0-9]{64}$/.test(reply.request_id) && reply.bot_id === config.bot_id && /^-?[1-9][0-9]*$/.test(reply.chat_id)
     && Number.isSafeInteger(Number(reply.chat_id)) && (reply.thread_id === "" || /^[1-9][0-9]*$/.test(reply.thread_id) && Number.isSafeInteger(Number(reply.thread_id)))
     && typeof reply.text === "string" && reply.text.length > 0 && reply.text.length <= 4096, "telegram_control_reply_invalid");
@@ -30,7 +38,7 @@ export async function sendTelegramControlReply(config: TelegramDeliveryConfigura
   let response: Response;
   try { response = await request(`https://api.telegram.org/bot${token}/sendMessage`, { method: "POST", redirect: "error", signal: context.signal,
     headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chat_id: target.chat_id, text: target.text,
-      link_preview_options: { is_disabled: true }, ...(target.thread_id ? { message_thread_id: Number(target.thread_id) } : {}) }) }); }
+      link_preview_options: { is_disabled: true }, ...(markup ? { reply_markup: markup } : {}), ...(target.thread_id ? { message_thread_id: Number(target.thread_id) } : {}) }) }); }
   catch { requireThat(false, "telegram_control_reply_unknown"); }
   requireThat(response.body, "telegram_control_reply_unknown");
   const reader = response.body.getReader(), chunks: Uint8Array[] = []; let size = 0;
@@ -48,7 +56,8 @@ export async function sendTelegramControlReply(config: TelegramDeliveryConfigura
     && value.from.is_bot === true && String(value.from.id) === target.bot_id && Number.isSafeInteger(value.from.id)
     && String(value.message_thread_id ?? "") === target.thread_id && value.text === target.text
     && Number.isSafeInteger(value.date) && Number(value.date) * 1000 >= started - 5000
-    && !value.reply_markup && !value.reply_to_message && !value.external_reply && !value.forward_origin && !value.sender_chat
+    && (markup ? digest(value.reply_markup ?? null) === digest(markup) : !value.reply_markup)
+    && !value.reply_to_message && !value.external_reply && !value.forward_origin && !value.sender_chat
     && !value.business_connection_id && !value.edit_date && !value.is_ephemeral && !value.is_from_offline && !value.is_paid_post
     && !value.direct_messages_topic, "telegram_control_receipt_mismatch");
   return { reply_digest: issued, adapter_digest: adapterDigest, remote_message_id: String(value.message_id) };

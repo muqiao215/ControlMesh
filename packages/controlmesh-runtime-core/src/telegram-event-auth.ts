@@ -88,7 +88,7 @@ export class TelegramEventAuthenticator {
       || message.sender_chat || message.business_connection_id || message.forward_origin || message.guest_query_id)
       return { kind: "ignored", reason: "telegram_callback_context_unsupported" };
     requireThat(typeof value.id === "string" && /^[A-Za-z0-9_-]{1,256}$/.test(value.id)
-      && typeof value.data === "string" && /^cmc:[a-f0-9]{48}$/.test(value.data), "telegram_callback_identity_invalid");
+      && typeof value.data === "string" && /^cm[cg]:[a-f0-9]{48}$/.test(value.data), "telegram_callback_identity_invalid");
     requireThat(Number.isSafeInteger(value.from.id) && id(String(value.from.id))
       && Number.isSafeInteger(message.from.id) && Number.isSafeInteger(message.message_id) && id(String(message.message_id))
       && Number.isSafeInteger(message.chat.id) && id(String(message.chat.id), true)

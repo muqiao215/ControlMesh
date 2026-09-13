@@ -80,8 +80,9 @@ No claim that full TS migration or distributed coordination has completed. A sco
    Preserve separate real-account and cross-device ingress acceptance requirements.
    Schema 41 management replies are pushed at c6cefd7; CI 34748541257 passed.
    Schema 42 read-only task pages, cursors and independent control response delivery pass
-   76 related tests, 33 migration tests and typecheck. Commit/push and verify full CI,
-   then continue management mutation menus and rate-refusal behavior for these responses.
+   76 related tests, 33 migration tests and typecheck. CI 34748841147 passed for 4e27457. Task cancellation buttons now pass 79 focused
+   regression tests; verify their committed CI. Continue remaining ownership/acceptance
+   gaps and management response rate-refusal parity without treating menus as cutover proof.
 2. Complete the remaining ownership/acceptance matrix below. Prioritize normal execution,
    transport delivery and recovery across supported providers/devices over disconnected
    helper additions. Do not waive an original requirement to obtain a release.

@@ -84,6 +84,7 @@ export class WebhookInboundRuntime {
       do {
         this.controlDirty = false;
         this.inbox.applyControl?.(this.runtime, this.deliveries, this.adapterId);
+        if (await this.inbox.confirmCallbacks?.(this.deliveries, this.adapterId)) this.controlDirty = true;
         if (await this.inbox.confirmControlReplies!(this.deliveries, this.adapterId)) this.controlDirty = true;
       } while (this.controlDirty && !this.stopping);
     })().catch(error => { this.failure = error instanceof RuntimeConflict ? error.code : `${this.transport}_control_delivery_failed`; })
