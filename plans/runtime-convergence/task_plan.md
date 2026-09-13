@@ -299,3 +299,8 @@ retained cancelled outcomes converge through bounded normal recovery after reope
 corrupt-evidence refusal and idempotency checks. Next: remaining host workunit creation,
 automatic authorized step advancement and durable long-running process/log ownership,
 then continue all original CM-R0–R7 acceptance and release gates.
+
+Retained host-output checkpoint: normal control/CLI can read bounded per-stream output
+with strict principal isolation and execution-bound cursors. Remaining log owner is
+durable streaming during execution and long-job persistence, alongside normal workunit
+creation/automatic advancement and the unchanged full migration/release matrix.

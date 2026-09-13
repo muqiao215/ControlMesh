@@ -2284,3 +2284,8 @@ persistent injected HostJob write failure must surface from drain as well as the
 completion path. Recovering reporting from an existing cancelled episode never restores
 its lease; immutable manifest/observation digests and current running snapshot bind the
 projection. Absence of retained output still cannot prove native process termination.
+
+RuntimeKernel.inspect allows administrative cross-principal inspection. Host output must
+not inherit that as transcript permission: readHostOutput explicitly checks the stored
+task principal before reading effects. Continuation pages bind effect ID and observation
+digest so a newer execution cannot silently replace the page source.

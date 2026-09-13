@@ -1043,3 +1043,17 @@ Configured host/local queue/control/process regression with real SpecMesh: 40 pa
 291 assertions, 9.87s (/tmp/cm-host-cancel-window-regression.log); typecheck/diff-check pass.
 Remaining: no retained outcome cannot prove termination; durable execution/logs, workunit
 creation/automatic advancement and other host-parity.md/full migration owners remain.
+
+## 2026-09-13 — authenticated retained host output
+
+Added host_output control plus host-output CLI with separate streams, bounded Unicode
+code-point pages, explicit effect/digest binding for later pages and evidence validation.
+Unavailable output differs from empty retained output; task/effect state is reported
+without interpreting text as completion. No filesystem log paths are followed.
+
+Initial regression found task:admin permits cross-principal kernel inspection, so the
+new output owner now additionally requires tasks.principal equal the configured actor.
+The revised regression covers real shell Unicode/stderr, recovery, owner/field refusal,
+invalid/corrupt evidence, bound cursors and CLI parsing. Result: 36 pass;  0 fail;  318 expect() calls; Ran 36 tests across 3 files. [16.55s]
+Typecheck/diff check passed. This is post-process retained output; durable streaming,
+workunit creation/advancement and all remaining host/full runtime parity remain open.

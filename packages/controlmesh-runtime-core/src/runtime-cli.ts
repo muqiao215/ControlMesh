@@ -13,6 +13,7 @@ export const runtimeHelp = `ControlMesh TypeScript 运行时（候选入口）
   status                          查看队列与并发容量
   tasks [--after ID] [--limit N]   查看任务、结果状态和阻塞原因
   inspect TASK                    查看任务及当前版本
+  host-output TASK              分页读取已保存的主机命令输出
   host-jobs                     查看主机任务摘要
   inspect-host-job JOB           查看主机任务和步骤
   approve-host-step JOB --step ID --revision N  批准当前版本的下一步骤
@@ -65,6 +66,7 @@ export function parseRuntimeCli(argv: string[]): RuntimeCliCommand | null {
   }
   const command = args[0]!, options: Record<string, string[]> = {
     "history-search": ["--provider", "--query"], "history-refresh": ["--provider"], "session-events": ["--session", "--limit", "--before"],
+    "host-output": ["--stream", "--offset", "--limit", "--effect", "--digest"],
     "host-jobs": ["--after", "--limit"], "inspect-host-job": [], "approve-host-step": ["--step", "--revision"],
     "prepare-adoption": ["--provider", "--session"], handoff: [], verify: [],
     ui: [], serve: ["--config"], status: [], tasks: ["--after", "--limit"], inspect: [], events: ["--after", "--limit"],
@@ -80,7 +82,7 @@ export function parseRuntimeCli(argv: string[]): RuntimeCliCommand | null {
   };
   const socket = text("--socket"); requireThat(isAbsolute(socket), "local_socket_path_invalid");
   const timeout_ms = number("--timeout-ms", 30_000); requireThat(timeout_ms > 0 && timeout_ms <= 300_000, "invalid_local_control_timeout");
-  const targeted = ["inspect-host-job", "approve-host-step", "inspect", "events", "new", "enqueue", "resume", "cancel", "tell", "prepare-adoption", "handoff", "verify"].includes(command);
+  const targeted = ["host-output", "inspect-host-job", "approve-host-step", "inspect", "events", "new", "enqueue", "resume", "cancel", "tell", "prepare-adoption", "handoff", "verify"].includes(command);
   requireThat(args.length === (targeted ? 2 : 1), "invalid_cli_arguments");
   const base = { command, socket, json: flags["--json"] === true, timeout_ms };
   if (command === "ui") return base;
@@ -101,6 +103,8 @@ export function parseRuntimeCli(argv: string[]): RuntimeCliCommand | null {
       case "status": request = { op: "status" }; break;
       case "tasks": request = { op: "list_tasks", after: flags["--after"] ?? "", limit: number("--limit", 50) }; break;
       case "inspect": request = { op: "inspect_task", task_id: args[1] }; break;
+      case "host-output": request = { op: "host_output", task_id: args[1], stream: flags["--stream"] ?? "stdout", offset: number("--offset", 0), limit: number("--limit", 4096),
+        ...(flags["--effect"] === undefined ? {} : { effect_id: text("--effect") }), ...(flags["--digest"] === undefined ? {} : { observation_digest: text("--digest") }) }; break;
       case "host-jobs": request = { op: "host_jobs", after: flags["--after"] ?? "", limit: number("--limit", 20) }; break;
       case "inspect-host-job": request = { op: "inspect_host_job", job_id: args[1] }; break;
       case "approve-host-step": identifier(text("--step")); request = { op: "approve_host_step", job_id: args[1], step_id: text("--step"), expected_revision: number("--revision") }; break;

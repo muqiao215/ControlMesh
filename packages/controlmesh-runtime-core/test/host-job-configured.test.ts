@@ -1,3 +1,5 @@
+import { readHostOutput } from "../src/host-job-output";
+import { parseRuntimeCli } from "../src/runtime-cli";
 import { expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, realpathSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -19,7 +21,7 @@ for (const recover of [false, true]) test(`configured host queue advances two ex
   const control = () => new LocalRuntimeControl(owned.runtime, undefined, owned.submissionIdentity, undefined, undefined, owned.recovery);
   try {
     new HostJobStore(owned.runtime.kernel.db, () => {}).put(actor, "create-job", 0, { job_id: "job", repo: workspace,
-      created_at: "2026-09-13", updated_at: "2026-09-13", steps: ["one", "two"].map(id => ({ id, command: `printf '${id}\\n' >> marker`, approval_required: true })) });
+      created_at: "2026-09-13", updated_at: "2026-09-13", steps: ["one", "two"].map(id => ({ id, command: `printf '${id}\\n' >> marker; printf '你🙂好'; printf '警告' >&2`, approval_required: true })) });
     expect(owned.describe().providers).toEqual([{ provider: "host", model: "" }]);
     const outOfOrder = await control().handle({ id: "approve-out-of-order", op: "approve_host_step", job_id: "job", expected_revision: 1, step_id: "two" });
     expect(outOfOrder.ok).toBe(false);
@@ -30,6 +32,8 @@ for (const recover of [false, true]) test(`configured host queue advances two ex
       const submitted = await control().handle({ id: `submit-${step}`, op: "submit", task: { task_id: step, chat_id: "test", status: "waiting", provider: "host",
         host_job: { job_id: "job", revision, step_id: step, approval: approval.result } } });
       expect(submitted.ok).toBe(true);
+      expect(await control().handle({ id: `before-output-${step}`, op: "host_output", task_id: step }))
+        .toMatchObject({ ok: true, result: { available: false } });
       const queued = await control().handle({ id: `enqueue-${step}`, op: "enqueue", task_id: step, expected_revision: 1 });
       expect(queued.ok).toBe(true);
       if (recover && index === 0) owned.runtime.kernel.db.sql.exec("CREATE TRIGGER lost_completion BEFORE UPDATE ON host_jobs WHEN NEW.revision=3 BEGIN SELECT RAISE(ABORT,'lost completion'); END;");
@@ -46,6 +50,24 @@ for (const recover of [false, true]) test(`configured host queue advances two ex
         expect(result.ok).toBe(true);
       }
       expect(owned.runtime.inspectTask(step).task.status).toBe("done");
+      const page = await control().handle({ id: `output-${step}`, op: "host_output", task_id: step, limit: 2 });
+      expect(page).toMatchObject({ ok: true, result: { available: true, text: "你🙂", next_offset: 2, offset_unit: "unicode_code_point" } });
+      const first = page.result as { effect_id: string; observation_digest: string };
+      expect(await control().handle({ id: `tail-${step}`, op: "host_output", task_id: step, offset: 2, effect_id: first.effect_id, observation_digest: first.observation_digest }))
+        .toMatchObject({ ok: true, result: { text: "好", next_offset: null } });
+      expect(await control().handle({ id: `stderr-${step}`, op: "host_output", task_id: step, stream: "stderr" }))
+        .toMatchObject({ ok: true, result: { text: "警告" } });
+      expect(await control().handle({ id: `unbound-${step}`, op: "host_output", task_id: step, offset: 1 })).toMatchObject({ ok: false, error: "host_output_cursor_binding_required" });
+      expect(await control().handle({ id: `changed-${step}`, op: "host_output", task_id: step, offset: 1, effect_id: first.effect_id, observation_digest: "a".repeat(64) }))
+        .toMatchObject({ ok: false, error: "host_output_observation_changed" });
+      expect(await control().handle({ id: `huge-${step}`, op: "host_output", task_id: step, limit: 8193 })).toMatchObject({ ok: false, error: "invalid_host_output_page" });
+      expect(await control().handle({ id: `override-${step}`, op: "host_output", task_id: step, principal: "other" })).toMatchObject({ ok: false, error: "unexpected_local_request_field" });
+      expect(() => readHostOutput(owned.runtime.kernel, { ...actor, id: "other" }, step)).toThrow();
+      const db = owned.runtime.kernel.db;
+      const retained = db.sql.query("SELECT payload FROM effect_observations WHERE effect_id=?").get(first.effect_id) as { payload: string };
+      db.sql.query("UPDATE effect_observations SET payload='{}' WHERE effect_id=?").run(first.effect_id);
+      expect(await control().handle({ id: `corrupt-${step}`, op: "host_output", task_id: step })).toMatchObject({ ok: false, error: "host_output_evidence_changed" });
+      db.sql.query("UPDATE effect_observations SET payload=? WHERE effect_id=?").run(retained.payload, first.effect_id);
       expect(readFileSync(join(workspace, "marker"), "utf8")).toBe(index === 0 ? "one\n" : "one\ntwo\n");
       if (index === 0) expect(owned.runtime.inspectHostJob("job")!.job.steps[1]!.state).toBe("pending");
     }
@@ -205,4 +227,9 @@ for (const mode of ["queued", "claimed", "stale", "forged"]) test(`pending host 
     await owned.runtime.drain();
     expect(db.sql.query("SELECT COUNT(*) AS n FROM effects").get()).toEqual({ n: 0 });
   } finally { await owned.close(); rmSync(root, { recursive: true, force: true }); }
+});
+
+ test("host output CLI preserves explicit execution and Unicode cursor binding", () => {
+  const parsed = parseRuntimeCli(["host-output", "task", "--socket", "/tmp/fixture.sock", "--stream", "stderr", "--offset", "2", "--effect", "effect", "--digest", "a".repeat(64)]);
+  expect(parsed?.request).toMatchObject({ op: "host_output", task_id: "task", stream: "stderr", offset: 2, effect_id: "effect", observation_digest: "a".repeat(64) });
 });

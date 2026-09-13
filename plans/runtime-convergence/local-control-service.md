@@ -359,3 +359,16 @@ completion binds a fresh passing snapshot. Recovery requires the same profile an
 passing check before accepting retained output. Failed checks preserve uncertain execution
 without replay. This verifies project workflow state; it does not attest that a shell command
 read Agent context or that project closeout was reviewed (`closeout_verified: false`).
+
+### Retained host output
+
+`host-output TASK --stream stdout --limit 4096` reads the latest retained host execution
+output through `host_output`. Use returned `effect_id`, `observation_digest`, and
+`next_offset` as `--effect`, `--digest`, and `--offset` for subsequent pages. Offsets count
+Unicode code points; limit is 1–8192. Stderr is a separate stream. Output is scoped to the
+configured principal even if that principal has general task-admin inspection rights.
+
+`available: false` means no retained outcome yet, not successful empty output. Returned
+task/effect state and actual process reason remain separate. This endpoint reads database
+observations only; it does not open stored stdout_path/stderr_path. Output arrives after
+process supervision returns; durable real-time streaming and long-job logs remain pending.

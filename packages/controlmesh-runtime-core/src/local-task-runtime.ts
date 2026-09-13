@@ -1,3 +1,4 @@
+import { readHostOutput, type HostOutputPageRequest } from "./host-job-output";
 import { recoverHostCancellation } from "./host-job-cancellation";
 import { HostJobStore } from "./host-job-store";
 import { HostJobApprovals } from "./host-job-approval";
@@ -118,6 +119,9 @@ export class LocalTaskRuntime {
         run: run ? { run_id: run.run_id, state: run.state, outcome: run.outcome ? JSON.parse(run.outcome) : null } : null };
     });
     return { tasks, next_after: rows.length > limit ? tasks.at(-1)!.task_id : null };
+  }
+  hostOutput(taskId: string, request: HostOutputPageRequest = {}) {
+    this.current(); return readHostOutput(this.kernel, this.actor, taskId, request);
   }
   hostJobs(after = "", limit = 20) {
     this.current(); return new HostJobStore(this.kernel.db, () => this.current()).list(this.actor, after, limit);
