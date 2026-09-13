@@ -289,3 +289,17 @@ Each decision is built against the frozen output contract's round/role requireme
 is parsed by the production scheduler. Both workers still communicate through scoped MCP.
 A completed scheduler drains again without new native requests. This qualifies these
 local happy paths, not every repair/round/error branch or physical-device combination.
+
+## Candidate backstage-event file migration
+
+Use `bun packages/controlmesh-runtime-core/scripts/migrate-runtime-events.ts` with
+`--source /absolute/events.jsonl --database /absolute/candidate.sqlite --principal OWNER
+--session SESSION_KEY`. The default is read-only preview: it validates one selected
+session's file and reports SHA-256, byte count, unique and duplicate event counts without
+creating/upgrading the target. Repeat with `--apply --sha256 DIGEST_FROM_PREVIEW` to import
+that exact snapshot. Existing event IDs with identical payloads replay; conflicting IDs
+roll back the event batch. Opening an older candidate target on apply upgrades its schema.
+
+The command does not discover files, start agents, replay tasks or modify source JSONL.
+Malformed input and unsupported numeric representations are refusals. Production event
+producer cutover is a separate pending migration gate.

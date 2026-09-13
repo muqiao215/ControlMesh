@@ -759,3 +759,18 @@ passed, 32 assertions, 466ms (`/tmp/cm-event-import-final.log`); typecheck and d
 passed. Import accepts bounded caller-supplied content; filesystem discovery, migration
 command/dry-run reporting and production producer wiring remain open. No local operator
 JSONL files were imported or modified.
+
+## 2026-09-13 — explicit event-file migration command
+
+Added scripts/migrate-runtime-events.ts with default dry-run and explicit source, target
+database, principal and session. Apply requires the SHA-256 returned by preview. Source
+reading is bounded to 16 MiB, canonical regular/no-follow, descriptor/path stable across
+read and strict UTF-8. Entire batch is validated in memory before opening the target.
+Apply consumes the verified snapshot, so later source changes cannot alter imported
+bytes. Preview creates no target database; source files are never modified.
+
+Real CLI subprocess tests plus event codec/import tests: 5 passed, 42 assertions, 604ms
+(`/tmp/cm-event-command.log`); typecheck and diff-check passed. Tests cover missing/stale
+digest refusal before target creation, successful apply/replay, unchanged source and
+symlink refusal. No operator history was migrated. Producer wiring and full cutover
+remain pending; this command only imports explicitly supplied backstage events.

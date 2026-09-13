@@ -209,3 +209,8 @@ Backstage import checkpoint: atomic caller-supplied JSONL import/export and loss
 integer round-trip implemented. Remaining migration work includes explicit file snapshot
 selection, dry-run/cutover command, production event producer wiring and rollback
 qualification; unsupported numeric forms must remain visible refusals.
+
+Backstage file migration checkpoint: explicit read-only preview and digest-bound apply
+command implemented and subprocess-tested. Remaining: actual producer/control wiring,
+operational cutover/export rollback qualification and unsupported numeric-form handling.
+No operator files are migrated automatically.

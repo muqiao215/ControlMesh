@@ -2169,3 +2169,10 @@ rounded Number. JSON export preserves numeric wire types, verified against Pytho
 Exponent-form unsafe numbers remain unsupported: legacy Python floats and integers
 must not silently become the same migration representation. Malformed JSONL batches
 are refused as a whole, unlike the tolerant Python viewer's skip-bad-line behavior.
+
+Event migration dry-run uses a separate in-memory database, avoiding accidental target
+schema upgrades during preview. Apply validates exact source hash and full batch before
+opening the target. The loaded snapshot is the authoritative import input; source path
+changes after reading cannot change it. Existing-target conflicts roll back event writes,
+but opening an older valid candidate database may upgrade its schema; this is not a
+production writer switch or a claim of whole-runtime rollback compatibility.
