@@ -11,7 +11,10 @@ export class WebhookInboundRuntime {
   private stopping = false;
   private activeRequests = 0;
   private failure: string | null = null;
-  constructor(readonly inbox: Pick<FeishuInbox, "receive" | "applyPending" | "status" | "listBlocked" | "retry"> & { confirmCallbacks?(deliveries: DeliveryOutbox, adapterId: string): Promise<boolean> }, private readonly runtime: LocalTaskRuntime, private readonly deliveries: DeliveryOutbox,
+  constructor(readonly inbox: Pick<FeishuInbox, "receive" | "applyPending" | "status" | "listBlocked" | "retry"> & {
+    applyControl?(runtime: LocalTaskRuntime): number;
+    confirmCallbacks?(deliveries: DeliveryOutbox, adapterId: string): Promise<boolean>;
+  }, private readonly runtime: LocalTaskRuntime, private readonly deliveries: DeliveryOutbox,
     private readonly adapterId: string, private readonly path = "/feishu/events", private readonly port = 0, private readonly transport: "feishu" | "telegram" = "feishu") {
     requireThat(/^\/[A-Za-z0-9/_-]{1,127}$/.test(path), `invalid_${transport}_event_path`);
   }
@@ -42,6 +45,11 @@ export class WebhookInboundRuntime {
   kick(): void {
     if (this.stopping) return;
     this.dirty = true;
+    try { this.inbox.applyControl?.(this.runtime); }
+    catch (error) {
+      this.failure = error instanceof RuntimeConflict ? error.code : `${this.transport}_ingress_control_failed`;
+      return;
+    }
     if (this.pumping) return;
     this.pumping = (async () => {
       do {

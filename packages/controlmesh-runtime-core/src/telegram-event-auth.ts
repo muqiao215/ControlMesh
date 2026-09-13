@@ -33,6 +33,11 @@ export function assertTelegramIncoming(value: unknown): asserts value is Telegra
 
 /** Secret-authenticated provider bytes; body fields cannot issue runtime permissions. */
 export class TelegramEventAuthenticator {
+  controlCommand(message: TelegramIncomingMessage): "stop" | null {
+    this.assertCurrent();
+    const command = /^\/stop(?:@([a-z0-9_]+))?(?:\s|$)/i.exec(message.text.trim());
+    return command && (!command[1] || command[1].toLowerCase() === this.config.bot_username.toLowerCase()) ? "stop" : null;
+  }
   private readonly config: TelegramEventConfiguration;
   constructor(config: TelegramEventConfiguration, private readonly current: () => void) {
     this.config = structuredClone(config);
@@ -109,6 +114,9 @@ export class TelegramEventAuthenticator {
       && Number.isSafeInteger(value.date) && Number(value.date) > 0 && Number(value.date) <= Number.MAX_SAFE_INTEGER / 1000
       && (value.message_thread_id === undefined || (Number.isSafeInteger(value.message_thread_id) && Number(value.message_thread_id) > 0)), "telegram_message_identity_invalid");
     const text = value.text, username = `@${this.config.bot_username.toLowerCase()}`;
+    const addressedCommand = /^\/[a-z0-9_]+(@[a-z0-9_]+)(?:\s|$)/i.exec(text.trim());
+    if (addressedCommand && addressedCommand[1].toLowerCase() !== username)
+      return { kind: "ignored", reason: "telegram_command_other_bot" };
     let mentioned = false;
     if (value.entities !== undefined) {
       requireThat(Array.isArray(value.entities) && value.entities.length <= 256, "telegram_entities_invalid");

@@ -271,3 +271,25 @@ acceptance item has matching evidence, release and local alignment.
   artifacts, not physical fleet deployment, all provider artifact profiles or real accounts.
   Next verify this commit's CI, then continue transport parity and the remaining CM-R0–R7
   gates. Production remains Python; release/local alignment is still pending.
+
+## Telegram runtime stop control
+
+- Device-artifact delivery `232b7ad` is pushed; CI `34747306589` succeeded.
+- Audit of Python `messenger/telegram/app.py` and `orchestrator/selectors/` confirmed
+  `/stop` has a direct runtime route, while model/cron/session/task menus use separate
+  management handlers. TS previously queued `/stop` as ordinary model input.
+- TS now consumes authenticated `/stop` (including the selected bot suffix) without
+  model preflight. It cancels only the mapped conversation task and blocks older queued
+  inputs/callbacks. Duplicate updates retain their original receipt. One reserved control
+  slot admits stop at ordinary inbox capacity; there is no unbounded queue exemption.
+- The ingress pump previously awaited `runtime.drain()` before processing newly received
+  input. Its optional synchronous control hook now runs on ingress kicks even during
+  active execution. Shared Feishu behavior retains its existing path.
+- Webhook test starts a held execution, posts stop through real loopback HTTP and proves
+  the active controller exits as cancelled with no successful-result delivery. Related
+  Telegram inbox/polling and Feishu inbox checks: **52 pass, 0 fail**, 417 assertions,
+  2.31s (`/tmp/cm-telegram-stop-active.log`); typecheck passed. Final callback-order check:
+  1 pass, 5 assertions (`/tmp/cm-telegram-stop-order.log`). No external chat account used.
+- Stops without a mapped task consume the command without creating a model task. A
+  dedicated management response/menu surface remains open, as do model/cron/named-session
+  selectors, task cancel-all/cleanup, formatting/streaming and full migration/release gates.

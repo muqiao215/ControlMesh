@@ -73,8 +73,9 @@ No claim that full TS migration or distributed coordination has completed. A sco
    rate-limit CI 34745426070 passed. Schema 40 configured local media now passes the
    full runtime regression (1117 pass, 34 skips, 0 fail) and CI 34746981469 passed
    for d86373c. Device artifact capture now connects accepted transferred files to the
-   Telegram outbox (105 focused passes). Commit/push and verify its CI, then continue
-   management selectors, rich formatting and streaming parity, plus remaining provider
+   Telegram outbox (105 focused passes); 232b7ad CI 34747306589 passed. Runtime stop
+   now bypasses queued/active Agent work (52 related regression passes). Verify its
+   commit's CI, then continue management selectors, rich formatting and streaming parity, plus remaining provider
    and physical-device artifact profiles.
    Preserve separate real-account and cross-device ingress acceptance requirements.
 2. Complete the remaining ownership/acceptance matrix below. Prioritize normal execution,

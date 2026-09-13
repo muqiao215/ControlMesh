@@ -945,6 +945,15 @@ Projection atomically stages the complete text/file group; confirmed send or ori
 recovery releases its send copy, while an unknown send retains bytes without replay.
 This Telegram integration does not imply media parity for other transports.
 
+Telegram `/stop` is a runtime control command, never a model prompt. `TelegramInbox`
+handles it before ordinary queued input, scoped to the authenticated bot/chat/topic and
+current conversation task. The shared ingress pump invokes the optional control path
+even while awaiting native execution, allowing cancellation to abort the active controller.
+Older queued input/callbacks are retained as blocked; a late stop cannot supersede newer
+applied input or continuation callbacks. Ordinary inbox capacity stays 128 with one
+additional reserved stop slot. Commands addressed to another bot are ignored. This does
+not implement the Python model/cron/session/task management selector menus.
+
 `feishu-credentials.ts` owns selected self-built-app tenant-token refresh. The profile loader
 uses descriptor-checked private files, never credential discovery. Tokens are memory-only,
 refresh is shared within one instance, expiry is monotonic, and credential rotation invalidates

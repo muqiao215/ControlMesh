@@ -17,7 +17,9 @@ const event = (update = 1, chat = 777, thread?: number) => ({ update_id: update,
   ...(thread ? { message_thread_id: thread } : {}) } });
 const cleanups: (() => void | Promise<void>)[] = [];
 afterEach(async () => { for (const close of cleanups.splice(0).reverse()) await close(); });
-function fixture(output = "Fixture result") {
+function fixture(output = "Fixture result", holdExecution = false) {
+  let started!: () => void;
+  const executionStarted = new Promise<void>(resolve => { started = resolve; });
   const root = mkdtempSync(join(tmpdir(), "cm-telegram-inbox-")); cleanups.push(() => rmSync(root, { recursive: true, force: true }));
   const path = join(root, "runtime.sqlite"), seen: any[] = [], posts: any[] = [], acks: any[] = []; let ackLost = false, deny = false, quota = false, valid = true;
   const current = () => { if (!valid) throw new RuntimeConflict("fixture_revoked"); };
@@ -44,6 +46,11 @@ function fixture(output = "Fixture result") {
       const execution: LocalTaskExecution = { binding_digest: digest("fixture"), assertCurrent: current,
         async ensureReady() { return { decision: quota ? "wait" : "cached", reason: quota ? "quota_exhausted" : "ready", retry_after: quota ? 60000 : null, permit: null, report: null }; },
         async execute(lease, context) { seen.push(structuredClone(snapshot.task)); kernel.start(actor, `start-${lease.episode_id}`, lease); context.assertCurrent();
+          started();
+          if (holdExecution) {
+            await new Promise<void>(resolve => { if (context.signal.aborted) resolve(); else context.signal.addEventListener("abort", () => resolve(), { once: true }); });
+            context.assertCurrent();
+          }
           return kernel.finish(actor, `finish-${lease.episode_id}`, lease, "done", { delivery_text: output, native_session: { session_id: "ses_fixture", turn: seen.length } }); }
       }; return execution;
     }, current);
@@ -53,7 +60,7 @@ function fixture(output = "Fixture result") {
     cleanups.push(close); return { db, kernel, inbox, runtime, deliveries, inbound, close };
   };
   const receive = (inbox: TelegramInbox, body: unknown) => inbox.receive(headers(), Buffer.from(JSON.stringify(body))) as { accepted: boolean; receipt_id: string; reason?: string };
-  return { ...open(), open, receive, seen, posts, acks, loseAck: () => { ackLost = true; }, deny: () => { deny = true; }, quota: (value = true) => { quota = value; }, revoke: () => { valid = false; } };
+  return { ...open(), open, receive, seen, posts, acks, executionStarted, loseAck: () => { ackLost = true; }, deny: () => { deny = true; }, quota: (value = true) => { quota = value; }, revoke: () => { valid = false; } };
 }
 
 test("Telegram duplicate updates survive reopen; chat-local message IDs never alias another chat", async () => {
@@ -135,6 +142,76 @@ test("explicit retry of the paused run releases the retained next input", async 
   await f.inbound.drain(); expect(f.seen).toHaveLength(2); expect(f.inbox.status()).toEqual({ pending: 0, applied: 2, blocked: 0 });
 });
 
+
+test("stop bypasses quota and older queued input, survives reopen and never invokes a model", async () => {
+  const f = fixture(); f.quota(); f.receive(f.inbox, event()); f.receive(f.inbox, event(2)); await f.inbound.drain();
+  const taskId = (f.db.sql.query("SELECT task_id FROM tasks").get() as { task_id: string }).task_id;
+  const stop = event(3); stop.message.text = "/stop@fixture_bot"; f.receive(f.inbox, stop);
+  await f.inbound.drain(); expect(f.kernel.inspect(actor, taskId).task.status).toBe("cancelled");
+  expect(f.seen).toHaveLength(0); expect(f.inbox.listBlocked()[0].reason).toBe("telegram_input_predates_cancellation");
+  const events = f.db.sql.query("SELECT COUNT(*) AS n FROM events WHERE kind='task.cancelled'").get();
+  await f.close(); const next = f.open(); f.quota(false); f.receive(next.inbox, stop); await next.inbound.drain();
+  expect(next.db.sql.query("SELECT COUNT(*) AS n FROM events WHERE kind='task.cancelled'").get()).toEqual(events);
+  expect(next.kernel.inspect(actor, taskId).task.status).toBe("cancelled"); expect(f.seen).toHaveLength(0);
+});
+
+test("webhook stop interrupts an active execution while the work pump awaits it", async () => {
+  const f = fixture("not completed", true), address = f.inbound.start();
+  const post = (body: unknown) => fetch(`http://${address.hostname}:${address.port}${address.path}`, { method: "POST", headers: headers(), body: JSON.stringify(body) });
+  expect((await post(event())).ok).toBe(true); await f.executionStarted;
+  const stop = event(2); stop.message.text = "/stop"; expect((await post(stop)).ok).toBe(true);
+  await f.inbound.drain(); expect(f.seen).toHaveLength(1);
+  const task = f.kernel.inspect(actor, f.seen[0].task_id); expect(task.task.status).toBe("cancelled");
+  expect(f.runtime.queueStatus().running).toBe(0);
+  expect(f.posts.some(post => post.text.includes("not completed"))).toBe(false);
+});
+
+test("stop before initial admission suppresses older input without creating an Agent task", async () => {
+  const f = fixture(); f.receive(f.inbox, event()); const stop = event(2); stop.message.text = "/STOP";
+  f.receive(f.inbox, stop); await f.inbound.drain();
+  expect(f.db.sql.query("SELECT COUNT(*) AS n FROM tasks").get()).toEqual({ n: 0 });
+  expect(f.inbox.status()).toEqual({ pending: 0, applied: 1, blocked: 1 }); expect(f.seen).toHaveLength(0);
+});
+
+test("a full ordinary inbox retains one bounded stop slot", async () => {
+  const f = fixture(); for (let id = 1; id <= 128; id++) f.receive(f.inbox, event(id));
+  expect(() => f.receive(f.inbox, event(129))).toThrow("telegram_inbox_full");
+  const stop = event(129); stop.message.text = "/stop"; expect(f.receive(f.inbox, stop).accepted).toBe(true);
+  const overflow = event(130); overflow.message.text = "/stop";
+  expect(() => f.receive(f.inbox, overflow)).toThrow("telegram_inbox_full");
+  await f.inbound.drain(); expect(f.inbox.status()).toEqual({ pending: 0, applied: 1, blocked: 128 });
+  expect(f.db.sql.query("SELECT COUNT(*) AS n FROM tasks").get()).toEqual({ n: 0 }); expect(f.seen).toHaveLength(0);
+});
+
+test("stop affects only its authenticated topic and ignores another bot's command", async () => {
+  const f = fixture(); f.quota(); f.receive(f.inbox, event(1, -100123, 10)); f.receive(f.inbox, event(2, -100123, 20)); await f.inbound.drain();
+  const stop = event(3, -100123, 10); stop.message.text = "/stop@fixture_bot";
+  stop.message.entities = [{ type: "bot_command", offset: 0, length: stop.message.text.length }];
+  const other = structuredClone(stop); other.message.text = "/stop@another_bot";
+  expect(f.receive(f.inbox, other)).toMatchObject({ accepted: false, reason: "telegram_command_other_bot" });
+  f.receive(f.inbox, stop); await f.inbound.drain();
+  const tasks = f.db.sql.query("SELECT raw,status FROM tasks").all() as { raw: string; status: string }[];
+  expect(tasks.find(row => JSON.parse(row.raw).thread_id === "10")?.status).toBe("cancelled");
+  expect(tasks.find(row => JSON.parse(row.raw).thread_id === "20")?.status).toBe("waiting"); expect(f.seen).toHaveLength(0);
+});
+
+test("late older stop cannot cancel a newer applied request", async () => {
+  const f = fixture(); f.quota(); f.receive(f.inbox, event(10)); await f.inbound.drain();
+  const stop = event(2); stop.message.text = "/stop"; f.receive(f.inbox, stop); await f.inbound.drain();
+  expect((f.db.sql.query("SELECT status FROM tasks").get() as { status: string }).status).toBe("waiting");
+  expect(f.inbox.listBlocked()[0].reason).toBe("telegram_event_order_requires_review"); expect(f.seen).toHaveLength(0);
+});
+
+test("late stop cannot supersede an already consumed newer continuation button", async () => {
+  const f = fixture("Ready [button:Continue|next]"); f.receive(f.inbox, event()); await f.inbound.drain();
+  f.quota();
+  f.receive(f.inbox, { update_id: 100, callback_query: { id: "newer_choice", data: f.posts[0].reply_markup.inline_keyboard[0][0].callback_data,
+    from: { id: 777, is_bot: false }, message: { message_id: 1, date: Math.floor(Date.now() / 1000), chat: { id: 777, type: "private" },
+      from: { id: 123456, is_bot: true } } } });
+  await f.inbound.drain(); const stop = event(2); stop.message.text = "/stop"; f.receive(f.inbox, stop); await f.inbound.drain();
+  expect(f.kernel.inspect(actor, f.seen[0].task_id).task.status).toBe("waiting");
+  expect(f.inbox.listBlocked()[0].reason).toBe("telegram_event_order_requires_review"); expect(f.seen).toHaveLength(1);
+});
 
 test("queued input received before cancellation cannot resume the cancelled task", async () => {
   const f = fixture(); f.quota(); f.receive(f.inbox, event()); f.receive(f.inbox, event(2)); await f.inbound.drain();
