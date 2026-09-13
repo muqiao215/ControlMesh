@@ -82,6 +82,7 @@ export interface DeliveryReceipt {
   "target_digest": string;
   "adapter_digest": string;
   "remote_message_id": string;
+  "media_kind"?: "photo" | "video" | "audio" | "document";
 }
 
 export interface DeliveryTarget {
@@ -474,6 +475,7 @@ export interface TerminalDelivery {
   "output_policy": "summarized_only" | "full";
   "created_at": number;
   "choices"?: Record<string, unknown>[];
+  "media"?: Record<string, unknown>;
 }
 
 export interface Topology {

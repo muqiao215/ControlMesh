@@ -36,6 +36,14 @@
       "type": "string",
       "maxLength": 192,
       "minLength": 1
+    },
+    "media_kind": {
+      "enum": [
+        "photo",
+        "video",
+        "audio",
+        "document"
+      ]
     }
   }
 }

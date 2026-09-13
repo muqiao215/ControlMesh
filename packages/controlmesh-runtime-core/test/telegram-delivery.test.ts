@@ -165,9 +165,9 @@ test("schema 33 receipts gain chat namespaces without rewriting delivery evidenc
     adapter_digest TEXT NOT NULL, remote_message_id TEXT NOT NULL,
     delivery_id TEXT NOT NULL UNIQUE REFERENCES delivery_outbox(delivery_id), PRIMARY KEY(adapter_digest,remote_message_id));
     INSERT INTO old_receipts SELECT adapter_digest,remote_message_id,delivery_id FROM transport_receipts;
-    DROP TABLE transport_receipts; ALTER TABLE old_receipts RENAME TO transport_receipts; DROP TABLE IF EXISTS telegram_conversations; DROP TABLE IF EXISTS telegram_event_aliases; DROP TABLE IF EXISTS telegram_inbox; DROP TABLE IF EXISTS delivery_retry_after; DROP TABLE IF EXISTS telegram_callbacks; DROP TABLE IF EXISTS telegram_poll_updates; DROP TABLE IF EXISTS telegram_polling; PRAGMA user_version=33;`);
+    DROP TABLE transport_receipts; ALTER TABLE old_receipts RENAME TO transport_receipts; DROP TABLE IF EXISTS telegram_conversations; DROP TABLE IF EXISTS telegram_event_aliases; DROP TABLE IF EXISTS telegram_inbox; DROP TABLE IF EXISTS delivery_media; DROP TABLE IF EXISTS delivery_retry_after; DROP TABLE IF EXISTS telegram_callbacks; DROP TABLE IF EXISTS telegram_poll_updates; DROP TABLE IF EXISTS telegram_polling; PRAGMA user_version=33;`);
   const reopened = f.reopen(); expect(reopened.inspect(before.delivery_id)).toEqual(before);
-  expect(f.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 39 });
+  expect(f.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 40 });
   expect(f.db.sql.query("SELECT target_transport,target_chat,remote_message_id FROM transport_receipts").get())
     .toEqual({ target_transport: "telegram", target_chat: "-1001234567890", remote_message_id: "1" });
   await reopened.drain(); expect(f.count()).toBe(1);
@@ -180,7 +180,7 @@ test("schema upgrade refuses corrupted delivery evidence and rolls back its DDL"
     adapter_digest TEXT NOT NULL, remote_message_id TEXT NOT NULL,
     delivery_id TEXT NOT NULL UNIQUE REFERENCES delivery_outbox(delivery_id), PRIMARY KEY(adapter_digest,remote_message_id));
     INSERT INTO old_receipts SELECT adapter_digest,remote_message_id,delivery_id FROM transport_receipts;
-    DROP TABLE transport_receipts; ALTER TABLE old_receipts RENAME TO transport_receipts; DROP TABLE IF EXISTS telegram_conversations; DROP TABLE IF EXISTS telegram_event_aliases; DROP TABLE IF EXISTS telegram_inbox; DROP TABLE IF EXISTS delivery_retry_after; DROP TABLE IF EXISTS telegram_callbacks; DROP TABLE IF EXISTS telegram_poll_updates; DROP TABLE IF EXISTS telegram_polling; PRAGMA user_version=33;
+    DROP TABLE transport_receipts; ALTER TABLE old_receipts RENAME TO transport_receipts; DROP TABLE IF EXISTS telegram_conversations; DROP TABLE IF EXISTS telegram_event_aliases; DROP TABLE IF EXISTS telegram_inbox; DROP TABLE IF EXISTS delivery_media; DROP TABLE IF EXISTS delivery_retry_after; DROP TABLE IF EXISTS telegram_callbacks; DROP TABLE IF EXISTS telegram_poll_updates; DROP TABLE IF EXISTS telegram_polling; PRAGMA user_version=33;
     UPDATE delivery_outbox SET envelope_digest='corrupted';`);
   expect(() => f.reopen()).toThrow("delivery_migration_evidence_corrupted");
   expect(f.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 33 });
@@ -256,7 +256,7 @@ for (const attempted of [false, true]) test(`schema 34 only expands never-attemp
   envelope.text = "x".repeat(10000);
   f.db.sql.query("UPDATE delivery_outbox SET envelope=?,envelope_digest=?,state=?,attempt_id=? WHERE delivery_id=?")
     .run(JSON.stringify(envelope), digest(envelope), attempted ? "unknown" : "pending", attempted ? "old-attempt" : null, old.delivery_id);
-  f.db.sql.exec("DROP TABLE IF EXISTS telegram_conversations; DROP TABLE IF EXISTS telegram_event_aliases; DROP TABLE IF EXISTS telegram_inbox; DROP TABLE IF EXISTS delivery_retry_after; DROP TABLE IF EXISTS telegram_callbacks; DROP TABLE IF EXISTS telegram_poll_updates; DROP TABLE IF EXISTS telegram_polling; PRAGMA user_version=34");
+  f.db.sql.exec("DROP TABLE IF EXISTS telegram_conversations; DROP TABLE IF EXISTS telegram_event_aliases; DROP TABLE IF EXISTS telegram_inbox; DROP TABLE IF EXISTS delivery_media; DROP TABLE IF EXISTS delivery_retry_after; DROP TABLE IF EXISTS telegram_callbacks; DROP TABLE IF EXISTS telegram_poll_updates; DROP TABLE IF EXISTS telegram_polling; PRAGMA user_version=34");
   const reopened = f.reopen(), parts = reopened.list("task");
   expect(parts[0].delivery_id).toBe(old.delivery_id);
   if (attempted) { expect(parts).toHaveLength(1); await reopened.drain(); expect(f.count()).toBe(0); }

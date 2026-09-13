@@ -58,7 +58,7 @@ test("schema 32 migration keeps the old episode expiry as its hard deadline", ()
   try {
     const kernel = new RuntimeKernel(db); kernel.submit(actor, "create", { task_id: "task", chat_id: "test", status: "waiting" });
     const proof = kernel.claim(actor, "claim", "task", 1, 1000);
-    db.sql.exec("DROP TABLE episode_deadlines; DROP TABLE IF EXISTS telegram_conversations; DROP TABLE IF EXISTS telegram_event_aliases; DROP TABLE IF EXISTS telegram_inbox; DROP TABLE IF EXISTS delivery_retry_after; DROP TABLE IF EXISTS telegram_callbacks; DROP TABLE IF EXISTS telegram_poll_updates; DROP TABLE IF EXISTS telegram_polling; PRAGMA user_version=32;"); db.close();
+    db.sql.exec("DROP TABLE episode_deadlines; DROP TABLE IF EXISTS telegram_conversations; DROP TABLE IF EXISTS telegram_event_aliases; DROP TABLE IF EXISTS telegram_inbox; DROP TABLE IF EXISTS delivery_media; DROP TABLE IF EXISTS delivery_retry_after; DROP TABLE IF EXISTS telegram_callbacks; DROP TABLE IF EXISTS telegram_poll_updates; DROP TABLE IF EXISTS telegram_polling; PRAGMA user_version=32;"); db.close();
     db = new RuntimeDatabase(path, () => 10500);
     const upgraded = new RuntimeKernel(db);
     expect(upgraded.executionDeadline(actor, proof)).toBe(11000);

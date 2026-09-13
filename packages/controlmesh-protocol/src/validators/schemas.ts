@@ -355,6 +355,14 @@ export const controlmeshSchemas = {
       "type": "string",
       "maxLength": 192,
       "minLength": 1
+    },
+    "media_kind": {
+      "enum": [
+        "photo",
+        "video",
+        "audio",
+        "document"
+      ]
     }
   }
 },
@@ -4648,6 +4656,46 @@ export const controlmeshSchemas = {
             "minLength": 1,
             "maxLength": 4096
           }
+        }
+      }
+    },
+    "media": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "filename",
+        "size",
+        "sha256",
+        "kind"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "filename": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "^[^/\\\\\\u0000-\\u001f\\u007f]+$"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 52428800
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "kind": {
+          "enum": [
+            "photo",
+            "video",
+            "audio",
+            "document"
+          ]
         }
       }
     }

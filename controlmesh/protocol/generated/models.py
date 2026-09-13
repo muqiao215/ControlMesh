@@ -94,6 +94,7 @@ class DeliveryReceipt(BaseModel):
     target_digest: str
     adapter_digest: str
     remote_message_id: str
+    media_kind: Literal["photo", "video", "audio", "document"] | None = None
 
 
 class DeliveryTarget(BaseModel):
@@ -516,6 +517,7 @@ class TerminalDelivery(BaseModel):
     output_policy: Literal["summarized_only", "full"]
     created_at: int
     choices: list[dict[str, Any]] | None = None
+    media: dict[str, Any] | None = None
 
 
 class Topology(BaseModel):

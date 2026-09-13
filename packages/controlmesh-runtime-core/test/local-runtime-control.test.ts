@@ -167,10 +167,10 @@ test("schema eight upgrades without losing tasks or queued messages and without 
   const sent = first.runtime.tell("note", "a", "Survive upgrade");
   await first.close();
   const previous = new RuntimeDatabase(join(f.state, "runtime.sqlite"));
-  previous.sql.exec("DROP TABLE episode_deadlines; DROP TABLE process_output_chunks; DROP TABLE host_jobs; DROP TABLE backstage_events; DROP TABLE workspace_seed_files; DROP TABLE workspace_seed_transfers; DROP TABLE topology_artifact_publications; DROP TABLE device_artifact_files; DROP TABLE topology_native_inputs; DROP TABLE topology_device_runs; ALTER TABLE topology_tasks DROP COLUMN execution_source; DROP TABLE topology_schedule_members; DROP TABLE topology_schedules; ALTER TABLE topology_tasks DROP COLUMN kind; DROP TABLE topology_runs; ALTER TABLE topology_tasks DROP COLUMN execution_id; DROP TABLE topology_completions; DROP TABLE topology_controls; DROP TABLE topology_task_history; DROP TABLE topology_tasks; DROP TABLE team_topologies; DROP TABLE team_phases; DROP TABLE device_scheduled_work; DROP TABLE device_scheduler_leases; DROP TABLE device_assignment_generations; DROP TABLE device_native_adoptions; DROP TABLE command_reservations; DROP TABLE feishu_conversations; DROP TABLE feishu_event_aliases; DROP TABLE feishu_inbox; DROP TABLE transport_receipts; DROP TABLE delivery_outbox; DROP TABLE delivery_routes; DROP TABLE native_agent_deliveries; DROP TABLE native_agent_calls; DROP TABLE native_mailbox_deliveries; DROP TABLE IF EXISTS telegram_conversations; DROP TABLE IF EXISTS telegram_event_aliases; DROP TABLE IF EXISTS telegram_inbox; DROP TABLE IF EXISTS delivery_retry_after; DROP TABLE IF EXISTS telegram_callbacks; DROP TABLE IF EXISTS telegram_poll_updates; DROP TABLE IF EXISTS telegram_polling; PRAGMA user_version=8"); previous.close();
+  previous.sql.exec("DROP TABLE episode_deadlines; DROP TABLE process_output_chunks; DROP TABLE host_jobs; DROP TABLE backstage_events; DROP TABLE workspace_seed_files; DROP TABLE workspace_seed_transfers; DROP TABLE topology_artifact_publications; DROP TABLE device_artifact_files; DROP TABLE topology_native_inputs; DROP TABLE topology_device_runs; ALTER TABLE topology_tasks DROP COLUMN execution_source; DROP TABLE topology_schedule_members; DROP TABLE topology_schedules; ALTER TABLE topology_tasks DROP COLUMN kind; DROP TABLE topology_runs; ALTER TABLE topology_tasks DROP COLUMN execution_id; DROP TABLE topology_completions; DROP TABLE topology_controls; DROP TABLE topology_task_history; DROP TABLE topology_tasks; DROP TABLE team_topologies; DROP TABLE team_phases; DROP TABLE device_scheduled_work; DROP TABLE device_scheduler_leases; DROP TABLE device_assignment_generations; DROP TABLE device_native_adoptions; DROP TABLE command_reservations; DROP TABLE feishu_conversations; DROP TABLE feishu_event_aliases; DROP TABLE feishu_inbox; DROP TABLE transport_receipts; DROP TABLE delivery_outbox; DROP TABLE delivery_routes; DROP TABLE native_agent_deliveries; DROP TABLE native_agent_calls; DROP TABLE native_mailbox_deliveries; DROP TABLE IF EXISTS telegram_conversations; DROP TABLE IF EXISTS telegram_event_aliases; DROP TABLE IF EXISTS telegram_inbox; DROP TABLE IF EXISTS delivery_media; DROP TABLE IF EXISTS delivery_retry_after; DROP TABLE IF EXISTS telegram_callbacks; DROP TABLE IF EXISTS telegram_poll_updates; DROP TABLE IF EXISTS telegram_polling; PRAGMA user_version=8"); previous.close();
   const restored = openLocalRuntime(f.path);
   try {
-    expect(restored.runtime.kernel.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 39 });
+    expect(restored.runtime.kernel.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 40 });
     expect(restored.runtime.inspectTask("a").task.status).toBe("waiting");
     expect(restored.runtime.inspectMessage("a", sent.message_id).payload).toEqual({ text: "Survive upgrade" });
     expect(restored.runtime.mailboxStatus("a")).toEqual({ pending_count: 1 });
@@ -383,4 +383,28 @@ test("normal polling configuration is headless and does not require a webhook se
     expect(existsSync(join(f.root, "unused-token.json"))).toBe(false); expect(existsSync(f.data)).toBe(false);
     expect(owned.runtime.kernel.db.sql.query("SELECT COUNT(*) AS n FROM telegram_poll_updates").get()).toEqual({ n: 0 });
   } finally { await owned.close(); }
+});
+
+test("configured media roots project attachments without starting a provider or reading credentials", async () => {
+  const f = fixture(), file = join(f.workspace, "result.txt"); writeFileSync(file, "configured artifact");
+  writeFileSync(f.path, JSON.stringify({ ...f.config, source: { ...f.config.source, transport: "telegram" },
+    delivery: { kind: "telegram_text", adapter_id: "selected-bot", bot_id: "123456", credentials_file: join(f.root, "unused-token.json"), media_roots: [f.workspace] } }));
+  const owned = openLocalRuntime(f.path), actor: Principal = { id: "operator", device_id: "local", origin: "human_request", scopes: ["task:read", "task:execute"] };
+  try {
+    const task = owned.runtime.submit("media-create", { task_id: "media-task", chat_id: "777", status: "waiting", prompt: "fixture", repo_root: f.workspace,
+      provider: "opencode", model: "fixture/model" }, owned.submissionIdentity!({ task_id: "media-task", chat_id: "777", status: "waiting" }));
+    owned.deliveries!.bindTask("bind-media", "media-task", task.revision, "selected-bot");
+    const kernel = owned.runtime.kernel, lease = kernel.claim(actor, "claim-media", "media-task", task.revision, 5000);
+    kernel.start(actor, "start-media", lease); kernel.finish(actor, "finish-media", lease, "done", { delivery_text: `Ready <file:${file}>` });
+    owned.deliveries!.project(); expect(owned.deliveries!.list("media-task")).toHaveLength(2);
+    expect(kernel.db.sql.query("SELECT COUNT(*) AS n FROM delivery_media").get()).toEqual({ n: 1 });
+    expect(kernel.db.sql.query("SELECT COUNT(*) AS n FROM provider_checks").get()).toEqual({ n: 0 });
+    expect(existsSync(f.data)).toBe(false); expect(existsSync(join(f.root, "unused-token.json"))).toBe(false);
+  } finally { await owned.close(); }
+});
+
+for (const mediaRoots of [[], ["relative/path"], [123]]) test(`configured media roots refuse invalid authority ${JSON.stringify(mediaRoots)}`, () => {
+  const f = fixture(); writeFileSync(f.path, JSON.stringify({ ...f.config, source: { ...f.config.source, transport: "telegram" },
+    delivery: { kind: "telegram_text", adapter_id: "selected-bot", bot_id: "123456", credentials_file: join(f.root, "unused-token.json"), media_roots: mediaRoots } }));
+  expect(() => openLocalRuntime(f.path)).toThrow(); expect(existsSync(f.data)).toBe(false);
 });

@@ -69,14 +69,12 @@ No claim that full TS migration or distributed coordination has completed. A sco
 
 ## Next Step
 
-1. Schema 38 now includes ordinary Telegram button continuation with durable receipt
-   binding, atomic consumption and independent UI acknowledgement. Full regression:
-   1067 pass, 34 optional skips, 0 fail; final parser/authority checks: 75 pass.
-   Schema 39 additionally persists explicit rate-refusal cooldowns with bounded retry
-   and shared-bot admission; full regression 1078 pass, 34 skips, 0 fail, with 77 final
-   focused passes. Check the new commit's remote CI, then implement media, management
-   selectors, rich formatting and streaming parity. Preserve the separate
-   real-account and cross-device ingress acceptance requirements.
+1. Schema 38 ordinary Telegram choices and schema 39 bounded rate retries are pushed;
+   rate-limit CI 34745426070 passed. Schema 40 configured local media now passes the
+   full runtime regression (1117 pass, 34 skips, 0 fail). Complete focused boundary
+   checks, commit/push and verify that exact SHA's CI. Then implement cross-device
+   artifact sourcing, management selectors, rich formatting and streaming parity.
+   Preserve separate real-account and cross-device ingress acceptance requirements.
 2. Complete the remaining ownership/acceptance matrix below. Prioritize normal execution,
    transport delivery and recovery across supported providers/devices over disconnected
    helper additions. Do not waive an original requirement to obtain a release.

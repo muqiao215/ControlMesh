@@ -217,3 +217,33 @@ acceptance item has matching evidence, release and local alignment.
   must bind permitted bytes/identity and remote receipts rather than directly trusting
   an Agent-supplied filesystem path. Full supported transport and operational matrix,
   TS default switch and release/local-version alignment remain incomplete.
+
+## Schema 40: configured local media delivery
+
+- Rate-limit commit `82ecb40` is pushed; CI `34745426070` succeeded.
+- Normal Telegram configuration now accepts explicit `delivery.media_roots`. Canonical
+  root identity is pinned; file tags select only within those roots. Capture rejects
+  links, traversal and non-files, rechecks authorization while reading, and retains
+  immutable bytes with size/hash identity. The separate native context limit stays 4 MiB;
+  media is bounded to 50 MiB per file and 128 files/256 MiB in the private store.
+- Schema 40 stores media against the principal, complete envelope, terminal event and
+  task revision. Public metadata has no source path. Complete text/media groups stage
+  atomically; capacity refusal precedes file reads. Later-file failure rolls back earlier
+  captures and creates a blocked delivery, with explicit same-revision retry.
+- Multipart uploads use retained bytes for photo/video/audio/document. One complete
+  HTTP 400 rejection allows document fallback; ambiguous outcomes never trigger another
+  upload. Receipts bind bot/chat/topic/caption and media metadata. A transformed photo
+  acknowledgement is not proof of byte-identical remote storage.
+- Confirmed acceptance and original-ack reconciliation reclaim stored bytes. Unknown
+  uploads retain them across reopen and never automatically resend. Last-part buttons
+  preserve original-task continuation binding.
+- Full runtime regression, including Docker and independent SpecMesh: **1117 pass,
+  34 skip, 0 fail**, 12628 assertions, 1151 tests across 126 files, 397.63s
+  (`/tmp/cm-runtime-media-full.log`). The run has finished; do not resume its old handle.
+- Final media/capture/Telegram checks: **83 pass, 0 fail**, 541 assertions, 5.91s
+  (`/tmp/cm-media-final.log`); runtime typecheck and diff check pass.
+  Generated Python/TS protocol, bundled Web schemas and ownership fingerprint are included.
+- Acceptance scope is configured local roots with fixture HTTP endpoints. No actual
+  Telegram account upload, remote-device artifact sourcing, production cutover or full
+  TS migration is claimed. Cross-device artifacts, management selectors, formatting and
+  streaming remain required transport work before the broader migration/release gates.

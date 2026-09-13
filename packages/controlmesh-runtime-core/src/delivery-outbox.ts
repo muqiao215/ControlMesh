@@ -1,3 +1,4 @@
+import type { DeliveryMediaProjector } from "./delivery-media-projector";
 import { DeliveryRetryAfter } from "./delivery-retry";
 import type { TelegramIncomingCallback } from "./telegram-event-auth";
 import { telegramChoices } from "./telegram-choices";
@@ -53,7 +54,7 @@ export class DeliveryOutbox {
   private retryTimer?: ReturnType<typeof setTimeout>;
   private readonly active = new Map<AbortController, Promise<void>>();
   constructor(readonly kernel: RuntimeKernel, actor: Principal, adapters: readonly DeliveryAdapter[],
-    private readonly authorize: () => void, private readonly timeoutMs = 30_000) {
+    private readonly authorize: () => void, private readonly timeoutMs = 30_000, private readonly media?: DeliveryMediaProjector) {
     this.actor = structuredClone(actor);
     requireThat(Number.isSafeInteger(timeoutMs) && timeoutMs >= 100 && timeoutMs <= 60_000, "invalid_delivery_timeout");
     for (const adapter of adapters) {
@@ -143,7 +144,7 @@ export class DeliveryOutbox {
     });
   }
   /** An accepted event is already durable; projection can safely catch up after any restart. */
-  project(limit = 32): number {
+  project(limit = 32, onlyEvent?: number): number {
     this.current("delivery:project");
     requireThat(Number.isSafeInteger(limit) && limit >= 1 && limit <= 128, "invalid_delivery_limit");
     return this.kernel.db.transaction(() => {
@@ -152,7 +153,7 @@ export class DeliveryOutbox {
       if (limit === 0) return 0;
       const events = this.kernel.db.sql.query(`SELECT e.* FROM events e JOIN delivery_routes r ON r.task_id=e.task_id
         WHERE r.principal=? AND r.active=1 AND e.seq>=r.first_event AND e.kind IN ('task.done','task.failed','task.cancelled')
-        AND NOT EXISTS (SELECT 1 FROM delivery_outbox d WHERE d.event_seq=e.seq) ORDER BY e.seq LIMIT ?`).all(this.actor.id, limit) as
+        AND (? IS NULL OR e.seq=?) AND NOT EXISTS (SELECT 1 FROM delivery_outbox d WHERE d.event_seq=e.seq) ORDER BY e.seq LIMIT ?`).all(this.actor.id, onlyEvent ?? null, onlyEvent ?? null, limit) as
         { seq: number; task_id: string; revision: number; fence: number; origin: Principal["origin"]; at: number; kind: string; payload: string }[];
       let projected = 0, remaining = 128 - open.n;
       for (const event of events) {
@@ -171,18 +172,26 @@ export class DeliveryOutbox {
         assertProtocolSchema("terminal-delivery.schema.json", envelope);
         requireThat(Buffer.byteLength(envelope.text) <= 65536, "delivery_text_too_large");
         const offered = telegramChoices(envelope); envelope.text = offered.text;
-        const texts = deliveryTextParts(envelope);
-        if (texts.length > remaining) break; // Never persist only a prefix of an event.
-        const parts = texts.map((text, index) => ({ ...envelope, text,
-          delivery_id: index === 0 ? envelope.delivery_id : `${envelope.delivery_id}.${index}`,
-          ...(index === texts.length - 1 && offered.choices ? { choices: offered.choices } : {}) }));
+        let parts: TerminalDelivery[] | null, projectionFailed = false;
+        try {
+          parts = this.media && envelope.target.transport === "telegram"
+            ? this.kernel.db.transaction(() => this.media!.project(envelope, offered.choices, remaining))
+            : deliveryTextParts(envelope).map((text, index, texts) => ({ ...envelope, text,
+              delivery_id: index === 0 ? envelope.delivery_id : `${envelope.delivery_id}.${index}`,
+              ...(index === texts.length - 1 && offered.choices ? { choices: offered.choices } : {}) }));
+        } catch (error) {
+          this.current("delivery:project"); if (!this.media || envelope.target.transport !== "telegram") throw error;
+          projectionFailed = true;
+          parts = [{ ...envelope, text: "Media preparation failed. Review this delivery before retrying." }];
+        }
+        if (!parts || parts.length > remaining) break;
         const groupDigest = digest(parts.map(part => ({ delivery_id: part.delivery_id, envelope_digest: digest(part) })));
         for (const [index, part] of parts.entries()) {
           assertProtocolSchema("terminal-delivery.schema.json", part);
           this.kernel.db.sql.query(`INSERT INTO delivery_outbox
-            (delivery_id,event_seq,task_id,principal,route_digest,envelope,envelope_digest,state,created_at,part_index,part_count,group_digest)
-            VALUES (?,?,?,?,?,?,?,'pending',?,?,?,?)`)
-            .run(part.delivery_id, event.seq, event.task_id, this.actor.id, row.digest, canonical(part), digest(part),
+            (delivery_id,event_seq,task_id,principal,route_digest,envelope,envelope_digest,state,reason,created_at,part_index,part_count,group_digest)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+            .run(part.delivery_id, event.seq, event.task_id, this.actor.id, row.digest, canonical(part), digest(part), projectionFailed ? "blocked" : "pending", projectionFailed ? "delivery_media_projection_failed" : null,
               this.kernel.db.now(), index, parts.length, groupDigest);
         }
         remaining -= parts.length; projected++;
@@ -328,7 +337,7 @@ export class DeliveryOutbox {
       // Preserve the original remote acknowledgement separately from accepting the outcome.
       this.kernel.db.sql.query("UPDATE delivery_outbox SET observation=? WHERE delivery_id=? AND attempt_id=? AND observation IS NULL")
         .run(canonical(receipt), id, attempt);
-      this.kernel.db.transaction(() => { current(); const row = this.row(id); requireThat(row.attempt_id === attempt, "delivery_attempt_changed"); this.accept(row, receipt); });
+      this.kernel.db.transaction(() => { current(); const row = this.row(id); requireThat(row.attempt_id === attempt, "delivery_attempt_changed"); this.accept(row, receipt); this.media?.accepted(envelope); });
     } catch (error) {
       if (error instanceof DeliveryRetryAfter && attempted) {
         this.kernel.db.transaction(() => {
@@ -376,6 +385,13 @@ export class DeliveryOutbox {
     command(this.kernel.db, this.actor, requestId, "delivery.retry_blocked", { id }, () => {
       const row = this.row(id), { adapter } = this.evidence(row);
       requireThat(row.state === "blocked" && row.attempt_id === null, "delivery_retry_not_safe");
+      if (row.reason === "delivery_media_projection_failed") {
+        requireThat(this.media && row.part_count === 1 && this.kernel.inspect(this.actor, row.task_id).revision === this.evidence(row).envelope.task_revision,
+          "delivery_media_reprojection_stale");
+        this.kernel.db.sql.query("DELETE FROM delivery_outbox WHERE delivery_id=?").run(id);
+        requireThat(this.project(1, row.event_seq) === 1 && this.row(id).reason !== "delivery_media_projection_failed", "delivery_media_reprojection_failed");
+        return { reset: true };
+      }
       const retried: unknown = adapter.retryPreparation?.();
       if (retried !== undefined) { void Promise.resolve(retried).catch(() => {}); requireThat(false, "admission_must_be_synchronous"); }
       this.kernel.db.sql.query("UPDATE delivery_outbox SET state='pending',reason=NULL WHERE delivery_id=?").run(id);
@@ -400,7 +416,7 @@ export class DeliveryOutbox {
     const receipt = adapter.recoverAcknowledgement
       ? await adapter.recoverAcknowledgement(structuredClone(envelope), JSON.parse(row.observation), context)
       : await (await adapter.prepare(structuredClone(envelope), context)).inspect(structuredClone(envelope), remoteMessageId, context);
-    this.kernel.db.transaction(() => { current(); this.accept(this.row(id), receipt); });
+    this.kernel.db.transaction(() => { current(); this.accept(this.row(id), receipt); this.media?.accepted(envelope); });
     return this.inspect(id);
     } finally { clearTimeout(timeout); finished(); }
   }

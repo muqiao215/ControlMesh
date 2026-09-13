@@ -1,3 +1,4 @@
+import type { TerminalDelivery } from "@controlmesh/protocol";
 import type { DeliveryContext } from "./delivery-outbox";
 import { TelegramTextDelivery } from "./telegram-delivery";
 import { privateFile } from "./private-runtime-file";
@@ -5,10 +6,10 @@ import { decodeSnapshot } from "./migration";
 import { object, requireThat } from "./value";
 
 /** Selected bot credentials remain private and are checked at each delivery boundary. */
-export function openTelegramDelivery(profile: unknown, transport: string, current: () => void, request: typeof fetch = fetch) {
+export function openTelegramDelivery(profile: unknown, transport: string, current: () => void, request: typeof fetch = fetch, readMedia?: (envelope: TerminalDelivery) => Buffer) {
   requireThat(object(profile) && profile.kind === "telegram_text" && transport === "telegram"
     && typeof profile.adapter_id === "string" && typeof profile.bot_id === "string" && typeof profile.credentials_file === "string"
-    && Object.keys(profile).every(key => ["kind", "adapter_id", "bot_id", "credentials_file"].includes(key)), "invalid_telegram_delivery_profile");
+    && Object.keys(profile).every(key => ["kind", "adapter_id", "bot_id", "credentials_file", "media_roots"].includes(key)), "invalid_telegram_delivery_profile");
   const botId = profile.bot_id, path = profile.credentials_file;
   let revision: string | undefined;
   const load = () => {
@@ -23,6 +24,6 @@ export function openTelegramDelivery(profile: unknown, transport: string, curren
     async botToken(context: DeliveryContext) { context.assertCurrent(); return load(); },
     assertToken(token: string) { requireThat(load() === token, "telegram_credentials_changed"); },
   };
-  const adapter = new TelegramTextDelivery({ adapter_id: profile.adapter_id, bot_id: botId, assertCurrent: current, ...credentials }, request);
+  const adapter = new TelegramTextDelivery({ adapter_id: profile.adapter_id, bot_id: botId, assertCurrent: current, ...credentials }, request, readMedia);
   return { adapter, credentials, close: async () => {} };
 }

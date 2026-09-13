@@ -12,7 +12,7 @@ test("host job store upgrades, isolates owners and rejects stale concurrent writ
   const root = mkdtempSync(join(tmpdir(), "cm-host-store-")), path = join(root, "runtime.sqlite");
   let a = new RuntimeDatabase(path); let b: RuntimeDatabase | undefined;
   try {
-    a.sql.exec("DROP TABLE episode_deadlines; DROP TABLE process_output_chunks; DROP TABLE host_jobs; DROP TABLE IF EXISTS telegram_conversations; DROP TABLE IF EXISTS telegram_event_aliases; DROP TABLE IF EXISTS telegram_inbox; DROP TABLE IF EXISTS delivery_retry_after; DROP TABLE IF EXISTS telegram_callbacks; DROP TABLE IF EXISTS telegram_poll_updates; DROP TABLE IF EXISTS telegram_polling; PRAGMA user_version=30;"); a.close(); a = new RuntimeDatabase(path);
+    a.sql.exec("DROP TABLE episode_deadlines; DROP TABLE process_output_chunks; DROP TABLE host_jobs; DROP TABLE IF EXISTS telegram_conversations; DROP TABLE IF EXISTS telegram_event_aliases; DROP TABLE IF EXISTS telegram_inbox; DROP TABLE IF EXISTS delivery_media; DROP TABLE IF EXISTS delivery_retry_after; DROP TABLE IF EXISTS telegram_callbacks; DROP TABLE IF EXISTS telegram_poll_updates; DROP TABLE IF EXISTS telegram_polling; PRAGMA user_version=30;"); a.close(); a = new RuntimeDatabase(path);
     b = new RuntimeDatabase(path);
     const first = new HostJobStore(a, () => {}), second = new HostJobStore(b, () => {});
     const created = first.put(actor, "create", 0, job); expect(created.revision).toBe(1);
