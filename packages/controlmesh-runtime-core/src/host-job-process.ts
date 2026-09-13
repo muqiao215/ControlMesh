@@ -93,10 +93,10 @@ export class HostJobProcess {
       return this.kernel.db.transaction(() => {
         guard(); workflowEnd?.assertCurrent(); const current = store.get(actor, approval.job_id)!, finished = new Date(this.kernel.db.now()).toISOString();
         const success = outcome.exit_code === 0;
-        const steps = current.job.steps.map(item => item.id === step.id ? { ...item, state: success ? "completed" : "failed", exit_code: outcome.exit_code, finished_at: finished, completed_at: finished } : item);
+        const steps = current.job.steps.map(item => item.id === step.id ? { ...item, state: success ? "completed" : "failed", detail: success ? "completed" : `exit=${outcome.exit_code}`, exit_code: outcome.exit_code, finished_at: finished, completed_at: finished } : item);
         const done = steps.every(item => ["completed", "skipped"].includes(item.state));
         const saved = store.put(actor, `${effect}-result`, runningRevision, { ...current.job, steps, state: !success ? "failed" : done ? "completed" : current.job.state,
-          updated_at: finished, completed_at: done || !success ? finished : "" });
+          last_error: success ? "" : `step ${step.id} failed with exit code ${outcome.exit_code}`, updated_at: finished, completed_at: done || !success ? finished : "" });
         const result = { host_job_id: approval.job_id, step_id: step.id, host_job_revision: saved.revision, exit_code: outcome.exit_code, observation_digest: digest(outcome), ...(workflowEnd ? { specmesh: { snapshot_digest: workflowEnd.snapshot_digest, status: "pass", closeout_verified: false } } : {}) };
         this.kernel.confirmEffect(actor, `${effect}-confirm`, lease, effect, result);
         return this.kernel.finish(actor, `${effect}-finish`, lease, success ? "done" : "failed", result);
@@ -158,10 +158,10 @@ export class HostJobProcess {
         && typeof outcome.stdout === "string" && typeof outcome.stderr === "string"
         && Buffer.byteLength(outcome.stdout) + Buffer.byteLength(outcome.stderr) <= 524288, "host_job_outcome_unproven");
       const success = outcome.exit_code === 0, finished = new Date(this.kernel.db.now()).toISOString();
-      const steps = running.steps.map(item => item.id === step.id ? { ...item, state: success ? "completed" : "failed", exit_code: outcome.exit_code, finished_at: finished, completed_at: finished } : item);
+      const steps = running.steps.map(item => item.id === step.id ? { ...item, state: success ? "completed" : "failed", detail: success ? "completed" : `exit=${outcome.exit_code}`, exit_code: outcome.exit_code, finished_at: finished, completed_at: finished } : item);
       const done = steps.every(item => ["completed", "skipped"].includes(item.state));
       const saved = store.put(actor, `host-recover-${digest([requestId, binding])}`, current.revision, { ...running, steps,
-        state: !success ? "failed" : done ? "completed" : running.state, updated_at: finished, completed_at: done || !success ? finished : "" });
+        state: !success ? "failed" : done ? "completed" : running.state, last_error: success ? "" : `step ${step.id} failed with exit code ${outcome.exit_code}`, updated_at: finished, completed_at: done || !success ? finished : "" });
       return { host_job_id: approval.job_id, step_id: step.id, host_job_revision: saved.revision, exit_code: outcome.exit_code, observation_digest: evidence.observation_digest, ...(workflowEnd ? { specmesh: { snapshot_digest: workflowEnd.snapshot_digest, status: "pass", closeout_verified: false } } : {}) };
     });
   }

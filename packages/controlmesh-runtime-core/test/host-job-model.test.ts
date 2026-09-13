@@ -5,7 +5,12 @@ import { decodeHostJob, hostJobStates, hostStepStates, mergeHostJob } from "../s
 const job = (state: string, stepState: string) => ({ job_id: "job", state, created_at: "2026-09-13T00:00:00Z", updated_at: "2026-09-13T01:00:00Z", steps: [{ id: "test", command: "echo fixture", state: stepState }] });
 test("host job terminal merging agrees with live Python across task and step state pairs", async () => {
   const pairs = [...hostJobStates.flatMap(a => hostJobStates.map(b => [job(a, "pending"), job(b, "pending")])),
-    ...hostStepStates.flatMap(a => hostStepStates.map(b => [job("running", a), job("running", b)]))];
+    ...hostStepStates.flatMap(a => hostStepStates.map(b => [job("running", a), job("running", b)])),
+    ...["", "previous diagnostic"].flatMap(last_error => [0, 7].map(code => [
+      { ...job("running", "running"), last_error },
+      { ...job(code === 0 ? "completed" : "failed", code === 0 ? "completed" : "failed"),
+        last_error: code === 0 ? "" : `step test failed with exit code ${code}` },
+    ]))];
   const child = Bun.spawn(["uv", "run", "python", "-c", "import json,sys; from controlmesh.runtime.host_jobs import HostJob,_merge_job; print(json.dumps([_merge_job(HostJob.from_dict(a),HostJob.from_dict(b)).to_dict() for a,b in json.load(sys.stdin)]))"],
     { cwd: join(import.meta.dir, "../../.."), stdin: new Response(JSON.stringify(pairs)), stdout: "pipe", stderr: "pipe" });
   const output = await new Response(child.stdout).text(); expect(await child.exited).toBe(0);

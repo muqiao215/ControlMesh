@@ -2330,3 +2330,13 @@ entry points now share checks, while non-host device protocol semantics remain i
 Database upgrades preserve old episode expiry as the budget; never infer additional
 execution time from a new runtime default. Cross-TTL shell tests do not prove hour-long
 or detached-process operation.
+
+
+Python HostJobRunner assigns detail and last_error on completion/reconciliation, but
+HostJobStore _merge_job preserves an existing nonempty last_error. TS had omitted the
+execution assignments entirely. Both TS normal completion and retained-result recovery
+now supply them; the sticky persisted merge behavior remains compatible. Initial tests
+with a seeded prior error failed four cases and revealed that assignment is not final
+storage semantics. Added four live Python comparison cases for empty/nonempty prior
+errors and successful/failed incoming results. Historical error cleanup remains a known
+product issue, not a completed migration feature.

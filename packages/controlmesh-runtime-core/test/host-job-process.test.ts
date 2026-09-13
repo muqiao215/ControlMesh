@@ -10,9 +10,9 @@ import { HostJobProcess } from "../src/host-job-process";
 import { issueExecutionContext } from "../src/execution-context";
 import { issueToolGrant } from "../src/execution-grants";
 const actor: Principal = { id: "owner", device_id: "local", origin: "human_request", scopes: ["task:read", "task:create", "task:execute", "task:admin"] };
-function fixture(command: string, restricted = false) {
+function fixture(command: string, restricted = false, previousError = "") {
   const root = mkdtempSync(join(tmpdir(), "cm-host-process-")), db = new RuntimeDatabase(join(root, "runtime.sqlite")), kernel = new RuntimeKernel(db), store = new HostJobStore(db, () => {});
-  const saved = store.put(actor, "create-job", 0, { job_id: "job", repo: root, created_at: "2026-09-13", updated_at: "2026-09-13", steps: [{ id: "one", command, approval_required: true }] });
+  const saved = store.put(actor, "create-job", 0, { job_id: "job", repo: root, last_error: previousError, created_at: "2026-09-13", updated_at: "2026-09-13", steps: [{ id: "one", command, approval_required: true }] });
   const approval = new HostJobApprovals(db, () => {}).approve(actor, "approve", "job", saved.revision, "one");
   kernel.submit(actor, "create-task", { task_id: "host-task", chat_id: "main", status: "waiting", provider: "host",
     execution_context: issueExecutionContext({ origin: "user", source_scope: "local_foreground", transport: "terminal" }),
@@ -22,13 +22,15 @@ function fixture(command: string, restricted = false) {
   const runner = new HostJobProcess(kernel, actor, root, realpathSync("/bin/bash"), () => {});
   return { root, db, kernel, store, lease, runner, close() { db.close(); rmSync(root, { recursive: true, force: true }); } };
 }
-for (const code of [0, 7]) test(`host process executes once and records actual exit ${code}`, async () => {
-  const f = fixture(`printf 'executed\\n' >> marker; exit ${code}`);
+for (const previousError of ["", "previous diagnostic"]) for (const code of [0, 7]) test(`host process records exit ${code}, prior error ${JSON.stringify(previousError)}`, async () => {
+  const f = fixture(`printf 'executed\\n' >> marker; exit ${code}`, false, previousError);
   try {
     const result = await f.runner.execute(f.lease, { assertCurrent() {}, remainingMs: () => 5000 });
     expect(result.task.status).toBe(code === 0 ? "done" : "failed");
     expect(f.store.get(actor, "job")?.job.state).toBe(code === 0 ? "completed" : "failed");
     expect(f.store.get(actor, "job")?.job.steps[0]!.exit_code).toBe(code);
+    expect(f.store.get(actor, "job")?.job.steps[0]!.detail).toBe(code === 0 ? "completed" : `exit=${code}`);
+    expect(f.store.get(actor, "job")?.job.last_error).toBe(previousError || (code === 0 ? "" : `step one failed with exit code ${code}`));
     expect(readFileSync(join(f.root, "marker"), "utf8")).toBe("executed\n");
     await expect(f.runner.execute(f.lease, { assertCurrent() {} })).rejects.toThrow();
     expect(readFileSync(join(f.root, "marker"), "utf8")).toBe("executed\n");
@@ -88,7 +90,10 @@ for (const code of [0, 7]) test(`retained host exit ${code} recovers after reope
     const result = runner.reconcile("recover", "host-task", revision, binding);
     expect(result.task.status).toBe(code === 0 ? "done" : "failed");
     expect(result.needs_reconciliation).toBe(false);
-    expect(new HostJobStore(reopened, () => {}).get(recoveryActor, "job")?.job.steps[0]!.exit_code).toBe(code);
+    const recovered = new HostJobStore(reopened, () => {}).get(recoveryActor, "job")!.job;
+    expect(recovered.steps[0]!.exit_code).toBe(code);
+    expect(recovered.steps[0]!.detail).toBe(code === 0 ? "completed" : `exit=${code}`);
+    expect(recovered.last_error).toBe(code === 0 ? "" : `step one failed with exit code ${code}`);
     expect(runner.reconcile("recover", "host-task", revision, binding)).toEqual(result);
     expect(readFileSync(join(f.root, "marker"), "utf8")).toBe("once\n");
   } finally { reopened?.close(); f.close(); }

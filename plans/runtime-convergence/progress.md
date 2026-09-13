@@ -1166,3 +1166,16 @@ Final host/lease/device regression including the bypass case: 32 pass, 0 fail,
 No production migration, default switch, detached process acceptance or release claimed.
 Next host gaps remain durable execution ownership, trusted environment and runtime field
 projection; the full CM-R0..R7/provider/device/transport/native continuation gates stay open.
+
+
+## 2026-09-13 — host result diagnostic projection
+
+Normal and retained-outcome completion now set step.detail and job.last_error with the
+Python runner's messages. Cancelled-step detail was already present. Existing nonempty
+errors retain Python's sticky storage behavior. Actual shell exit 0/7, reopen recovery,
+rollback injection and whole-plan tests pass: 14 pass, 0 fail, 120 assertions, 2.68s
+(/tmp/cm-host-fields-final.log). Extended live Python merge comparison separately passed:
+2 tests, 8 assertions, 295ms. Typecheck passed. First exploratory run had 4 failures from
+incorrectly assuming empty last_error overwrites prior persisted diagnostics; corrected
+the expectation against Python source and added direct differential coverage.
+Durable detached execution, environment parity and full rollout remain open.
