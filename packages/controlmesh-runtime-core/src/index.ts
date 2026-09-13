@@ -106,3 +106,4 @@ export {
   type ImportResult,
   type ExportResult,
 } from "./cron-migration";
+export { CronTaskAdmission } from "./cron-task-admission";

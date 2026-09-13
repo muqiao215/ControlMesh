@@ -631,3 +631,15 @@ attempt insertion. Regression covers archive, disable and changed instruction, r
 zero attempts after rejection. Existing-attempt reconciliation is unchanged. Persistence
 suites: 18 pass/158 assertions; /tmp/cm-cron-admission-definition-review.log. This is an
 execution-entry guard required before timer/queue integration, not a completed scheduler.
+
+Implemented CronTaskAdmission using existing TaskIngress and the same RuntimeDatabase
+transaction: fixed schedule/cron provenance and controller-required grant, one task/attempt
+binding, repeated-submit observation, coordinator generation fencing, rollback on either
+task or attempt refusal, TaskHub policy checks and monitor disable after successful submit.
+The first implementation exposed FK ordering; corrected task-before-attempt in the same
+transaction. Initiated occurrences are now enqueued; explicit worker state advances running.
+Provider execution is not started. Timer due/quiet/dependency eligibility remains the
+scheduler's unimplemented owner; this trusted seam is not exposed as a remote endpoint.
+Validation: 29 tests pass/224 assertions; /tmp/cm-cron-task-admission-tests.log. Final
+typecheck passes after state correction; /tmp/cm-cron-task-admission-typecheck.log.
+Public index exports this admission seam for subsequent integration.

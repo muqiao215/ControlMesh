@@ -877,8 +877,8 @@ export class CronStore {
         now,
       );
 
-      // Transition occurrence to running
-      this.updateOccurrenceStateInternal(occurrenceId, "running");
+      // An initiated attempt is admitted, not proof that a worker has started.
+      this.updateOccurrenceStateInternal(occurrenceId, "enqueued");
 
       const created = this.db.sql.query(
         "SELECT * FROM cron_execution_attempts WHERE attempt_id = ?"
@@ -952,8 +952,10 @@ export class CronStore {
         attemptId,
       );
 
-      // Synchronize occurrence state on terminal transitions
-      if (nextState === "completed") {
+      // Worker startup/cancellation and terminal evidence drive occurrence state.
+      if (nextState === "running" || nextState === "cancelling") {
+        this.updateOccurrenceStateInternal(attempt.occurrence_id, nextState);
+      } else if (nextState === "completed") {
         this.updateOccurrenceStateInternal(attempt.occurrence_id, "completed");
       } else if (nextState === "failed") {
         this.updateOccurrenceStateInternal(attempt.occurrence_id, "failed");
