@@ -406,3 +406,10 @@ Gemini readiness checkpoint: concrete fresh-session probe and durable cache inte
 are implemented, including matching-generation execution failure invalidation. Next:
 ordinary configuration/task-adapter binding, qualified runtime/auth discovery and real
 account acceptance. No full Gemini, TS migration, multi-device rollout or release closure.
+
+
+Gemini ordinary-config checkpoint: provider description, submission/queue dispatch and
+control recovery now use shared GeminiRegistration. Full configured fixture execution
+and recovery after credential rotation pass. Next: installed native runtime/auth source
+qualification and actual account continuation, then remaining native receipts/Viewer and
+all outstanding CM-R0–R7 device/transport/terminal/cutover/release acceptance.

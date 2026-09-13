@@ -1,3 +1,4 @@
+import { GeminiRegistration } from "./providers/gemini-registration";
 import { dispatchHostOwner } from "./host-run-owner";
 import { hostJobEnvironment } from "./host-job-environment";
 import { HostJobAdapter } from "./host-job-adapter";
@@ -41,7 +42,7 @@ import { LocalNativeHistory, LocalOpenCodeHistory, RegisteredLocalHistory, type 
 /** Explicit isolated candidate configuration. Reading task state does not inspect or probe any provider. */
 export interface LocalRuntimeDescription {
   mode: "candidate"; workspace: string;
-  providers: { provider: "opencode" | "claude" | "codex" | "host"; model: string }[];
+  providers: { provider: "opencode" | "claude" | "codex" | "gemini" | "host"; model: string }[];
   registered_write_roots: string[];
   integrations: { history: boolean; specmesh: boolean };
 }
@@ -57,7 +58,7 @@ export function openLocalRuntime(path: string, options: { host_worker?: boolean 
   identifier(config.principal_id); identifier(config.device_id);
   requireThat(object(config.source) && config.source.command_origin === "human_request" && config.source.origin === "user"
     && config.source.source_scope === "local_foreground" && typeof config.source.transport === "string", "local_source_profile_unqualified");
-  requireThat(config.opencode !== undefined || config.claude !== undefined || config.codex !== undefined || config.host !== undefined, "local_provider_required");
+  requireThat(config.opencode !== undefined || config.claude !== undefined || config.codex !== undefined || config.gemini !== undefined || config.host !== undefined, "local_provider_required");
   requireThat(config.host === undefined || (object(config.host) && Object.keys(config.host).every(key => ["shell", "timeout_ms", "environment", "detached"].includes(key))
     && (config.host.detached === undefined || typeof config.host.detached === "boolean")
     && (config.host.timeout_ms === undefined || (Number.isSafeInteger(config.host.timeout_ms) && Number(config.host.timeout_ms) >= 1000 && Number(config.host.timeout_ms) <= 86_400_000))
@@ -131,6 +132,8 @@ export function openLocalRuntime(path: string, options: { host_worker?: boolean 
       return object(peers) ? prepareNativeAgentConfiguration(join(root, "codex-agent", taskId), communication!.node_executable as string,
         taskId, peers.peer_tasks as string[], peers.parent_task as string | null) : undefined;
     }, codexReads ? { node_executable: (config.codex as Record<string, unknown>).node_executable as string, read_files: [...workspace.read_files as string[]], required_reads: [...workspace.required_reads as string[]], ...(roots.length ? { write_roots: roots } : {}) } : undefined, specmesh?.binding_digest);
+    const gemini = config.gemini === undefined ? undefined : new GeminiRegistration(kernel, cache, actor, config.gemini, root, workspace.directory as string, current);
+    const geminiProfile = () => requireThat(!specmesh && !communication && roots.length === 0 && (workspace.read_files as string[]).length === 0 && (workspace.required_reads as string[]).length === 0, "gemini_native_receipt_profile_unavailable");
     const historyPorts = new Map<string, LocalNativeHistoryPort>();
     if (config.history !== undefined) {
       const historyConfig = config.history as { directory: string; python: string };
@@ -171,6 +174,9 @@ export function openLocalRuntime(path: string, options: { host_worker?: boolean 
         requireThat(object(config.host), "host_not_registered");
         return new HostJobAdapter(kernel, actor, workspace.directory as string, config.host.shell as string, current, specmesh, config.host.timeout_ms as number | undefined, config.host.environment).prepare(task);
       }
+      if (task.task.provider === "gemini") {
+        requireThat(gemini, "gemini_not_registered"); geminiProfile(); return gemini.adapter(task).prepare(task);
+      }
       if (task.task.provider === "codex") {
         requireThat(codex, "codex_not_registered");
         const execution = codex.adapter(task).prepare(task);
@@ -194,6 +200,9 @@ export function openLocalRuntime(path: string, options: { host_worker?: boolean 
           requireThat(saved.manifest.schema_version === "controlmesh.host_step_execution.v1", "host_job_manifest_unproven");
           return { episode_id: saved.episode.episode_id, effect_id: effectId, manifest_digest: saved.manifest_digest, observation_digest: saved.observation_digest };
         }
+        if (kernel.inspect(actor, taskId).task.provider === "gemini") {
+          requireThat(gemini, "gemini_not_registered"); geminiProfile(); return gemini.adapter(kernel.inspect(actor, taskId), true).inspectRecovery(taskId, revision, effectId);
+        }
         if (kernel.inspect(actor, taskId).task.provider === "codex") {
           requireThat(codex, "codex_not_registered"); return codex.adapter(kernel.inspect(actor, taskId), true).inspectRecovery(taskId, revision, effectId);
         }
@@ -203,6 +212,11 @@ export function openLocalRuntime(path: string, options: { host_worker?: boolean 
         return { episode_id: saved.episode.episode_id, effect_id: effectId, manifest_digest: saved.manifest_digest, observation_digest: saved.observation_digest };
       },
       accept: async (requestId, taskId, revision, candidate) => {
+        if (kernel.inspect(actor, taskId).task.provider === "gemini") {
+          current(); runtime.queueStatus(); requireThat(gemini, "gemini_not_registered"); geminiProfile();
+          const result = gemini.adapter(kernel.inspect(actor, taskId), true).recover(requestId, taskId, revision, candidate);
+          runtime.recover(); return result;
+        }
         if (kernel.inspect(actor, taskId).task.provider === "host") {
           current(); runtime.queueStatus(); requireThat(object(config.host), "host_not_registered");
           const result = await new HostJobProcess(kernel, actor, workspace.directory as string, config.host.shell as string,
@@ -289,7 +303,7 @@ export function openLocalRuntime(path: string, options: { host_worker?: boolean 
     const describe = (): LocalRuntimeDescription => {
       current();
       return { mode: "candidate", workspace: workspace.directory as string,
-        providers: (["opencode", "claude", "codex", "host"] as const).filter(name => object(config[name])).map(name => ({ provider: name, model: name === "host" ? "" : (config[name] as Record<string, unknown>).model as string })),
+        providers: (["opencode", "claude", "codex", "gemini", "host"] as const).filter(name => object(config[name])).map(name => ({ provider: name, model: name === "host" ? "" : (config[name] as Record<string, unknown>).model as string })),
         registered_write_roots: [...roots], integrations: { history: Boolean(history), specmesh: Boolean(specmesh) } };
     };
     return { runtime, recovery, describe, submissionIdentity, stop, close, ...(scheduler ? { scheduler, keep_alive: schedule!.keep_alive === true } : {}), ...(history ? { history } : {}), ...(deliveries ? { deliveries } : {}), ...(inbound ? { inbound } : {}), ...(specmesh ? { specmesh } : {}) };

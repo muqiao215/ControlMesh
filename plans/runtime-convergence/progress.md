@@ -1469,3 +1469,25 @@ Remaining/Next: ordinary configuration registration must bind this readiness obj
 the actual task adapter/configuration and enumerate qualified runtime/auth sources.
 Full native execution/isolation, account continuation, tool/workspace/mailbox and device
 profiles remain open, as do the complete migration/transport/terminal/release gates.
+
+
+## 2026-09-13 — ordinary Gemini configuration and control recovery
+
+Current/Done: candidate openLocalRuntime now registers/describes Gemini and resolves
+its queue execution plus recovery controls through GeminiRegistration. Registration
+validates explicit settings/runtime/credential sources and a canonical bounded native
+session directory. Preflight and execution share the same settings configuration.
+Recovery uses original configured evidence without checking new credentials/readiness.
+Unsupported native workflow/file/communication receipt profiles explicitly refuse.
+
+Verification: 57 tests passed, 0 failed, 400 assertions, 16.89s in
+/tmp/cm-gemini-config-regression.log; typecheck and diff check passed. The new configured
+flow uses actual Node permission-scoped settings probing, a fixture native module/CLI,
+normal submission/queue execution and close/reopen control recovery. Exactly one probe
+and one resume are observed, including recovery after credential rotation. This is not
+an installed Gemini account canary. Previous d21be48 CI succeeded (34739120104).
+
+Remaining/Next: qualify the installed complete native runtime/auth graph and run actual
+account-backed same-session continuation; then tool/workspace/mailbox receipt profiles,
+Viewer adoption and remaining device/transport/terminal/migration/release gates. The new
+text compatibility path does not close the full original CM-R0–R7 objective.

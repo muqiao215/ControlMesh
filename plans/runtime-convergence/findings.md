@@ -2470,3 +2470,12 @@ input/output and absence of tools, not merely exit 0. Registered credential-file
 needs independent checking when cached readiness is reused or another in-flight probe
 is awaited; environment hashes alone do not detect an OAuth file replacement. Native
 auth refresh may invalidate this conservative registration and requires requalification.
+
+
+Gemini normal configuration can reuse the generic local-runtime description and queue
+control interfaces; no new task store is needed. Recovery registration must locate and
+verify the original session/configuration while avoiding fresh credential admission: a
+rotated credential does not invalidate already retained execution evidence. A bounded
+chats-directory lookup verifies full UUID/project identity and refuses filename-prefix
+ambiguity. The configured fixture validates this wiring but is not native package or
+real model/account qualification.

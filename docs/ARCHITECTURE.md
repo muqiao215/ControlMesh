@@ -130,6 +130,16 @@ This is a registered host probe, not an isolated sandbox or proof that registrat
 enumerated every possible native auth/execution branch. Ordinary configuration wiring,
 complete native registration and account-backed acceptance remain open.
 
+The candidate local runtime now registers `gemini` alongside other configured providers.
+GeminiRegistration constructs preflight and task execution from the same explicit settings
+profile, canonical session directory and registered credential sources. Session lookup is
+bounded and validates the full native UUID/project; it never launches a model. Normal
+queue dispatch and control recovery use this registration. Recovery bypasses readiness
+and credential freshness so retained outcomes remain recoverable after credential rotation.
+The current text profile refuses configured workflow/file/communication requirements;
+their native receipt implementations, Viewer adoption, complete native runtime discovery
+and real account acceptance remain required before claiming full Gemini support.
+
 Responsibilities:
 
 - discover and authenticate official provider CLIs;
