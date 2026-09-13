@@ -151,16 +151,14 @@ test("device publication resumes a partial journal without replacing the first c
   expect(fs.statSync(join(f.repo, "PROJECT.md")).ino).toBe(inode); expect(f.read()).toBe(2); expect(f.commands()).toBe(commands);
 });
 
-test("publication refresh refuses cancellation, revocation, partition and an expired coordinator lease", async () => {
-  for (const failure of ["cancel", "revoke", "partition", "expiry"]) {
-    const f = setup(); f.hooks.after = command => { if (command.operation !== "observe") return;
-      if (failure === "cancel") f.cancel();
-      if (failure === "revoke") f.coordinator().revoke(owner, device.device_id!);
-      if (failure === "expiry") f.advance(10000);
-      if (failure === "partition") f.hooks.before = next => { if (next.operation === "renew") throw new Error("partition"); };
-    };
-    expect((await f.makeWorker().run("task", 5000)).status).toBe("unknown"); expect(f.read()).toBe(1);
-  }
+for (const failure of ["cancel", "revoke", "partition", "expiry"]) test(`publication refresh refuses ${failure}`, async () => {
+  const f = setup(); f.hooks.after = command => { if (command.operation !== "observe") return;
+    if (failure === "cancel") f.cancel();
+    if (failure === "revoke") f.coordinator().revoke(owner, device.device_id!);
+    if (failure === "expiry") f.advance(10000);
+    if (failure === "partition") f.hooks.before = next => { if (next.operation === "renew") throw new Error("partition"); };
+  };
+  expect((await f.makeWorker().run("task", 5000)).status).toBe("unknown"); expect(f.read()).toBe(1);
 });
 
 test("recovery rechecks coordinator challenge before touching retained files", async () => {
