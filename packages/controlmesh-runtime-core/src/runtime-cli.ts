@@ -1,3 +1,4 @@
+import { runtimeSessionStorageKey } from "./runtime-session-key";
 import { randomUUID } from "node:crypto";
 import { closeSync, constants, fstatSync, openSync, readSync } from "node:fs";
 import { isAbsolute } from "node:path";
@@ -12,6 +13,7 @@ export const runtimeHelp = `ControlMesh TypeScript 运行时（候选入口）
   status                          查看队列与并发容量
   tasks [--after ID] [--limit N]   查看任务、结果状态和阻塞原因
   inspect TASK                    查看任务及当前版本
+  session-events --session KEY   查看当前用户的会话事件摘要
   events TASK [--after N]         查看有来源标记的任务事件
   new TASK --prompt TEXT           使用已注册项目和模型创建任务
     [--provider NAME] [--model ID] 多 Provider 时显式选择；使用 enqueue 执行
@@ -59,7 +61,7 @@ export function parseRuntimeCli(argv: string[]): RuntimeCliCommand | null {
     else { const next = argv[++i]; requireThat(next !== undefined && !next.startsWith("--"), "missing_cli_option_value"); flags[arg] = next; }
   }
   const command = args[0]!, options: Record<string, string[]> = {
-    "history-search": ["--provider", "--query"], "history-refresh": ["--provider"],
+    "history-search": ["--provider", "--query"], "history-refresh": ["--provider"], "session-events": ["--session", "--limit"],
     "prepare-adoption": ["--provider", "--session"], handoff: [], verify: [],
     ui: [], serve: ["--config"], status: [], tasks: ["--after", "--limit"], inspect: [], events: ["--after", "--limit"],
     new: ["--project", "--provider", "--model", "--prompt", "--prompt-file", "--adoption"], enqueue: ["--revision"],
@@ -95,6 +97,7 @@ export function parseRuntimeCli(argv: string[]): RuntimeCliCommand | null {
       case "status": request = { op: "status" }; break;
       case "tasks": request = { op: "list_tasks", after: flags["--after"] ?? "", limit: number("--limit", 50) }; break;
       case "inspect": request = { op: "inspect_task", task_id: args[1] }; break;
+      case "session-events": request = { op: "session_events", session_key: runtimeSessionStorageKey(text("--session")), limit: number("--limit", 20) }; break;
       case "events": request = { op: "task_events", task_id: args[1], after: number("--after", 0), limit: number("--limit", 50) }; break;
       case "new": {
         let adoption: unknown;

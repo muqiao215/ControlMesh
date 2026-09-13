@@ -1,3 +1,6 @@
+import { RuntimeEventStore } from "./runtime-events";
+import { runtimeSessionKeyFromAddress } from "./runtime-session-key";
+import { decodeExecutionContext } from "./execution-context";
 import { nativeTaskOutcome } from "./native-task-failure";
 import { topologyNativeClaim } from "./topology-execution";
 import { assertTopologyNativeInput } from "./topology-native-input";
@@ -135,8 +138,26 @@ export class RuntimeKernel {
 
   eventOrigin(actor: Principal): Principal["origin"] { return this.scheduleActor === actor.id ? "schedule" : actor.origin; }
   private event(actor: Principal, task: TaskRow, kind: string, payload: unknown): void {
-    this.db.sql.query("INSERT INTO events (task_id,kind,revision,fence,principal,origin,at,payload) VALUES (?,?,?,?,?,?,?,?)")
-      .run(task.task_id, kind, task.revision, task.fence, actor.id, this.eventOrigin(actor), this.db.now(), canonical(payload));
+    const at = this.db.now();
+    const inserted = this.db.sql.query("INSERT INTO events (task_id,kind,revision,fence,principal,origin,at,payload) VALUES (?,?,?,?,?,?,?,?)")
+      .run(task.task_id, kind, task.revision, task.fence, actor.id, this.eventOrigin(actor), at, canonical(payload));
+    const raw = JSON.parse(task.raw) as LegacyTask;
+    if (kind.startsWith("task.") && raw.execution_context !== undefined) {
+      let context: ReturnType<typeof decodeExecutionContext>;
+      try { context = decodeExecutionContext(raw.execution_context); }
+      catch { return; } // Legacy task events remain readable; incomplete provenance cannot assign a session.
+      const topic = raw.thread_id ?? null;
+      requireThat(topic === null || typeof topic === "string" || (typeof topic === "number" && Number.isSafeInteger(topic)), "invalid_task_topic");
+      this.db.sql.query("INSERT OR IGNORE INTO meta(key,value) VALUES('backstage_source_id',?)").run(randomUUID());
+      const source = (this.db.sql.query("SELECT value FROM meta WHERE key='backstage_source_id'").get() as { value: string }).value;
+      new RuntimeEventStore(this.db).append(task.principal, {
+        event_id: `kernel-${digest([source, String(inserted.lastInsertRowid)])}`, event_type: kind,
+        session_key: runtimeSessionKeyFromAddress(context.transport, raw.chat_id, topic),
+        transport: context.transport, chat_id: raw.chat_id, topic_id: topic,
+        created_at: new Date(at).toISOString(),
+        payload: { task_id: task.task_id, status: task.status, revision: task.revision, fence: task.fence },
+      });
+    }
   }
 
   private save(task: TaskRow): void {

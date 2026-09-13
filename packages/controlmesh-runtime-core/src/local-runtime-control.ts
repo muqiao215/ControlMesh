@@ -32,7 +32,7 @@ export class LocalRuntimeControl {
         ...topologyControlFields,
         status: [], list_tasks: ["after", "limit"], task_events: ["task_id", "after", "limit"],
         submit: ["task", "specmesh_requirements_sha256"], inspect_task: ["task_id"], enqueue: ["task_id", "expected_revision"], inspect_run: ["run_id"],
-        resume: ["task_id", "expected_revision", "prompt"], cancel: ["task_id", "expected_revision"], tell: ["task_id", "text"], drain: [],
+        resume: ["task_id", "expected_revision", "prompt"], cancel: ["task_id", "expected_revision"], tell: ["task_id", "text"], drain: [], session_events: ["session_key", "limit"],
         inspect_message: ["task_id", "message_id"], mailbox_status: ["task_id"],
         bind_delivery: ["task_id", "expected_revision", "adapter_id", "output_policy"], deliveries: ["task_id"],
         drain_deliveries: [], retry_delivery: ["delivery_id"], reconcile_delivery: ["delivery_id", "remote_message_id"], revoke_delivery: ["task_id"],
@@ -52,6 +52,7 @@ export class LocalRuntimeControl {
       switch (request.op) {
         case "status": result = { queue: this.runtime.queueStatus(), parallelism: this.runtime.parallelLimit(), ...(this.describe ? { configuration: this.describe() } : {}) }; break;
         case "list_tasks": result = this.runtime.listTasks(request.after as string | undefined, request.limit as number | undefined); break;
+        case "session_events": requireThat(typeof request.session_key === "string", "invalid_session_key"); result = this.runtime.sessionEvents(request.session_key, request.limit as number | undefined); break;
         case "task_events": identifier(request.task_id); result = this.runtime.taskEvents(request.task_id, request.after as number | undefined, request.limit as number | undefined); break;
         case "history_search":
           requireThat(this.history && typeof request.provider === "string" && typeof request.query === "string", "native_history_not_configured");

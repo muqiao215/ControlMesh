@@ -69,3 +69,10 @@ test("event codec refuses unproven rounded numbers and excessive nesting", async
   expect(() => runtimeEventJson(deep)).toThrow("runtime_event_depth_exceeded");
   expect(runtimeEventJson(parseRuntimeEventJson('{"value":9007199254740993}'))).toBe('{"value":9007199254740993}');
 });
+
+test("session history CLI preserves typed identifiers and has no principal override", async () => {
+  const { parseRuntimeCli } = await import("../src/runtime-cli");
+  expect(parseRuntimeCli(["session-events", "--socket", "/tmp/cm.sock", "--session", "v2:terminal:s:main%3Atopic", "--limit", "5"])?.request)
+    .toMatchObject({ op: "session_events", session_key: "v2:terminal:s:main%3Atopic", limit: 5 });
+  expect(() => parseRuntimeCli(["session-events", "--socket", "/tmp/cm.sock", "--session", "tg:1", "--principal", "other"])).toThrow("unknown_cli_option");
+});

@@ -1,3 +1,6 @@
+import { RuntimeEventStore } from "./runtime-events";
+import { runtimeEventJson } from "./runtime-event-json";
+import { runtimeSessionStorageKey } from "./runtime-session-key";
 import { randomUUID } from "node:crypto";
 import { command, requireScope } from "./commands";
 import { AgentMailbox, type AgentMessage } from "./mailbox";
@@ -113,6 +116,13 @@ export class LocalTaskRuntime {
         run: run ? { run_id: run.run_id, state: run.state, outcome: run.outcome ? JSON.parse(run.outcome) : null } : null };
     });
     return { tasks, next_after: rows.length > limit ? tasks.at(-1)!.task_id : null };
+  }
+  sessionEvents(session: string, limit = 20) {
+    this.current(); requireScope(this.actor, "task:read");
+    requireThat(Number.isSafeInteger(limit) && limit >= 1 && limit <= 100, "invalid_local_event_limit");
+    const key = runtimeSessionStorageKey(session);
+    const events = new RuntimeEventStore(this.kernel.db).readRecent(this.actor.id, key, limit);
+    return { session_key: key, count: events.length, jsonl: events.map(event => runtimeEventJson(event) + "\n").join("") };
   }
   taskEvents(taskId: string, after = 0, limit = 50) {
     this.inspectTask(taskId);

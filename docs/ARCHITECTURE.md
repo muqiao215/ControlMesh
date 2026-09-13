@@ -1002,3 +1002,9 @@ Backstage JSONL import/export uses an event-specific lossless integer codec. Int
 records may contain bigint; callers must use `exportJsonl` for serialization. A batch
 binds one principal/session and rolls back on malformed input or conflicting event IDs.
 The task kernel's JSON codec and public protocol types remain separate.
+
+The TS kernel projects bounded task.* lifecycle summaries into backstage events in the
+same transaction, using validated execution-context transport and task address. A stored
+database source UUID namespaces event IDs. Local control exposes principal-bound
+`session_events` as lossless JSONL with a bounded record limit; legacy partial contexts
+remain task-only events. Other Python event producers are still pending migration.

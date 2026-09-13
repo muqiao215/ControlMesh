@@ -2176,3 +2176,10 @@ opening the target. The loaded snapshot is the authoritative import input; sourc
 changes after reading cannot change it. Existing-target conflicts roll back event writes,
 but opening an older valid candidate database may upgrade its schema; this is not a
 production writer switch or a claim of whole-runtime rollback compatibility.
+
+Kernel lifecycle event insertion is the common transactional producer for local/device
+task transitions. Project only bounded task.* summaries from valid execution contexts;
+legacy fixtures/records may carry incomplete context, which is insufficient to choose
+a session but must not invalidate existing task operations. Transport address encoding
+accepts the existing execution-context transport alphabet. Event IDs bind a persisted
+source UUID so unrelated databases do not collide on local sequence numbers.

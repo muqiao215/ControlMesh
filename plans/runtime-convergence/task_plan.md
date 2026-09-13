@@ -214,3 +214,8 @@ Backstage file migration checkpoint: explicit read-only preview and digest-bound
 command implemented and subprocess-tested. Remaining: actual producer/control wiring,
 operational cutover/export rollback qualification and unsupported numeric-form handling.
 No operator files are migrated automatically.
+
+Backstage producer checkpoint: TS kernel task.* summaries and authenticated local
+session-events query/CLI are wired and tested. Remaining Python frontstage/orchestrator
+and route-candidate/inbox producer parity must still be implemented before full cutover.
+Legacy partial-context tasks retain task events without inferred session projection.

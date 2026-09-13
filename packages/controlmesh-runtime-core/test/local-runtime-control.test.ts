@@ -294,3 +294,30 @@ test("scheduler configuration is explicit and rejects unknown or malformed field
     expect(await new LocalRuntimeControl(owned.runtime).handle({ id: "start", op: "start_scheduler" })).toMatchObject({ ok: false, error: "topology_scheduler_not_configured" });
   } finally { await owned.close(); }
 });
+
+test("normal task controls produce bounded session history atomically and refuse principal overrides", async () => {
+  const f = fixture(); let owned = openLocalRuntime(f.path);
+  try {
+    let control = new LocalRuntimeControl(owned.runtime, undefined, owned.submissionIdentity);
+    const request = { id: "session-submit", op: "submit", task: { task_id: "session-task", chat_id: "main", status: "waiting", prompt: "private task content" } };
+    const submitted = await control.handle(request); expect(submitted.ok).toBe(true);
+    expect((await control.handle(request)).ok).toBe(true);
+    const query = { id: "session-read", op: "session_events", session_key: "v2:terminal:s:main" };
+    const before = await control.handle(query); expect(before.ok).toBe(true);
+    const view = before.result as { count: number; jsonl: string };
+    expect(view.count).toBe(1); expect(view.jsonl).not.toContain("private task content");
+    expect(JSON.parse(view.jsonl)).toMatchObject({ event_type: "task.created", payload: { task_id: "session-task", status: "waiting" } });
+    expect(await control.handle({ ...query, principal: "other" })).toMatchObject({ ok: false, error: "unexpected_local_request_field" });
+    expect((await control.handle({ ...query, limit: 0 })).ok).toBe(false);
+    expect(await control.handle({ id: "cancel-session", op: "cancel", task_id: "session-task", expected_revision: 1 })).toMatchObject({ ok: true });
+    const after = (await control.handle(query)).result as { count: number; jsonl: string };
+    expect(after.count).toBe(2);
+    expect(after.jsonl.trim().split("\n").map(line => JSON.parse(line).event_type)).toEqual(["task.created", "task.cancelled"]);
+    await owned.close(); owned = openLocalRuntime(f.path); control = new LocalRuntimeControl(owned.runtime, undefined, owned.submissionIdentity);
+    expect((await control.handle(query)).result).toEqual(after);
+    const count = owned.runtime.kernel.db.sql.query("SELECT COUNT(*) AS n FROM tasks").get();
+    expect(await control.handle({ id: "bad-topic", op: "submit", task: { task_id: "bad-topic", chat_id: "main", thread_id: {}, status: "waiting" } })).toMatchObject({ ok: false });
+    expect(owned.runtime.kernel.db.sql.query("SELECT COUNT(*) AS n FROM tasks").get()).toEqual(count);
+    expect((await control.handle(query)).result).toEqual(after);
+  } finally { await owned.close(); }
+});

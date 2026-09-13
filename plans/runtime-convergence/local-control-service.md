@@ -303,3 +303,12 @@ roll back the event batch. Opening an older candidate target on apply upgrades i
 The command does not discover files, start agents, replay tasks or modify source JSONL.
 Malformed input and unsupported numeric representations are refusals. Production event
 producer cutover is a separate pending migration gate.
+
+### Session-scoped lifecycle summaries
+
+`bun packages/controlmesh-runtime-core/scripts/cm-runtime.ts session-events --socket
+/absolute/runtime.sock --session v2:terminal:s:main --limit 20` reads the configured
+principal's session summaries (maximum 100). The result contains session_key, count and
+JSONL, preserving imported large integers without lossy public JSON number conversion.
+Valid-source task lifecycle changes write bounded summaries transactionally. Legacy
+partial-context tasks remain available through task events; no session is inferred.

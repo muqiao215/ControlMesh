@@ -774,3 +774,20 @@ Real CLI subprocess tests plus event codec/import tests: 5 passed, 42 assertions
 digest refusal before target creation, successful apply/replay, unchanged source and
 symlink refusal. No operator history was migrated. Producer wiring and full cutover
 remain pending; this command only imports explicitly supplied backstage events.
+
+## 2026-09-13 — lifecycle producer and local session history surface
+
+Kernel task.* lifecycle events now append a bounded backstage summary in the same
+transaction when the task has a valid issued execution context. Summaries contain task
+ID/status/revision/fence, not raw model output, task prompt or credentials. Legacy partial
+contexts still produce original task events but cannot establish session attribution.
+Per-database persisted source UUID plus kernel sequence creates stable distinct event IDs.
+Local session_events control/CLI reads only the configured principal, caps reads at 100
+and returns lossless JSONL. No write/identity override is exposed on that surface.
+
+Normal submit/replay/cancel/reopen tests verify automatic production, bounded contents,
+identity-override refusal and transaction rollback on invalid topic. Kernel/device/control
+regressions: 61 passed, 351 assertions, 7.70s (`/tmp/cm-session-events-final.log`);
+event/CLI: 13 passed, 101 assertions, 8.02s (`/tmp/cm-session-events-cli.log`); typecheck
+and diff-check passed. This wires TS lifecycle production and reads; Python frontstage
+events, route-candidate/inbox producers and operational default switch remain pending.
