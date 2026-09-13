@@ -60,7 +60,7 @@ export class LocalTaskRuntime {
   private hostPlanCursor = "";
 
   constructor(readonly kernel: RuntimeKernel, actor: Principal, source: IngressSource,
-    private readonly resolve: LocalTaskResolver, private readonly authorize: () => void, options: LocalRuntimeOptions = {}, private readonly hostWorkspace?: string) {
+    private readonly resolve: LocalTaskResolver, private readonly authorize: () => void, options: LocalRuntimeOptions = {}, private readonly hostWorkspace?: string, private readonly hostTimeoutMs?: number) {
     this.actor = structuredClone(actor); this.sourceProfile = structuredClone(source);
     identifier(actor.device_id);
     for (const scope of ["task:read", "task:execute", "task:reconcile", "task:admin"]) requireScope(actor, scope);
@@ -68,11 +68,12 @@ export class LocalTaskRuntime {
     requireThat(Number.isSafeInteger(this.parallelism) && this.parallelism >= 1 && this.parallelism <= 16
       && Number.isSafeInteger(this.maxPending) && this.maxPending >= 1 && this.maxPending <= 1024
       && Number.isSafeInteger(this.leaseMs) && this.leaseMs >= 1000 && this.leaseMs <= 300_000, "invalid_local_runtime_limits");
+    requireThat(hostTimeoutMs === undefined || (Number.isSafeInteger(hostTimeoutMs) && hostTimeoutMs >= 1000 && hostTimeoutMs <= 86_400_000), "invalid_host_execution_timeout");
     this.current();
     this.ingress = new TaskIngress(kernel, source, () => this.current());
     // Two controllers cannot claim different concurrency budgets for the same configured device/owner.
     const key = `local-policy:${digest([actor.id, actor.device_id])}`;
-    const policy = canonical({ source, parallelism: this.parallelism, max_pending: this.maxPending, lease_ms: this.leaseMs, origin: actor.origin });
+    const policy = canonical({ source, parallelism: this.parallelism, max_pending: this.maxPending, lease_ms: this.leaseMs, origin: actor.origin, ...(hostTimeoutMs === undefined ? {} : { host_timeout_ms: hostTimeoutMs }) });
     kernel.db.transaction(() => {
       const existing = kernel.db.sql.query("SELECT value FROM meta WHERE key=?").get(key) as { value: string } | null;
       requireThat(!existing || existing.value === policy, "local_runtime_policy_conflict");
@@ -326,7 +327,9 @@ export class LocalTaskRuntime {
           const task = this.kernel.inspect(this.actor, row.task_id), execution = this.resolve(task);
           this.checkExecution(execution);
           requireThat(execution.binding_digest === row.binding_digest, "queued_execution_binding_changed");
-          const lease = this.kernel.claim(this.actor, `local-claim-${row.run_id}`, row.task_id, row.expected_revision, this.leaseMs);
+          const duration = task.task.provider === "host" ? this.hostTimeoutMs : undefined;
+          const ttl = Math.min(this.leaseMs, duration ?? this.leaseMs);
+          const lease = this.kernel.claim(this.actor, `local-claim-${row.run_id}`, row.task_id, row.expected_revision, ttl, duration !== undefined && duration > ttl ? duration : undefined);
           this.kernel.withLease(this.actor, lease, () => {});
           this.kernel.db.sql.query("UPDATE local_runs SET state='running',owner=?,lease=? WHERE run_id=?")
             .run(this.owner, canonical(lease), row.run_id);
@@ -356,6 +359,17 @@ export class LocalTaskRuntime {
     const context: LocalExecutionContext = { signal, remainingMs: () => lease.lease_until - this.kernel.db.now(), assertCurrent: () => {
       this.current(); requireThat(!signal.aborted, "local_execution_interrupted");
       this.kernel.withLease(this.actor, lease, () => {}); this.checkExecution(execution);
+      if (this.hostTimeoutMs !== undefined && this.hostTimeoutMs > this.leaseMs
+        && this.kernel.inspect(this.actor, row.task_id).task.provider === "host"
+        && lease.lease_until - this.kernel.db.now() < this.leaseMs / 2
+        && lease.lease_until < this.kernel.executionDeadline(this.actor, lease)) {
+        const renewed = this.kernel.db.transaction(() => {
+          const next = this.kernel.renewLease({ ...this.actor, origin: "internal" }, `local-renew-${digest([row.run_id, lease.lease_until])}`, lease, this.leaseMs);
+          const saved = this.kernel.db.sql.query("UPDATE local_runs SET lease=? WHERE run_id=? AND owner=? AND state='running'").run(canonical(next), row.run_id, this.owner);
+          requireThat(saved.changes === 1, "local_run_ownership_changed"); return next;
+        });
+        Object.assign(lease, renewed);
+      }
     }, assertPublicationAuthority: () => {
       this.current(); requireThat(!signal.aborted, "local_execution_interrupted");
       this.kernel.withLease(this.actor, lease, () => {});

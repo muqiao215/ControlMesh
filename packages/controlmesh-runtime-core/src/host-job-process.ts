@@ -16,7 +16,7 @@ import { canonical, digest, object, requireThat } from "./value";
 export class HostJobProcess {
   private readonly actor: Principal;
   constructor(private readonly kernel: RuntimeKernel, actor: Principal, private readonly workspace: string,
-    private readonly shell: string, private readonly authorize: () => void, private readonly workflow?: SpecMeshPort) { this.actor = structuredClone(actor); }
+    private readonly shell: string, private readonly authorize: () => void, private readonly workflow?: SpecMeshPort, private readonly timeoutMs = 300_000) { this.actor = structuredClone(actor); }
   async execute(lease: Lease, admission: ProcessAdmission) {
     const actor = this.actor, task = this.kernel.inspect(actor, lease.task_id).task;
     requireThat(object(task.host_job) && task.provider === "host", "host_job_task_binding_required");
@@ -60,7 +60,7 @@ export class HostJobProcess {
     });
     try {
       const outcome = await new ProcessSupervisor().run({ command: [this.shell, "--noprofile", "--norc", "-c", step.command], cwd: workspace.path,
-        env: { PATH: "/usr/bin:/bin", LANG: "C.UTF-8" }, timeout_ms: 300000, max_output_bytes: 262144 }, { ...admission, assertCurrent: guard, onOutput: (stream, text) => appendHostLog(this.kernel, actor, lease, effect, stream, text) });
+        env: { PATH: "/usr/bin:/bin", LANG: "C.UTF-8" }, timeout_ms: this.timeoutMs, max_output_bytes: 262144 }, { ...admission, assertCurrent: guard, onOutput: (stream, text) => appendHostLog(this.kernel, actor, lease, effect, stream, text) });
       // Retain the owned process outcome even after lease loss; it cannot authorize completion alone.
       this.kernel.db.transaction(() => {
         const changed = this.kernel.db.sql.query("UPDATE effects SET result=? WHERE effect_id=? AND task_id=? AND episode_id=? AND fence=? AND state IN ('dispatched','unknown') AND result IS NULL")

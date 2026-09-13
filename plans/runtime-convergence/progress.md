@@ -1147,3 +1147,22 @@ across 22 files in 37.34s (/tmp/cm-host-log-migrations.log). Final log/CLI regre
 Typecheck/diff check passed. Old-version downgrade fixtures now remove the new table and
 expect schema 32. This is not permission to open production Python state or a claim of
 long-running/orphan-process parity; existing host output and five-minute limits remain.
+
+
+## 2026-09-13 — bounded host lease renewal (schema 33)
+
+Explicit trusted host.timeout_ms permits execution beyond a single short lease with an
+immutable total budget. Local renewal and persisted run proof update share a transaction;
+maintenance events use internal origin. Both kernel host renewal entry points enforce
+current ownership and the same deadline. Cancellation/expiry and stale proofs refuse.
+Old schema episodes receive their original lease expiry, not a newly extended budget.
+
+Actual two-second shell execution completed across a one-second lease with a four-second
+budget; a one-second budget stopped before its final marker. Event-write fault injection
+rolled renewal back. Migration regression before the final entry-point correction:
+352 pass, 0 fail, 3130 assertions, 24 files, 40.03s (/tmp/cm-renewal-migrations.log).
+Final host/lease/device regression including the bypass case: 32 pass, 0 fail,
+163 assertions, 3 files, 8.43s (/tmp/cm-renewal-final.log). Typecheck passed.
+No production migration, default switch, detached process acceptance or release claimed.
+Next host gaps remain durable execution ownership, trusted environment and runtime field
+projection; the full CM-R0..R7/provider/device/transport/native continuation gates stay open.

@@ -26,7 +26,7 @@ export class RuntimeDatabase {
       this.transaction(() => {
         const version = (this.sql.query("PRAGMA user_version").get() as { user_version: number }).user_version;
         const app = (this.sql.query("PRAGMA application_id").get() as { application_id: number }).application_id;
-        requireThat(version >= 0 && version <= 32, "unsupported_database_version");
+        requireThat(version >= 0 && version <= 33, "unsupported_database_version");
         requireThat(app === 0 || app === APPLICATION_ID, "foreign_database");
         if (version === 0) {
           const tables = this.sql.query("SELECT name FROM sqlite_master WHERE type='table'").all();
@@ -458,6 +458,13 @@ export class RuntimeDatabase {
           );
           CREATE INDEX process_output_effect ON process_output_chunks(effect_id,seq);
           PRAGMA user_version=32;`);
+        }
+        if (version < 33) {
+          this.sql.exec(`CREATE TABLE episode_deadlines (
+            episode_id TEXT PRIMARY KEY REFERENCES episodes(episode_id), deadline_at INTEGER NOT NULL CHECK(deadline_at>=0)
+          );
+          INSERT INTO episode_deadlines SELECT episode_id,MAX(0,lease_until) FROM episodes;
+          PRAGMA user_version=33;`);
         }
       });
       this.sql.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;");

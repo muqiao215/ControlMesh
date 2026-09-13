@@ -56,7 +56,8 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
   requireThat(object(config.source) && config.source.command_origin === "human_request" && config.source.origin === "user"
     && config.source.source_scope === "local_foreground" && typeof config.source.transport === "string", "local_source_profile_unqualified");
   requireThat(config.opencode !== undefined || config.claude !== undefined || config.codex !== undefined || config.host !== undefined, "local_provider_required");
-  requireThat(config.host === undefined || (object(config.host) && Object.keys(config.host).every(key => key === "shell")
+  requireThat(config.host === undefined || (object(config.host) && Object.keys(config.host).every(key => ["shell", "timeout_ms"].includes(key))
+    && (config.host.timeout_ms === undefined || (Number.isSafeInteger(config.host.timeout_ms) && Number(config.host.timeout_ms) >= 1000 && Number(config.host.timeout_ms) <= 86_400_000))
     && typeof config.host.shell === "string" && isAbsolute(config.host.shell) && realpathSync(config.host.shell) === config.host.shell), "invalid_local_host_profile");
   requireThat(config.opencode === undefined || (object(config.opencode) && typeof config.opencode.model === "string" && config.opencode.cli_version === "1.18.29"
     && object(config.opencode.native_configuration) && object(config.opencode.environment) && Object.values(config.opencode.environment).every(value => typeof value === "string")
@@ -164,7 +165,7 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
     const runtime = new LocalTaskRuntime(kernel, actor, { command_origin: "human_request", origin: "user", source_scope: "local_foreground", transport: config.source.transport }, task => {
       if (task.task.provider === "host") {
         requireThat(object(config.host), "host_not_registered");
-        return new HostJobAdapter(kernel, actor, workspace.directory as string, config.host.shell as string, current, specmesh).prepare(task);
+        return new HostJobAdapter(kernel, actor, workspace.directory as string, config.host.shell as string, current, specmesh, config.host.timeout_ms as number | undefined).prepare(task);
       }
       if (task.task.provider === "codex") {
         requireThat(codex, "codex_not_registered");
@@ -178,7 +179,7 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
       const { runner, store, registration, worker } = registered(task);
       const execution = new OpenCodeTaskAdapter(kernel, cache, actor, store, worker, runner, registration).prepare(task);
       return specmesh ? specmesh.bind(execution, registration.admission.required_reads) : execution;
-    }, current, object(config.limits) ? config.limits : {}, object(config.host) ? workspace.directory as string : undefined);
+    }, current, object(config.limits) ? config.limits : {}, object(config.host) ? workspace.directory as string : undefined, object(config.host) ? config.host.timeout_ms as number | undefined : undefined);
     const recovery: LocalRuntimeRecovery = {
       inspect: (taskId, revision, effectId) => {
         current(); runtime.queueStatus();

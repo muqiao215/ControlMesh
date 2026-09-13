@@ -448,3 +448,14 @@ Schema 32 stores up to 4096 chunks/1 MiB per effect; the current host supervisor
 outcome, never success. This adds durable streaming under the existing supervisor; long
 process lifetime, larger log retention and orphan-process continuation remain separate
 qualification gaps. Previous schema-31 TS runtimes cannot open upgraded state.
+
+
+### Bounded host duration
+
+Trusted host configuration accepts optional timeout_ms (1000..86400000). The default
+remains 300000 ms; local lease_ms remains at most 300000. When explicit host timeout is
+longer than the lease, the active owner renews before expiry up to the original claim's
+absolute deadline. Changing this frozen policy on an existing candidate state refuses
+with local_runtime_policy_conflict; it is not a live config-based budget extension.
+Supervisor disconnect/cancellation still stops owned execution. This setting does not
+establish detached long-job recovery or change provider duration policies.

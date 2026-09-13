@@ -14,7 +14,7 @@ import { digest, object, requireThat } from "./value";
 /** Registered host execution shares the durable local queue without any model probe. */
 export class HostJobAdapter {
   constructor(private readonly kernel: RuntimeKernel, private readonly actor: Principal,
-    private readonly workspace: string, private readonly shell: string, private readonly authorize: () => void, private readonly workflow?: SpecMeshPort) {}
+    private readonly workspace: string, private readonly shell: string, private readonly authorize: () => void, private readonly workflow?: SpecMeshPort, private readonly timeoutMs = 300_000) {}
   prepare(snapshot: TaskSnapshot): LocalTaskExecution {
     const task = snapshot.task;
     const identity = () => {
@@ -34,7 +34,7 @@ export class HostJobAdapter {
       requireThat(isAbsolute(this.shell) && realpathSync(this.shell) === this.shell, "host_job_shell_not_canonical");
       const stat = statSync(this.shell, { bigint: true });
       requireThat(stat.isFile() && (stat.mode & 0o111n) !== 0n, "host_job_shell_invalid");
-      return digest({ workflow: this.workflow?.binding_digest ?? null, workspace: directoryIdentity(this.workspace), shell: this.shell,
+      return digest({ workflow: this.workflow?.binding_digest ?? null, timeout_ms: this.timeoutMs, workspace: directoryIdentity(this.workspace), shell: this.shell,
         shell_identity: [stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs].map(String),
         task: { task_id: task.task_id, host_job: task.host_job, execution_context: task.execution_context, tool_grant: task.tool_grant } });
     };
@@ -46,7 +46,7 @@ export class HostJobAdapter {
         new HostJobApprovals(this.kernel.db, this.authorize).assertApproved(this.actor, (task.host_job as Record<string, unknown>).approval);
         return { decision: "cached", reason: "host_step_approved", retry_after: null, permit: null, report: null };
       },
-      execute: (lease, context) => new HostJobProcess(this.kernel, this.actor, this.workspace, this.shell, this.authorize, this.workflow).execute(lease, context),
+      execute: (lease, context) => new HostJobProcess(this.kernel, this.actor, this.workspace, this.shell, this.authorize, this.workflow, this.timeoutMs).execute(lease, context),
     };
   }
 }

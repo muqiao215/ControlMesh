@@ -1030,3 +1030,18 @@ filesystem paths. Noninitial cursors bind the effect. Process lifetime/lease aut
 still belongs to ProcessSupervisor and the existing kernel; stored partial logs do not
 prove an orphaned process stopped or enable resuming it. Previous TS binaries capped at
 schema 31 reject this database version; rollback requires a compatible snapshot/runtime.
+
+
+### Candidate bounded host lease renewal
+
+Schema 33 persists episode_deadlines independently of renewable lease_until. Claims can
+supply a maximum duration up to one day; omitted budgets and migrated episodes retain
+their original expiry. Host renewals through either kernel entry point require the same
+principal/device/current episode and cannot exceed that deadline or revive cancellation.
+Device renewal without a host task keeps its existing protocol semantics.
+
+An explicit trusted host.timeout_ms config enables local renewal, bounded by that budget.
+The local owner renews through internal events and updates its durable run proof atomically;
+its supervisor still verifies current authority and stops on disconnect or lease loss.
+This does not provide detached process adoption. Rollback from schema 33 requires a
+compatible runtime or a pre-upgrade snapshot, never deleting tables from live state.

@@ -227,12 +227,13 @@ export class RuntimeKernel {
     this.assertTopologyParents(taskId);
   }
 
-  claim(actor: Principal, requestId: string, taskId: string, expectedRevision: number, ttlMs: number): Lease {
+  claim(actor: Principal, requestId: string, taskId: string, expectedRevision: number, ttlMs: number, maxDurationMs?: number): Lease {
     this.scope(actor, "task:execute");
     this.owned(actor, this.row(taskId));
     identifier(actor.device_id);
     requireThat(Number.isSafeInteger(ttlMs) && ttlMs >= 100 && ttlMs <= 300_000, "invalid_lease_ttl");
-    return this.request(actor, requestId, "claim", { taskId, expectedRevision, ttlMs }, () => {
+    requireThat(maxDurationMs === undefined || (Number.isSafeInteger(maxDurationMs) && maxDurationMs >= ttlMs && maxDurationMs <= 86_400_000), "invalid_execution_duration");
+    return this.request(actor, requestId, "claim", { taskId, expectedRevision, ttlMs, ...(maxDurationMs === undefined ? {} : { maxDurationMs }) }, () => {
       const task = this.row(taskId);
       this.owned(actor, task);
       this.revision(task, expectedRevision);
@@ -254,10 +255,32 @@ export class RuntimeKernel {
       topologyNativeClaim(this, actor, taskId, lease);
       this.db.sql.query("INSERT INTO episodes (episode_id,task_id,device_id,fence,state,lease_until) VALUES (?,?,?,?,'leased',?)")
         .run(lease.episode_id, taskId, lease.device_id, lease.fence, lease.lease_until);
+      this.db.sql.query("INSERT INTO episode_deadlines VALUES (?,?)").run(lease.episode_id, now + (maxDurationMs ?? ttlMs));
       this.save(task);
       this.event(actor, task, "episode.claimed", lease);
       return lease;
     });
+  }
+
+  executionDeadline(actor: Principal, proof: Lease): number {
+    this.scope(actor, "task:execute"); this.lease(actor, proof);
+    const row = this.db.sql.query("SELECT deadline_at FROM episode_deadlines WHERE episode_id=?").get(proof.episode_id) as { deadline_at: number } | null;
+    requireThat(row && Number.isSafeInteger(row.deadline_at), "execution_deadline_unproven"); return row.deadline_at;
+  }
+  renewLease(actor: Principal, requestId: string, proof: Lease, ttlMs: number): Lease {
+    this.scope(actor, "task:execute"); this.owned(actor, this.row(proof.task_id));
+    requireThat(Number.isSafeInteger(ttlMs) && ttlMs >= 100 && ttlMs <= 300_000, "invalid_lease_ttl");
+    return this.request(actor, requestId, "renew_lease", { proof, ttlMs }, () => {
+      const { episode, task } = this.lease(actor, proof);
+      requireThat(task.principal === actor.id, "lease_renewal_owner_mismatch");
+      requireThat(episode.lease_until === proof.lease_until, "lease_renewal_stale");
+      const deadline = this.executionDeadline(actor, proof), until = Math.min(this.db.now() + ttlMs, deadline);
+      requireThat(until > episode.lease_until, "execution_deadline_reached");
+      this.db.sql.query("UPDATE episodes SET lease_until=? WHERE episode_id=?").run(until, proof.episode_id);
+      const renewed = { ...proof, lease_until: until };
+      this.event(actor, task, "episode.renewed", { episode_id: proof.episode_id, lease_until: until, deadline_at: deadline });
+      return renewed;
+    }, value => { this.lease(actor, value); return value; });
   }
 
   private lease(actor: Principal, proof: Lease, cleanup = false): { task: TaskRow; episode: EpisodeRow } {
@@ -291,6 +314,8 @@ export class RuntimeKernel {
   renew(actor: Principal, requestId: string, proof: Lease, ttlMs: number): Lease {
     this.scope(actor, "task:execute");
     this.owned(actor, this.row(proof.task_id));
+    // Host execution has a fixed budget regardless of the renewal entry point.
+    if (JSON.parse(this.row(proof.task_id).raw).provider === "host") return this.renewLease(actor, requestId, proof, ttlMs);
     requireThat(Number.isSafeInteger(ttlMs) && ttlMs >= 100 && ttlMs <= 300_000, "invalid_lease_ttl");
     return this.request(actor, requestId, "renew", { proof, ttlMs }, () => {
       this.lease(actor, proof);

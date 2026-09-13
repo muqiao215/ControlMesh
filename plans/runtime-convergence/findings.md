@@ -2322,3 +2322,11 @@ before completion makes progress readable after reconnect without inventing a fi
 A failed sink is a supervision failure, not a reason to drop output silently. Sequence-bound
 digests and effect-bound cursors prevent cross-execution page mixing. The retained chunk
 budget is separate from ProcessSupervisor's current raw output cap.
+
+
+Review of bounded renewal found the pre-existing device-facing kernel renew entry point.
+Restricting only the new renewLease method left host deadlines bypassable. Both host
+entry points now share checks, while non-host device protocol semantics remain intact.
+Database upgrades preserve old episode expiry as the budget; never infer additional
+execution time from a new runtime default. Cross-TTL shell tests do not prove hour-long
+or detached-process operation.
