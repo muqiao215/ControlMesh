@@ -2412,3 +2412,10 @@ actual environment-loading compatibility still needs explicit execution design. 
 write grant is not ruled out by process.permission.has('fs.write') alone, so the helper
 also requires exact runtime flags. The parent launcher must control trusted module/Node
 identity and environment; this standalone helper does not establish those identities.
+
+
+The settings probe should be supervised like native processes: cancellation, authority
+checks and bounded output are shared runtime behavior, not duplicated timers in a provider
+wrapper. Its identity list must be supplied by trusted registration; checking only the
+entry chunk would not prove transitive imports unchanged. The returned assertRuntimeCurrent
+name explicitly excludes settings-file freshness, which requires separate source binding.

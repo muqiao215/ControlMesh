@@ -362,3 +362,9 @@ not yet a runnable Provider adapter or evidence of account-backed continuation.
 Gemini settings checkpoint: isolated native settings probe now enforces fixed Node
 read-only permissions and fresh loader state with digest-only settings output. Complete
 identity-bound launcher and effective-policy/process integration before Provider admission.
+
+
+Gemini settings runner checkpoint: supervised read-only loading with explicit environment
+and registered runtime-file identity checks is implemented. Next registration requirements
+remain complete native dependency/settings source discovery and joint effective-policy /
+session/process binding; full Gemini execution and account qualification are still open.

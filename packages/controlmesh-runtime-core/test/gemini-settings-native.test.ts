@@ -1,5 +1,6 @@
+import { GeminiSettingsRunner } from "../src/providers/gemini-settings-runner";
 import { expect, test } from "bun:test";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -31,5 +32,18 @@ test.skipIf(!module || !node)("native Gemini settings preflight preserves deprec
     writeFileSync(path, JSON.stringify({ general: { enableAutoUpdate: true } }));
     const second = await launch(true); expect(second.code).toBe(0);
     expect(JSON.parse(second.out).settings_digest).not.toBe(JSON.parse(first.out).settings_digest);
+    const tracked = join(root, "registered-dependency.js"); writeFileSync(tracked, "fixture dependency");
+    const input = { node_executable: realpathSync(node!), settings_module: realpathSync(module!), workspace,
+      runtime_files: [realpathSync(module!), tracked], environment: { HOME: home, GEMINI_CLI_HOME: home,
+        GEMINI_CLI_SYSTEM_SETTINGS_PATH: join(root, "system.json"), GEMINI_CLI_SYSTEM_DEFAULTS_PATH: join(root, "defaults.json") } };
+    const runner = new GeminiSettingsRunner();
+    const observed = await runner.run(input, { assertCurrent() {}, remainingMs: () => 10000 });
+    expect(observed.settings_digest).toBe(JSON.parse(second.out).settings_digest); observed.assertRuntimeCurrent();
+    await expect(runner.run({ ...input, environment: { ...input.environment, NODE_OPTIONS: "--allow-fs-write=*" } }, { assertCurrent() {} })).rejects.toThrow("unsafe_gemini_probe_environment");
+    writeFileSync(tracked, "changed dependency");
+    expect(() => observed.assertRuntimeCurrent()).toThrow("gemini_probe_configuration_changed");
+    const aborted = new AbortController(); aborted.abort();
+    await expect(runner.run(input, { assertCurrent() {}, signal: aborted.signal })).rejects.toThrow("gemini_settings_probe_failed");
+
   } finally { rmSync(root, { recursive: true, force: true }); }
 }, 20000);

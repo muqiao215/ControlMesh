@@ -1333,3 +1333,20 @@ A/B confirmed unprotected native loading writes deprecated settings while protec
 silently swallows the blocked write and returns success. Operator configuration untouched.
 Next: bind exact executable/module/config identities and connect settings to effective
 policy and process/session registration. Normal Gemini execution remains unavailable.
+
+
+## 2026-09-13 — supervised native settings runner
+
+GeminiSettingsRunner now launches the read-only helper through ProcessSupervisor with
+fixed Node flags, explicit environment, 10-second deadline and 64 KiB output cap. Canonical
+Node/module/helper/registered dependency file identities, input and workspace are checked
+through supervision and before accepting output. NODE_OPTIONS/NODE_PATH refuse before
+launch. Output accepts only the settings digest and bounded source-path response.
+
+Installed settings runner test passed: 1 pass, 0 fail, 14 assertions, 2.12s
+(/tmp/cm-gemini-settings-runner.log). Supervised digest matched direct loading; registered
+file mutation invalidated runtime identity; pre-cancelled call refused. Typecheck passed
+including final assertRuntimeCurrent naming. This check intentionally does not assert
+settings-file freshness. Registration still must discover/pin the complete dependency
+closure and settings sources and join this with policy/session execution. No account call,
+production configuration or provider admission changed.
