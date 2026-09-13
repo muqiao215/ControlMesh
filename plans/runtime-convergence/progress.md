@@ -1366,3 +1366,21 @@ assertions, 2.39s (/tmp/cm-gemini-dependency-admission.log). The unregistered mo
 marker was never emitted; typed refusal received instead. Typecheck passed before final
 fixture-only addition; diff check passed. Native API checked against Node 22.23.2 docs.
 Full CLI execution dependency/configuration and settings-file binding remain open.
+
+
+## 2026-09-13 — observed native settings source identities
+
+The private probe now observes the synchronous readFileSync/existsSync paths used by the
+native settings loader, including missing files and trustedFolders.json. Registered mode
+requires those paths in its bounded manifest before access; a sticky failure flag prevents
+native error swallowing from turning source refusal into success. Identity is checked
+before/after reads and after loading. The runner binds the same source identities through
+supervision and its returned runtime/current-source check.
+
+Installed native test: 1 pass, 0 fail, 21 assertions, 3.77s
+(/tmp/cm-gemini-source-files-verified.log). Omitted user settings refuse; changed settings
+invalidate the returned check; the actual observed set contains the trust file. Typecheck
+passed before the final trust-path assertion; diff check passed. Source identities use
+canonical inode/mode/size/nanosecond timestamps or absent-path ancestry, not immutable
+mounts. Coverage is the qualified synchronous loader path, not all possible future async
+I/O or Agent execution. Provider registration and execution-policy joining remain open.

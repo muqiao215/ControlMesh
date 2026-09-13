@@ -2427,3 +2427,11 @@ A discovered graph is workload-specific; settings-loader dependencies are not th
 Gemini execution graph. Registered probe mode checks membership before evaluation rather
 than merely comparing a list after imported code has already run. Builtin modules stay
 covered by the Node executable identity; helper code is independently pinned by the runner.
+
+
+Four returned settings layers omit auxiliary authority inputs such as trustedFolders.json.
+Observing actual synchronous filesystem access during loadSettings captures these and
+absence tests. Native settings/trust readers can catch filesystem errors, so registration
+refusal must also be remembered outside their catch blocks. Currentness includes missing
+paths anchored to canonical existing ancestors; parent directory activity alone is not a
+file-content change. Observation does not turn mutable files into an immutable sandbox.

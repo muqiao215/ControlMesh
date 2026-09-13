@@ -34,11 +34,15 @@ test.skipIf(!module || !node)("native Gemini settings preflight preserves deprec
     expect(JSON.parse(second.out).settings_digest).not.toBe(JSON.parse(first.out).settings_digest);
     const tracked = join(root, "registered-dependency.js"); writeFileSync(tracked, "fixture dependency");
     const input = { node_executable: realpathSync(node!), settings_module: realpathSync(module!), workspace,
+      settings_sources: (JSON.parse(second.out).settings_sources as { path: string }[]).map(source => source.path),
       runtime_files: [...JSON.parse(second.out).loaded_runtime_files as string[], tracked], environment: { HOME: home, GEMINI_CLI_HOME: home,
         GEMINI_CLI_SYSTEM_SETTINGS_PATH: join(root, "system.json"), GEMINI_CLI_SYSTEM_DEFAULTS_PATH: join(root, "defaults.json") } };
     const runner = new GeminiSettingsRunner();
     expect(input.runtime_files.length).toBeGreaterThan(2);
     await expect(runner.run({ ...input, runtime_files: [realpathSync(module!)] }, { assertCurrent() {} })).rejects.toThrow("gemini_unregistered_runtime_dependency");
+    expect(input.settings_sources).toContain(path);
+    expect(input.settings_sources).toContain(join(home, ".gemini/trustedFolders.json"));
+    await expect(runner.run({ ...input, settings_sources: input.settings_sources.filter(source => source !== path) }, { assertCurrent() {} })).rejects.toThrow("gemini_settings_probe_failed");
     const observed = await runner.run(input, { assertCurrent() {}, remainingMs: () => 10000 });
     expect(observed.settings_digest).toBe(JSON.parse(second.out).settings_digest); observed.assertRuntimeCurrent();
     await expect(runner.run({ ...input, environment: { ...input.environment, NODE_OPTIONS: "--allow-fs-write=*" } }, { assertCurrent() {} })).rejects.toThrow("unsafe_gemini_probe_environment");
@@ -49,6 +53,9 @@ test.skipIf(!module || !node)("native Gemini settings preflight preserves deprec
     writeFileSync(dependency, 'console.log("UNREGISTERED_CODE_EXECUTED");');
     // The typed single-record refusal proves the dependency did not emit its evaluation marker.
     await expect(runner.run({ ...input, settings_module: entry, runtime_files: [entry] }, { assertCurrent() {} })).rejects.toThrow("gemini_unregistered_runtime_dependency");
+    const sourceBound = await runner.run(input, { assertCurrent() {} });
+    writeFileSync(path, JSON.stringify({ general: { enableAutoUpdate: false } }));
+    expect(() => sourceBound.assertRuntimeCurrent()).toThrow("gemini_probe_configuration_changed");
     const aborted = new AbortController(); aborted.abort();
     await expect(runner.run(input, { assertCurrent() {}, signal: aborted.signal })).rejects.toThrow("gemini_settings_probe_failed");
 

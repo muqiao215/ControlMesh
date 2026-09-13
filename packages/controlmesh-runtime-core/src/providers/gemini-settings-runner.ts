@@ -1,3 +1,4 @@
+import { geminiSourceIdentity } from "../../scripts/gemini-source-identity.mjs";
 import { lstatSync, realpathSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { ProcessSupervisor, type ProcessAdmission } from "../process-supervisor";
@@ -9,6 +10,7 @@ export interface GeminiSettingsProbeInput {
   environment: Record<string, string>;
   /** Version-bound registration owns the complete dependency list. */
   runtime_files: readonly string[];
+  settings_sources: readonly string[];
 }
 export class GeminiSettingsRunner {
   async run(input: GeminiSettingsProbeInput, admission: ProcessAdmission) {
@@ -19,7 +21,9 @@ export class GeminiSettingsRunner {
     requireThat(Array.isArray(input.runtime_files) && input.runtime_files.length > 0 && input.runtime_files.length <= 1024
       && input.runtime_files.includes(input.settings_module), "gemini_runtime_files_unproven");
     const helper = join(import.meta.dir, "../../scripts/gemini-settings-probe.mjs");
-    const files = [...new Set([input.node_executable, input.settings_module, helper, ...input.runtime_files])];
+    requireThat(Array.isArray(input.settings_sources) && input.settings_sources.length > 0 && input.settings_sources.length <= 256, "gemini_settings_sources_unproven");
+    const sources = input.settings_sources.map(geminiSourceIdentity), sourceDigest = digest(sources);
+    const files = [...new Set([input.node_executable, input.settings_module, helper, join(import.meta.dir, "../../scripts/gemini-source-identity.mjs"), ...input.runtime_files])];
     const identity = () => digest(files.map(path => {
       requireThat(typeof path === "string" && isAbsolute(path) && realpathSync(path) === path, "gemini_probe_runtime_replaced");
       const stat = lstatSync(path, { bigint: true }); requireThat(stat.isFile(), "gemini_probe_runtime_replaced");
@@ -30,11 +34,11 @@ export class GeminiSettingsRunner {
     const assertCurrent = () => {
       const value: unknown = admission.assertCurrent();
       if (value !== undefined) { void Promise.resolve(value).catch(() => {}); requireThat(false, "admission_must_be_synchronous"); }
-      requireThat(digest(input) === issued && identity() === runtime && digest(directoryIdentity(input.workspace)) === workspace, "gemini_probe_configuration_changed");
+      requireThat(digest(input.settings_sources.map(geminiSourceIdentity)) === sourceDigest && digest(input) === issued && identity() === runtime && digest(directoryIdentity(input.workspace)) === workspace, "gemini_probe_configuration_changed");
     };
     assertCurrent();
     const result = await new ProcessSupervisor().run({ command: [input.node_executable, "--experimental-permission", "--allow-fs-read=*",
-      helper, input.settings_module, input.workspace, "--ignore-env", "--registered-runtime"], stdin_text: JSON.stringify(input.runtime_files), cwd: input.workspace,
+      helper, input.settings_module, input.workspace, "--ignore-env", "--registered-runtime"], stdin_text: JSON.stringify({ runtime_files: input.runtime_files, settings_sources: input.settings_sources }), cwd: input.workspace,
       env: { PATH: "/usr/bin:/bin", LANG: "C.UTF-8", ...input.environment }, timeout_ms: 10000, max_output_bytes: 65536 }, { ...admission, assertCurrent });
     assertCurrent();
     if (result.reason === "exited" && result.exit_code === 2 && result.stdout.trim() === JSON.stringify({ error: "gemini_unregistered_runtime_dependency" }))
@@ -48,6 +52,8 @@ export class GeminiSettingsRunner {
     requireThat(Array.isArray(parsed.loaded_runtime_files) && parsed.loaded_runtime_files.length > 0 && parsed.loaded_runtime_files.length <= 256
       && parsed.loaded_runtime_files.every(path => typeof path === "string" && input.runtime_files.includes(path))
       && parsed.loaded_runtime_files.includes(input.settings_module), "gemini_unregistered_runtime_dependency");
-    return { schema_version: parsed.schema_version, settings_digest: parsed.settings_digest, sources: parsed.sources as string[], loaded_runtime_files: parsed.loaded_runtime_files as string[], runtime_digest: runtime, assertRuntimeCurrent: assertCurrent };
+    requireThat(Array.isArray(parsed.settings_sources) && parsed.settings_sources.length > 0 && parsed.settings_sources.every(source => object(source)
+      && sources.some(expected => expected.path === source.path && expected.identity === source.identity)), "gemini_settings_sources_unproven");
+    return { schema_version: parsed.schema_version, settings_digest: parsed.settings_digest, sources: parsed.sources as string[], loaded_runtime_files: parsed.loaded_runtime_files as string[], runtime_digest: runtime, settings_sources_digest: sourceDigest, assertRuntimeCurrent: assertCurrent };
   }
 }

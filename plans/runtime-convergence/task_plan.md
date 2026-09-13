@@ -373,3 +373,9 @@ session/process binding; full Gemini execution and account qualification are sti
 Gemini settings dependency checkpoint: actual loaded-file discovery and pre-evaluation
 registered-list refusal now pass on installed Node/Gemini. Continue source settings-file
 binding and joint native policy/session execution registration; no full Provider acceptance.
+
+
+Gemini source-file checkpoint: synchronous native settings/trust accesses are discovered,
+registered and identity-checked across loading/supervision. Complete the unified settings /
+effective-policy / session registration and actual process integration before normal
+Gemini Provider admission or broader migration closure.
