@@ -3,7 +3,7 @@
     "events_inbox_and_host_jobs": {
       "controlmesh/runtime/__init__.py": "9fd6f23ea57f38001683c8878077d1c9b3bd8db534084c06b4e91faee65baa81",
       "controlmesh/runtime/agent_inbox.py": "d435983a3c62f66a49bdc4ed9c017ab0a4b9dc1b1538736baf1302a1fa80b01b",
-      "controlmesh/runtime/host_job_bridge.py": "5ffa2c4e072515ca4cf2101a1beae86ce5cc5a15f3e132cae867465712f6ce70",
+      "controlmesh/runtime/host_job_bridge.py": "abe1daf705f1288af9ccf12a875a4eaf92a62f1340fe49ad97fb52b3e62b8b77",
       "controlmesh/runtime/host_jobs.py": "7ce83bf50d33f8b9849153258704bc3a38b4bbdcba71773f2f8307d0acf273b1",
       "controlmesh/runtime/models.py": "7b7f6713d5746630e8ee5c96db2403393cada4e260ffa92f9a29e87fae0d8e7a",
       "controlmesh/runtime/registry.py": "de1f15abe98e42aaa141d63ba45027ec4aba0a03017be8afe35b8daec2d25462",

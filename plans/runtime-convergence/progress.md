@@ -583,3 +583,10 @@ allows 2881 civil minute slots for historical date-line repeats. Updated result 
 0 fail, 907 assertions in 216ms, Ruff and diff checks pass. Full persistence acceptance,
 cron ingress/provider integration, and runtime rollout remain open. AGY recovery wrapper
 1864653 and handle 57638 reverified live; no duplicate continuation dispatched.
+
+CI follow-up: 1c8170b run 34758490373 failed the generated runtime ownership check,
+not the new supervision tests. Primary omitted regeneration after changing bridge source.
+Regeneration changes only the host_job_bridge.py SHA in python-ownership.json; inventory
+remains 514 modules/57 fields. No gate relaxed. b6d9ddb was pushed with 217 recurrence
+tests passing; its run 34759251799 was still active when inspected. AGY recovery remains
+live and has begun updating archive/restore code; its final evidence is not available yet.
