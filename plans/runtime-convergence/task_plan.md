@@ -77,8 +77,9 @@ adoption and retained-result reconciliation. The installed 0.154.0 binary plus r
 headless Viewer have passed configured adoption and context-preserving continuation
 across reopen against a synthetic loopback model endpoint. This does not qualify live
 account behavior or native tool permissions. Gemini 0.59 JSONL snapshot/baseline reading
-is implemented and qualified against its installed recording service; persistent registration,
-process execution and terminal-result verification remain. Codex
+is implemented and qualified against its installed recording service; stream/text-turn
+verification now matches persisted messages and successful terminal output. Persistent
+registration, process/grant enforcement and actual native model execution remain. Codex
 fresh-session creation, interrupted lineage qualification, effective native sandbox
 behavior, and broader Codex topology qualification remain. Local native Codex pipeline
 worker/reviewer execution and parent artifact acceptance after reopen, plus concurrent

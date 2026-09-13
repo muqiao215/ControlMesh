@@ -2103,3 +2103,19 @@ terminal completion, authorization, model health or registered runtime parity fr
 readable transcript. A test imports the installed recording service and generates fresh
 isolated records without an account/model. Legacy .json conversion and subagent stores
 are not covered by the current main-session JSONL owner.
+
+
+### Gemini 0.59 stream completion versus legacy observation
+
+Installed gemini-OENNDR6N.js around 11205/11243/11282 emits init(session_id/model),
+user input and final result(status). Assistant events around 11380 carry delta=true;
+tool_use/tool_result events identify paired calls. StreamJsonFormatter in the installed
+chunk-YSBB75DZ.js formats each event as newline-terminated JSON. The old generic observer
+inserted blank lines between Gemini deltas and did not require a final result. Explicit
+init/delta streams now use the strict parser. Historical JSON and array observations
+retain their existing compatibility behavior, proven by the 410-case Python/TS oracle.
+verifyGeminiTextTurn independently always requires a strict stream, successful process
+outcome and exact correspondence with newly persisted session messages. It rejects tool
+turns until a scoped tool receipt owner is integrated. Installed recording/formatting
+services generate the session/events in tests; process outcome fields remain a fixture,
+so this is not native model-execution or account acceptance.

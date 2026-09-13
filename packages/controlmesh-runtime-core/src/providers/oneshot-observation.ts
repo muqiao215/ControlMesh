@@ -1,3 +1,4 @@
+import { parseGeminiStream } from "./gemini-stream";
 import { codexNativeFailure } from "./codex-failure";
 import { object } from "../value";
 import { failureFromNativeStderr, nativeFailure } from "./opencode-events";
@@ -11,13 +12,23 @@ export interface OneShotObservation {
 export function observeOneShot(provider: string, stdout: string, stderr = ""): OneShotObservation {
   oneShotProvider(provider);
   const raw = stdout.trim();
-  let events: unknown[] = [], invalid = false;
+  let events: unknown[] = [], invalid = false, legacyArray = false;
   if (raw) {
-    try { const data: unknown = JSON.parse(raw); events = Array.isArray(data) ? data : [data]; }
+    try { const data: unknown = JSON.parse(raw); legacyArray = Array.isArray(data); events = legacyArray ? data as unknown[] : [data]; }
     catch {
       for (const line of raw.split("\n").filter(line => line.trim())) {
         try { events.push(JSON.parse(line)); } catch { invalid = true; }
       }
+    }
+  }
+  if (provider === "gemini" && !legacyArray && events.some(value => object(value)
+    && (value.type === "init" || (value.type === "message" && value.delta === true)))) {
+    try {
+      const stream = parseGeminiStream(stdout);
+      return { text: stream.text, terminal: true, error_code: null, session_id: stream.session_id, quota_reset_at: null };
+    } catch (failure) {
+      const code = failure instanceof Error && /^[a-z_]+$/.test(failure.message) ? failure.message : "invalid_native_output";
+      return { text: "", terminal: false, error_code: code, session_id: null, quota_reset_at: null };
     }
   }
   const texts: string[] = [];

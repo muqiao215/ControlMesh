@@ -1,3 +1,4 @@
+import { verifyGeminiTextTurn } from "../src/providers/gemini-turn";
 import { expect, test } from "bun:test";
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -64,6 +65,15 @@ test.skipIf(!process.env.CM_GEMINI_RECORDING_MODULE)("installed Gemini recording
     recorder.recordMessage({ type: "user", content: "Continue" });
     recorder.recordMessage({ type: "gemini", content: "Continued", model: "fixture-model" });
     expect(store.assertAppend(baseline).appended_messages).toHaveLength(2);
+    const formatter = new native.StreamJsonFormatter();
+    const stdout = [{ type: "init", session_id: id, model: "fixture-model" }, { type: "message", role: "user", content: "Continue" },
+      { type: "message", role: "assistant", content: "Con", delta: true }, { type: "message", role: "assistant", content: "tinued", delta: true },
+      { type: "result", status: "success" }].map(event => formatter.formatEvent(event)).join("");
+    const outcome = { reason: "exited" as const, exit_code: 0, stdout, stderr: "", duration_ms: 1 };
+    expect(verifyGeminiTextTurn(store, baseline, outcome, "Continue", "fixture-model")).toMatchObject({ session_id: id, text: "Continued" });
+    expect(() => verifyGeminiTextTurn(store, baseline, { ...outcome, exit_code: 1 }, "Continue", "fixture-model")).toThrow("gemini_native_outcome_unproven");
+    expect(() => verifyGeminiTextTurn(store, baseline, outcome, "Other prompt", "fixture-model")).toThrow("gemini_turn_binding_changed");
+    expect(() => verifyGeminiTextTurn(store, baseline, { ...outcome, stdout: stdout.replace("tinued", "tradiction") }, "Continue", "fixture-model")).toThrow("gemini_turn_output_unproven");
     recorder.rewindTo(before.messages[1]!.id);
     expect(store.snapshot(id).messages).toHaveLength(1);
     expect(() => store.assertAppend(baseline)).toThrow("gemini_prior_context_changed");

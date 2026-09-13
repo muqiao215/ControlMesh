@@ -2,6 +2,21 @@
 
 ## Current
 
+Gemini native stream/text-turn verification now joins process and retained-session evidence.
+Stream deltas concatenate verbatim; init identity, one user input, matched tool results and
+one final success event are required. Truncated/late/error streams are refused. A text turn
+requires exited/0, matching session/model/prompt, unchanged native baseline and exact new
+persisted user/assistant content. Tool-bearing turns require a future scoped receipt owner.
+The one-shot observer routes explicit native init/delta streams to this verifier while
+preserving legacy JSON/array behavior; two differential failures exposed those legacy
+formats and were corrected without weakening the new persistent turn verifier.
+Validation: 12 tests, 483 assertions (2.76s), including the live Python/TS one-shot matrix,
+installed Gemini recording/formatting services and forged/missing result refusal.
+Typecheck/diff-check passed. Evidence: /tmp/cm-gemini-turn-final.log.
+The installed service test does not launch the Gemini CLI/model. Registered preflight,
+process/grant enforcement, native model smoke and task/recovery integration remain work,
+alongside all incomplete CM-R0–R7 rollout and release requirements.
+
 Gemini CLI 0.59.0 is installed. Its bundled ChatRecordingService uses JSONL metadata,
 message-ID replacements, $set metadata/full-message updates and $rewindTo records, rather
 than treating every line as a new message. A strict GeminiSessionStore now replays those
