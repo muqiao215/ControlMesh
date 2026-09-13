@@ -184,3 +184,8 @@ Gemini admission follow-up: installed policy-engine qualification demonstrates t
 --admin-policy can be ignored when system TOML exists. Require effective-policy admission
 and immutable configuration through execution; do not remove restrictive-grant refusal
 based on command construction alone. See findings/progress dated 2026-09-13.
+
+Gemini profile checkpoint: explicit UUID command and exact-tool TOML rendering implemented;
+installed engine qualification passes. Integrate profile only with registered session
+identity, effective-policy verification and immutable execution configuration. CM-R3
+remains in progress; no default/provider admission change at this checkpoint.

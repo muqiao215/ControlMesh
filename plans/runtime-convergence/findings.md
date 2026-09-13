@@ -2139,3 +2139,9 @@ directories and no account/model. Do not unlock mapToolGrant merely by supplying
 --admin-policy: admission must establish the effective rules and prevent configuration
 changes between verification and execution. Existing Gemini restrictive-grant refusal
 remains necessary until that owner exists.
+
+Gemini profile now owns command and policy construction separately from admission. Native
+admin rule priority 999 grants exact tools over deny fallback 998, while unrelated user
+allow rules remain below admin tier when loaded. Installed-engine tests prove the
+generated policy semantics. They do not resolve system-policy suppression or TOCTOU;
+those are required before process admission can trust the profile.

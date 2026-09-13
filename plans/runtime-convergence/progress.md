@@ -676,3 +676,15 @@ policy directories are removed and patched Storage accessors restored. No produc
 configuration or sessions changed. Test: 1 passed, 4 assertions, 704ms
 (`/tmp/cm-gemini-policy-native.log`); typecheck passed. This identifies an execution
 admission requirement; Gemini native grant parity remains incomplete.
+
+## 2026-09-13 — Gemini explicit resume and policy material
+
+Added internal gemini-profile owner: full UUID resume, explicit model, stream-json,
+default approval, controller admin-policy path and byte-preserving stdin; no CLI extras.
+Policy rendering uses exact validated tool names, deterministic deduplication and a
+deny fallback. Installed Gemini policy loader/engine verifies allowed read versus denied
+write/similar/unknown names. 3 tests passed, 28 assertions, 642ms
+(`/tmp/cm-gemini-profile.log`); typecheck and diff-check passed. This is configuration
+material, not an execution admission token. Effective policy, configuration immutability,
+session ownership and actual supervised resume integration remain pending; restrictive
+Gemini grant refusal stays in place.
