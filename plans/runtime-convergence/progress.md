@@ -840,3 +840,25 @@ tests passed (10 tests, 69 assertions). All affected migration fixtures: 331 pas
 and diff-check passed. No production database was opened. Legacy authority-file import,
 approval/process ownership, reconciliation and normal runtime control wiring remain open.
 Old TS binaries refuse schema 31; this is not default cutover or full rollback acceptance.
+
+## 2026-09-13 — explicit legacy host-job snapshot import
+
+Added host-job-import for one explicitly selected job directory or legacy index. Directory
+mode requires canonical job-id directory, HOST_JOB/STEPS identity and updated_at agreement,
+and uses STEPS as step authority. Both files are re-read by digest before returning the
+snapshot. TOOL_RESULT is ignored. Index mode requires exactly one matching job. Missing
+authority files never silently fall back to an existing index. Digest-bound create-only
+import uses HostJobStore receipts; a changed snapshot cannot overwrite an existing job.
+Authorization is checked before file reads and again before persistence.
+
+Current Python HostJobStore generated the authority/index fixtures; TS decoded payload
+matched Python exactly. Tests also cover derived-result tampering, digest changes,
+missing files, duplicate index identity, timestamp mismatch, replay and scope refusal.
+5 tests passed, 37 assertions, 691ms (`/tmp/cm-host-job-import-final.log`); typecheck and
+diff-check passed. No operator files or processes were touched.
+
+Legacy timestamps have second precision and files lack a shared generation digest.
+Matching timestamps plus stable reads cannot prove original cross-file atomicity.
+Imported running/PID/approval fields remain historical data, not permission to resume;
+process reconciliation/approval remains required before native execution. Operational
+migration CLI and runner/control integration remain open.

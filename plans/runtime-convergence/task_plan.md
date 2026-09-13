@@ -234,3 +234,8 @@ Host-job storage checkpoint: schema-31 transactional store, principal isolation,
 checks, receipt replay and bound job identity implemented. Legacy authority-file import,
 approval/dispatch and interrupted-process reconciliation remain required; no stored PID
 or approval metadata grants native process authority.
+
+Host-job import checkpoint: explicit directory/index snapshot selection, stable source
+digests and create-only import implemented against Python-generated files. Cross-file
+generation proof is absent in the legacy format; imported execution state needs separate
+reconciliation. Operational CLI, approval/process runner and control wiring remain open.

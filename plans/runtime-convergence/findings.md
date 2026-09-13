@@ -2203,3 +2203,9 @@ overwriting newer steps; principal-scoped primary keys avoid leaking jobs across
 Replay authorization is checked before receipt lookup and again in the replay callback.
 Job repo/source_task_id/plan_id are immutable storage bindings, since relocating an
 existing approved graph would otherwise reuse step identity in a different context.
+
+Python HostJobStore prefers directory records over the aggregate index and overwrites
+metadata steps with STEPS.json. TOOL_RESULT.json is derived. TS import makes source choice
+explicit and refuses incomplete selected-directory authority. Stable double reads and
+matching updated_at catch detectable partial saves, but legacy second-resolution timestamps
+cannot distinguish every generation; do not claim atomic historical provenance.
