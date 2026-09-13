@@ -194,3 +194,8 @@ Open regression gate (2026-09-13): broad optional Docker suite observed reviewer
 in publish_received=true topology; isolated and paired reruns pass. Preserve this as
 unresolved, capture classified reason with the added diagnostics on recurrence, and
 require a clean broad gate before cutover. See progress for exact logs and counts.
+
+Full-gate update: d5fa32b passes the complete local runtime-core gate (890/30/0,
+10905 assertions). Prior container reviewer uncertainty did not recur in broad order;
+its root cause remains unconfirmed. This satisfies the current regression rerun only,
+not the still-open native/provider/physical-device and cutover acceptance matrix.

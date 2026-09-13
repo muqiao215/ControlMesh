@@ -705,3 +705,19 @@ Remote CI for 6df3ee4 (34729703343) and ee64368 (34729596207) completed success;
 not negate the local optional Docker failure. Physical ARM64 peer SSH still timed out;
 no remote run started. Production cutover remains blocked on the complete acceptance
 matrix, not just CI.
+
+## 2026-09-13 — diagnostic full-suite rerun
+
+At d5fa32b, the complete runtime-core gate with the pinned Docker image and real
+SpecMesh root passed: 890 passed, 30 skipped, 0 failed, 10905 assertions across
+920 tests / 96 files, 354.81s (`/tmp/cm-runtime-core-diagnostic.log`), command exit 0.
+Ownership drift check and typecheck were part of that command. Both artifact publishing
+modes passed within the original broad execution order (22.35s / 22.63s). The previous
+intermittent unknown outcome did not reproduce; root cause remains unconfirmed.
+
+Static review found existing heartbeat serialization before publication refresh and
+terminal completion; no evidence justified weakening leases or changing retry behavior.
+The 30 skips include optional installed native/account-dependent profiles and therefore
+this successful suite does not close provider parity, real account, physical peer or
+production cutover gates. Preserve the earlier failure and new reason diagnostics for
+recurrence; continue outstanding CM-R3/R4/R6 work.
