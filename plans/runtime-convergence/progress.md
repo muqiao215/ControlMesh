@@ -379,3 +379,8 @@ was preserved. This checkpoint is not final release/local-alignment acceptance.
   survived export/re-import; main database bytes stayed unchanged. Missing source and
   lost imported rows refused output. This is compatibility-artifact rehearsal, not Python
   production startup, writer transfer, or complete multi-store rollback acceptance.
+
+- Post-test typecheck found a widened string in the new test task status. The initial
+  export commit was pushed before that failure stopped publication; corrected the test
+  to the literal status and reran typecheck successfully. Use the follow-up commit CI,
+  not the superseded commit, for acceptance.

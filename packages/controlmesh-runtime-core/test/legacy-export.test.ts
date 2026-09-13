@@ -18,7 +18,7 @@ test("offline compatibility export preserves Python fields plus new TS tasks wit
   try {
     const db = new RuntimeDatabase(path), migration = new LegacyMigration(db);
     migration.importSnapshot("python", fixture, migration.preview("python", fixture).digest, actor.id);
-    const created = { task_id: "created-in-ts", chat_id: "test", status: "waiting", future: { retained: true } };
+    const created = { task_id: "created-in-ts", chat_id: "test", status: "waiting" as const, future: { retained: true } };
     new RuntimeKernel(db).submit(actor, "new", created); db.close();
     const before = readFileSync(path); const result = await run(path, output);
     expect(result.code).toBe(0); expect(readFileSync(path)).toEqual(before);
