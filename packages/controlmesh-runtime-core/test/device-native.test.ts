@@ -11,6 +11,11 @@ import { AgentMailbox } from "../src/mailbox";
 import { prepareNativeAgentConfiguration } from "../src/providers/native-agent-profile";
 import { nativeAgentTools } from "../src/providers/native-agent-journal";
 import { NativeMcpTestClient } from "./helpers/native-mcp-client";
+import { DeliveryOutbox } from "../src/delivery-outbox";
+import { TelegramTextDelivery } from "../src/telegram-delivery";
+import { DeliveryMediaStore } from "../src/delivery-media";
+import { DeliveryMediaProjector } from "../src/delivery-media-projector";
+import { DeliveryDeviceFiles } from "../src/delivery-device-file";
 import fixture from "./fixtures/native-session-v2.json";
 
 const cleanup: (() => void)[] = [];
@@ -19,7 +24,7 @@ const owner: Principal = { id: "operator", origin: "human_request", device_id: "
 const device: Principal = { id: owner.id, origin: "agent_message", device_id: "native-worker", scopes: ["provider:probe"] };
 const outcome = (stdout: string): ProcessOutcome => ({ reason: "exited", exit_code: 0, stdout, stderr: "", duration_ms: 1 });
 
-function setup(mode: "normal" | "partition" | "changed-file" | "lost-completion" | "scheduled" | "lost-before-completion" | "lost-dispatch" | "altered-native-tool" | "altered-native-input" = "normal", communicationEnabled = false, unmanagedSeed = false, transfer?: { content: string; drop?: "before" | "after"; omit?: boolean }) {
+function setup(mode: "normal" | "partition" | "changed-file" | "lost-completion" | "scheduled" | "lost-before-completion" | "lost-dispatch" | "altered-native-tool" | "altered-native-input" = "normal", communicationEnabled = false, unmanagedSeed = false, transfer?: { content: string; drop?: "before" | "after"; omit?: boolean; telegram?: boolean }) {
   const root = mkdtempSync(join(tmpdir(), "cm-native-device-test-")); cleanup.push(() => rmSync(root, { recursive: true, force: true }));
   const workspace = join(root, "project"), data = join(root, "data"); mkdirSync(workspace); mkdirSync(join(data, "opencode"), { recursive: true });
   writeFileSync(join(workspace, "PROJECT.md"), transfer?.content ?? "revision-one");
@@ -78,11 +83,11 @@ function setup(mode: "normal" | "partition" | "changed-file" | "lost-completion"
     ...(binding.runtime_digest ? { runtime_digest: binding.runtime_digest } : {}),
     model_invoked: true, duration_ms: 1, observation: { status: "ready", reason: "native_sentinel_verified", session_id: "ses_Probe", failure: null } });
   const source = mode === "scheduled" ? { command_origin: "schedule" as const, origin: "cron" as const, source_scope: "cron" as const, transport: "scheduler" }
-    : { command_origin: "human_request" as const, origin: "user" as const, source_scope: "local_foreground" as const, transport: "test" };
+    : { command_origin: "human_request" as const, origin: "user" as const, source_scope: "local_foreground" as const, transport: transfer?.telegram ? "telegram" : "test" };
   const task = new TaskIngress(kernel, source, () => {}).submit({ ...owner, origin: source.command_origin }, "create", {
-    task_id: "native-task", chat_id: "chat", status: "waiting", provider: "opencode", model: binding.model, prompt: "read current project", repo_root: "/coordinator/private/path",
+    task_id: "native-task", chat_id: transfer?.telegram ? "777" : "chat", status: "waiting", provider: "opencode", model: binding.model, prompt: "read current project", repo_root: "/coordinator/private/path",
     ...(transfer ? { completion_requirements: { schema_version: "controlmesh.task_completion.v1", files: [{ path: "PROJECT.md", mode: "read" }] } } : {}),
-  }, { chat_id: "chat" }, { tool_deny: ["bash", "edit", "write"] });
+  }, { chat_id: transfer?.telegram ? "777" : "chat" }, { tool_deny: ["bash", "edit", "write"] });
   const communication = communicationEnabled ? prepareNativeAgentConfiguration(join(root, "task-channel"), Bun.which("node")!, "native-task", ["native-parent"], "native-parent") : undefined;
   const specification = { ...(transfer ? { artifact_transfer: true } : {}), capability: "native.read", workspace_id: "project", device_ids: [device.device_id!], input: { execution_context: { origin: "user", source_scope: "local_foreground" } },
     ...(communication ? { peer_tasks: ["native-parent"], parent_task: "native-parent" } : {}) };
@@ -177,6 +182,53 @@ async function submitAdoption(f: ReturnType<typeof setup>) {
   f.coordinator.assign(owner, "assign-adopted", "adopted", task.revision, f.specification);
   return prepared;
 }
+
+for (const suffix of ["", "\n分页 artifact\n".repeat(24000)]) test(`completed device artifact (${suffix.length ? "chunked" : "single chunk"}) reaches the normal media outbox without a local path mapping`, async () => {
+  const content = `Ready <artifact:PROJECT.md>${suffix}`, f = setup("normal", false, false, { content, telegram: true });
+  const actor = { ...owner, scopes: [...owner.scopes, "delivery:configure", "delivery:project", "delivery:read", "delivery:send", "delivery:reconcile"] };
+  const source = new DeliveryDeviceFiles(f.kernel, actor, () => {}), store = new DeliveryMediaStore(f.kernel, actor, () => {});
+  const media = new DeliveryMediaProjector([], store, () => {}, source);
+  let sends = 0;
+  const adapter = new TelegramTextDelivery({ adapter_id: "telegram", bot_id: "123456", assertCurrent() {}, assertToken() {},
+    async botToken() { return "123456:fixture_token_only"; } }, (async (url: string | URL | Request, init?: RequestInit) => {
+      sends++; let payload: object;
+      if (String(url).endsWith("sendDocument")) {
+        const form = await new Request(String(url), init).formData(), file = form.get("document") as File;
+        expect(await file.text()).toBe(content); expect(file.name).toBe("PROJECT.md");
+        payload = { caption: form.get("caption"), document: { file_id: "file", file_unique_id: "unique", file_size: file.size, file_name: file.name } };
+      } else payload = { text: JSON.parse(String(init?.body)).text };
+      return Response.json({ ok: true, result: { message_id: sends, date: Math.floor(Date.now() / 1000),
+        chat: { id: 777 }, from: { id: 123456, is_bot: true }, ...payload } });
+    }) as typeof fetch, envelope => media.read(envelope));
+  const outbox = new DeliveryOutbox(f.kernel, actor, [adapter], () => {}, 1000, media);
+  try {
+    outbox.bindTask("bind-media", "native-task", f.kernel.inspect(owner, "native-task").revision, "telegram", "full");
+    expect((await f.worker.run("native-task", 5000)).status).toBe("done");
+    outbox.project(); expect(outbox.list("native-task")).toHaveLength(2);
+    const envelope = JSON.parse((f.coordinatorDB.sql.query("SELECT envelope FROM delivery_outbox WHERE part_index=1").get() as { envelope: string }).envelope);
+    const captured = source.capture(envelope, "PROJECT.md");
+    expect(() => new DeliveryMediaProjector([f.workspace], store, () => {}).project({ ...envelope, media: undefined,
+      text: "<artifact:PROJECT.md>" }, undefined, 1)).toThrow("delivery_device_source_not_configured");
+    expect(() => source.capture(envelope, "../PROJECT.md")).toThrow("delivery_device_path_invalid");
+    expect(() => source.capture({ ...envelope, event_seq: envelope.event_seq - 1 }, "PROJECT.md")).toThrow("delivery_device_event_mismatch");
+    expect(() => new DeliveryDeviceFiles(f.kernel, { ...actor, id: "foreign" }, () => {}).capture(envelope, "PROJECT.md")).toThrow();
+    expect(() => source.capture(envelope, "missing.txt")).toThrow("device_artifact_unavailable");
+    expect(() => new DeliveryDeviceFiles(f.kernel, actor, () => { throw new Error("revoked"); }).capture(envelope, "PROJECT.md")).toThrow("revoked");
+    let checks = 0;
+    expect(() => new DeliveryDeviceFiles(f.kernel, actor, () => { if (++checks === 3) throw new Error("revoked during capture"); })
+      .capture(envelope, "PROJECT.md")).toThrow("revoked during capture");
+    const firstByte = captured.bytes[0]!; captured.bytes[0] = firstByte ^ 255;
+    expect(() => captured.assertCurrent()).toThrow("delivery_device_content_changed"); captured.bytes[0] = firstByte;
+    rmSync(f.workspace, { recursive: true }); // The coordinator must read retained transferred bytes, never this worker path.
+    expect(captured.bytes.toString()).toBe(content); captured.assertCurrent();
+    await outbox.drain(); expect(sends).toBe(2); expect(outbox.groups("native-task")[0].complete).toBe(true);
+    const snapshot = f.kernel.inspect(owner, "native-task");
+    f.kernel.resume(owner, "resume-after-stage", "native-task", snapshot.revision, "Continue");
+    expect(() => captured.assertCurrent()).toThrow();
+    expect(f.coordinatorDB.sql.query("SELECT COUNT(*) AS n FROM delivery_media").get()).toEqual({ n: 0 });
+    await outbox.drain(); expect(sends).toBe(2); expect(f.calls()).toBe(1);
+  } finally { await outbox.stop(); }
+});
 
 for (const [name, content] of [["empty", ""], ["text", "current project bytes"], ["chunked", "分页\n".repeat(24000)]]) test(`normal device completion transfers ${name} bytes into the durable coordinator inbox`, async () => {
   const f = setup("normal", false, false, { content });

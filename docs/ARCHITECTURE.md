@@ -927,10 +927,23 @@ automatic resend of an uncertain outcome.
 
 The private local entrypoint optionally configures one selected Feishu or Telegram text adapter; tasks
 still require explicit route binding. Execution completion and delivery completion remain
-distinct. Readback can accept a retained original acknowledgement only after matching current
-authority and the actual remote message; an unobserved send stays unknown. A 128-record
+distinct. Recovery can accept a retained original acknowledgement after matching current
+authority and the original send evidence; it does not claim fresh remote readback.
+An unobserved send stays unknown. A 128-record
 unresolved queue, four shared dispatch slots and per-task ordering bound work. Shutdown
 drains HTTP before storage closes. HTTP/SIGKILL tests use loopback and fixture credentials.
+
+Schema 40 retains private attachment bytes in `delivery_media`. Telegram's optional
+`delivery.media_roots` grants canonical local roots for `<file:/absolute/path>` selections.
+Independent `delivery.media_device_artifacts: true` enables `<artifact:relative/path>`
+selections from the accepted device execution attached to the terminal event. No local
+root is required for device artifacts, and remote paths never become local filesystem
+authority. The device inbox verifies current task revision, confirmed execution, principal,
+completion contract and full content hash before capture. Existing device transfer bounds
+(4 MiB/file, 16 MiB/execution) remain distinct from the 50 MiB local media profile.
+Projection atomically stages the complete text/file group; confirmed send or original-ack
+recovery releases its send copy, while an unknown send retains bytes without replay.
+This Telegram integration does not imply media parity for other transports.
 
 `feishu-credentials.ts` owns selected self-built-app tenant-token refresh. The profile loader
 uses descriptor-checked private files, never credential discovery. Tokens are memory-only,

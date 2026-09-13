@@ -1,5 +1,6 @@
 import { DeliveryMediaStore } from "./delivery-media";
 import { DeliveryMediaProjector } from "./delivery-media-projector";
+import { DeliveryDeviceFiles } from "./delivery-device-file";
 import { GeminiRegistration } from "./providers/gemini-registration";
 import { dispatchHostOwner } from "./host-run-owner";
 import { hostJobEnvironment } from "./host-job-environment";
@@ -310,8 +311,10 @@ export function openLocalRuntime(path: string, options: { host_worker?: boolean 
       inbox = new FeishuInbox(kernel, actor, config.delivery.app_id, auth,
         { provider: inboundProvider, model: inboundProfile.model as string, repo_root: workspace.directory as string }, currentInbound);
     }
-    const media = object(config.delivery) && config.delivery.kind === "telegram_text" && config.delivery.media_roots !== undefined
-      ? new DeliveryMediaProjector(config.delivery.media_roots, new DeliveryMediaStore(kernel, actor, current), current) : undefined;
+    const media = object(config.delivery) && config.delivery.kind === "telegram_text"
+      && (config.delivery.media_roots !== undefined || config.delivery.media_device_artifacts === true)
+      ? new DeliveryMediaProjector(config.delivery.media_roots ?? [], new DeliveryMediaStore(kernel, actor, current), current,
+        config.delivery.media_device_artifacts === true ? new DeliveryDeviceFiles(kernel, actor, current) : undefined) : undefined;
     const delivery = config.delivery === undefined ? undefined : object(config.delivery) && config.delivery.kind === "telegram_text"
       ? openTelegramDelivery(config.delivery, config.source.transport, current, fetch, media ? envelope => media.read(envelope) : undefined) : openFeishuDelivery(config.delivery, config.source.transport, current, fetch,
       inbox ? { binding_digest: inbox.binding_digest, resolve: envelope => inbox!.replyTarget(envelope) } : undefined);

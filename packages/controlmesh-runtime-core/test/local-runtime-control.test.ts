@@ -403,6 +403,24 @@ test("configured media roots project attachments without starting a provider or 
   } finally { await owned.close(); }
 });
 
+test("device artifact delivery can be configured without granting local filesystem roots", async () => {
+  const f = fixture();
+  writeFileSync(f.path, JSON.stringify({ ...f.config, source: { ...f.config.source, transport: "telegram" },
+    delivery: { kind: "telegram_text", adapter_id: "selected-bot", bot_id: "123456", credentials_file: join(f.root, "unused-token.json"), media_device_artifacts: true } }));
+  const owned = openLocalRuntime(f.path);
+  try {
+    expect(owned.deliveries).toBeDefined(); expect(existsSync(f.data)).toBe(false);
+    expect(existsSync(join(f.root, "unused-token.json"))).toBe(false);
+  } finally { await owned.close(); }
+});
+
+for (const value of ["true", 1, {}, null]) test(`device artifact delivery rejects non-boolean selection ${JSON.stringify(value)}`, () => {
+  const f = fixture();
+  writeFileSync(f.path, JSON.stringify({ ...f.config, source: { ...f.config.source, transport: "telegram" },
+    delivery: { kind: "telegram_text", adapter_id: "selected-bot", bot_id: "123456", credentials_file: join(f.root, "unused-token.json"), media_device_artifacts: value } }));
+  expect(() => openLocalRuntime(f.path)).toThrow("invalid_telegram_delivery_profile");
+});
+
 for (const mediaRoots of [[], ["relative/path"], [123]]) test(`configured media roots refuse invalid authority ${JSON.stringify(mediaRoots)}`, () => {
   const f = fixture(); writeFileSync(f.path, JSON.stringify({ ...f.config, source: { ...f.config.source, transport: "telegram" },
     delivery: { kind: "telegram_text", adapter_id: "selected-bot", bot_id: "123456", credentials_file: join(f.root, "unused-token.json"), media_roots: mediaRoots } }));

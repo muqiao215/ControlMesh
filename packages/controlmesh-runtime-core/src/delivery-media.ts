@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { assertProtocolSchema, type TerminalDelivery } from "@controlmesh/protocol";
 import { requireScope } from "./commands";
 import type { CapturedDeliveryFile } from "./delivery-file";
+import type { CapturedDeviceDeliveryFile } from "./delivery-device-file";
 import type { Principal, RuntimeKernel } from "./kernel";
 import { canonical, digest, requireThat } from "./value";
 
@@ -23,7 +24,7 @@ export class DeliveryMediaStore {
     requireThat(event && event.task_id === envelope.task_id && event.revision === envelope.task_revision
       && event.kind === `task.${envelope.status}`, "delivery_media_event_mismatch");
   }
-  stage(envelope: TerminalDelivery, captured: CapturedDeliveryFile, kind: "photo" | "video" | "audio" | "document"): Media {
+  stage(envelope: TerminalDelivery, captured: CapturedDeliveryFile | CapturedDeviceDeliveryFile, kind: "photo" | "video" | "audio" | "document"): Media {
     this.current("delivery:project", envelope); captured.assertCurrent();
     requireThat(envelope.media === undefined && captured.bytes.length === captured.snapshot.size && sha(captured.bytes) === captured.snapshot.sha256,
       "delivery_media_capture_mismatch");

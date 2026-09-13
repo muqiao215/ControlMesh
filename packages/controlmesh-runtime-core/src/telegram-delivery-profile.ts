@@ -9,7 +9,8 @@ import { object, requireThat } from "./value";
 export function openTelegramDelivery(profile: unknown, transport: string, current: () => void, request: typeof fetch = fetch, readMedia?: (envelope: TerminalDelivery) => Buffer) {
   requireThat(object(profile) && profile.kind === "telegram_text" && transport === "telegram"
     && typeof profile.adapter_id === "string" && typeof profile.bot_id === "string" && typeof profile.credentials_file === "string"
-    && Object.keys(profile).every(key => ["kind", "adapter_id", "bot_id", "credentials_file", "media_roots"].includes(key)), "invalid_telegram_delivery_profile");
+    && (profile.media_device_artifacts === undefined || typeof profile.media_device_artifacts === "boolean")
+    && Object.keys(profile).every(key => ["kind", "adapter_id", "bot_id", "credentials_file", "media_roots", "media_device_artifacts"].includes(key)), "invalid_telegram_delivery_profile");
   const botId = profile.bot_id, path = profile.credentials_file;
   let revision: string | undefined;
   const load = () => {

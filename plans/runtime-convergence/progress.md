@@ -247,3 +247,27 @@ acceptance item has matching evidence, release and local alignment.
   Telegram account upload, remote-device artifact sourcing, production cutover or full
   TS migration is claimed. Cross-device artifacts, management selectors, formatting and
   streaming remain required transport work before the broader migration/release gates.
+
+## Device artifact to media integration
+
+- Local media commit `d86373c` is pushed; CI `34746981469` succeeded.
+- `DeliveryDeviceFiles` captures only a file declared by the accepted device execution
+  identified by the original terminal event. It uses `DeviceArtifactInbox.read`, preserving
+  current revision, principal, completion proof and digest checks through every chunk and
+  revalidation. It never resolves a worker path on the coordinator filesystem.
+- Normal Telegram config accepts boolean `media_device_artifacts`; explicit true enables
+  `<artifact:relative/path>` without granting local roots. Local and device capture share
+  the durable media store and outbox; existing per-device transfer limits remain enforced.
+- End-to-end fixture coverage runs the device worker/HTTP transfer/completion, projects
+  the original text plus attachment, removes the worker directory, and verifies multipart
+  upload of the transferred bytes. Single/chunked files, rejected foreign/event/path
+  references, disabled source, revoked authority and post-resume capture are covered.
+- Related native-device, media, outbox and normal-config regression: **105 pass, 0 fail**,
+  961 assertions, 10.62s (`/tmp/cm-device-media-regression.log`); runtime typecheck and
+  diff check passed. The test sender uses fixture credentials and intercepted HTTP.
+- Final single/chunked checks also reject authority loss during capture and modified
+  captured buffers: 2 pass, 0 fail, 42 assertions (`/tmp/cm-device-media-final.log`).
+- This closes the retained device-artifact-to-Telegram path for existing accepted device
+  artifacts, not physical fleet deployment, all provider artifact profiles or real accounts.
+  Next verify this commit's CI, then continue transport parity and the remaining CM-R0–R7
+  gates. Production remains Python; release/local alignment is still pending.

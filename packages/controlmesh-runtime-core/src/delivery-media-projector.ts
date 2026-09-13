@@ -4,14 +4,15 @@ import { fileURLToPath } from "node:url";
 import type { TerminalDelivery } from "@controlmesh/protocol";
 import { captureDeliveryFile } from "./delivery-file";
 import { DeliveryMediaStore } from "./delivery-media";
+import { DeliveryDeviceFiles } from "./delivery-device-file";
 import { deliveryTextParts } from "./delivery-text-parts";
 import { requireThat } from "./value";
 
 /** Explicit configured roots issue file access; file tags merely select within them. */
 export class DeliveryMediaProjector {
   private readonly roots: { path: string; device: string; inode: string }[];
-  constructor(roots: unknown, readonly store: DeliveryMediaStore, private readonly authorize: () => void) {
-    requireThat(Array.isArray(roots) && roots.length > 0 && roots.length <= 16 && roots.every(root => typeof root === "string"), "delivery_media_roots_required");
+  constructor(roots: unknown, readonly store: DeliveryMediaStore, private readonly authorize: () => void, private readonly devices?: DeliveryDeviceFiles) {
+    requireThat(Array.isArray(roots) && (roots.length > 0 || devices !== undefined) && roots.length <= 16 && roots.every(root => typeof root === "string"), "delivery_media_roots_required");
     this.roots = roots.map(path => {
       requireThat(isAbsolute(path) && resolve(path) === path && realpathSync(path) === path, "delivery_media_root_invalid");
       const stat = lstatSync(path, { bigint: true }); requireThat(stat.isDirectory(), "delivery_media_root_invalid");
@@ -28,27 +29,31 @@ export class DeliveryMediaProjector {
   }
   project(envelope: TerminalDelivery, choices: TerminalDelivery["choices"], capacity: number): TerminalDelivery[] | null {
     this.current();
-    const paths: string[] = [];
-    const text = envelope.text.replace(/<file:([^>]+)>/g, (_whole, raw: string) => {
+    const paths: { path: string; device: boolean }[] = [];
+    const text = envelope.text.replace(/<(file|artifact):([^>]+)>/g, (_whole, source: string, raw: string) => {
       let value = raw.trim();
+      if (source === "artifact") {
+        requireThat(this.devices, "delivery_device_source_not_configured");
+        paths.push({ path: value, device: true }); return "";
+      }
       if (value.startsWith("file:")) value = fileURLToPath(value);
       else { requireThat(!value.includes("://"), "delivery_media_path_invalid"); value = decodeURIComponent(value); }
       requireThat(isAbsolute(value) && !value.includes("\0"), "delivery_media_absolute_path_required");
-      paths.push(resolve(value)); return "";
+      paths.push({ path: resolve(value), device: false }); return "";
     }).trim();
     requireThat(paths.length <= 16, "delivery_media_count_exceeded");
     const texts = text ? deliveryTextParts({ ...envelope, text }) : paths.length ? [] : [envelope.text];
     if (texts.length + paths.length > capacity) return null;
     const parts: TerminalDelivery[] = texts.map(text => ({ ...envelope, text }));
-    for (const path of paths) parts.push({ ...envelope, text: path.slice(path.lastIndexOf(sep) + 1) });
+    for (const { path } of paths) parts.push({ ...envelope, text: path.slice(path.lastIndexOf(sep) + 1) });
     for (const [index, part] of parts.entries()) {
       part.delivery_id = index === 0 ? envelope.delivery_id : `${envelope.delivery_id}.${index}`;
       if (choices && index === parts.length - 1) part.choices = choices;
     }
-    for (const [index, path] of paths.entries()) {
+    for (const [index, { path, device }] of paths.entries()) {
       const root = this.roots.find(root => { const inner = relative(root.path, path); return inner && !isAbsolute(inner) && inner !== ".." && !inner.startsWith(`..${sep}`); });
-      requireThat(root, "delivery_media_outside_roots");
-      const captured = captureDeliveryFile(root.path, path, () => this.current());
+      requireThat(device || root, "delivery_media_outside_roots");
+      const captured = device ? this.devices!.capture(envelope, path) : captureDeliveryFile(root!.path, path, () => this.current());
       const bytes = captured.bytes, extension = extname(path).toLowerCase();
       const image = (bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])) || bytes.subarray(0, 3).equals(Buffer.from([255,216,255]))
         || /^GIF8[79]a$/.test(bytes.subarray(0, 6).toString()) || (bytes.subarray(0,4).toString() === "RIFF" && bytes.subarray(8,12).toString() === "WEBP") || bytes.subarray(0,2).toString() === "BM");
