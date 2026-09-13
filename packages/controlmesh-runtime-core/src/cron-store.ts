@@ -1116,6 +1116,26 @@ export class CronStore {
     });
   }
 
+  /** Trusted result projector calls this only after verifying kernel terminal evidence.
+   * Current authority and the original attempt fence remain separate across restart.
+   */
+  acceptReconciledAttemptResult(attemptId: string, authority: { coordinatorId: string; fence: number },
+    expectedFence: number, result: { state: "completed" | "failed"; status: string }): void {
+    this.db.transaction(() => {
+      requireThat(this.getCoordinatorEpoch(authority.coordinatorId).current_generation === authority.fence, "stale_coordinator_fence");
+      const attempt = this.getAttempt(attemptId);
+      requireThat(attempt && attempt.coordinator_id === authority.coordinatorId, "attempt_coordinator_mismatch");
+      requireThat(Number.isSafeInteger(expectedFence) && expectedFence > 0 && expectedFence <= authority.fence
+        && attempt.fencing_generation === expectedFence, "stale_attempt_fence");
+      requireThat(attempt.state !== "completed" && attempt.state !== "failed", "attempt_already_terminal");
+      requireThat((result.state === "completed" || result.state === "failed") && typeof result.status === "string", "invalid_cron_result");
+      this.db.sql.query("UPDATE cron_execution_attempts SET state=?,result_status=?,finished_at=? WHERE attempt_id=?")
+        .run(result.state, result.status, this.db.now(), attemptId);
+      this.updateOccurrenceStateInternal(attempt.occurrence_id, result.state);
+      this.db.sql.query("DELETE FROM cron_dependency_locks WHERE active_attempt_id=?").run(attemptId);
+    });
+  }
+
   /**
    * Reconciles a dependency lock across failovers or after process termination.
    * Separates current controller authority from the expected old attempt identity and fence.

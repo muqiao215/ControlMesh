@@ -730,3 +730,13 @@ Six result/service tests pass (52 assertions) and typecheck/diff check pass; log
 /tmp/cm-cron-cancellation-{tests,typecheck}.log. Cross-generation takeover and native
 termination/reconciliation acceptance remain pending; cancellation alone is not proof
 that an external process terminated.
+
+Current coordinator generation can now project terminal kernel results for earlier
+attempt generations under the same principal/device, without rewriting original issued
+fences. New trusted store result acceptance verifies current authority and expected old
+fence, finalizes occurrence/attempt and releases its lock in one transaction. Pending or
+unknown old executions retain locks and are not replayed. Nineteen result/persistence
+tests pass (192 assertions), typecheck/diff check pass; logs
+/tmp/cm-cron-generation-{tests,typecheck}.log. Tests include current authority rejecting
+the stale caller, waiting for old work, successful/failed terminal projection and original
+fence retention. This is not cross-device or changed-principal takeover acceptance.

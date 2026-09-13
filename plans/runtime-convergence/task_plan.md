@@ -77,8 +77,10 @@ No claim that full TS migration or distributed coordination has completed. A sco
    native identities and current handles; do not restart terminal attempts.
    Continue cron owner parity: recurrence and offline persistence are committed; primary
    has integrated transactional TaskIngress admission plus persisted cursors, due/quiet
-   checks and FIFO dependency waits. Runtime startup wiring, quota circuits, real worker
-   execution and delivery remain pending. CBC is quota-blocked and
+   checks and FIFO dependency waits. Candidate service startup, atomic queue registration,
+   kernel result projection, cancellation and same-device generation recovery are wired
+   with scoped tests. Quota circuits, real worker execution/delivery and cross-device
+   acceptance remain pending. CBC is quota-blocked and
    AGY returned partial timeout output; current attempt facts belong in delegation/README.md.
    The actual Python owners and adversarial evidence remain authoritative over the proposal.
 2. Complete the remaining ownership/acceptance matrix below. Prioritize normal execution,

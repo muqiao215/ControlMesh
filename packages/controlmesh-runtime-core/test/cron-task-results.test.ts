@@ -7,7 +7,7 @@ import { reconcileCronTaskResults } from "../src/cron-task-results";
 
 const actor: Principal = { id: "owner", origin: "schedule", device_id: "device",
   scopes: ["task:create", "task:read", "task:execute", "task:reconcile", "task:admin", "task:cancel"] };
-for (const outcome of ["done", "failed", "unknown", "cancel_queued", "cancel_dispatched"] as const) test(`kernel ${outcome} evidence controls cron state and dependency release`, () => {
+for (const outcome of ["done", "failed", "unknown", "cancel_queued", "cancel_dispatched", "done_after_restart", "failed_after_restart"] as const) test(`kernel ${outcome} evidence controls cron state and dependency release`, () => {
   let now = Date.now();
   const db = new RuntimeDatabase(":memory:", () => now);
   try {
@@ -51,14 +51,23 @@ for (const outcome of ["done", "failed", "unknown", "cancel_queued", "cancel_dis
       expect(reconcileCronTaskResults(kernel, actor, 1)).toBe(0);
       return;
     }
-    expect(() => kernel.finish(actor, "premature", lease, outcome, {})).toThrow("unresolved_effects");
+    const terminal = outcome === "done_after_restart" ? "done" : outcome === "failed_after_restart" ? "failed" : outcome;
+    const restarted = outcome.endsWith("after_restart"), generation = restarted ? 2 : 1;
+    if (restarted) {
+      store.incrementCoordinatorEpoch(actor.id, 1);
+      expect(() => reconcileCronTaskResults(kernel, actor, 1)).toThrow("stale_coordinator_fence");
+      expect(reconcileCronTaskResults(kernel, actor, 2)).toBe(0);
+      expect(store.getDependencyLock("resource")).not.toBeNull();
+    }
+    expect(() => kernel.finish(actor, "premature", lease, terminal, {})).toThrow("unresolved_effects");
     kernel.confirmEffect(actor, "confirm", lease, "effect", { fixture: true });
-    kernel.finish(actor, "finish", lease, outcome, { fixture: true });
-    expect(reconcileCronTaskResults(kernel, actor, 1)).toBe(1);
-    expect(store.getAttempt(admitted.attempt.attempt_id)?.state).toBe(outcome === "done" ? "completed" : "failed");
+    kernel.finish(actor, "finish", lease, terminal, { fixture: true });
+    expect(reconcileCronTaskResults(kernel, actor, generation)).toBe(1);
+    expect(store.getAttempt(admitted.attempt.attempt_id)?.state).toBe(terminal === "done" ? "completed" : "failed");
+    expect(store.getAttempt(admitted.attempt.attempt_id)?.fencing_generation).toBe(1);
     expect(store.getDependencyLock("resource")).toBeNull();
-    expect(reconcileCronTaskResults(kernel, actor, 1)).toBe(0);
-    store.incrementCoordinatorEpoch(actor.id, 1);
-    expect(() => reconcileCronTaskResults(kernel, actor, 1)).toThrow("stale_coordinator_fence");
+    expect(reconcileCronTaskResults(kernel, actor, generation)).toBe(0);
+    store.incrementCoordinatorEpoch(actor.id, generation);
+    expect(() => reconcileCronTaskResults(kernel, actor, generation)).toThrow("stale_coordinator_fence");
   } finally { db.close(); }
 });
