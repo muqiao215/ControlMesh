@@ -5,8 +5,8 @@ import { CronStore } from "../src/cron-store";
 import { CronTaskAdmission } from "../src/cron-task-admission";
 
 const actor: Principal = { id: "scheduler", origin: "schedule", device_id: "device", scopes: ["task:create", "task:read"] };
-function fixture() {
-  const db = new RuntimeDatabase(":memory:"), kernel = new RuntimeKernel(db), store = new CronStore(db);
+function fixture(clock: () => number = Date.now) {
+  const db = new RuntimeDatabase(":memory:", clock), kernel = new RuntimeKernel(db), store = new CronStore(db);
   store.putJob({ id: "scheduled", title: "Scheduled", schedule: "* * * * *", task_folder: "scheduled", agent_instruction: "Inspect current files",
     execution_mode: "taskhub", output_policy: "summarized_only", provider: "opencode", model: "configured-model", chat_id: 123 });
   store.registerCoordinator(actor.id);
@@ -80,5 +80,30 @@ test("monitor disables after atomic submission and replay does not create anothe
     expect(f.store.getJob("scheduled")!.enabled).toBe(false);
     expect(admission.submit(occurrence.occurrence_id)).toEqual(first);
     expect(f.db.sql.query("SELECT COUNT(*) AS n FROM tasks").get()).toEqual({ n: 1 });
+  } finally { f.db.close(); }
+});
+
+test("future occurrence cannot create a task until its actual due instant", () => {
+  let now = Date.parse("2026-06-01T13:00:00Z");
+  const f = fixture(() => now);
+  try {
+    const occurrence = f.store.createOccurrence("scheduled", now + 60000);
+    const admission = new CronTaskAdmission(f.kernel, actor, 1);
+    expect(() => admission.submit(occurrence.occurrence_id)).toThrow("cron_occurrence_not_due");
+    expect(f.store.listAttempts(occurrence.occurrence_id)).toHaveLength(0);
+    now += 60000;
+    expect(admission.submit(occurrence.occurrence_id).task.task.status).toBe("waiting");
+  } finally { f.db.close(); }
+});
+
+test("explicit overnight quiet window uses configured user zone without recurrence-zone substitution", () => {
+  const now = Date.parse("2026-06-01T13:00:00Z"); // 21:00 Shanghai, 09:00 New York.
+  const f = fixture(() => now);
+  try {
+    f.store.putJob({ ...f.store.getJob("scheduled")!.raw_metadata, timezone: "America/New_York", quiet_start: 21, quiet_end: 8 } as Parameters<CronStore["putJob"]>[0]);
+    const occurrence = f.store.createOccurrence("scheduled", now - 60000);
+    expect(() => new CronTaskAdmission(f.kernel, actor, 1, { userTimezone: "Asia/Shanghai" }).submit(occurrence.occurrence_id)).toThrow("cron_quiet_hours");
+    expect(f.store.listAttempts(occurrence.occurrence_id)).toHaveLength(0);
+    expect(new CronTaskAdmission(f.kernel, actor, 1, { userTimezone: "UTC" }).submit(occurrence.occurrence_id).task.task.status).toBe("waiting");
   } finally { f.db.close(); }
 });

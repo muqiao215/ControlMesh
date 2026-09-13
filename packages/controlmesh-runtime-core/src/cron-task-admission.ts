@@ -1,23 +1,29 @@
 import { CronStore, type CronExecutionAttemptRecord } from "./cron-store";
 import type { Principal, RuntimeKernel, TaskSnapshot } from "./kernel";
 import { TaskIngress } from "./task-ingress";
+import { resolveCronTimezone } from "./cron-schedule";
 import { identifier, requireThat } from "./value";
 
 const foregroundCapabilities = new Set(["repo_write", "git_write", "network_write", "github_release", "publish"]);
 
 /** Trusted scheduler seam for TaskHub-mode occurrences. No timer or provider is started.
- * The scheduler must establish due/quiet/dependency eligibility before calling this seam;
+ * The scheduler must establish dependency eligibility before calling this seam;
  * native execution still requires the existing queue, source, grant and sandbox checks.
  */
 export class CronTaskAdmission {
   private readonly store: CronStore;
   private readonly ingress: TaskIngress;
   private readonly actor: Principal;
+  private readonly quietTimezone: string;
 
-  constructor(private readonly kernel: RuntimeKernel, actor: Principal, private readonly generation: number) {
+  constructor(private readonly kernel: RuntimeKernel, actor: Principal, private readonly generation: number,
+    timezone: { userTimezone?: string; hostTimezone?: string } = {}) {
     identifier(actor.id); identifier(actor.device_id);
     requireThat(actor.origin === "schedule" && Number.isSafeInteger(generation) && generation > 0, "invalid_cron_controller");
     this.actor = Object.freeze({ ...actor, scopes: Object.freeze([...actor.scopes]) });
+    // Python CronObserver uses the configured user zone for quiet hours, not
+    // each job's recurrence zone and not heartbeat's default quiet window.
+    this.quietTimezone = resolveCronTimezone({ configuredTimezone: timezone.userTimezone, hostTimezone: timezone.hostTimezone });
     this.store = new CronStore(kernel.db);
     this.ingress = new TaskIngress(kernel, { command_origin: "schedule", origin: "cron", source_scope: "cron", transport: "cron" }, () => this.current());
     this.current();
@@ -45,6 +51,15 @@ export class CronTaskAdmission {
       }
       const job = this.store.getJob(occurrence.job_id);
       requireThat(job, "cron_definition_not_active");
+      const now = this.kernel.db.now();
+      requireThat(occurrence.scheduled_at <= now, "cron_occurrence_not_due");
+      const start = job.quiet_start ?? 0, end = job.quiet_end ?? 0;
+      requireThat(Number.isInteger(start) && Number(start) >= 0 && Number(start) <= 23
+        && Number.isInteger(end) && Number(end) >= 0 && Number(end) <= 23, "invalid_cron_quiet_window");
+      const hour = Number(new Intl.DateTimeFormat("en-US", { timeZone: this.quietTimezone, hour: "2-digit", hourCycle: "h23" }).format(now));
+      const quiet = start !== end && (Number(start) < Number(end)
+        ? hour >= Number(start) && hour < Number(end) : hour >= Number(start) || hour < Number(end));
+      requireThat(!quiet, "cron_quiet_hours");
       requireThat(job.execution_mode === "taskhub", "cron_taskhub_mode_required");
       requireThat(job.output_policy === "summarized_only", "cron_taskhub_requires_summarized_only");
       const risk = String(job.risk ?? "low").trim().toLowerCase();

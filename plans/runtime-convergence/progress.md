@@ -643,3 +643,11 @@ scheduler's unimplemented owner; this trusted seam is not exposed as a remote en
 Validation: 29 tests pass/224 assertions; /tmp/cm-cron-task-admission-tests.log. Final
 typecheck passes after state correction; /tmp/cm-cron-task-admission-typecheck.log.
 Public index exports this admission seam for subsequent integration.
+
+0b4886e push initially timed out; verified remote still at 0a85b05, then explicit bounded
+push succeeded. Admission now verifies due time and explicit quiet windows before task
+creation, matching Python's configured-user-timezone semantics (no heartbeat fallback,
+no substitution of job recurrence timezone). Seven admission tests pass/28 assertions,
+including fixed-clock due boundary and cross-midnight zone behavior; typecheck passes.
+Logs /tmp/cm-cron-quiet-admission-{tests,typecheck}.log. Dependency eligibility, durable
+timer/cursor loop and actual execution/delivery are still pending; production unchanged.
