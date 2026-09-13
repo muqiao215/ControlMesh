@@ -1981,3 +1981,24 @@ The successful dual-session fixture asserts exactly one model probe, two distinc
 sessions, both messages consumed with agent_message origin, and no added messages or
 model calls during repeated recovery. These are real local binaries with synthetic
 Responses; physical devices, real accounts and full migration remain separate gates.
+
+## 2026-09-13 — Codex controlled file reads and completion
+
+CodexWorkspace reuses NativeWorkspaceFiles and NativeAgentChannel with the workspace.v1
+client; native MCP exposure is limited to read_file. Normal configuration accepts explicit
+codex.node_executable with registered read_files/required_reads. The ingress owner now
+admits Codex read completion contracts, while writes are still refused. Task input carries
+current-read requirements; full native prompt/history verification remains in force.
+
+The dispatch manifest retains workspace scope, command and a configuration/task/episode
+binding. The tool channel requires matching episode/fence and manifest digest before file
+access. Retained verification recreates an inspection-only file owner, checks every native
+MCP receipt, current source identity/content, full read coverage and completion hashes.
+Message and file MCP records are separated by their fixed server names; both are independently
+verified when configured together. Current-source changes, missing receipts and wrong hashes
+refuse. No source publication, broad filesystem grant or new task store was introduced.
+
+Real installed CLI + Viewer tests passed native read/second-turn reread, lost observation
+recovery without model calls, and combined messaging/read. Responses are synthetic loopback
+fixtures. Physical ARM64 SSH was rechecked and still timed out; no remote canary was started.
+Previous bd642d2 and 5d0dcae CI completed successfully; e3a26fb was running when checked.

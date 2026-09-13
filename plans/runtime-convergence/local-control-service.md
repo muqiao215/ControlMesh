@@ -189,9 +189,10 @@ handle to `new TASK --provider codex --adoption JSON`, then explicitly `enqueue`
 adoption and execution journal; retained-result recovery does not call the model.
 
 This profile currently runs already-adopted sessions under native read-only settings.
-It does not yet fulfill configured required-file, write or SpecMesh
-completion contracts; those contracts are rejected before probing and remain migration
-work. Preserve governed project requirements. The existing Python production entrypoint
+Configured read_files and required_reads are supported when codex.node_executable
+is an explicit absolute Node/Bun executable for the private MCP client. Read completion
+contracts require exact native receipts and current file hashes. Write and SpecMesh
+completion profiles remain migration work and are refused. Preserve governed project requirements. The existing Python production entrypoint
 and released default are unchanged; full native sandbox/real-account qualification is
 still required by the runtime-convergence acceptance matrix.
 
@@ -226,3 +227,12 @@ Concurrent tasks waiting on the same in-flight provider preflight observe its ca
 result within their own bounded deadline. Only the original permit launches a probe.
 Cancellation stops a waiter without abandoning the probe owner; failures and unknown
 outcomes are returned without automatic re-probing.
+
+Codex exposes the separate controlmesh_workspace MCP server with read_file only. The
+controller configures its allowed file list and required complete reads; task input names
+these requirements as literal data. The private workspace journal and original source
+snapshot are retained in the dispatch manifest. Every tool call checks the current
+lease and matching dispatch digest. Native result content must match journal receipts,
+and required reads must cover all current bytes before task completion or reconciliation.
+A changed source blocks acceptance. This read profile composes with active messaging;
+read_file is not a write or reviewed SpecMesh closeout capability.

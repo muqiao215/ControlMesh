@@ -97,11 +97,7 @@ test("Codex locator refuses ambiguity and ignores symlink candidates", () => {
   expect(() => findCodexSession(f.sessions, "desktop", id)).toThrow("native_session_ambiguous");
 });
 
-test("configured Codex refuses unimplemented file contracts before a provider probe", async () => {
+test("configured Codex refuses required reads without a registered workspace tool profile", () => {
   const f = fixture(); f.config.workspace.required_reads.push(join(f.workspace, "PROJECT.md")); f.save();
-  const current = f.open();
-  const prepared = await f.request(current.control, "select", "prepare_adoption", { task_id: "task", provider: "codex", session_id: id });
-  const task = await f.request(current.control, "submit", "submit", { task: { task_id: "task", chat_id: "fixture", status: "waiting", provider: "codex", model: "fixture-model", repo_root: f.workspace, prompt: "Continue", native_session: prepared.native_session } });
-  expect(await current.control.handle({ id: "enqueue", op: "enqueue", task_id: "task", expected_revision: task.revision })).toMatchObject({ ok: false });
-  expect(current.owned.runtime.kernel.db.sql.query("SELECT COUNT(*) AS n FROM provider_checks").get()).toEqual({ n: 0 });
+  expect(() => f.open()).toThrow("invalid_codex_workspace_profile");
 });

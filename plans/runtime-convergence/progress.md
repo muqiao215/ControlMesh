@@ -2,6 +2,21 @@
 
 ## Current
 
+Codex controlled current-file reads are now qualified through a separately scoped MCP
+server and the existing NativeWorkspaceFiles receipt owner. Native output must match
+retained receipts, required current reads and read-only task completion contracts.
+The channel requires the matching dispatched manifest; recovery verifies retained evidence
+without a new model request. Unconfigured communication/workspace receipts are refused.
+Validation: installed CLI + real Viewer + synthetic loopback read/recovery 2 tests,
+43 assertions (27.41s); final combined file-read/communication test 1 test, 24 assertions
+(13.93s); targeted workspace/communication/ingress/local configuration regression 27 tests,
+451 assertions (4.76s). Final typecheck and diff-check passed.
+Evidence: /tmp/cm-native-workspace-read-v2.log, /tmp/cm-native-workspace-scope-final.log,
+/tmp/cm-codex-files-final.log. These isolated fixtures do not qualify real-account behavior.
+Rock 5C SSH timed out; physical-device qualification remains unavailable. Codex writes,
+publication, SpecMesh lifecycle, full provider/store/transport parity and release/default
+switch are still open. Production remains Python CM 0.43.0; full CM-R0–R7 is incomplete.
+
 Local dual-native Codex exchange is qualified against a loopback model fixture. Two
 separately seeded native sessions run concurrently, ask/receive/answer through MCP and
 consume the attributed messages. Alpha's lost observation reconciles after reopen with

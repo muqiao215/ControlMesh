@@ -14,8 +14,8 @@ import { LocalRuntimeControl } from "../src/local-runtime-control";
 import { codexSearchResponse, codexFunctionResponse, codexMessagesResponse, codexPatchResponse, codexTextResponse } from "./helpers/codex-responses";
 
 const executable = process.env.CM_CODEX_TEST_EXECUTABLE, viewer = process.env.CM_HISTORY_TEST_ROOT;
-test.skipIf(!executable || !viewer).each(["normal", "lost-observation", "readonly-patch", "commentary", "mailbox", "mailbox-recovery", "active-send", "active-send-recovery", "active-exchange", "active-exchange-recovery"])("installed Codex persists native context through Viewer adoption and configured runtime reopen (%s)", async mode => {
-  const exchange = mode.startsWith("active-exchange"), active = mode.startsWith("active-"), inbox = mode.startsWith("mailbox"), lost = mode === "lost-observation" || mode === "mailbox-recovery" || mode === "active-send-recovery" || mode === "active-exchange-recovery", patch = mode === "readonly-patch";
+test.skipIf(!executable || !viewer).each(["normal", "lost-observation", "readonly-patch", "commentary", "mailbox", "mailbox-recovery", "active-send", "active-send-recovery", "active-exchange", "active-exchange-recovery", "workspace-read", "workspace-read-recovery", "workspace-read-communication"])("installed Codex persists native context through Viewer adoption and configured runtime reopen (%s)", async mode => {
+  const workspaceRead = mode.startsWith("workspace-read"), exchange = mode.startsWith("active-exchange"), active = mode.startsWith("active-") || mode === "workspace-read-communication", inbox = mode.startsWith("mailbox"), lost = mode === "lost-observation" || mode === "mailbox-recovery" || mode === "active-send-recovery" || mode === "active-exchange-recovery" || mode === "workspace-read-recovery", patch = mode === "readonly-patch";
   const root = mkdtempSync(join(tmpdir(), "cm-native-codex-flow-")), home = join(root, "home"), workspace = join(root, "project"), state = join(root, "state");
   for (const path of [home, workspace, state]) mkdirSync(path, { mode: 0o700 });
   const marker = randomUUID(), requests: { phase: string; has_seed: boolean; mailbox_input: boolean }[] = [];
@@ -23,6 +23,9 @@ test.skipIf(!executable || !viewer).each(["normal", "lost-observation", "readonl
   let exchangeStep = 0, peerQuestion = "";
   let peerLease: Lease | undefined;
   const peerActor: Principal = { id: "operator", origin: "agent_message", device_id: "desktop", scopes: ["task:read", "task:execute", "message:read", "message:send", "message:ack"] };
+  const readTurns = new Set<string>();
+  const projectFile = join(workspace, "PROJECT.md");
+  if (workspaceRead) writeFileSync(projectFile, "Current project file evidence\n");
   const patchOutputs: string[] = [];
   const target = join(workspace, "readonly-canary.txt");
   const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
@@ -64,6 +67,15 @@ test.skipIf(!executable || !viewer).each(["normal", "lost-observation", "readonl
       sendIssued = true;
       return codexFunctionResponse(body.model, tool.name, { request_id: "native-send", recipient_task: "peer", text: "Native agent message" }, namespace.name);
     }
+    if (workspaceRead && phase === "resume") {
+      if (!readTurns.has(last)) {
+        const namespace = (body.input ?? []).filter((item: any) => item.type === "tool_search_output").flatMap((item: any) => item.tools ?? []).find((item: any) => item.name === "mcp__controlmesh_workspace");
+        if (!namespace) return codexSearchResponse(body.model, "controlmesh_workspace read_file");
+        readTurns.add(last);
+        return codexFunctionResponse(body.model, "read_file", { request_id: "read", path: "PROJECT.md" }, namespace.name);
+      }
+      expect(all).toContain("Current project file evidence");
+    }
     if (patch && phase === "resume") {
       for (const item of body.input ?? []) if (item.type === "custom_tool_call_output") patchOutputs.push(JSON.stringify(item.output));
       if (!patchIssued) {
@@ -89,9 +101,9 @@ test.skipIf(!executable || !viewer).each(["normal", "lost-observation", "readonl
     const configPath = join(root, "runtime.json");
     writeFileSync(configPath, JSON.stringify({ schema_version: "controlmesh.local_runtime.v1", mode: "candidate", state_root: state,
       principal_id: "operator", device_id: "desktop", source: { command_origin: "human_request", origin: "user", source_scope: "local_foreground", transport: "terminal" },
-      workspace: { directory: workspace, read_files: [], required_reads: [] },
+      workspace: { directory: workspace, read_files: workspaceRead ? [projectFile] : [], required_reads: workspaceRead ? [projectFile] : [] },
       ...(active ? { communication: { node_executable: process.execPath, tasks: { task: { peer_tasks: ["peer"], parent_task: "peer" } } } } : {}),
-      codex: { executable, cli_version: "0.154.0", codex_home: home, model: "gpt-5.5", environment }, history: { directory: viewer, python: "/usr/bin/python3" } }), { mode: 0o600 });
+      codex: { executable, ...(workspaceRead ? { node_executable: process.execPath } : {}), cli_version: "0.154.0", codex_home: home, model: "gpt-5.5", environment }, history: { directory: viewer, python: "/usr/bin/python3" } }), { mode: 0o600 });
     owned = openLocalRuntime(configPath);
     const control = () => new LocalRuntimeControl(owned!.runtime, owned!.deliveries, owned!.submissionIdentity, owned!.inbound, owned!.specmesh, owned!.recovery, owned!.history);
     const request = async (id: string, op: string, fields: Record<string, unknown>): Promise<any> => {
@@ -99,7 +111,7 @@ test.skipIf(!executable || !viewer).each(["normal", "lost-observation", "readonl
     };
     const adopted = await request("adopt", "prepare_adoption", { task_id: "task", provider: "codex", session_id: reference.session_id });
     expect(readFileSync(store.path)).toEqual(before); expect(requests).toHaveLength(1);
-    const submitted = await request("submit", "submit", { task: { task_id: "task", chat_id: "fixture", status: "waiting", provider: "codex", model: "gpt-5.5", repo_root: workspace, prompt: "Continue the earlier conversation.", native_session: adopted.native_session } });
+    const submitted = await request("submit", "submit", { task: { task_id: "task", chat_id: "fixture", status: "waiting", provider: "codex", model: "gpt-5.5", repo_root: workspace, prompt: "Continue the earlier conversation.", ...(workspaceRead ? { completion_requirements: { schema_version: "controlmesh.task_completion.v1", files: [{ path: "PROJECT.md", mode: "read" }] } } : {}), native_session: adopted.native_session } });
     if (active) await request("peer-create", "submit", { task: { task_id: "peer", chat_id: "fixture", status: "waiting", provider: "codex", model: "gpt-5.5", repo_root: workspace, prompt: "Peer fixture" } });
     if (exchange) peerLease = owned.runtime.kernel.claim({ ...peerActor, origin: "human_request" }, "peer-claim", "peer", owned.runtime.inspectTask("peer").revision, 60000);
     if (inbox) {
@@ -135,7 +147,7 @@ test.skipIf(!executable || !viewer).each(["normal", "lost-observation", "readonl
     const resumed = await request("resume", "resume", { task_id: "task", expected_revision: completed.revision, prompt: "Continue once more." });
     await request("enqueue-again", "enqueue", { task_id: "task", expected_revision: resumed.revision }); await owned.runtime.drain();
     expect(owned.runtime.inspectTask("task").task.status).toBe("done");
-    expect(requests.map(item => item.phase)).toEqual(exchange ? ["seed", "probe", ...Array(7).fill("resume")] : active ? ["seed", "probe", "resume", "resume", "resume", "resume"] : patch ? ["seed", "probe", "resume", "resume", "resume"] : ["seed", "probe", "resume", "resume"]);
+    expect(requests.map(item => item.phase)).toEqual(workspaceRead ? ["seed", "probe", ...Array(active ? 7 : 5).fill("resume")] : exchange ? ["seed", "probe", ...Array(7).fill("resume")] : active ? ["seed", "probe", "resume", "resume", "resume", "resume"] : patch ? ["seed", "probe", "resume", "resume", "resume"] : ["seed", "probe", "resume", "resume"]);
     if (inbox) expect(requests.filter(item => item.phase === "resume").map(item => item.mailbox_input)).toEqual([true, false]);
     if (active) {
       expect(sendIssued).toBe(true);
@@ -146,6 +158,12 @@ test.skipIf(!executable || !viewer).each(["normal", "lost-observation", "readonl
       expect(owned.runtime.kernel.db.sql.query("SELECT status FROM messages WHERE recipient_task='task' ORDER BY sequence").all()).toEqual([{ status: "consumed" }, { status: "consumed" }]);
       expect(owned.runtime.kernel.db.sql.query("SELECT COUNT(*) AS n FROM messages WHERE recipient_task='outside'").get()).toEqual({ n: 0 });
       expect(owned.runtime.kernel.db.sql.query("SELECT tool FROM native_agent_calls ORDER BY seq").all()).toEqual(["controlmesh_send", "controlmesh_ask_parent", "controlmesh_receive", "controlmesh_answer"].map(tool => ({ tool })));
+    }
+    if (workspaceRead) {
+      expect(readTurns.size).toBe(2);
+      const result = JSON.parse((owned.runtime.kernel.db.sql.query("SELECT result FROM effects ORDER BY rowid DESC LIMIT 1").get() as { result: string }).result);
+      expect(result.task_completion.files[0]).toMatchObject({ path: "PROJECT.md", mode: "read" });
+      expect(result.workspace_receipts.read_files).toEqual([projectFile]);
     }
     if (patch) {
       expect(patchIssued).toBe(true);

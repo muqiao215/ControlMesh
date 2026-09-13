@@ -49,8 +49,8 @@ export function codexFunctionResponse(model: unknown, name: string, args: Record
   return new Response(events.map((event, sequence_number) => `event: ${event.type}\ndata: ${JSON.stringify({ ...event, sequence_number })}\n\n`).join(""), { headers: { "content-type": "text/event-stream" } });
 }
 
-export function codexSearchResponse(model: unknown): Response {
-  const item = { id: `ts_${randomUUID()}`, type: "tool_search_call", call_id: `call_${randomUUID()}`, status: "completed", execution: "client", arguments: { query: "controlmesh send", limit: 4 } };
+export function codexSearchResponse(model: unknown, query = "controlmesh send"): Response {
+  const item = { id: `ts_${randomUUID()}`, type: "tool_search_call", call_id: `call_${randomUUID()}`, status: "completed", execution: "client", arguments: { query, limit: 4 } };
   const response = { id: `resp_${randomUUID()}`, object: "response", created_at: 1, status: "completed", model, output: [item], usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } };
   const events = [{ type: "response.created", response: { ...response, status: "in_progress", output: [] } }, { type: "response.output_item.added", output_index: 0, item }, { type: "response.output_item.done", output_index: 0, item }, { type: "response.completed", response }];
   return new Response(events.map((event, sequence_number) => `event: ${event.type}\ndata: ${JSON.stringify({ ...event, sequence_number })}\n\n`).join(""), { headers: { "content-type": "text/event-stream" } });

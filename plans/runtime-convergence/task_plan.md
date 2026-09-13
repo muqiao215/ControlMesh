@@ -78,7 +78,9 @@ headless Viewer have passed configured adoption and context-preserving continuat
 across reopen against a synthetic loopback model endpoint. This does not qualify live
 account behavior or native tool permissions. Gemini persistent registration, Codex
 fresh-session creation, interrupted lineage qualification, effective native sandbox
-behavior, and Codex active messaging/topology/file-receipt integration remain.
+behavior, and Codex topology/write-publication integration remain. Codex current-file
+read receipts and read completion contracts are now registered; SpecMesh lifecycle
+integration and write publication remain pending.
 Codex initial mailbox delivery and retained consumption recovery are now integrated;
 active messaging is registered through the shared broker. Installed-native send/ask/receive/answer,
 local two-session concurrent question/answer and retained recovery pass against loopback

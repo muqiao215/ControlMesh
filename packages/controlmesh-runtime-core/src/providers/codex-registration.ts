@@ -1,3 +1,4 @@
+import type { CodexWorkspaceConfiguration } from "./codex-workspace";
 import type { NativeAgentConfiguration } from "./native-agent-profile";
 import { existsSync, opendirSync, realpathSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
@@ -43,12 +44,12 @@ export class CodexRegistration {
   private readonly identity: string;
   readonly sessions: string;
   constructor(private readonly kernel: RuntimeKernel, private readonly cache: PreflightCache, private readonly actor: Principal,
-    value: unknown, private readonly state: string, private readonly workspace: string, private readonly authorize: () => void, private readonly communicationForTask?: (taskId: string) => NativeAgentConfiguration | undefined) {
+    value: unknown, private readonly state: string, private readonly workspace: string, private readonly authorize: () => void, private readonly communicationForTask?: (taskId: string) => NativeAgentConfiguration | undefined, private readonly workspaceFiles?: CodexWorkspaceConfiguration) {
     requireThat(object(value) && value.cli_version === "0.154.0" && typeof value.executable === "string" && typeof value.codex_home === "string"
       && typeof value.model === "string" && /^[^\s\x00]{1,256}$/.test(value.model) && object(value.environment)
       && Object.keys(value.environment).every(key => codexProbeCredentialKeys.includes(key))
       && Object.values(value.environment).every(v => typeof v === "string" && !v.includes("\0"))
-      && Object.keys(value).every(key => ["cli_version", "executable", "codex_home", "model", "environment", "timeout_ms"].includes(key)), "invalid_local_codex_profile");
+      && Object.keys(value).every(key => ["cli_version", "executable", "codex_home", "model", "environment", "timeout_ms", "node_executable"].includes(key)), "invalid_local_codex_profile");
     const timeout = value.timeout_ms ?? 60000;
     requireThat(Number.isSafeInteger(timeout) && Number(timeout) >= 1000 && Number(timeout) <= 300000, "invalid_native_timeout");
     this.config = { executable: value.executable, codex_home: value.codex_home, model: value.model, environment: value.environment as Record<string, string>, timeout_ms: Number(timeout) };
@@ -77,7 +78,7 @@ export class CodexRegistration {
       && object(task.task.native_session) && typeof task.task.native_session.session_id === "string", "codex_native_adoption_required");
     const store = this.locate(task.task.native_session.session_id);
     const communication = this.communicationForTask?.(task.task.task_id);
-    const config: CodexTaskConfiguration = { ...(communication ? { communication } : {}), executable: this.config.executable, cli_version: "0.154.0", state_home: this.state,
+    const config: CodexTaskConfiguration = { ...(this.workspaceFiles ? { workspace_files: this.workspaceFiles } : {}), ...(communication ? { communication } : {}), executable: this.config.executable, cli_version: "0.154.0", state_home: this.state,
       codex_home: this.config.codex_home, rollout_path: store.path, sandbox: "read-only", model: this.config.model, timeout_ms: this.config.timeout_ms,
       environment: { ...this.config.environment, HOME: dirname(this.config.codex_home), CODEX_HOME: this.config.codex_home, PATH: "/usr/bin:/bin" } };
     // Recovery consumes retained evidence; it must not require fresh credentials or readiness.
