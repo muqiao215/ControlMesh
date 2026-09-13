@@ -1,3 +1,4 @@
+import { SpecMeshPort, type SpecMeshObservation } from "./specmesh-port";
 import { decodeHostJob } from "./host-job-model";
 import { realpathSync, statSync } from "node:fs";
 import { isAbsolute } from "node:path";
@@ -10,11 +11,11 @@ import { enforceLocalReadSource } from "./execution-policy";
 import { directoryIdentity } from "./providers/native-manifest";
 import { canonical, digest, object, requireThat } from "./value";
 
-/** Single local-foreground step. Container/source variants and retained-result recovery are separate owners. */
+/** Approved local-foreground step with retained-result recovery and optional independent workflow checks. */
 export class HostJobProcess {
   private readonly actor: Principal;
   constructor(private readonly kernel: RuntimeKernel, actor: Principal, private readonly workspace: string,
-    private readonly shell: string, private readonly authorize: () => void) { this.actor = structuredClone(actor); }
+    private readonly shell: string, private readonly authorize: () => void, private readonly workflow?: SpecMeshPort) { this.actor = structuredClone(actor); }
   async execute(lease: Lease, admission: ProcessAdmission) {
     const actor = this.actor, task = this.kernel.inspect(actor, lease.task_id).task;
     requireThat(object(task.host_job) && task.provider === "host", "host_job_task_binding_required");
@@ -35,6 +36,7 @@ export class HostJobProcess {
     const guard = () => {
       const checked: unknown = this.authorize();
       if (checked !== undefined) { void Promise.resolve(checked).catch(() => {}); requireThat(false, "admission_must_be_synchronous"); }
+      this.workflow?.assertCurrent();
       admission.assertCurrent(); this.kernel.withLease(actor, lease, () => {});
       requireThat(digest(directoryIdentity(this.workspace)) === digest(workspace) && shellIdentity() === shell, "host_job_execution_configuration_changed");
       const current = this.kernel.inspect(actor, lease.task_id).task;
@@ -42,15 +44,17 @@ export class HostJobProcess {
         && canonical(current.tool_grant) === canonical(grant), "host_job_task_binding_changed");
       requireThat(store.get(actor, approval.job_id)?.revision === runningRevision, "host_job_revision_conflict");
     };
+    const workflowStart = this.workflow ? await this.workflow.inspect("check", admission) : undefined;
+    if (workflowStart) requireThat(workflowStart.result.status === "pass", "specmesh_start_gate_blocked");
     this.kernel.db.transaction(() => {
-      guard();
+      guard(); workflowStart?.assertCurrent();
       this.kernel.start(actor, `${effect}-start`, lease);
       const started = new Date(this.kernel.db.now()).toISOString();
       const running = store.put(actor, `${effect}-running`, initial.revision, { ...initial.job, state: "running", current_step_id: step.id, updated_at: started,
         steps: initial.job.steps.map(item => item.id === step.id ? { ...item, state: "running", started_at: started, pid: null, pgid: null } : item) });
       runningRevision = running.revision;
       const permit = this.kernel.dispatchEffect(actor, `${effect}-dispatch`, lease, effect, { job_id: approval.job_id, step_id: step.id, command_digest: step.command_digest },
-        { schema_version: "controlmesh.host_step_execution.v1", approval, workspace, shell, running_revision: runningRevision, job: running.job });
+        { schema_version: "controlmesh.host_step_execution.v1", approval, workspace, shell, running_revision: runningRevision, job: running.job, workflow: this.workflow ? { binding_digest: this.workflow.binding_digest, start_snapshot_digest: workflowStart!.snapshot_digest } : null });
       requireThat(permit.dispatch_permitted, "host_job_dispatch_already_attempted"); dispatched = true;
     });
     try {
@@ -64,14 +68,16 @@ export class HostJobProcess {
         this.kernel.db.sql.query("INSERT INTO effect_observations VALUES(?,?,?)").run(effect, digest(outcome), canonical(outcome));
       });
       guard(); requireThat(outcome.reason === "exited" && outcome.exit_code !== null, "host_job_outcome_uncertain");
+      const workflowEnd = this.workflow ? await this.workflow.inspect("check", { ...admission, assertCurrent: guard }) : undefined;
+      if (workflowEnd) requireThat(workflowEnd.result.status === "pass", "specmesh_publication_gate_blocked");
       return this.kernel.db.transaction(() => {
-        guard(); const current = store.get(actor, approval.job_id)!, finished = new Date(this.kernel.db.now()).toISOString();
+        guard(); workflowEnd?.assertCurrent(); const current = store.get(actor, approval.job_id)!, finished = new Date(this.kernel.db.now()).toISOString();
         const success = outcome.exit_code === 0;
         const steps = current.job.steps.map(item => item.id === step.id ? { ...item, state: success ? "completed" : "failed", exit_code: outcome.exit_code, finished_at: finished, completed_at: finished } : item);
         const done = steps.every(item => ["completed", "skipped"].includes(item.state));
         const saved = store.put(actor, `${effect}-result`, runningRevision, { ...current.job, steps, state: !success ? "failed" : done ? "completed" : current.job.state,
           updated_at: finished, completed_at: done || !success ? finished : "" });
-        const result = { host_job_id: approval.job_id, step_id: step.id, host_job_revision: saved.revision, exit_code: outcome.exit_code, observation_digest: digest(outcome) };
+        const result = { host_job_id: approval.job_id, step_id: step.id, host_job_revision: saved.revision, exit_code: outcome.exit_code, observation_digest: digest(outcome), ...(workflowEnd ? { specmesh: { snapshot_digest: workflowEnd.snapshot_digest, status: "pass", closeout_verified: false } } : {}) };
         this.kernel.confirmEffect(actor, `${effect}-confirm`, lease, effect, result);
         return this.kernel.finish(actor, `${effect}-finish`, lease, success ? "done" : "failed", result);
       });
@@ -80,7 +86,20 @@ export class HostJobProcess {
       throw error;
     }
   }
+  async recover(requestId: string, taskId: string, expectedRevision: number, binding: ReconciliationBinding) {
+    const checked: unknown = this.authorize();
+    if (checked !== undefined) { void Promise.resolve(checked).catch(() => {}); requireThat(false, "admission_must_be_synchronous"); }
+    this.workflow?.assertCurrent();
+    const replay = this.kernel.reconciliationReceipt(this.actor, requestId, taskId, expectedRevision, binding);
+    if (replay) return replay;
+    const observation = this.workflow ? await this.workflow.inspect("check", { assertCurrent: this.authorize }) : undefined;
+    return this.acceptRecovery(requestId, taskId, expectedRevision, binding, observation);
+  }
   reconcile(requestId: string, taskId: string, expectedRevision: number, binding: ReconciliationBinding) {
+    requireThat(!this.workflow, "host_workflow_recovery_required");
+    return this.acceptRecovery(requestId, taskId, expectedRevision, binding);
+  }
+  private acceptRecovery(requestId: string, taskId: string, expectedRevision: number, binding: ReconciliationBinding, workflowEnd?: SpecMeshObservation) {
     const checked: unknown = this.authorize();
     if (checked !== undefined) { void Promise.resolve(checked).catch(() => {}); requireThat(false, "admission_must_be_synchronous"); }
     const actor = this.actor;
@@ -88,6 +107,12 @@ export class HostJobProcess {
     if (replay) return replay;
     return this.kernel.reconcileEffect(actor, requestId, taskId, expectedRevision, binding, evidence => {
       const manifest = evidence.manifest, outcome = evidence.observation;
+      if (this.workflow) {
+        requireThat(object(manifest.workflow) && manifest.workflow.binding_digest === this.workflow.binding_digest
+          && typeof manifest.workflow.start_snapshot_digest === "string" && /^[a-f0-9]{64}$/.test(manifest.workflow.start_snapshot_digest), "host_workflow_binding_changed");
+        requireThat(workflowEnd?.result.status === "pass", "specmesh_publication_gate_blocked");
+        workflowEnd.assertCurrent();
+      } else requireThat(manifest.workflow === undefined || manifest.workflow === null, "host_workflow_binding_changed");
       requireThat(manifest.schema_version === "controlmesh.host_step_execution.v1", "host_job_manifest_unproven");
       const approval = new HostJobApprovals(this.kernel.db, this.authorize).inspectReceipt(actor, manifest.approval);
       const task = evidence.task.task;
@@ -117,7 +142,7 @@ export class HostJobProcess {
       const done = steps.every(item => ["completed", "skipped"].includes(item.state));
       const saved = store.put(actor, `host-recover-${digest([requestId, binding])}`, current.revision, { ...running, steps,
         state: !success ? "failed" : done ? "completed" : running.state, updated_at: finished, completed_at: done || !success ? finished : "" });
-      return { host_job_id: approval.job_id, step_id: step.id, host_job_revision: saved.revision, exit_code: outcome.exit_code, observation_digest: evidence.observation_digest };
+      return { host_job_id: approval.job_id, step_id: step.id, host_job_revision: saved.revision, exit_code: outcome.exit_code, observation_digest: evidence.observation_digest, ...(workflowEnd ? { specmesh: { snapshot_digest: workflowEnd.snapshot_digest, status: "pass", closeout_verified: false } } : {}) };
     });
   }
 

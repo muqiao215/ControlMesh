@@ -353,6 +353,9 @@ HostJob revision; a completed step task does not automatically approve later com
 Use inspect_reconciliation/reconcile_task for retained exit outcomes; restart alone never
 re-executes an uncertain command. No native session or model probe is created for host jobs.
 
-Host SpecMesh execution is currently refused with `host_specmesh_profile_unqualified`
-when a SpecMesh port is configured, until command-specific workflow evidence is wired.
-This is an explicit remaining integration gate, not completion of full host runner parity.
+When SpecMesh is configured, the host runner checks the standalone plugin before dispatch
+and after the command. The dispatch manifest binds the plugin profile and starting snapshot;
+completion binds a fresh passing snapshot. Recovery requires the same profile and a current
+passing check before accepting retained output. Failed checks preserve uncertain execution
+without replay. This verifies project workflow state; it does not attest that a shell command
+read Agent context or that project closeout was reviewed (`closeout_verified: false`).

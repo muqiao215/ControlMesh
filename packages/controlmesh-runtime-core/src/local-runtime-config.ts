@@ -164,8 +164,7 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
     const runtime = new LocalTaskRuntime(kernel, actor, { command_origin: "human_request", origin: "user", source_scope: "local_foreground", transport: config.source.transport }, task => {
       if (task.task.provider === "host") {
         requireThat(object(config.host), "host_not_registered");
-        requireThat(!specmesh, "host_specmesh_profile_unqualified");
-        return new HostJobAdapter(kernel, actor, workspace.directory as string, config.host.shell as string, current).prepare(task);
+        return new HostJobAdapter(kernel, actor, workspace.directory as string, config.host.shell as string, current, specmesh).prepare(task);
       }
       if (task.task.provider === "codex") {
         requireThat(codex, "codex_not_registered");
@@ -200,9 +199,8 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
       accept: async (requestId, taskId, revision, candidate) => {
         if (kernel.inspect(actor, taskId).task.provider === "host") {
           current(); runtime.queueStatus(); requireThat(object(config.host), "host_not_registered");
-          requireThat(!specmesh, "host_specmesh_profile_unqualified");
-          const result = new HostJobProcess(kernel, actor, workspace.directory as string, config.host.shell as string,
-            () => { current(); runtime.queueStatus(); }).reconcile(requestId, taskId, revision, candidate);
+          const result = await new HostJobProcess(kernel, actor, workspace.directory as string, config.host.shell as string,
+            () => { current(); runtime.queueStatus(); }, specmesh).recover(requestId, taskId, revision, candidate);
           runtime.recover(); return result;
         }
         if (kernel.inspect(actor, taskId).task.provider === "codex") {

@@ -2246,3 +2246,9 @@ controls. Readiness checks current pending approval, while the execution binding
 static workspace/shell/task authority without invalidating itself when the step becomes
 running. No model readiness probe is needed. SpecMesh host execution remains explicitly
 unqualified; native file-read evidence cannot be assumed for arbitrary shell commands.
+
+Host workflow integration must allow start/end snapshots to differ: shell commands can
+legitimately change project documents. Enforce the start snapshot immediately before
+dispatch, keep plugin identity current during execution, then verify the fresh end snapshot
+in the completion transaction. Failed post-check retains actual execution evidence and
+requires reconciliation. Never label this Agent context consumption or reviewed closeout.

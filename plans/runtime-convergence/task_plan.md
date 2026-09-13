@@ -269,3 +269,8 @@ Configured host checkpoint: normal submit/enqueue and recovery controls now supp
 explicit host registration and individually approved multistep progression. Next owner:
 command-specific SpecMesh admission/completion evidence, then remaining host source and
 device profiles. The existing native SpecMesh read verifier is not host command evidence.
+
+Host workflow checkpoint: independent start/end checks and same-profile recovery checks
+are wired and qualified against the actual standalone plugin. Next: complete remaining
+host execution source/container/device profiles against Python behavior, then continue
+all unresolved provider/transport/terminal and rollout owners in CM-R0–R7.

@@ -965,3 +965,17 @@ Remaining: host SpecMesh workflow integration, nonforeground/container/device pr
 full Python host parity and the original CM-R0–R7 acceptance/cutover scope.
 
 Final configured-host test (including out-of-order approval refusal): 2 pass;  0 fail;  33 expect() calls; Ran 2 tests across 1 file. [980.00ms]
+
+## 2026-09-13 — host SpecMesh start/completion/recovery checks
+
+HostJob execution now invokes the independent SpecMesh check before dispatch and after
+retaining the command outcome. Dispatch records profile/start snapshot; acceptance records
+the fresh passing snapshot. Recovery checks the same profile and current project state;
+removing a previously configured workflow cannot approve the retained result. This is
+workflow state evidence, not native Agent document consumption or reviewed closeout.
+
+Actual standalone Python plugin plus bash tests cover successful completion, missing
+start documents with zero effects, and command-induced missing documentation followed by
+blocked recovery, repair and acceptance without re-execution. Regression: 37 pass;  0 fail;  261 expect() calls; Ran 37 tests across 4 files. [21.72s]
+Typecheck and diff check passed. Remaining host owners include source/container/device
+profiles and full Python runner parity; original migration/release matrix remains open.
