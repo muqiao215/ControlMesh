@@ -186,3 +186,22 @@ acceptance item has matching evidence, release and local alignment.
 - Next: check CI for the callback commit, then port remaining transport media/rich output,
   management selectors, rate limits and streaming behavior within CM-R3. Retain the
   separate operational acceptance and CM-R7 cutover gates.
+
+## Outbound rate-limit checkpoint (schema 39, uncommitted)
+
+- Callback commit 607f69e remote CI 34744841392 passed runtime tests, but failed
+  bundled dashboard synchronization: its embedded generated schema lacked `choices`.
+  The canonical Web build regenerated only the matching 29-line schema addition.
+- Explicit HTTP 429 + validated Telegram negative response + bounded positive integer
+  retry_after now issues a typed refusal. Other malformed/API/network outcomes remain
+  unknown and cannot authorize a retry. Schema 39 retains refusal count, adapter,
+  envelope digest, last attempt and not-before time. Shared bot cooldown is checked
+  before preparation and again at dispatch admission; three refusals latch blocked.
+- Owned wakeup resumes pending delivery after the persisted deadline, without an
+  incoming message; stop clears the timer. Reopen reuses the original deadline. No
+  Agent is rerun by delivery retry. These changes are not committed or accepted yet.
+- Focused outbox/Telegram baseline: 72 pass, 0 fail, 615 assertions, 3.69s
+  (`/tmp/cm-telegram-rate.log`). Additional shared-bot and actual timer checks:
+  47 pass, 0 fail, 382 assertions, 3.10s (`/tmp/cm-rate-wakeup.log`). Typecheck passes.
+- Still verify the schema 39 broad regression and stop/concurrent wakeup/revocation
+  boundaries before publishing this owner. No actual account/production service changed.

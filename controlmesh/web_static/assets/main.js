@@ -11454,6 +11454,35 @@ var controlmeshSchemas = {
       created_at: {
         type: "integer",
         minimum: 0
+      },
+      choices: {
+        type: "array",
+        maxItems: 16,
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: [
+            "id",
+            "label",
+            "text"
+          ],
+          properties: {
+            id: {
+              type: "string",
+              pattern: "^cmc:[a-f0-9]{48}$"
+            },
+            label: {
+              type: "string",
+              minLength: 1,
+              maxLength: 64
+            },
+            text: {
+              type: "string",
+              minLength: 1,
+              maxLength: 4096
+            }
+          }
+        }
       }
     }
   },
