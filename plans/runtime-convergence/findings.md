@@ -2354,3 +2354,11 @@ LocalTaskRuntime.perform still live inside that service. Actual SIGKILL loses th
 observer even though process-anchor stops the command. Durable host ownership must move
 supervision, renewal and final queue projection together; disabling anchor disconnect
 would remove a protection without creating result or cancellation ownership.
+
+
+A per-host-run independent worker can reuse the existing perform method instead of
+weakening process-anchor authority. The parent only claims and persists a transfer owner;
+worker CAS moves ownership and then performs the original lease. A lost launch response
+must not release/retry the task because the worker may already have claimed it. Management
+recovery already skips valid active episodes and projects terminal state from worker DB
+writes. Management drain's local active map does not imply all independent runs finished.

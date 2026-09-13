@@ -159,10 +159,10 @@ test("headless SpecMesh gate reports a failed check through process exit status 
 });
 
 
-for (const killService of [false, true]) test(`running host command boundary: service killed=${killService}`, async () => {
+for (const detached of [false, true]) for (const killService of [false, true]) test(`running host command boundary: service killed=${killService}, detached=${detached}`, async () => {
   const f = fixture(), config = JSON.parse(readFileSync(f.config, "utf8"));
   delete config.opencode;
-  config.host = { shell: realpathSync("/bin/bash"), timeout_ms: 10000 };
+  config.host = { shell: realpathSync("/bin/bash"), timeout_ms: 10000, detached };
   config.limits = { lease_ms: 1000 };
   writeFileSync(f.config, JSON.stringify(config), { mode: 0o600 });
   let service = await serve(f.config, f.socket);
@@ -178,20 +178,51 @@ for (const killService of [false, true]) test(`running host command boundary: se
     await until(() => existsSync(join(f.workspace, "started")));
     // All request connections have closed while the actual command waits for release.
     expect(service.child.exitCode).toBeNull();
-    if (killService) { await service.stop("SIGKILL"); service = await serve(f.config, f.socket); }
-    if (killService) {
+    if (killService) { await service.stop("SIGKILL"); if (detached) await Bun.sleep(1500); service = await serve(f.config, f.socket); }
+    if (killService && !detached) {
       await until(async () => ((await call("read-interruption", "inspect_task", { task_id: "host-boundary" })).result as TaskSnapshot | undefined)?.needs_reconciliation === true);
     }
     writeFileSync(join(f.workspace, "release"), "release");
-    if (!killService) await until(async () => ((await call("read-completion", "inspect_task", { task_id: "host-boundary" })).result as TaskSnapshot | undefined)?.task.status === "done");
+    if (!killService || detached) await until(async () => ((await call("read-completion", "inspect_task", { task_id: "host-boundary" })).result as TaskSnapshot | undefined)?.task.status === "done");
     else await Bun.sleep(250);
-    expect(existsSync(join(f.workspace, "finished"))).toBe(!killService);
+    expect(existsSync(join(f.workspace, "finished"))).toBe(!killService || detached);
     expect(readFileSync(join(f.workspace, "started"), "utf8")).toBe("once");
     const db = new RuntimeDatabase(join(f.state, "runtime.sqlite"));
     try {
       expect(db.sql.query("SELECT COUNT(*) AS n FROM effects").get()).toEqual({ n: 1 });
       expect(db.sql.query("SELECT COUNT(*) AS n FROM episodes").get()).toEqual({ n: 1 });
-      expect(db.sql.query("SELECT COUNT(*) AS n FROM effect_observations").get()).toEqual({ n: killService ? 0 : 1 });
+      expect(db.sql.query("SELECT COUNT(*) AS n FROM effect_observations").get()).toEqual({ n: killService && !detached ? 0 : 1 });
+    } finally { db.close(); }
+  } finally { await service.stop(); }
+}, 15000);
+
+
+test("restarted management service cancels the original detached host owner", async () => {
+  const f = fixture(), config = JSON.parse(readFileSync(f.config, "utf8")); delete config.opencode;
+  config.host = { shell: realpathSync("/bin/bash"), timeout_ms: 10000, detached: true }; config.limits = { lease_ms: 1000 };
+  writeFileSync(f.config, JSON.stringify(config), { mode: 0o600 });
+  let service = await serve(f.config, f.socket);
+  const call = (id: string, op: string, fields = {}) => requestRuntimeControl(f.socket, { id, op, ...fields });
+  const until = async (condition: () => boolean | Promise<boolean>) => {
+    const end = Date.now() + 5000;
+    while (!(await condition())) { if (Date.now() >= end) throw new Error("detached cancellation timed out"); await Bun.sleep(25); }
+  };
+  try {
+    expect(await call("submit", "submit", { task: { task_id: "cancel-host", chat_id: "test", status: "waiting", workunit_kind: "long_shell",
+      command: "printf once >> started; while [ ! -f release ]; do sleep 0.05; done; touch finished" } })).toMatchObject({ ok: true });
+    expect(await call("enqueue", "enqueue", { task_id: "cancel-host", expected_revision: 1 })).toMatchObject({ ok: true });
+    await until(() => existsSync(join(f.workspace, "started")));
+    await service.stop("SIGKILL"); await Bun.sleep(1500); service = await serve(f.config, f.socket);
+    const task = (await call("inspect", "inspect_task", { task_id: "cancel-host" })).result as TaskSnapshot;
+    expect(await call("cancel", "cancel", { task_id: "cancel-host", expected_revision: task.revision })).toMatchObject({ ok: true });
+    const db = new RuntimeDatabase(join(f.state, "runtime.sqlite"));
+    try {
+      await until(() => (db.sql.query("SELECT COUNT(*) AS n FROM effect_observations").get() as { n: number }).n === 1);
+      writeFileSync(join(f.workspace, "release"), "release"); await Bun.sleep(200);
+      expect(existsSync(join(f.workspace, "finished"))).toBe(false);
+      expect(readFileSync(join(f.workspace, "started"), "utf8")).toBe("once");
+      expect(db.sql.query("SELECT state FROM host_jobs").get()).toEqual({ state: "cancelled" });
+      expect(db.sql.query("SELECT COUNT(*) AS n FROM episodes").get()).toEqual({ n: 1 });
     } finally { db.close(); }
   } finally { await service.stop(); }
 }, 15000);

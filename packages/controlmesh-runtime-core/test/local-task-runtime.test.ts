@@ -121,3 +121,26 @@ test("runtime policy and queue bounds cannot be bypassed by opening another cont
   expect(() => f.runtime.enqueue("b", "b", 1)).toThrow("local_queue_full");
   expect(() => new LocalTaskRuntime(f.kernel, actor, source, f.resolver, () => {}, { parallelism: 2, max_pending: 1 })).toThrow("local_runtime_policy_conflict");
 });
+
+test("host ownership transfer rejects duplicates, changed bindings and revoked leases", async () => {
+  for (const mode of ["complete", "binding", "cancel"]) {
+    const f = fixture();
+    let transfer!: import("../src/local-task-runtime").HostRunTransfer;
+    const manager = new LocalTaskRuntime(f.kernel, actor, source, f.resolver, () => {}, {}, undefined, undefined, value => { transfer = value; });
+    manager.submit("host-submit", { task_id: "host", chat_id: "test", status: "waiting", provider: "host" }, { chat_id: "test" });
+    const run = manager.enqueue("host-enqueue", "host", 1); await manager.drain();
+    expect(transfer.previous_owner).toStartWith("host-transfer:"); expect(f.calls).toEqual([]);
+    const worker = new LocalTaskRuntime(f.kernel, actor, source, f.resolver, () => {});
+    if (mode === "binding") { f.changeBinding(); await expect(worker.acceptHostRun(transfer)).rejects.toThrow("queued_execution_binding_changed"); }
+    else if (mode === "cancel") {
+      manager.cancel("cancel", "host", manager.inspectTask("host").revision);
+      await expect(worker.acceptHostRun(transfer)).rejects.toThrow();
+    } else {
+      await worker.acceptHostRun(transfer);
+      expect(worker.inspect(run.run_id).state).toBe("completed");
+      await expect(worker.acceptHostRun(transfer)).rejects.toThrow("host_run_transfer_stale");
+      expect(f.calls).toEqual(["probe:host", "execute:host"]);
+    }
+    await worker.stop(); await manager.stop();
+  }
+});

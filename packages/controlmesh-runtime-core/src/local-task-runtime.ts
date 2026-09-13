@@ -42,6 +42,7 @@ interface RunRow extends Omit<LocalRun, "outcome"> {
   binding_digest: string; owner: string | null; lease: string | null; outcome: string | null;
 }
 export interface LocalRuntimeOptions { parallelism?: number; max_pending?: number; lease_ms?: number }
+export interface HostRunTransfer { run_id: string; previous_owner: string; binding_digest: string }
 
 /** Durable local execution entrypoint. No automatic retries, provider fallback or legacy-writer activation. */
 export class LocalTaskRuntime {
@@ -60,7 +61,8 @@ export class LocalTaskRuntime {
   private hostPlanCursor = "";
 
   constructor(readonly kernel: RuntimeKernel, actor: Principal, source: IngressSource,
-    private readonly resolve: LocalTaskResolver, private readonly authorize: () => void, options: LocalRuntimeOptions = {}, private readonly hostWorkspace?: string, private readonly hostTimeoutMs?: number) {
+    private readonly resolve: LocalTaskResolver, private readonly authorize: () => void, options: LocalRuntimeOptions = {}, private readonly hostWorkspace?: string, private readonly hostTimeoutMs?: number,
+    private readonly dispatchHost?: (transfer: HostRunTransfer) => void) {
     this.actor = structuredClone(actor); this.sourceProfile = structuredClone(source);
     identifier(actor.device_id);
     for (const scope of ["task:read", "task:execute", "task:reconcile", "task:admin"]) requireScope(actor, scope);
@@ -343,6 +345,20 @@ export class LocalTaskRuntime {
       });
       if (!prepared) { if (skipped) continue; break; }
       const launch = prepared as { row: RunRow; lease: Lease; execution: LocalTaskExecution };
+      if (this.dispatchHost && this.kernel.inspect(this.actor, launch.row.task_id).task.provider === "host") {
+        // A lost launch acknowledgement must not trigger a second command execution.
+        try {
+          const pendingOwner = `host-transfer:${randomUUID()}`;
+          this.kernel.db.transaction(() => {
+            this.current(); this.kernel.withLease(this.actor, launch.lease, () => {});
+            const changed = this.kernel.db.sql.query("UPDATE local_runs SET owner=? WHERE run_id=? AND owner=? AND state='running'").run(pendingOwner, launch.row.run_id, this.owner);
+            requireThat(changed.changes === 1, "host_run_transfer_stale");
+          });
+          this.dispatchHost({ run_id: launch.row.run_id, previous_owner: pendingOwner, binding_digest: launch.row.binding_digest });
+        }
+        catch { /* Leave the leased row for expiry/reconciliation; launch outcome is unknown. */ }
+        continue;
+      }
       const controller = new AbortController();
       const promise = Promise.resolve().then(() => this.perform(launch.row, launch.lease, launch.execution, controller.signal))
         .finally(() => this.active.delete(launch.row.run_id));
@@ -353,6 +369,28 @@ export class LocalTaskRuntime {
   }
   private reason(error: unknown): string {
     return error instanceof RuntimeConflict ? error.code : "local_execution_failed";
+  }
+  /** Trusted detached worker claims an existing host run exactly once; never creates a task. */
+  async acceptHostRun(transfer: HostRunTransfer): Promise<void> {
+    let claimed!: { row: RunRow; lease: Lease; execution: LocalTaskExecution };
+    this.kernel.db.transaction(() => {
+      this.current();
+      requireThat(transfer.previous_owner.startsWith("host-transfer:"), "host_run_transfer_stale");
+      const row = this.rows("running").find(row => row.run_id === transfer.run_id);
+      requireThat(row && row.owner === transfer.previous_owner && row.binding_digest === transfer.binding_digest && row.lease, "host_run_transfer_stale");
+      const task = this.kernel.inspect(this.actor, row.task_id);
+      requireThat(task.task.provider === "host", "host_run_transfer_provider_mismatch");
+      const execution = this.resolve(task), lease = JSON.parse(row.lease) as Lease;
+      this.checkExecution(execution); requireThat(execution.binding_digest === transfer.binding_digest, "queued_execution_binding_changed");
+      this.kernel.withLease(this.actor, lease, () => {});
+      requireThat((this.kernel.db.sql.query("SELECT state FROM episodes WHERE episode_id=?").get(lease.episode_id) as { state: string } | null)?.state === "leased", "host_run_already_started");
+      const changed = this.kernel.db.sql.query("UPDATE local_runs SET owner=? WHERE run_id=? AND owner=? AND state='running'").run(this.owner, row.run_id, transfer.previous_owner);
+      requireThat(changed.changes === 1, "host_run_transfer_stale"); claimed = { row, lease, execution };
+    });
+    const controller = new AbortController();
+    const promise = this.perform(claimed.row, claimed.lease, claimed.execution, controller.signal);
+    this.active.set(claimed.row.run_id, { controller, promise });
+    try { await promise; } finally { this.active.delete(claimed.row.run_id); }
   }
   private async perform(row: RunRow, lease: Lease, execution: LocalTaskExecution, signal: AbortSignal): Promise<void> {
     let state: LocalRun["state"] = "interrupted", reason = "local_execution_failed", retryAfter: number | null = null;

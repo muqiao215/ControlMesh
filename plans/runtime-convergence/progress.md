@@ -1204,3 +1204,20 @@ lifetime gap and cancellation-safe baseline, not durable execution ownership.
 CLI regression: 10 pass, 0 fail, 89 assertions, 10.17s
 (/tmp/cm-host-service-boundary.log). Typecheck passed after adding explicit response types.
 Concrete independent-owner seam and required crash/ownership gates recorded in host-parity.
+
+
+## 2026-09-13 — independent host owner, candidate opt-in
+
+Implemented host.detached worker launch and atomic one-time transfer of an already-claimed
+host run. Worker retains supervision, lease renewal, current-config/workflow checks and
+terminal persistence independently of management process lifetime. No anchor disconnect
+rule weakened. Automatic topology scheduler startup suppressed in the one-run worker.
+
+Real service SIGKILL, 1.5-second downtime beyond its 1-second initial lease, reopen and
+original command completion passed with one episode/effect. Reopened service cancelled
+the original worker before its final marker; cancellation outcome/job state persisted.
+Service/local regression: 21 pass, 0 fail, 156 assertions, 17.11s
+(/tmp/cm-detached-host-final.log). One-time transfer, configuration binding and revoked
+lease regression: 9 pass, 0 fail, 45 assertions, 589ms (/tmp/cm-host-transfer.log).
+Typecheck/diff check passed. Default profile unchanged. Worker-kill/launch-before-ack,
+full detached plan/offline lifetime and production deployment remain unaccepted.

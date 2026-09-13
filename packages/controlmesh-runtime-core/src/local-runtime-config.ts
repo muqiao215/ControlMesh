@@ -1,3 +1,4 @@
+import { dispatchHostOwner } from "./host-run-owner";
 import { hostJobEnvironment } from "./host-job-environment";
 import { HostJobAdapter } from "./host-job-adapter";
 import { HostJobProcess } from "./host-job-process";
@@ -44,7 +45,7 @@ export interface LocalRuntimeDescription {
   registered_write_roots: string[];
   integrations: { history: boolean; specmesh: boolean };
 }
-export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; deliveries?: DeliveryOutbox; inbound?: FeishuInboundRuntime;
+export function openLocalRuntime(path: string, options: { host_worker?: boolean } = {}): { runtime: LocalTaskRuntime; deliveries?: DeliveryOutbox; inbound?: FeishuInboundRuntime;
   scheduler?: TopologyScheduler; keep_alive?: boolean; specmesh?: SpecMeshPort; recovery: LocalRuntimeRecovery; history?: LocalNativeHistoryPort;
   describe: () => LocalRuntimeDescription; submissionIdentity: (task: LegacyTask) => SubmissionIdentity; stop: () => Promise<void>; close: () => Promise<void> } {
   const loaded = privateFile(path), config = decodeSnapshot(loaded.bytes).source;
@@ -57,7 +58,8 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
   requireThat(object(config.source) && config.source.command_origin === "human_request" && config.source.origin === "user"
     && config.source.source_scope === "local_foreground" && typeof config.source.transport === "string", "local_source_profile_unqualified");
   requireThat(config.opencode !== undefined || config.claude !== undefined || config.codex !== undefined || config.host !== undefined, "local_provider_required");
-  requireThat(config.host === undefined || (object(config.host) && Object.keys(config.host).every(key => ["shell", "timeout_ms", "environment"].includes(key))
+  requireThat(config.host === undefined || (object(config.host) && Object.keys(config.host).every(key => ["shell", "timeout_ms", "environment", "detached"].includes(key))
+    && (config.host.detached === undefined || typeof config.host.detached === "boolean")
     && (config.host.timeout_ms === undefined || (Number.isSafeInteger(config.host.timeout_ms) && Number(config.host.timeout_ms) >= 1000 && Number(config.host.timeout_ms) <= 86_400_000))
     && typeof config.host.shell === "string" && isAbsolute(config.host.shell) && realpathSync(config.host.shell) === config.host.shell), "invalid_local_host_profile");
   if (object(config.host)) hostJobEnvironment(config.host.environment);
@@ -181,7 +183,8 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
       const { runner, store, registration, worker } = registered(task);
       const execution = new OpenCodeTaskAdapter(kernel, cache, actor, store, worker, runner, registration).prepare(task);
       return specmesh ? specmesh.bind(execution, registration.admission.required_reads) : execution;
-    }, current, object(config.limits) ? config.limits : {}, object(config.host) ? workspace.directory as string : undefined, object(config.host) ? config.host.timeout_ms as number | undefined : undefined);
+    }, current, object(config.limits) ? config.limits : {}, object(config.host) ? workspace.directory as string : undefined, object(config.host) ? config.host.timeout_ms as number | undefined : undefined,
+      object(config.host) && config.host.detached === true && !options.host_worker ? transfer => dispatchHostOwner(path, transfer) : undefined);
     const recovery: LocalRuntimeRecovery = {
       inspect: (taskId, revision, effectId) => {
         current(); runtime.queueStatus();
@@ -279,7 +282,7 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
       interval_ms: schedule.interval_ms as number | undefined, lease_ms: schedule.lease_ms as number | undefined, max_steps: schedule.max_steps as number | undefined,
     }, Array.isArray(schedule.artifact_files) && schedule.artifact_files.length > 0 ? new TopologyArtifactGate(kernel,
       { workspace: workspace.directory as string, allowed_files: schedule.artifact_files as string[] }, current, specmesh) : undefined);
-    if (scheduler && schedule!.auto_start) scheduler.start();
+    if (scheduler && schedule!.auto_start && !options.host_worker) scheduler.start();
     let stopping: Promise<void> | undefined, closing: Promise<void> | undefined;
     const stop = () => stopping ??= Promise.all([scheduler?.stop(), runtime.stop(), deliveries?.stop(), delivery?.close(), inbound?.stop(), specmesh?.stop(), history?.stop()]).then(() => {});
     const close = () => closing ??= stop().then(() => db.close());

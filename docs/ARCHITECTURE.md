@@ -1052,3 +1052,20 @@ baseline. Constructors snapshot and freeze this configuration; task payloads do 
 it and controller environment is not implicitly inherited. Queue binding and execution
 manifest contain its digest, not the variable map. Retained-result recovery requires the
 same environment digest; older manifests without it represent only the historical default.
+
+
+### Candidate detached host execution owner
+
+Explicit host.detached registers a private worker launch after a local host run is claimed.
+The manager persists a random host-transfer owner; the independent worker atomically swaps
+that owner for its own identity only while the same run/binding/lease is current and the
+episode is still leased. Duplicate transfers cannot execute. The worker opens the same
+trusted configuration without auto-starting its topology scheduler and reuses perform,
+HostJobProcess, renewal, logs, workflow and outcome persistence. No command/environment is
+passed in process arguments; the private stdin transfer selects only an existing run.
+
+Management shutdown leaves these workers running; explicit kernel cancellation still
+revokes their authority. The ordinary anchor disconnect rule stays intact if the worker
+itself dies. Unknown worker-launch outcomes are left leased for recovery, never retried
+blindly. A manager drain does not await another process's active map: inspect the durable
+run/task for completion. Full worker-death/launch-gap and deployment gates remain open.

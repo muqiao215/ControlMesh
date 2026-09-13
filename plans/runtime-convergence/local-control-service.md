@@ -471,3 +471,15 @@ invalid names refuse. Environment changes invalidate queued execution bindings a
 retained-result acceptance under a different profile. Values stay in the private config;
 execution manifests carry a digest. This is trusted executable configuration, including
 any shell-affecting variables, not an untrusted per-task parameter.
+
+
+### Independent host owner (candidate opt-in)
+
+Set host.detached to true to give each claimed host step an independent execution process.
+Control service stop/restart no longer cancels that step; explicit task cancellation does.
+Use host.timeout_ms for the total budget and limits.lease_ms for renewable ownership.
+Default detached is false. Management drain may return while a detached run is active;
+inspect its durable state and logs. Only the claimed host step is transferred: advancing
+later plan steps still requires a running management service. Worker death and launch
+uncertainty do not authorize command replay. This candidate has not been enabled in
+production or qualified for all source/device/provider profiles.
