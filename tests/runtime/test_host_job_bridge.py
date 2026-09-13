@@ -516,7 +516,8 @@ async def test_detached_worker_completion_is_reconciled_by_another_process(tmp_p
 
 
 @pytest.mark.asyncio
-async def test_confirmed_dead_worker_is_finalized_as_failed(tmp_path: Path) -> None:
+@pytest.mark.parametrize("exit_artifact", [None, "", "  \n", "incomplete", "\udcff"])
+async def test_confirmed_dead_worker_is_finalized_as_failed(tmp_path: Path, exit_artifact: str | None) -> None:
     paths = _paths(tmp_path)
     (tmp_path / "repo").mkdir(parents=True)
     sleeper = _write_worker(
@@ -533,6 +534,10 @@ async def test_confirmed_dead_worker_is_finalized_as_failed(tmp_path: Path) -> N
     assert running.steps[0].pid is not None
 
     os.kill(int(running.steps[0].pid or 0), signal.SIGKILL)
+    if exit_artifact is not None:
+        HostJobRunner(paths).store.exit_code_path("dead-1", running.steps[0].id).write_bytes(
+            exit_artifact.encode("utf-8", errors="surrogateescape")
+        )
     event = await await_terminal_event(paths, job_id="dead-1", parent_agent=PARENT, timeout_seconds=15.0)
 
     assert event is not None

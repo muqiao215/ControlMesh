@@ -13,13 +13,20 @@ Agent continuation. CM production remains Python 0.43.0. No release/cutover clai
 | cbc-parent-bridge-r3 | same CBC conversation | completed exit 0, received; local bridge accepted after primary corrections, 23 tests pass |
 | cbc-ci-stability | CBC 01a09a99-315f-74f3-b35d-55e86c299a2e | completed, received; 5cab0c9 pushed, remote CI 34756010064 success |
 | agy-cron-batch1 | AGY def64a8d-18c9-49eb-abd4-82488284d15f | worker completed exit 0/SUCCESS; controller 61893 failed final collection; artifacts read; implementation rejected |
-| agy-cron-batch1-r2 | same AGY conversation | active run/wait 93495; use frozen controller-r3-snapshot, await result then review |
+| agy-cron-batch1-r2 | same AGY conversation | completed exit 0; received and consumed once (second consume null/3); code rejected with concrete counterexamples |
+| agy-cron-batch1-r3 | same AGY conversation | completed/received/consumed; earlier counterexamples fixed, snapshot replacement and deletion lineage rejected |
+| agy-cron-batch1-r4 | same AGY conversation | failed wrapper disappeared, exit code unknown; received with review required; native quiescence not proven, no restart yet |
+| cbc-cron-recurrence | CBC 01a09aba-fdd5-7569-b07c-a3dc7b707188 | failed wrapper disappeared, exit code unknown; received with review required; cbc ps reports no active sessions; code/tests unfinished |
 
 Logical parent: `codex-runtime-convergence`. Isolated CM home and snapshot paths are
 documented below. Never restart a terminal worker because its controller failed; never
 modify a frozen controller copy while its worker runs. No idle-desktop callback exists.
-Next action: poll handle 93495, review its reported changes against review-2.md, then
-consume its bound terminal event once using the same controller snapshot. Historical
+Next action: inspect native quiescence before any explicit continuation. Old handles
+99572/55848 were stopped after their recorded wrapper PIDs were confirmed absent; an
+empty exit_code.txt fooled the old controller into waiting forever. The primary fixed
+this with 27 passing supervision tests and collected both failed/unknown events. Freeze
+the corrected controller before dispatch; do not reuse controller-8f4de54 for recovery.
+Preserve unfinished worker code and the raw-field collision review. Historical
 bootstrap attempts have older/missing intent fields and must not be silently rebound.
 
 ## Historical dispatch notes
@@ -181,3 +188,14 @@ Python and explicit --repo/--cwd. Its manifest binds 477 copied Python files. Th
 passed a completed/exit-0 smoke; never modify or replace it while handle 93495 is active.
 CBC bridge revision 3 still runs on handle 92783; its targeted 22 tests passed but the
 worker is still producing final evidence. Wait for terminal before touching its files.
+
+Historical note above superseded: CBC 92783 is terminal and local bridge fixes were
+accepted/pushed at 8f4de54. AGY 93495 is also terminal and consumed; primary reproduced
+null-to-empty conversion, dropped user raw/version/spec_digest and read-created authority.
+Current AGY revision 3 is recorded in the authoritative table at the top.
+
+CBC recurrence assignment: [cbc-cron-recurrence.md](cbc-cron-recurrence.md). Native session
+was confirmed through CBC heartbeat inventory after CM launch. It does not own database.ts,
+cron-store.ts, cron-migration.ts, src/index.ts or AGY's tests. Its optional parser
+dependency/package lock changes must be reviewed before integration. No runtime timer or
+provider execution is authorized in this batch; Python is a test oracle only.

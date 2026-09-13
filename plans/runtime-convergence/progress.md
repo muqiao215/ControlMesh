@@ -507,3 +507,52 @@ not rerun these broad suites. New files have no mypy errors; 12 pre-existing hos
 errors remain. Ownership generator refreshed: 514 Python modules / 57 persisted TaskEntry
 fields, golden fixture unchanged. This records an added Python owner still requiring TS
 port; neither full migration nor installed 0.43.0 alignment is complete.
+
+Local bridge committed/pushed at `8f4de54`; remote CI 34756650873 completed successfully.
+AGY revision 2 completed exit 0 through the frozen CM controller at 12:14:14Z, was
+received, and its exact bound terminal event was consumed once; second consume returned
+null/exit 3. This is real native-worker result-channel acceptance, not only a fake CLI.
+Primary still rejected its cron code: an actual Bun import/export changed null description
+and timezone to empty strings, dropped user raw/version/spec_digest, and a getter created
+coordinator authority. Failover completion reconciliation and snapshot publication also
+need repair. AGY revision 3 runs as `agy-cron-batch1-r3`, handle 68371, from frozen
+`controller-8f4de54` extracted from committed code. See delegation/agy-cron-batch-1-review-3.md.
+No other cheap workers remain active. Do not replay the consumed revision-2 attempt.
+
+Next independent owner dispatched: CBC recurrence (`cbc-cron-recurrence`, handle 55848,
+native 01a09aba-fdd5-7569-b07c-a3dc7b707188), also through frozen controller-8f4de54.
+Owns pure TS expression/timezone/DST calculation and Python differential fixtures, with
+no database edits, timer, provider call or delivery. AGY remains persistence owner.
+Prior goal turn was concrete progress: CI and bridge commits both passed remote CI,
+real native terminal consumption was verified, and rejected cron defects were reproduced.
+
+AGY r3 completed at 12:28:03Z, exit 0; its bound event was consumed. Earlier raw/null
+and authority-getter counterexamples now pass independent Bun review. New concrete
+regressions: replace:true still retained omitted per-job fields, and removeJob deleted
+an active attempt through FK cascade. R4 now owns exact replacement plus archived
+definitions retaining execution lineage (CM job agy-cron-batch1-r4, handle 99572).
+Do not accept or push the TS cron candidate until these regressions are resolved.
+
+Cross-project read-only refresh: Viewer worktree retains its three untracked user
+paths; SpecMesh worktree is clean. Their local AGENTS/PROJECT and active plans still
+leave Viewer HV-H0/H1/H4/H5 and the broader native handoff matrix open, plus SpecMesh
+external closeout/reviewer evidence and provider/device takeover acceptance. CM's new
+CLI result bridge does not close these gates. No source/service changes in either
+repository were made during this refresh.
+
+Primary follow-up: both existing run/wait handles remained live; no worker restarted.
+A fresh in-memory Bun import/export reproduced loss of five user fields named like
+internal metadata (storage_raw/storage_version/storage_spec_digest/storage_archived/
+raw_metadata). See delegation/cron-raw-collision-review.md. This observation is against
+the still-edited candidate; recheck after AGY R4 finishes before dispatching another review.
+
+Correction at 2026-09-13 20:56 +08: old run/wait handles reflected live controllers, not
+live workers. Actual recorded worker PIDs 1831863/1826029 were absent; stdout/stderr and
+exit_code.txt were empty. Bridge existence-only completion checks prevented vanished
+worker detection. Primary aligned evidence parsing with HostJobRunner's integer parser;
+27 focused tests pass (20.34s), including absent/empty/whitespace/corrupt/non-UTF8 exit
+artifacts, with Ruff/diff checks passing. Log: /tmp/cm-parent-empty-exit-tests.log.
+Stopped only the three identified stale run/wait controllers; corrected wait collected
+both jobs as failed, exit_code=null, review_required=true, quiescence=unknown. CBC native
+ps reports no active sessions; AGY native quiescence still needs checking. Neither task
+was restarted, accepted, or marked successful. Existing code is unfinished and preserved.

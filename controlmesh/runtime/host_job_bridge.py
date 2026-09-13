@@ -688,7 +688,13 @@ def _completion_confirmed(runner: HostJobRunner, job: HostJob) -> bool:
         return False
     if step.exit_code is not None:
         return True
-    return runner.store.exit_code_path(job.job_id, step.id).is_file()
+    try:
+        int(runner.store.exit_code_path(job.job_id, step.id).read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        # A wrapper can leave an empty or partial file when interrupted during
+        # publication. Match the runner's parser, not just path existence.
+        return False
+    return True
 
 
 def _terminal_result(paths: ControlMeshPaths, job_id: str, job: HostJob) -> dict[str, Any]:
@@ -725,7 +731,7 @@ def _worker_outcome(runner: HostJobRunner, job: HostJob) -> str:
     step = _current_step(job)
     if job.state != "running" or step is None or step.state != "running":
         return "running"
-    if runner.store.exit_code_path(job.job_id, step.id).is_file():
+    if _completion_confirmed(runner, job):
         return "running"
     pid_state = process_state(step.pid)
     if pid_state == PROCESS_DEAD:
@@ -748,7 +754,7 @@ def _finalize_vanished_worker(paths: ControlMeshPaths, runner: HostJobRunner, jo
     step = _current_step(job)
     if job.state != "running" or step is None or step.state != "running":
         return False
-    if runner.store.exit_code_path(job.job_id, step.id).is_file():
+    if _completion_confirmed(runner, job):
         return False
     if process_state(step.pid) != PROCESS_DEAD:
         return False

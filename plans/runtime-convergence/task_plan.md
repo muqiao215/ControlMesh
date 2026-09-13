@@ -75,9 +75,10 @@ No claim that full TS migration or distributed coordination has completed. A sco
    separate from its future TS owner port and from an idle desktop callback. The updated
    Python ownership inventory includes this new owner. See delegation/README.md for
    native identities and current handles; do not restart terminal attempts.
-   Continue cron owner parity: AGY batch 1 is rejected pending its revision 2 fixes for
-   fencing, uncertain-attempt replay and migration preservation. The actual Python owners
-   and adversarial evidence remain authoritative over the design proposal.
+   Continue cron owner parity: AGY persistence remains unaccepted pending exact snapshot
+   replacement and retained execution lineage; CBC independently owns pure recurrence
+   and Python-oracle parity. Current attempt IDs and handles belong in delegation/README.md.
+   The actual Python owners and adversarial evidence remain authoritative over the proposal.
 2. Complete the remaining ownership/acceptance matrix below. Prioritize normal execution,
    transport delivery and recovery across supported providers/devices over disconnected
    helper additions. Do not waive an original requirement to obtain a release.
