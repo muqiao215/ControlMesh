@@ -1,6 +1,7 @@
 import { decodeSourceScope, type SourceScope } from "./execution-context";
 import { sourceRequiresSandbox, type ExecutionPolicyDecision } from "./execution-policy";
 import { object, requireThat } from "./value";
+import { assertControllerApprovalPermit, type ControllerApprovalPermit } from "./controller-approval-permit";
 
 export interface ToolGrantSnapshot {
   readonly schema_version: "controlmesh.tool_grant.v1";
@@ -111,10 +112,12 @@ export function mapToolGrant(provider: string, raw: ToolGrantSnapshot | null, co
 }
 
 /** Admission is stricter than flag mapping: even an otherwise empty grant cannot waive a source/approval floor. */
-export function enforceProviderConfirmation(provider: string, grant: ToolGrantSnapshot, policy?: ExecutionPolicyDecision): void {
+export function enforceProviderConfirmation(provider: string, grant: ToolGrantSnapshot, policy?: ExecutionPolicyDecision,
+  approval?: { permit: ControllerApprovalPermit; task_id: string }): void {
   const current = decodeToolGrant(grant);
   requireThat(policy === undefined || policy.outcome === "accepted", "execution_policy_not_accepted");
   if (current.confirmation_policy === "controller_required" || policy?.confirmation_policy === "controller_required") {
+    if (approval) { assertControllerApprovalPermit(approval.permit, approval.task_id, provider, current); return; }
     throw new ToolGrantDenied(provider, "controller_approval_unavailable");
   }
 }

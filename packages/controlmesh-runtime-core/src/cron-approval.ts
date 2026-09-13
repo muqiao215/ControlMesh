@@ -4,6 +4,10 @@ import type { RuntimeDatabase } from "./database";
 import type { Principal } from "./kernel";
 import { directoryIdentity } from "./providers/native-manifest";
 import { canonical, digest, identifier, requireThat } from "./value";
+import type { LegacyTask } from "./value";
+import { decodeToolGrant, issueTaskGrantForSubmit } from "./execution-grants";
+import { issueControllerApprovalPermit } from "./controller-approval-permit";
+import { decodeExecutionContext } from "./execution-context";
 
 export interface CronApproval {
   schema_version: "controlmesh.cron_approval.v1";
@@ -53,8 +57,35 @@ export class CronApprovals {
         schema_version: "controlmesh.cron_approval.v1", request_id: requestId, principal: actor.id,
         device_id: actor.device_id ?? null, ...body,
       }));
-      return this.inspect(actor, approval);
+      const verified = this.inspect(actor, approval);
+      this.db.sql.query("INSERT INTO meta(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+        .run(`cron_approval_active:${digest([actor.id, occurrenceId])}`, canonical(verified));
+      return verified;
     });
+  }
+  forTask(actor: Principal, task: LegacyTask) {
+    this.current(actor, "task:read");
+    identifier(task.cron_occurrence_id);
+    const saved = this.db.sql.query("SELECT value FROM meta WHERE key=?")
+      .get(`cron_approval_active:${digest([actor.id, task.cron_occurrence_id])}`) as { value: string } | null;
+    requireThat(saved, "cron_approval_required");
+    const approval = this.inspect(actor, JSON.parse(saved.value) as CronApproval);
+    const issuedTask = canonical(task);
+    const check = () => {
+      this.inspect(actor, approval);
+      requireThat(canonical(task) === issuedTask, "cron_approved_task_changed");
+      const store = new CronStore(this.db), occurrence = store.getOccurrence(approval.occurrence_id)!;
+      const job = store.getJob(occurrence.job_id)!;
+      const context = decodeExecutionContext(task.execution_context);
+      requireThat(context.origin === "cron" && context.source_scope === "cron", "cron_approved_source_mismatch");
+      requireThat(task.task_id === `cron-${approval.occurrence_id}` && task.cron_job_id === job.id
+        && task.cron_definition_digest === occurrence.definition_digest && task.repo_root === this.workspace
+        && task.provider === job.provider && task.model === job.model && task.prompt === job.agent_instruction, "cron_approved_task_mismatch");
+      const expected = issueTaskGrantForSubmit({ source_scope: "cron", transport: "cron", chat_id: String(job.chat_id ?? 0),
+        ...(job.topic_id != null ? { topic_id: String(job.topic_id) } : {}) });
+      requireThat(canonical(decodeToolGrant(task.tool_grant)) === canonical(expected), "cron_approved_grant_mismatch");
+    };
+    return issueControllerApprovalPermit(task.task_id, String(task.provider), decodeToolGrant(task.tool_grant), digest(approval), check);
   }
   inspect(actor: Principal, approval: CronApproval): CronApproval {
     this.current(actor, "task:read");

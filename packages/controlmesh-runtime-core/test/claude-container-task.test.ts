@@ -9,6 +9,8 @@ import { digest } from "../src/value";
 import type { ClaudeTaskConfiguration } from "../src/providers/claude-task-profile";
 import { startLocalRuntimeService } from "../src/local-runtime-service";
 import { requestRuntimeControl } from "../src/runtime-control-socket";
+import { CronStore } from "../src/cron-store";
+import { CronTaskAdmission } from "../src/cron-task-admission";
 
 const actual = process.env.CM_CONTAINER_TEST_IMAGE ? test : test.skip;
 const cleanup: (() => void | Promise<void>)[] = [];
@@ -74,6 +76,36 @@ actual("normal configuration runs and resumes Claude in Docker with image-owned 
   const records = f.records(); expect(records).toHaveLength(6); expect(records.every(row => row.state === "removed")).toBe(true);
   for (const row of f.rows("SELECT payload FROM execution_manifests")) expect(JSON.parse(row.payload).container.runtime_digest).toMatch(/^[a-f0-9]{64}$/);
   for (const row of f.rows("SELECT result FROM episodes")) expect(JSON.parse(row.result).container).toMatchObject({ image_id: f.selected.container!.image_id, cleanup: "removed" });
+}, 90_000);
+
+actual("approved cron runs through configured Claude container and recovers without replay", async () => {
+  const f = await fixture();
+  new CronStore(f.opened.runtime.kernel.db).registerCoordinator("operator");
+  await f.opened.close();
+  const config = JSON.parse(readFileSync(f.file, "utf8")); config.cron_scheduler = { generation: 1 };
+  writeFileSync(f.file, JSON.stringify(config), { mode: 0o600 });
+  let owned = openLocalRuntime(f.file); cleanup.push(() => owned.close());
+  const store = new CronStore(owned.runtime.kernel.db);
+  store.putJob({ id: "scheduled", title: "Scheduled", schedule: "0 0 1 1 *", task_folder: "scheduled",
+    agent_instruction: "Read PROJECT.md and write result.txt.", provider: "claude", model: "fixture-model",
+    execution_mode: "taskhub", output_policy: "summarized_only", dependency: "workspace" });
+  const occurrence = store.createOccurrence("scheduled", Date.now() - 1000);
+  const actor = { id: "operator", origin: "schedule" as const, device_id: "desktop", scopes: ["task:create", "task:read"] };
+  const admission = new CronTaskAdmission(owned.runtime.kernel, actor, 1, { workspace: f.workspace }, owned.runtime);
+  expect(() => admission.submit(occurrence.occurrence_id)).toThrow("cron_approval_required");
+  expect(store.listAttempts(occurrence.occurrence_id)).toHaveLength(0);
+  owned.cron!.approve("approve-cron", occurrence.occurrence_id, Date.now() + 60000);
+  const admitted = admission.submit(occurrence.occurrence_id);
+  await owned.runtime.drain(); owned.cron!.tick();
+  expect(owned.runtime.inspectTask(admitted.task.task.task_id).task.status).toBe("done");
+  expect(store.getAttempt(admitted.attempt.attempt_id)?.state).toBe("completed");
+  expect(store.getDependencyLock("workspace")).toBeNull();
+  expect(readFileSync(join(f.workspace, "result.txt"), "utf8")).toBe("current fact\n");
+  const original = readFileSync(join(f.config, "inputs.jsonl"), "utf8");
+  expect(original.trim().split("\n")).toHaveLength(1);
+  await owned.close(); owned = openLocalRuntime(f.file);
+  owned.cron!.tick(); await owned.runtime.drain();
+  expect(readFileSync(join(f.config, "inputs.jsonl"), "utf8")).toBe(original);
 }, 90_000);
 
 actual("persistent socket service executes after clients disconnect and resumes the original native session after service restart", async () => {

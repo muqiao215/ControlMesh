@@ -782,3 +782,20 @@ tests pass (49 assertions), typecheck/diff check pass; /tmp/cm-cron-approval-{te
 Includes actual socket approval/revoke and restart receipt replay. Provider consumption,
 container cron source support and native execution acceptance remain pending. Issuing a
 receipt does not start a task or weaken existing controller_required enforcement.
+
+Claude configured runtime now consumes current CronApprovals through task/provider/grant
+bound in-process permits. JSON copies and other-task/changed-grant use are rejected;
+each use rechecks persisted approval, expiry, revocation, generation, workspace/config
+binding and exact cron source/template/grant. Task confirmation_policy stays
+controller_required. Active approval lookup is persisted by occurrence. Claude container
+source now admits cron with the existing sandbox floor, and task scope obtains its actual
+configured container source. Other providers remain unconnected to approval permits.
+Actual Docker with synthetic Claude completed approved cron -> queue -> file publication
+-> kernel result -> cron terminal/lock release -> restart without another native input:
+1 pass/9 assertions, /tmp/cm-cron-approved-container.log, image node22 sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5.
+Approval/service/scheduler tests 14 pass/90 assertions; Claude tests 19 pass/3 skip/128
+assertions; authority/approval tests 13 pass/862 assertions; typecheck and diff check pass.
+Logs /tmp/cm-cron-{permit-tests,claude-regression,authority-regression,permit-typecheck}.log.
+This proves the configured execution mechanism with a synthetic CLI, not real model
+continuation or full migration. OpenCode/Codex approvals, quota circuits, delivery and
+physical-device acceptance remain open; no production service/account was changed.

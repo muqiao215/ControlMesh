@@ -3,6 +3,7 @@ import { existsSync, lstatSync, readdirSync, realpathSync, statSync } from "node
 import { isAbsolute, join } from "node:path";
 import { contains, type ContainerConfiguration } from "../containers/plan";
 import { decodeToolGrant, enforceProviderConfirmation } from "../execution-grants";
+import type { ControllerApprovalPermit } from "../controller-approval-permit";
 import { enforceNativeReadSource } from "../execution-policy";
 import { digest, requireThat, type LegacyTask } from "../value";
 import { WorkspaceStage } from "../workspace-stage";
@@ -26,6 +27,7 @@ export interface ClaudeTaskConfiguration {
   required_reads: readonly string[];
   write_roots: readonly string[];
   workflow_binding?: string;
+  controller_approval?: ControllerApprovalPermit;
   timeout_ms?: number;
   max_turns?: number;
   communication?: { peer_tasks: string[]; parent_task: string | null };
@@ -79,9 +81,10 @@ export function claudeTaskScope(config: ClaudeTaskConfiguration, task: LegacyTas
   requireThat(task.provider === "claude" && task.model === config.model && typeof task.repo_root === "string"
     && realpathSync(task.repo_root) === config.workspace && directoryIdentity(config.workspace).path === config.workspace, "claude_task_registration_mismatch");
   if (containerSource) requireThat(config.container && containerSource.runtimeDigest() === new ClaudeContainerProbeRunner(claudeContainerProfile(config)).runtimeDigest(), "claude_container_source_mismatch");
-  enforceNativeReadSource(task.execution_context, containerSource ?? {});
+  enforceNativeReadSource(task.execution_context, containerSource ?? (config.container ? new ClaudeContainerProbeRunner(claudeContainerProfile(config)) : {}));
   WorkspaceStage.assertLocation(config.state_home, config.workspace);
-  const grant = decodeToolGrant(task.tool_grant); enforceProviderConfirmation("claude", grant);
+  const grant = decodeToolGrant(task.tool_grant); enforceProviderConfirmation("claude", grant, undefined,
+    config.controller_approval ? { permit: config.controller_approval, task_id: task.task_id } : undefined);
   requireThat(grant.network_policy === "sandbox_default", "no_network_unenforceable");
   const roots = config.write_roots.length ? writeRoots(config.workspace, { roots: config.write_roots, ...(config.workflow_binding ? { workflow_binding: config.workflow_binding } : {}) }) : [];
   const reads = registeredReads(config.workspace, config.read_files, roots, afterPublication);

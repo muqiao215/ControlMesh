@@ -55,7 +55,8 @@ export class ClaudeContainerProbeRunner {
   assertSource(context: ExecutionContext): void {
     requireThat(this.runtimeDigest() === this.initial, "claude_container_probe_profile_changed");
     enforceExecutionPolicy(context, true);
-    requireThat(context.origin === "user" && ["local_foreground", "direct_message", "group_message"].includes(context.source_scope), "source_execution_floor_unavailable");
+    requireThat((context.origin === "user" && ["local_foreground", "direct_message", "group_message"].includes(context.source_scope))
+      || (context.origin === "cron" && context.source_scope === "cron"), "source_execution_floor_unavailable");
     // This readiness profile can only dispatch through the concrete container supervisor.
   }
   async run(spec: ProcessSpec, admission: ProcessAdmission): Promise<ProcessOutcome> {

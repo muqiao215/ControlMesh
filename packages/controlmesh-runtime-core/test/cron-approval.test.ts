@@ -6,6 +6,30 @@ import { RuntimeDatabase } from "../src/database";
 import { CronStore } from "../src/cron-store";
 import { CronApprovals } from "../src/cron-approval";
 import type { Principal } from "../src/kernel";
+import { RuntimeKernel } from "../src/kernel";
+import { CronTaskAdmission } from "../src/cron-task-admission";
+import { decodeToolGrant, enforceProviderConfirmation } from "../src/execution-grants";
+
+test("native approval permits reject JSON copies, other tasks, changed grants and revocation", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "cm-cron-permit-")), db = new RuntimeDatabase(":memory:");
+  try {
+    const actor: Principal = { id: "owner", device_id: "device", origin: "human_request", scopes: ["task:create", "task:admin", "task:read"] };
+    const kernel = new RuntimeKernel(db), store = new CronStore(db); store.registerCoordinator(actor.id);
+    store.putJob({ id: "job", title: "Job", schedule: "* * * * *", task_folder: "job", agent_instruction: "Inspect",
+      provider: "claude", model: "fixture", execution_mode: "taskhub", output_policy: "summarized_only" });
+    const occurrence = store.createOccurrence("job", Date.now() - 1000);
+    const approvals = new CronApprovals(db, workspace, "a".repeat(64), 1, () => {});
+    const receipt = approvals.approve(actor, "approve", occurrence.occurrence_id, Date.now() + 60000);
+    const task = new CronTaskAdmission(kernel, { ...actor, origin: "schedule" }, 1, { workspace }).submit(occurrence.occurrence_id).task.task;
+    const permit = approvals.forTask(actor, task), grant = decodeToolGrant(task.tool_grant);
+    expect(() => enforceProviderConfirmation("claude", grant, undefined, { permit, task_id: task.task_id })).not.toThrow();
+    expect(() => enforceProviderConfirmation("claude", grant, undefined, { permit: structuredClone(permit), task_id: task.task_id })).toThrow("controller_approval_unproven");
+    expect(() => enforceProviderConfirmation("claude", grant, undefined, { permit, task_id: "another" })).toThrow("controller_approval_unproven");
+    expect(() => enforceProviderConfirmation("claude", { ...grant, tool_deny: ["Bash"] }, undefined, { permit, task_id: task.task_id })).toThrow("controller_approval_unproven");
+    approvals.revoke(actor, "revoke", receipt);
+    expect(() => enforceProviderConfirmation("claude", grant, undefined, { permit, task_id: task.task_id })).toThrow("cron_approval_revoked");
+  } finally { db.close(); rmSync(workspace, { recursive: true, force: true }); }
+});
 
 for (const change of ["revoke", "expire", "definition", "workspace", "configuration", "generation"] as const) test(`cron approval becomes unusable after ${change}`, () => {
   const root = mkdtempSync(join(tmpdir(), "cm-cron-approval-")), workspace = join(root, "repo"); mkdirSync(workspace);

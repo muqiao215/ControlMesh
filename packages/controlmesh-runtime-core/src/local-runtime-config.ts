@@ -126,12 +126,17 @@ export function openLocalRuntime(path: string, options: { host_worker?: boolean 
   try {
     requireThat(config.specmesh === undefined || object(config.specmesh), "invalid_specmesh_profile");
     const specmesh = config.specmesh === undefined ? undefined : new SpecMeshPort(config.specmesh as unknown as SpecMeshConfiguration, workspace.directory as string, current);
+    const cronApprovals = object(cronConfig) && !options.host_worker
+      ? new CronApprovals(db, workspace.directory as string, digest(config), cronConfig.generation as number, current) : undefined;
     const claudeConfiguration = (taskId: string): ClaudeTaskConfiguration => {
       current(); const selected = config.claude;
       requireThat(object(selected), "claude_not_registered");
       const peers = object(communication) && object(communication.tasks) ? communication.tasks[taskId] : undefined;
       requireThat(peers === undefined || (object(peers) && communication!.node_executable === selected.node_executable), "claude_communication_node_mismatch");
+      const row = cronApprovals ? db.sql.query("SELECT raw FROM tasks WHERE task_id=? AND principal=?").get(taskId, actor.id) as { raw: string } | null : null;
+      const cronTask = row ? JSON.parse(row.raw) as LegacyTask : undefined;
       return { executable: selected.executable as string, node_executable: selected.node_executable as string,
+        ...(cronTask?.cron_occurrence_id ? { controller_approval: cronApprovals!.forTask(actor, cronTask) } : {}),
         state_home: root, environment: { home: selected.home as string, config_directory: selected.config_directory as string, credentials: selected.environment as Record<string, string> },
         model: selected.model as string, workspace: workspace.directory as string, read_files: workspace.read_files as string[], required_reads: workspace.required_reads as string[],
         write_roots: roots, ...(peers ? { communication: structuredClone(peers) as { peer_tasks: string[]; parent_task: string | null } } : {}),
@@ -350,7 +355,6 @@ export function openLocalRuntime(path: string, options: { host_worker?: boolean 
         maxJobs: cronConfig.max_jobs as number | undefined,
         workspace: workspace.directory as string,
       }, runtime);
-    const cronApprovals = cronScheduler ? new CronApprovals(db, workspace.directory as string, digest(config), cronConfig!.generation as number, current) : undefined;
     const cron = cronScheduler ? {
       approve(requestId: string, occurrenceId: string, expiresAt: number) { return cronApprovals!.approve(actor, requestId, occurrenceId, expiresAt); },
       revoke(requestId: string, approval: CronApproval) { cronApprovals!.revoke(actor, requestId, approval); },

@@ -83,6 +83,7 @@ export class CronScheduler {
             cursor.pending = null; cursor.next_at = next(); cursor.reason = reason;
           } else if (["local_queue_full", "cron_dependency_busy", "cron_attempt_requires_reconciliation", "cron_taskhub_mode_required",
             "cron_taskhub_requires_summarized_only", "cron_taskhub_requires_foreground", "cron_provider_not_configured",
+            "cron_approval_required", "cron_approval_revoked", "cron_approval_expired_or_foreign", "cron_approval_binding_changed",
             "source_execution_floor_unavailable", "opencode_not_registered", "claude_not_registered", "codex_not_registered", "gemini_not_registered", "host_not_registered"].includes(reason)) cursor.reason = reason;
           else throw error;
           }
