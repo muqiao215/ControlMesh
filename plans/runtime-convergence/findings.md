@@ -2385,3 +2385,11 @@ fields and all competing rules at/above the fallback. Lower-priority rules remai
 This is a version-specific rule proof, not permission to trust a caller-supplied rule list
 or skip config immutability. System TOML suppression is detected as missing effective admin
 rules in the actual installed engine test.
+
+
+Gemini policy file bytes alone do not bind effective configuration: system directory
+membership can suppress admin policy, including a directory initially absent. The new
+observer records absence against canonical ancestor identity and snapshots bounded TOML
+members with no symlink authority. It wraps loaded-rule qualification but does not discover
+sources, watch arbitrary settings or make mutable directories immutable. Preserve that
+boundary when integrating the provider rather than treating a snapshot digest as a grant.

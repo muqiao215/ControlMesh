@@ -346,3 +346,8 @@ Gemini checkpoint: loaded-rule validation now detects the installed 0.59 system-
 suppression path with native engine evidence. Normal runtime registration/preflight,
 configuration immutability, process/session integration and full account qualification
 remain required. No grant mapping or default provider admission has been relaxed.
+
+
+Gemini source-binding follow-up: bounded directory/file observation now wraps loaded-rule
+qualification and catches configuration drift. Complete native settings/source discovery
+and protected execution binding before changing the existing provider admission refusal.

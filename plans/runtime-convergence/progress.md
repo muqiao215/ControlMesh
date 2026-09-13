@@ -1282,3 +1282,19 @@ Typecheck/diff check passed. The function validates loaded rules only, not CLI i
 immutable config or execution grants. It is not yet wired to the normal Gemini runtime;
 existing restrictive-grant refusal remains. Next integration must bind exact native code,
 configuration snapshots, current session baseline and supervised process lifetime.
+
+
+## 2026-09-13 — Gemini policy source observation binding
+
+Added bounded policy-directory observation with canonical identities, sorted membership,
+descriptor-checked TOML file snapshots and explicit absent-directory ancestry. Native
+loaded-rule qualification checks this snapshot before and after loading and returns a
+currentness check. Tests cover added/modified policy, newly created absent directory,
+symlink replacement and mutation during loading, plus actual installed-engine rule loading.
+6 pass, 0 fail, 17 assertions, 2 files, 780ms (/tmp/cm-gemini-policy-snapshot.log).
+Typecheck/diff check passed. No account/model calls or operator policy changes.
+
+The trusted caller must still discover every effective source from the exact native
+settings/environment. This observer detects drift; it does not provide immutable mounts
+or eliminate a race between checks and native use. Normal Gemini registration/preflight,
+protected execution configuration and actual session/process integration remain open.
