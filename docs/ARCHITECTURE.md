@@ -964,6 +964,15 @@ that response after capacity returns. Inbox status exposes deferred/unresolved r
 separately from Agent execution. The initial control transport does not auto-retry rate
 refusals; full management menus and transport parity remain in the migration plan.
 
+Schema 42 classifies read-only `/tasks` requests separately from execution input. Its
+ten-item pages use active delivery routes for the selected bot/principal/chat/topic,
+revalidate current task grants, and expose a cursor through `/tasks after <task_id>`.
+The stored response carries observation time and omits prompts and filesystem paths.
+Read-only views neither supersede older execution input nor block later input at reply
+capacity. The control response pump runs independently of native execution; status can
+arrive while an Agent remains active. Unsupported `/tasks` arguments produce usage text,
+not a model request. Management mutation buttons remain unimplemented.
+
 `feishu-credentials.ts` owns selected self-built-app tenant-token refresh. The profile loader
 uses descriptor-checked private files, never credential discovery. Tokens are memory-only,
 refresh is shared within one instance, expiry is monotonic, and credential rotation invalidates

@@ -33,10 +33,17 @@ export function assertTelegramIncoming(value: unknown): asserts value is Telegra
 
 /** Secret-authenticated provider bytes; body fields cannot issue runtime permissions. */
 export class TelegramEventAuthenticator {
-  controlCommand(message: TelegramIncomingMessage): "stop" | null {
+  controlCommand(message: TelegramIncomingMessage): "stop" | "tasks" | null {
     this.assertCurrent();
+    const tasks = /^\/tasks(?:@([a-z0-9_]+))?(?:\s|$)/i.exec(message.text.trim());
+    if (tasks && (!tasks[1] || tasks[1].toLowerCase() === this.config.bot_username.toLowerCase())) return "tasks";
     const command = /^\/stop(?:@([a-z0-9_]+))?(?:\s|$)/i.exec(message.text.trim());
     return command && (!command[1] || command[1].toLowerCase() === this.config.bot_username.toLowerCase()) ? "stop" : null;
+  }
+  tasksCursor(message: TelegramIncomingMessage): string | null {
+    this.assertCurrent();
+    const command = /^\/tasks(?:@([a-z0-9_]+))?(?:\s+after\s+([A-Za-z0-9][A-Za-z0-9_.:@-]{0,191}))?\s*$/i.exec(message.text.trim());
+    return command && (!command[1] || command[1].toLowerCase() === this.config.bot_username.toLowerCase()) ? command[2] ?? "" : null;
   }
   private readonly config: TelegramEventConfiguration;
   constructor(config: TelegramEventConfiguration, private readonly current: () => void) {

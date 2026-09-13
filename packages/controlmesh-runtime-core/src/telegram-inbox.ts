@@ -13,6 +13,7 @@ interface InboxRow {
   id: string; bot_id: string; principal: string; event_id: string; message_id: string; chat_id: string;
   conversation_id: string; received_at: number; payload: string; payload_digest: string;
   state: "pending" | "applied" | "blocked"; task_id: string | null; reason: string | null;
+  control_kind: "stop" | "tasks" | null;
 }
 interface CallbackRow { id: string; bot_id: string; principal: string; event_id: string; callback_id: string; payload: string; payload_digest: string; state: string; received_at: number }
 interface Conversation { id: string; bot_id: string; principal: string; task_id: string; first_event: string }
@@ -84,6 +85,7 @@ export class TelegramInbox {
         (id,bot_id,principal,event_id,message_id,chat_id,conversation_id,payload,payload_digest,state,received_at) VALUES (?,?,?,?,?,?,?,?,?,'pending',?)`)
         .run(id, this.bot_id, this.actor.id, message.event_id, message.message_id, message.chat_id, this.conversationId(message), canonical(message), digest(message), this.kernel.db.now());
       this.kernel.db.sql.query("INSERT INTO telegram_event_aliases VALUES (?,?,?)").run(this.bot_id, message.event_id, id);
+      this.kernel.db.sql.query("UPDATE telegram_inbox SET control_kind=? WHERE id=?").run(this.auth.controlCommand(message), id);
       return { accepted: true, receipt_id: id };
     });
   }
@@ -131,7 +133,7 @@ export class TelegramInbox {
           requireThat(!this.auth.policy({ ...callback, schema_version: "controlmesh.telegram_incoming.v1", text: callback.choice_id,
             created_at: row.received_at, mentions_local_bot: true }), "telegram_event_policy_changed");
           if (this.kernel.db.sql.query(`SELECT 1 FROM telegram_inbox WHERE bot_id=? AND principal=? AND chat_id=?
-            AND json_extract(payload,'$.thread_id')=? AND state!='applied'
+            AND json_extract(payload,'$.thread_id')=? AND state!='applied' AND COALESCE(control_kind,'')!='tasks'
             AND (reason IS NULL OR reason NOT IN ('telegram_event_order_requires_review','telegram_input_predates_cancellation'))
             AND (received_at<? OR (received_at=? AND CAST(event_id AS INTEGER)<?)) LIMIT 1`)
             .get(this.bot_id, this.actor.id, callback.chat_id, callback.thread_id, row.received_at, row.received_at, Number(callback.event_id))) return false;
@@ -241,10 +243,53 @@ export class TelegramInbox {
     }, value => { this.check("telegram:process"); return value; });
   }
   /** The ingress pump may call this while it is awaiting a native execution. */
-  applyControl(runtime: LocalTaskRuntime, limit = 16): number {
+  applyControl(runtime: LocalTaskRuntime, deliveries?: DeliveryOutbox, adapterId?: string): number {
     this.check("telegram:process");
-    requireThat(Number.isSafeInteger(limit) && limit >= 1 && limit <= 128, "invalid_telegram_inbox_limit");
-    return this.applyStops(runtime, limit);
+    this.classifyPendingControls();
+    const stopped = this.applyStops(runtime, 16);
+    return stopped + (deliveries && adapterId ? this.applyTaskViews(deliveries, adapterId, 16 - stopped) : 0);
+  }
+  private classifyPendingControls(): void {
+    const rows = this.kernel.db.sql.query("SELECT * FROM telegram_inbox WHERE principal=? AND bot_id=? AND state='pending' AND control_kind IS NULL ORDER BY rowid LIMIT 129")
+      .all(this.actor.id, this.bot_id) as InboxRow[];
+    for (const row of rows) {
+      const kind = this.auth.controlCommand(this.load(row));
+      if (kind) this.kernel.db.sql.query("UPDATE telegram_inbox SET control_kind=? WHERE id=? AND control_kind IS NULL").run(kind, row.id);
+    }
+  }
+  private applyTaskViews(deliveries: DeliveryOutbox, adapterId: string, limit: number): number {
+    const rows = this.kernel.db.sql.query("SELECT * FROM telegram_inbox WHERE principal=? AND bot_id=? AND state='pending' AND control_kind='tasks' ORDER BY rowid LIMIT ?")
+      .all(this.actor.id, this.bot_id, limit) as InboxRow[];
+    let applied = 0;
+    for (const original of rows) {
+      try {
+        if (this.kernel.db.transaction(() => {
+          this.check("telegram:process");
+          const row = this.kernel.db.sql.query("SELECT * FROM telegram_inbox WHERE id=?").get(original.id) as InboxRow;
+          if (row.state !== "pending") return false;
+          const message = this.load(row), cursor = this.auth.tasksCursor(message);
+          requireThat(!this.auth.policy(message), "telegram_event_policy_changed");
+          const count = this.kernel.db.sql.query("SELECT COUNT(*) AS n FROM telegram_control_replies WHERE principal=? AND bot_id=? AND state!='sent'")
+            .get(this.actor.id, this.bot_id) as { n: number };
+          if (count.n >= 128) return false;
+          const page = cursor === null ? null : deliveries.telegramTaskPage(adapterId, message, cursor);
+          const text = page ? ["Tasks in this conversation", `Observed at ${new Date(this.kernel.db.now()).toISOString()}`, "", ...page.tasks.map(task =>
+            `${task.task_id}${task.name ? ` — ${task.name}` : ""}\n${task.status}${task.needs_reconciliation ? " · outcome needs reconciliation" : ""}`),
+            ...(page.tasks.length ? [] : ["No tasks on this page."]), ...(page.next ? ["", `Next page: /tasks after ${page.next}`] : [])].join("\n")
+            : "Usage: /tasks or /tasks after <task_id>. Other task management commands are not available in this runtime yet.";
+          const reply: TelegramControlReply = { request_id: row.id, bot_id: this.bot_id, chat_id: message.chat_id, thread_id: message.thread_id, text };
+          requireThat(text.length <= 4096, "telegram_task_page_too_large");
+          this.kernel.db.sql.query(`INSERT INTO telegram_control_replies (inbox_id,principal,bot_id,payload,payload_digest,state,chat_id)
+            VALUES (?,?,?,?,?,'pending',?)`).run(row.id, this.actor.id, this.bot_id, canonical(reply), digest(reply), message.chat_id);
+          this.kernel.db.sql.query("UPDATE telegram_inbox SET state='applied',reason=NULL WHERE id=?").run(row.id);
+          return true;
+        })) applied++;
+      } catch (error) {
+        const reason = error instanceof RuntimeConflict ? error.code : "telegram_task_view_failed";
+        this.kernel.db.sql.query("UPDATE telegram_inbox SET state='blocked',reason=? WHERE id=? AND state='pending'").run(reason, original.id);
+      }
+    }
+    return applied;
   }
   /** Stop bypasses a blocked execution lane but never supersedes newer applied input. */
   private applyStops(runtime: LocalTaskRuntime, limit: number): number {
@@ -261,7 +306,7 @@ export class TelegramInbox {
           if (row.state !== "pending") return false;
           const message = this.load(row); requireThat(!this.auth.policy(message), "telegram_event_policy_changed");
           requireScope(this.actor, "task:cancel");
-          requireThat(!this.kernel.db.sql.query(`SELECT 1 FROM telegram_inbox WHERE conversation_id=? AND state='applied'
+          requireThat(!this.kernel.db.sql.query(`SELECT 1 FROM telegram_inbox WHERE conversation_id=? AND state='applied' AND COALESCE(control_kind,'')!='tasks'
             AND (json_extract(payload,'$.created_at')>? OR (json_extract(payload,'$.created_at')=? AND CAST(message_id AS INTEGER)>?)) LIMIT 1`)
             .get(row.conversation_id, message.created_at, message.created_at, Number(message.message_id)), "telegram_event_order_requires_review");
           requireThat(!this.kernel.db.sql.query(`SELECT 1 FROM telegram_callbacks WHERE bot_id=? AND principal=? AND state='applied'
@@ -355,17 +400,19 @@ export class TelegramInbox {
       }
     }));
     const pending = this.kernel.db.sql.query("SELECT 1 FROM telegram_control_replies WHERE bot_id=? AND principal=? AND state='pending' LIMIT 1").get(this.bot_id, this.actor.id);
-    const deferred = this.kernel.db.sql.query("SELECT 1 FROM telegram_inbox WHERE bot_id=? AND principal=? AND state='applied' AND reason='telegram_control_reply_deferred' LIMIT 1").get(this.bot_id, this.actor.id);
+    const deferred = this.kernel.db.sql.query("SELECT 1 FROM telegram_inbox WHERE bot_id=? AND principal=? AND ((state='applied' AND reason='telegram_control_reply_deferred') OR (state='pending' AND control_kind='tasks')) LIMIT 1").get(this.bot_id, this.actor.id);
     const usage = this.kernel.db.sql.query("SELECT COUNT(*) AS n FROM telegram_control_replies WHERE bot_id=? AND principal=? AND state!='sent'").get(this.bot_id, this.actor.id) as { n: number };
     return Boolean(pending || deferred && usage.n < 128);
   }
   /** Synchronous effects compose inside the same transaction as marking the provider event applied. */
   applyPending(runtime: LocalTaskRuntime, deliveries: DeliveryOutbox, adapterId: string, limit = 16): number {
     this.check("telegram:process"); requireThat(Number.isSafeInteger(limit) && limit >= 1 && limit <= 128, "invalid_telegram_inbox_limit");
+    this.classifyPendingControls();
     const stopped = this.applyStops(runtime, limit);
+    const viewed = this.applyTaskViews(deliveries, adapterId, limit - stopped);
     const rows = this.kernel.db.sql.query("SELECT * FROM telegram_inbox WHERE principal=? AND bot_id=? AND state='pending' ORDER BY json_extract(payload,'$.created_at'),CAST(message_id AS INTEGER),rowid LIMIT ?")
       .all(this.actor.id, this.bot_id, 128) as InboxRow[];
-    let applied = stopped;
+    let applied = stopped + viewed;
     for (const original of rows) {
       // Scan the bounded inbox past deferred conversations; the limit caps applied work.
       if (applied >= limit) break;
@@ -375,15 +422,16 @@ export class TelegramInbox {
           const row = this.kernel.db.sql.query("SELECT * FROM telegram_inbox WHERE id=?").get(original.id) as InboxRow;
           if (row.state !== "pending") return false;
           const message = this.load(row); requireThat(!this.auth.policy(message), "telegram_event_policy_changed");
+          if (this.auth.controlCommand(message) === "tasks") return false;
           if (this.kernel.db.sql.query(`SELECT 1 FROM telegram_callbacks WHERE bot_id=? AND principal=? AND state='pending'
             AND json_extract(payload,'$.chat_id')=? AND json_extract(payload,'$.thread_id')=?
             AND (received_at<? OR (received_at=? AND CAST(event_id AS INTEGER)<?)) LIMIT 1`)
             .get(this.bot_id, this.actor.id, message.chat_id, message.thread_id, row.received_at, row.received_at, Number(message.event_id))) return false;
-          const laterApplied = this.kernel.db.sql.query(`SELECT 1 FROM telegram_inbox WHERE conversation_id=? AND state='applied'
+          const laterApplied = this.kernel.db.sql.query(`SELECT 1 FROM telegram_inbox WHERE conversation_id=? AND state='applied' AND COALESCE(control_kind,'')!='tasks'
             AND (json_extract(payload,'$.created_at')>? OR (json_extract(payload,'$.created_at')=? AND CAST(message_id AS INTEGER)>?)) LIMIT 1`)
             .get(row.conversation_id, message.created_at, message.created_at, Number(message.message_id));
           requireThat(!laterApplied, "telegram_event_order_requires_review");
-          if (this.kernel.db.sql.query(`SELECT 1 FROM telegram_inbox WHERE conversation_id=? AND state!='applied' AND (reason IS NULL OR reason NOT IN ('telegram_event_order_requires_review','telegram_input_predates_cancellation'))
+          if (this.kernel.db.sql.query(`SELECT 1 FROM telegram_inbox WHERE conversation_id=? AND state!='applied' AND COALESCE(control_kind,'')!='tasks' AND (reason IS NULL OR reason NOT IN ('telegram_event_order_requires_review','telegram_input_predates_cancellation'))
             AND (json_extract(payload,'$.created_at')<? OR (json_extract(payload,'$.created_at')=? AND CAST(message_id AS INTEGER)<?)) LIMIT 1`)
             .get(row.conversation_id, message.created_at, message.created_at, Number(message.message_id))) return false;
           const conversation = this.kernel.db.sql.query("SELECT * FROM telegram_conversations WHERE id=?").get(row.conversation_id) as Conversation | null;

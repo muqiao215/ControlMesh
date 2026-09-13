@@ -319,6 +319,28 @@ acceptance item has matching evidence, release and local alignment.
 - No actual Telegram account send occurred. Definitive rate-refusal retry for management
   replies, full selector menus, formatting/streaming and the wider CM-R0–R7 matrix remain.
 
+## Schema 42: task status commands
+
+- Management replies `c6cefd7` are pushed; CI `34748541257` succeeded.
+- `/tasks` now directly reads selected bot/principal/chat/topic routes, rechecks current
+  task authority and returns up to ten entries with an observation time. `/tasks after
+  <task_id>` continues the bounded page. Names are display-bounded and control characters
+  removed; prompts and paths are not included. No task or model invocation is created.
+- Persisted `control_kind` separates read-only views from execution input ordering. Older
+  pending user input is not superseded by a newer task view, and a pending view at reply
+  capacity does not block later execution input. Old pending requests are classified on
+  schema upgrade before admission. Invalid `/tasks` arguments receive usage text.
+- The independent control reply pump sends status during active execution without waiting
+  for `runtime.drain()`. It is bounded, joins shutdown, and retains prior unknown-send
+  behavior. Stop continues to abort the original runtime controller.
+- Final Telegram control/inbox/polling and shared Feishu regression: **76 pass, 0 fail**,
+  696 assertions, 3.52s (`/tmp/cm-task-views-final.log`). Migration/upgrade cases across
+  the runtime suite: **33 pass, 0 fail**, 188 assertions (`/tmp/cm-task-views-migrations.log`).
+  Current typecheck and diff check passed. No actual chat account used; full CI for the
+  new commit must still be checked. Prior schema 41 full regression does not certify 42.
+- This implements the read-only task page and cursor, not cancellation/cleanup buttons,
+  model/cron/session menus, streaming/formatting or the full migration/release matrix.
+
 ## Release checkpoint
 
 GitHub latest releases remain CM `v0.43.0`, Viewer `v1.1.0`, SpecMesh `v1.2.1`; installed

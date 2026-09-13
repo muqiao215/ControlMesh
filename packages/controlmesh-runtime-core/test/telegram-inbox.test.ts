@@ -20,6 +20,8 @@ afterEach(async () => { for (const close of cleanups.splice(0).reverse()) await 
 function fixture(output = "Fixture result", holdExecution = false) {
   let started!: () => void;
   const executionStarted = new Promise<void>(resolve => { started = resolve; });
+  let viewSent!: () => void;
+  const taskViewSent = new Promise<void>(resolve => { viewSent = resolve; });
   const root = mkdtempSync(join(tmpdir(), "cm-telegram-inbox-")); cleanups.push(() => rmSync(root, { recursive: true, force: true }));
   const path = join(root, "runtime.sqlite"), seen: any[] = [], posts: any[] = [], acks: any[] = []; let ackLost = false, controlAckLost = false, deny = false, quota = false, valid = true;
   const current = () => { if (!valid) throw new RuntimeConflict("fixture_revoked"); };
@@ -29,6 +31,7 @@ function fixture(output = "Fixture result", holdExecution = false) {
       acks.push(body); return Response.json(ackLost ? { ok: false, error_code: 500 } : { ok: true, result: true });
     }
     posts.push(body);
+    if (body.text?.startsWith("Tasks in this conversation")) viewSent();
     return Response.json({ ok: true, result: { message_id: posts.length, date: Math.floor(Date.now() / 1000), chat: { id: Number(body.chat_id) },
       from: { id: 123456, is_bot: true }, text: body.text, ...(body.reply_markup ? { reply_markup: body.reply_markup } : {}), ...(body.message_thread_id ? { message_thread_id: body.message_thread_id } : {}) } });
   } }); cleanups.push(() => server.stop(true));
@@ -62,7 +65,7 @@ function fixture(output = "Fixture result", holdExecution = false) {
     cleanups.push(close); return { db, kernel, inbox, runtime, deliveries, inbound, close };
   };
   const receive = (inbox: TelegramInbox, body: unknown) => inbox.receive(headers(), Buffer.from(JSON.stringify(body))) as { accepted: boolean; receipt_id: string; reason?: string };
-  return { ...open(), open, receive, seen, posts, acks, executionStarted, loseControlReply: () => { controlAckLost = true; }, loseAck: () => { ackLost = true; }, deny: () => { deny = true; }, quota: (value = true) => { quota = value; }, revoke: () => { valid = false; } };
+  return { ...open(), open, receive, seen, posts, acks, executionStarted, taskViewSent, loseControlReply: () => { controlAckLost = true; }, loseAck: () => { ackLost = true; }, deny: () => { deny = true; }, quota: (value = true) => { quota = value; }, revoke: () => { valid = false; } };
 }
 
 test("Telegram duplicate updates survive reopen; chat-local message IDs never alias another chat", async () => {
@@ -145,6 +148,82 @@ test("explicit retry of the paused run releases the retained next input", async 
 });
 
 
+test("tasks command replies without creating a model task or changing older input ordering", async () => {
+  const f = fixture(); f.receive(f.inbox, event()); const view = event(2); view.message.text = "/tasks";
+  f.receive(f.inbox, view); await f.inbound.drain();
+  expect(f.seen).toHaveLength(1); expect(f.seen[0].prompt).toBe("request 1");
+  expect(f.posts.some(post => post.text.startsWith("Tasks in this conversation"))).toBe(true);
+  expect(f.inbox.listBlocked()).toHaveLength(0);
+  await f.close(); const next = f.open(); const sends = f.posts.length; f.receive(next.inbox, view); await next.inbound.drain();
+  expect(f.posts).toHaveLength(sends); expect(f.seen).toHaveLength(1);
+});
+
+test("invalid task command stays a management request and never enters a model queue", async () => {
+  const f = fixture(), view = event(); view.message.text = "/tasks after ../private";
+  f.receive(f.inbox, view); await f.inbound.drain();
+  expect(f.seen).toHaveLength(0); expect(f.posts[0].text).toContain("Usage: /tasks");
+  expect(f.db.sql.query("SELECT COUNT(*) AS n FROM tasks").get()).toEqual({ n: 0 });
+});
+
+test("task status can be delivered while an execution remains active", async () => {
+  const f = fixture("not yet finished", true), address = f.inbound.start();
+  const post = (body: unknown) => fetch(`http://${address.hostname}:${address.port}${address.path}`, { method: "POST", headers: headers(), body: JSON.stringify(body) });
+  await post(event()); await f.executionStarted;
+  const view = event(2); view.message.text = "/tasks"; await post(view); await f.taskViewSent;
+  expect(f.kernel.inspect(actor, f.seen[0].task_id).task.status).toBe("running");
+  expect(f.posts.find(post => post.text.startsWith("Tasks in this conversation"))?.text).toContain("running");
+  const stop = event(3); stop.message.text = "/stop"; await post(stop); await f.inbound.drain();
+  expect(f.kernel.inspect(actor, f.seen[0].task_id).task.status).toBe("cancelled"); expect(f.seen).toHaveLength(1);
+});
+
+test("viewing quota-blocked work does not supersede the retained next user request", async () => {
+  const f = fixture(); f.quota(); f.receive(f.inbox, event()); f.receive(f.inbox, event(2)); await f.inbound.drain();
+  const view = event(3); view.message.text = "/tasks"; f.receive(f.inbox, view); await f.inbound.drain();
+  expect(f.posts.at(-1).text).toContain("waiting"); expect(f.seen).toHaveLength(0);
+  const taskId = (f.db.sql.query("SELECT task_id FROM tasks").get() as { task_id: string }).task_id;
+  f.quota(false); f.runtime.enqueue("release-quota", taskId, f.kernel.inspect(actor, taskId).revision); await f.inbound.drain();
+  expect(f.seen).toHaveLength(2); expect(f.seen[1].task_id).toBe(taskId); expect(f.inbox.listBlocked()).toHaveLength(0);
+});
+
+test("a pending task view at response capacity does not block a later normal input", async () => {
+  const f = fixture();
+  for (let id = 1; id <= 128; id++) { const stop = event(id); stop.message.text = "/stop"; f.receive(f.inbox, stop); f.inbox.applyControl(f.runtime); }
+  const view = event(129); view.message.text = "/tasks"; f.receive(f.inbox, view); f.receive(f.inbox, event(130));
+  f.db.sql.exec("UPDATE telegram_control_replies SET state='unknown',reason='fixture_unobserved_send'");
+  await f.inbound.drain(); expect(f.seen).toHaveLength(1); expect(f.seen[0].prompt).toBe("request 130");
+  expect(f.inbox.status().pending).toBe(1);
+  expect(f.db.sql.query("SELECT COUNT(*) AS n FROM telegram_control_replies WHERE state='unknown'").get()).toEqual({ n: 128 });
+});
+
+test("task pages use selected bot and topic routes, with a bounded cursor", async () => {
+  const f = fixture();
+  for (let id = 0; id < 12; id++) {
+    const ingress = new (await import("../src/task-ingress")).TaskIngress(f.kernel,
+      { command_origin: "human_request", origin: "user", source_scope: "group_message", transport: "telegram" }, () => {});
+    const taskId = `page-${String(id).padStart(2, "0")}`;
+    ingress.submit(actor, `create-${taskId}`, { task_id: taskId, chat_id: "-100123", status: "waiting", name: `Task ${id}` },
+      { chat_id: "-100123", thread_id: id === 11 ? "20" : "10" });
+    f.deliveries.bindTask(`bind-${taskId}`, taskId, 1, "selected");
+  }
+  const view = event(20, -100123, 10); view.message.text = "/tasks@fixture_bot";
+  view.message.entities = [{ type: "bot_command", offset: 0, length: view.message.text.length }];
+  f.receive(f.inbox, view); await f.inbound.drain();
+  expect(f.posts[0].text).toContain("page-00"); expect(f.posts[0].text).not.toContain("page-10"); expect(f.posts[0].text).not.toContain("page-11");
+  expect(f.posts[0].text).toContain("Next page: /tasks after page-09");
+  const next = event(21, -100123, 10); next.message.text = "/tasks@fixture_bot after page-09"; next.message.entities = view.message.entities;
+  f.receive(f.inbox, next); await f.inbound.drain(); expect(f.posts[1].text).toContain("page-10"); expect(f.posts[1].text).not.toContain("page-11");
+  expect(f.seen).toHaveLength(0);
+});
+
+test("schema 41 pending task-view input is classified after upgrade without launching an Agent", async () => {
+  const f = fixture(), view = event(); view.message.text = "/tasks"; const receipt = f.receive(f.inbox, view);
+  f.db.sql.exec("ALTER TABLE telegram_inbox DROP COLUMN control_kind; PRAGMA user_version=41"); await f.close();
+  const next = f.open(); expect(next.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 42 });
+  expect(next.db.sql.query("SELECT control_kind FROM telegram_inbox WHERE id=?").get(receipt.receipt_id)).toEqual({ control_kind: null });
+  await next.inbound.drain(); expect(f.seen).toHaveLength(0); expect(f.posts[0].text).toContain("No tasks on this page.");
+  expect(next.db.sql.query("SELECT control_kind,state FROM telegram_inbox WHERE id=?").get(receipt.receipt_id)).toEqual({ control_kind: "tasks", state: "applied" });
+});
+
 test("stop bypasses quota and older queued input, survives reopen and never invokes a model", async () => {
   const f = fixture(); f.quota(); f.receive(f.inbox, event()); f.receive(f.inbox, event(2)); await f.inbound.drain();
   const taskId = (f.db.sql.query("SELECT task_id FROM tasks").get() as { task_id: string }).task_id;
@@ -217,8 +296,8 @@ test("full management reply storage defers feedback without rolling back stop or
 test("schema 40 upgrade preserves accepted input and task identity while adding empty management replies", async () => {
   const f = fixture(), input = event(); f.receive(f.inbox, input); await f.inbound.drain();
   const tasks = f.db.sql.query("SELECT * FROM tasks").all(), inbox = f.db.sql.query("SELECT * FROM telegram_inbox").all();
-  f.db.sql.exec("DROP TABLE telegram_control_replies; PRAGMA user_version=40"); await f.close();
-  const next = f.open(); expect(next.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 41 });
+  f.db.sql.exec("DROP TABLE telegram_control_replies; ALTER TABLE telegram_inbox DROP COLUMN control_kind; PRAGMA user_version=40"); await f.close();
+  const next = f.open(); expect(next.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 42 });
   expect(next.db.sql.query("SELECT * FROM tasks").all()).toEqual(tasks);
   expect(next.db.sql.query("SELECT * FROM telegram_inbox").all()).toEqual(inbox);
   expect(next.inbox.controlReplyStatus()).toEqual({ pending: 0, sent: 0, unknown: 0, blocked: 0 });

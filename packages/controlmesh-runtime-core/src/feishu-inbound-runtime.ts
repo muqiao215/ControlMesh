@@ -7,12 +7,14 @@ import { requireThat, RuntimeConflict } from "./value";
 export class WebhookInboundRuntime {
   private server: ReturnType<typeof Bun.serve> | undefined;
   private pumping: Promise<void> | undefined;
+  private controlPumping: Promise<void> | undefined;
+  private controlDirty = false;
   private dirty = false;
   private stopping = false;
   private activeRequests = 0;
   private failure: string | null = null;
   constructor(readonly inbox: Pick<FeishuInbox, "receive" | "applyPending" | "status" | "listBlocked" | "retry"> & {
-    applyControl?(runtime: LocalTaskRuntime): number;
+    applyControl?(runtime: LocalTaskRuntime, deliveries?: DeliveryOutbox, adapterId?: string): number;
     confirmCallbacks?(deliveries: DeliveryOutbox, adapterId: string): Promise<boolean>;
     confirmControlReplies?(deliveries: DeliveryOutbox, adapterId: string): Promise<boolean>;
     controlReplyStatus?(): { pending: number; sent: number; unknown: number; blocked: number };
@@ -47,11 +49,12 @@ export class WebhookInboundRuntime {
   kick(): void {
     if (this.stopping) return;
     this.dirty = true;
-    try { this.inbox.applyControl?.(this.runtime); }
+    try { this.inbox.applyControl?.(this.runtime, this.deliveries, this.adapterId); }
     catch (error) {
       this.failure = error instanceof RuntimeConflict ? error.code : `${this.transport}_ingress_control_failed`;
       return;
     }
+    this.kickControlReplies();
     if (this.pumping) return;
     this.pumping = (async () => {
       do {
@@ -59,22 +62,35 @@ export class WebhookInboundRuntime {
         const blockedBefore = this.inbox.status().blocked;
         const applied = this.inbox.applyPending(this.runtime, this.deliveries, this.adapterId);
         const moreCallbacks = await this.inbox.confirmCallbacks?.(this.deliveries, this.adapterId);
-        const moreControl = await this.inbox.confirmControlReplies?.(this.deliveries, this.adapterId);
+        this.kickControlReplies();
         const before = this.runtime.queueStatus();
         await this.runtime.drain();
         if (this.stopping) break;
         await this.deliveries.drain();
         const after = this.runtime.queueStatus();
         // Reopened queued work can release a conversation even when this pass applied no new event.
-        if (moreCallbacks || moreControl || (applied || this.inbox.status().blocked > blockedBefore || after.queued + after.running < before.queued + before.running) && this.inbox.status().pending) this.dirty = true;
+        if (moreCallbacks || (applied || this.inbox.status().blocked > blockedBefore || after.queued + after.running < before.queued + before.running) && this.inbox.status().pending) this.dirty = true;
       } while (this.dirty && !this.stopping);
       this.failure = null;
     })().catch(error => {
       this.failure = error instanceof RuntimeConflict ? error.code : `${this.transport}_ingress_processing_failed`;
     }).finally(() => { this.pumping = undefined; if (this.dirty && !this.stopping) this.kick(); });
   }
-  async drain(): Promise<void> { this.kick(); while (this.pumping) await this.pumping; }
-  status() { return { ...this.inbox.status(), processing: Boolean(this.pumping), failure: this.failure,
+  private kickControlReplies(): void {
+    if (this.stopping || !this.inbox.confirmControlReplies) return;
+    this.controlDirty = true;
+    if (this.controlPumping) return;
+    this.controlPumping = (async () => {
+      do {
+        this.controlDirty = false;
+        this.inbox.applyControl?.(this.runtime, this.deliveries, this.adapterId);
+        if (await this.inbox.confirmControlReplies!(this.deliveries, this.adapterId)) this.controlDirty = true;
+      } while (this.controlDirty && !this.stopping);
+    })().catch(error => { this.failure = error instanceof RuntimeConflict ? error.code : `${this.transport}_control_delivery_failed`; })
+      .finally(() => { this.controlPumping = undefined; });
+  }
+  async drain(): Promise<void> { this.kick(); while (this.pumping || this.controlPumping) await Promise.all([this.pumping, this.controlPumping]); }
+  status() { return { ...this.inbox.status(), processing: Boolean(this.pumping || this.controlPumping), failure: this.failure,
     ...(this.inbox.controlReplyStatus ? { control_replies: this.inbox.controlReplyStatus() } : {}),
     listener: this.server ? { hostname: "127.0.0.1", port: this.server.port, path: this.path } : null, blocked_items: this.inbox.listBlocked() }; }
   retry(requestId: string, id: string): void { this.inbox.retry(requestId, id); this.kick(); }
@@ -82,7 +98,7 @@ export class WebhookInboundRuntime {
     this.stopping = true;
     await this.server?.stop(true); this.server = undefined;
     // The shared runtime owner stops execution/delivery concurrently before awaiting this pump.
-    await this.pumping;
+    await Promise.all([this.pumping, this.controlPumping]);
   }
 }
 

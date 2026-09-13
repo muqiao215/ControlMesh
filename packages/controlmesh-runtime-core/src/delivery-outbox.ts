@@ -1,7 +1,7 @@
 import type { DeliveryMediaProjector } from "./delivery-media-projector";
 import type { TelegramControlReply, TelegramControlReceipt } from "./telegram-control-reply";
 import { DeliveryRetryAfter } from "./delivery-retry";
-import type { TelegramIncomingCallback } from "./telegram-event-auth";
+import type { TelegramIncomingCallback, TelegramIncomingMessage } from "./telegram-event-auth";
 import { telegramChoices } from "./telegram-choices";
 import { deliveryTextParts } from "./delivery-text-parts";
 import { randomUUID } from "node:crypto";
@@ -231,6 +231,26 @@ export class DeliveryOutbox {
       return { event_seq, part_count: count, sent_parts: sent,
         complete: parts.length === count && parts.every((part, index) => part.part_index === index && part.part_count === count && part.state === "sent"), parts };
     });
+  }
+  telegramTaskPage(adapterId: string, message: TelegramIncomingMessage, after = "") {
+    this.current("delivery:read"); if (after) identifier(after);
+    const adapter = this.adapters.get(adapterId);
+    requireThat(adapter && adapter.binding_digest === digest({ adapter: "telegram_text.v1", adapter_id: adapterId,
+      bot_id: message.bot_id, transport: "telegram" }), "telegram_control_adapter_mismatch");
+    this.adapterCurrent(adapter);
+    const rows = this.kernel.db.sql.query(`SELECT task_id FROM delivery_routes WHERE principal=? AND active=1
+      AND adapter_id=? AND adapter_digest=? AND task_id>? AND json_extract(binding,'$.target.transport')='telegram'
+      AND json_extract(binding,'$.target.chat_id')=? AND json_extract(binding,'$.target.thread_id')=?
+      AND json_extract(binding,'$.execution_context.source_scope')=? ORDER BY task_id LIMIT 11`)
+      .all(this.actor.id, adapterId, adapter.binding_digest, after, message.chat_id, message.thread_id, message.source_scope) as { task_id: string }[];
+    const tasks = rows.slice(0, 10).map(row => {
+      this.routeBinding(row.task_id);
+      const task = this.kernel.inspect(this.actor, row.task_id);
+      return { task_id: row.task_id, revision: task.revision, status: task.task.status,
+        name: typeof task.task.name === "string" ? Array.from(task.task.name.replace(/[\x00-\x1f\x7f]/g, " ")).slice(0, 64).join("") : "",
+        needs_reconciliation: task.needs_reconciliation };
+    });
+    return { tasks, next: rows.length > 10 ? tasks.at(-1)!.task_id : null };
   }
   async sendTelegramControlReply(adapterId: string, reply: TelegramControlReply, authorize: () => void, beforeDispatch: () => void) {
     this.current("delivery:send"); const adapter = this.adapters.get(adapterId);
