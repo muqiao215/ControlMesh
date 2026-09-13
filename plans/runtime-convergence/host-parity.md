@@ -12,7 +12,7 @@ coverage remains part of the full runtime objective, separately.
 | Task routing and job creation | tasks/host_execution.py; tasks/hub.py:_start_host_job_task | Normal creation/start and ordinary workunit routing are wired; 104 live Python classifier cases match; other source profiles remain | Normal task creates exactly one bound job; source restrictions checked before creation/launch |
 | Step advancement | runtime/host_jobs.py:_advance_job | Explicit whole-plan run now advances confirmed steps through the local queue; individual approval/start remains available | Ordered automatic progression for authorized steps, stop at approval/failed dependency, restart without duplicate start |
 | Explicit cancellation | runtime/host_jobs.py:cancel | Running-step cancellation now retains same-episode outcome and synchronizes cancelled job/step; queued/leased-unstarted cancellation is atomic; retained cancellation outcomes recover after reopen; missing-outcome process termination remains unproven | Atomic cancellation intent plus confirmed process outcome reflected in job/step; no success claim or repeated command |
-| Detached lifecycle | runtime/host_jobs.py:shutdown/_execute_step/reconcile_job | Candidate host.detached independent owner survives management SIGKILL beyond initial lease; explicit cancel after reconnect passed; worker death/launch-gap gates still open | Durable execution owner survives UI/control reconnect; actual kill/reopen fixture proves original process identity and single execution |
+| Detached lifecycle | runtime/host_jobs.py:shutdown/_execute_step/reconcile_job | Candidate host.detached independent owner survives management SIGKILL beyond initial lease; explicit cancel after reconnect passed; worker SIGKILL and lost-launch-ack refusal now covered; complete offline plan/deployment gates still open | Durable execution owner survives UI/control reconnect; actual kill/reopen fixture proves original process identity and single execution |
 | Logs and exit artifacts | runtime/host_jobs.py:stdout_path/stderr_path/exit_code_path | Retained output and running streamed chunks have authenticated paging; long-job retention/lifetime remain | Authorized bounded stdout/stderr retrieval during/after run, restart persistence, explicit output-limit behavior |
 | Runtime fields | runtime/host_jobs.py:_execute_step/_finalize_job | TS completion/recovery now project detail and last_error; prior nonempty last_error remains sticky as in Python storage (known diagnostic limitation) | Differential completion/failure state and field assertions |
 | Source boundary | tasks/hub.py host policy guards | TS local foreground only; no imported metadata authority | Preserve compatible allowed sources with issued policy, refuse isolation-required sources; no unsafe fallback |
@@ -54,3 +54,9 @@ same execution finishes exactly once; cancel from the restarted service and prov
 kill the execution owner and retain uncertainty without replay; reject stale owner after
 fence change; preserve output and workflow gate checks; exercise launch-before-ack crash.
 Do not adopt a legacy imported PID or expose command/environment via process arguments.
+
+
+Detached owner fault evidence now covers actual owner SIGKILL (command stops, one execution,
+unknown result), bounded pre-admission input and simulated launch-ack loss (no redispatch).
+This does not establish every instruction-level launch crash window or offline whole-plan
+advancement. The management process still owns admission of subsequent approved steps.

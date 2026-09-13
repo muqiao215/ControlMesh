@@ -144,3 +144,19 @@ test("host ownership transfer rejects duplicates, changed bindings and revoked l
     await worker.stop(); await manager.stop();
   }
 });
+
+test("lost host launch acknowledgement never automatically repeats a transfer", async () => {
+  const f = fixture(); let transfers = 0;
+  const manager = new LocalTaskRuntime(f.kernel, actor, source, f.resolver, () => {}, {}, undefined, undefined, () => {
+    transfers++; throw new Error("launch acknowledgement lost");
+  });
+  manager.submit("host-submit", { task_id: "host", chat_id: "test", status: "waiting", provider: "host" }, { chat_id: "test" });
+  const run = manager.enqueue("host-enqueue", "host", 1); await manager.drain(); await manager.drain();
+  expect(transfers).toBe(1); expect(f.calls).toEqual([]);
+  f.db.sql.query("UPDATE episodes SET lease_until=0").run();
+  const reopened = new LocalTaskRuntime(f.kernel, actor, source, f.resolver, () => {});
+  reopened.recover(); await reopened.drain();
+  expect(reopened.inspect(run.run_id).state).toBe("interrupted");
+  expect(f.db.sql.query("SELECT COUNT(*) AS n FROM episodes").get()).toEqual({ n: 1 });
+  expect(f.calls).toEqual([]); await manager.stop(); await reopened.stop();
+});

@@ -226,3 +226,51 @@ test("restarted management service cancels the original detached host owner", as
     } finally { db.close(); }
   } finally { await service.stop(); }
 }, 15000);
+
+test("host owner startup refuses oversized or stalled transfer input before opening runtime", async () => {
+  for (const oversized of [true, false]) {
+    const child = Bun.spawn([process.execPath, join(import.meta.dir, "../scripts/host-run-owner.ts")], { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
+    const cleanup = setTimeout(() => child.kill("SIGKILL"), 8000);
+    try {
+      if (oversized) { child.stdin.write("x".repeat(16385)); child.stdin.end(); }
+      expect(await child.exited).toBe(2);
+      expect(await new Response(child.stdout).text()).toBe("");
+      expect(await new Response(child.stderr).text()).toBe("");
+    } finally { clearTimeout(cleanup); if (child.exitCode === null) child.kill("SIGKILL"); await child.exited; }
+  }
+}, 10000);
+
+test("killing the actual detached owner stops its command and never replays it", async () => {
+  const f = fixture(), config = JSON.parse(readFileSync(f.config, "utf8")); delete config.opencode;
+  config.host = { shell: realpathSync("/bin/bash"), timeout_ms: 10000, detached: true }; config.limits = { lease_ms: 1000 };
+  writeFileSync(f.config, JSON.stringify(config), { mode: 0o600 });
+  const service = await serve(f.config, f.socket);
+  const call = (id: string, op: string, fields = {}) => requestRuntimeControl(f.socket, { id, op, ...fields });
+  const until = async (condition: () => boolean | Promise<boolean>) => {
+    const end = Date.now() + 5000;
+    while (!(await condition())) { if (Date.now() >= end) throw new Error("owner-death observation timed out"); await Bun.sleep(25); }
+  };
+  try {
+    expect(await call("submit", "submit", { task: { task_id: "owner-death", chat_id: "test", status: "waiting", workunit_kind: "long_shell",
+      command: 'printf "%s" "$PPID" > anchor; printf once >> started; printf progress; while [ ! -f release ]; do sleep 0.05; done; touch finished' } })).toMatchObject({ ok: true });
+    expect(await call("enqueue", "enqueue", { task_id: "owner-death", expected_revision: 1 })).toMatchObject({ ok: true });
+    await until(() => existsSync(join(f.workspace, "started")));
+    const anchorPid = Number(readFileSync(join(f.workspace, "anchor"), "utf8"));
+    expect(Number.isSafeInteger(anchorPid) && anchorPid > 1).toBe(true);
+    const stat = readFileSync(`/proc/${anchorPid}/stat`, "utf8");
+    const ownerPid = Number(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[1]);
+    expect(Number.isSafeInteger(ownerPid) && ownerPid > 1 && ownerPid !== process.pid && ownerPid !== service.child.pid).toBe(true);
+    expect(readFileSync(`/proc/${ownerPid}/cmdline`, "utf8")).toContain(join(import.meta.dir, "../scripts/host-run-owner.ts"));
+    process.kill(ownerPid, "SIGKILL");
+    await until(async () => ((await call("inspect", "inspect_task", { task_id: "owner-death" })).result as TaskSnapshot).needs_reconciliation);
+    writeFileSync(join(f.workspace, "release"), "release"); await Bun.sleep(250);
+    expect(existsSync(join(f.workspace, "finished"))).toBe(false);
+    expect(readFileSync(join(f.workspace, "started"), "utf8")).toBe("once");
+    const db = new RuntimeDatabase(join(f.state, "runtime.sqlite"));
+    try {
+      expect(db.sql.query("SELECT COUNT(*) AS n FROM episodes").get()).toEqual({ n: 1 });
+      expect(db.sql.query("SELECT COUNT(*) AS n FROM effects").get()).toEqual({ n: 1 });
+      expect(db.sql.query("SELECT COUNT(*) AS n FROM effect_observations").get()).toEqual({ n: 0 });
+    } finally { db.close(); }
+  } finally { await service.stop(); }
+}, 15000);

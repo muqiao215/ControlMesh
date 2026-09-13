@@ -1221,3 +1221,19 @@ Service/local regression: 21 pass, 0 fail, 156 assertions, 17.11s
 lease regression: 9 pass, 0 fail, 45 assertions, 589ms (/tmp/cm-host-transfer.log).
 Typecheck/diff check passed. Default profile unchanged. Worker-kill/launch-before-ack,
 full detached plan/offline lifetime and production deployment remain unaccepted.
+
+
+## 2026-09-13 — detached owner startup and death faults
+
+Owner stdin now has a 16 KiB incremental read limit and a five-second pre-admission timeout.
+An oversized or stalled transfer exits before runtime admission. A lost launch response
+remains leased, expires to interruption and never auto-redispatches. Actual owned-process
+SIGKILL was targeted through the test command's anchor parent and verified worker argv:
+its command stopped before a released final marker, with one episode/effect and no invented
+terminal observation. Task became reconciliation-required after expiry.
+
+Fault/CLI/local regression: 24 pass, 0 fail, 178 assertions, 22.86s
+(/tmp/cm-host-owner-faults.log). Owner-death targeted regression: 1 pass, 14 filtered,
+0 fail, 12 assertions, 1.67s. Typecheck passed. Broader runtime regression with configured
+Docker and independent SpecMesh started at /tmp/cm-runtime-detached-full.log; pending,
+not counted as passing. Full objective/production switch remains open.

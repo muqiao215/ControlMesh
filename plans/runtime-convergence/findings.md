@@ -2362,3 +2362,10 @@ worker CAS moves ownership and then performs the original lease. A lost launch r
 must not release/retry the task because the worker may already have claimed it. Management
 recovery already skips valid active episodes and projects terminal state from worker DB
 writes. Management drain's local active map does not imply all independent runs finished.
+
+
+The detached worker originally awaited stdin EOF without a time bound. A stalled transfer
+could leave an unadmitted process alive; bounded incremental input and pre-admission timeout
+close that window. Actual worker death differs from management death: anchor cleanup stops
+the command, but no surviving observer can certify its result. Current recovery deliberately
+retains uncertainty and a single execution instead of blindly retrying.
