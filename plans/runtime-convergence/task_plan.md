@@ -204,3 +204,8 @@ CM-R2 backstage events checkpoint: schema-30 principal-scoped session event stor
 legacy/typed session key support implemented, with direct Python key comparison and
 322-test migration regression. Still required: lossless legacy JSONL import, production
 event producer/API wiring, rollback/export qualification. This does not close CM-R2.
+
+Backstage import checkpoint: atomic caller-supplied JSONL import/export and lossless
+integer round-trip implemented. Remaining migration work includes explicit file snapshot
+selection, dry-run/cutover command, production event producer wiring and rollback
+qualification; unsupported numeric forms must remain visible refusals.

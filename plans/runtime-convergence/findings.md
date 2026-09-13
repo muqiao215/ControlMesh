@@ -2162,3 +2162,10 @@ v2 type tag. Original event payloads remain JSON-safe; lossless legacy import st
 needs an explicit conversion decision for unsafe numeric chat/topic payload values.
 New append replay handling intentionally tightens Python's unconditional append behavior
 using principal/event_id identity; conflicting content is not silently overwritten.
+
+Installed Bun exposes JSON.parse reviver context.source. The event-specific codec uses
+that exact token for unsafe integer values; it never derives bigint from an already
+rounded Number. JSON export preserves numeric wire types, verified against Python.
+Exponent-form unsafe numbers remain unsupported: legacy Python floats and integers
+must not silently become the same migration representation. Malformed JSONL batches
+are refused as a whole, unlike the tolerant Python viewer's skip-bad-line behavior.

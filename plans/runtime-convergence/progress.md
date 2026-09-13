@@ -741,3 +741,21 @@ regression: 322 passed, 2937 assertions, 63.61s (`/tmp/cm-events-all-migrations.
 typecheck and diff-check passed. Python producers/JSONL import and public API integration
 remain open. No production writer changed. Old TS binaries reject schema 30; do not
 open an upgraded candidate database with an older runtime.
+
+## 2026-09-13 — transactional legacy backstage JSONL import/export
+
+RuntimeEventStore now imports an explicitly selected session's JSONL batch atomically
+and exports compatible JSONL. Integer source tokens beyond JS safe range are parsed
+from Bun's native JSON reviver source context into bigint and serialized back as JSON
+numbers. Nested payload integers and numeric chat/topic references retain their values.
+The dedicated event codec is required; ordinary JSON.stringify cannot encode this
+internal representation. Previously rounded Number inputs and unsafe exponent-form
+values are refused rather than guessed. No public protocol payload type changed.
+
+Tests compare exported records directly with Python json.loads, including uint64 chat
+IDs and nested negative integers; verify replay counts, conflicting-batch rollback,
+malformed-line refusal, session/principal isolation and numeric/depth limits. 4 tests
+passed, 32 assertions, 466ms (`/tmp/cm-event-import-final.log`); typecheck and diff-check
+passed. Import accepts bounded caller-supplied content; filesystem discovery, migration
+command/dry-run reporting and production producer wiring remain open. No local operator
+JSONL files were imported or modified.

@@ -38,3 +38,34 @@ test("backstage event migration, reopen, principal isolation and retry identity"
     expect(db.sql.query("SELECT COUNT(*) AS n FROM events").get()).toEqual({ n: 0 });
   } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
 });
+
+test("legacy JSONL import preserves Python integers and rolls back a conflicting batch", async () => {
+  const db = new RuntimeDatabase(":memory:"), store = new RuntimeEventStore(db);
+  try {
+    const text = '{"event_id":"large","session_key":"terminal:18446744073709551615","event_type":"progress","payload":{"negative":-18446744073709551615,"nested":[18446744073709551615]},"created_at":"2026-09-13","transport":"terminal","chat_id":18446744073709551615,"topic_id":null}\n';
+    const key = "terminal:18446744073709551615";
+    expect(store.importJsonl("owner", key, text)).toEqual({ imported: 1, replayed: 0 });
+    expect(store.importJsonl("owner", key, text)).toEqual({ imported: 0, replayed: 1 });
+    expect(store.readRecent("owner", key)[0]!.chat_id).toBe(18446744073709551615n);
+    const exported = store.exportJsonl("owner", key);
+    const child = Bun.spawn(["uv", "run", "python", "-c", "import json,sys; a,b=json.load(sys.stdin); assert json.loads(a)==json.loads(b); print('exact')"], { cwd: join(import.meta.dir, "../../.."), stdin: new Response(JSON.stringify([text, exported])), stdout: "pipe", stderr: "pipe" });
+    expect(await new Response(child.stdout).text()).toBe("exact\n"); expect(await child.exited).toBe(0);
+    const newEvent = text.replace('"large"', '"new"');
+    expect(() => store.importJsonl("owner", key, newEvent + text.replace('"progress"', '"changed"'))).toThrow("runtime_event_id_conflict");
+    expect(store.readRecent("owner", key)).toHaveLength(1);
+    expect(() => store.importJsonl("owner", key, newEvent + "broken\n")).toThrow();
+    expect(() => store.importJsonl("owner", "tg:1", newEvent)).toThrow("runtime_event_import_session_mismatch");
+    expect(store.readRecent("owner", key)).toHaveLength(1);
+    expect(store.exportJsonl("other", key)).toBe("");
+  } finally { db.close(); }
+});
+
+test("event codec refuses unproven rounded numbers and excessive nesting", async () => {
+  const { parseRuntimeEventJson, runtimeEventJson } = await import("../src/runtime-event-json");
+  expect(() => runtimeEventJson({ value: Number.MAX_SAFE_INTEGER + 1 })).toThrow("runtime_event_number_unproven");
+  expect(() => parseRuntimeEventJson('{"value":1e30}')).toThrow("runtime_event_number_unproven");
+  expect(() => runtimeEventJson({ value: undefined })).toThrow("invalid_runtime_event_json");
+  let deep: unknown = null; for (let i = 0; i < 66; i++) deep = [deep];
+  expect(() => runtimeEventJson(deep)).toThrow("runtime_event_depth_exceeded");
+  expect(runtimeEventJson(parseRuntimeEventJson('{"value":9007199254740993}'))).toBe('{"value":9007199254740993}');
+});

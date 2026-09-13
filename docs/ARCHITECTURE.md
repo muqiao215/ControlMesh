@@ -997,3 +997,8 @@ and makes event-ID replay idempotent within that principal. Session keys preserv
 string versus integer identity, including large decimal terminal IDs. This is an internal
 candidate owner; legacy JSONL import and production producer cutover remain pending in
 `plans/runtime-convergence/`.
+
+Backstage JSONL import/export uses an event-specific lossless integer codec. Internal
+records may contain bigint; callers must use `exportJsonl` for serialization. A batch
+binds one principal/session and rolls back on malformed input or conflicting event IDs.
+The task kernel's JSON codec and public protocol types remain separate.
