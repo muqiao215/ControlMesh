@@ -721,3 +721,23 @@ The 30 skips include optional installed native/account-dependent profiles and th
 this successful suite does not close provider parity, real account, physical peer or
 production cutover gates. Preserve the earlier failure and new reason diagnostics for
 recurrence; continue outstanding CM-R3/R4/R6 work.
+
+## 2026-09-13 — backstage runtime event store, schema 30
+
+Added runtime-session-key and runtime-events TS owners. Numeric session references use
+validated decimal strings/BigInt normalization rather than Number, preserving large
+terminal IDs; typed string refs remain distinct. Supported canonical/legacy keys were
+compared directly with the current Python SessionKey implementation. Malformed percent
+encoding is deliberately refused, not silently replaced. Schema 30 adds a separate
+principal-scoped backstage_events table; task kernel events remain untouched.
+
+Appending the same event ID/payload is idempotent; conflicting reuse is rejected.
+readRecent preserves insertion order, legacy alias lookup, principal isolation and
+Python limit<=0 meaning all events. Unsafe numeric chat/topic values are refused, not
+rounded. JSONL import must preserve such integers before decoding; not implemented yet.
+Tests cover schema-29 upgrade, reopen, conflict rollback and unchanged task-event table.
+Historical downgrade fixtures now also remove the new table. Targeted 18-file migration
+regression: 322 passed, 2937 assertions, 63.61s (`/tmp/cm-events-all-migrations.log`);
+typecheck and diff-check passed. Python producers/JSONL import and public API integration
+remain open. No production writer changed. Old TS binaries reject schema 30; do not
+open an upgraded candidate database with an older runtime.

@@ -199,3 +199,8 @@ Full-gate update: d5fa32b passes the complete local runtime-core gate (890/30/0,
 10905 assertions). Prior container reviewer uncertainty did not recur in broad order;
 its root cause remains unconfirmed. This satisfies the current regression rerun only,
 not the still-open native/provider/physical-device and cutover acceptance matrix.
+
+CM-R2 backstage events checkpoint: schema-30 principal-scoped session event storage and
+legacy/typed session key support implemented, with direct Python key comparison and
+322-test migration regression. Still required: lossless legacy JSONL import, production
+event producer/API wiring, rollback/export qualification. This does not close CM-R2.

@@ -988,3 +988,12 @@ publication; recovery reads original helper bytes without rebuilding from curren
 Claude turn limits count actual model/tool-use rounds in both streamed blocks and original JSONL,
 not the provider's reported num_turns counter. This local container path has native continuation
 and publication-loss recovery evidence; device Claude admission remains in the active plan.
+
+### Candidate backstage event storage
+
+The TS runtime's schema-30 `backstage_events` table stores session-scoped events separately
+from task lifecycle `events`. `RuntimeEventStore` requires a principal on every operation
+and makes event-ID replay idempotent within that principal. Session keys preserve typed
+string versus integer identity, including large decimal terminal IDs. This is an internal
+candidate owner; legacy JSONL import and production producer cutover remain pending in
+`plans/runtime-convergence/`.

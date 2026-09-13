@@ -2152,3 +2152,13 @@ broad suite. Return the same controlled reason field already used for unavailabl
 outcomes, preserving unknown/reconciliation semantics and avoiding raw exception text.
 The publish_received=true reviewer uncertainty has not reproduced in isolated or paired
 runs; environment/order sensitivity is a hypothesis, not a confirmed cause.
+
+Python runtime/store.py is a session-scoped backstage event stream, distinct from TS
+kernel task events. Reusing the tasks table would require inventing tasks for session
+events. A separate schema-30 table preserves that distinction. Python terminal session
+keys may contain uint64 identifiers beyond JS safe integers; normalize session key
+integers through BigInt and retain decimal text. Numeric string references require the
+v2 type tag. Original event payloads remain JSON-safe; lossless legacy import still
+needs an explicit conversion decision for unsafe numeric chat/topic payload values.
+New append replay handling intentionally tightens Python's unconditional append behavior
+using principal/event_id identity; conflicting content is not silently overwritten.
