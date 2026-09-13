@@ -666,3 +666,13 @@ oneshot tests (`/tmp/cm-gemini-failure-final.log`); runtime-core typecheck passe
 process fixture verifies interruption before a retry marker; it does not run a real
 Gemini model/account. Full Gemini admission/grant/preflight and native execution remain
 open. Production remains Python; no runtime cutover or release is claimed.
+
+## 2026-09-13 — installed Gemini policy precedence qualification
+
+Added optional installed-code regression using the real policy loader and engine. It
+verifies controller admin denial for read/write/unknown tools, then demonstrates user
+allow precedence after system TOML presence disables the admin path. Isolated temporary
+policy directories are removed and patched Storage accessors restored. No production
+configuration or sessions changed. Test: 1 passed, 4 assertions, 704ms
+(`/tmp/cm-gemini-policy-native.log`); typecheck passed. This identifies an execution
+admission requirement; Gemini native grant parity remains incomplete.

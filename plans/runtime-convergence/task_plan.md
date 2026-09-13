@@ -179,3 +179,8 @@ Typed native failures and supervised retry interruption are implemented and loca
 verified (12 tests, typecheck). CM-R3 remains in progress: Gemini native grant enforcement,
 preflight and actual account-backed execution are not established by these fixtures.
 Continue these owners before declaring Gemini provider parity or switching defaults.
+
+Gemini admission follow-up: installed policy-engine qualification demonstrates that
+--admin-policy can be ignored when system TOML exists. Require effective-policy admission
+and immutable configuration through execution; do not remove restrictive-grant refusal
+based on command construction alone. See findings/progress dated 2026-09-13.

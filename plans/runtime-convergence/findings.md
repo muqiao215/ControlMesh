@@ -2127,3 +2127,15 @@ FatalAuthenticationError, ValidationRequiredError and ModelNotFoundError. Prefer
 explicit types over message patterns, including conflicting message text. Bare
 RESOURCE_EXHAUSTED is ambiguous and is not proof of an exhausted balance. Only native
 error envelopes participate in process interruption; model/tool prose is not authority.
+
+## 2026-09-13 — Gemini effective policy cannot be inferred from CLI flags
+
+Installed Gemini 0.59.0 createPolicyEngineConfig (chunk-YSBB75DZ.js:364375) drops
+adminPolicyPaths if the system policy directory contains any .toml file. This occurs
+before filterSecurePolicyDirectories verifies system-directory security. A controller
+admin deny-all policy wins over user allow-all with no system TOML, but loses when an
+unrelated system TOML appears. Native PolicyEngine.check reproduces this with isolated
+directories and no account/model. Do not unlock mapToolGrant merely by supplying
+--admin-policy: admission must establish the effective rules and prevent configuration
+changes between verification and execution. Existing Gemini restrictive-grant refusal
+remains necessary until that owner exists.
