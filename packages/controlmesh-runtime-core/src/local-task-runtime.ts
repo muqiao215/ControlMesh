@@ -1,3 +1,4 @@
+import { HostJobPlanRunner, hostStepTaskId } from "./host-job-plan-runner";
 import { readHostOutput, type HostOutputPageRequest } from "./host-job-output";
 import { recoverHostCancellation } from "./host-job-cancellation";
 import { HostJobStore } from "./host-job-store";
@@ -50,6 +51,7 @@ export class LocalTaskRuntime {
   private stopping = false;
   private persistenceFailure: unknown;
   private hostCancellationCursor = "";
+  private hostPlanCursor = "";
 
   constructor(readonly kernel: RuntimeKernel, actor: Principal, source: IngressSource,
     private readonly resolve: LocalTaskResolver, private readonly authorize: () => void, options: LocalRuntimeOptions = {}, private readonly hostWorkspace?: string) {
@@ -120,6 +122,12 @@ export class LocalTaskRuntime {
     });
     return { tasks, next_after: rows.length > limit ? tasks.at(-1)!.task_id : null };
   }
+  private hostPlanRunner() {
+    requireThat(this.hostWorkspace, "host_creation_not_registered");
+    return new HostJobPlanRunner(this.kernel, this.actor, this.hostWorkspace, () => this.current(), (id, proof) => this.startHostStep(id, proof));
+  }
+  runHostJob(requestId: string, jobId: string, revision: number) { this.current(); return this.hostPlanRunner().register(requestId, jobId, revision); }
+  inspectHostPlan(runId: string) { this.current(); return this.hostPlanRunner().inspect(runId); }
   createHostJob(requestId: string, raw: unknown) {
     this.current(); requireScope(this.actor, "task:admin");
     requireThat(this.hostWorkspace && this.actor.origin === "human_request", "host_creation_not_registered");
@@ -142,7 +150,7 @@ export class LocalTaskRuntime {
       const verified = new HostJobApprovals(this.kernel.db, () => this.current()).assertApproved(this.actor, approval);
       const job = new HostJobStore(this.kernel.db, () => this.current()).get(this.actor, verified.job_id)!;
       requireThat(job.job.repo === this.hostWorkspace, "host_job_workspace_mismatch");
-      const taskId = `host-step-${digest([this.actor.id, verified.job_id, verified.revision, verified.step_id]).slice(0, 40)}`;
+      const taskId = hostStepTaskId(this.actor.id, verified);
       const submitted = this.submit(`host-submit-${digest(requestId)}`, { task_id: taskId, chat_id: "host-jobs", status: "waiting", provider: "host",
         repo_root: this.hostWorkspace, title: job.job.summary, host_job: { job_id: verified.job_id, revision: verified.revision, step_id: verified.step_id, approval: verified } }, { chat_id: "host-jobs" });
       const queued = this.enqueue(`host-enqueue-${digest(requestId)}`, taskId, submitted.revision);
@@ -278,6 +286,7 @@ export class LocalTaskRuntime {
   /** One bounded queue pass; callers can tick a service loop without repeating blocked model probes. */
   tick(): void {
     this.current(); this.recover();
+    if (this.hostWorkspace) this.hostPlanCursor = this.hostPlanRunner().advance(this.hostPlanCursor);
     for (let scanned = 0; scanned < this.maxPending && this.active.size < this.parallelism; scanned++) {
       let prepared: { row: RunRow; lease: Lease; execution: LocalTaskExecution } | null = null;
       let skipped = false;

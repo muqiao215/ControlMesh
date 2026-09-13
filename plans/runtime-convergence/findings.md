@@ -2302,3 +2302,10 @@ two HostJob revisions per accepted step, including retained-result acceptance. A
 mutation deliberately invalidates future derived approvals. If runner persistence changes
 this progression, change the authorization protocol explicitly rather than silently
 weakening the version check. Approval alone is still not scheduled execution.
+
+Whole-plan automatic progression can persist immutable run intent in the existing command
+receipt ledger; mutable progress remains authoritative in job/task/effect records. Receipts
+are verified against operation/body/origin, not trusted from a schema-looking response.
+Step completion fields alone are insufficient: confirm matching task/episode/result and
+retained exit evidence before dispatching the next step. A SQLite failure during next
+enqueue leaves the preceding completion intact and rolls back the new task/queue event.

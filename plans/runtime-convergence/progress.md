@@ -1090,3 +1090,25 @@ regression with SpecMesh: 23 passed, 266 assertions, 8.25s
 (/tmp/cm-host-plan-approval-final.log); typecheck/diff check passed.
 Next: explicit run-plan control and persisted, bounded automatic advancement using these
 receipts and actual predecessor completion evidence; full host/migration scope unchanged.
+
+## 2026-09-13 — persistent automatic host-plan advancement
+
+Added run_host_job/inspect_host_plan and matching CLI. Explicit run intent persists as
+a verified command receipt separate from approval. Normal tick/drain scans bounded
+registrations and atomically starts the next approved step through existing local queue.
+Advancement requires prior task/episode done, matching confirmed host effect, original
+manifest/observation hashes and actual exit 0. Internal events link run/approval provenance.
+No existing task is re-enqueued implicitly. No new cron or production writer was created.
+
+Actual bash tests cover full success, nonzero first step stopping the plan, forged host
+completion refusing advancement, restart before execution/after completion, and injected
+second-step enqueue failure followed by reopen resuming only the second command. Broad
+host/queue/CLI regression: 34 pass, 326 assertions, 16.03s
+(/tmp/cm-host-plan-runtime.log). Added CLI parse assertions and reran focused tests; see
+final result below. Typecheck initially required exported registration type and an explicit
+step-index union guard; corrected typecheck and diff check pass.
+
+Remaining: blocked-plan operator UX, Python workunit routing and long-running process/log
+ownership, plus all outstanding full migration/provider/device/release acceptance.
+
+Final whole-plan/CLI focused result: 5 pass;  0 fail;  39 expect() calls; Ran 5 tests across 1 file. [1199.00ms]

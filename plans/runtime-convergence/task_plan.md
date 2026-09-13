@@ -314,3 +314,8 @@ Graph authorization checkpoint: persisted whole-remaining-plan approval and deri
 receipts are implemented and exercised through actual command execution/reopen. Next:
 explicit run-plan registration and bounded persistent automatic advancement, requiring
 real prior task/effect completion, then remaining host/full migration acceptance owners.
+
+Automatic local host-plan checkpoint: explicit durable run registration, bounded tick
+advancement, prior-success evidence and between-step restart are implemented and tested.
+Next: remaining Python workunit routing and durable long-running process/log owners in
+host-parity.md; continue unchanged CM-R0–R7 multi-device/provider/terminal/release gates.

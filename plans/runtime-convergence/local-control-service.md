@@ -395,3 +395,24 @@ or host-output. After completion, inspect-host-job gives the revision for the ne
 Current workflow requires explicit approval/start for each step. It is not automatic
 advancement or Python workunit heuristic routing. New command definitions cannot import
 PID/state/approval metadata or select a different filesystem root.
+
+### Run the remaining fixed host plan automatically
+
+`run-host-job JOB --revision N --request-id RUN` explicitly authorizes and registers
+automatic execution of all remaining pending steps at that job revision. Use the normal
+`--socket`. Registration is durable but does not synchronously run commands; the existing
+service tick/drain loop queues the next step. `inspect-host-plan RUN` reports progress.
+Step-by-step approve/start remains available when whole-plan authorization is not wanted.
+
+The run registration is an immutable command receipt, independently verified before
+use. Derived step approvals bind ordered definitions and expected revisions. The next
+step is queued only after the prior task/episode, confirmed effect and retained exit-0
+observation agree. Manually marking a step completed cannot satisfy this check. Existing
+step tasks are never automatically recreated or re-enqueued after failure/uncertainty.
+The ordinary task recovery controls remain responsible for those cases.
+
+Each tick scans at most 128 registrations with cursor progression; all steps use the
+existing local parallelism and pending limits. Internal enqueue events carry the run and
+approval IDs. Extra job mutations invalidate expected progression. This is local host
+plan execution; it does not establish durable detached processes or multi-device host
+execution parity.

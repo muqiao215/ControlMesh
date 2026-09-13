@@ -33,6 +33,7 @@ export class LocalRuntimeControl {
         status: [], list_tasks: ["after", "limit"], task_events: ["task_id", "after", "limit"],
         submit: ["task", "specmesh_requirements_sha256"], inspect_task: ["task_id"], enqueue: ["task_id", "expected_revision"], inspect_run: ["run_id"],
         resume: ["task_id", "expected_revision", "prompt"], cancel: ["task_id", "expected_revision"], tell: ["task_id", "text"], drain: [], session_events: ["session_key", "limit", "before"],
+        run_host_job: ["job_id", "expected_revision"], inspect_host_plan: ["run_id"],
         create_host_job: ["job"], start_host_step: ["approval"],
         host_output: ["task_id", "stream", "offset", "limit", "effect_id", "observation_digest"],
         host_jobs: ["after", "limit"], inspect_host_job: ["job_id"], approve_host_step: ["job_id", "expected_revision", "step_id"],
@@ -55,6 +56,8 @@ export class LocalRuntimeControl {
       switch (request.op) {
         case "status": result = { queue: this.runtime.queueStatus(), parallelism: this.runtime.parallelLimit(), ...(this.describe ? { configuration: this.describe() } : {}) }; break;
         case "list_tasks": result = this.runtime.listTasks(request.after as string | undefined, request.limit as number | undefined); break;
+        case "run_host_job": identifier(request.job_id); result = this.runtime.runHostJob(id, request.job_id, request.expected_revision as number); break;
+        case "inspect_host_plan": identifier(request.run_id); result = this.runtime.inspectHostPlan(request.run_id); break;
         case "create_host_job": result = this.runtime.createHostJob(id, request.job); break;
         case "start_host_step": result = this.runtime.startHostStep(id, request.approval); break;
         case "host_output": identifier(request.task_id); result = this.runtime.hostOutput(request.task_id, {
