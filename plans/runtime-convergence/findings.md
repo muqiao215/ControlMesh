@@ -2196,3 +2196,10 @@ Python merge also allows a terminal step to disappear when omitted from incoming
 and allows changing an unfinished step command under the same ID. The TS candidate
 refuses those cases instead of reusing old approval/completion context. Import requires
 explicit timestamps rather than generating a new historical creation time.
+
+Host-job persistence uses the runtime's existing command receipt transaction rather
+than an independent JSON writer. Revision equality prevents stale controllers from
+overwriting newer steps; principal-scoped primary keys avoid leaking jobs across users.
+Replay authorization is checked before receipt lookup and again in the replay callback.
+Job repo/source_task_id/plan_id are immutable storage bindings, since relocating an
+existing approved graph would otherwise reuse step identity in a different context.

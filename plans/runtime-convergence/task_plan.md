@@ -229,3 +229,8 @@ Host-job migration checkpoint: model decoding and terminal merge ported with 85-
 live Python differential coverage. Next owners are transactional persistence, source
 file authority/import, process supervision/approval and interrupted-job reconciliation.
 This checkpoint does not enable host command execution or complete host-job parity.
+
+Host-job storage checkpoint: schema-31 transactional store, principal isolation, revision
+checks, receipt replay and bound job identity implemented. Legacy authority-file import,
+approval/dispatch and interrupted-process reconciliation remain required; no stored PID
+or approval metadata grants native process authority.

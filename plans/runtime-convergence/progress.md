@@ -821,3 +821,22 @@ rewritten during import. Approval metadata is preserved data, never execution au
 (`/tmp/cm-host-job-model.log`); typecheck and diff-check passed. Persistent host-job store,
 legacy file precedence/import, approved process dispatch, reconciliation and execution
 control remain open. No host command or old host job was started.
+
+## 2026-09-13 — transactional host-job storage, schema 31
+
+Added principal-scoped HostJobStore with explicit revision zero for creation, optimistic
+revision updates, existing command receipts and synchronous authorization rechecks even
+on replay. Reads require task:read; writes task:admin. Project/source-task/plan bindings
+cannot change on update. The existing host-job terminal merge owns payload updates.
+List returns bounded summaries; stored process/approval fields remain historical data,
+not execution capability. Schema 31 adds host_jobs and historical downgrade fixtures
+remove it when constructing older database shapes.
+
+Tests cover schema-30 upgrade, two connections racing stale revisions, idempotent replay
+after later updates, privilege withdrawal, principal isolation, binding refusal, restart
+and injected storage failure rolling back both row and receipt. Host model/store/event
+tests passed (10 tests, 69 assertions). All affected migration fixtures: 331 passed,
+3005 assertions, 41.24s across 20 files (`/tmp/cm-host-store-migrations.log`); typecheck
+and diff-check passed. No production database was opened. Legacy authority-file import,
+approval/process ownership, reconciliation and normal runtime control wiring remain open.
+Old TS binaries refuse schema 31; this is not default cutover or full rollback acceptance.

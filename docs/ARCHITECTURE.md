@@ -1008,3 +1008,11 @@ same transaction, using validated execution-context transport and task address. 
 database source UUID namespaces event IDs. Local control exposes principal-bound
 `session_events` as lossless JSONL with a bounded record limit; legacy partial contexts
 remain task-only events. Other Python event producers are still pending migration.
+
+### Candidate host-job persistence
+
+Schema 31 stores host jobs separately in principal-scoped `host_jobs`. HostJobStore uses
+existing receipt transactions, revision checks and terminal merge rules; job workspace
+and source bindings remain fixed. This internal store does not dispatch commands or
+trust imported PID/approval metadata. See runtime-convergence for remaining import,
+execution and reconciliation owners.
