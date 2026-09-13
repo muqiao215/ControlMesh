@@ -1192,3 +1192,15 @@ skip, 0 fail, 211 assertions, 3 files, 2.88s (/tmp/cm-host-environment.log). Typ
 diff check passed. No operator credentials/environment were read or migrated. Actual
 operator build-tool qualification, inherited/login environment compatibility and durable
 process ownership remain open; this is not full host parity or production cutover.
+
+
+## 2026-09-13 — real service/host lifetime baseline
+
+Added actual cm-runtime subprocess tests for client disconnect and management service
+SIGKILL during a running host shell. Client disconnect completes once; service death
+stops the command and reopens with one episode/effect, no final observation and explicit
+reconciliation need. No duplicate start/late marker observed. This proves the present
+lifetime gap and cancellation-safe baseline, not durable execution ownership.
+CLI regression: 10 pass, 0 fail, 89 assertions, 10.17s
+(/tmp/cm-host-service-boundary.log). Typecheck passed after adding explicit response types.
+Concrete independent-owner seam and required crash/ownership gates recorded in host-parity.

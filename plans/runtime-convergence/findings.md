@@ -2347,3 +2347,10 @@ environment support now freezes a bounded snapshot into the adapter/process and 
 digest to queue admission and retained-result recovery. A real fixture executable outside
 system PATH ran after runtime reopen; changed configured variables prevented dispatch.
 This validates configuration plumbing, not operator toolchain or Python bash -lc parity.
+
+
+The local service was already independent of terminal clients, but ProcessSupervisor and
+LocalTaskRuntime.perform still live inside that service. Actual SIGKILL loses the output
+observer even though process-anchor stops the command. Durable host ownership must move
+supervision, renewal and final queue projection together; disabling anchor disconnect
+would remove a protection without creating result or cancellation ownership.

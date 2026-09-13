@@ -25,3 +25,32 @@ a persisted owner/lease/result channel with fencing, bounded reconnect and cance
 
 The preceding configured-host and SpecMesh tests prove those particular paths; they do
 not establish this matrix, full TS migration, or release readiness.
+
+
+## Durable execution owner: implementation boundary
+
+Live cm-runtime service/host tests now distinguish client disconnect from service loss.
+Closed request sockets leave execution running to completion. SIGKILL of the execution
+service kills the anchored command; reopen retains one episode/effect, no terminal
+observation and reconciliation required. This is a verified gap, not detached acceptance.
+
+Next implementation must split management connection lifetime from an independently
+running host execution owner. The owner, not a reconnecting controller, must retain the
+ProcessSupervisor, current episode/fence, environment/workflow/config binding, output sink
+and immutable total deadline. It must perform current-authority renewal and atomically
+persist final outcome even when the management service is absent. A controller restarting
+must inspect that persisted ownership and avoid re-enqueueing or revoking a still-current
+owner solely because its own in-memory active map is empty.
+
+The current LocalTaskRuntime.perform owns renewal and final local_runs projection. Those
+operations must move together for detached host work; a subprocess that only runs shell
+would lose cancellation/config/fencing checks. LocalTaskRuntime.recover already leaves
+leased/running episodes alone, but expired recovery and explicit stop must distinguish
+management shutdown from task cancellation. Keep the shared process-anchor disconnect
+kill behavior: the anchor's parent becomes the independent execution owner.
+
+Before enabling this path: kill/restart the management service mid-command and prove the
+same execution finishes exactly once; cancel from the restarted service and prove stop;
+kill the execution owner and retain uncertainty without replay; reject stale owner after
+fence change; preserve output and workflow gate checks; exercise launch-before-ack crash.
+Do not adopt a legacy imported PID or expose command/environment via process arguments.

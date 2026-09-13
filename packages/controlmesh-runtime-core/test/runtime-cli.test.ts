@@ -1,5 +1,7 @@
+import type { TaskSnapshot } from "../src/kernel";
+import { requestRuntimeControl } from "../src/runtime-control-socket";
 import { afterEach, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseRuntimeCli, renderRuntimeReply, resolveRuntimeNew, terminalText } from "../src/runtime-cli";
@@ -155,3 +157,41 @@ test("headless SpecMesh gate reports a failed check through process exit status 
     expect(await invoke(f.socket, "verify", "task")).toMatchObject({ code: 0, value: { ok: true, result: { gate_passed: true } } });
   } finally { await listener.close(); }
 });
+
+
+for (const killService of [false, true]) test(`running host command boundary: service killed=${killService}`, async () => {
+  const f = fixture(), config = JSON.parse(readFileSync(f.config, "utf8"));
+  delete config.opencode;
+  config.host = { shell: realpathSync("/bin/bash"), timeout_ms: 10000 };
+  config.limits = { lease_ms: 1000 };
+  writeFileSync(f.config, JSON.stringify(config), { mode: 0o600 });
+  let service = await serve(f.config, f.socket);
+  const call = (id: string, op: string, fields = {}) => requestRuntimeControl(f.socket, { id, op, ...fields });
+  const until = async (condition: () => boolean | Promise<boolean>) => {
+    const end = Date.now() + 5000;
+    while (!(await condition())) { if (Date.now() >= end) throw new Error("host boundary observation timed out"); await Bun.sleep(25); }
+  };
+  try {
+    expect(await call("submit-host", "submit", { task: { task_id: "host-boundary", chat_id: "test", status: "waiting", workunit_kind: "long_shell",
+      command: "printf once >> started; while [ ! -f release ]; do sleep 0.05; done; printf finished > finished" } })).toMatchObject({ ok: true });
+    expect(await call("enqueue-host", "enqueue", { task_id: "host-boundary", expected_revision: 1 })).toMatchObject({ ok: true });
+    await until(() => existsSync(join(f.workspace, "started")));
+    // All request connections have closed while the actual command waits for release.
+    expect(service.child.exitCode).toBeNull();
+    if (killService) { await service.stop("SIGKILL"); service = await serve(f.config, f.socket); }
+    if (killService) {
+      await until(async () => ((await call("read-interruption", "inspect_task", { task_id: "host-boundary" })).result as TaskSnapshot | undefined)?.needs_reconciliation === true);
+    }
+    writeFileSync(join(f.workspace, "release"), "release");
+    if (!killService) await until(async () => ((await call("read-completion", "inspect_task", { task_id: "host-boundary" })).result as TaskSnapshot | undefined)?.task.status === "done");
+    else await Bun.sleep(250);
+    expect(existsSync(join(f.workspace, "finished"))).toBe(!killService);
+    expect(readFileSync(join(f.workspace, "started"), "utf8")).toBe("once");
+    const db = new RuntimeDatabase(join(f.state, "runtime.sqlite"));
+    try {
+      expect(db.sql.query("SELECT COUNT(*) AS n FROM effects").get()).toEqual({ n: 1 });
+      expect(db.sql.query("SELECT COUNT(*) AS n FROM episodes").get()).toEqual({ n: 1 });
+      expect(db.sql.query("SELECT COUNT(*) AS n FROM effect_observations").get()).toEqual({ n: killService ? 0 : 1 });
+    } finally { db.close(); }
+  } finally { await service.stop(); }
+}, 15000);
