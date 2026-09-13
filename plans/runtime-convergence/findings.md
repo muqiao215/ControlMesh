@@ -2189,3 +2189,10 @@ A record-count limit alone allowed imported session history to exceed the socket
 escaping stays below the socket cap. Bun SQLite cached query iterators fail on reuse
 after an early break in this profile; a per-page prepared/finalized statement avoids
 shared iterator state while retaining bounded memory.
+
+Python runtime/host_jobs.py owns a distinct host-job/step state model absent from TS.
+Task terminal states are sticky; terminal step records survive stale incoming snapshots.
+Python merge also allows a terminal step to disappear when omitted from incoming steps
+and allows changing an unfinished step command under the same ID. The TS candidate
+refuses those cases instead of reusing old approval/completion context. Import requires
+explicit timestamps rather than generating a new historical creation time.

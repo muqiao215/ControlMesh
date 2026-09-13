@@ -224,3 +224,8 @@ Session-history operational checkpoint: record/byte-bounded cursor paging is wir
 through local control and CLI, with large-payload and concurrent-insert regression
 coverage. This supports lightweight history retrieval; remaining event producers and
 full runtime migration gates stay open.
+
+Host-job migration checkpoint: model decoding and terminal merge ported with 85-pair
+live Python differential coverage. Next owners are transactional persistence, source
+file authority/import, process supervision/approval and interrupted-job reconciliation.
+This checkpoint does not enable host command execution or complete host-job parity.

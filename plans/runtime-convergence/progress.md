@@ -806,3 +806,18 @@ Event/CLI/local-control tests: 29 passed, 217 assertions, 10.74s
 verify both raw page and 8 MiB outer response bounds, repeated pages, new inserts,
 principal isolation and cursor refusal. Full legacy export retains its explicit whole-
 stream semantics; the interactive control path is now bounded.
+
+## 2026-09-13 — native TS host-job model and terminal merge
+
+Added host-job-model with Python-compatible serialized fields/defaults for valid input,
+command SHA-256 binding, explicit imported timestamps, unique bounded step IDs and sticky
+terminal task/step merge. Current Python _merge_job was run directly against 85 task/step
+state pairs and matched TS. Additional refusals prevent changing a step's command/cwd/
+kind/approval-required/side-effect definition, deleting terminal steps or accepting a
+mismatched digest. These tighten unsafe legacy merge cases; they are not silently
+rewritten during import. Approval metadata is preserved data, never execution authority.
+
+2 tests passed, 8 assertions (including the 85-pair structural comparison), 336ms
+(`/tmp/cm-host-job-model.log`); typecheck and diff-check passed. Persistent host-job store,
+legacy file precedence/import, approved process dispatch, reconciliation and execution
+control remain open. No host command or old host job was started.
