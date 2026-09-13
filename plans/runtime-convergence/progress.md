@@ -1112,3 +1112,19 @@ Remaining: blocked-plan operator UX, Python workunit routing and long-running pr
 ownership, plus all outstanding full migration/provider/device/release acceptance.
 
 Final whole-plan/CLI focused result: 5 pass;  0 fail;  39 expect() calls; Ran 5 tests across 1 file. [1199.00ms]
+
+## 2026-09-13 — ordinary workunit routing to host execution
+
+Ported Python explicit-workunit/command-field classifier and integrated ordinary submit
+when host is registered. Atomic route creation issues a runtime approval for the explicit
+foreground command, preserves task ID and source-task binding, records requested provider/
+model/reason, and leaves execution to normal enqueue. Source and grant failures roll back
+job/task/receipt creation; prompt text never selects shell execution.
+
+Direct live Python comparison: all 104 workunit/command combinations match. Actual bash
+normal-submit/queue/reopen fixture executes once, creates no model probe, and retries keep
+one job. Restricted-network and group-source fixtures produce no runnable state. Initial
+typecheck needed explicit optional classifier fields and a literal test status; corrected.
+Regression: 34 pass, 364 assertions, 4.43s (/tmp/cm-host-workunit-final.log); typecheck and
+diff check passed. This does not qualify all Python source variants, environment or
+unbounded detached process behavior. Those long-job/log owners remain next.

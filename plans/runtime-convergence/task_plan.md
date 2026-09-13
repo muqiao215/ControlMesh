@@ -319,3 +319,8 @@ Automatic local host-plan checkpoint: explicit durable run registration, bounded
 advancement, prior-success evidence and between-step restart are implemented and tested.
 Next: remaining Python workunit routing and durable long-running process/log owners in
 host-parity.md; continue unchanged CM-R0–R7 multi-device/provider/terminal/release gates.
+
+Ordinary workunit checkpoint: Python-equivalent classification and normal TS submit-to-
+host routing are wired with atomic source/grant refusal and actual command verification.
+Next: durable long-running process and streaming-log ownership, remaining source-profile
+parity, then all outstanding provider/device/terminal/cutover gates in CM-R0–R7.

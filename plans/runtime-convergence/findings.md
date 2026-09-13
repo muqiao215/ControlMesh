@@ -2309,3 +2309,10 @@ are verified against operation/body/origin, not trusted from a schema-looking re
 Step completion fields alone are insufficient: confirm matching task/episode/result and
 retained exit evidence before dispatching the next step. A SQLite failure during next
 enqueue leaves the preceding completion intact and rolls back the new task/queue event.
+
+Python HostExecutionDecision checks workunit_kind first, then substrings in the explicit
+command field. Preserve that ordering and side-effect classification; do not add prompt
+heuristics. TS routing is opt-in through registered host capability. Native provider/model
+requests remain diagnostic metadata when actual executor changes to host. Submit must
+commit grant validation together with job/approval/task creation, not leave a partially
+authorized job after restrictive policy refuses the command.

@@ -1,3 +1,7 @@
+import { classifyHostExecution } from "./host-execution-policy";
+import { issueExecutionContext } from "./execution-context";
+import { enforceLocalReadSource } from "./execution-policy";
+import { decodeToolGrant, restrictiveGrant } from "./execution-grants";
 import { HostJobPlanRunner, hostStepTaskId } from "./host-job-plan-runner";
 import { readHostOutput, type HostOutputPageRequest } from "./host-job-output";
 import { recoverHostCancellation } from "./host-job-cancellation";
@@ -44,6 +48,7 @@ export class LocalTaskRuntime {
   private readonly owner = randomUUID();
   private readonly actor: Principal;
   private readonly ingress: TaskIngress;
+  private readonly sourceProfile: IngressSource;
   private readonly parallelism: number;
   private readonly maxPending: number;
   private readonly leaseMs: number;
@@ -55,7 +60,7 @@ export class LocalTaskRuntime {
 
   constructor(readonly kernel: RuntimeKernel, actor: Principal, source: IngressSource,
     private readonly resolve: LocalTaskResolver, private readonly authorize: () => void, options: LocalRuntimeOptions = {}, private readonly hostWorkspace?: string) {
-    this.actor = structuredClone(actor);
+    this.actor = structuredClone(actor); this.sourceProfile = structuredClone(source);
     identifier(actor.device_id);
     for (const scope of ["task:read", "task:execute", "task:reconcile", "task:admin"]) requireScope(actor, scope);
     this.parallelism = options.parallelism ?? 2; this.maxPending = options.max_pending ?? 128; this.leaseMs = options.lease_ms ?? 300_000;
@@ -188,7 +193,27 @@ export class LocalTaskRuntime {
     return { queued: this.rows("queued").length, running: this.rows("running").length };
   }
   submit(requestId: string, task: LegacyTask, identity: SubmissionIdentity, restrictions?: SubmissionRestrictions): TaskSnapshot {
-    this.current(); return this.ingress.submit(this.actor, requestId, task, identity, restrictions);
+    this.current();
+    const decision = this.hostWorkspace ? classifyHostExecution({ workunit_kind: task.workunit_kind, command: task.command }) : undefined;
+    if (!this.hostWorkspace || task.host_job !== undefined || !decision?.route_to_host || typeof task.command !== "string" || !task.command.trim())
+      return this.ingress.submit(this.actor, requestId, task, identity, restrictions);
+    enforceLocalReadSource(issueExecutionContext(this.sourceProfile));
+    requireThat(task.repo_root === undefined || task.repo_root === this.hostWorkspace, "host_job_workspace_mismatch");
+    return command(this.kernel.db, this.actor, requestId, "local.submit_host_workunit", { task, identity, restrictions: restrictions ?? {}, workspace: this.hostWorkspace }, () => {
+      this.current();
+      const jobId = `task-${digest([this.actor.id, task.task_id])}`, at = new Date(this.kernel.db.now()).toISOString();
+      const job = new HostJobStore(this.kernel.db, () => this.current()).put(this.actor, `host-route-create-${digest(requestId)}`, 0,
+        { job_id: jobId, job_kind: decision.job_kind, repo: this.hostWorkspace, source_task_id: task.task_id, plan_id: task.plan_id ?? "",
+          summary: task.title ?? task.name ?? "", created_at: at, updated_at: at,
+          steps: [{ id: decision.step_id, title: decision.step_title, command: task.command, cwd: this.hostWorkspace, side_effect: decision.side_effect, approval_required: true }] });
+      const approval = new HostJobApprovals(this.kernel.db, () => this.current()).approve(this.actor, `host-route-approval-${digest(requestId)}`, jobId, job.revision, decision.step_id);
+      const submitted = this.ingress.submit(this.actor, `host-route-submit-${digest(requestId)}`, { ...task, provider: "host", model: "", repo_root: this.hostWorkspace,
+        host_route: { requested_provider: task.provider ?? null, requested_model: task.model ?? null, reason: decision.reason },
+        host_job: { job_id: jobId, revision: job.revision, step_id: decision.step_id, approval } }, identity, restrictions);
+      const grant = decodeToolGrant(submitted.task.tool_grant);
+      requireThat(!restrictiveGrant(grant) && grant.confirmation_policy === "provider_runtime", "host_job_grant_unenforceable");
+      return submitted;
+    }, value => { this.current(); return value; });
   }
   resume(requestId: string, taskId: string, expectedRevision: number, prompt: string): TaskSnapshot {
     this.current(); return this.kernel.resume(this.actor, requestId, taskId, expectedRevision, prompt);

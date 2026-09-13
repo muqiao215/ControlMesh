@@ -416,3 +416,21 @@ existing local parallelism and pending limits. Internal enqueue events carry the
 approval IDs. Extra job mutations invalidate expected progression. This is local host
 plan execution; it does not establish durable detached processes or multi-device host
 execution parity.
+
+### Ordinary host workunit routing
+
+With explicit host registration, a normal submit containing a nonempty command and a
+recognized workunit_kind (test_execution, long_shell, release_validation, uv_build,
+git_write, repo_write, repo_publish, github_release, publish, release_publish) uses the
+TS host path. Python command-field heuristics are also preserved; prompt text is never
+examined for executable intent. Without host registration, normal provider routing stays.
+
+The explicit local foreground command submission issues a current runtime step receipt
+and creates its bound job/task atomically; it does not enqueue or execute automatically.
+Use the normal enqueue control. Task ID is preserved; provider becomes host, while
+host_route stores requested_provider, requested_model and reason. No provider model probe
+is needed. Caller-supplied authority, mismatched workspace, isolation-required sources
+and unenforceable grants cannot commit a runnable host task.
+
+This preserves Python workunit classification, not its unbounded login-shell process
+behavior. Current host source/environment/duration restrictions and long-job gaps remain.
