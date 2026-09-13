@@ -816,6 +816,16 @@ export class CronStore {
       const occurrence = this.getOccurrence(occurrenceId);
       requireThat(occurrence, "occurrence_not_found");
 
+      // Admission uses current normalized storage, not caller-supplied metadata
+      // or the historical occurrence alone. Updates/reconciliation of existing
+      // attempts remain available after a job is disabled or archived.
+      const definition = this.db.sql.query(
+        "SELECT archived, enabled, version, spec_digest FROM cron_jobs WHERE job_id = ?"
+      ).get(occurrence.job_id) as { archived: number; enabled: number; version: number; spec_digest: string } | null;
+      requireThat(definition && definition.archived === 0 && definition.enabled === 1, "cron_definition_not_active");
+      requireThat(definition.version === occurrence.schedule_revision && definition.spec_digest === occurrence.definition_digest,
+        "cron_occurrence_definition_changed");
+
       // 1. Block attempts on terminal occurrences (completed, failed, cancelled, skipped)
       if (
         occurrence.state === "completed" ||

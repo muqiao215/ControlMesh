@@ -623,3 +623,11 @@ Legacy export plus persistence/recovery follow-up: 20 pass/174 assertions. See
 delegation/primary-cron-persistence-result.md for scoped source acceptance and remaining
 runtime integration. This records a failed full run and successful targeted correction,
 not a fabricated all-green full rerun.
+
+Scheduler integration review reproduced a stale-admission gap: createAttempt accepted
+an old queued occurrence after its definition was archived. Added transactional current
+normalized definition validation (active/enabled and exact revision/digest) before new
+attempt insertion. Regression covers archive, disable and changed instruction, requiring
+zero attempts after rejection. Existing-attempt reconciliation is unchanged. Persistence
+suites: 18 pass/158 assertions; /tmp/cm-cron-admission-definition-review.log. This is an
+execution-entry guard required before timer/queue integration, not a completed scheduler.

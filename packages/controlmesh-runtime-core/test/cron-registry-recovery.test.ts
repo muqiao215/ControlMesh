@@ -9,6 +9,22 @@ import { exportCronRegistry, importCronRegistry } from "../src/cron-migration";
 
 const core = { id: "recovery", title: "Recovery", schedule: "* * * * *", task_folder: "recovery", agent_instruction: "Inspect" };
 
+test("queued occurrences cannot start after archive, disable, or definition replacement", () => {
+  for (const change of ["archive", "disable", "replace"] as const) {
+    const db = new RuntimeDatabase(":memory:");
+    try {
+      const store = new CronStore(db);
+      store.putJob(core); store.registerCoordinator("coordinator");
+      const occurrence = store.createOccurrence(core.id, 1773400000000);
+      if (change === "archive") store.archiveJob(core.id);
+      if (change === "disable") store.setEnabled(core.id, false);
+      if (change === "replace") store.putJob({ ...core, agent_instruction: "Changed scope" });
+      expect(() => store.createAttempt(occurrence.occurrence_id, { coordinatorId: "coordinator", executorDeviceId: "device", fencingGeneration: 1 })).toThrow();
+      expect(store.listAttempts(occurrence.occurrence_id)).toHaveLength(0);
+    } finally { db.close(); }
+  }
+});
+
 test("raw metadata collisions survive replacement and status updates without internal authority", () => {
   const db = new RuntimeDatabase(":memory:");
   try {
