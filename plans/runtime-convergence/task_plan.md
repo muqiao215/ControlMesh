@@ -189,3 +189,8 @@ Gemini profile checkpoint: explicit UUID command and exact-tool TOML rendering i
 installed engine qualification passes. Integrate profile only with registered session
 identity, effective-policy verification and immutable execution configuration. CM-R3
 remains in progress; no default/provider admission change at this checkpoint.
+
+Open regression gate (2026-09-13): broad optional Docker suite observed reviewer unknown
+in publish_received=true topology; isolated and paired reruns pass. Preserve this as
+unresolved, capture classified reason with the added diagnostics on recurrence, and
+require a clean broad gate before cutover. See progress for exact logs and counts.

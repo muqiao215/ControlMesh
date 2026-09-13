@@ -688,3 +688,20 @@ write/similar/unknown names. 3 tests passed, 28 assertions, 642ms
 material, not an execution admission token. Effective policy, configuration immutability,
 session ownership and actual supervised resume integration remain pending; restrictive
 Gemini grant refusal stays in place.
+
+## 2026-09-13 — broad regression exposes intermittent device completion uncertainty
+
+Full runtime-core gate at 6df3ee4: 889 passed, 30 skipped, 1 failed, 10876 assertions,
+354.52s (`/tmp/cm-runtime-core-post-gemini.log`). Failure: configured container topology
+with publish_received=true returned unknown for reviewer instead of done. Exact isolated
+reproduction passed (52 assertions, 22.59s); paired false/true sequence passed (106
+assertions, 44.69s). Root cause remains unresolved; these reruns do not turn the full gate
+green. Added contextual synthetic-fixture failure diagnostics. DeviceWorker now preserves
+its existing classified reason on unknown outcomes rather than dropping it; completion,
+reconciliation and retry behavior stay unchanged. Related device/control tests: 44 passed,
+307 assertions, 7.44s; typecheck/diff-check passed.
+
+Remote CI for 6df3ee4 (34729703343) and ee64368 (34729596207) completed success; this does
+not negate the local optional Docker failure. Physical ARM64 peer SSH still timed out;
+no remote run started. Production cutover remains blocked on the complete acceptance
+matrix, not just CI.

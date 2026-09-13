@@ -53,8 +53,12 @@ for (const publish of [false, true]) actual(`configured coordinator delivers art
       const inspected = await worker.control.handle({ id: `inspect-${id}`, op: "inspect_task", task_id: id }); expect(inspected.ok).toBe(true);
       const job = inspected.result as { revision: number; assignment_digest: string };
       writeFileSync(join(config, "fixture-result.json"), JSON.stringify({ topology: "pipeline", substage: id === "worker" ? "worker_running" : "review_running", worker_role: id, status: "completed", summary: "Verified file receipt" }));
-      expect(await worker.control.handle({ id: `run-${id}`, op: "run", task_id: id, expected_revision: job.revision, assignment_digest: job.assignment_digest }))
-        .toMatchObject({ ok: true, result: { status: "done" } });
+      const run = await worker.control.handle({ id: `run-${id}`, op: "run", task_id: id, expected_revision: job.revision, assignment_digest: job.assignment_digest });
+      if ((run.result as { status?: string } | undefined)?.status !== "done") {
+        const diagnostic = await worker.control.handle({ id: `failure-${id}`, op: "inspect_task", task_id: id });
+        throw new Error(`Container topology ${id} failed: ${JSON.stringify({ run, diagnostic })}`);
+      }
+      expect(run).toMatchObject({ ok: true, result: { status: "done" } });
     }
     if (publish) expect(readFileSync(join(workspace, "PROJECT.md"), "utf8")).toBe("device artifact fact\n");
     const originalInputs = readFileSync(join(config, "inputs.jsonl")); expect(originalInputs.toString().trim().split("\n")).toHaveLength(2);

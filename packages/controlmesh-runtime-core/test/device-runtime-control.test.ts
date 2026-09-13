@@ -192,7 +192,7 @@ test("shutdown stops an owned in-flight device task and refuses later work", asy
   } } });
   const control = new DeviceWorkerControl(db, actor, client, worker, () => {}, () => abort.abort());
   const job = await client.inspect("one"), run = control.handle({ id: "run", op: "run", task_id: "one", expected_revision: job.revision, assignment_digest: job.assignment_digest });
-  await ready; await control.stop(); expect((await run).result).toEqual({ status: "unknown" });
+  await ready; await control.stop(); expect((await run).result).toEqual({ status: "unknown", reason: expect.stringMatching(/^[a-z_]+$/) });
   expect((await control.handle({ id: "later", op: "status" })).error).toBe("device_runtime_stopped");
   expect((await f.call("inspect", "inspect_task", { task_id: "one" })).result).toMatchObject({ needs_reconciliation: true });
 });

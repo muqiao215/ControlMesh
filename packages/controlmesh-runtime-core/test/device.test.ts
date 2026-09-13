@@ -282,7 +282,7 @@ test("real worker stops its owned process on network loss and never retries the 
       } finally { clearTimeout(disconnect); }
     },
   } } });
-  expect(await worker.run("task", 1500)).toEqual({ status: "unknown" });
+  expect(await worker.run("task", 1500)).toEqual({ status: "unknown", reason: expect.stringMatching(/^[a-z_]+$/) });
   expect(calls).toBe(1);
   expect(["authority_lost", "cancelled"]).toContain(reason);
   f.advance(10_000);

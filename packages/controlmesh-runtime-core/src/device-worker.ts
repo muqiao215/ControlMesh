@@ -312,7 +312,7 @@ export class DeviceWorker {
           }
         } catch { /* unstarted expiry recovery is safe if the response is lost */ }
       }
-      return attempted ? { status: "unknown" } : { status: "unavailable", reason };
+      return attempted ? { status: "unknown", reason } : { status: "unavailable", reason };
     } finally {
       closed = true;
       if (timer) clearTimeout(timer);

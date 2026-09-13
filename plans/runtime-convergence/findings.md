@@ -2145,3 +2145,10 @@ admin rule priority 999 grants exact tools over deny fallback 998, while unrelat
 allow rules remain below admin tier when loaded. Installed-engine tests prove the
 generated policy semantics. They do not resolve system-policy suppression or TOCTOU;
 those are required before process admission can trust the profile.
+
+DeviceWorker.run discarded its classified failure reason only for attempted executions
+returning unknown. This obscured the optional Docker topology failure observed in the
+broad suite. Return the same controlled reason field already used for unavailable
+outcomes, preserving unknown/reconciliation semantics and avoiding raw exception text.
+The publish_received=true reviewer uncertainty has not reproduced in isolated or paired
+runs; environment/order sensitivity is a hypothesis, not a confirmed cause.
