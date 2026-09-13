@@ -459,3 +459,15 @@ absolute deadline. Changing this frozen policy on an existing candidate state re
 with local_runtime_policy_conflict; it is not a live config-based budget extension.
 Supervisor disconnect/cancellation still stops owned execution. This setting does not
 establish detached long-job recovery or change provider duration policies.
+
+
+### Explicit host environment
+
+host.environment is an optional object of process environment names and string values.
+It overrides the /usr/bin:/bin PATH and C.UTF-8 LANG baseline. Configure toolchain PATH
+explicitly; controller environment and shell login files are not automatically inherited.
+At most 128 entries, 32 KiB per value and 128 KiB serialized total are accepted; NUL and
+invalid names refuse. Environment changes invalidate queued execution bindings and refuse
+retained-result acceptance under a different profile. Values stay in the private config;
+execution manifests carry a digest. This is trusted executable configuration, including
+any shell-affecting variables, not an untrusted per-task parameter.

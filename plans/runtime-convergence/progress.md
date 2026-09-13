@@ -1179,3 +1179,16 @@ rollback injection and whole-plan tests pass: 14 pass, 0 fail, 120 assertions, 2
 incorrectly assuming empty last_error overwrites prior persisted diagnostics; corrected
 the expectation against Python source and added direct differential coverage.
 Durable detached execution, environment parity and full rollout remain open.
+
+
+## 2026-09-13 — explicit trusted host execution environment
+
+Added bounded host.environment config, frozen snapshots, queue/manifest digest binding
+and recovery compatibility checks. Default-only historical manifests remain readable with
+the default environment. Actual fixture executable in a configured tool directory ran and
+wrote its configured value; changed environment after enqueue/reopen yielded zero effects.
+Invalid entries and snapshot isolation covered. Regression: 19 pass, 3 optional SpecMesh
+skip, 0 fail, 211 assertions, 3 files, 2.88s (/tmp/cm-host-environment.log). Typecheck and
+diff check passed. No operator credentials/environment were read or migrated. Actual
+operator build-tool qualification, inherited/login environment compatibility and durable
+process ownership remain open; this is not full host parity or production cutover.

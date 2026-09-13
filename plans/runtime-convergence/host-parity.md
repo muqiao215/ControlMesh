@@ -16,7 +16,7 @@ coverage remains part of the full runtime objective, separately.
 | Logs and exit artifacts | runtime/host_jobs.py:stdout_path/stderr_path/exit_code_path | Retained output and running streamed chunks have authenticated paging; long-job retention/lifetime remain | Authorized bounded stdout/stderr retrieval during/after run, restart persistence, explicit output-limit behavior |
 | Runtime fields | runtime/host_jobs.py:_execute_step/_finalize_job | TS completion/recovery now project detail and last_error; prior nonempty last_error remains sticky as in Python storage (known diagnostic limitation) | Differential completion/failure state and field assertions |
 | Source boundary | tasks/hub.py host policy guards | TS local foreground only; no imported metadata authority | Preserve compatible allowed sources with issued policy, refuse isolation-required sources; no unsafe fallback |
-| Environment and duration | Python bash -lc inherited environment, unbounded wait | TS fixed PATH/LANG, no login shell; explicit bounded duration now renews short leases up to an immutable deadline | Explicit trusted execution environment and durable long-job lease ownership; real build-tool and duration acceptance |
+| Environment and duration | Python bash -lc inherited environment, unbounded wait | TS explicit trusted environment over PATH/LANG defaults, no login shell; explicit bounded duration now renews short leases up to an immutable deadline | Explicit trusted execution environment and durable long-job lease ownership; real build-tool and duration acceptance |
 
 Historical imported PID/exit_code.txt alone must never become process ownership proof.
 Do not change the shared anchor disconnect fail-closed rule merely to keep host jobs alive:

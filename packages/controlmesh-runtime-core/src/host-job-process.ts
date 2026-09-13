@@ -1,3 +1,4 @@
+import { hostJobEnvironment } from "./host-job-environment";
 import { appendHostLog } from "./host-job-log";
 import { SpecMeshPort, type SpecMeshObservation } from "./specmesh-port";
 import { decodeHostJob } from "./host-job-model";
@@ -14,9 +15,10 @@ import { canonical, digest, object, requireThat } from "./value";
 
 /** Approved local-foreground step with retained-result recovery and optional independent workflow checks. */
 export class HostJobProcess {
+  private readonly environment: Readonly<Record<string, string>>;
   private readonly actor: Principal;
   constructor(private readonly kernel: RuntimeKernel, actor: Principal, private readonly workspace: string,
-    private readonly shell: string, private readonly authorize: () => void, private readonly workflow?: SpecMeshPort, private readonly timeoutMs = 300_000) { this.actor = structuredClone(actor); }
+    private readonly shell: string, private readonly authorize: () => void, private readonly workflow?: SpecMeshPort, private readonly timeoutMs = 300_000, environment?: unknown) { this.actor = structuredClone(actor); this.environment = hostJobEnvironment(environment); }
   async execute(lease: Lease, admission: ProcessAdmission) {
     const actor = this.actor, task = this.kernel.inspect(actor, lease.task_id).task;
     requireThat(object(task.host_job) && task.provider === "host", "host_job_task_binding_required");
@@ -55,12 +57,12 @@ export class HostJobProcess {
         steps: initial.job.steps.map(item => item.id === step.id ? { ...item, state: "running", started_at: started, pid: null, pgid: null } : item) });
       runningRevision = running.revision;
       const permit = this.kernel.dispatchEffect(actor, `${effect}-dispatch`, lease, effect, { job_id: approval.job_id, step_id: step.id, command_digest: step.command_digest },
-        { schema_version: "controlmesh.host_step_execution.v1", approval, workspace, shell, running_revision: runningRevision, job: running.job, workflow: this.workflow ? { binding_digest: this.workflow.binding_digest, start_snapshot_digest: workflowStart!.snapshot_digest } : null });
+        { schema_version: "controlmesh.host_step_execution.v1", approval, workspace, shell, environment_digest: digest(this.environment), running_revision: runningRevision, job: running.job, workflow: this.workflow ? { binding_digest: this.workflow.binding_digest, start_snapshot_digest: workflowStart!.snapshot_digest } : null });
       requireThat(permit.dispatch_permitted, "host_job_dispatch_already_attempted"); dispatched = true;
     });
     try {
       const outcome = await new ProcessSupervisor().run({ command: [this.shell, "--noprofile", "--norc", "-c", step.command], cwd: workspace.path,
-        env: { PATH: "/usr/bin:/bin", LANG: "C.UTF-8" }, timeout_ms: this.timeoutMs, max_output_bytes: 262144 }, { ...admission, assertCurrent: guard, onOutput: (stream, text) => appendHostLog(this.kernel, actor, lease, effect, stream, text) });
+        env: { ...this.environment }, timeout_ms: this.timeoutMs, max_output_bytes: 262144 }, { ...admission, assertCurrent: guard, onOutput: (stream, text) => appendHostLog(this.kernel, actor, lease, effect, stream, text) });
       // Retain the owned process outcome even after lease loss; it cannot authorize completion alone.
       this.kernel.db.transaction(() => {
         const changed = this.kernel.db.sql.query("UPDATE effects SET result=? WHERE effect_id=? AND task_id=? AND episode_id=? AND fence=? AND state IN ('dispatched','unknown') AND result IS NULL")
@@ -134,6 +136,7 @@ export class HostJobProcess {
         workflowEnd.assertCurrent();
       } else requireThat(manifest.workflow === undefined || manifest.workflow === null, "host_workflow_binding_changed");
       requireThat(manifest.schema_version === "controlmesh.host_step_execution.v1", "host_job_manifest_unproven");
+      requireThat((manifest.environment_digest ?? digest(hostJobEnvironment())) === digest(this.environment), "host_environment_binding_changed");
       const approval = new HostJobApprovals(this.kernel.db, this.authorize).inspectReceipt(actor, manifest.approval);
       const task = evidence.task.task;
       requireThat(task.provider === "host" && object(task.host_job) && task.host_job.job_id === approval.job_id

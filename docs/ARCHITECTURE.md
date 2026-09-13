@@ -1045,3 +1045,10 @@ The local owner renews through internal events and updates its durable run proof
 its supervisor still verifies current authority and stops on disconnect or lease loss.
 This does not provide detached process adoption. Rollback from schema 33 requires a
 compatible runtime or a pre-upgrade snapshot, never deleting tables from live state.
+
+
+Trusted host.environment adds bounded explicit process variables over the fixed PATH/LANG
+baseline. Constructors snapshot and freeze this configuration; task payloads do not supply
+it and controller environment is not implicitly inherited. Queue binding and execution
+manifest contain its digest, not the variable map. Retained-result recovery requires the
+same environment digest; older manifests without it represent only the historical default.

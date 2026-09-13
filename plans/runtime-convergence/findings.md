@@ -2340,3 +2340,10 @@ with a seeded prior error failed four cases and revealed that assignment is not 
 storage semantics. Added four live Python comparison cases for empty/nonempty prior
 errors and successful/failed incoming results. Historical error cleanup remains a known
 product issue, not a completed migration feature.
+
+
+Host fixed PATH prevented using toolchains outside system directories. Explicit trusted
+environment support now freezes a bounded snapshot into the adapter/process and binds its
+digest to queue admission and retained-result recovery. A real fixture executable outside
+system PATH ran after runtime reopen; changed configured variables prevented dispatch.
+This validates configuration plumbing, not operator toolchain or Python bash -lc parity.
