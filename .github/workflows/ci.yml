@@ -13,6 +13,14 @@ on:
         type: boolean
         default: false
 
+concurrency:
+  # Superseded runs for the same event/ref stop burning runner time and stop
+  # reporting stale failures. Pull requests group by PR number and pushes by ref,
+  # so the two stay independent. Each deliberate workflow_dispatch has its own
+  # group: the default pending queue must not replace an earlier manual request.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+
 env:
   UV_VERSION: "0.11.7"
   BUN_VERSION: "1.3.11"
@@ -24,6 +32,7 @@ jobs:
     name: Ruff
     if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.notify_test) }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -48,6 +57,7 @@ jobs:
     name: Mypy smoke
     if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.notify_test) }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -77,6 +87,7 @@ jobs:
     name: Pytest (Python ${{ matrix.python-version }})
     if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.notify_test) }}
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -112,6 +123,7 @@ jobs:
     name: Build package
     if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.notify_test) }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -136,6 +148,7 @@ jobs:
     name: Protocol, SDK, and Web
     if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.notify_test) }}
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
       - name: Checkout independent SpecMesh snapshot contract
@@ -188,6 +201,7 @@ jobs:
     name: Installed read-only Alpha smoke
     if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.notify_test) }}
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -237,16 +251,21 @@ jobs:
           cache: pnpm
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
+      - name: Confirm Docker engine readiness (read-only, bounded)
+        run: bash .github/scripts/docker-readiness.sh
       - name: Pull pinned Node image for actual process acceptance
         run: |
           docker pull node@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5
           docker image inspect node@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5 --format 'CM_CONTAINER_TEST_IMAGE={{.Id}}' >> "$GITHUB_ENV"
       - name: Run real container lifecycle and one-shot tests
         run: bun test packages/controlmesh-runtime-core/test/container.test.ts packages/controlmesh-runtime-core/test/opencode-container.test.ts packages/controlmesh-runtime-core/test/workspace-stage-container.test.ts
+      - name: Collect read-only Docker diagnostics
+        if: failure()
+        run: bash .github/scripts/docker-readiness.sh --diagnose
 
   ci-success:
     name: CI success
-    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.notify_test) }}
+    if: ${{ always() && !cancelled() && !(github.event_name == 'workflow_dispatch' && inputs.notify_test) }}
     needs:
       - ruff
       - mypy
@@ -256,14 +275,30 @@ jobs:
       - alpha-smoke
       - container-execution
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Confirm all required gates passed
-        run: echo "All required ControlMesh CI gates passed."
+        env:
+          GATE_RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          gates = json.loads(os.environ["GATE_RESULTS"])
+          failures = {name: gate["result"] for name, gate in gates.items() if gate["result"] != "success"}
+          if not gates or failures:
+              print(f"Required CI gates did not pass: {failures or 'no results'}")
+              sys.exit(1)
+          print("All required ControlMesh CI gates passed.")
+          PY
 
   failure-smoke:
     name: Synthetic failure for notification test
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.notify_test }}
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Trigger synthetic failure
         run: |
@@ -282,6 +317,7 @@ jobs:
       - failure-smoke
     if: ${{ always() && contains(needs.*.result, 'failure') }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Send Telegram notification
         env:
