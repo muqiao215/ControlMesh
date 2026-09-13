@@ -64,7 +64,7 @@ export class GeminiSettingsRunner {
       && sources.some(expected => expected.path === source.path && expected.identity === source.identity)), "gemini_settings_sources_unproven");
     let effectivePolicy;
     if (policy) {
-      requireThat(object(parsed.effective_policy) && Array.isArray(parsed.effective_policy.sources)
+      requireThat(object(parsed.effective_policy) && parsed.effective_policy.ignore_local_env === true && Array.isArray(parsed.effective_policy.sources)
         && digest([...new Set(parsed.effective_policy.sources)].sort()) === digest([...new Set(policy.sources)].sort()), "gemini_policy_sources_changed");
       effectivePolicy = { ...verifyGeminiEffectivePolicy(parsed.effective_policy.rules, policy.allowed_tools, policy.policy_filename), configuration_digest: policySnapshot!.binding_digest };
     } else requireThat(parsed.effective_policy === undefined, "gemini_unrequested_policy_output");

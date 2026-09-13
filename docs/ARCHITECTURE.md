@@ -96,7 +96,9 @@ one supervised, read-only Node probe. Trusted registration pins runtime dependen
 settings/trust sources and policy directories; the returned currentness guard checks
 all three. The qualified 0.59 headless projection applies the explicit admin directory
 to the loaded settings, and verifies native rules against the requested tool set.
-Resume command construction shares `--ignore-env` with the probe. This binding is still
+The public CLI rejects the loader-internal `--ignore-env` flag. Execution therefore
+requires native merged `advanced.ignoreLocalEnv: true`, verified by the policy probe;
+resume argv omits that unsupported flag. This binding is still
 pre-execution evidence: normal Gemini task registration, protected process configuration,
 session/result recovery and account-backed acceptance remain open. The generic Gemini
 restrictive grant mapping remains refused until those execution owners are connected.

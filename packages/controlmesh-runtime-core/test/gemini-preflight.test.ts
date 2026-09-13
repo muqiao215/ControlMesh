@@ -22,6 +22,10 @@ test("Gemini readiness requires exact model, input, sentinel and no tool events"
     { type: "tool_result", tool_id: "tool", status: "success", output: "PONG" }] as any);
   expect(judgeGeminiPreflight(outcome(tools), "fixture").status).toBe("unavailable");
   expect(judgeGeminiPreflight(outcome([{ type: "result", status: "error", error: { type: "TerminalQuotaError", message: "quota exhausted" } }]), "fixture").reason).toBe("quota_exhausted");
+  const startup = { ...outcome([]), exit_code: 55, stderr: "Error authenticating: IneligibleTierError: client unsupported\n reasonCode: 'UNSUPPORTED_CLIENT'" };
+  expect(judgeGeminiPreflight(startup, "fixture").reason).toBe("native_client_unsupported");
+  expect(judgeGeminiPreflight({ ...startup, exit_code: 0 }, "fixture").reason).not.toBe("native_client_unsupported");
+  expect(judgeGeminiPreflight({ ...startup, stdout: outcome(rows()).stdout }, "fixture").reason).not.toBe("native_client_unsupported");
 });
 test.each([false, true])("Gemini durable preflight caches success or quota without duplicate model dispatch (quota=%s)", async quota => {
   const root = mkdtempSync(join(tmpdir(), "cm-gemini-preflight-")), policy = join(root, "policy"), executable = join(root, "gemini"), credentials = join(root, "credentials");
@@ -35,7 +39,7 @@ test.each([false, true])("Gemini durable preflight caches success or quota witho
   const driver = new GeminiPreflight({ async run(spec, admission) {
     admission.assertCurrent();
     if (spec.command.includes("--version")) return { ...outcome([]), stdout: "0.59.0\n" };
-    models++; expect(spec.command).not.toContain("--resume"); expect(spec.command).toContain("--ignore-env"); expect(spec.stdin_text).toBe(geminiProbePrompt);
+    models++; expect(spec.command).not.toContain("--resume"); expect(spec.command).not.toContain("--ignore-env"); expect(spec.stdin_text).toBe(geminiProbePrompt);
     return quota ? outcome([{ type: "result", status: "error", error: { type: "TerminalQuotaError", message: "quota exhausted" } }]) : outcome(rows());
   } }, settings);
   const actor = { id: "operator", device_id: "desktop", origin: "human_request" as const, scopes: ["provider:probe"] };

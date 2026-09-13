@@ -1491,3 +1491,32 @@ Remaining/Next: qualify the installed complete native runtime/auth graph and run
 account-backed same-session continuation; then tool/workspace/mailbox receipt profiles,
 Viewer adoption and remaining device/transport/terminal/migration/release gates. The new
 text compatibility path does not close the full original CM-R0–R7 objective.
+
+
+## 2026-09-13 — installed CLI/account qualification corrected prior argv assumption
+
+Current/Done: the installed public Gemini 0.59 CLI rejects --ignore-env even though its
+internal settings loader accepts it. This invalidates the earlier command-profile claim.
+Resume/probe commands now omit it; joined effective-policy admission requires merged
+advanced.ignoreLocalEnv=true. A real installed CLI parser regression and a missing-setting
+refusal test now cover this seam. Probe reports retain process reason/exit code without
+raw stderr. Pre-stream IneligibleTierError/UNSUPPORTED_CLIENT is classified explicitly.
+
+Live evidence: two bounded initial diagnostic attempts exited 1 at argument parsing;
+no model completion. After correction, the private copied OAuth file refreshed and the
+currentness guard stopped admission. One requalification of that refreshed copy exited
+55 with native IneligibleTierError and reasonCode UNSUPPORTED_CLIENT. The server refused
+this client for Gemini Code Assist for individuals. Retained outcome reclassification
+returns unavailable/native_client_unsupported without another account request. No
+successful real model/session continuation is established. Evidence is private under
+/tmp/cm-gemini-account-BNTF1Q; temporary OAuth/account copies were removed. Operator
+auth files were never write targets; no production configuration was changed.
+
+Verification: 43 pass, 0 fail, 268 assertions, 13.02s in
+/tmp/cm-gemini-native-fix-regression.log; actual CLI parser, installed native settings/
+recording and shared cache/service tests enabled. Typecheck and diff check passed.
+
+Remaining/Next: current OAuth/CLI account path is blocked by native client eligibility,
+not quota. Do not retry it without a relevant runtime/auth-state change. Continue other
+full migration owners and native tool/Viewer/device profiles; real Gemini account
+continuation remains unaccepted. Full CM-R0–R7/release objective stays active.

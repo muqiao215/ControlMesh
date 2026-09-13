@@ -50,7 +50,7 @@ test("Gemini supervised exact-session dispatch retains evidence and reconciles w
     const result = await f.runner.run(f.input, f.admission);
     expect(result.evidence.text).toBe("remembered");
     const args = JSON.parse(readFileSync(join(f.root, "args"), "utf8"));
-    expect(args).toContain(f.input.session_id); expect(args).toContain("--ignore-env"); expect(args).not.toContain(f.input.prompt);
+    expect(args).toContain(f.input.session_id); expect(args).not.toContain("--ignore-env"); expect(args).not.toContain(f.input.prompt);
     expect(verifyRetainedGeminiResume(f.input, f.dispatch, f.outcome, () => {}).evidence.revision).toBe(result.evidence.revision);
     await expect(f.runner.run(f.input, f.admission)).rejects.toThrow("gemini_adoption_changed");
   } finally { f.close(); }

@@ -63,6 +63,9 @@ try {
       || typeof policyRequest.admin_directory !== "string" || !policyRequest.admin_directory.startsWith("/")) throw new Error("invalid_policy_request");
     const policyNative = await import(pathToFileURL(policyRequest.module).href);
     const merged = settings.merged;
+    // --ignore-env is loader-internal and rejected by the public 0.59 CLI parser.
+    // Real execution must obtain the same behavior from its merged settings.
+    if (merged.advanced?.ignoreLocalEnv !== true) throw new Error("gemini_ignore_local_env_required");
     const resolvePolicyPath = value => {
       if (typeof value !== "string") throw new Error("invalid_policy_path");
       if (value.toLowerCase().startsWith("%userprofile%")) value = homedir() + value.substring(13);
@@ -78,7 +81,7 @@ try {
     const sources = policyNative.getPolicyDirectories(policyNative.DEFAULT_CORE_POLICIES_DIR, policySettings.policyPaths, undefined, policySettings.adminPolicyPaths);
     if (!Array.isArray(policyRequest.sources) || JSON.stringify([...new Set(sources)].sort()) !== JSON.stringify([...new Set(policyRequest.sources)].sort())) throw new Error("policy_sources_changed");
     const config = await policyNative.createPolicyEngineConfig(policySettings, "default", policyNative.DEFAULT_CORE_POLICIES_DIR, false);
-    effective_policy = { sources, rules: config.rules };
+    effective_policy = { sources, rules: config.rules, ignore_local_env: true };
     for (const [path, identity] of observedSources) if (geminiSourceIdentity(path).identity !== identity) throw new Error("settings_source_changed");
   }
   console.log(JSON.stringify({ schema_version: "gemini.settings_probe.v1", settings_digest, loaded_runtime_files: [...loadedFiles].sort(), registration_checked: Boolean(registered),

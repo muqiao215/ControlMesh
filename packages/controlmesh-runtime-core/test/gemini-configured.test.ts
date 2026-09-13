@@ -10,7 +10,7 @@ test.skipIf(!node).each([false, true])("configured Gemini performs preflight, na
   const root = mkdtempSync(join(tmpdir(), "cm-gemini-config-")), state = join(root, "state"), workspace = join(root, "workspace"), sessions = join(root, "chats"), policy = join(root, "policy");
   for (const path of [state, workspace, sessions, policy]) mkdirSync(path, { mode: 0o700 });
   const settingsFile = join(root, "settings.json"), module = join(root, "native.mjs"), executable = join(root, "gemini"), events = join(root, "events");
-  writeFileSync(settingsFile, "{}");
+  writeFileSync(settingsFile, JSON.stringify({ advanced: { ignoreLocalEnv: true } }));
   const credentials = join(root, "credentials.json"); writeFileSync(credentials, "old-fixture");
   writeFileSync(join(policy, "cm.toml"), '[[rule]]\ntoolName="*"\ndecision="deny"\npriority=998\n');
   writeFileSync(module, `import fs from 'node:fs';

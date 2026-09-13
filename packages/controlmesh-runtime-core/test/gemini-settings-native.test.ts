@@ -63,7 +63,7 @@ test.skipIf(!module || !node)("native Gemini settings preflight preserves deprec
       const native = await import(pathToFileURL(policyModule).href);
       const admin = join(root, "admin"), user = join(root, "policies"); mkdirSync(admin); mkdirSync(user);
       writeFileSync(join(admin, "cm.toml"), geminiToolPolicy(["read_file"]));
-      writeFileSync(path, JSON.stringify({ policyPaths: [user], tools: { allowed: ["write_file"] } }));
+      writeFileSync(path, JSON.stringify({ advanced: { ignoreLocalEnv: true }, policyPaths: [user], tools: { allowed: ["write_file"] } }));
       const registration = { ...input, effective_policy: { module: policyModule, admin_directory: admin,
         policy_filename: "cm.toml", allowed_tools: ["read_file"],
         sources: native.getPolicyDirectories(native.DEFAULT_CORE_POLICIES_DIR, [user], undefined, [admin]) as string[] } };
@@ -74,6 +74,9 @@ test.skipIf(!module || !node)("native Gemini settings preflight preserves deprec
       writeFileSync(join(admin, "cm.toml"), geminiToolPolicy(["write_file"]));
       expect(() => joined.assertRuntimeCurrent()).toThrow("gemini_policy_configuration_changed");
       await expect(runner.run(registration, { assertCurrent() {} })).rejects.toThrow("gemini_effective_policy_conflict");
+      writeFileSync(join(admin, "cm.toml"), geminiToolPolicy(["read_file"]));
+      writeFileSync(path, JSON.stringify({ policyPaths: [user], advanced: { ignoreLocalEnv: false } }));
+      await expect(runner.run(registration, { assertCurrent() {} })).rejects.toThrow("gemini_settings_probe_failed");
     }
     const aborted = new AbortController(); aborted.abort();
     await expect(runner.run(input, { assertCurrent() {}, signal: aborted.signal })).rejects.toThrow("gemini_settings_probe_failed");

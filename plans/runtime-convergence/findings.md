@@ -2479,3 +2479,19 @@ rotated credential does not invalidate already retained execution evidence. A bo
 chats-directory lookup verifies full UUID/project identity and refuses filename-prefix
 ambiguity. The configured fixture validates this wiring but is not native package or
 real model/account qualification.
+
+
+Correction to earlier --ignore-env assumption: installed bundle/gemini.js selects
+gemini-OENNDR6N.js, whose CLI parser rejects that flag. chunk-LZ4UWPZ4.js loadEnvironment
+checks either internal argv --ignore-env or settings.advanced.ignoreLocalEnv; only the
+latter is usable in the qualified public command. Testing exported loadSettings without
+testing the actual entry parser missed this mismatch. The actual public parser is now
+an optional installed-native regression gate.
+
+The bounded private OAuth-copy canary reached the native authentication path after that
+fix. Native stderr began Error authenticating: IneligibleTierError and included
+reasonCode UNSUPPORTED_CLIENT; exit code was 55, stdout empty. This is not evidence of
+quota exhaustion. Initial OAuth refresh changed a registered credential identity, so
+currentness correctly refused; requalification exposed the actual eligibility failure.
+Only the anchored native startup envelope with nonzero exit and empty stdout gets this
+classification; assistant text or a success exit cannot assert it.

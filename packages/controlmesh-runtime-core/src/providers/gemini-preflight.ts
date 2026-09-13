@@ -23,6 +23,10 @@ export function geminiProbeCredentialRevision(input: Pick<GeminiProbeInput, "cre
   return digest({ environment: input.environment, files: input.credential_sources.map(geminiSourceIdentity) });
 }
 export function judgeGeminiPreflight(outcome: ProcessOutcome, model: string): PreflightObservation {
+  if (outcome.reason === "exited" && outcome.exit_code !== 0 && outcome.stdout.trim() === ""
+    && /^Error authenticating: IneligibleTierError:/m.test(outcome.stderr)
+    && /reasonCode:\s*['"]UNSUPPORTED_CLIENT['"]/.test(outcome.stderr))
+    return { status: "unavailable", reason: "native_client_unsupported", session_id: null, failure: null };
   const failures = outcome.stdout.split("\n").map(geminiFailureLine).filter(value => value !== null);
   const order = ["quota_exhausted", "authentication_failed", "model_unavailable", "rate_limited", "provider_error"];
   failures.sort((a, b) => order.indexOf(a.code) - order.indexOf(b.code));
@@ -79,6 +83,6 @@ export class GeminiPreflight {
     const checked = await run([input.executable, "--version"], false); version = checked.stdout.trim();
     if (checked.reason !== "exited" || checked.exit_code !== 0 || version !== geminiProbeVersion) return report({ status: "unavailable", reason: "unsupported_gemini_version", session_id: null, failure: null });
     guard(); invoked = true; const outcome = await run(command, true); guard();
-    return report(judgeGeminiPreflight(outcome, input.model));
+    return { ...report(judgeGeminiPreflight(outcome, input.model)), process_reason: outcome.reason, process_exit_code: outcome.exit_code };
   }
 }

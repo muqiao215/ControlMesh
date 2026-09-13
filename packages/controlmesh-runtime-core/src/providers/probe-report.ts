@@ -12,4 +12,7 @@ export interface ProviderProbeReport {
   model_invoked: boolean;
   duration_ms: number;
   runtime_digest?: string;
+  /** Process facts only; no raw stderr, credentials or private paths. */
+  process_reason?: string;
+  process_exit_code?: number | null;
 }

@@ -413,3 +413,11 @@ control recovery now use shared GeminiRegistration. Full configured fixture exec
 and recovery after credential rotation pass. Next: installed native runtime/auth source
 qualification and actual account continuation, then remaining native receipts/Viewer and
 all outstanding CM-R0–R7 device/transport/terminal/cutover/release acceptance.
+
+
+Installed Gemini checkpoint: corrected unsupported public --ignore-env argv; native
+merged advanced.ignoreLocalEnv=true is now required. Actual public parser passes.
+The live OAuth-copy account path is unavailable/native_client_unsupported, not quota;
+real continuation remains unaccepted and further identical probes must not be retried.
+Continue remaining full migration owners while resolving the qualified runtime/account
+path only when relevant external state changes. No full objective or release closure.
