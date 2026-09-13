@@ -1,4 +1,5 @@
 import type { DeliveryMediaProjector } from "./delivery-media-projector";
+import type { TelegramControlReply, TelegramControlReceipt } from "./telegram-control-reply";
 import { DeliveryRetryAfter } from "./delivery-retry";
 import type { TelegramIncomingCallback } from "./telegram-event-auth";
 import { telegramChoices } from "./telegram-choices";
@@ -23,6 +24,7 @@ export interface DeliveryAdapter {
   /** Explicit operator retry may clear a credential failure latch; never invoked by drain. */
   retryPreparation?(): void;
   answerCallback?(queryId: string, accepted: boolean, context: DeliveryContext): Promise<void>;
+  sendControlReply?(reply: TelegramControlReply, context: DeliveryContext, beforeDispatch: () => void): Promise<TelegramControlReceipt>;
   prepare(envelope: TerminalDelivery, context: DeliveryContext): Promise<PreparedDelivery>;
   /** Explicit local acknowledgement recovery, never a claim of current remote content.
    * Input comes only from the persisted observation, not an operator-supplied receipt. */
@@ -229,6 +231,18 @@ export class DeliveryOutbox {
       return { event_seq, part_count: count, sent_parts: sent,
         complete: parts.length === count && parts.every((part, index) => part.part_index === index && part.part_count === count && part.state === "sent"), parts };
     });
+  }
+  async sendTelegramControlReply(adapterId: string, reply: TelegramControlReply, authorize: () => void, beforeDispatch: () => void) {
+    this.current("delivery:send"); const adapter = this.adapters.get(adapterId);
+    requireThat(adapter?.sendControlReply && adapter.binding_digest === digest({ adapter: "telegram_text.v1", adapter_id: adapterId,
+      bot_id: reply.bot_id, transport: "telegram" }), "telegram_control_adapter_mismatch");
+    const controller = new AbortController(), untrack = this.track(controller), timer = setTimeout(() => controller.abort(), 5000);
+    try { return await adapter.sendControlReply(reply, { signal: controller.signal, assertCurrent: () => {
+      this.current("delivery:send"); this.adapterCurrent(adapter); requireThat(!controller.signal.aborted, "telegram_control_timeout");
+      const checked: unknown = authorize();
+      if (checked !== undefined) { void Promise.resolve(checked).catch(() => {}); requireThat(false, "admission_must_be_synchronous"); }
+    } }, beforeDispatch); }
+    finally { clearTimeout(timer); untrack(); }
   }
   async answerTelegramCallback(adapterId: string, callback: TelegramIncomingCallback, accepted: boolean): Promise<void> {
     this.current("delivery:send"); const adapter = this.adapters.get(adapterId);

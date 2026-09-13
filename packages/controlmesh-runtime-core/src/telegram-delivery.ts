@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { sendTelegramControlReply, type TelegramControlReply } from "./telegram-control-reply";
 import { DeliveryRetryAfter } from "./delivery-retry";
 import { telegramDeliveryText } from "./delivery-text-parts";
 export { telegramDeliveryText } from "./delivery-text-parts";
@@ -30,6 +31,10 @@ export class TelegramTextDelivery implements DeliveryAdapter {
     const result: unknown = this.config.assertCurrent();
     if (result !== undefined) { void Promise.resolve(result).catch(() => {}); requireThat(false, "admission_must_be_synchronous"); }
     requireThat(this.config.bot_id === this.botId && this.config.adapter_id === this.adapter_id, "telegram_registration_changed");
+  }
+  sendControlReply(reply: TelegramControlReply, context: DeliveryContext, beforeDispatch: () => void) {
+    this.assertCurrent();
+    return sendTelegramControlReply(this.config, this.binding_digest, this.request, reply, context, beforeDispatch);
   }
   async answerCallback(queryId: string, accepted: boolean, context: DeliveryContext): Promise<void> {
     context.assertCurrent(); this.assertCurrent();

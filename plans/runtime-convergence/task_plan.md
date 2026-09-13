@@ -78,6 +78,9 @@ No claim that full TS migration or distributed coordination has completed. A sco
    commit's CI, then continue management selectors, rich formatting and streaming parity, plus remaining provider
    and physical-device artifact profiles.
    Preserve separate real-account and cross-device ingress acceptance requirements.
+   Schema 41 independent management replies pass the fixed-source full suite (1148 pass,
+   34 skips, 0 fail) and current typecheck. Commit/push and verify its CI; next connect
+   management task/menu commands and finish rate-refusal behavior for these responses.
 2. Complete the remaining ownership/acceptance matrix below. Prioritize normal execution,
    transport delivery and recovery across supported providers/devices over disconnected
    helper additions. Do not waive an original requirement to obtain a release.

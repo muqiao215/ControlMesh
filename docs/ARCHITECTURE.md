@@ -954,6 +954,16 @@ applied input or continuation callbacks. Ordinary inbox capacity stays 128 with 
 additional reserved stop slot. Commands addressed to another bot are ignored. This does
 not implement the Python model/cron/session/task management selector menus.
 
+Schema 41 `telegram_control_replies` owns responses that do not correspond to task
+results, initially no-op `/stop`. Each reply binds an authenticated inbox request and
+bot/chat/topic target; it creates no task or model invocation. Dispatch is journaled
+before HTTP. Unknown sends are never replayed; a retained original acknowledgement can
+be explicitly accepted through the inbox retry operation. A full 128-record unresolved
+reply queue leaves a deferred response marker without rolling back the stop, and drains
+that response after capacity returns. Inbox status exposes deferred/unresolved replies
+separately from Agent execution. The initial control transport does not auto-retry rate
+refusals; full management menus and transport parity remain in the migration plan.
+
 `feishu-credentials.ts` owns selected self-built-app tenant-token refresh. The profile loader
 uses descriptor-checked private files, never credential discovery. Tokens are memory-only,
 refresh is shared within one instance, expiry is monotonic, and credential rotation invalidates

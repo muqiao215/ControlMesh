@@ -28,7 +28,7 @@ export class RuntimeDatabase {
       this.transaction(() => {
         const version = (this.sql.query("PRAGMA user_version").get() as { user_version: number }).user_version;
         const app = (this.sql.query("PRAGMA application_id").get() as { application_id: number }).application_id;
-        requireThat(version >= 0 && version <= 40, "unsupported_database_version");
+        requireThat(version >= 0 && version <= 41, "unsupported_database_version");
         requireThat(app === 0 || app === APPLICATION_ID, "foreign_database");
         if (version === 0) {
           const tables = this.sql.query("SELECT name FROM sqlite_master WHERE type='table'").all();
@@ -593,6 +593,15 @@ export class RuntimeDatabase {
             binding_digest TEXT NOT NULL, metadata TEXT NOT NULL, source TEXT NOT NULL,
             content BLOB NOT NULL
           ); PRAGMA user_version=40;`);
+        }
+        if (version < 41) {
+          this.sql.exec(`CREATE TABLE telegram_control_replies (
+            inbox_id TEXT PRIMARY KEY REFERENCES telegram_inbox(id), principal TEXT NOT NULL, bot_id TEXT NOT NULL,
+            payload TEXT NOT NULL, payload_digest TEXT NOT NULL, state TEXT NOT NULL,
+            observation TEXT, receipt TEXT, reason TEXT,
+            adapter_digest TEXT, chat_id TEXT NOT NULL, remote_message_id TEXT,
+            UNIQUE(adapter_digest,chat_id,remote_message_id)
+          ); PRAGMA user_version=41;`);
         }
       });
       this.sql.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;");

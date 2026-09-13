@@ -293,3 +293,36 @@ acceptance item has matching evidence, release and local alignment.
 - Stops without a mapped task consume the command without creating a model task. A
   dedicated management response/menu surface remains open, as do model/cron/named-session
   selectors, task cancel-all/cleanup, formatting/streaming and full migration/release gates.
+
+## Schema 41: independent management replies
+
+- Stop control `b99d78e` is pushed; CI `34747662184` succeeded. Another CI invocation
+  exists for the same SHA (`34747661811`), not a separate implementation.
+- `telegram_control_replies` binds private runtime responses to authenticated inbox
+  requests, without synthetic tasks. No-op stop responses use it; actual cancellation
+  keeps its existing terminal result response. Task selector menus remain open.
+- `telegram-control-reply.ts` verifies bot/chat/thread/text/attempt identity. Dispatch
+  becomes unknown before HTTP; original acknowledgements are retained separately from
+  acceptance. Explicit inbox retry can accept that original acknowledgement, without
+  another send. Unobserved sends cannot be retried; preparation failures remain blocked.
+- Response capacity does not undo a stop: with 128 unresolved send records, a completed
+  stop retains a deferred reply marker. Capacity recovery stages only the response.
+  Deferred work contributes to admission and status; source policy is rechecked after
+  reopen. Unresolved reply IDs/reasons appear in the existing inspection/retry surface.
+- Focused transport/inbox/polling/Feishu checks: **69 pass, 0 fail**, 650 assertions, 3.43s
+  (`/tmp/cm-control-replies-capacity.log`). Full frozen-source regression with Docker and
+  independent SpecMesh: **1148 pass, 34 skip, 0 fail**, 12946 assertions, 1182 tests across
+  127 files, 410.38s (`/tmp/cm-runtime-control-replies-frozen.log`, session 38768 exited 0).
+  Current runtime typecheck passed. No live test process remains for this run.
+- Superseded run 39661 mixed cached old modules with a new capacity test and had one
+  known failure. It is not acceptance evidence; the frozen-source run above replaces it.
+- No actual Telegram account send occurred. Definitive rate-refusal retry for management
+  replies, full selector menus, formatting/streaming and the wider CM-R0–R7 matrix remain.
+
+## Release checkpoint
+
+GitHub latest releases remain CM `v0.43.0`, Viewer `v1.1.0`, SpecMesh `v1.2.1`; installed
+`/home/muqiao/.local/bin/cm` reports `0.43.0`. No TS production switch or new release has
+occurred. Viewer HEAD is `9ea53f1`, SpecMesh HEAD `d393c54`; their respective handoff-service
+and independent-port plans retain open acceptance phases. Unrelated Viewer untracked work
+was preserved. This checkpoint is not final release/local-alignment acceptance.

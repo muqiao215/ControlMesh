@@ -35,7 +35,7 @@ test("host output is durable and readable before completion, with execution-boun
       const otherDB = new RuntimeDatabase(join(state, "runtime.sqlite"));
       try {
         const actor: Principal = { id: "owner", origin: "human_request", scopes: ["task:read", "task:admin"] }, kernel = new RuntimeKernel(otherDB);
-        expect(otherDB.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 40 });
+        expect(otherDB.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 41 });
         const logs = readHostLog(kernel, actor, "log");
         expect(logs.chunks.map(item => item.text).join("")).toContain("你🙂好");
         expect(() => readHostLog(kernel, { ...actor, id: "other" }, "log")).toThrow("host_output_owner_mismatch");
@@ -70,9 +70,9 @@ test("schema 31 upgrades without changing persisted task state", () => {
   const actor: Principal = { id: "owner", origin: "human_request", scopes: ["task:read", "task:create"] };
   try {
     const kernel = new RuntimeKernel(db), original = kernel.submit(actor, "create", { task_id: "saved", chat_id: "test", status: "waiting", provider: "host" });
-    db.sql.exec("DROP TABLE episode_deadlines; DROP TABLE process_output_chunks; DROP TABLE IF EXISTS telegram_conversations; DROP TABLE IF EXISTS telegram_event_aliases; DROP TABLE IF EXISTS telegram_inbox; DROP TABLE IF EXISTS delivery_media; DROP TABLE IF EXISTS delivery_retry_after; DROP TABLE IF EXISTS telegram_callbacks; DROP TABLE IF EXISTS telegram_poll_updates; DROP TABLE IF EXISTS telegram_polling; PRAGMA user_version=31;"); db.close();
+    db.sql.exec("DROP TABLE episode_deadlines; DROP TABLE process_output_chunks; DROP TABLE IF EXISTS telegram_conversations; DROP TABLE IF EXISTS telegram_event_aliases; DROP TABLE IF EXISTS telegram_inbox; DROP TABLE IF EXISTS telegram_control_replies; DROP TABLE IF EXISTS delivery_media; DROP TABLE IF EXISTS delivery_retry_after; DROP TABLE IF EXISTS telegram_callbacks; DROP TABLE IF EXISTS telegram_poll_updates; DROP TABLE IF EXISTS telegram_polling; PRAGMA user_version=31;"); db.close();
     db = new RuntimeDatabase(file);
-    expect(db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 40 });
+    expect(db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 41 });
     expect(new RuntimeKernel(db).inspect(actor, "saved")).toEqual(original);
     expect(db.sql.query("SELECT COUNT(*) AS n FROM process_output_chunks").get()).toEqual({ n: 0 });
   } finally { db.close(); rmSync(root, { recursive: true, force: true }); }

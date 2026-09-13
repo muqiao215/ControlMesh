@@ -14,6 +14,8 @@ export class WebhookInboundRuntime {
   constructor(readonly inbox: Pick<FeishuInbox, "receive" | "applyPending" | "status" | "listBlocked" | "retry"> & {
     applyControl?(runtime: LocalTaskRuntime): number;
     confirmCallbacks?(deliveries: DeliveryOutbox, adapterId: string): Promise<boolean>;
+    confirmControlReplies?(deliveries: DeliveryOutbox, adapterId: string): Promise<boolean>;
+    controlReplyStatus?(): { pending: number; sent: number; unknown: number; blocked: number };
   }, private readonly runtime: LocalTaskRuntime, private readonly deliveries: DeliveryOutbox,
     private readonly adapterId: string, private readonly path = "/feishu/events", private readonly port = 0, private readonly transport: "feishu" | "telegram" = "feishu") {
     requireThat(/^\/[A-Za-z0-9/_-]{1,127}$/.test(path), `invalid_${transport}_event_path`);
@@ -57,13 +59,14 @@ export class WebhookInboundRuntime {
         const blockedBefore = this.inbox.status().blocked;
         const applied = this.inbox.applyPending(this.runtime, this.deliveries, this.adapterId);
         const moreCallbacks = await this.inbox.confirmCallbacks?.(this.deliveries, this.adapterId);
+        const moreControl = await this.inbox.confirmControlReplies?.(this.deliveries, this.adapterId);
         const before = this.runtime.queueStatus();
         await this.runtime.drain();
         if (this.stopping) break;
         await this.deliveries.drain();
         const after = this.runtime.queueStatus();
         // Reopened queued work can release a conversation even when this pass applied no new event.
-        if (moreCallbacks || (applied || this.inbox.status().blocked > blockedBefore || after.queued + after.running < before.queued + before.running) && this.inbox.status().pending) this.dirty = true;
+        if (moreCallbacks || moreControl || (applied || this.inbox.status().blocked > blockedBefore || after.queued + after.running < before.queued + before.running) && this.inbox.status().pending) this.dirty = true;
       } while (this.dirty && !this.stopping);
       this.failure = null;
     })().catch(error => {
@@ -72,6 +75,7 @@ export class WebhookInboundRuntime {
   }
   async drain(): Promise<void> { this.kick(); while (this.pumping) await this.pumping; }
   status() { return { ...this.inbox.status(), processing: Boolean(this.pumping), failure: this.failure,
+    ...(this.inbox.controlReplyStatus ? { control_replies: this.inbox.controlReplyStatus() } : {}),
     listener: this.server ? { hostname: "127.0.0.1", port: this.server.port, path: this.path } : null, blocked_items: this.inbox.listBlocked() }; }
   retry(requestId: string, id: string): void { this.inbox.retry(requestId, id); this.kick(); }
   async stop(): Promise<void> {

@@ -21,7 +21,7 @@ function fixture(output = "Fixture result", holdExecution = false) {
   let started!: () => void;
   const executionStarted = new Promise<void>(resolve => { started = resolve; });
   const root = mkdtempSync(join(tmpdir(), "cm-telegram-inbox-")); cleanups.push(() => rmSync(root, { recursive: true, force: true }));
-  const path = join(root, "runtime.sqlite"), seen: any[] = [], posts: any[] = [], acks: any[] = []; let ackLost = false, deny = false, quota = false, valid = true;
+  const path = join(root, "runtime.sqlite"), seen: any[] = [], posts: any[] = [], acks: any[] = []; let ackLost = false, controlAckLost = false, deny = false, quota = false, valid = true;
   const current = () => { if (!valid) throw new RuntimeConflict("fixture_revoked"); };
   const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
     const body = await request.json();
@@ -38,7 +38,9 @@ function fixture(output = "Fixture result", holdExecution = false) {
     const adapter = new TelegramTextDelivery({ adapter_id: "selected", bot_id: policy.bot_id, assertCurrent: current, assertToken: current,
       async botToken() { return "123456:fixture_token_only"; } }, (async (url, init) => {
       const target = new URL(String(url)); expect(target.origin).toBe("https://api.telegram.org");
-      return fetch(`${server.url.origin}${target.pathname}`, init);
+      const response = await fetch(`${server.url.origin}${target.pathname}`, init);
+      if (controlAckLost && JSON.parse(String(init?.body)).text?.startsWith("No active task")) { await response.arrayBuffer(); throw new Error("lost control receipt"); }
+      return response;
     }) as typeof fetch);
     const deliveries = new DeliveryOutbox(kernel, actor, [adapter], current);
     const runtime = new LocalTaskRuntime(kernel, actor, { command_origin: "human_request", origin: "user", source_scope: "local_foreground", transport: "telegram" }, snapshot => {
@@ -60,7 +62,7 @@ function fixture(output = "Fixture result", holdExecution = false) {
     cleanups.push(close); return { db, kernel, inbox, runtime, deliveries, inbound, close };
   };
   const receive = (inbox: TelegramInbox, body: unknown) => inbox.receive(headers(), Buffer.from(JSON.stringify(body))) as { accepted: boolean; receipt_id: string; reason?: string };
-  return { ...open(), open, receive, seen, posts, acks, executionStarted, loseAck: () => { ackLost = true; }, deny: () => { deny = true; }, quota: (value = true) => { quota = value; }, revoke: () => { valid = false; } };
+  return { ...open(), open, receive, seen, posts, acks, executionStarted, loseControlReply: () => { controlAckLost = true; }, loseAck: () => { ackLost = true; }, deny: () => { deny = true; }, quota: (value = true) => { quota = value; }, revoke: () => { valid = false; } };
 }
 
 test("Telegram duplicate updates survive reopen; chat-local message IDs never alias another chat", async () => {
@@ -171,6 +173,56 @@ test("stop before initial admission suppresses older input without creating an A
   f.receive(f.inbox, stop); await f.inbound.drain();
   expect(f.db.sql.query("SELECT COUNT(*) AS n FROM tasks").get()).toEqual({ n: 0 });
   expect(f.inbox.status()).toEqual({ pending: 0, applied: 1, blocked: 1 }); expect(f.seen).toHaveLength(0);
+  expect(f.posts).toHaveLength(1); expect(f.posts[0].text).toContain("No active task");
+  expect(f.db.sql.query("SELECT state FROM telegram_control_replies").get()).toEqual({ state: "sent" });
+});
+
+test("unknown management response survives reopen without resending or reapplying stop", async () => {
+  const f = fixture(); f.loseControlReply(); const stop = event(); stop.message.text = "/stop";
+  const stored = f.receive(f.inbox, stop); await f.inbound.drain(); expect(f.posts).toHaveLength(1);
+  expect(f.db.sql.query("SELECT state FROM telegram_control_replies").get()).toEqual({ state: "unknown" });
+  expect(() => f.inbox.retry("retry-unknown", stored.receipt_id)).toThrow("telegram_control_observation_required");
+  await f.close(); const reopened = f.open(); f.receive(reopened.inbox, stop); await reopened.inbound.drain();
+  expect(f.posts).toHaveLength(1); expect(f.seen).toHaveLength(0);
+});
+
+test("retained management acknowledgement can be explicitly accepted without another send", async () => {
+  const f = fixture(), stop = event(); stop.message.text = "/stop"; const stored = f.receive(f.inbox, stop);
+  f.db.sql.exec("CREATE TEMP TRIGGER fail_control_accept BEFORE UPDATE OF state ON telegram_control_replies WHEN NEW.state='sent' BEGIN SELECT RAISE(ABORT,'fixture'); END");
+  await f.inbound.drain(); expect(f.posts).toHaveLength(1);
+  expect(f.db.sql.query("SELECT state FROM telegram_control_replies").get()).toEqual({ state: "unknown" });
+  f.db.sql.exec("DROP TRIGGER fail_control_accept"); f.inbox.retry("accept-original", stored.receipt_id);
+  await f.inbound.drain(); expect(f.posts).toHaveLength(1);
+  expect(f.db.sql.query("SELECT state FROM telegram_control_replies").get()).toEqual({ state: "sent" });
+});
+
+test("full management reply storage defers feedback without rolling back stop or replaying input", async () => {
+  const f = fixture();
+  for (let id = 1; id <= 128; id++) {
+    const stop = event(id); stop.message.text = "/stop"; f.receive(f.inbox, stop); f.inbox.applyControl(f.runtime);
+  }
+  f.receive(f.inbox, event(129)); const stop = event(130); stop.message.text = "/stop";
+  const stored = f.receive(f.inbox, stop); f.inbox.applyControl(f.runtime);
+  expect(f.db.sql.query("SELECT state,reason FROM telegram_inbox WHERE id=?").get(stored.receipt_id))
+    .toEqual({ state: "applied", reason: "telegram_control_reply_deferred" });
+  expect(f.db.sql.query("SELECT COUNT(*) AS n FROM telegram_control_replies").get()).toEqual({ n: 128 });
+  expect(f.inbox.controlReplyStatus().pending).toBe(129);
+  await f.close(); const next = f.open(); await next.inbound.drain();
+  expect(f.posts).toHaveLength(129); expect(f.seen).toHaveLength(0);
+  expect(next.db.sql.query("SELECT COUNT(*) AS n FROM tasks").get()).toEqual({ n: 0 });
+  expect(next.inbox.controlReplyStatus()).toEqual({ pending: 0, sent: 129, unknown: 0, blocked: 0 });
+  await next.inbound.drain(); expect(f.posts).toHaveLength(129);
+});
+
+test("schema 40 upgrade preserves accepted input and task identity while adding empty management replies", async () => {
+  const f = fixture(), input = event(); f.receive(f.inbox, input); await f.inbound.drain();
+  const tasks = f.db.sql.query("SELECT * FROM tasks").all(), inbox = f.db.sql.query("SELECT * FROM telegram_inbox").all();
+  f.db.sql.exec("DROP TABLE telegram_control_replies; PRAGMA user_version=40"); await f.close();
+  const next = f.open(); expect(next.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 41 });
+  expect(next.db.sql.query("SELECT * FROM tasks").all()).toEqual(tasks);
+  expect(next.db.sql.query("SELECT * FROM telegram_inbox").all()).toEqual(inbox);
+  expect(next.inbox.controlReplyStatus()).toEqual({ pending: 0, sent: 0, unknown: 0, blocked: 0 });
+  f.receive(next.inbox, input); await next.inbound.drain(); expect(f.seen).toHaveLength(1);
 });
 
 test("a full ordinary inbox retains one bounded stop slot", async () => {
