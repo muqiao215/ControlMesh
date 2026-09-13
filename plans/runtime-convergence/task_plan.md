@@ -329,3 +329,14 @@ Streaming host log checkpoint: schema-32 durable chunks and normal control/CLI r
 work before completion and after reopen; sink failures stop execution. Historical migration
 regression passes. Next: bounded lease renewal/durable long-job execution ownership and
 remaining environment/source parity, then full CM-R0–R7 native/device/terminal/cutover gates.
+
+
+## Latest verification and next action
+
+At b1de06f, the configured Docker/SpecMesh runtime regression passed 960 tests with 30
+optional skips (990 total); see progress for limits. Independent host execution survives
+management loss and obeys cancellation, expiry and owner-death handling. Next: continue
+only the remaining steps of its already-approved host plan while management is offline,
+without taking unrelated queued work or relaxing per-step approval/version checks.
+This next action does not supersede remaining provider/transport/device/migration/release
+requirements or the CM-R7 production writer cutover gate.

@@ -1237,3 +1237,16 @@ Fault/CLI/local regression: 24 pass, 0 fail, 178 assertions, 22.86s
 0 fail, 12 assertions, 1.67s. Typecheck passed. Broader runtime regression with configured
 Docker and independent SpecMesh started at /tmp/cm-runtime-detached-full.log; pending,
 not counted as passing. Full objective/production switch remains open.
+
+
+## 2026-09-13 — complete detached-runtime regression
+
+The previously running full suite completed successfully against b1de06f, with no source
+changes during its run: 960 pass, 30 optional skip, 0 fail, 11643 assertions; 990 tests
+across 113 files in 380.35s (/tmp/cm-runtime-detached-full.log), exit 0. Configured Docker
+image and independent SpecMesh gates were enabled. Unconfigured installed/native fixture
+profiles remain skipped; this result is not complete provider/account/device qualification.
+Remote CI independently confirmed a986fed success (run 34736519797); b1de06f CI was still
+running when queried and is not asserted complete here. Worktree was clean at completion.
+Next implementation seam is same-approved-plan advancement while management stays offline;
+current independent owner finishes only its current step. Full CM-R0..R7 remains open.
