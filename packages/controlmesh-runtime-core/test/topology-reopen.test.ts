@@ -138,7 +138,7 @@ test("schema 21 upgrade preserves a completed run's accepted-input digest and th
     const final = await f.cycle(1), before = f.kernel.inspect(actor, "parent");
     f.db.sql.exec("DROP TABLE episode_deadlines; DROP TABLE process_output_chunks; DROP TABLE host_jobs; DROP TABLE backstage_events; DROP TABLE workspace_seed_files; DROP TABLE workspace_seed_transfers; DROP TABLE topology_artifact_publications; DROP TABLE device_artifact_files; DROP TABLE topology_native_inputs; DROP TABLE topology_device_runs; ALTER TABLE topology_tasks DROP COLUMN execution_source; DROP TABLE topology_schedule_members; DROP TABLE topology_schedules; ALTER TABLE topology_tasks DROP COLUMN kind; DROP TABLE topology_runs; ALTER TABLE topology_tasks DROP COLUMN execution_id; PRAGMA user_version=21");
     await f.restart(); expect(f.kernel.inspect(actor, "parent")).toEqual(before);
-    expect(f.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 34 });
+    expect(f.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 35 });
     expect(f.reopen().parent.task.status).toBe("waiting");
     expect(f.topology.inspectRun(actor, "parent", final.topology.state.execution_id)).not.toBeNull();
   } finally { await f.close(); }

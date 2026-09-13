@@ -1,3 +1,5 @@
+import { deliveryTextParts } from "./delivery-text-parts";
+import type { TerminalDelivery } from "@controlmesh/protocol";
 import { Database } from "bun:sqlite";
 import { closeSync, lstatSync, openSync } from "node:fs";
 import { isAbsolute } from "node:path";
@@ -26,7 +28,7 @@ export class RuntimeDatabase {
       this.transaction(() => {
         const version = (this.sql.query("PRAGMA user_version").get() as { user_version: number }).user_version;
         const app = (this.sql.query("PRAGMA application_id").get() as { application_id: number }).application_id;
-        requireThat(version >= 0 && version <= 34, "unsupported_database_version");
+        requireThat(version >= 0 && version <= 35, "unsupported_database_version");
         requireThat(app === 0 || app === APPLICATION_ID, "foreign_database");
         if (version === 0) {
           const tables = this.sql.query("SELECT name FROM sqlite_master WHERE type='table'").all();
@@ -487,6 +489,54 @@ export class RuntimeDatabase {
           DROP TABLE transport_receipts;
           ALTER TABLE transport_receipts_scoped RENAME TO transport_receipts;
           PRAGMA user_version=34;`);
+        }
+        if (version < 35) {
+          // Rebuild both sides of the only inbound foreign key atomically. Existing
+          // single deliveries keep their IDs, observations and accepted receipts.
+          this.sql.exec(`CREATE TABLE delivery_backup AS SELECT * FROM delivery_outbox;
+            CREATE TABLE receipts_backup AS SELECT * FROM transport_receipts;
+            DROP TABLE transport_receipts; DROP TABLE delivery_outbox;
+            CREATE TABLE delivery_outbox (
+              delivery_id TEXT PRIMARY KEY, event_seq INTEGER NOT NULL REFERENCES events(seq),
+              task_id TEXT NOT NULL REFERENCES delivery_routes(task_id), principal TEXT NOT NULL,
+              route_digest TEXT NOT NULL, envelope TEXT NOT NULL, envelope_digest TEXT NOT NULL,
+              state TEXT NOT NULL CHECK(state IN ('pending','dispatching','sent','unknown','blocked')),
+              attempt_id TEXT, attempt_started INTEGER, attempt_until INTEGER, observation TEXT, receipt TEXT, reason TEXT,
+              created_at INTEGER NOT NULL, part_index INTEGER NOT NULL DEFAULT 0 CHECK(part_index>=0),
+              part_count INTEGER NOT NULL DEFAULT 1 CHECK(part_count BETWEEN 1 AND 32 AND part_index<part_count),
+              group_digest TEXT NOT NULL DEFAULT '', UNIQUE(event_seq,part_index)
+            );
+            INSERT INTO delivery_outbox (delivery_id,event_seq,task_id,principal,route_digest,envelope,envelope_digest,state,
+              attempt_id,attempt_started,attempt_until,observation,receipt,reason,created_at)
+              SELECT delivery_id,event_seq,task_id,principal,route_digest,envelope,envelope_digest,state,
+              attempt_id,attempt_started,attempt_until,observation,receipt,reason,created_at FROM delivery_backup;
+            CREATE INDEX delivery_pending ON delivery_outbox(principal,state,event_seq,part_index);
+            CREATE TABLE transport_receipts (
+              adapter_digest TEXT NOT NULL, target_transport TEXT NOT NULL, target_chat TEXT NOT NULL,
+              remote_message_id TEXT NOT NULL, delivery_id TEXT NOT NULL UNIQUE REFERENCES delivery_outbox(delivery_id),
+              PRIMARY KEY(adapter_digest,target_transport,target_chat,remote_message_id)
+            );
+            INSERT INTO transport_receipts SELECT * FROM receipts_backup;
+            DROP TABLE receipts_backup; DROP TABLE delivery_backup;
+            PRAGMA user_version=35;`);
+          const oldRows = this.sql.query("SELECT delivery_id,envelope_digest,envelope,attempt_id,observation,receipt FROM delivery_outbox").all() as
+            { delivery_id: string; envelope_digest: string; envelope: string; attempt_id: string | null; observation: string | null; receipt: string | null }[];
+          for (const row of oldRows) {
+            const envelope = JSON.parse(row.envelope) as TerminalDelivery;
+            requireThat(digest(envelope) === row.envelope_digest, "delivery_migration_evidence_corrupted");
+            // Only never-attempted output may expand. Unknown/sent work never gains new sends.
+            const texts = row.attempt_id === null && row.observation === null && row.receipt === null ? deliveryTextParts(envelope) : [envelope.text];
+            const parts = texts.map((text, index) => ({ ...envelope, text, delivery_id: index === 0 ? row.delivery_id : `${row.delivery_id}.${index}` }));
+            const group = digest(parts.map(part => ({ delivery_id: part.delivery_id, envelope_digest: digest(part) })));
+            for (const [index, part] of parts.entries()) {
+              if (index === 0) this.sql.query("UPDATE delivery_outbox SET envelope=?,envelope_digest=?,part_count=?,group_digest=? WHERE delivery_id=?")
+                .run(JSON.stringify(part), digest(part), parts.length, group, row.delivery_id);
+              else this.sql.query(`INSERT INTO delivery_outbox
+                (delivery_id,event_seq,task_id,principal,route_digest,envelope,envelope_digest,state,created_at,part_index,part_count,group_digest)
+                SELECT ?,event_seq,task_id,principal,route_digest,?,?,'pending',created_at,?,?,? FROM delivery_outbox WHERE delivery_id=?`)
+                .run(part.delivery_id, JSON.stringify(part), digest(part), index, parts.length, group, row.delivery_id);
+            }
+          }
         }
       });
       this.sql.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;");

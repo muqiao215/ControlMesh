@@ -5,8 +5,8 @@
 Full TS migration, multi-device coordination and real Agent continuity remain **in
 progress**. No production writer cutover, complete release or default TS installation
 has been accepted. Last directly checked local `cm --version`: **0.43.0**, Python.
-The last pushed baseline is **90c4348** (configured Telegram text delivery). Current
-changes add schema 34 chat-scoped receipt uniqueness and retained-acknowledgement recovery;
+The last pushed baseline is **62f35d6** (chat-scoped receipts and local acknowledgement recovery).
+Current changes add schema 35 multipart projection, ordered per-part sends and group status;
 this remains a scoped transport port, not production cutover.
 
 This file is the current handoff, not a chronological commit log. Historical detail
@@ -27,7 +27,7 @@ adapter, that host execution cannot survive management loss, or that public Gemi
 | Native Codex | Registered local resume, preflight, Viewer adoption, workspace/SpecMesh receipts and topology/mailbox integration | Installed CLI with loopback model fixtures covers selected flows; real accounts, physical devices and remaining branches differ |
 | Gemini | Registered local text continuation, native JSONL/stream verification, process supervisor, durable task results/recovery, persistent readiness cache | Configured fixture and installed loader/parser tests pass; actual OAuth account is rejected by server; tools/Viewer/device paths remain |
 | Coordination | Device identity/leases/fences, durable mailbox, explicit topology scheduling and native task context | Scoped real-device and local native-fixture evidence; full cross-device/provider/partition/rollout matrix remains |
-| Telegram delivery | Selected private bot profile in normal local configuration, strict numeric-chat text receipts, durable no-replay behavior | Local HTTP/outbox/reopen tests; multipart, inbound, files, streaming and production delivery remain |
+| Telegram delivery | Selected private bot profile, strict receipts, ordered persisted multipart text, retained-ack recovery and group status | Local HTTP/reopen/SIGKILL and upgrade tests; inbound, files, formatting, streaming, rate-limit handling and production delivery remain |
 | Integrations | Headless History ports and independent SpecMesh lifecycle are used by qualified provider paths | SpecMesh check does not imply reviewed closeout; supported providers/receipt profiles differ |
 
 ### Gemini actual-account findings
@@ -47,6 +47,14 @@ Temporary login copies were deleted; operator authentication files were not writ
 Private diagnostic evidence: `/tmp/cm-gemini-account-BNTF1Q` (ephemeral, not release assets).
 
 ## Verification
+
+- **Multipart targeted regression:** 60 pass, 0 fail, 509 assertions, 3.24s;
+  `/tmp/cm-telegram-multipart-tests.log`.
+- **Schema 35 full regression:** 1010 pass, 34 optional skips, 0 fail, 12,000 assertions;
+  1,044 tests / 120 files, 391.72s, exit 0. Docker and standalone SpecMesh enabled.
+  `/tmp/cm-runtime-telegram-multipart-full.log`. Typecheck and diff check passed.
+- GitHub CI for `62f35d6ee21c71a1bbfe16568b71203b78d8738c` succeeded (34741123956);
+  remote CI for the current multipart change is not yet verified.
 
 - **Schema 34 / Telegram recovery full regression:** 1002 pass, 34 optional skips, 0 fail;
   11,923 assertions / 1,036 tests / 120 files, 390.56s, exit 0.
@@ -114,13 +122,13 @@ Private diagnostic evidence: `/tmp/cm-gemini-account-BNTF1Q` (ephemeral, not rel
 
 ## Next
 
-Telegram text delivery is now wired through normal local configuration and DeliveryOutbox.
-Retained successful acknowledgements can now be accepted locally after a failed acceptance
-transaction, without credentials, remote readback or another send. Missing original
-acknowledgements still remain unknown. Next implement multipart receipt ownership,
-then Telegram ingress and remaining message/file/streaming profiles. Current text delivery
-refuses over 4096 UTF-16 units including its heading; it never silently truncates. Telegram
-has no generic getMessage readback; local acknowledgement recovery proves only the original
-send, not continued remote existence or unchanged content. Do not recover by replaying POST.
+Telegram text delivery is wired through normal configuration and DeliveryOutbox. Multipart
+text is projected atomically into per-part records, with sequential barriers and group
+completion available through private `delivery_groups`. Schema 35 broad validation passed.
+Next implement Telegram ingress and its message/thread routing, followed by files, rich
+formatting, bounded rate-limit handling and streaming. No real account sends are authorized.
+Original retained acknowledgements recover locally without credentials or another send;
+missing acknowledgements remain unknown and stop the unsent suffix. This proves original
+send acknowledgement, not current remote content or recipient consumption.
 Keep the complete original objective active; mark complete only after every phase and
 acceptance item has matching evidence, release and local alignment.

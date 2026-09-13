@@ -70,7 +70,7 @@ test("version sixteen upgrades topology storage without losing existing task and
     db.sql.query("INSERT INTO team_phases VALUES ('team','owner',1,'{}')").run();
     db.sql.exec("DROP TABLE episode_deadlines; DROP TABLE process_output_chunks; DROP TABLE host_jobs; DROP TABLE backstage_events; DROP TABLE workspace_seed_files; DROP TABLE workspace_seed_transfers; DROP TABLE topology_artifact_publications; DROP TABLE device_artifact_files; DROP TABLE topology_native_inputs; DROP TABLE topology_device_runs; ALTER TABLE topology_tasks DROP COLUMN execution_source; DROP TABLE topology_schedule_members; DROP TABLE topology_schedules; ALTER TABLE topology_tasks DROP COLUMN kind; DROP TABLE topology_runs; ALTER TABLE topology_tasks DROP COLUMN execution_id; DROP TABLE topology_completions; DROP TABLE topology_controls; DROP TABLE topology_task_history; DROP TABLE topology_tasks; DROP TABLE team_topologies; PRAGMA user_version=16");
     db.close(); db = new RuntimeDatabase(path);
-    expect(db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 34 });
+    expect(db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 35 });
     expect(new RuntimeKernel(db).inspect(actor, "parent").task.status).toBe("waiting");
     expect(db.sql.query("SELECT state FROM team_phases WHERE team_id='team'").get()).toEqual({ state: "{}" });
     expect(new RuntimeTopology(new RuntimeKernel(db)).inspect(actor, "parent")).toBeNull();

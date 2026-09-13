@@ -22,7 +22,7 @@ test("backstage event migration, reopen, principal isolation and retry identity"
   try {
     // A prior schema has no backstage table. Upgrade must retain unrelated state.
     db.sql.exec("DROP TABLE episode_deadlines; DROP TABLE process_output_chunks; DROP TABLE host_jobs; DROP TABLE backstage_events; PRAGMA user_version=29;"); db.close(); db = new RuntimeDatabase(path);
-    expect(db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 34 });
+    expect(db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 35 });
     const store = new RuntimeEventStore(db);
     const event = { event_id: "one", session_key: "123", event_type: "progress", payload: { state: "running" }, created_at: "2026-09-13T00:00:00Z", transport: "tg", chat_id: 123, topic_id: null };
     store.append("owner", event); store.append("owner", event);

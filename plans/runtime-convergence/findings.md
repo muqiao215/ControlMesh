@@ -2574,3 +2574,48 @@ Full schema 34 regression completed: 1002 pass, 34 optional skips, 0 fail, 11,92
 Legacy version assertion updates only change the expected current schema to 34; downgrade
 fixture versions remain unchanged. The corrupted-upgrade test intentionally expects 33
 because failed migration rolls back. Typecheck passed. No real transport message was sent.
+
+
+## Schema 35 multipart transport ownership
+
+`delivery-text-parts.ts` owns pure bounded text projection, with a UTF-16 budget including
+Telegram's task heading and part marker. Iterating code points avoids splitting surrogate
+pairs; concatenating the bodies after removing markers reproduces the original text.
+Projection persists every part in one transaction before any HTTP call. Parts retain the
+original event/task/provenance/target and have independent envelope digests, attempt and
+acknowledgement records. The first part keeps the original delivery ID; later parts use
+indexed suffixes. A group digest binds the ordered IDs and envelope digests. Missing parts
+or changed part ordering/count block admission. Group insertion respects remaining outbox
+capacity atomically; it never creates only the first few parts of an event.
+
+Dispatch checks earlier event and earlier part states inside the same transaction that
+admits a send. Unknown or blocked parts prevent later sends even across controllers/reopen.
+An acknowledged prefix is never resent. Explicit retained-ack recovery releases only the
+never-sent suffix. Private `delivery_groups` reports expected/sent counts and complete only
+for a complete contiguous set whose every part is sent; execution completion remains separate.
+
+Schema 35 rebuilds outbox plus its receipt foreign key in one transaction. Existing IDs,
+routes, acknowledgements and observations are preserved. Never-attempted long output may
+expand, retaining its first ID; attempted/unknown/sent records cannot gain new sends from
+upgrade. The prior test expecting long text refusal was updated to complete Unicode delivery.
+A test assertion initially widened pending to string and failed typecheck; its literal type
+was corrected. Focused tests: 60 pass, 0 fail, 509 assertions. Actual SIGKILL after the local
+HTTP side effect verifies one unknown prefix and no later sends after reopening.
+
+Python `_send_text_chunks` renders HTML, handles BadRequest fallback and returns the last
+Message only. The TS port now owns each segment, but HTML conversion, reply/file/button and
+streaming parity remain. Rate rejection currently stops rather than retrying; a bounded
+retry-after owner remains needed. No application/account operation was performed.
+
+Next ingress owner: Python `telegram/inbound_spool.py` persists pending messages by bot
+runtime fingerprint, chat/message dedupe key and conversation lane with a lease-style claim;
+it also retains superseded/quarantine/dead-letter state and backlog health. TS FeishuInbox
+already provides transactional receive/apply and current source/grant checks, but its app/event
+identity cannot be reused blindly for Telegram chat-local message IDs and update offsets.
+Telegram ingress needs its own authenticated polling/webhook receipt boundary, durable offset
+advance after persistence, bounded per-conversation application and explicit thread identity.
+
+Schema 35 full regression finished: 1010 pass, 34 optional skips, 0 fail, 12,000 assertions,
+391.72s, exit 0; /tmp/cm-runtime-telegram-multipart-full.log. Docker and standalone SpecMesh
+enabled. Typecheck and diff check passed. This remains controlled transport/fixture evidence,
+not production Telegram sending, native account acceptance or full migration completion.

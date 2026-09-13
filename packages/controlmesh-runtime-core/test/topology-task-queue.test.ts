@@ -115,7 +115,7 @@ test("version seventeen adds assignment storage without changing persisted topol
     f.db.sql.exec("DROP TABLE episode_deadlines; DROP TABLE process_output_chunks; DROP TABLE host_jobs; DROP TABLE backstage_events; DROP TABLE workspace_seed_files; DROP TABLE workspace_seed_transfers; DROP TABLE topology_artifact_publications; DROP TABLE device_artifact_files; DROP TABLE topology_native_inputs; DROP TABLE topology_device_runs; ALTER TABLE topology_tasks DROP COLUMN execution_source; DROP TABLE topology_schedule_members; DROP TABLE topology_schedules; ALTER TABLE topology_tasks DROP COLUMN kind; DROP TABLE topology_runs; ALTER TABLE topology_tasks DROP COLUMN execution_id; DROP TABLE topology_completions; DROP TABLE topology_controls; DROP TABLE topology_task_history; DROP TABLE topology_tasks; PRAGMA user_version=17");
     const upgraded = new RuntimeDatabase(f.path);
     try {
-      expect(upgraded.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 34 });
+      expect(upgraded.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 35 });
       expect(new RuntimeTopology(new RuntimeKernel(upgraded)).inspect(actor, "parent")).toEqual(before);
       expect(upgraded.sql.query("SELECT COUNT(*) AS n FROM topology_tasks").get()).toEqual({ n: 0 });
     } finally { upgraded.close(); }
@@ -183,7 +183,7 @@ test("version eighteen assignment gains a generation without losing its run or a
     f.db.sql.exec("DROP TABLE episode_deadlines; DROP TABLE process_output_chunks; DROP TABLE host_jobs; DROP TABLE backstage_events; DROP TABLE workspace_seed_files; DROP TABLE workspace_seed_transfers; DROP TABLE topology_artifact_publications; DROP TABLE device_artifact_files; DROP TABLE topology_native_inputs; DROP TABLE topology_device_runs; ALTER TABLE topology_tasks DROP COLUMN execution_source; DROP TABLE topology_schedule_members; DROP TABLE topology_schedules; ALTER TABLE topology_tasks DROP COLUMN kind; DROP TABLE topology_runs; ALTER TABLE topology_tasks DROP COLUMN execution_id; DROP TABLE topology_completions; DROP TABLE topology_controls; DROP TABLE topology_task_history; ALTER TABLE topology_tasks DROP COLUMN generation; PRAGMA user_version=18");
     const upgraded = new RuntimeDatabase(f.path);
     try {
-      expect(upgraded.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 34 });
+      expect(upgraded.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 35 });
       expect(upgraded.sql.query("SELECT * FROM topology_tasks WHERE child_id='worker'").get()).toEqual(before);
       expect(upgraded.sql.query("SELECT COUNT(*) AS n FROM topology_task_history").get()).toEqual({ n: 0 });
     } finally { upgraded.close(); }

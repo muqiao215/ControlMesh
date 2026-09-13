@@ -69,12 +69,10 @@ No claim that full TS migration or distributed coordination has completed. A sco
 
 ## Next Step
 
-1. Full runtime regression at `3a56eed` passed: 977 pass, 34 optional skips, 0 fail.
-   Configured Telegram text delivery now passes its outbox/local HTTP regression.
-   Chat-scoped receipts and retained-acknowledgement recovery passed the schema 34 broad
-   regression (1002 pass, 34 optional skips, 0 fail). Next implement multipart receipt ownership,
-   then its remaining ingress/message/file behavior. Optional installed-native and
-   real-account evidence remain separate from the broad baseline.
+1. Multipart delivery now has schema 35 per-part records, ordered dispatch and group status.
+   Its broad regression passed (1010 pass, 34 optional skips, 0 fail). Next port Telegram ingress and message/thread
+   routing, followed by file/rich/streaming and bounded rate-limit behavior. Optional
+   installed-native and real-account evidence remain separate from broad fixture results.
 2. Complete the remaining ownership/acceptance matrix below. Prioritize normal execution,
    transport delivery and recovery across supported providers/devices over disconnected
    helper additions. Do not waive an original requirement to obtain a release.

@@ -1,3 +1,5 @@
+import { telegramDeliveryText } from "./delivery-text-parts";
+export { telegramDeliveryText } from "./delivery-text-parts";
 import { assertProtocolSchema, type DeliveryReceipt, type TerminalDelivery } from "@controlmesh/protocol";
 import type { DeliveryAdapter, DeliveryContext, PreparedDelivery } from "./delivery-outbox";
 import { digest, identifier, object, requireThat } from "./value";
@@ -12,12 +14,6 @@ export interface TelegramDeliveryConfiguration {
 function numericId(value: unknown, positive = false): value is string {
   return typeof value === "string" && (positive ? /^[1-9][0-9]*$/ : /^-?[1-9][0-9]*$/).test(value)
     && Number.isSafeInteger(Number(value));
-}
-export function telegramDeliveryText(envelope: TerminalDelivery): string {
-  const scope = envelope.execution_context.source_scope;
-  const label = scope === "cron" ? "Scheduled task" : scope === "heartbeat" ? "Heartbeat task"
-    : scope === "bot_handoff" ? "Agent task" : scope === "webhook" ? "Webhook task" : "Task";
-  return `${label} ${envelope.task_id}: ${envelope.status === "done" ? "completed" : envelope.status}\n\n${envelope.text}`;
 }
 /** Plain text, numeric chat/forum target. Unknown sends are never retried here. */
 export class TelegramTextDelivery implements DeliveryAdapter {

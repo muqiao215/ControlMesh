@@ -1,3 +1,4 @@
+import { deliveryTextParts } from "./delivery-text-parts";
 import { randomUUID } from "node:crypto";
 import { assertProtocolSchema, type DeliveryReceipt, type DeliveryTarget, type TerminalDelivery } from "@controlmesh/protocol";
 import { command, requireScope } from "./commands";
@@ -23,7 +24,7 @@ export interface DeliveryAdapter {
   recoverAcknowledgement?(envelope: TerminalDelivery, receipt: DeliveryReceipt, context: DeliveryContext): Promise<DeliveryReceipt>;
 }
 export interface DeliveryView {
-  delivery_id: string; task_id: string; event_seq: number;
+  delivery_id: string; task_id: string; event_seq: number; part_index: number; part_count: number;
   state: "pending" | "dispatching" | "sent" | "unknown" | "blocked";
   reason: string | null; receipt: DeliveryReceipt | null; observed_receipt: DeliveryReceipt | null;
 }
@@ -32,7 +33,7 @@ interface Route {
   binding: string; digest: string; first_event: number; active: number;
 }
 interface DeliveryRow extends Omit<DeliveryView, "receipt" | "observed_receipt"> {
-  principal: string; route_digest: string; envelope: string; envelope_digest: string;
+  group_digest: string; principal: string; route_digest: string; envelope: string; envelope_digest: string;
   attempt_id: string | null; attempt_started: number | null; attempt_until: number | null; observation: string | null; receipt: string | null;
 }
 interface RouteBinding {
@@ -147,6 +148,7 @@ export class DeliveryOutbox {
         WHERE r.principal=? AND r.active=1 AND e.seq>=r.first_event AND e.kind IN ('task.done','task.failed','task.cancelled')
         AND NOT EXISTS (SELECT 1 FROM delivery_outbox d WHERE d.event_seq=e.seq) ORDER BY e.seq LIMIT ?`).all(this.actor.id, limit) as
         { seq: number; task_id: string; revision: number; fence: number; origin: Principal["origin"]; at: number; kind: string; payload: string }[];
+      let projected = 0, remaining = 128 - open.n;
       for (const event of events) {
         const { row, binding } = this.routeBinding(event.task_id), payload = JSON.parse(event.payload);
         const result = object(payload.result) ? payload.result : {};
@@ -162,11 +164,22 @@ export class DeliveryOutbox {
           text: summary || (binding.output_policy === "full" ? raw : "") || fallback, output_policy: binding.output_policy, created_at: event.at };
         assertProtocolSchema("terminal-delivery.schema.json", envelope);
         requireThat(Buffer.byteLength(envelope.text) <= 65536, "delivery_text_too_large");
-        this.kernel.db.sql.query(`INSERT INTO delivery_outbox
-          (delivery_id,event_seq,task_id,principal,route_digest,envelope,envelope_digest,state,created_at) VALUES (?,?,?,?,?,?,?,'pending',?)`)
-          .run(envelope.delivery_id, event.seq, event.task_id, this.actor.id, row.digest, canonical(envelope), digest(envelope), this.kernel.db.now());
+        const texts = deliveryTextParts(envelope);
+        if (texts.length > remaining) break; // Never persist only a prefix of an event.
+        const parts = texts.map((text, index) => ({ ...envelope, text,
+          delivery_id: index === 0 ? envelope.delivery_id : `${envelope.delivery_id}.${index}` }));
+        const groupDigest = digest(parts.map(part => ({ delivery_id: part.delivery_id, envelope_digest: digest(part) })));
+        for (const [index, part] of parts.entries()) {
+          assertProtocolSchema("terminal-delivery.schema.json", part);
+          this.kernel.db.sql.query(`INSERT INTO delivery_outbox
+            (delivery_id,event_seq,task_id,principal,route_digest,envelope,envelope_digest,state,created_at,part_index,part_count,group_digest)
+            VALUES (?,?,?,?,?,?,?,'pending',?,?,?,?)`)
+            .run(part.delivery_id, event.seq, event.task_id, this.actor.id, row.digest, canonical(part), digest(part),
+              this.kernel.db.now(), index, parts.length, groupDigest);
+        }
+        remaining -= parts.length; projected++;
       }
-      return events.length;
+      return projected;
     });
   }
   private row(id: string): DeliveryRow {
@@ -176,7 +189,7 @@ export class DeliveryOutbox {
   }
   inspect(id: string): DeliveryView {
     this.current("delivery:read"); const row = this.row(id);
-    return { delivery_id: id, task_id: row.task_id, event_seq: row.event_seq, state: row.state, reason: row.reason,
+    return { delivery_id: id, task_id: row.task_id, event_seq: row.event_seq, state: row.state, reason: row.reason, part_index: row.part_index, part_count: row.part_count,
       receipt: row.receipt ? JSON.parse(row.receipt) : null, observed_receipt: row.observation ? JSON.parse(row.observation) : null };
   }
   status(): Record<DeliveryView["state"], number> {
@@ -188,12 +201,27 @@ export class DeliveryOutbox {
   }
   list(taskId: string): DeliveryView[] {
     this.current("delivery:read"); this.kernel.inspect(this.actor, taskId);
-    return (this.kernel.db.sql.query("SELECT delivery_id FROM delivery_outbox WHERE task_id=? AND principal=? ORDER BY event_seq LIMIT 128")
+    return (this.kernel.db.sql.query("SELECT delivery_id FROM delivery_outbox WHERE task_id=? AND principal=? ORDER BY event_seq,part_index LIMIT 4096")
       .all(taskId, this.actor.id) as { delivery_id: string }[]).map(row => this.inspect(row.delivery_id));
+  }
+  groups(taskId: string): { event_seq: number; part_count: number; sent_parts: number; complete: boolean; parts: DeliveryView[] }[] {
+    const grouped = new Map<number, DeliveryView[]>();
+    for (const part of this.list(taskId)) { const values = grouped.get(part.event_seq) ?? []; values.push(part); grouped.set(part.event_seq, values); }
+    return [...grouped].map(([event_seq, parts]) => {
+      const count = parts[0]!.part_count, sent = parts.filter(part => part.state === "sent").length;
+      return { event_seq, part_count: count, sent_parts: sent,
+        complete: parts.length === count && parts.every((part, index) => part.part_index === index && part.part_count === count && part.state === "sent"), parts };
+    });
   }
   private evidence(row: DeliveryRow): { envelope: TerminalDelivery; adapter: DeliveryAdapter } {
     const { row: route, adapter } = this.checkedRoute(row.task_id);
     requireThat(route.digest === row.route_digest, "delivery_route_changed");
+    const siblings = this.kernel.db.sql.query("SELECT delivery_id,envelope_digest,part_index,part_count,group_digest FROM delivery_outbox WHERE event_seq=? ORDER BY part_index")
+      .all(row.event_seq) as { delivery_id: string; envelope_digest: string; part_index: number; part_count: number; group_digest: string }[];
+    requireThat(siblings.length === row.part_count && siblings.every((part, index) => part.part_index === index
+      && part.part_count === row.part_count && part.group_digest === row.group_digest)
+      && digest(siblings.map(({ delivery_id, envelope_digest }) => ({ delivery_id, envelope_digest }))) === row.group_digest,
+      "delivery_group_corrupted");
     const envelope = JSON.parse(row.envelope) as TerminalDelivery;
     assertProtocolSchema("terminal-delivery.schema.json", envelope);
     requireThat(digest(envelope) === row.envelope_digest && envelope.delivery_id === row.delivery_id
@@ -220,8 +248,8 @@ export class DeliveryOutbox {
   async deliver(id: string): Promise<DeliveryView> {
     this.current("delivery:send"); const original = this.row(id);
     if (original.state !== "pending") return this.inspect(id);
-    const prior = () => this.kernel.db.sql.query("SELECT 1 FROM delivery_outbox WHERE task_id=? AND event_seq<? AND state!='sent' LIMIT 1")
-      .get(original.task_id, original.event_seq);
+    const prior = () => this.kernel.db.sql.query("SELECT 1 FROM delivery_outbox WHERE task_id=? AND (event_seq<? OR (event_seq=? AND part_index<?)) AND state!='sent' LIMIT 1")
+      .get(original.task_id, original.event_seq, original.event_seq, original.part_index);
     const capacity = () => (this.kernel.db.sql.query("SELECT COUNT(*) AS n FROM delivery_outbox WHERE state='dispatching'").get() as { n: number }).n < 4;
     if (prior() || !capacity()) return this.inspect(id);
     let attempted = false;
@@ -259,7 +287,7 @@ export class DeliveryOutbox {
   }
   async drain(): Promise<void> {
     this.current("delivery:send"); this.project(); this.recover();
-    const rows = this.kernel.db.sql.query("SELECT delivery_id FROM delivery_outbox WHERE principal=? AND state='pending' ORDER BY event_seq LIMIT 32")
+    const rows = this.kernel.db.sql.query("SELECT delivery_id FROM delivery_outbox WHERE principal=? AND state='pending' ORDER BY event_seq,part_index LIMIT 32")
       .all(this.actor.id) as { delivery_id: string }[];
     for (const row of rows) await this.deliver(row.delivery_id);
   }

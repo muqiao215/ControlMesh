@@ -1136,4 +1136,9 @@ unknown across restart and never automatically replay. Schema 34 scopes remote m
 receipt and route identities. Unlike Feishu, Telegram cannot provide generic message
 readback; its explicit recovery path accepts only the already-retained original successful
 acknowledgement, without HTTP or credentials. This does not assert current remote content.
-Multipart ownership remains open in `plans/runtime-convergence/`. The production Python transport is unchanged.
+Schema 35 projects multipart text atomically into ordered per-part records. Each part has
+its own attempt and acknowledgement; an uncertain prefix stops its suffix across restart.
+The group digest binds part order/content identities, and private `delivery_groups` reports
+completion only after every expected part is sent. Pure text projection needs no credentials
+or network. Rich formatting, inbound/file/streaming and rate-limit parity remain open in
+`plans/runtime-convergence/`. The production Python transport is unchanged.

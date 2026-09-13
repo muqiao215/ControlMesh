@@ -39,7 +39,7 @@ export class LocalRuntimeControl {
         host_output: ["task_id", "stream", "offset", "limit", "effect_id", "observation_digest"],
         host_jobs: ["after", "limit"], inspect_host_job: ["job_id"], approve_host_step: ["job_id", "expected_revision", "step_id"],
         inspect_message: ["task_id", "message_id"], mailbox_status: ["task_id"],
-        bind_delivery: ["task_id", "expected_revision", "adapter_id", "output_policy"], deliveries: ["task_id"],
+        bind_delivery: ["task_id", "expected_revision", "adapter_id", "output_policy"], deliveries: ["task_id"], delivery_groups: ["task_id"],
         drain_deliveries: [], retry_delivery: ["delivery_id"], reconcile_delivery: ["delivery_id", "remote_message_id"], revoke_delivery: ["task_id"],
         start_inbound: [], inbound_status: [], drain_inbound: [], retry_inbound: ["receipt_id"],
         prepare_handoff: ["task_id"], verify_specmesh: ["task_id"],
@@ -51,7 +51,7 @@ export class LocalRuntimeControl {
       requireThat(Object.keys(request).every(key => ["id", "op", ...fields[request.op as string]].includes(key)), "unexpected_local_request_field");
       let result: unknown;
       if (["start_inbound", "inbound_status", "drain_inbound", "retry_inbound"].includes(request.op)) requireThat(this.inbound, "feishu_inbound_not_configured");
-      if (["bind_delivery", "deliveries", "drain_deliveries", "retry_delivery", "reconcile_delivery", "revoke_delivery"].includes(request.op))
+      if (["bind_delivery", "deliveries", "delivery_groups", "drain_deliveries", "retry_delivery", "reconcile_delivery", "revoke_delivery"].includes(request.op))
         requireThat(this.deliveries, "delivery_not_configured");
       if (Object.hasOwn(topologyControlFields, request.op)) result = await topologyControl(this.scheduler, request, id);
       switch (request.op) {
@@ -135,6 +135,7 @@ export class LocalRuntimeControl {
           this.deliveries!.bindTask(id, request.task_id, request.expected_revision as number, request.adapter_id,
             request.output_policy as TerminalDelivery["output_policy"] | undefined); result = { bound: true }; break;
         }
+        case "delivery_groups": identifier(request.task_id); result = this.deliveries!.groups(request.task_id); break;
         case "deliveries": identifier(request.task_id); result = this.deliveries!.list(request.task_id); break;
         case "drain_deliveries": await this.deliveries!.drain(); result = this.deliveries!.status(); break;
         case "retry_delivery": identifier(request.delivery_id); result = this.deliveries!.retryBlocked(id, request.delivery_id); break;
