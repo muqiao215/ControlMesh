@@ -710,3 +710,13 @@ rejection of missing/stale authority, and no child scheduler. One test/seven ass
 passes, plus typecheck; /tmp/cm-cron-service-{tests,typecheck}.log. No production profile
 was changed. Real native execution/terminal synchronization, quota circuits and delivery
 acceptance remain pending; full TS migration and multi-device gates remain open.
+
+Service cron ticks now project current-coordinator/device kernel execution evidence before
+scheduling. Running requires a started episode, terminal projection requires matching
+task fence/device/episode state and no unresolved effects; completion and dependency
+release share one transaction. Unknown task evidence retains locks and marks uncertainty;
+unchanged/terminal attempts are not repeatedly written. Four result/service tests pass
+(38 assertions), with typecheck; /tmp/cm-cron-results-{tests,typecheck}.log. Tests use
+actual kernel claim/start/effect/finish/expiry APIs, not a real CLI/model. Cross-generation
+takeover, cancelled task projection, quota circuits and end-to-end native/delivery
+acceptance remain open. No production cron or external account was operated.

@@ -45,6 +45,7 @@ import { ClaudeTaskAdapter } from "./providers/claude-task-adapter";
 import { ClaudeTaskReconciler } from "./providers/claude-task-reconciler";
 import type { ClaudeTaskConfiguration } from "./providers/claude-task-profile";
 import { CronScheduler, type CronTickResult } from "./cron-scheduler";
+import { reconcileCronTaskResults } from "./cron-task-results";
 import { LocalNativeHistory, LocalOpenCodeHistory, RegisteredLocalHistory, type LocalNativeHistoryPort } from "./providers/local-native-history";
 
 /** Explicit isolated candidate configuration. Reading task state does not inspect or probe any provider. */
@@ -347,7 +348,11 @@ export function openLocalRuntime(path: string, options: { host_worker?: boolean 
         userTimezone: cronConfig.user_timezone as string | undefined, hostTimezone: cronConfig.host_timezone as string | undefined,
         maxJobs: cronConfig.max_jobs as number | undefined,
       }, runtime);
-    const cron = cronScheduler ? { tick() { current(); return cronScheduler.tick(); } } : undefined;
+    const cron = cronScheduler ? { tick() {
+      current();
+      reconcileCronTaskResults(kernel, actor, cronConfig!.generation as number);
+      return cronScheduler.tick();
+    } } : undefined;
     if (scheduler && schedule!.auto_start && !options.host_worker) scheduler.start();
     let stopping: Promise<void> | undefined, closing: Promise<void> | undefined;
     const stop = () => stopping ??= Promise.all([scheduler?.stop(), runtime.stop(), deliveries?.stop(), delivery?.close(), inbound?.stop(), specmesh?.stop(), history?.stop()]).then(() => {});
