@@ -363,3 +363,19 @@ was preserved. This checkpoint is not final release/local-alignment acceptance.
   719 assertions, 3.47s (`/tmp/cm-management-cancel-final.log`). Added quota, active
   cancellation, duplicate/reopen, wrong-parent and stale-version cases. No real account
   was contacted. Full migration, production switch and release remain incomplete.
+
+## Offline compatibility export rehearsal
+
+- `e33952b` is pushed; CI `34749102599` was verified in progress, not yet accepted.
+- Added `scripts/legacy-export.ts` as an executable counterpart to the offline snapshot
+  importer. It opens SQLite read-only, reads one transaction, verifies runtime identity,
+  retained original digest/count and task identities/statuses, and refuses missing original
+  tasks. It does not instantiate the schema-migrating RuntimeDatabase constructor.
+- Output uses exclusive creation and mode 0600, is flushed before success, and never
+  overwrites an existing backup or final-component symlink. A failed write may leave a
+  partial newly created file; no successful receipt is emitted in that case.
+- Independent-process export plus kernel regression: **18 pass, 0 fail**, 97 assertions,
+  776ms (`/tmp/cm-legacy-export.log`). Python serializer fixture fields and new TS rows
+  survived export/re-import; main database bytes stayed unchanged. Missing source and
+  lost imported rows refused output. This is compatibility-artifact rehearsal, not Python
+  production startup, writer transfer, or complete multi-store rollback acceptance.
