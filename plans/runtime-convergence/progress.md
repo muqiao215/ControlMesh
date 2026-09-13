@@ -2,6 +2,20 @@
 
 ## Current
 
+Gemini CLI 0.59.0 is installed. Its bundled ChatRecordingService uses JSONL metadata,
+message-ID replacements, $set metadata/full-message updates and $rewindTo records, rather
+than treating every line as a new message. A strict GeminiSessionStore now replays those
+records against the registered workspace hash, checks canonical bounded stable reads and
+retains a byte/content baseline. Appended continuation refuses old-message rewrites,
+rewinds/full replacement and changed original prefix, including edit-then-restore.
+Validation: 3 tests, 18 assertions (659ms), including the actual installed recording
+service producing message/token updates, continuation and rewind without any model call.
+Typecheck/diff-check passed. Evidence: /tmp/cm-gemini-session-final.log.
+This is an internal session owner, not a registered Provider or completed Gemini turn
+verifier. Preflight, process supervision, native completion/recovery, History integration
+and full CM-R0–R7 migration/release/default-switch gates remain open.
+Previous b61c5ce and 279181a pushes succeeded after the earlier network resets.
+
 Normal TopologyScheduler director_worker and debate_judge execution now has installed
 Codex qualification. Three distinct native sessions run the two peer workers and controller.
 The director dispatches registered roles and resumes its original session to complete;

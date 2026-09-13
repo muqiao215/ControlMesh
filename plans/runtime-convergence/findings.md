@@ -2086,3 +2086,20 @@ native sessions are asserted. A completed drain performs no further native reque
 Both happy paths pass without runtime modifications. Physical devices and non-happy
 branches remain unqualified by these fixtures. GitHub connection reset now affects API
 reads as well as Git push, so local qualification must not be reported as published CI.
+
+
+### Installed Gemini 0.59 conversation persistence
+
+Installed package: /home/muqiao/.local/lib/node_modules/@google/gemini-cli/package.json
+(version 0.59.0). Entry bundle imports chunk-YSBB75DZ.js; its ChatRecordingService around
+285529 initializes metadata with sessionId/projectHash/startTime/lastUpdated. getProjectHash
+around 252167 hashes the project-root string with SHA-256. loadConversationRecord around
+285340 replaces message IDs in insertion order, applies $set/messages and rewinds from
+$rewindTo inclusively (unknown IDs clear the history). Main session filenames end with the
+first eight session-ID characters; the header must still validate the complete UUID.
+The new strict reader implements this JSONL shape and refuses malformed/partial records,
+identity changes, noncanonical paths and changed baseline context. It does not infer
+terminal completion, authorization, model health or registered runtime parity from a
+readable transcript. A test imports the installed recording service and generates fresh
+isolated records without an account/model. Legacy .json conversion and subagent stores
+are not covered by the current main-session JSONL owner.
