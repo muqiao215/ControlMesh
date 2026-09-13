@@ -91,11 +91,27 @@ test("replacing a workspace at the same absolute path invalidates execution admi
   expect(checked).toBe(true);
 });
 
-test("Codex process status preserves typed native errors across nonzero exits", async () => {
+test("Codex preserves typed native failures when the process exits before supervision aborts it", async () => {
   for (const [message, code] of [["401 unauthorized", "authentication_failed"], ["429 too many requests", "rate_limited"], ["model not available", "model_unavailable"], ["You've hit your usage limit", "quota_exhausted"]]) {
-    const input = launch(`console.log(JSON.stringify({type:'turn.failed',error:{message:${JSON.stringify(message)}}})); process.exit(1);`, "codex");
-    const result = await new OneShotProviderProcess().run(input, ready);
+    const stdout = JSON.stringify({ type: "turn.failed", error: { message } }) + "\n";
+    // Fix the natural-exit side of the race; live abort is exercised separately below.
+    const supervisor = { async run() {
+      return { reason: "exited" as const, exit_code: 1, stdout, stderr: "", duration_ms: 1 };
+    } } as ConstructorParameters<typeof OneShotProviderProcess>[0];
+    const result = await new OneShotProviderProcess(supervisor).run(launch("process.exit(1);", "codex"), ready);
     expect(result.process.exit_code).toBe(1);
+    expect(result.status).toBe(`error:${code}`);
+  }
+});
+
+test("Codex native failure abort preserves classification before a live process can retry", async () => {
+  for (const [message, code] of [["401 unauthorized", "authentication_failed"], ["429 too many requests", "rate_limited"], ["model not available", "model_unavailable"], ["You've hit your usage limit", "quota_exhausted"]]) {
+    const input = launch(`console.log(JSON.stringify({type:'turn.failed',error:{message:${JSON.stringify(message)}}})); await Bun.sleep(30000); console.log('UNEXPECTED_RETRY');`, "codex");
+    const result = await new OneShotProviderProcess().run(input, ready);
+    expect(result.process.reason).toBe("provider_abort");
+    expect(result.process.exit_code).not.toBe(0);
+    expect(result.process.duration_ms).toBeLessThan(4000);
+    expect(result.process.stdout).not.toContain("UNEXPECTED_RETRY");
     expect(result.status).toBe(`error:${code}`);
   }
 });

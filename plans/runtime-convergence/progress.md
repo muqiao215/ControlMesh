@@ -151,3 +151,18 @@ account, webhook registration or production service was changed. Entire TS migra
 multi-device/provider continuity remain in progress under the original phase/acceptance matrix.
 Keep the complete original objective active; mark complete only after every phase and
 acceptance item has matching evidence, release and local alignment.
+
+## CI correction — native exit versus supervisor abort (2026-09-13)
+
+- Remote run 34743304830 at 00a264e failed the Codex one-shot test because its
+  fixed exit-code assertion expected 1 while the supervisor terminated the process
+  with SIGTERM (143) after observing a typed native failure. This is an actual race
+  in the test, not evidence that the failure classification disappeared.
+- Split coverage into deterministic natural-exit classification (exit 1) and real
+  supervised processes held alive after each authentication/rate/model/quota failure.
+  The latter must abort before retry, retain the typed status and finish within 4s.
+  Focused verification: 8 pass, 0 fail, 466 assertions, 2.17s;
+  `/tmp/cm-oneshot-ci-race.log`. Remote replacement CI remains to be checked.
+- Telegram choices are uncommitted work: schema/sender/projection exist, but callback
+  consumption and acknowledgement are not implemented. Do not release those partial
+  changes as usable buttons. Full migration/release remains incomplete.
