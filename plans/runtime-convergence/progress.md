@@ -417,3 +417,17 @@ was preserved. This checkpoint is not final release/local-alignment acceptance.
   SpecMesh cases were subsequently exercised with the configured local repository:
   **12 pass, 0 fail**, 136 assertions, 7.82s (`/tmp/cm-host-source-specmesh.log`). Runtime
   typecheck passed. Full source ingress/deployment matrix and production cutover remain.
+
+## Cheap-worker acceptance and parent supervision
+
+- User now delegates routine implementation/testing to installed CBC/AGY; primary owns
+  dispatch, review and acceptance. Global CLI no-prompt defaults are user-authorized.
+- Primary inspected CBC raw logs: 19 pass, 0 fail, 111 assertions (2.60s), both host
+  process and issued-ingress suites; typecheck exit 0. No production code changed by CBC.
+  Host-source-ingress acceptance is ready for commit. AGY cron plan remains review pending.
+- Live CM listener verified on 127.0.0.1:8799, process 8610. Existing TaskHub parent
+  inbox/consume/result callback chain is present. A generic doctor profile is not proof
+  the running service lacks it. CBC is assigned to reuse/verify the actual parent bridge,
+  not introduce a second scheduler or assume CM main is this Codex conversation.
+- CBC bridge process handle 51930; output /tmp/cm-cbc-taskhub-parent.json, diagnostics
+  /tmp/cm-cbc-taskhub-parent.err. Poll handle before restarting. No periodic model job.
