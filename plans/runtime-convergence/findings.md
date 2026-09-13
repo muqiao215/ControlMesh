@@ -2455,3 +2455,10 @@ retains output before semantic/currentness failure, so quota, cancellation and m
 text remain available for the task receipt owner. Its current host compatibility path
 requires local user source and preserves existing restrictive-grant refusals. A deny-tool
 policy check does not itself prove filesystem/network isolation or the full CLI graph.
+
+
+Kernel finish stores confirmed native_session in episode results; kernel resume transfers
+that result reference into the task before its next dispatch. The Gemini adapter preserves
+this existing lifecycle instead of rewriting task state itself. A settings probe and a
+fixture cached readiness decision do not prove account availability: production registration
+still needs an actual version/config/credential-bound preflight owner.

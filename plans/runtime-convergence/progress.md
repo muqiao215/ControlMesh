@@ -1426,3 +1426,24 @@ Remaining/Next: connect normal task receipts/readiness/config registration and r
 qualify actual CLI execution dependencies and protected configuration, tools/workspace
 receipts and account-backed same-session continuation. Restrictive grants still refuse.
 Full CM-R0–R7 migration, multi-device/transport acceptance and release remain open.
+
+
+## 2026-09-13 — Gemini durable task adapter and restart recovery
+
+Current/Done: GeminiTaskAdapter connects local queue execution to kernel dispatch,
+private durable outcome retention, observation and completion transactions. It binds
+task/configuration/principal/device and explicit adopted bytes. Unknown dispatched
+outcomes remain reconcilable. Recovery uses retained evidence and native flock, accepts
+idempotent repeats and refuses wrong evidence. Kernel resume carries the newly confirmed
+reference into the next turn. Unsupported mailbox/topology/workspace receipt paths refuse.
+
+Verification: 24 Gemini tests passed, 0 failed, 179 assertions, 9.07s in
+/tmp/cm-gemini-task-regression.log. Installed native settings/recording tests enabled.
+New queue tests use supervised fixture CLI processes and injected readiness/settings,
+including normal completion, lost observation, database reopen, duplicate recovery, wrong
+evidence and a second original-session turn. Typecheck passed before final assertion-only
+addition. Initial fixture readiness shape and pre-resume-reference assumptions were fixed.
+
+Remaining/Next: concrete model/credential preflight, ordinary registration and actual CLI
+qualification; native tool/workspace/mailbox receipt profiles and real account/device
+acceptance. No production writer switch or release; full CM-R0–R7 scope remains active.

@@ -110,6 +110,16 @@ abort retries, and cancellation retains the process outcome. Restrictive grants 
 refused. This process primitive is not yet normal TaskHub registration, protected runtime
 isolation, a tool-bearing receipt path or an account-backed acceptance result.
 
+`GeminiTaskAdapter` connects that primitive to the durable local queue and existing
+kernel effect/observation/reconciliation transactions. It binds the adopted session,
+task digest, principal/device and registered configuration, persists outcomes privately,
+and marks uncertain dispatched runs for reconciliation. Kernel resume carries the last
+confirmed native reference into the next turn. Restart recovery verifies retained text
+under the native lock and does not dispatch another process. Readiness is supplied by a
+trusted provider owner; ordinary configuration registration and account qualification
+remain open. Workspace-completion and mailbox/topology tasks explicitly refuse until
+their native receipt paths are implemented.
+
 Responsibilities:
 
 - discover and authenticate official provider CLIs;

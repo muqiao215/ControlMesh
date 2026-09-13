@@ -393,3 +393,10 @@ and model-free retained text verification are implemented, with quota-abort/canc
 changed-adoption fixture coverage. Next is normal TaskHub/readiness/receipt registration
 and protected real CLI qualification, then native account and full device/profile matrix.
 No default runtime switch or full migration completion is established by this primitive.
+
+
+Gemini task checkpoint: durable local queue, outcome confirmation and model-free restart
+recovery are now wired through GeminiTaskAdapter. A second same-session fixture turn and
+wrong-evidence/idempotency checks pass. Next: concrete readiness and ordinary configured
+registration, real CLI/account qualification, then native receipt and multi-device profiles.
+Full migration, physical transport/terminal acceptance and rollout remain open.

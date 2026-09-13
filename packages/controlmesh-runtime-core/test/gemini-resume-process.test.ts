@@ -20,10 +20,10 @@ if(process.argv.includes('--version')) { console.log('0.59.0'); process.exit(0);
 if(!fs.existsSync(process.env.DISPATCH)) process.exit(12);
 let prompt=''; for await(const chunk of process.stdin) prompt+=chunk;
 fs.writeFileSync(process.env.ARGS,JSON.stringify(process.argv.slice(2)));
-const emit=(value)=>JSON.stringify(value)+'\\n';
+const emit=(value)=>JSON.stringify(value)+'\\n'; const turn=require('node:crypto').randomUUID();
 if(process.env.MODE==='cancel') { console.error('CANCEL_READY'); await Bun.sleep(30000); process.exit(0); }
 if(process.env.MODE==='quota') { process.stdout.write(emit({type:'result',status:'error',error:{type:'TerminalQuotaError',message:'quota exhausted'}})); await Bun.sleep(30000); process.exit(0); }
-fs.appendFileSync(process.env.SESSION,emit({id:'u',type:'user',timestamp:'now',content:prompt})+emit({id:'a',type:'gemini',timestamp:'now',content:'remembered',model:'fixture'}));
+fs.appendFileSync(process.env.SESSION,emit({id:turn+'u',type:'user',timestamp:'now',content:prompt})+emit({id:turn+'a',type:'gemini',timestamp:'now',content:'remembered',model:'fixture'}));
 process.stdout.write(emit({type:'init',session_id:process.env.ID,model:'fixture'})+emit({type:'message',role:'user',content:prompt})+emit({type:'message',role:'assistant',delta:true,content:process.env.MODE==='mismatch'?'incorrect':'remembered'})+emit({type:'result',status:'success'}));
 `, { mode: 0o700 });
   const input: GeminiResumeInput = { executable, cli_version: "0.59.0", state_home: state, session_path: path, device_id: "desktop", session_id: session,
@@ -84,4 +84,51 @@ test("Gemini cancellation retains the owned process outcome", async () => {
     expect(f.outcome.reason).toBe("cancelled");
     expect(f.outcome.duration_ms).toBeLessThan(5000);
   } finally { f.close(); }
+});
+
+test.each([false, true])("Gemini durable queue confirms original-session output and reconciles after reopen (lost observation=%s)", async lost => {
+  const { RuntimeDatabase, RuntimeKernel, LocalTaskRuntime } = await import("../src");
+  const { GeminiTaskAdapter } = await import("../src/providers/gemini-task-adapter");
+  const f = fixture(), database = join(f.root, "runtime.sqlite");
+  let db = new RuntimeDatabase(database), kernel = new RuntimeKernel(db);
+  const actor = { id: "operator", device_id: "desktop", origin: "human_request" as const,
+    scopes: ["task:create", "task:read", "task:execute", "task:resume", "task:reconcile", "task:admin", "task:cancel", "message:read"] };
+  const { baseline, session_id, device_id, prompt, execution_context, tool_grant, ...config } = f.input;
+  const reference = { ...baseline, provider: "gemini", device_id, directory: config.settings.workspace, model: config.model };
+  let nativeRuns = 0;
+  const driver = { run: async (input: GeminiResumeInput, admission: import("../src/providers/gemini-resume-process").GeminiResumeAdmission) => {
+    nativeRuns++;
+    return f.runner.run(input, { ...admission, retainDispatch(value) {
+      admission.retainDispatch(value); f.admission.retainDispatch(value);
+      expect(db.sql.query("SELECT COUNT(*) AS n FROM execution_manifests").get()).toEqual({ n: nativeRuns });
+    } });
+  } };
+  const readiness = { async ensure() { return { decision: "cached", reason: "ready", retry_after: null, permit: null, report: null } as const; }, assertReady() {} };
+  let adapter = new GeminiTaskAdapter(kernel, actor, config, readiness, () => {}, driver);
+  const source = { command_origin: "human_request" as const, origin: "user" as const, source_scope: "local_foreground" as const, transport: "terminal" };
+  let runtime = new LocalTaskRuntime(kernel, actor, source, task => adapter.prepare(task), () => {});
+  try {
+    kernel.submit(actor, "create", { task_id: "task", chat_id: "fixture", status: "waiting", provider: "gemini", model: config.model,
+      repo_root: reference.directory, native_session: reference, prompt, execution_context, tool_grant });
+    if (lost) kernel.recordEffectObservation = () => { throw new Error("observation lost"); };
+    const run = runtime.enqueue("run", "task", 1); await runtime.drain();
+    const snapshot = kernel.inspect(actor, "task");
+    if (lost) {
+      expect(snapshot.needs_reconciliation).toBe(true); expect(runtime.inspect(run.run_id).state).not.toBe("completed");
+      const effect = (db.sql.query("SELECT effect_id FROM effects").get() as { effect_id: string }).effect_id;
+      await runtime.stop(); db.close(); db = new RuntimeDatabase(database); kernel = new RuntimeKernel(db);
+      adapter = new GeminiTaskAdapter(kernel, actor, config, readiness, () => {}, driver);
+      const binding = adapter.inspectRecovery("task", snapshot.revision, effect);
+      expect(() => adapter.recover("wrong-evidence", "task", snapshot.revision, { ...binding, observation_digest: "0".repeat(64) })).toThrow("reconciliation_evidence_changed");
+      expect(adapter.recover("recover", "task", snapshot.revision, binding).task.status).toBe("done");
+      expect(adapter.recover("recover", "task", snapshot.revision, binding).task.status).toBe("done");
+    } else expect(snapshot.task.status).toBe("done");
+    const done = kernel.inspect(actor, "task");
+    const resumed = kernel.resume(actor, "resume", "task", done.revision, "Continue again");
+    const updated = resumed.task.native_session as typeof reference;
+    expect(updated.session_id).toBe(session_id); expect(updated.revision).not.toBe(reference.revision); expect(nativeRuns).toBe(1);
+    if (lost) runtime = new LocalTaskRuntime(kernel, actor, source, task => adapter.prepare(task), () => {});
+    runtime.enqueue("second", "task", resumed.revision); await runtime.drain();
+    expect(kernel.inspect(actor, "task").task.status).toBe("done"); expect(nativeRuns).toBe(2);
+  } finally { await runtime.stop(); db.close(); f.close(); }
 });
