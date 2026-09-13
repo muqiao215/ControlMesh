@@ -3,6 +3,8 @@ import { requireScope } from "./commands";
 import { CronStore } from "./cron-store";
 import { CronTaskAdmission } from "./cron-task-admission";
 import type { LocalTaskRuntime } from "./local-task-runtime";
+import { ToolGrantDenied } from "./execution-grants";
+import { ExecutionPolicyDenied } from "./execution-policy";
 import { CronScheduleError, nextCronOccurrence, resolveCronTimezone } from "./cron-schedule";
 import type { Principal, RuntimeKernel } from "./kernel";
 import { canonical, digest, object, requireThat, RuntimeConflict } from "./value";
@@ -70,6 +72,9 @@ export class CronScheduler {
           const submitted = this.admission.submit(occurrence.occurrence_id);
           cursor.last_task = submitted.task.task.task_id; cursor.reason = null; cursor.pending = null; cursor.next_at = next();
         } catch (error) {
+          if (error instanceof ToolGrantDenied || error instanceof ExecutionPolicyDenied) {
+            cursor.reason = error instanceof ToolGrantDenied ? `tool_grant_denied:${error.reason_code}` : `execution_policy_denied:${error.decision.reason_code}`;
+          } else {
           if (!(error instanceof RuntimeConflict)) throw error;
           const reason = error.code;
           if (["cron_quiet_hours", "active_or_uncertain_attempt_exists"].includes(reason)) {
@@ -77,8 +82,10 @@ export class CronScheduler {
               reason === "cron_quiet_hours" ? "skipped_quiet" : "skipped_duplicate", { coordinatorId: this.actor.id, fence: this.generation });
             cursor.pending = null; cursor.next_at = next(); cursor.reason = reason;
           } else if (["local_queue_full", "cron_dependency_busy", "cron_attempt_requires_reconciliation", "cron_taskhub_mode_required",
-            "cron_taskhub_requires_summarized_only", "cron_taskhub_requires_foreground", "cron_provider_not_configured"].includes(reason)) cursor.reason = reason;
+            "cron_taskhub_requires_summarized_only", "cron_taskhub_requires_foreground", "cron_provider_not_configured",
+            "source_execution_floor_unavailable", "opencode_not_registered", "claude_not_registered", "codex_not_registered", "gemini_not_registered", "host_not_registered"].includes(reason)) cursor.reason = reason;
           else throw error;
+          }
         }
       }
       const serialized = canonical(cursor), changed = saved?.value !== serialized;

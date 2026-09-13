@@ -7,10 +7,35 @@ import { RuntimeKernel, type Principal } from "../src/kernel";
 import { CronStore } from "../src/cron-store";
 import { CronScheduler } from "../src/cron-scheduler";
 import { LocalTaskRuntime } from "../src/local-task-runtime";
+import { decodeToolGrant, enforceProviderConfirmation } from "../src/execution-grants";
 
 const actor: Principal = { id: "scheduler", origin: "schedule", device_id: "device", scopes: ["task:create", "task:read"] };
 const job = { id: "scheduled", title: "Scheduled", schedule: "* * * * *", task_folder: "scheduled", agent_instruction: "Inspect",
   execution_mode: "taskhub", output_policy: "summarized_only", provider: "opencode", model: "configured-model", chat_id: 123 };
+
+test("controller grant denial remains a stable pending slot without a task or model call", () => {
+  let now = Date.parse("2026-06-01T12:00:00Z");
+  const db = new RuntimeDatabase(":memory:", () => now);
+  try {
+    const kernel = new RuntimeKernel(db), store = new CronStore(db);
+    const executor = { ...actor, scopes: [...actor.scopes, "task:execute", "task:reconcile", "task:admin"] };
+    const runtime = new LocalTaskRuntime(kernel, executor,
+      { command_origin: "schedule", origin: "cron", source_scope: "cron", transport: "cron" }, snapshot => {
+        enforceProviderConfirmation("opencode", decodeToolGrant(snapshot.task.tool_grant));
+        throw new Error("cron grant must not be bypassed");
+      }, () => {});
+    store.registerCoordinator(actor.id); store.putJob(job);
+    const scheduler = new CronScheduler(kernel, actor, 1, {}, runtime);
+    scheduler.tick(); now += 60000;
+    const blocked = scheduler.tick()[0];
+    expect(blocked.reason).toBe("tool_grant_denied:controller_approval_unavailable");
+    expect(blocked.pending).not.toBeNull();
+    expect(scheduler.tick()[0]).toMatchObject({ pending: blocked.pending, changed: false });
+    expect(db.sql.query("SELECT COUNT(*) AS n FROM tasks").get()).toEqual({ n: 0 });
+    expect(store.listAttempts(blocked.pending!)).toHaveLength(0);
+    expect(db.sql.query("SELECT COUNT(*) AS n FROM provider_checks").get()).toEqual({ n: 0 });
+  } finally { db.close(); }
+});
 
 test("scheduler atomically queues work and retries a full queue without orphan tasks or attempts", () => {
   let now = Date.parse("2026-06-01T12:00:00Z");

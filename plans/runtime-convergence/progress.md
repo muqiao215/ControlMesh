@@ -749,3 +749,14 @@ tests pass (117 assertions), typecheck/diff check pass;
 /tmp/cm-cron-device-results-{tests,typecheck}.log. This shared-database identity test is
 not a two-physical-device network/partition acceptance. Prior remote SHA 79628c9 CI
 34762813061 was observed in_progress; avoid cancelling it with another immediate push.
+
+Native cron readiness audit found concrete execution gaps: enforceProviderConfirmation
+rejects every controller_required grant; Claude/OpenCode container source allowlists only
+admit user-origin scopes; Claude task registration also requires trusted repo_root which
+cron admission does not yet supply. Startup wiring alone therefore does not enable native
+cron. Scheduler now persists typed grant/source/policy/registration denials as pending
+slot reasons rather than closing the service; unexpected faults still propagate. Actual
+grant-enforcement regression proves stable pending slot and zero tasks/attempts/probes.
+Six scheduler tests pass (36 assertions), typecheck/diff check pass;
+/tmp/cm-cron-grant-block-{tests,typecheck}.log. Next work must implement bound controller
+approval consumption and trusted workspace/source admission, not remove the gates.
