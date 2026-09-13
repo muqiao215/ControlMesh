@@ -3,7 +3,7 @@ import { RuntimeDatabase } from "../src/database";
 import { RuntimeKernel, type Principal } from "../src/kernel";
 import { CronStore } from "../src/cron-store";
 import { CronTaskAdmission } from "../src/cron-task-admission";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, renameSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -16,6 +16,21 @@ function fixture(clock: () => number = Date.now, path = ":memory:") {
   const occurrence = store.createOccurrence("scheduled", 1773400000000);
   return { db, kernel, store, occurrence };
 }
+
+test("trusted workspace overrides job metadata and detects directory replacement", () => {
+  const root = mkdtempSync(join(tmpdir(), "cm-cron-workspace-")), workspace = join(root, "repo");
+  mkdirSync(workspace);
+  const f = fixture();
+  try {
+    f.store.putJob({ ...f.store.getJob("scheduled")!, repo_root: "/untrusted-job-path" });
+    const occurrence = f.store.createOccurrence("scheduled", 1773400060000);
+    const admission = new CronTaskAdmission(f.kernel, actor, 1, { workspace });
+    expect(admission.submit(occurrence.occurrence_id).task.task.repo_root).toBe(workspace);
+    renameSync(workspace, join(root, "original")); mkdirSync(workspace);
+    expect(() => admission.submit(occurrence.occurrence_id)).toThrow("cron_workspace_changed");
+    expect(f.store.listAttempts(occurrence.occurrence_id)).toHaveLength(1);
+  } finally { f.db.close(); rmSync(root, { recursive: true, force: true }); }
+});
 
 test("cron TaskIngress binds one task/attempt and schedule provenance on repeated submission", () => {
   const f = fixture();

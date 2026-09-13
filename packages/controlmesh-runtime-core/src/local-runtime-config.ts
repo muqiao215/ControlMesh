@@ -347,6 +347,7 @@ export function openLocalRuntime(path: string, options: { host_worker?: boolean 
       { ...actor, origin: "schedule" }, cronConfig.generation as number, {
         userTimezone: cronConfig.user_timezone as string | undefined, hostTimezone: cronConfig.host_timezone as string | undefined,
         maxJobs: cronConfig.max_jobs as number | undefined,
+        workspace: workspace.directory as string,
       }, runtime);
     const cron = cronScheduler ? { tick() {
       current();

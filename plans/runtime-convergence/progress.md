@@ -760,3 +760,13 @@ grant-enforcement regression proves stable pending slot and zero tasks/attempts/
 Six scheduler tests pass (36 assertions), typecheck/diff check pass;
 /tmp/cm-cron-grant-block-{tests,typecheck}.log. Next work must implement bound controller
 approval consumption and trusted workspace/source admission, not remove the gates.
+
+Trusted configured workspace now flows through CronScheduler/CronTaskAdmission into
+repo_root; job-supplied metadata cannot override it. Admission captures canonical
+directory path/device/inode and revalidates before submission, including retries.
+Eleven admission/service tests pass (50 assertions), typecheck/diff check pass;
+/tmp/cm-cron-workspace-{tests,typecheck}.log. Directory replacement is rejected without
+creating a second attempt. Controller approval consumption and cron container source
+support still remain; no native-execution completion claim. Remote CI 34762813061 for
+79628c94e83a10342bd2628fa494f0da538d84f2 is now completed/success. Publish accumulated
+device-result, typed-block and workspace changes together for the next complete CI.

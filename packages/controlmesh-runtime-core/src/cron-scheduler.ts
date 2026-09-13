@@ -23,9 +23,9 @@ export class CronScheduler {
   private readonly store: CronStore;
   private readonly admission: CronTaskAdmission;
   private readonly actor: Principal;
-  private readonly settings: { userTimezone?: string; hostTimezone?: string; maxJobs: number; intervalMs: number };
+  private readonly settings: { userTimezone?: string; hostTimezone?: string; workspace?: string; maxJobs: number; intervalMs: number };
   constructor(private readonly kernel: RuntimeKernel, actor: Principal, private readonly generation: number,
-    options: { userTimezone?: string; hostTimezone?: string; maxJobs?: number; intervalMs?: number } = {}, runtime?: LocalTaskRuntime) {
+    options: { userTimezone?: string; hostTimezone?: string; workspace?: string; maxJobs?: number; intervalMs?: number } = {}, runtime?: LocalTaskRuntime) {
     this.actor = Object.freeze({ ...actor, scopes: Object.freeze([...actor.scopes]) });
     this.settings = Object.freeze({ ...options, maxJobs: options.maxJobs ?? 256, intervalMs: options.intervalMs ?? 1000 });
     requireThat(Number.isSafeInteger(this.settings.maxJobs) && this.settings.maxJobs > 0 && this.settings.maxJobs <= 4096

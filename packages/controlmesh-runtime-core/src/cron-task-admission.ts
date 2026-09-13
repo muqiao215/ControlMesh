@@ -3,6 +3,7 @@ import type { Principal, RuntimeKernel, TaskSnapshot } from "./kernel";
 import { TaskIngress } from "./task-ingress";
 import { resolveCronTimezone } from "./cron-schedule";
 import type { LocalTaskRuntime } from "./local-task-runtime";
+import { directoryIdentity } from "./providers/native-manifest";
 import { requireScope } from "./commands";
 import { canonical, digest, identifier, object, requireThat, RuntimeConflict } from "./value";
 
@@ -17,10 +18,15 @@ export class CronTaskAdmission {
   private readonly ingress: TaskIngress;
   private readonly actor: Principal;
   private readonly quietTimezone: string;
+  private readonly workspace: Readonly<ReturnType<typeof directoryIdentity>> | undefined;
 
   constructor(private readonly kernel: RuntimeKernel, actor: Principal, private readonly generation: number,
-    timezone: { userTimezone?: string; hostTimezone?: string } = {}, private readonly runtime?: LocalTaskRuntime) {
+    timezone: { userTimezone?: string; hostTimezone?: string; workspace?: string } = {}, private readonly runtime?: LocalTaskRuntime) {
     requireThat(!runtime || runtime.kernel === kernel, "cron_queue_kernel_mismatch");
+    if (timezone.workspace !== undefined) {
+      this.workspace = Object.freeze(directoryIdentity(timezone.workspace));
+      requireThat(this.workspace.path === timezone.workspace, "cron_workspace_not_canonical");
+    }
     identifier(actor.id); identifier(actor.device_id);
     requireThat(actor.origin === "schedule" && Number.isSafeInteger(generation) && generation > 0, "invalid_cron_controller");
     this.actor = Object.freeze({ ...actor, scopes: Object.freeze([...actor.scopes]) });
@@ -34,6 +40,7 @@ export class CronTaskAdmission {
 
   private current(): void {
     requireThat(this.store.getCoordinatorEpoch(this.actor.id).current_generation === this.generation, "stale_coordinator_fence");
+    if (this.workspace) requireThat(canonical(directoryIdentity(this.workspace.path)) === canonical(this.workspace), "cron_workspace_changed");
   }
 
   submit(occurrenceId: string): { task: TaskSnapshot; attempt: CronExecutionAttemptRecord } {
@@ -105,6 +112,7 @@ export class CronTaskAdmission {
       const task = this.ingress.submit(this.actor, `cron-submit-${occurrenceId}`, {
         task_id: taskId, chat_id: chatId, status: "waiting", title: job.title, prompt: job.agent_instruction,
         provider: job.provider, model: job.model, workunit_kind: kind, risk, output_policy: "summarized_only",
+        ...(this.workspace ? { repo_root: this.workspace.path } : {}),
         cron_occurrence_id: occurrenceId, cron_job_id: job.id, cron_definition_digest: occurrence.definition_digest,
       }, { source_id: job.id, chat_id: chatId, ...(job.topic_id != null ? { topic_id: String(job.topic_id) } : {}) });
       const attempt = this.store.createAttempt(occurrenceId, { coordinatorId: this.actor.id,
