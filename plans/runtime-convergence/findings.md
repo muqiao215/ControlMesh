@@ -2401,3 +2401,14 @@ and default sources retain their own precedence. Reusing that native resolver av
 second diverging directory-discovery implementation. CLI merged settings load separately
 and are cached by workspace; importing its loader into a long-lived controller without
 isolated environment/cache handling remains inappropriate for admission.
+
+
+Gemini loadSettings caches by workspace for 10 seconds, invokes loadEnvironment and performs
+deprecated-setting migration. Under Node permission write denial, native save failures are
+swallowed and loadSettings can still succeed with migrated in-memory values. Therefore
+exit status alone cannot prove a read-only preflight; enforce write denial natively and
+verify source bytes in tests. --ignore-env is required for this bounded probe profile;
+actual environment-loading compatibility still needs explicit execution design. A scoped
+write grant is not ruled out by process.permission.has('fs.write') alone, so the helper
+also requires exact runtime flags. The parent launcher must control trusted module/Node
+identity and environment; this standalone helper does not establish those identities.

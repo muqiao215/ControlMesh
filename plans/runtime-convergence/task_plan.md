@@ -357,3 +357,8 @@ Gemini native resolution checkpoint: policy source discovery and loading now use
 exports with settings/source drift checks. Next registration work must use an isolated,
 version-bound CLI settings loader and protected execution configuration; this helper is
 not yet a runnable Provider adapter or evidence of account-backed continuation.
+
+
+Gemini settings checkpoint: isolated native settings probe now enforces fixed Node
+read-only permissions and fresh loader state with digest-only settings output. Complete
+identity-bound launcher and effective-policy/process integration before Provider admission.

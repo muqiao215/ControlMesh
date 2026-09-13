@@ -1315,3 +1315,21 @@ diff check passed. Registration must still pin native module/executable identity
 merged settings from the actual CLI loader, bind its source files/environment and protect
 configuration through execution. No normal Gemini execution or broader grant admission
 was enabled by this helper.
+
+
+## 2026-09-13 — read-only native settings probe
+
+Added a private Node settings probe using fixed --experimental-permission and
+--allow-fs-read=* flags, no write/child/worker grants, no NODE_OPTIONS and --ignore-env.
+It calls native loadSettings in a fresh process and emits only settings digest and source
+paths, not merged values. Missing/replaced permission flags refuse, including a scoped
+--allow-fs-write addition. Probe is not a network sandbox or complete Provider admission.
+
+Installed Node 22.23.2 and Gemini settings module test: 1 pass, 0 fail, 10 assertions,
+1.222s (/tmp/cm-gemini-settings-readonly-final.log). Deprecated settings migrated in memory
+without changing fixture bytes; fresh process detected changed settings; test secret absent
+from output. Typecheck passed before final flag-only changes; diff check passed. Exploratory
+A/B confirmed unprotected native loading writes deprecated settings while protected loading
+silently swallows the blocked write and returns success. Operator configuration untouched.
+Next: bind exact executable/module/config identities and connect settings to effective
+policy and process/session registration. Normal Gemini execution remains unavailable.
