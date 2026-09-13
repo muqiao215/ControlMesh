@@ -271,3 +271,12 @@ against the original contract and current bytes. An installed-native worker/revi
 pipeline with sequential session continuation and parent completion after service reopen
 is qualified on the local loopback fixture. This does not qualify remote Codex workers or
 all topology modes; those remain runtime-convergence acceptance work.
+
+
+Native fanout qualification also uses three separately seeded Codex sessions. Two workers
+run concurrently and exchange a question/answer through their registered peer scopes.
+A worker whose observation is lost must reconcile before collectWorkers can dispatch the
+merger; the merger's frozen context includes both accepted worker summaries. The fixture
+asserts two simultaneously running tasks, no replay during recovery, three distinct session
+IDs and consumed schedule inputs. It uses a local synthetic model endpoint and supplies no
+physical-device or real-account evidence.

@@ -2,6 +2,20 @@
 
 ## Current
 
+Installed Codex concurrent fanout is now qualified on the loopback model fixture.
+Three distinct sessions represent alpha, beta and merger. Alpha/beta overlap (two running
+local tasks observed) and exchange a native MCP question/answer. Alpha's lost observation
+blocks whole-batch collection and does not start the merger. After reopen with auth removed,
+retained reconciliation completes without new requests/messages; restoring fixture auth
+allows the third session to consume both accepted summaries and finish the parent.
+Final exchange + fanout matrix: 2 tests, 88 assertions (45.41s). Typecheck/diff-check passed.
+Evidence: /tmp/cm-codex-peer-fanout-final.log. This is native CLI with synthetic loopback
+Responses, not physical-device or real-account qualification. Rock 5C SSH again ended with
+connection timeout/exit 255 to 100.103.100.10:22; no remote canary was started.
+28a1f11 CI 34727900799 succeeded; 6a25b39 CI 34728114519 was in progress when observed.
+Director/judge qualification, physical-device input/output, full TS parity and final
+release/default-switch remain incomplete; the complete CM-R0–R7 objective stays active.
+
 Codex topology participation now validates the frozen native assignment instead of
 blanket rejection. An empty ordinary inbox no longer skips required topology input:
 NativeMailboxDelivery prepares the coordinator schedule context and native receipts

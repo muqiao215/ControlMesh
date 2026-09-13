@@ -2060,3 +2060,16 @@ Installed-native pipeline evidence includes one worker write, a reviewer read us
 updated same native session, two consumed schedule inputs, and parent artifact acceptance
 after reopen without model/history changes. Real-account and physical-device evidence
 are not supplied by this loopback fixture. Broader native topology qualification remains.
+
+
+### Concurrent native Codex fanout with retained recovery
+
+The installed peer fixture now covers a real fanout coordinator in addition to direct
+peer exchange. It seeds three distinct native sessions, observes two concurrent local
+runs, verifies frozen role context in each model request, and requires alpha's lost
+observation to reconcile before the merger is dispatched. Premature collection fails
+with topology_child_not_completed and no merger model request. The third native session
+receives both accepted worker summaries from the coordinator and completes the parent.
+No runtime change was necessary beyond the already-registered topology input path.
+Native command/version/session behavior is real; the model endpoint remains synthetic.
+The physical peer still times out, so this evidence cannot close the multi-device gate.
