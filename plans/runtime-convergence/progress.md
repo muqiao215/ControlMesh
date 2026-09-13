@@ -2,6 +2,24 @@
 
 ## Current
 
+Codex topology participation now validates the frozen native assignment instead of
+blanket rejection. An empty ordinary inbox no longer skips required topology input:
+NativeMailboxDelivery prepares the coordinator schedule context and native receipts
+consume it. Parent artifact acceptance verifies the Codex task_completion format.
+Validation: installed Codex + Viewer + loopback model worker/write -> reviewer/read
+pipeline 1 test, 50 assertions (18.12s). Reviewer adopts the updated same native session;
+both schedule messages are consumed. After service reopen the parent verifies the actual
+file receipt and completes without another model request or history change. This is
+local sequential continuity, not two concurrent providers or physical-device topology.
+Topology/artifacts/Codex regression: 85 pass, 2 environment skips, 786 assertions (13.41s).
+Then artifact tests with real standalone SpecMesh: 18 pass, 68 assertions (5.98s), including
+Codex missing-proof refusal. Typecheck/diff-check passed after correcting a test-only
+optional-string assertion. Logs: /tmp/cm-codex-topology-native.log,
+/tmp/cm-codex-topology-regression.log, /tmp/cm-codex-topology-artifacts-final.log.
+Earlier commits 592f37e, 49dbf8b and de5accd CI succeeded; 28a1f11 CI 34727900799 was
+in progress when observed. Other native topology modes, device/real-account qualification
+and full migration/release/default switch remain open.
+
 Codex now uses the independent SpecMesh lifecycle through normal local registration.
 The start gate runs before provider readiness and requires all referenced continuity
 files to be registered required reads. The workflow binding participates in the retained

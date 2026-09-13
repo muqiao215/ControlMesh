@@ -247,7 +247,7 @@ then promotes under the current lease and native session lock. Only an applied p
 can finish the task. Recovery persists its reservation before promotion and consumes the
 retained proposal without a model call, including an already-published proposal whose task
 confirmation was lost. Concurrent source changes block promotion/recovery rather than being
-overwritten. Reviewed SpecMesh closeout and topology participation remain separate gates.
+overwritten. Reviewed SpecMesh closeout remains a separate gate.
 
 
 Codex uses the same independent SpecMeshPort.bind lifecycle as Claude/OpenCode. The start
@@ -261,3 +261,13 @@ the same configured plugin and checks the published result again without native 
 Missing/blocked startup checks do not spend a provider probe; a blocked publication check
 leaves retained work for reconciliation and does not imply rollback of already-published
 files. Overall closeout still requires the explicit reviewed acceptance path.
+
+
+Codex adopted sessions can participate in coordinator-assigned native topology tasks.
+The adapter validates frozen topology context and prepares its required mailbox input
+even when the ordinary inbox was empty. Attributed schedule input is consumed only with
+the native user-message receipt. Parent artifact acceptance validates Codex task_completion
+against the original contract and current bytes. An installed-native worker/reviewer
+pipeline with sequential session continuation and parent completion after service reopen
+is qualified on the local loopback fixture. This does not qualify remote Codex workers or
+all topology modes; those remain runtime-convergence acceptance work.

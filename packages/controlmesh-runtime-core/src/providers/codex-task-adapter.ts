@@ -1,3 +1,4 @@
+import { assertTopologyNativeInput } from "../topology-native-input";
 import { contains } from "../containers/plan";
 import { writeRoots } from "./native-workspace";
 import { nativeWorkspaceTools } from "./native-workspace-files";
@@ -73,7 +74,7 @@ export class CodexTaskAdapter {
   prepare(snapshot: TaskSnapshot): LocalTaskExecution {
     this.current();
     if (this.config.communication) assertNativeAgentConfiguration(this.config.communication);
-    requireThat(!this.kernel.db.sql.query("SELECT 1 FROM topology_tasks WHERE child_id=?").get(snapshot.task.task_id), "codex_topology_profile_unavailable");
+    assertTopologyNativeInput(this.kernel, snapshot.task.task_id);
     if (this.config.workspace_files?.write_roots?.length) writeRoots(snapshot.task.repo_root as string, { roots: this.config.workspace_files.write_roots });
     const input = this.input(snapshot), issued = nativeTaskDigest(snapshot.task), configuration = digest(this.config);
     new CodexSessionStore(input.rollout_path, this.actor.device_id!).validate(input.reference);
@@ -141,7 +142,7 @@ export class CodexTaskAdapter {
     const authority = <T>(operation: () => T): T => this.kernel.withLease(this.actor, lease, () => { current(); publicationLock?.assertCurrent(); return operation(); });
     try {
       current(); requireThat(!this.config.workflow_binding || context.verifyPublication, "codex_workflow_verifier_required");
-      const delivery = mailbox.pendingCount(this.actor, lease.task_id) > 0 ? mailbox.prepare(this.actor, lease, input.prompt, 32768) : undefined;
+      const delivery = assertTopologyNativeInput(this.kernel, lease.task_id) || mailbox.pendingCount(this.actor, lease.task_id) > 0 ? mailbox.prepare(this.actor, lease, input.prompt, 32768) : undefined;
       input = { ...input, prompt: nativeInput(input.prompt, delivery) };
       if (this.config.communication) {
         communication = new NativeAgentBroker(this.kernel, this.actor, lease, effect, this.config.communication, current);

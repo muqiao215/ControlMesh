@@ -127,7 +127,7 @@ export class TopologyArtifactGate {
       stamps.push({ assignment, child, run, result_digest: digest(accepted.result) });
       const contract = decodeTaskCompletion(child.task.completion_requirements);
       if (!contract) continue;
-      requireThat(["claude", "opencode"].includes(String(child.task.provider)) && typeof child.task.repo_root === "string"
+      requireThat(["claude", "opencode", "codex"].includes(String(child.task.provider)) && typeof child.task.repo_root === "string"
         && canonical(directoryIdentity(child.task.repo_root)) === canonical(this.workspace), "topology_artifact_child_workspace_mismatch");
       let hashes: string[], source: Witness["source"];
       if (assignment.execution_source === "device") {
@@ -151,7 +151,7 @@ export class TopologyArtifactGate {
           manifest_digest: evidence.manifest_digest };
       } else {
         requireThat(accepted.result.schema_version !== "controlmesh.device_native_result.v1", "topology_artifact_child_workspace_mismatch");
-        hashes = deviceCompletionProof(contract, accepted.result.completion)!.sha256;
+        hashes = deviceCompletionProof(contract, child.task.provider === "codex" ? accepted.result.task_completion : accepted.result.completion)!.sha256;
       }
       for (const [index, file] of contract.files.entries()) values.push({ child_id: assignment.child_id, generation: assignment.generation,
         episode_id: lease.episode_id, effect_id: effects[0]!.effect_id, path: file.path, mode: file.mode, sha256: hashes[index]!, ...(source ? { source } : {}) });

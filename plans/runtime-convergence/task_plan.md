@@ -78,7 +78,9 @@ headless Viewer have passed configured adoption and context-preserving continuat
 across reopen against a synthetic loopback model endpoint. This does not qualify live
 account behavior or native tool permissions. Gemini persistent registration, Codex
 fresh-session creation, interrupted lineage qualification, effective native sandbox
-behavior, and Codex topology integration remain. Codex current-file read receipts,
+behavior, and broader Codex topology qualification remain. Local native Codex pipeline
+worker/reviewer execution and parent artifact acceptance after reopen are qualified against
+the loopback model fixture; other topologies and physical devices remain. Codex current-file read receipts,
 staged write publication and retained publication recovery are now registered. SpecMesh
 start/post-publication checks and recovery checks are registered; reviewed closeout remains
 a separate gate. Installed-native fixtures do not qualify real-account or cross-device write behavior.

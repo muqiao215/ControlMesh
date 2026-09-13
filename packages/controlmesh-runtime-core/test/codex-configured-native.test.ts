@@ -1,3 +1,4 @@
+import { RuntimeTopology, RuntimePipeline, TopologyArtifactGate } from "../src";
 import type { Lease, Principal } from "../src/kernel";
 import { expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -14,8 +15,8 @@ import { LocalRuntimeControl } from "../src/local-runtime-control";
 import { codexSearchResponse, codexFunctionResponse, codexMessagesResponse, codexPatchResponse, codexTextResponse } from "./helpers/codex-responses";
 
 const executable = process.env.CM_CODEX_TEST_EXECUTABLE, viewer = process.env.CM_HISTORY_TEST_ROOT;
-test.skipIf(!executable || !viewer).each(["normal", "lost-observation", "readonly-patch", "commentary", "mailbox", "mailbox-recovery", "active-send", "active-send-recovery", "active-exchange", "active-exchange-recovery", "workspace-read", "workspace-read-recovery", "workspace-read-communication", "workspace-write", "workspace-write-recovery", "workspace-write-published-recovery", "workspace-write-conflict", ...(process.env.CM_SPECMESH_TEST_ROOT ? ["workspace-write-specmesh", "workspace-write-specmesh-recovery", "workspace-write-specmesh-gate-recovery", "workspace-write-specmesh-start-blocked"] : [])])("installed Codex persists native context through Viewer adoption and configured runtime reopen (%s)", async mode => {
-  const specmesh = mode.includes("specmesh");
+test.skipIf(!executable || !viewer).each(["normal", "lost-observation", "readonly-patch", "commentary", "mailbox", "mailbox-recovery", "active-send", "active-send-recovery", "active-exchange", "active-exchange-recovery", "workspace-read", "workspace-read-recovery", "workspace-read-communication", "workspace-write", "workspace-write-recovery", "workspace-write-published-recovery", "workspace-write-conflict", "workspace-write-topology", ...(process.env.CM_SPECMESH_TEST_ROOT ? ["workspace-write-specmesh", "workspace-write-specmesh-recovery", "workspace-write-specmesh-gate-recovery", "workspace-write-specmesh-start-blocked"] : [])])("installed Codex persists native context through Viewer adoption and configured runtime reopen (%s)", async mode => {
+  const specmesh = mode.includes("specmesh"), topology = mode === "workspace-write-topology";
   const workspaceWrite = mode.startsWith("workspace-write"), workspaceRead = mode.startsWith("workspace-"), exchange = mode.startsWith("active-exchange"), active = mode.startsWith("active-") || mode === "workspace-read-communication", inbox = mode.startsWith("mailbox"), lost = mode === "lost-observation" || mode === "mailbox-recovery" || mode === "active-send-recovery" || mode === "active-exchange-recovery" || mode === "workspace-read-recovery" || mode === "workspace-write-recovery" || mode === "workspace-write-published-recovery" || mode === "workspace-write-specmesh-recovery" || mode === "workspace-write-specmesh-gate-recovery", patch = mode === "readonly-patch";
   const root = mkdtempSync(join(tmpdir(), "cm-native-codex-flow-")), home = join(root, "home"), workspace = join(root, "project"), state = join(root, "state");
   for (const path of [home, workspace, state]) mkdirSync(path, { mode: 0o700 });
@@ -46,6 +47,16 @@ test.skipIf(!executable || !viewer).each(["normal", "lost-observation", "readonl
     const phase = last.includes("Reply with exactly PONG.") ? "probe" : last.includes("Seed marker:") ? "seed" : "resume";
     requests.push({ phase, has_seed: all.includes(marker), mailbox_input: last.includes("peer-mailbox-canary") });
     if (phase === "resume" && !all.includes(marker)) return Response.json({ error: { message: "fixture_missing_prior_context" } }, { status: 400 });
+    let role: string | undefined;
+    if (topology && phase === "resume") {
+      const user = users.at(-1), input = typeof user.content === "string" ? user.content : user.content.map((part: any) => part.text ?? "").join("");
+      const batch = JSON.parse(input.slice(input.lastIndexOf("\n") + 1));
+      const assigned = batch.messages.find((item: any) => item.kind === "handoff").payload;
+      expect(assigned.source).toBe("coordinator_topology"); expect(assigned.topology).toBe("pipeline");
+      role = assigned.worker_role;
+      expect(["worker", "reviewer"]).toContain(role!);
+      expect(assigned.output_contract.required_values.worker_role).toBe(role);
+    }
     if (active && phase === "resume" && !sendIssued) {
       const namespace = (body.input ?? []).filter((item: any) => item.type === "tool_search_output").flatMap((item: any) => item.tools ?? []).find((item: any) => item.name === "mcp__controlmesh");
       const tool = namespace?.tools?.find((tool: any) => tool.name === "send");
@@ -78,7 +89,7 @@ test.skipIf(!executable || !viewer).each(["normal", "lost-observation", "readonl
       sendIssued = true;
       return codexFunctionResponse(body.model, tool.name, { request_id: "native-send", recipient_task: "peer", text: "Native agent message" }, namespace.name);
     }
-    if (workspaceWrite && phase === "resume") {
+    if (workspaceWrite && role !== "reviewer" && phase === "resume") {
       const namespace = (body.input ?? []).filter((item: any) => item.type === "tool_search_output").flatMap((item: any) => item.tools ?? []).find((item: any) => item.name === "mcp__controlmesh_workspace");
       if (!namespace) return codexSearchResponse(body.model, "controlmesh_workspace read_file write_file");
       const step = writeSteps.get(last) ?? 0; writeSteps.set(last, step + 1);
@@ -92,7 +103,7 @@ test.skipIf(!executable || !viewer).each(["normal", "lost-observation", "readonl
       if (specmesh && step === 3) return codexFunctionResponse(body.model, "read_file", { request_id: "agents", path: "AGENTS.md" }, namespace.name);
       expect(all).toContain("Updated by native Codex");
     }
-    if (workspaceRead && !workspaceWrite && phase === "resume") {
+    if (workspaceRead && (!workspaceWrite || role === "reviewer") && phase === "resume") {
       if (!readTurns.has(last)) {
         const namespace = (body.input ?? []).filter((item: any) => item.type === "tool_search_output").flatMap((item: any) => item.tools ?? []).find((item: any) => item.name === "mcp__controlmesh_workspace");
         if (!namespace) return codexSearchResponse(body.model, "controlmesh_workspace read_file");
@@ -109,6 +120,7 @@ test.skipIf(!executable || !viewer).each(["normal", "lost-observation", "readonl
       }
     }
     if (mode === "commentary" && phase === "resume") return codexMessagesResponse(body.model, [{ text: "Checking prior context.", phase: "commentary" }, { text: "Context continued", phase: "final_answer" }]);
+    if (topology && phase === "resume") return codexTextResponse(body.model, JSON.stringify({ topology: "pipeline", substage: role === "worker" ? "worker_running" : "review_running", worker_role: role, status: "completed", summary: "Checked current project artifact" }));
     return codexTextResponse(body.model, phase === "probe" ? "PONG" : phase === "seed" ? "Seed stored" : "Context continued");
   } });
   let owned: ReturnType<typeof openLocalRuntime> | undefined;
@@ -138,6 +150,38 @@ test.skipIf(!executable || !viewer).each(["normal", "lost-observation", "readonl
     const adopted = await request("adopt", "prepare_adoption", { task_id: "task", provider: "codex", session_id: reference.session_id });
     expect(readFileSync(store.path)).toEqual(before); expect(requests).toHaveLength(1);
     const submitted = await request("submit", "submit", { task: { task_id: "task", chat_id: "fixture", status: "waiting", provider: "codex", model: "gpt-5.5", repo_root: workspace, prompt: "Continue the earlier conversation.", ...(workspaceRead ? { completion_requirements: { schema_version: "controlmesh.task_completion.v1", files: [{ path: "PROJECT.md", mode: workspaceWrite ? "write" : "read" }] } } : {}), native_session: adopted.native_session } });
+    if (topology) {
+      const actor: Principal = { id: "operator", device_id: "desktop", origin: "human_request", scopes: ["task:create", "task:read", "task:execute", "task:resume", "task:reconcile", "task:admin", "team:write", "message:read", "message:ack"] };
+      const contract = { schema_version: "controlmesh.task_completion.v1", files: [{ path: "PROJECT.md", mode: "write" }] };
+      const parent = await request("parent-create", "submit", { task: { task_id: "parent", chat_id: "fixture", status: "waiting", provider: "codex", model: "gpt-5.5", repo_root: workspace, prompt: "Produce and review project artifact", completion_requirements: contract } });
+      const kernel = owned.runtime.kernel;
+      new RuntimeTopology(kernel).create(actor, "topology", "parent", parent.revision, "pipeline");
+      let gate = new TopologyArtifactGate(kernel, { workspace, allowed_files: ["PROJECT.md"] }, () => {});
+      let pipeline = new RuntimePipeline(kernel, owned.runtime, gate);
+      const dispatched = pipeline.dispatch(actor, "worker-dispatch", "parent", parent.revision, 1, { task_id: "task", revision: submitted.revision, role: "worker" });
+      await owned.runtime.drain();
+      const worker = owned.runtime.inspectTask("task"); expect(worker.task.status, JSON.stringify(worker)).toBe("done");
+      expect(readFileSync(projectFile, "utf8")).toBe(writtenText);
+      const reviewerAdoption = await request("reviewer-adopt", "prepare_adoption", { task_id: "reviewer", provider: "codex", session_id: reference.session_id });
+      const reviewer = await request("reviewer-create", "submit", { task: { task_id: "reviewer", chat_id: "fixture", status: "waiting", provider: "codex", model: "gpt-5.5", repo_root: workspace, prompt: "Review current project artifact", native_session: reviewerAdoption.native_session,
+        completion_requirements: { schema_version: "controlmesh.task_completion.v1", files: [{ path: "PROJECT.md", mode: "read" }] } } });
+      const review = pipeline.advance(actor, "advance-review", "parent", parent.revision, dispatched.topology.revision, "task", worker.revision, {}, { task_id: "reviewer", revision: reviewer.revision, role: "reviewer" });
+      await owned.runtime.drain();
+      const reviewed = owned.runtime.inspectTask("reviewer"); expect(reviewed.task.status, JSON.stringify(reviewed)).toBe("done");
+      expect(kernel.db.sql.query("SELECT status,origin FROM messages ORDER BY rowid").all()).toEqual([{ status: "consumed", origin: "schedule" }, { status: "consumed", origin: "schedule" }]);
+      const nativeBytes = readFileSync(store.path), requestCount = requests.length;
+      await owned.close(); owned = openLocalRuntime(configPath);
+      gate = new TopologyArtifactGate(owned.runtime.kernel, { workspace, allowed_files: ["PROJECT.md"] }, () => {});
+      pipeline = new RuntimePipeline(owned.runtime.kernel, owned.runtime, gate);
+      const proof = await gate.prepare(actor, "parent", parent.revision, review.topology.revision);
+      expect(proof.evidence.files[0]?.witness.child_id).toBe("task");
+      const result = pipeline.advance(actor, "finish-parent", "parent", parent.revision, review.topology.revision, "reviewer", reviewed.revision);
+      expect(result.parent?.task.status).toBe("done");
+      expect(requests.length).toBe(requestCount); expect(readFileSync(store.path)).toEqual(nativeBytes);
+      expect(requests.filter(item => item.phase === "probe")).toHaveLength(1);
+      expect(requests.filter(item => item.phase === "resume").every(item => item.has_seed)).toBe(true);
+      return;
+    }
     if (active) await request("peer-create", "submit", { task: { task_id: "peer", chat_id: "fixture", status: "waiting", provider: "codex", model: "gpt-5.5", repo_root: workspace, prompt: "Peer fixture" } });
     if (exchange) peerLease = owned.runtime.kernel.claim({ ...peerActor, origin: "human_request" }, "peer-claim", "peer", owned.runtime.inspectTask("peer").revision, 60000);
     if (inbox) {

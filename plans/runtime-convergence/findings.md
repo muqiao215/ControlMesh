@@ -2046,3 +2046,17 @@ The independent plugin remains unchanged. Passing checks retain closeout_verifie
 reviewed closeout is not inferred. Native tests cover start refusal, normal publication,
 lost-observation recovery and an injected postpublication gate refusal followed by a real
 plugin check after reopen. No historical production task or real-account model was used.
+
+
+### Codex native topology context and parent file evidence
+
+The adapter's pendingCount shortcut skipped NativeMailboxDelivery.prepare when no
+ordinary message existed, but prepare also creates required coordinator topology input.
+After validating the frozen assignment, Codex now enters that path for topology tasks.
+The shared delivery owner retains attribution and consumes only native-confirmed input.
+TopologyArtifactGate previously accepted only Claude/OpenCode and their completion key;
+it now verifies Codex task_completion using the same contract/path/hash verifier.
+Installed-native pipeline evidence includes one worker write, a reviewer read using the
+updated same native session, two consumed schedule inputs, and parent artifact acceptance
+after reopen without model/history changes. Real-account and physical-device evidence
+are not supplied by this loopback fixture. Broader native topology qualification remains.

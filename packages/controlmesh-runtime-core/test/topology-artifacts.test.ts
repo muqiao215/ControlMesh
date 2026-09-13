@@ -14,7 +14,7 @@ const actor: Principal = { id: "owner", device_id: "local", origin: "internal", 
 const source = { command_origin: "internal" as const, origin: "background" as const, source_scope: "background_task" as const, transport: "terminal" };
 const hash = (text: string | Buffer) => createHash("sha256").update(text).digest("hex");
 const plugin = process.env.CM_SPECMESH_TEST_ROOT;
-interface Options { mode?: "read" | "write"; childMode?: "read" | "write"; absentContract?: boolean; expected?: string; foreign?: boolean; missingProof?: boolean; specmesh?: boolean }
+interface Options { provider?: "opencode" | "codex"; mode?: "read" | "write"; childMode?: "read" | "write"; absentContract?: boolean; expected?: string; foreign?: boolean; missingProof?: boolean; specmesh?: boolean }
 async function fixture(options: Options = {}) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "cm-topology-artifacts-"))), workspace = join(root, "project"), foreign = join(root, "foreign"), path = join(root, "state.sqlite");
   for (const dir of [workspace, foreign]) mkdirSync(dir, { mode: 0o700 });
@@ -62,7 +62,7 @@ async function fixture(options: Options = {}) {
         if (stage) { const proposal = stage.seal(authority); stage.promote(authority, proposal.proposal_digest); }
       } else kernel.dispatchEffect(actor, `dispatch-${lease.episode_id}`, lease, lease.episode_id, { synthetic_driver: true });
       const text = JSON.stringify({ topology: "pipeline", substage: id === "worker" ? "worker_running" : "review_running", worker_role: id, status: "completed", summary: "delivered" });
-      const result = { text, output_digest: digest(text), native_session: { session_id: `synthetic_${id}` }, ...(completion && !options.missingProof ? { completion } : {}) };
+      const result = { text, output_digest: digest(text), native_session: { session_id: `synthetic_${id}` }, ...(completion && !options.missingProof ? (options.provider === "codex" ? { task_completion: completion } : { completion }) : {}) };
       kernel.confirmEffect(actor, `confirm-${lease.episode_id}`, lease, lease.episode_id, result);
       return kernel.finish(actor, `finish-${lease.episode_id}`, lease, "done", result);
     } });
@@ -72,7 +72,7 @@ async function fixture(options: Options = {}) {
   }
   open();
   for (const id of ["parent", "worker", "reviewer"]) {
-    let task: LegacyTask = { task_id: id, chat_id: "test", status: "waiting", provider: "opencode", repo_root: id === "worker" && options.foreign ? foreign : workspace,
+    let task: LegacyTask = { task_id: id, chat_id: "test", status: "waiting", provider: options.provider ?? "opencode", repo_root: id === "worker" && options.foreign ? foreign : workspace,
       ...(id === "parent" ? { completion_requirements: contract } : id === "worker" && !options.absentContract ? { completion_requirements: childContract } : {}) };
     if (id === "parent" && port) task = (await adoptSpecMeshCompletion(task, hash(readFileSync(join(workspace, requirementsPath))), port)).task;
     runtime!.submit(`submit-${id}`, task, { chat_id: "test" });
@@ -166,4 +166,21 @@ test("reopening requires new child artifact evidence even when prior delivered f
     await expect(f.gate.prepare(actor, "parent", opened.parent.revision, opened.topology.revision)).rejects.toThrow("topology_artifact_witnesses_missing");
     expect(f.calls).toEqual(["worker", "reviewer"]); expect(f.kernel.inspect(actor, "parent").task.status).toBe("waiting");
   } finally { await f.close(); }
+});
+
+for (const mode of ["read", "write"] as const) test(`Codex child ${mode} receipts satisfy the parent artifact contract after reopen`, async () => {
+  const f = await fixture({ provider: "codex", mode });
+  try {
+    await f.reopen();
+    const prepared = await f.prepare();
+    expect(prepared.evidence.files[0]?.witness.child_id).toBe("worker");
+    expect(prepared.evidence.files[0]?.sha256).toBe(hash(mode === "write" ? "delivered\n" : "before\n"));
+    expect(f.finish().parent?.task.status).toBe("done");
+  } finally { await f.close(); }
+});
+
+test("Codex parent acceptance refuses missing native file completion evidence", async () => {
+  const f = await fixture({ provider: "codex", missingProof: true });
+  try { await expect(f.prepare()).rejects.toThrow("device_completion_proof_required"); }
+  finally { await f.close(); }
 });
