@@ -12,7 +12,7 @@ export interface ProcessSpec {
   max_output_bytes?: number;
 }
 export interface ProcessOutcome {
-  reason: "exited" | "deadline" | "cancelled" | "authority_lost" | "output_limit" | "provider_abort" | "spawn_failed" | "anchor_failed" | "cleanup_failed";
+  reason: "exited" | "deadline" | "cancelled" | "authority_lost" | "output_limit" | "provider_abort" | "spawn_failed" | "anchor_failed" | "cleanup_failed" | "output_sink_failed";
   exit_code: number | null;
   stdout: string;
   stderr: string;
@@ -23,6 +23,7 @@ export interface ProcessAdmission {
   assertCurrent: () => void;
   remainingMs?: () => number;
   signal?: AbortSignal;
+  onOutput?: (stream: "stdout" | "stderr", text: string) => void;
   abortOnStderrLine?: (line: string) => boolean;
   abortOnStdoutLine?: (line: string) => boolean;
 }
@@ -97,6 +98,13 @@ export class ProcessSupervisor {
     admission.signal?.addEventListener("abort", abort, { once: true });
     const readers: ReadableStreamDefaultReader<Uint8Array>[] = [];
     let observedBytes = 0;
+    const retain = (stderr: boolean, text: string) => {
+      if (!text || !admission.onOutput) return;
+      try {
+        const result: unknown = admission.onOutput(stderr ? "stderr" : "stdout", text);
+        if (result !== undefined) { void Promise.resolve(result).catch(() => {}); throw new Error("asynchronous output sink"); }
+      } catch { stop("output_sink_failed"); }
+    };
     const read = async (stream: ReadableStream<Uint8Array>, stderr: boolean) => {
       const reader = stream.getReader();
       readers.push(reader);
@@ -111,7 +119,7 @@ export class ProcessSupervisor {
           const remaining = cap - observedBytes;
           observedBytes += value.byteLength;
           const chunk = decoder.decode(value.subarray(0, Math.max(0, remaining)), { stream: true });
-          text += chunk;
+          text += chunk; retain(stderr, chunk);
           if (observedBytes > cap) stop("output_limit");
           if (abortLine) {
             line += chunk;
@@ -120,7 +128,7 @@ export class ProcessSupervisor {
             for (const completed of lines) if (abortLine(completed)) stop("provider_abort");
           }
         }
-        const tail = decoder.decode(); text += tail; line += tail;
+        const tail = decoder.decode(); text += tail; line += tail; retain(stderr, tail);
         if (line && abortLine?.(line)) stop("provider_abort");
       } catch { if (!stopping) stop("anchor_failed"); }
       return text;

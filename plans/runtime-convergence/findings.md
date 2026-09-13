@@ -2316,3 +2316,9 @@ heuristics. TS routing is opt-in through registered host capability. Native prov
 requests remain diagnostic metadata when actual executor changes to host. Submit must
 commit grant validation together with job/approval/task creation, not leave a partially
 authorized job after restrictive policy refuses the command.
+
+Streaming evidence must be independent from terminal effect observations. Persisting chunks
+before completion makes progress readable after reconnect without inventing a final result.
+A failed sink is a supervision failure, not a reason to drop output silently. Sequence-bound
+digests and effect-bound cursors prevent cross-execution page mixing. The retained chunk
+budget is separate from ProcessSupervisor's current raw output cap.

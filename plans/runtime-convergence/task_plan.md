@@ -324,3 +324,8 @@ Ordinary workunit checkpoint: Python-equivalent classification and normal TS sub
 host routing are wired with atomic source/grant refusal and actual command verification.
 Next: durable long-running process and streaming-log ownership, remaining source-profile
 parity, then all outstanding provider/device/terminal/cutover gates in CM-R0–R7.
+
+Streaming host log checkpoint: schema-32 durable chunks and normal control/CLI reads now
+work before completion and after reopen; sink failures stop execution. Historical migration
+regression passes. Next: bounded lease renewal/durable long-job execution ownership and
+remaining environment/source parity, then full CM-R0–R7 native/device/terminal/cutover gates.

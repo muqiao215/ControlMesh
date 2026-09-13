@@ -17,6 +17,7 @@ export const runtimeHelp = `ControlMesh TypeScript 运行时（候选入口）
   inspect-host-plan RUN          查看整项运行状态
   create-host-job --file JSON    创建待审批的主机任务
   start-host-step --file JSON    使用审批回执创建并排队步骤任务
+  host-log TASK                 读取运行中已持久保存的输出片段
   host-output TASK              分页读取已保存的主机命令输出
   host-jobs                     查看主机任务摘要
   inspect-host-job JOB           查看主机任务和步骤
@@ -72,6 +73,7 @@ export function parseRuntimeCli(argv: string[]): RuntimeCliCommand | null {
     "history-search": ["--provider", "--query"], "history-refresh": ["--provider"], "session-events": ["--session", "--limit", "--before"],
     "run-host-job": ["--revision"], "inspect-host-plan": [],
     "create-host-job": ["--file"], "start-host-step": ["--file"],
+    "host-log": ["--effect", "--after", "--limit"],
     "host-output": ["--stream", "--offset", "--limit", "--effect", "--digest"],
     "host-jobs": ["--after", "--limit"], "inspect-host-job": [], "approve-host-step": ["--step", "--revision"],
     "prepare-adoption": ["--provider", "--session"], handoff: [], verify: [],
@@ -88,7 +90,7 @@ export function parseRuntimeCli(argv: string[]): RuntimeCliCommand | null {
   };
   const socket = text("--socket"); requireThat(isAbsolute(socket), "local_socket_path_invalid");
   const timeout_ms = number("--timeout-ms", 30_000); requireThat(timeout_ms > 0 && timeout_ms <= 300_000, "invalid_local_control_timeout");
-  const targeted = ["run-host-job", "inspect-host-plan", "host-output", "inspect-host-job", "approve-host-step", "inspect", "events", "new", "enqueue", "resume", "cancel", "tell", "prepare-adoption", "handoff", "verify"].includes(command);
+  const targeted = ["host-log", "run-host-job", "inspect-host-plan", "host-output", "inspect-host-job", "approve-host-step", "inspect", "events", "new", "enqueue", "resume", "cancel", "tell", "prepare-adoption", "handoff", "verify"].includes(command);
   requireThat(args.length === (targeted ? 2 : 1), "invalid_cli_arguments");
   const base = { command, socket, json: flags["--json"] === true, timeout_ms };
   if (command === "ui") return base;
@@ -113,6 +115,7 @@ export function parseRuntimeCli(argv: string[]): RuntimeCliCommand | null {
       case "inspect-host-plan": request = { op: "inspect_host_plan", run_id: args[1] }; break;
       case "create-host-job": request = { op: "create_host_job", job: JSON.parse(commandFile(text("--file"))) }; break;
       case "start-host-step": request = { op: "start_host_step", approval: JSON.parse(commandFile(text("--file"))) }; break;
+      case "host-log": request = { op: "host_log", task_id: args[1], after: number("--after", 0), limit: number("--limit", 32), ...(flags["--effect"] === undefined ? {} : { effect_id: text("--effect") }) }; break;
       case "host-output": request = { op: "host_output", task_id: args[1], stream: flags["--stream"] ?? "stdout", offset: number("--offset", 0), limit: number("--limit", 4096),
         ...(flags["--effect"] === undefined ? {} : { effect_id: text("--effect") }), ...(flags["--digest"] === undefined ? {} : { observation_digest: text("--digest") }) }; break;
       case "host-jobs": request = { op: "host_jobs", after: flags["--after"] ?? "", limit: number("--limit", 20) }; break;

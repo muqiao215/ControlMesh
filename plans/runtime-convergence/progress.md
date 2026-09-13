@@ -1128,3 +1128,22 @@ typecheck needed explicit optional classifier fields and a literal test status; 
 Regression: 34 pass, 364 assertions, 4.43s (/tmp/cm-host-workunit-final.log); typecheck and
 diff check passed. This does not qualify all Python source variants, environment or
 unbounded detached process behavior. Those long-job/log owners remain next.
+
+## 2026-09-13 — persistent streaming host output (schema 32)
+
+ProcessSupervisor supports a synchronous output sink; failures or async callbacks stop
+execution as output_sink_failed. Host execution writes bounded Unicode chunks into new
+schema-32 process_output_chunks with effect/stream/sequence/content digests. Logging can
+retain same-execution output after cancellation revokes dispatch, without granting any
+completion authority. host_log and host-log expose principal-owned bounded cursor pages.
+
+Real command fixture blocks mid-execution while a second DB connection reads persisted
+Unicode/stdout/stderr; later runtime reopen preserves complete chunks. Corrupt content,
+owner/field overrides and unbound cursors refuse. Throwing/async sink tests stop before
+a later marker. A schema-31 fixture upgrades with the original task unchanged.
+
+Migration/host regression: 348 pass, 3 optional skip, 0 fail, 3199 assertions; 351 tests
+across 22 files in 37.34s (/tmp/cm-host-log-migrations.log). Final log/CLI regression: 12 pass;  0 fail;  89 expect() calls; Ran 12 tests across 2 files. [8.60s]
+Typecheck/diff check passed. Old-version downgrade fixtures now remove the new table and
+expect schema 32. This is not permission to open production Python state or a claim of
+long-running/orphan-process parity; existing host output and five-minute limits remain.

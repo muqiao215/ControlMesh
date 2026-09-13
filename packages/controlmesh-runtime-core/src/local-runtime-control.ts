@@ -35,6 +35,7 @@ export class LocalRuntimeControl {
         resume: ["task_id", "expected_revision", "prompt"], cancel: ["task_id", "expected_revision"], tell: ["task_id", "text"], drain: [], session_events: ["session_key", "limit", "before"],
         run_host_job: ["job_id", "expected_revision"], inspect_host_plan: ["run_id"],
         create_host_job: ["job"], start_host_step: ["approval"],
+        host_log: ["task_id", "effect_id", "after", "limit"],
         host_output: ["task_id", "stream", "offset", "limit", "effect_id", "observation_digest"],
         host_jobs: ["after", "limit"], inspect_host_job: ["job_id"], approve_host_step: ["job_id", "expected_revision", "step_id"],
         inspect_message: ["task_id", "message_id"], mailbox_status: ["task_id"],
@@ -60,6 +61,7 @@ export class LocalRuntimeControl {
         case "inspect_host_plan": identifier(request.run_id); result = this.runtime.inspectHostPlan(request.run_id); break;
         case "create_host_job": result = this.runtime.createHostJob(id, request.job); break;
         case "start_host_step": result = this.runtime.startHostStep(id, request.approval); break;
+        case "host_log": identifier(request.task_id); result = this.runtime.hostLog(request.task_id, request.effect_id as string | undefined, request.after as number | undefined, request.limit as number | undefined); break;
         case "host_output": identifier(request.task_id); result = this.runtime.hostOutput(request.task_id, {
           stream: request.stream as "stdout" | "stderr" | undefined, offset: request.offset as number | undefined,
           limit: request.limit as number | undefined, effect_id: request.effect_id as string | undefined,

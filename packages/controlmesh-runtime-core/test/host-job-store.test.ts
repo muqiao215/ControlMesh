@@ -12,7 +12,7 @@ test("host job store upgrades, isolates owners and rejects stale concurrent writ
   const root = mkdtempSync(join(tmpdir(), "cm-host-store-")), path = join(root, "runtime.sqlite");
   let a = new RuntimeDatabase(path); let b: RuntimeDatabase | undefined;
   try {
-    a.sql.exec("DROP TABLE host_jobs; PRAGMA user_version=30;"); a.close(); a = new RuntimeDatabase(path);
+    a.sql.exec("DROP TABLE process_output_chunks; DROP TABLE host_jobs; PRAGMA user_version=30;"); a.close(); a = new RuntimeDatabase(path);
     b = new RuntimeDatabase(path);
     const first = new HostJobStore(a, () => {}), second = new HostJobStore(b, () => {});
     const created = first.put(actor, "create", 0, job); expect(created.revision).toBe(1);

@@ -1,3 +1,4 @@
+import { appendHostLog } from "./host-job-log";
 import { SpecMeshPort, type SpecMeshObservation } from "./specmesh-port";
 import { decodeHostJob } from "./host-job-model";
 import { realpathSync, statSync } from "node:fs";
@@ -59,7 +60,7 @@ export class HostJobProcess {
     });
     try {
       const outcome = await new ProcessSupervisor().run({ command: [this.shell, "--noprofile", "--norc", "-c", step.command], cwd: workspace.path,
-        env: { PATH: "/usr/bin:/bin", LANG: "C.UTF-8" }, timeout_ms: 300000, max_output_bytes: 262144 }, { ...admission, assertCurrent: guard });
+        env: { PATH: "/usr/bin:/bin", LANG: "C.UTF-8" }, timeout_ms: 300000, max_output_bytes: 262144 }, { ...admission, assertCurrent: guard, onOutput: (stream, text) => appendHostLog(this.kernel, actor, lease, effect, stream, text) });
       // Retain the owned process outcome even after lease loss; it cannot authorize completion alone.
       this.kernel.db.transaction(() => {
         const changed = this.kernel.db.sql.query("UPDATE effects SET result=? WHERE effect_id=? AND task_id=? AND episode_id=? AND fence=? AND state IN ('dispatched','unknown') AND result IS NULL")

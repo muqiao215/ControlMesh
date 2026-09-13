@@ -1016,3 +1016,17 @@ existing receipt transactions, revision checks and terminal merge rules; job wor
 and source bindings remain fixed. This internal store does not dispatch commands or
 trust imported PID/approval metadata. See runtime-convergence for remaining import,
 execution and reconciliation owners.
+
+### Candidate process output storage
+
+Schema 32 adds append-only process_output_chunks keyed by execution effect and ordered
+by sequence. Host supervision persists decoded chunks before terminal output acceptance;
+content digests include effect, stream and sequence. This output is observational only: it
+never confirms an effect or completes a task. An unavailable/synchronous-contract-violating
+output sink stops the supervised process with output_sink_failed.
+
+The host_log control/CLI reads bounded, principal-owned pages without following stored
+filesystem paths. Noninitial cursors bind the effect. Process lifetime/lease authority
+still belongs to ProcessSupervisor and the existing kernel; stored partial logs do not
+prove an orphaned process stopped or enable resuming it. Previous TS binaries capped at
+schema 31 reject this database version; rollback requires a compatible snapshot/runtime.

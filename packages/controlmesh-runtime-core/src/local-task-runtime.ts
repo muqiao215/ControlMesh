@@ -1,3 +1,4 @@
+import { readHostLog } from "./host-job-log";
 import { classifyHostExecution } from "./host-execution-policy";
 import { issueExecutionContext } from "./execution-context";
 import { enforceLocalReadSource } from "./execution-policy";
@@ -163,6 +164,7 @@ export class LocalTaskRuntime {
     }, value => { this.current(); return value; });
     return { task: this.inspectTask(result.task_id), run: this.inspect(result.run_id) };
   }
+  hostLog(taskId: string, effectId?: string, after = 0, limit = 32) { this.current(); return readHostLog(this.kernel, this.actor, taskId, effectId, after, limit); }
   hostOutput(taskId: string, request: HostOutputPageRequest = {}) {
     this.current(); return readHostOutput(this.kernel, this.actor, taskId, request);
   }

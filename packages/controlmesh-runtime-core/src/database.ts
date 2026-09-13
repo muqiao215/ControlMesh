@@ -26,7 +26,7 @@ export class RuntimeDatabase {
       this.transaction(() => {
         const version = (this.sql.query("PRAGMA user_version").get() as { user_version: number }).user_version;
         const app = (this.sql.query("PRAGMA application_id").get() as { application_id: number }).application_id;
-        requireThat(version >= 0 && version <= 31, "unsupported_database_version");
+        requireThat(version >= 0 && version <= 32, "unsupported_database_version");
         requireThat(app === 0 || app === APPLICATION_ID, "foreign_database");
         if (version === 0) {
           const tables = this.sql.query("SELECT name FROM sqlite_master WHERE type='table'").all();
@@ -449,6 +449,15 @@ export class RuntimeDatabase {
             );
             PRAGMA user_version = 31;
           `);
+        }
+        if (version < 32) {
+          this.sql.exec(`CREATE TABLE process_output_chunks (
+            seq INTEGER PRIMARY KEY AUTOINCREMENT, effect_id TEXT NOT NULL REFERENCES effects(effect_id),
+            stream TEXT NOT NULL CHECK(stream IN ('stdout','stderr')), text TEXT NOT NULL,
+            digest TEXT NOT NULL, bytes INTEGER NOT NULL CHECK(bytes>0)
+          );
+          CREATE INDEX process_output_effect ON process_output_chunks(effect_id,seq);
+          PRAGMA user_version=32;`);
         }
       });
       this.sql.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;");

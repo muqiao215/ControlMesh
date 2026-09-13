@@ -434,3 +434,17 @@ and unenforceable grants cannot commit a runnable host task.
 
 This preserves Python workunit classification, not its unbounded login-shell process
 behavior. Current host source/environment/duration restrictions and long-job gaps remain.
+
+### Live persisted host logs
+
+`host-log TASK --limit 32` reads stored output chunks while a process is running or after
+it ends. Poll using returned `effect_id` and `next_after` as `--effect` and `--after`.
+`has_more` concerns currently saved chunks, not whether execution has finished; inspect
+task_status/effect_state separately. Limit is at most 64 records and encoded page content
+is bounded to 256 KiB. Unicode decoding happens before persistence.
+
+Schema 32 stores up to 4096 chunks/1 MiB per effect; the current host supervisor's smaller
+256-KiB raw-output limit still applies. Sink failures stop execution and remain an uncertain
+outcome, never success. This adds durable streaming under the existing supervisor; long
+process lifetime, larger log retention and orphan-process continuation remain separate
+qualification gaps. Previous schema-31 TS runtimes cannot open upgraded state.
