@@ -27,5 +27,5 @@ export function geminiResumeCommand(input: GeminiResumeProfile) {
   requireThat(typeof input.policy_path === "string" && isAbsolute(input.policy_path) && !/[\x00\r\n]/.test(input.policy_path), "invalid_gemini_policy_path");
   requireThat(typeof input.prompt === "string" && input.prompt.trim().length > 0 && Buffer.byteLength(input.prompt) <= 1024 * 1024 && !input.prompt.includes("\0"), "invalid_gemini_prompt");
   return { command: [input.executable, "--resume", input.session_id, "--model", input.model,
-    "--output-format", "stream-json", "--approval-mode", "default", "--admin-policy", input.policy_path, "-p", ""], stdin_text: input.prompt };
+    "--output-format", "stream-json", "--approval-mode", "default", "--ignore-env", "--admin-policy", input.policy_path, "-p", ""], stdin_text: input.prompt };
 }

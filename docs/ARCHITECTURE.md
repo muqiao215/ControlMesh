@@ -91,6 +91,16 @@ review, and summary snapshots in the writer's immediate pre-write hook.
 
 ### Provider Execution
 
+The TS Gemini candidate joins native settings loading and effective-policy loading in
+one supervised, read-only Node probe. Trusted registration pins runtime dependencies,
+settings/trust sources and policy directories; the returned currentness guard checks
+all three. The qualified 0.59 headless projection applies the explicit admin directory
+to the loaded settings, and verifies native rules against the requested tool set.
+Resume command construction shares `--ignore-env` with the probe. This binding is still
+pre-execution evidence: normal Gemini task registration, protected process configuration,
+session/result recovery and account-backed acceptance remain open. The generic Gemini
+restrictive grant mapping remains refused until those execution owners are connected.
+
 Responsibilities:
 
 - discover and authenticate official provider CLIs;

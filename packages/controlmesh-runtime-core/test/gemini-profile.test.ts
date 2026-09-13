@@ -8,6 +8,7 @@ test("Gemini resume binds a full native identity and keeps prompt bytes out of a
   expect(result.command).not.toContain(input.prompt);
   expect(result.command.slice(1, 5)).toEqual(["--resume", input.session_id, "--model", input.model]);
   expect(result.command).toContain("stream-json");
+  expect(result.command).toContain("--ignore-env");
   for (const session_id of ["latest", "1", "12345678", "", input.session_id + "\n"]) expect(() => geminiResumeCommand({ ...input, session_id })).toThrow("invalid_native_session_id");
   for (const model of ["--yolo", "model\n--yolo", ""]) expect(() => geminiResumeCommand({ ...input, model })).toThrow("invalid_gemini_model");
   expect(() => geminiResumeCommand({ ...input, policy_path: "relative.toml" })).toThrow("invalid_gemini_policy_path");

@@ -379,3 +379,10 @@ Gemini source-file checkpoint: synchronous native settings/trust accesses are di
 registered and identity-checked across loading/supervision. Complete the unified settings /
 effective-policy / session registration and actual process integration before normal
 Gemini Provider admission or broader migration closure.
+
+
+Joined Gemini admission checkpoint: the settings runner now loads native effective rules
+from the same merged settings and checks registered policy sources, configuration drift
+and the exact requested tool set. Resume argv matches the probe's --ignore-env profile.
+Next is actual same-configuration process/session dispatch and normal task registration;
+this checkpoint does not complete Gemini, the full migration or production rollout.

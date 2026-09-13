@@ -1384,3 +1384,23 @@ passed before the final trust-path assertion; diff check passed. Source identiti
 canonical inode/mode/size/nanosecond timestamps or absent-path ancestry, not immutable
 mounts. Coverage is the qualified synchronous loader path, not all possible future async
 I/O or Agent execution. Provider registration and execution-policy joining remain open.
+
+
+## 2026-09-13 — joined native settings and effective-policy admission
+
+Current: the supervised settings runner can now request effective-policy qualification
+from the same native process and merged settings. Runtime dependencies, settings/trust
+sources and policy directory snapshots share its currentness guard. The headless 0.59
+projection uses an explicit admin-directory override and native default/user sources.
+Resume command construction now shares --ignore-env with settings admission.
+
+Done: installed native joined-policy acceptance and all Gemini regression passed
+18 tests, 0 failures, 140 assertions in 6.51s; log /tmp/cm-gemini-joined-final.log.
+Typecheck and diff check passed. Tests include a settings-level write allow overridden
+by the read-only admin policy, missing source registration, changed policy files and
+conflicting effective rules. No model calls or operator settings writes occurred.
+
+Remaining/Next: normal Gemini task registration, exact CLI execution-graph qualification,
+protected same-configuration process dispatch and native session/outcome recovery remain
+open. Do not relax grant mapping from preflight evidence alone. Full CM-R0–R7 scope,
+other providers/transports/devices, production migration and release remain unfinished.

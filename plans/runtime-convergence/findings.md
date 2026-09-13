@@ -2435,3 +2435,15 @@ absence tests. Native settings/trust readers can catch filesystem errors, so reg
 refusal must also be remembered outside their catch blocks. Currentness includes missing
 paths anchored to canonical existing ancestors; parent directory activity alone is not a
 file-content change. Observation does not turn mutable files into an immutable sandbox.
+
+
+The installed Gemini 0.59 CLI's createPolicyEngineConfig2 projects mcp/tools/mcpServers,
+policyPaths/adminPolicyPaths and disableAlwaysAllow from merged settings into the core
+policy loader. Its current workspace-policy feature is disabled; headless mode adds
+ask_user to excludes and --admin-policy overrides settings.adminPolicyPaths. The joined
+probe reproduces this qualified path in the same process as loadSettings, checks actual
+native source directories, and returns effective rules without merged setting values.
+This remains a version-specific projection, not proof of the entire CLI execution graph.
+The resume command previously omitted --ignore-env while the probe required it; command
+construction now matches this admission assumption. Full dispatch still needs protected
+configuration and native process/session integration.

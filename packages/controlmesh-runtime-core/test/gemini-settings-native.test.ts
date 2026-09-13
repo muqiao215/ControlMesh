@@ -1,4 +1,6 @@
 import { GeminiSettingsRunner } from "../src/providers/gemini-settings-runner";
+import { geminiToolPolicy } from "../src/providers/gemini-profile";
+import { pathToFileURL } from "node:url";
 import { expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -56,6 +58,23 @@ test.skipIf(!module || !node)("native Gemini settings preflight preserves deprec
     const sourceBound = await runner.run(input, { assertCurrent() {} });
     writeFileSync(path, JSON.stringify({ general: { enableAutoUpdate: false } }));
     expect(() => sourceBound.assertRuntimeCurrent()).toThrow("gemini_probe_configuration_changed");
+    if (process.env.CM_GEMINI_RECORDING_MODULE) {
+      const policyModule = realpathSync(process.env.CM_GEMINI_RECORDING_MODULE);
+      const native = await import(pathToFileURL(policyModule).href);
+      const admin = join(root, "admin"), user = join(root, "policies"); mkdirSync(admin); mkdirSync(user);
+      writeFileSync(join(admin, "cm.toml"), geminiToolPolicy(["read_file"]));
+      writeFileSync(path, JSON.stringify({ policyPaths: [user], tools: { allowed: ["write_file"] } }));
+      const registration = { ...input, effective_policy: { module: policyModule, admin_directory: admin,
+        policy_filename: "cm.toml", allowed_tools: ["read_file"],
+        sources: native.getPolicyDirectories(native.DEFAULT_CORE_POLICIES_DIR, [user], undefined, [admin]) as string[] } };
+      const joined = await runner.run(registration, { assertCurrent() {} });
+      expect(joined.effective_policy?.allowed_tools).toEqual(["read_file"]);
+      joined.assertRuntimeCurrent();
+      await expect(runner.run({ ...registration, effective_policy: { ...registration.effective_policy, sources: [admin] } }, { assertCurrent() {} })).rejects.toThrow("gemini_settings_probe_failed");
+      writeFileSync(join(admin, "cm.toml"), geminiToolPolicy(["write_file"]));
+      expect(() => joined.assertRuntimeCurrent()).toThrow("gemini_policy_configuration_changed");
+      await expect(runner.run(registration, { assertCurrent() {} })).rejects.toThrow("gemini_effective_policy_conflict");
+    }
     const aborted = new AbortController(); aborted.abort();
     await expect(runner.run(input, { assertCurrent() {}, signal: aborted.signal })).rejects.toThrow("gemini_settings_probe_failed");
 
