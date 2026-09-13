@@ -911,3 +911,27 @@ Control/approval/CLI tests: 27 passed, 199 assertions, 10.27s
 unknown/typed comparison; diff-check passed. The interface inherits existing private
 local-control socket trust and configured origin, not independent proof of human UI
 presence. Kernel dispatch/process ownership and reconciliation remain pending.
+
+## 2026-09-13 — kernel-bound supervised host step execution
+
+Added HostJobProcess for a single approved local-foreground step. It validates current
+approval/task binding, canonical registered workspace and shell identity, issued source
+and grants. Restrictive tool/network/root grants are refused because this host profile
+does not implement a sandbox. Step-running transition and kernel start/effect dispatch
+are one transaction; current host revision prevents another task using the same approval
+from launching the step again. Existing ProcessSupervisor owns the actual bash process
+and descendants, bounded output and cancellation. Environment is explicitly supplied.
+
+Owned process outcome is retained in effect_observations before authority/completion
+checks. A successful/nonzero exit updates step/job, confirms the effect and completes
+the kernel task atomically. Cancellation/deadline/authority uncertainty keeps the job
+step running for reconciliation and marks the task unknown when permitted; no replay.
+Approval alone still does not authorize launch: a current kernel lease/task binding is
+required. This class is not yet registered with normal task resolver/dispatch controls.
+
+Actual bash tests write one marker, verify exit 0/7 states, forbid duplicate execution,
+refuse no-network grants before dispatch and cancel a sleeping child while retaining its
+actual outcome. Kernel/approval/store/process: 24 passed, 137 assertions, 1.208s
+(`/tmp/cm-host-process-final.log`); typecheck/diff-check passed. Retained-result recovery,
+configured scheduling, multi-step progression and sandbox/device profiles remain open.
+No old/operator host jobs or commands were run.

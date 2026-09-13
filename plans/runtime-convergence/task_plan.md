@@ -253,3 +253,8 @@ and interrupted-result reconciliation; approvals alone never launch commands.
 Host control checkpoint: configured list/detail/step-approval operations and CLI wired
 with principal isolation, restart/replay and revision tests. Remaining execution owners
 are kernel-bound dispatch, native process supervision and uncertain-result reconciliation.
+
+Host execution checkpoint: an approved single local-foreground step can run through
+existing kernel lease/effect supervision with actual exit/cancel/no-replay tests. Next:
+retained-result recovery, configured resolver/dispatch, multi-step progression, and
+non-foreground/container/device source profiles. Full host runner parity remains open.

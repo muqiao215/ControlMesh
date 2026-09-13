@@ -2226,3 +2226,10 @@ Host-job control identity comes from LocalTaskRuntime's configured actor, not re
 fields. Human-request-only approval policy remains in HostJobApprovals. This uses the
 existing private local control channel's trust boundary; it is not a new end-user
 authentication mechanism. Approval/read requests do not enqueue a native provider.
+
+Host commands can share RuntimeKernel lease/effect ownership and ProcessSupervisor rather
+than duplicating Python runner process tracking. Host-job revision CAS before dispatch
+invalidates the previously approved pending version, preventing a second execution from
+reusing it. Persisting actual outcomes before authority checks preserves evidence if
+completion cannot commit. Recovery must verify that retained host manifest/outcome and
+current job binding; imported PIDs or exit_code.txt are still not trusted execution proof.
