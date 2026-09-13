@@ -18,6 +18,9 @@ export interface DeliveryAdapter {
   /** Explicit operator retry may clear a credential failure latch; never invoked by drain. */
   retryPreparation?(): void;
   prepare(envelope: TerminalDelivery, context: DeliveryContext): Promise<PreparedDelivery>;
+  /** Explicit local acknowledgement recovery, never a claim of current remote content.
+   * Input comes only from the persisted observation, not an operator-supplied receipt. */
+  recoverAcknowledgement?(envelope: TerminalDelivery, receipt: DeliveryReceipt, context: DeliveryContext): Promise<DeliveryReceipt>;
 }
 export interface DeliveryView {
   delivery_id: string; task_id: string; event_seq: number;
@@ -205,8 +208,8 @@ export class DeliveryOutbox {
     if (row.state === "sent") { requireThat(digest(JSON.parse(row.receipt!)) === digest(receipt), "delivery_receipt_conflict"); return; }
     requireThat(["dispatching", "unknown"].includes(row.state), "delivery_not_dispatched");
     requireThat(row.observation && digest(JSON.parse(row.observation)) === digest(receipt), "delivery_observation_required");
-    this.kernel.db.sql.query("INSERT INTO transport_receipts VALUES (?,?,?)")
-      .run(receipt.adapter_digest, receipt.remote_message_id, row.delivery_id);
+    this.kernel.db.sql.query("INSERT INTO transport_receipts (adapter_digest,target_transport,target_chat,remote_message_id,delivery_id) VALUES (?,?,?,?,?)")
+      .run(receipt.adapter_digest, envelope.target.transport, envelope.target.chat_id, receipt.remote_message_id, row.delivery_id);
     this.kernel.db.sql.query("UPDATE delivery_outbox SET state='sent',receipt=?,reason=NULL WHERE delivery_id=?").run(canonical(receipt), row.delivery_id);
   }
   recover(): number {
@@ -283,10 +286,13 @@ export class DeliveryOutbox {
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
     const current = () => { this.current("delivery:reconcile"); requireThat(!signal.aborted, "delivery_interrupted"); this.evidence(this.row(id)); };
     try {
-    current(); const { envelope, adapter } = this.evidence(row), prepared = await adapter.prepare(structuredClone(envelope), { signal, assertCurrent: current });
+    current(); const { envelope, adapter } = this.evidence(row);
     requireThat(row.attempt_started !== null, "delivery_attempt_missing");
-    current(); const receipt = await prepared.inspect(structuredClone(envelope), remoteMessageId,
-      { signal, not_before: row.attempt_started, assertCurrent: current });
+    const context = { signal, not_before: row.attempt_started, assertCurrent: current };
+    current();
+    const receipt = adapter.recoverAcknowledgement
+      ? await adapter.recoverAcknowledgement(structuredClone(envelope), JSON.parse(row.observation), context)
+      : await (await adapter.prepare(structuredClone(envelope), context)).inspect(structuredClone(envelope), remoteMessageId, context);
     this.kernel.db.transaction(() => { current(); this.accept(this.row(id), receipt); });
     return this.inspect(id);
     } finally { clearTimeout(timeout); finished(); }

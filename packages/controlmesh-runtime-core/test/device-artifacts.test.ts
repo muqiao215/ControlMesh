@@ -69,7 +69,7 @@ test("schema 26 upgrade preserves existing tasks and receipts and creates an emp
   new RuntimeKernel(db).submit(owner, "create", { task_id: "old", status: "waiting", chat_id: "fixture" });
   const tasks = db.sql.query("SELECT * FROM tasks").all(), receipts = db.sql.query("SELECT * FROM receipts").all();
   db.sql.exec("DROP TABLE episode_deadlines; DROP TABLE process_output_chunks; DROP TABLE host_jobs; DROP TABLE backstage_events; DROP TABLE workspace_seed_files; DROP TABLE workspace_seed_transfers; DROP TABLE topology_artifact_publications; DROP TABLE device_artifact_files; PRAGMA user_version=26"); db.close(); db = new RuntimeDatabase(path);
-  expect(db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 33 });
+  expect(db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 34 });
   expect(db.sql.query("SELECT * FROM tasks").all()).toEqual(tasks); expect(db.sql.query("SELECT * FROM receipts").all()).toEqual(receipts);
   expect(db.sql.query("SELECT COUNT(*) AS n FROM device_artifact_files").get()).toEqual({ n: 0 });
 });

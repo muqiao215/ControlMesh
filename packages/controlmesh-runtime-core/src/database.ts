@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import { closeSync, lstatSync, openSync } from "node:fs";
 import { isAbsolute } from "node:path";
-import { requireThat } from "./value";
+import { digest, object, requireThat } from "./value";
 
 const APPLICATION_ID = 0x434d5254;
 
@@ -26,7 +26,7 @@ export class RuntimeDatabase {
       this.transaction(() => {
         const version = (this.sql.query("PRAGMA user_version").get() as { user_version: number }).user_version;
         const app = (this.sql.query("PRAGMA application_id").get() as { application_id: number }).application_id;
-        requireThat(version >= 0 && version <= 33, "unsupported_database_version");
+        requireThat(version >= 0 && version <= 34, "unsupported_database_version");
         requireThat(app === 0 || app === APPLICATION_ID, "foreign_database");
         if (version === 0) {
           const tables = this.sql.query("SELECT name FROM sqlite_master WHERE type='table'").all();
@@ -465,6 +465,28 @@ export class RuntimeDatabase {
           );
           INSERT INTO episode_deadlines SELECT episode_id,MAX(0,lease_until) FROM episodes;
           PRAGMA user_version=33;`);
+        }
+        if (version < 34) {
+          // Message IDs may be chat-local (Telegram). Preserve existing task/route/receipt
+          // identities; derive the namespace only from the retained delivery envelope.
+          for (const retained of this.sql.query(`SELECT d.envelope,d.envelope_digest FROM transport_receipts r
+            JOIN delivery_outbox d ON d.delivery_id=r.delivery_id`).all() as { envelope: string; envelope_digest: string }[]) {
+            const envelope: unknown = JSON.parse(retained.envelope);
+            requireThat(object(envelope) && digest(envelope) === retained.envelope_digest && object(envelope.target)
+              && typeof envelope.target.transport === "string" && typeof envelope.target.chat_id === "string",
+              "delivery_migration_evidence_corrupted");
+          }
+          this.sql.exec(`CREATE TABLE transport_receipts_scoped (
+            adapter_digest TEXT NOT NULL, target_transport TEXT NOT NULL, target_chat TEXT NOT NULL,
+            remote_message_id TEXT NOT NULL, delivery_id TEXT NOT NULL UNIQUE REFERENCES delivery_outbox(delivery_id),
+            PRIMARY KEY(adapter_digest,target_transport,target_chat,remote_message_id)
+          );
+          INSERT INTO transport_receipts_scoped
+            SELECT r.adapter_digest,json_extract(d.envelope,'$.target.transport'),json_extract(d.envelope,'$.target.chat_id'),r.remote_message_id,r.delivery_id
+            FROM transport_receipts r JOIN delivery_outbox d ON d.delivery_id=r.delivery_id;
+          DROP TABLE transport_receipts;
+          ALTER TABLE transport_receipts_scoped RENAME TO transport_receipts;
+          PRAGMA user_version=34;`);
         }
       });
       this.sql.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;");

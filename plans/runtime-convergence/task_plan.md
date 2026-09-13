@@ -71,7 +71,8 @@ No claim that full TS migration or distributed coordination has completed. A sco
 
 1. Full runtime regression at `3a56eed` passed: 977 pass, 34 optional skips, 0 fail.
    Configured Telegram text delivery now passes its outbox/local HTTP regression.
-   Next implement multipart receipt ownership and retained-acknowledgement recovery,
+   Chat-scoped receipts and retained-acknowledgement recovery passed the schema 34 broad
+   regression (1002 pass, 34 optional skips, 0 fail). Next implement multipart receipt ownership,
    then its remaining ingress/message/file behavior. Optional installed-native and
    real-account evidence remain separate from the broad baseline.
 2. Complete the remaining ownership/acceptance matrix below. Prioritize normal execution,

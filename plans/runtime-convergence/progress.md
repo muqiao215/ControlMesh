@@ -5,7 +5,8 @@
 Full TS migration, multi-device coordination and real Agent continuity remain **in
 progress**. No production writer cutover, complete release or default TS installation
 has been accepted. Last directly checked local `cm --version`: **0.43.0**, Python.
-The last pushed baseline is **c918e37**. Current changes add configured Telegram text delivery;
+The last pushed baseline is **90c4348** (configured Telegram text delivery). Current
+changes add schema 34 chat-scoped receipt uniqueness and retained-acknowledgement recovery;
 this remains a scoped transport port, not production cutover.
 
 This file is the current handoff, not a chronological commit log. Historical detail
@@ -46,6 +47,14 @@ Temporary login copies were deleted; operator authentication files were not writ
 Private diagnostic evidence: `/tmp/cm-gemini-account-BNTF1Q` (ephemeral, not release assets).
 
 ## Verification
+
+- **Schema 34 / Telegram recovery full regression:** 1002 pass, 34 optional skips, 0 fail;
+  11,923 assertions / 1,036 tests / 120 files, 390.56s, exit 0.
+  `/tmp/cm-runtime-telegram-recovery-full.log`; Docker and standalone SpecMesh enabled.
+  Includes retained-ack recovery, cross-chat message IDs and migration corruption rollback.
+  Typecheck and diff check passed. Optional native/account profiles remain unaccepted.
+- GitHub CI for pushed baseline `90c43487e13ff0a6ed2c56ab6122f3232db2a73f` succeeded
+  (run 34740647662). This does not establish remote CI for the current change.
 
 - **Telegram and existing delivery regression:** 48 pass, 0 fail, 396 assertions, 2.49s;
   `/tmp/cm-telegram-delivery-tests.log`. Includes normal configuration, private credential
@@ -106,10 +115,12 @@ Private diagnostic evidence: `/tmp/cm-gemini-account-BNTF1Q` (ephemeral, not rel
 ## Next
 
 Telegram text delivery is now wired through normal local configuration and DeliveryOutbox.
-Next implement multipart receipt ownership and safe recovery of retained acknowledgements,
+Retained successful acknowledgements can now be accepted locally after a failed acceptance
+transaction, without credentials, remote readback or another send. Missing original
+acknowledgements still remain unknown. Next implement multipart receipt ownership,
 then Telegram ingress and remaining message/file/streaming profiles. Current text delivery
 refuses over 4096 UTF-16 units including its heading; it never silently truncates. Telegram
-has no generic getMessage readback, so an observed acknowledgement whose acceptance fails
-remains unknown under the existing recovery interface. Do not solve this by replaying POST.
+has no generic getMessage readback; local acknowledgement recovery proves only the original
+send, not continued remote existence or unchanged content. Do not recover by replaying POST.
 Keep the complete original objective active; mark complete only after every phase and
 acceptance item has matching evidence, release and local alignment.

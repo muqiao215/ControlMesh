@@ -47,7 +47,7 @@ test("schema 28 upgrade adds the private seed inbox and retains existing runtime
     const old = new Database(path); old.exec("DROP TABLE episode_deadlines; DROP TABLE process_output_chunks; DROP TABLE host_jobs; DROP TABLE backstage_events; DROP TABLE workspace_seed_files; DROP TABLE workspace_seed_transfers; PRAGMA user_version=28;"); old.close();
     const upgraded = new RuntimeDatabase(path);
     try {
-      expect(upgraded.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 33 });
+      expect(upgraded.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 34 });
       expect(upgraded.sql.query("SELECT value FROM meta WHERE key='seed-upgrade-marker'").get()).toEqual({ value: "kept" });
       expect(upgraded.sql.query("SELECT COUNT(*) AS n FROM workspace_seed_transfers").get()).toEqual({ n: 0 });
     } finally { upgraded.close(); }

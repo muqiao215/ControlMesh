@@ -48,7 +48,7 @@ function setup(options: { lost?: boolean; mutate?: (message: any) => void; error
   kernel.start(agent, "start", lease); kernel.finish(agent, "finish", lease, "done", { text: "PRIVATE LOG", delivery_text: options.long ? "x".repeat(4096) : "Reviewed result" });
   const reopen = () => { const opened = new RuntimeDatabase(path); cleanup.push(() => opened.close());
     return new DeliveryOutbox(new RuntimeKernel(opened), actor, [adapter], () => {}, 1000); };
-  return { db, outbox, reopen, writeCredentials, bodies, hooks, config, count: () => posts, revoke: () => { valid = false; } };
+  return { db, kernel, adapter, outbox, reopen, writeCredentials, bodies, hooks, config, count: () => posts, revoke: () => { valid = false; } };
 }
 
 test("Telegram task output is sent once to its numeric chat, with bound receipt after reopen", async () => {
@@ -66,12 +66,15 @@ test("lost Telegram acknowledgement stays unknown across reopen and never repeat
   expect(() => reopened.retryBlocked("retry", row.delivery_id)).toThrow("delivery_retry_not_safe"); expect(f.count()).toBe(1);
 });
 
-test("Telegram original observation survives failed acceptance, but no fake readback is issued", async () => {
+test("Telegram original acknowledgement recovers failed acceptance locally without readback or resend", async () => {
   const f = setup(); f.db.sql.exec("CREATE TEMP TRIGGER fail_accept BEFORE UPDATE OF state ON delivery_outbox WHEN NEW.state='sent' BEGIN SELECT RAISE(ABORT,'fixture_commit_failure'); END");
   await f.outbox.drain(); const row = f.outbox.list("task")[0];
   expect(row.state).toBe("unknown"); expect(row.observed_receipt?.remote_message_id).toBe("1");
-  const reopened = f.reopen(); await expect(reopened.reconcile(row.delivery_id, "1")).rejects.toThrow("telegram_readback_unavailable");
-  await reopened.drain(); expect(reopened.inspect(row.delivery_id).state).toBe("unknown"); expect(f.count()).toBe(1);
+  f.revoke(); // Recovery of the original receipt does not need a live credential.
+  const reopened = f.reopen();
+  expect((await reopened.reconcile(row.delivery_id, "1")).state).toBe("sent");
+  expect((await reopened.reconcile(row.delivery_id, "1")).state).toBe("sent");
+  await reopened.drain(); expect(f.count()).toBe(1);
 });
 
 for (const [name, mutate] of Object.entries({
@@ -128,4 +131,57 @@ test("normal candidate configuration registers Telegram and validates submission
     config.source.transport = "fs"; config.state_root = join(root, "other-state"); mkdirSync(config.state_root, { mode: 0o700 }); writeFileSync(path, JSON.stringify(config), { mode: 0o600 });
     expect(() => openLocalRuntime(path)).toThrow("invalid_telegram_delivery_profile");
   } finally { await owned?.close(); rmSync(root, { recursive: true, force: true }); }
+});
+
+
+test("identical Telegram message numbers in separate chats do not collide", async () => {
+  const f = setup({ mutate: message => { message.message_id = 1; } }); await f.outbox.drain();
+  new TaskIngress(f.kernel, { command_origin: "human_request", origin: "user", source_scope: "local_foreground", transport: "telegram" }, () => {})
+    .submit(actor, "create-other", { task_id: "other", chat_id: "987654", status: "waiting" }, { chat_id: "987654" });
+  f.outbox.bindTask("bind-other", "other", 1, f.adapter.adapter_id);
+  const lease = f.kernel.claim(actor, "claim-other", "other", 1, 5000); f.kernel.start(actor, "start-other", lease);
+  f.kernel.finish(actor, "finish-other", lease, "done", { delivery_text: "Second chat" });
+  await f.outbox.drain();
+  expect(f.outbox.list("other")[0]).toMatchObject({ state: "sent", receipt: { remote_message_id: "1" } });
+  expect(f.db.sql.query("SELECT COUNT(*) AS n FROM transport_receipts").get()).toEqual({ n: 2 }); expect(f.count()).toBe(2);
+});
+
+test("retained Telegram acknowledgement cannot be reassigned to another chat", async () => {
+  const f = setup(); f.db.sql.exec("CREATE TEMP TRIGGER fail_accept BEFORE UPDATE OF state ON delivery_outbox WHEN NEW.state='sent' BEGIN SELECT RAISE(ABORT,'fixture_commit_failure'); END");
+  await f.outbox.drain(); const row = f.outbox.list("task")[0];
+  await expect(f.reopen().reconcile(row.delivery_id, "2")).rejects.toThrow("delivery_original_acknowledgement_required");
+  const envelope = JSON.parse((f.db.sql.query("SELECT envelope FROM delivery_outbox").get() as any).envelope);
+  await expect(f.adapter.recoverAcknowledgement(envelope, { ...row.observed_receipt!, target_digest: "0".repeat(64) },
+    { signal: new AbortController().signal, assertCurrent() {} })).rejects.toThrow("telegram_acknowledgement_mismatch");
+  expect(f.outbox.inspect(row.delivery_id).state).toBe("unknown"); expect(f.count()).toBe(1);
+});
+
+
+test("schema 33 receipts gain chat namespaces without rewriting delivery evidence", async () => {
+  const f = setup(); await f.outbox.drain(); const before = f.outbox.list("task")[0];
+  f.db.sql.exec(`CREATE TABLE old_receipts (
+    adapter_digest TEXT NOT NULL, remote_message_id TEXT NOT NULL,
+    delivery_id TEXT NOT NULL UNIQUE REFERENCES delivery_outbox(delivery_id), PRIMARY KEY(adapter_digest,remote_message_id));
+    INSERT INTO old_receipts SELECT adapter_digest,remote_message_id,delivery_id FROM transport_receipts;
+    DROP TABLE transport_receipts; ALTER TABLE old_receipts RENAME TO transport_receipts; PRAGMA user_version=33;`);
+  const reopened = f.reopen(); expect(reopened.inspect(before.delivery_id)).toEqual(before);
+  expect(f.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 34 });
+  expect(f.db.sql.query("SELECT target_transport,target_chat,remote_message_id FROM transport_receipts").get())
+    .toEqual({ target_transport: "telegram", target_chat: "-1001234567890", remote_message_id: "1" });
+  await reopened.drain(); expect(f.count()).toBe(1);
+});
+
+
+test("schema upgrade refuses corrupted delivery evidence and rolls back its DDL", async () => {
+  const f = setup(); await f.outbox.drain();
+  f.db.sql.exec(`CREATE TABLE old_receipts (
+    adapter_digest TEXT NOT NULL, remote_message_id TEXT NOT NULL,
+    delivery_id TEXT NOT NULL UNIQUE REFERENCES delivery_outbox(delivery_id), PRIMARY KEY(adapter_digest,remote_message_id));
+    INSERT INTO old_receipts SELECT adapter_digest,remote_message_id,delivery_id FROM transport_receipts;
+    DROP TABLE transport_receipts; ALTER TABLE old_receipts RENAME TO transport_receipts; PRAGMA user_version=33;
+    UPDATE delivery_outbox SET envelope_digest='corrupted';`);
+  expect(() => f.reopen()).toThrow("delivery_migration_evidence_corrupted");
+  expect(f.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 33 });
+  expect(f.db.sql.query("SELECT COUNT(*) AS n FROM transport_receipts").get()).toEqual({ n: 1 });
+  expect(f.db.sql.query("SELECT name FROM sqlite_master WHERE name='transport_receipts_scoped'").get()).toBeNull();
 });

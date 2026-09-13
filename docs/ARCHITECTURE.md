@@ -1132,6 +1132,8 @@ step IDs retain one owner per execution. Other task/provider scheduling stays ma
 
 Telegram's candidate text profile uses an explicit private bot credential file, numeric
 chat identity and strict sendMessage acknowledgement validation. Unknown sends remain
-unknown across restart and never automatically replay. Unlike Feishu, Telegram cannot
-provide generic message readback; retained-ack acceptance recovery and multipart ownership
-remain open in `plans/runtime-convergence/`. The production Python transport is unchanged.
+unknown across restart and never automatically replay. Schema 34 scopes remote message uniqueness by transport and chat while preserving existing
+receipt and route identities. Unlike Feishu, Telegram cannot provide generic message
+readback; its explicit recovery path accepts only the already-retained original successful
+acknowledgement, without HTTP or credentials. This does not assert current remote content.
+Multipart ownership remains open in `plans/runtime-convergence/`. The production Python transport is unchanged.

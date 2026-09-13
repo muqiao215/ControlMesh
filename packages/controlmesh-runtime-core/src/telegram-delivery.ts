@@ -1,4 +1,4 @@
-import type { DeliveryReceipt, TerminalDelivery } from "@controlmesh/protocol";
+import { assertProtocolSchema, type DeliveryReceipt, type TerminalDelivery } from "@controlmesh/protocol";
 import type { DeliveryAdapter, DeliveryContext, PreparedDelivery } from "./delivery-outbox";
 import { digest, identifier, object, requireThat } from "./value";
 
@@ -35,6 +35,17 @@ export class TelegramTextDelivery implements DeliveryAdapter {
   }
   submissionIdentity(_taskId: string, chatId: string): { chat_id: string } {
     this.assertCurrent(); requireThat(numericId(chatId), "telegram_target_unqualified"); return { chat_id: chatId };
+  }
+  async recoverAcknowledgement(envelope: TerminalDelivery, receipt: DeliveryReceipt, context: DeliveryContext): Promise<DeliveryReceipt> {
+    context.assertCurrent(); this.assertCurrent();
+    assertProtocolSchema("delivery-receipt.schema.json", receipt);
+    requireThat(envelope.target.transport === this.transport && numericId(envelope.target.chat_id)
+      && receipt.delivery_id === envelope.delivery_id && receipt.envelope_digest === digest(envelope)
+      && receipt.target_digest === digest(envelope.target) && receipt.adapter_digest === this.binding_digest
+      && numericId(receipt.remote_message_id, true), "telegram_acknowledgement_mismatch");
+    // No credential access or remote call: this accepts the already verified original send,
+    // not a claim that its content still exists remotely. The outbox binds the stored observation.
+    return structuredClone(receipt);
   }
   async prepare(original: TerminalDelivery, context: DeliveryContext): Promise<PreparedDelivery> {
     context.assertCurrent(); this.assertCurrent(); const issued = digest(original), text = telegramDeliveryText(original);

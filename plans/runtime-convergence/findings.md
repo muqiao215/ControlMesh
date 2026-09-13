@@ -2542,3 +2542,35 @@ Normal configuration test initially reused a state directory after changing sour
 existing local_runtime_policy_conflict correctly fired before the transport validator. The
 negative configuration test now uses an independent temporary state directory. The runtime
 policy guard was not changed. Final focused regression: 48 pass, 0 fail, 396 assertions.
+
+
+## Telegram receipt namespace and original-ack recovery
+
+The Bot API defines message_id as unique inside a chat, not for the whole bot:
+https://core.telegram.org/bots/api#message . The original TS receipt table keyed only
+(adapter_digest, remote_message_id), causing a second chat's valid message 1 to collide.
+Schema 34 now keys (adapter_digest, target_transport, target_chat, remote_message_id).
+The transactional upgrade validates retained envelope digests and derives namespaces
+from those envelopes; task IDs, routes, adapter binding and remote IDs are unchanged.
+An initial idea to namespace the adapter's remote ID was replaced before commit because
+changing adapter binding would strand existing immutable task routes. Migration tests
+cover preserving a sent record and rejecting corrupted evidence without partial DDL.
+
+DeliveryAdapter has an optional recoverAcknowledgement path. Only Telegram uses it;
+Feishu retains its remote-readback path. The outbox first requires an already-persisted
+original observation matching the requested ID, unchanged route/current authority and
+an original attempt timestamp. Telegram checks receipt/envelope/target/adapter identities;
+accept still atomically matches the original observation and enforces scoped uniqueness.
+No live credentials or HTTP are required for this local acknowledgement acceptance. It
+proves the original accepted send, not current remote existence/content. Missing original
+acknowledgements remain unknown and cannot be substituted by an operator-provided receipt.
+
+Multipart still requires per-part dispatch/ack persistence before advancing, aggregate
+completion only when all parts are acknowledged, and explicit handling of interrupted
+parts. A loop around sendMessage returning only the last ID would lose that ownership.
+
+Full schema 34 regression completed: 1002 pass, 34 optional skips, 0 fail, 11,923 assertions,
+390.56s; Docker and standalone SpecMesh enabled. Log: /tmp/cm-runtime-telegram-recovery-full.log.
+Legacy version assertion updates only change the expected current schema to 34; downgrade
+fixture versions remain unchanged. The corrupted-upgrade test intentionally expects 33
+because failed migration rolls back. Typecheck passed. No real transport message was sent.
