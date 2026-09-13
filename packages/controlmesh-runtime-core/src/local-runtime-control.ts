@@ -12,6 +12,7 @@ import type { SpecMeshPort } from "./specmesh-port";
 import type { ReconciliationBinding, TaskSnapshot } from "./kernel";
 import type { LocalNativeHistoryPort } from "./providers/local-native-history";
 import type { LocalRuntimeDescription } from "./local-runtime-config";
+import type { CronApproval, CronApprovalControl } from "./cron-approval";
 
 export interface LocalRuntimeRecovery {
   inspect(taskId: string, revision: number, effectId: string): ReconciliationBinding;
@@ -23,7 +24,7 @@ export class LocalRuntimeControl {
   constructor(private readonly runtime: LocalTaskRuntime, private readonly deliveries?: DeliveryOutbox,
     private readonly submissionIdentity?: (task: LegacyTask) => SubmissionIdentity, private readonly inbound?: FeishuInboundRuntime | TelegramPollingRuntime,
     private readonly specmesh?: SpecMeshPort, private readonly recovery?: LocalRuntimeRecovery, private readonly history?: LocalNativeHistoryPort, private readonly scheduler?: TopologyScheduler,
-    private readonly describe?: () => LocalRuntimeDescription) {}
+    private readonly describe?: () => LocalRuntimeDescription, private readonly cron?: CronApprovalControl) {}
 
   async handle(request: unknown): Promise<Record<string, unknown>> {
     let id: string | null = null;
@@ -31,6 +32,7 @@ export class LocalRuntimeControl {
       requireThat(object(request), "invalid_local_request"); identifier(request.id); id = request.id;
       const fields: Record<string, readonly string[]> = {
         ...topologyControlFields,
+        approve_cron_occurrence: ["occurrence_id", "expires_at"], revoke_cron_approval: ["approval"],
         status: [], list_tasks: ["after", "limit"], task_events: ["task_id", "after", "limit"],
         submit: ["task", "specmesh_requirements_sha256"], inspect_task: ["task_id"], enqueue: ["task_id", "expected_revision"], inspect_run: ["run_id"],
         resume: ["task_id", "expected_revision", "prompt"], cancel: ["task_id", "expected_revision"], tell: ["task_id", "text"], drain: [], session_events: ["session_key", "limit", "before"],
@@ -56,6 +58,12 @@ export class LocalRuntimeControl {
         requireThat(this.deliveries, "delivery_not_configured");
       if (Object.hasOwn(topologyControlFields, request.op)) result = await topologyControl(this.scheduler, request, id);
       switch (request.op) {
+        case "approve_cron_occurrence":
+          requireThat(this.cron, "cron_not_configured"); identifier(request.occurrence_id);
+          result = this.cron.approve(id, request.occurrence_id, request.expires_at as number); break;
+        case "revoke_cron_approval":
+          requireThat(this.cron && object(request.approval), "invalid_cron_approval_request");
+          this.cron.revoke(id, request.approval as unknown as CronApproval); result = { revoked: true }; break;
         case "status": result = { queue: this.runtime.queueStatus(), parallelism: this.runtime.parallelLimit(), ...(this.describe ? { configuration: this.describe() } : {}) }; break;
         case "list_tasks": result = this.runtime.listTasks(request.after as string | undefined, request.limit as number | undefined); break;
         case "run_host_job": identifier(request.job_id); result = this.runtime.runHostJob(id, request.job_id, request.expected_revision as number); break;

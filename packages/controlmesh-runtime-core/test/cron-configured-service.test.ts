@@ -6,6 +6,7 @@ import { RuntimeDatabase } from "../src/database";
 import { CronStore } from "../src/cron-store";
 import { openLocalRuntime } from "../src/local-runtime-config";
 import { startLocalRuntimeService } from "../src/local-runtime-service";
+import { requestRuntimeControl } from "../src/runtime-control-socket";
 
 test("configured service plans durable cron cursors without bootstrap or model calls", async () => {
   const root = mkdtempSync(join(tmpdir(), "cm-cron-service-")), state = join(root, "state"), workspace = join(root, "workspace");
@@ -31,9 +32,17 @@ test("configured service plans durable cron cursors without bootstrap or model c
     expect(JSON.parse(cursor.value).next_at).toBeGreaterThan(Date.now());
     expect(db.sql.query("SELECT COUNT(*) AS n FROM tasks").get()).toEqual({ n: 0 });
     expect(db.sql.query("SELECT COUNT(*) AS n FROM provider_checks").get()).toEqual({ n: 0 });
+    const occurrence = store.createOccurrence("future", JSON.parse(cursor.value).next_at);
+    const request = { id: "approve", op: "approve_cron_occurrence", occurrence_id: occurrence.occurrence_id, expires_at: Date.now() + 60000 };
+    const approved = await requestRuntimeControl(join(root, "control.sock"), request);
+    expect(approved.ok).toBe(true);
+    expect(await requestRuntimeControl(join(root, "control.sock"), { ...request, id: "spoof", principal: "other" })).toMatchObject({ ok: false });
     await service.close(); service = undefined;
     service = await startLocalRuntimeService(path, join(root, "control.sock"));
     expect(db.sql.query("SELECT value FROM meta WHERE key LIKE 'cron_cursor:%'").get()).toEqual(cursor);
+    expect(await requestRuntimeControl(join(root, "control.sock"), request)).toEqual(approved);
+    expect(await requestRuntimeControl(join(root, "control.sock"), { id: "revoke", op: "revoke_cron_approval", approval: approved.result })).toMatchObject({ ok: true });
+    expect(await requestRuntimeControl(join(root, "control.sock"), request)).toMatchObject({ ok: false, error: "cron_approval_revoked" });
     await service.close(); service = undefined;
     const worker = openLocalRuntime(path, { host_worker: true });
     try { expect(worker.cron).toBeUndefined(); } finally { await worker.close(); }

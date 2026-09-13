@@ -46,6 +46,7 @@ import { ClaudeTaskReconciler } from "./providers/claude-task-reconciler";
 import type { ClaudeTaskConfiguration } from "./providers/claude-task-profile";
 import { CronScheduler, type CronTickResult } from "./cron-scheduler";
 import { reconcileCronTaskResults } from "./cron-task-results";
+import { CronApprovals, type CronApprovalControl, type CronApproval } from "./cron-approval";
 import { LocalNativeHistory, LocalOpenCodeHistory, RegisteredLocalHistory, type LocalNativeHistoryPort } from "./providers/local-native-history";
 
 /** Explicit isolated candidate configuration. Reading task state does not inspect or probe any provider. */
@@ -56,7 +57,7 @@ export interface LocalRuntimeDescription {
   integrations: { history: boolean; specmesh: boolean };
 }
 export function openLocalRuntime(path: string, options: { host_worker?: boolean } = {}): { runtime: LocalTaskRuntime; deliveries?: DeliveryOutbox; inbound?: FeishuInboundRuntime | TelegramPollingRuntime;
-  scheduler?: TopologyScheduler; cron?: { tick(): CronTickResult[] }; keep_alive?: boolean; specmesh?: SpecMeshPort; recovery: LocalRuntimeRecovery; history?: LocalNativeHistoryPort;
+  scheduler?: TopologyScheduler; cron?: CronApprovalControl & { tick(): CronTickResult[] }; keep_alive?: boolean; specmesh?: SpecMeshPort; recovery: LocalRuntimeRecovery; history?: LocalNativeHistoryPort;
   describe: () => LocalRuntimeDescription; submissionIdentity: (task: LegacyTask) => SubmissionIdentity; stop: () => Promise<void>; close: () => Promise<void> } {
   const loaded = privateFile(path), config = decodeSnapshot(loaded.bytes).source;
   requireThat(object(config) && config.schema_version === "controlmesh.local_runtime.v1" && config.mode === "candidate", "unsupported_local_runtime_config");
@@ -349,7 +350,11 @@ export function openLocalRuntime(path: string, options: { host_worker?: boolean 
         maxJobs: cronConfig.max_jobs as number | undefined,
         workspace: workspace.directory as string,
       }, runtime);
-    const cron = cronScheduler ? { tick() {
+    const cronApprovals = cronScheduler ? new CronApprovals(db, workspace.directory as string, digest(config), cronConfig!.generation as number, current) : undefined;
+    const cron = cronScheduler ? {
+      approve(requestId: string, occurrenceId: string, expiresAt: number) { return cronApprovals!.approve(actor, requestId, occurrenceId, expiresAt); },
+      revoke(requestId: string, approval: CronApproval) { cronApprovals!.revoke(actor, requestId, approval); },
+      tick() {
       current();
       reconcileCronTaskResults(kernel, actor, cronConfig!.generation as number);
       return cronScheduler.tick();

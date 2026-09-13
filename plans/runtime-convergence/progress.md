@@ -770,3 +770,15 @@ creating a second attempt. Controller approval consumption and cron container so
 support still remain; no native-execution completion claim. Remote CI 34762813061 for
 79628c94e83a10342bd2628fa494f0da538d84f2 is now completed/success. Publish accumulated
 device-result, typed-block and workspace changes together for the next complete CI.
+
+CronApprovals now issues one-occurrence persisted command receipts bound to definition
+revision/digest, current coordinator generation, workspace path/device/inode, full runtime
+configuration digest and expiry (maximum 24 hours). Human-origin task:admin is required;
+scheduled/agent callers cannot self-approve. Inspect rechecks durable receipt, scope,
+current authority, binding, expiry and revocation; revoke is idempotent and receipt replay
+cannot resurrect a revoked approval. Private local service operations approve_cron_occurrence
+and revoke_cron_approval are wired without caller-supplied identity. Seven approval/service
+tests pass (49 assertions), typecheck/diff check pass; /tmp/cm-cron-approval-{tests,typecheck}.log.
+Includes actual socket approval/revoke and restart receipt replay. Provider consumption,
+container cron source support and native execution acceptance remain pending. Issuing a
+receipt does not start a task or weaken existing controller_required enforcement.
