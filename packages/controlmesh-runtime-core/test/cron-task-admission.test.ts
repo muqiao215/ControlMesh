@@ -107,3 +107,25 @@ test("explicit overnight quiet window uses configured user zone without recurren
     expect(new CronTaskAdmission(f.kernel, actor, 1, { userTimezone: "UTC" }).submit(occurrence.occurrence_id).task.task.status).toBe("waiting");
   } finally { f.db.close(); }
 });
+
+test("shared dependency rejects competing task atomically even after the lock deadline", () => {
+  let now = Date.parse("2026-06-01T13:00:00Z");
+  const f = fixture(() => now);
+  try {
+    const template = f.store.getJob("scheduled")!.raw_metadata;
+    f.store.putJob({ ...template, dependency: "shared-resource" } as Parameters<CronStore["putJob"]>[0]);
+    f.store.putJob({ ...template, id: "competitor", dependency: "shared-resource" } as Parameters<CronStore["putJob"]>[0]);
+    const first = f.store.createOccurrence("scheduled", now - 60000);
+    const second = f.store.createOccurrence("competitor", now - 60000);
+    const admission = new CronTaskAdmission(f.kernel, actor, 1);
+    const submitted = admission.submit(first.occurrence_id);
+    expect(f.store.getDependencyLock("shared-resource")!.active_attempt_id).toBe(submitted.attempt.attempt_id);
+    expect(() => admission.submit(second.occurrence_id)).toThrow("cron_dependency_busy");
+    now += 120000;
+    expect(() => admission.submit(second.occurrence_id)).toThrow("cron_dependency_busy");
+    expect(f.store.listAttempts(second.occurrence_id)).toHaveLength(0);
+    expect(f.db.sql.query("SELECT COUNT(*) AS n FROM tasks").get()).toEqual({ n: 1 });
+    f.store.incrementCoordinatorEpoch(actor.id, 1);
+    expect(() => f.store.acquireDependencyLock("shared-resource", first.occurrence_id, submitted.attempt.attempt_id, 60000)).toThrow("stale_coordinator_fence");
+  } finally { f.db.close(); }
+});

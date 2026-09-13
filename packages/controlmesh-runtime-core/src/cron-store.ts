@@ -1026,6 +1026,8 @@ export class CronStore {
       const attempt = this.getAttempt(attemptId);
       requireThat(attempt && attempt.occurrence_id === occurrenceId, "invalid_attempt_for_occurrence");
       requireThat(attempt.state === "initiated" || attempt.state === "running", "attempt_not_active");
+      const epoch = this.getCoordinatorEpoch(attempt.coordinator_id);
+      requireThat(epoch.current_generation === attempt.fencing_generation, "stale_coordinator_fence");
 
       const existingLock = this.getDependencyLock(dependency);
       if (existingLock) {

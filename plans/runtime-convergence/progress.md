@@ -651,3 +651,12 @@ no substitution of job recurrence timezone). Seven admission tests pass/28 asser
 including fixed-clock due boundary and cross-midnight zone behavior; typecheck passes.
 Logs /tmp/cm-cron-quiet-admission-{tests,typecheck}.log. Dependency eligibility, durable
 timer/cursor loop and actual execution/delivery are still pending; production unchanged.
+
+Dependency integration: Python DependencyQueue uses same-key FIFO mutual exclusion,
+not prerequisite job IDs. Task admission now acquires the existing persisted dependency
+lock inside the task/attempt transaction; busy admission rolls back task and attempt.
+Lock acquisition/renewal additionally checks the attempt's current coordinator generation.
+Test verifies a competitor remains blocked after deadline without replay and stale
+coordinator renewal is rejected. Twenty tests pass/148 assertions and typecheck passes;
+/tmp/cm-cron-dependency-admission-{tests,typecheck}.log. FIFO admission ordering and
+verified terminal release still need scheduler/execution integration; no claim they are done.

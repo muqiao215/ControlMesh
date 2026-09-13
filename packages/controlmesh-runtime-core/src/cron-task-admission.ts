@@ -75,6 +75,10 @@ export class CronTaskAdmission {
       }, { source_id: job.id, chat_id: chatId, ...(job.topic_id != null ? { topic_id: String(job.topic_id) } : {}) });
       const attempt = this.store.createAttempt(occurrenceId, { coordinatorId: this.actor.id,
         executorDeviceId: this.actor.device_id!, fencingGeneration: this.generation, taskId });
+      if (job.dependency != null) {
+        requireThat(typeof job.dependency === "string" && this.store.acquireDependencyLock(job.dependency,
+          occurrenceId, attempt.attempt_id, 60_000), "cron_dependency_busy");
+      }
       if (job.job_kind === "monitor") this.store.setEnabled(job.id, false);
       return { task, attempt };
     });
