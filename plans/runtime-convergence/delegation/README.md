@@ -17,6 +17,8 @@ Agent continuation. CM production remains Python 0.43.0. No release/cutover clai
 | agy-cron-batch1-r3 | same AGY conversation | completed/received/consumed; earlier counterexamples fixed, snapshot replacement and deletion lineage rejected |
 | agy-cron-batch1-r4 | same AGY conversation | failed wrapper disappeared, exit code unknown; received with review required; native quiescence not proven, no restart yet |
 | cbc-cron-recurrence | CBC 01a09aba-fdd5-7569-b07c-a3dc7b707188 | failed wrapper disappeared, exit code unknown; received with review required; cbc ps reports no active sessions; code/tests unfinished |
+| cbc-cron-recurrence-recovery | same CBC conversation | process completed exit 0, but stdout is quota 429; application task NOT complete; reset 2026-09-14 17:26:09 UTC+8; do not retry before evidenced reset |
+| agy-cron-recovery | AGY def64a8d-18c9-49eb-abd4-82488284d15f | explicit continuation after absent matching process and available native presence lock; active handle 57638; wrapper PID 1864653 verified live; owns persistence review-4 plus raw-field review |
 
 Logical parent: `codex-runtime-convergence`. Isolated CM home and snapshot paths are
 documented below. Never restart a terminal worker because its controller failed; never
@@ -28,6 +30,14 @@ this with 27 passing supervision tests and collected both failed/unknown events.
 the corrected controller before dispatch; do not reuse controller-8f4de54 for recovery.
 Preserve unfinished worker code and the raw-field collision review. Historical
 bootstrap attempts have older/missing intent fields and must not be silently rebound.
+
+Corrected frozen controller: controller-1c8170b under the same parent-supervision root.
+Current next action: poll 57638 and verify its wrapper/native result; primary owns recurrence.
+Do not act on superseded references to the old AGY/CBC handles below.
+Fix commit 1c8170b pushed. Recovery handle 42834 is terminal; process exit zero does not
+prove a successful native turn. CBC returned only a 429 quota notice. Its raw stdout is
+the authoritative failure evidence; a future provider adapter must classify this separately
+from generic host-process completion. Do not change the historical process exit code.
 
 ## Historical dispatch notes
 

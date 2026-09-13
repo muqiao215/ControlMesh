@@ -556,3 +556,30 @@ Stopped only the three identified stale run/wait controllers; corrected wait col
 both jobs as failed, exit_code=null, review_required=true, quiescence=unknown. CBC native
 ps reports no active sessions; AGY native quiescence still needs checking. Neither task
 was restarted, accepted, or marked successful. Existing code is unfinished and preserved.
+
+After CBC ps confirmed no active native session, primary explicitly continued the same
+native conversation through new job cbc-cron-recurrence-recovery on frozen controller
+1c8170b. Handle 42834 ended, process exit 0, but stdout reports quota 429 with reset
+2026-09-14 17:26:09 UTC+8. This is application failure, not accepted work. No retries
+before evidenced reset. Generic process completion and provider semantic completion
+remain distinct; do not rewrite real exit codes. Fix 1c8170b pushed successfully.
+
+Primary recurrence recovery review: CBC's test file was empty (Bun exit 0 but zero tests),
+so primary added 172 zoneinfo-matrix cases, 41 grammar cases and timezone/fall-back checks.
+Initial result 173 pass/42 fail exposed ignored range/wildcard steps (*/15 ran every minute).
+Compared actual installed CronSim Field.parse and corrected step selection in TS. Result:
+215 pass, 0 fail, 906 assertions; /tmp/cm-primary-cron-recurrence-review.log. Golden --check
+reproduces the checked-in matrix. TS errors in recurrence/tests corrected; package typecheck
+still fails only on unfinished cron-store archived DTO fields. Six-field grammar rejection,
+remaining DST/bounds coverage and original parser attribution remain review items; this is
+not full cron acceptance. No CBC model retry, source cutover or cron provider execution.
+
+Independent restart counterexample: daily 01:30 America/New_York, reference
+2026-11-01T06:05Z (second 01:05) incorrectly returned the already-used civil slot at
+06:30Z. Recurrence now binds repeated civil slots to fold 0 only; no fold-1 catch-up.
+This is an explicit no-replay policy, not unchanged Python runtime parity. Oracle retains
+py_announced_ms/py_fire_ms separately; expected_ms records the TS policy. Bounded retry
+allows 2881 civil minute slots for historical date-line repeats. Updated result 216 pass,
+0 fail, 907 assertions in 216ms, Ruff and diff checks pass. Full persistence acceptance,
+cron ingress/provider integration, and runtime rollout remain open. AGY recovery wrapper
+1864653 and handle 57638 reverified live; no duplicate continuation dispatched.
