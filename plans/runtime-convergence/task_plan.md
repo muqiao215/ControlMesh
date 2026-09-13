@@ -80,8 +80,8 @@ account behavior or native tool permissions. Gemini persistent registration, Cod
 fresh-session creation, interrupted lineage qualification, effective native sandbox
 behavior, and Codex topology integration remain. Codex current-file read receipts,
 staged write publication and retained publication recovery are now registered. SpecMesh
-lifecycle integration remains pending; installed-native fixtures do not qualify real-account
-or cross-device write behavior.
+start/post-publication checks and recovery checks are registered; reviewed closeout remains
+a separate gate. Installed-native fixtures do not qualify real-account or cross-device write behavior.
 Codex initial mailbox delivery and retained consumption recovery are now integrated;
 active messaging is registered through the shared broker. Installed-native send/ask/receive/answer,
 local two-session concurrent question/answer and retained recovery pass against loopback

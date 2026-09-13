@@ -121,7 +121,7 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
       const peers = object(communication) && object(communication.tasks) && Object.hasOwn(communication.tasks, taskId) ? communication.tasks[taskId] : undefined;
       return object(peers) ? prepareNativeAgentConfiguration(join(root, "codex-agent", taskId), communication!.node_executable as string,
         taskId, peers.peer_tasks as string[], peers.parent_task as string | null) : undefined;
-    }, codexReads ? { node_executable: (config.codex as Record<string, unknown>).node_executable as string, read_files: [...workspace.read_files as string[]], required_reads: [...workspace.required_reads as string[]], ...(roots.length ? { write_roots: roots } : {}) } : undefined);
+    }, codexReads ? { node_executable: (config.codex as Record<string, unknown>).node_executable as string, read_files: [...workspace.read_files as string[]], required_reads: [...workspace.required_reads as string[]], ...(roots.length ? { write_roots: roots } : {}) } : undefined, specmesh?.binding_digest);
     const historyPorts = new Map<string, LocalNativeHistoryPort>();
     if (config.history !== undefined) {
       const historyConfig = config.history as { directory: string; python: string };
@@ -160,8 +160,8 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
     const runtime = new LocalTaskRuntime(kernel, actor, { command_origin: "human_request", origin: "user", source_scope: "local_foreground", transport: config.source.transport }, task => {
       if (task.task.provider === "codex") {
         requireThat(codex, "codex_not_registered");
-        requireThat(!specmesh, "codex_file_or_workflow_profile_unavailable");
-        return codex.adapter(task).prepare(task);
+        const execution = codex.adapter(task).prepare(task);
+        return specmesh ? specmesh.bind(execution, workspace.required_reads as string[]) : execution;
       }
       if (task.task.provider === "claude") {
         const selected = claudeConfiguration(task.task.task_id), execution = new ClaudeTaskAdapter(kernel, cache, actor, selected, current).prepare(task);
@@ -185,7 +185,13 @@ export function openLocalRuntime(path: string): { runtime: LocalTaskRuntime; del
       accept: async (requestId, taskId, revision, candidate) => {
         if (kernel.inspect(actor, taskId).task.provider === "codex") {
           current(); runtime.queueStatus(); requireThat(codex, "codex_not_registered");
-          const result = await codex.adapter(kernel.inspect(actor, taskId), true).recover(requestId, taskId, revision, candidate);
+          const result = await codex.adapter(kernel.inspect(actor, taskId), true).recover(requestId, taskId, revision, candidate,
+            specmesh ? async assertPublished => {
+              const authorize = () => { current(); runtime.queueStatus(); assertPublished(); };
+              const checked = await specmesh.inspect("check", { assertCurrent: authorize });
+              requireThat(checked.result.status === "pass" && checked.result.references.every(item => (workspace.required_reads as string[]).includes(join(workspace.directory as string, item.path))), "specmesh_publication_gate_blocked");
+              authorize(); checked.assertCurrent(); return { specmesh: { snapshot_digest: checked.snapshot_digest, status: "pass", closeout_verified: false } };
+            } : undefined);
           runtime.recover(); return result;
         }
         if (kernel.inspect(actor, taskId).task.provider === "claude") {

@@ -140,8 +140,8 @@ test.each([false, true])("Codex queue owns dispatch, durable output and restart 
       readiness = makeReadiness();
       adapter = new CodexTaskAdapter(kernel, actor, config, readiness, () => {}, process);
       const binding = adapter.inspectRecovery("task", snapshot.revision, effect.effect_id);
-      expect(adapter.recover("recover", "task", snapshot.revision, binding).task.status).toBe("done");
-      expect(adapter.recover("recover", "task", snapshot.revision, binding).task.status).toBe("done");
+      expect((await adapter.recover("recover", "task", snapshot.revision, binding)).task.status).toBe("done");
+      expect((await adapter.recover("recover", "task", snapshot.revision, binding)).task.status).toBe("done");
       expect(nativeRuns).toBe(1);
       runtime = new LocalTaskRuntime(kernel, actor, source, value => adapter.prepare(value), () => {});
     } else expect(snapshot.task.status).toBe("done");

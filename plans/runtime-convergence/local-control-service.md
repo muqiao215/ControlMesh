@@ -193,7 +193,7 @@ Configured read_files and required_reads are supported when codex.node_executabl
 is an explicit absolute Node/Bun executable for the private MCP client. Read completion
 contracts require exact native receipts and current file hashes. Registered workspace.write_roots
 also enables staged write/edit through that client. Native shell settings remain read-only;
-the controller owns promotion. SpecMesh completion profiles remain migration work and are refused. Preserve governed project requirements. The existing Python production entrypoint
+the controller owns promotion. The optional SpecMesh profile checks before execution and after publication, including recovery. Preserve governed project requirements. The existing Python production entrypoint
 and released default are unchanged; full native sandbox/real-account qualification is
 still required by the runtime-convergence acceptance matrix.
 
@@ -247,4 +247,17 @@ then promotes under the current lease and native session lock. Only an applied p
 can finish the task. Recovery persists its reservation before promotion and consumes the
 retained proposal without a model call, including an already-published proposal whose task
 confirmation was lost. Concurrent source changes block promotion/recovery rather than being
-overwritten. This does not yet enable reviewed SpecMesh closeout or topology participation.
+overwritten. Reviewed SpecMesh closeout and topology participation remain separate gates.
+
+
+Codex uses the same independent SpecMeshPort.bind lifecycle as Claude/OpenCode. The start
+check must pass and every plugin reference must already be in configured required_reads;
+project assertions cannot add file permissions. The plugin binding is retained in the
+Codex configuration digest. During publication, authority checks use the publication
+phase so the pre-write document snapshot does not incorrectly revoke an owned change.
+A fresh plugin check validates the resulting files before CM confirms the effect. Its
+snapshot digest is retained with status=pass and closeout_verified=false. Recovery requires
+the same configured plugin and checks the published result again without native execution.
+Missing/blocked startup checks do not spend a provider probe; a blocked publication check
+leaves retained work for reconciliation and does not imply rollback of already-published
+files. Overall closeout still requires the explicit reviewed acceptance path.

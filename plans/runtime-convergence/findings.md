@@ -2031,3 +2031,18 @@ confirmation after promotion, and a conflicting external source edit. Authentica
 removed for successful recovery fixtures; native history/request counts remain unchanged.
 The conflict test preserves the external edit during both execution and recovery refusal.
 SpecMesh and topology registration gates remain; full migration is not complete.
+
+
+### Codex independent SpecMesh lifecycle registration
+
+SpecMeshPort.bind already separates original snapshot checks from publication authority.
+Codex must switch to context.assertPublicationAuthority once its proposal is sealed;
+otherwise its owned document update invalidates the original start snapshot before the
+fresh plugin check. The adapter now invokes verifyPublication before completion, with
+native session locking across that asynchronous interval. Normal registration retains
+the plugin binding; recovery requires its verifier, checks current files and only then
+reconciles. Start gates precede provider readiness and cannot grant new file permissions.
+The independent plugin remains unchanged. Passing checks retain closeout_verified=false;
+reviewed closeout is not inferred. Native tests cover start refusal, normal publication,
+lost-observation recovery and an injected postpublication gate refusal followed by a real
+plugin check after reopen. No historical production task or real-account model was used.

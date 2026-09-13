@@ -2,6 +2,23 @@
 
 ## Current
 
+Codex now uses the independent SpecMesh lifecycle through normal local registration.
+The start gate runs before provider readiness and requires all referenced continuity
+files to be registered required reads. The workflow binding participates in the retained
+configuration digest. Publication transitions to publication authority, checks the fresh
+plugin snapshot before completion and retains status=pass/closeout_verified=false.
+Recovery reserves retained work and runs the same configured check without native execution.
+Validation: installed CLI + real Viewer + standalone SpecMesh + loopback model normal and
+lost-observation publication 2 tests, 59 assertions (36.41s); blocked-publication recovery
+and missing-start-document 2 tests, 46 assertions (22.70s). Startup rejection makes no
+provider request; the publication rejection is an injected blocked result after a real
+plugin check, and reopen recovery uses the real plugin. Shared SpecMesh/Codex regressions
+24 tests, 151 assertions (18.78s); typecheck/diff-check passed.
+Evidence: /tmp/cm-codex-specmesh-native.log, /tmp/cm-codex-specmesh-gates.log,
+/tmp/cm-codex-specmesh-regression.log. Tests use fresh isolated native sessions and a
+synthetic model endpoint. Reviewed closeout, topology, physical device/real-account
+qualification and full CM-R0–R7 migration/release/default-switch gates remain incomplete.
+
 Codex normal local configuration now registers staged writes through workspace.write_roots
 and codex.node_executable. Write/edit MCP calls use the current lease transaction; native
 shell remains read-only. The manifest binds stage/tool scope, observation precedes promotion,

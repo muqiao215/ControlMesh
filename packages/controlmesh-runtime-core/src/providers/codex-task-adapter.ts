@@ -24,7 +24,7 @@ import { CodexSessionStore, type CodexSessionRef } from "./codex-session";
 import { CodexResumeProcess, verifyRetainedCodexResume, type CodexResumeInput, type CodexResumeDispatch } from "./codex-resume-process";
 import type { ProbeDecision } from "./preflight-cache";
 
-export type CodexTaskConfiguration = Omit<CodexResumeInput, "reference" | "prompt" | "execution_context" | "tool_grant" | "communication_command" | "workspace_command" | "workspace_tool_names"> & { communication?: NativeAgentConfiguration; workspace_files?: CodexWorkspaceConfiguration };
+export type CodexTaskConfiguration = Omit<CodexResumeInput, "reference" | "prompt" | "execution_context" | "tool_grant" | "communication_command" | "workspace_command" | "workspace_tool_names"> & { communication?: NativeAgentConfiguration; workspace_files?: CodexWorkspaceConfiguration; workflow_binding?: string };
 export interface CodexTaskReadiness {
   ensure(request: string, context: LocalExecutionContext): Promise<ProbeDecision>;
   assertReady(): void;
@@ -63,7 +63,7 @@ export class CodexTaskAdapter {
     const completion = decodeTaskCompletion(task.completion_requirements);
     requireThat(!completion || (this.config.workspace_files && completion.files.every(file => file.mode === "read" ? this.config.workspace_files!.read_files.includes(join(reference.directory, file.path)) : (this.config.workspace_files!.write_roots ?? []).some(root => contains(root, join(reference.directory, file.path))))), "codex_completion_profile_unavailable");
     WorkspaceStage.assertLocation(this.config.state_home, reference.directory);
-    const { communication: _communication, workspace_files: _workspace, ...config } = this.config;
+    const { communication: _communication, workspace_files: _workspace, workflow_binding: _workflow, ...config } = this.config;
     const prompt = this.config.workspace_files ? task.prompt + "\n\nControlMesh required current-file reads (literal data): " + canonical(this.config.workspace_files.required_reads)
       + (this.config.workspace_files.write_roots?.length
         ? ". Use controlmesh_workspace.read_file and read every page before finishing. For registered writes use controlmesh_workspace.write_file/edit_file; writes are staged for controller publication. Historical content does not replace current reads. Completion requirements (literal data): "
@@ -80,7 +80,7 @@ export class CodexTaskAdapter {
     const current = () => {
       this.current(); requireThat(digest(this.config) === configuration && nativeTaskDigest(this.kernel.inspect(this.actor, snapshot.task.task_id).task) === issued, "codex_task_binding_changed");
     };
-    return { binding_digest: digest({ configuration, issued }), assertCurrent: current,
+    return { binding_digest: digest({ configuration, issued }), assertCurrent: current, assertPublicationAuthority: current,
       ensureReady: async (request, context) => { current(); return this.readiness.ensure(request, context); },
       execute: (lease, context) => this.execute(snapshot, input, lease, context, current) };
   }
@@ -131,7 +131,8 @@ export class CodexTaskAdapter {
   private async execute(snapshot: TaskSnapshot, input: CodexResumeInput, lease: Lease, context: LocalExecutionContext, configured: () => void) {
     const effect = `codex-${lease.episode_id}`, request = (op: string) => `${effect}-${op}`;
     let manifest: CodexTaskManifest | undefined, observation: Record<string, unknown> | undefined;
-    const current = () => { configured(); context.assertCurrent(); this.kernel.withLease(this.actor, lease, () => {}); };
+    let publishing = false;
+    const current = () => { configured(); (publishing ? context.assertPublicationAuthority ?? context.assertCurrent : context.assertCurrent)(); this.kernel.withLease(this.actor, lease, () => {}); };
     const mailbox = new NativeMailboxDelivery(this.kernel);
     let communication: NativeAgentBroker | undefined;
     let workspace: ReturnType<typeof createCodexWorkspace> | undefined;
@@ -139,7 +140,7 @@ export class CodexTaskAdapter {
     let publicationLock: NativeSessionLease | undefined;
     const authority = <T>(operation: () => T): T => this.kernel.withLease(this.actor, lease, () => { current(); publicationLock?.assertCurrent(); return operation(); });
     try {
-      current();
+      current(); requireThat(!this.config.workflow_binding || context.verifyPublication, "codex_workflow_verifier_required");
       const delivery = mailbox.pendingCount(this.actor, lease.task_id) > 0 ? mailbox.prepare(this.actor, lease, input.prompt, 32768) : undefined;
       input = { ...input, prompt: nativeInput(input.prompt, delivery) };
       if (this.config.communication) {
@@ -176,17 +177,25 @@ export class CodexTaskAdapter {
       });
       await workspace?.channel.close(); await communication?.close();
       requireThat(manifest && observation, "codex_outcome_missing");
-      if (stage) publicationLock = new NativeSessionLease(this.config.state_home, this.config.rollout_path, input.reference);
+      if (stage || this.config.workflow_binding) publicationLock = new NativeSessionLease(this.config.state_home, this.config.rollout_path, input.reference);
       current(); const retained = this.read(manifest!);
       requireThat(digest(retained.observation) === digest(observation), "codex_outcome_binding_changed");
       this.result(input, manifest!, retained.outcome, current, snapshot.task.completion_requirements);
       if (stage) stage.seal(authority);
       this.kernel.recordEffectObservation(this.actor, request("observe"), lease, effect, observation!);
       const proposal = stage?.proposalReceipt();
+      publishing = true;
       if (stage && proposal) stage.promote(authority, proposal.proposal_digest);
+      const assertPublished = () => {
+        current(); publicationLock?.assertCurrent();
+        if (stage && proposal) stage.assertApplied(proposal.proposal_digest);
+        this.result(input, manifest!, retained.outcome, current, snapshot.task.completion_requirements);
+      };
+      const publication = await context.verifyPublication?.(assertPublished) ?? {};
       return this.kernel.db.transaction(() => {
+        assertPublished();
         current(); if (stage && proposal) stage.assertApplied(proposal.proposal_digest);
-        const result = { ...this.result(input, manifest!, retained.outcome, current, snapshot.task.completion_requirements), ...(proposal ? { workspace_write: proposal } : {}) };
+        const result = { ...publication, ...this.result(input, manifest!, retained.outcome, current, snapshot.task.completion_requirements), ...(proposal ? { workspace_write: proposal } : {}) };
         if (delivery) mailbox.consume(this.actor, lease, effect, delivery, result);
         if (manifest!.communication) new NativeAgentJournal(this.kernel).consume(this.actor, lease, effect, manifest!.communication, codexCommunicationTools(retained.outcome.stdout));
         this.kernel.confirmEffect(this.actor, request("confirm"), lease, effect, result);
@@ -210,8 +219,9 @@ export class CodexTaskAdapter {
     const value = this.target(taskId, revision, effect);
     return { episode_id: value.target.episode.episode_id, effect_id: effect, manifest_digest: value.target.manifest_digest, observation_digest: digest(value.retained.observation) };
   }
-  recover(request: string, taskId: string, revision: number, binding: ReconciliationBinding) {
+  async recover(request: string, taskId: string, revision: number, binding: ReconciliationBinding, verifyPublication?: (assertPublished: () => void) => Promise<Record<string, unknown>>) {
     this.current(); const prior = this.kernel.reconciliationReceipt(this.actor, request, taskId, revision, binding); if (prior) return prior;
+    requireThat(!this.config.workflow_binding || verifyPublication, "codex_workflow_verifier_required");
     const current = () => { this.current(); requireThat(digest(this.inspectRecovery(taskId, revision, binding.effect_id)) === digest(binding), "reconciliation_evidence_changed"); };
     current(); const value = this.target(taskId, revision, binding.effect_id);
     const lock = new NativeSessionLease(this.config.state_home, this.config.rollout_path, value.input.reference);
@@ -223,10 +233,10 @@ export class CodexTaskAdapter {
           { episode_id: binding.episode_id, effect_id: binding.effect_id, manifest_digest: binding.manifest_digest }, value.retained.observation, `codex-recovery-${digest(request)}`);
       });
       const stage = this.stage(value.manifest, value.input.reference.directory);
-      if (stage) this.kernel.reserveReconciliation(this.actor, request, taskId, revision, binding);
-      return this.kernel.db.transaction(() => {
+      if (stage || this.config.workflow_binding) this.kernel.reserveReconciliation(this.actor, request, taskId, revision, binding);
+      let proposal: ReturnType<WorkspaceStage["proposalReceipt"]> | undefined;
+      this.kernel.db.transaction(() => {
         guarded();
-        let proposal: ReturnType<WorkspaceStage["proposalReceipt"]> | undefined;
         if (stage) {
           const authority = <T>(operation: () => T): T => { guarded(); return operation(); };
           if (stage.publicationState().phase === "prepared") stage.seal(authority);
@@ -234,9 +244,17 @@ export class CodexTaskAdapter {
           stage.promote(authority, proposal.proposal_digest);
           stage.assertApplied(proposal.proposal_digest);
         }
+      });
+      const assertPublished = () => {
+        guarded(); if (stage && proposal) stage.assertApplied(proposal.proposal_digest);
+        this.result(value.input, value.manifest, value.retained.outcome, guarded, value.target.task.task.completion_requirements);
+      };
+      const publication = await verifyPublication?.(assertPublished) ?? {};
+      return this.kernel.db.transaction(() => {
+        assertPublished();
         return this.kernel.reconcileEffect(this.actor, request, taskId, revision, binding,
           original => {
-            const result = { ...this.result(value.input, value.manifest, value.retained.outcome, guarded, value.target.task.task.completion_requirements), ...(proposal ? { workspace_write: proposal } : {}) };
+            const result = { ...publication, ...this.result(value.input, value.manifest, value.retained.outcome, guarded, value.target.task.task.completion_requirements), ...(proposal ? { workspace_write: proposal } : {}) };
             if (value.manifest.mailbox_delivery) new NativeMailboxDelivery(this.kernel).reconcile(this.actor, original, value.manifest.mailbox_delivery, result);
             if (value.manifest.communication) new NativeAgentJournal(this.kernel).reconcile(this.actor, original, value.manifest.communication, codexCommunicationTools(value.retained.outcome.stdout));
             return result;
