@@ -652,3 +652,17 @@ original-mode check: 4 passed, 19 assertions (`/tmp/cm-seed-modes-final.log`). T
 diff-check passed. Exact schema-29 commit b697357 CI run 34714662479 completed success;
 this is the complete post-fixture-fix gate referenced in the earlier entry. Network/device
 assignment and live delivery acceptance remain pending.
+
+## 2026-09-13 — Gemini typed failure and retry interruption
+
+Native Gemini terminal envelopes now classify quota, rate limit, authentication and model
+errors; known native types take precedence over message fallback. Stream parsing and
+one-shot process supervision share the classifier. Assistant/tool content and warnings
+do not trigger the abort callback. Relative retry delays remain relative, without an
+invented reset timestamp.
+
+Validation: 12 tests passed, 484 assertions, 2.29s in gemini-failure, gemini-stream and
+oneshot tests (`/tmp/cm-gemini-failure-final.log`); runtime-core typecheck passed. The
+process fixture verifies interruption before a retry marker; it does not run a real
+Gemini model/account. Full Gemini admission/grant/preflight and native execution remain
+open. Production remains Python; no runtime cutover or release is claimed.

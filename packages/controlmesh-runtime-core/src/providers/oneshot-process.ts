@@ -1,3 +1,4 @@
+import { geminiFailureLine } from "./gemini-failure";
 import { codexFailureLine } from "./codex-failure";
 import { realpathSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
@@ -57,7 +58,7 @@ export class OneShotProviderProcess {
     const processSpec = { command: plan.command, cwd: input.workspace,
       env: { ...input.environment, ...plan.env_overrides }, ...(plan.stdin_text === null ? {} : { stdin_text: plan.stdin_text }), timeout_ms: input.timeout_ms };
     const processAdmission: ProcessAdmission = { assertCurrent: current, remainingMs: admission.remainingMs, signal: admission.signal,
-      abortOnStdoutLine: line => Boolean((config.provider === "codex" && codexFailureLine(line)) || admission.abortOnStdoutLine?.(line)),
+      abortOnStdoutLine: line => Boolean((config.provider === "codex" && codexFailureLine(line)) || (config.provider === "gemini" && geminiFailureLine(line)) || admission.abortOnStdoutLine?.(line)),
       abortOnStderrLine: line => Boolean((config.provider === "opencode" && failureFromNativeStderr(line)) || admission.abortOnStderrLine?.(line)) };
     const outcome = this.containers ? await this.containers.run({ ...processSpec, execution_id: input.execution_id ?? "", no_network: grant.network_policy === "no_network",
       writable_roots: config.permission_mode === "read-only" ? [] : grant.writable_roots.length ? grant.writable_roots.map(root => resolve(input.workspace, root)) : [input.workspace] }, processAdmission)

@@ -1,3 +1,4 @@
+import { geminiNativeFailure } from "./gemini-failure";
 import { parseGeminiStream } from "./gemini-stream";
 import { codexNativeFailure } from "./codex-failure";
 import { object } from "../value";
@@ -20,6 +21,12 @@ export function observeOneShot(provider: string, stdout: string, stderr = ""): O
         try { events.push(JSON.parse(line)); } catch { invalid = true; }
       }
     }
+  }
+  if (provider === "gemini" && !legacyArray) {
+    const fatal = events.find(value => object(value) && value.type === "result" && value.status === "error" && object(value.error) && typeof value.error.type === "string");
+    const failure = geminiNativeFailure(fatal);
+    if (failure) return { text: "", terminal: false, error_code: failure.code, session_id: null,
+      quota_reset_at: failure.reset_at === null ? null : new Date(failure.reset_at).toISOString() };
   }
   if (provider === "gemini" && !legacyArray && events.some(value => object(value)
     && (value.type === "init" || (value.type === "message" && value.delta === true)))) {

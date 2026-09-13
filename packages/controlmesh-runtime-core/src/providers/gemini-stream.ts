@@ -1,3 +1,4 @@
+import { geminiNativeFailure } from "./gemini-failure";
 import { object, requireThat } from "../value";
 
 export interface GeminiStreamTool { id: string; name: string; parameters: Record<string, unknown>; status: "success" | "error"; output: unknown }
@@ -14,6 +15,8 @@ export function parseGeminiStream(stdout: string) {
   const pending = new Map<string, { name: string; parameters: Record<string, unknown> }>(), seen = new Set<string>(), tools: GeminiStreamTool[] = [];
   for (const event of events.slice(1)) {
     requireThat(!terminal && (event.session_id === undefined || event.session_id === init.session_id), "gemini_stream_sequence_invalid");
+    const failure = geminiNativeFailure(event);
+    requireThat(!failure, failure?.code ?? "provider_error");
     if (event.type === "message") {
       requireThat(typeof event.content === "string", "invalid_gemini_stream");
       if (event.role === "user") { requireThat(prompt === undefined && event.delta !== true, "gemini_stream_sequence_invalid"); prompt = event.content; }

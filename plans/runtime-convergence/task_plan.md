@@ -172,3 +172,10 @@ prior results, delivered through existing verified mailbox input. Missing/altere
 fails before claim; oversized input blocks rather than truncates. The real topology canary
 is only partially positive and remains unaccepted; its failed reviewer and skipped reopen
 are documented in progress.md. No production writer or installed-version switch occurred.
+
+### Gemini failure classification checkpoint (2026-09-13)
+
+Typed native failures and supervised retry interruption are implemented and locally
+verified (12 tests, typecheck). CM-R3 remains in progress: Gemini native grant enforcement,
+preflight and actual account-backed execution are not established by these fixtures.
+Continue these owners before declaring Gemini provider parity or switching defaults.

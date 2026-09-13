@@ -2119,3 +2119,11 @@ outcome and exact correspondence with newly persisted session messages. It rejec
 turns until a scoped tool receipt owner is integrated. Installed recording/formatting
 services generate the session/events in tests; process outcome fields remain a fixture,
 so this is not native model-execution or account acceptance.
+
+## Gemini native error authority
+
+Installed Gemini 0.59.0 distinguishes TerminalQuotaError, RetryableQuotaError,
+FatalAuthenticationError, ValidationRequiredError and ModelNotFoundError. Prefer these
+explicit types over message patterns, including conflicting message text. Bare
+RESOURCE_EXHAUSTED is ambiguous and is not proof of an exhausted balance. Only native
+error envelopes participate in process interruption; model/tool prose is not authority.
