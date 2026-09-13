@@ -1073,3 +1073,20 @@ SpecMesh: 37 pass;  0 fail;  311 expect() calls; Ran 37 tests across 4 files. [9
 Typecheck and diff check passed. Python heuristic workunit routing, automatic authorized
 advancement and durable long-running logs/process ownership remain; no full migration
 or production cutover claim.
+
+## 2026-09-13 — fixed remaining-graph authorization
+
+HostJobApprovals now stores explicit human approval for the remaining pending graph and
+derives individually verifiable step receipts. The receipt freezes ordered step definition
+digests and expected revision progression (one running + one accepted-terminal update per
+step). Existing assertApproved still enforces the current exact next step and revision.
+Historical derived receipts remain readable for recovery; modified graph/index/owner and
+extra revision changes cannot obtain execution authority. Replay returns the historical
+decision, never new authority. No public automatic-start API or scheduler added yet.
+
+Actual bash two-step creation/queue/reopen tests now run with individual and whole-graph
+receipts, including rollback on enqueue failure. Approval/host execution/creation/configured
+regression with SpecMesh: 23 passed, 266 assertions, 8.25s
+(/tmp/cm-host-plan-approval-final.log); typecheck/diff check passed.
+Next: explicit run-plan control and persisted, bounded automatic advancement using these
+receipts and actual predecessor completion evidence; full host/migration scope unchanged.

@@ -1,3 +1,5 @@
+import { HostJobApprovals } from "../src/host-job-approval";
+import type { Principal } from "../src/kernel";
 import { expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, realpathSync, writeFileSync, readFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -6,7 +8,7 @@ import { openLocalRuntime } from "../src/local-runtime-config";
 import { LocalRuntimeControl } from "../src/local-runtime-control";
 import { parseRuntimeCli } from "../src/runtime-cli";
 
-test("normal controls create, approve and start host steps atomically without importing state", async () => {
+for (const wholePlan of [false, true]) test(`normal controls create, approve and start host steps atomically without importing state, whole plan=${wholePlan}`, async () => {
   const root = mkdtempSync(join(tmpdir(), "cm-host-create-")), state = join(root, "state"), workspace = join(root, "workspace"), path = join(root, "config.json");
   mkdirSync(state, { mode: 0o700 }); mkdirSync(workspace);
   writeFileSync(path, JSON.stringify({ schema_version: "controlmesh.local_runtime.v1", mode: "candidate", state_root: state,
@@ -26,9 +28,12 @@ test("normal controls create, approve and start host steps atomically without im
     expect(await control().handle({ id: "create", op: "create_host_job", job })).toEqual(created);
     expect(existsSync(join(workspace, "marker"))).toBe(false);
     expect(await control().handle({ id: "unapproved", op: "start_host_step", approval: {} })).toMatchObject({ ok: false });
+    const actor: Principal = { id: "owner", device_id: "local", origin: "human_request", scopes: ["task:read", "task:admin", "task:execute"] };
+    const plan = wholePlan ? new HostJobApprovals(owned.runtime.kernel.db, () => {}).approvePlan(actor, "whole-plan", "job", 1) : undefined;
     for (const [index, step] of ["first", "second"].entries()) {
       const revision = owned.runtime.inspectHostJob("job")!.revision;
-      const approved = await control().handle({ id: `approve-${step}`, op: "approve_host_step", job_id: "job", expected_revision: revision, step_id: step });
+      const approved = plan ? { ok: true, result: new HostJobApprovals(owned.runtime.kernel.db, () => {}).planStep(actor, plan, index) }
+        : await control().handle({ id: `approve-${step}`, op: "approve_host_step", job_id: "job", expected_revision: revision, step_id: step });
       expect(approved.ok).toBe(true);
       const receiptFile = join(root, "approval.json"); writeFileSync(receiptFile, JSON.stringify(approved.result));
       expect(parseRuntimeCli(["start-host-step", "--file", receiptFile, "--socket", "/tmp/test.sock"])?.request)

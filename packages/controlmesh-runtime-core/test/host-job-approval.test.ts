@@ -42,3 +42,29 @@ test("host-job CLI names the current step and revision without accepting issuer 
   expect(() => parseRuntimeCli(["approve-host-step", "job", "--socket", "/tmp/cm.sock", "--step", "one"])).toThrow("missing_cli_option");
   expect(() => parseRuntimeCli(["approve-host-step", "job", "--socket", "/tmp/cm.sock", "--approved-by", "user"])).toThrow("unknown_cli_option");
 });
+
+test("whole-job authorization fixes remaining step order, definitions and revision progression", () => {
+  const db = new RuntimeDatabase(":memory:"), store = new HostJobStore(db, () => {}), approvals = new HostJobApprovals(db, () => {});
+  try {
+    const initial = store.put(actor, "create", 0, raw);
+    expect(() => approvals.approvePlan({ ...actor, origin: "schedule" }, "cron", "job", 1)).toThrow("host_job_human_approval_required");
+    const plan = approvals.approvePlan(actor, "plan", "job", 1);
+    expect(plan.steps.map(step => [step.step_id, step.revision])).toEqual([["one", 1], ["two", 3]]);
+    const first = approvals.planStep(actor, plan, 0), second = approvals.planStep(actor, plan, 1);
+    expect(approvals.assertApproved(actor, first)).toEqual(first);
+    expect(() => approvals.assertApproved(actor, second)).toThrow("host_job_revision_conflict");
+    expect(() => approvals.planStep(actor, { ...plan, steps: [...plan.steps].reverse() }, 0)).toThrow("host_job_plan_approval_unproven");
+    expect(() => approvals.assertApproved(actor, { ...first, plan_step_index: 1 })).toThrow("host_job_plan_approval_unproven");
+    expect(() => approvals.planStep({ ...actor, id: "other" }, plan, 0)).toThrow("invalid_host_job_plan_approval");
+    expect(() => approvals.planStep(actor, plan, 2)).toThrow("invalid_host_job_plan_step");
+    const running = store.put(actor, "running", 1, { ...initial.job, state: "running", steps: initial.job.steps.map(step => step.id === "one" ? { ...step, state: "running" } : step) });
+    expect(() => approvals.approvePlan(actor, "during", "job", 2)).toThrow("host_job_plan_not_pending");
+    const completed = store.put(actor, "result", running.revision, { ...running.job, steps: running.job.steps.map(step => step.id === "one" ? { ...step, state: "completed" } : step) });
+    expect(approvals.approvePlan(actor, "plan", "job", 1)).toEqual(plan);
+    expect(approvals.inspectReceipt(actor, first)).toEqual(first);
+    expect(approvals.assertApproved(actor, second)).toEqual(second);
+    store.put(actor, "extra-change", completed.revision, { ...completed.job, summary: "changed after approval" });
+    expect(() => approvals.assertApproved(actor, second)).toThrow("host_job_revision_conflict");
+    expect(() => approvals.inspectPlan({ ...actor, scopes: [] }, plan)).toThrow("scope_denied");
+  } finally { db.close(); }
+});

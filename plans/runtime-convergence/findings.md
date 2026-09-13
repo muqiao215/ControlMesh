@@ -2295,3 +2295,10 @@ accept only command graph metadata and receive workspace/timestamps/approval req
 from registered runtime configuration. Approved-step startup wraps ingress plus enqueue
 in one transaction; deterministic task identity includes principal to avoid cross-owner
 collisions. A normal task requires no direct HostJobStore access or migrated JSON files.
+
+Whole-graph approval cannot merely approve the current job ID: it must bind remaining
+ordered step definitions and expected versions. The current host runner consumes exactly
+two HostJob revisions per accepted step, including retained-result acceptance. Any extra
+mutation deliberately invalidates future derived approvals. If runner persistence changes
+this progression, change the authorization protocol explicitly rather than silently
+weakening the version check. Approval alone is still not scheduled execution.

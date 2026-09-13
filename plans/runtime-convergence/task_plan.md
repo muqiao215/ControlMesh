@@ -309,3 +309,8 @@ New host workflow checkpoint: normal controls/CLI create fresh definitions and a
 start an explicitly approved step. Legacy import is no longer required for this path.
 Next: automatic advancement for authorized steps and parity for Python workunit routing,
 plus durable long-running execution/logs; original full migration matrix stays open.
+
+Graph authorization checkpoint: persisted whole-remaining-plan approval and derived step
+receipts are implemented and exercised through actual command execution/reopen. Next:
+explicit run-plan registration and bounded persistent automatic advancement, requiring
+real prior task/effect completion, then remaining host/full migration acceptance owners.
