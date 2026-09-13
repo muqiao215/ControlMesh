@@ -21,6 +21,7 @@ import { decodeSnapshot } from "./migration";
 import { digest, identifier, object, requireThat, type LegacyTask } from "./value";
 import { prepareNativeAgentConfiguration } from "./providers/native-agent-profile";
 import { DeliveryOutbox } from "./delivery-outbox";
+import { openTelegramDelivery } from "./telegram-delivery-profile";
 import { openFeishuDelivery } from "./feishu-delivery-profile";
 import { privateFile } from "./private-runtime-file";
 import type { SubmissionIdentity } from "./task-ingress";
@@ -282,7 +283,8 @@ export function openLocalRuntime(path: string, options: { host_worker?: boolean 
       inbox = new FeishuInbox(kernel, actor, config.delivery.app_id, auth,
         { provider: inboundProvider, model: inboundProfile.model as string, repo_root: workspace.directory as string }, currentInbound);
     }
-    const delivery = config.delivery === undefined ? undefined : openFeishuDelivery(config.delivery, config.source.transport, current, fetch,
+    const delivery = config.delivery === undefined ? undefined : object(config.delivery) && config.delivery.kind === "telegram_text"
+      ? openTelegramDelivery(config.delivery, config.source.transport, current) : openFeishuDelivery(config.delivery, config.source.transport, current, fetch,
       inbox ? { binding_digest: inbox.binding_digest, resolve: envelope => inbox!.replyTarget(envelope) } : undefined);
     const deliveries = delivery ? new DeliveryOutbox(kernel, actor, [delivery.adapter], current) : undefined;
     const inboundConfig = config.inbound as Record<string, unknown> | undefined;

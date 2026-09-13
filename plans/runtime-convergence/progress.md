@@ -5,7 +5,8 @@
 Full TS migration, multi-device coordination and real Agent continuity remain **in
 progress**. No production writer cutover, complete release or default TS installation
 has been accepted. Last directly checked local `cm --version`: **0.43.0**, Python.
-The latest implementation before this document consolidation is **3a56eed**, pushed.
+The last pushed baseline is **c918e37**. Current changes add configured Telegram text delivery;
+this remains a scoped transport port, not production cutover.
 
 This file is the current handoff, not a chronological commit log. Historical detail
 through this consolidation remains in Git at `3a56eed`; deeper native observations and
@@ -25,6 +26,7 @@ adapter, that host execution cannot survive management loss, or that public Gemi
 | Native Codex | Registered local resume, preflight, Viewer adoption, workspace/SpecMesh receipts and topology/mailbox integration | Installed CLI with loopback model fixtures covers selected flows; real accounts, physical devices and remaining branches differ |
 | Gemini | Registered local text continuation, native JSONL/stream verification, process supervisor, durable task results/recovery, persistent readiness cache | Configured fixture and installed loader/parser tests pass; actual OAuth account is rejected by server; tools/Viewer/device paths remain |
 | Coordination | Device identity/leases/fences, durable mailbox, explicit topology scheduling and native task context | Scoped real-device and local native-fixture evidence; full cross-device/provider/partition/rollout matrix remains |
+| Telegram delivery | Selected private bot profile in normal local configuration, strict numeric-chat text receipts, durable no-replay behavior | Local HTTP/outbox/reopen tests; multipart, inbound, files, streaming and production delivery remain |
 | Integrations | Headless History ports and independent SpecMesh lifecycle are used by qualified provider paths | SpecMesh check does not imply reviewed closeout; supported providers/receipt profiles differ |
 
 ### Gemini actual-account findings
@@ -44,6 +46,11 @@ Temporary login copies were deleted; operator authentication files were not writ
 Private diagnostic evidence: `/tmp/cm-gemini-account-BNTF1Q` (ephemeral, not release assets).
 
 ## Verification
+
+- **Telegram and existing delivery regression:** 48 pass, 0 fail, 396 assertions, 2.49s;
+  `/tmp/cm-telegram-delivery-tests.log`. Includes normal configuration, private credential
+  rotation, wrong replies, API rejection, lost response and failed acceptance/reopen.
+  Typecheck and diff check passed. No real Telegram message was sent.
 
 - **Latest focused regression at 3a56eed:** 43 pass, 0 fail, 268 assertions, 13.02s;
   `/tmp/cm-gemini-native-fix-regression.log`. Installed Gemini public parser,
@@ -98,9 +105,11 @@ Private diagnostic evidence: `/tmp/cm-gemini-account-BNTF1Q` (ephemeral, not rel
 
 ## Next
 
-The current broad regression passed. The next concrete unported transport owner is Telegram: TS currently has Feishu
-inbound/delivery modules but no Telegram adapter. Port its normal delivery and durable
-failure/recovery behavior through DeliveryOutbox, then ingress and remaining message/file
-profiles; verify with controlled transport fixtures before any actual sending.
+Telegram text delivery is now wired through normal local configuration and DeliveryOutbox.
+Next implement multipart receipt ownership and safe recovery of retained acknowledgements,
+then Telegram ingress and remaining message/file/streaming profiles. Current text delivery
+refuses over 4096 UTF-16 units including its heading; it never silently truncates. Telegram
+has no generic getMessage readback, so an observed acknowledgement whose acceptance fails
+remains unknown under the existing recovery interface. Do not solve this by replaying POST.
 Keep the complete original objective active; mark complete only after every phase and
 acceptance item has matching evidence, release and local alignment.

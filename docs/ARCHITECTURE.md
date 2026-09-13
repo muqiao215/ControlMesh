@@ -918,14 +918,14 @@ authorization and provenance. The normal command path and limits are in the
 public mutation API, installed default switch or completed interactive-terminal claim.
 
 `delivery-outbox.ts` owns terminal-result projection and uncertain transport outcomes;
-`feishu-delivery.ts` is its first concrete adapter. Schema 11 retains explicit task routes,
+`feishu-delivery.ts` and `telegram-delivery.ts` provide transport-specific adapters. Schema 11 retains explicit task routes,
 event-based pending delivery, dispatch attempts, original acknowledgements and accepted
 remote receipts. Kernel terminal events remain durable, allowing projection after restart
 without rerunning execution. Routes derive destinations from issued reply grants and pin
 source/adapter identity. There is no cross-transport broadcast fallback, model injection or
 automatic resend of an uncertain outcome.
 
-The private local entrypoint optionally configures one selected Feishu text adapter; tasks
+The private local entrypoint optionally configures one selected Feishu or Telegram text adapter; tasks
 still require explicit route binding. Execution completion and delivery completion remain
 distinct. Readback can accept a retained original acknowledgement only after matching current
 authority and the actual remote message; an unobserved send stays unknown. A 128-record
@@ -1128,3 +1128,10 @@ predecessor effect confirmation and expected revisions remain mandatory. The own
 only queued host steps bearing that approval ID and does not drain unrelated work.
 An active management service can race the same queue; transactional claim and deterministic
 step IDs retain one owner per execution. Other task/provider scheduling stays management-owned.
+
+
+Telegram's candidate text profile uses an explicit private bot credential file, numeric
+chat identity and strict sendMessage acknowledgement validation. Unknown sends remain
+unknown across restart and never automatically replay. Unlike Feishu, Telegram cannot
+provide generic message readback; retained-ack acceptance recovery and multipart ownership
+remain open in `plans/runtime-convergence/`. The production Python transport is unchanged.

@@ -2514,3 +2514,31 @@ into the durable outbox, rather than accidentally duplicating external messages.
 is an in-memory TTL/LRU and does not by itself provide cross-restart delivery authority.
 Next implementation should connect normal Telegram delivery/outcome handling, followed by
 its remaining ingress/file/streaming behavior. No real message was sent in this audit.
+
+
+## Telegram configured text delivery
+
+`telegram-delivery.ts` is a real HTTP adapter behind DeliveryOutbox, selected by
+`local-runtime-config.ts` through `telegram-delivery-profile.ts`. Trusted delivery config:
+`kind: telegram_text`, `adapter_id`, numeric string `bot_id`, absolute `credentials_file`.
+The private JSON credential file contains `bot_id` and `bot_token`; the first qualified
+file revision is pinned for this runtime generation. Rotation requires reopening; no
+account discovery, arbitrary endpoint, token logging or automatic send retry is used.
+
+Bot API sendMessage returns a Message on success (https://core.telegram.org/bots/api#sendmessage).
+The adapter verifies chat, bot sender, message/thread identity, exact text and attempt time.
+This initial profile refuses reply/business/edited/offline/direct-message-topic contexts and
+oversize output rather than manufacturing a receipt. Forum thread targets are accepted by
+the adapter, but normal submission currently emits only chat identity; ingress/thread
+registration still needs implementation and acceptance.
+
+Lost HTTP acknowledgement leaves an unknown delivery after database reopen with no resend.
+When the acknowledgement is retained but the acceptance transaction fails, the current
+outbox reconcile API requires adapter readback; Telegram cannot provide generic getMessage.
+It therefore reports telegram_readback_unavailable and preserves unknown. A retained-ack
+recovery contract and per-part ownership for multipart sends remain required work.
+
+Normal configuration test initially reused a state directory after changing source transport;
+existing local_runtime_policy_conflict correctly fired before the transport validator. The
+negative configuration test now uses an independent temporary state directory. The runtime
+policy guard was not changed. Final focused regression: 48 pass, 0 fail, 396 assertions.

@@ -75,3 +75,6 @@ export { CodexPreflight, codexProbeCredentialRevision, codexProbeProfile, codexP
 export { CodexTaskPreflight } from "./providers/codex-task-preflight";
 export { GeminiPreflight, geminiProbeCredentialRevision, geminiProbeProfile, geminiProbeVersion, type GeminiProbeInput } from "./providers/gemini-preflight";
 export { GeminiTaskPreflight } from "./providers/gemini-task-preflight";
+
+export { TelegramTextDelivery, type TelegramDeliveryConfiguration } from "./telegram-delivery";
+export { openTelegramDelivery } from "./telegram-delivery-profile";
