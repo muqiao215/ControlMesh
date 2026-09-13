@@ -82,3 +82,5 @@ export { openTelegramDelivery } from "./telegram-delivery-profile";
 export { TelegramEventAuthenticator, type TelegramEventConfiguration, type TelegramIncomingMessage } from "./telegram-event-auth";
 export { TelegramInbox, type TelegramTaskTemplate } from "./telegram-inbox";
 export { WebhookInboundRuntime } from "./feishu-inbound-runtime";
+
+export { TelegramPollingRuntime, type TelegramPollingCredentials } from "./telegram-polling";

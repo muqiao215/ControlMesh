@@ -1,3 +1,4 @@
+import type { DeliveryContext } from "./delivery-outbox";
 import { TelegramTextDelivery } from "./telegram-delivery";
 import { privateFile } from "./private-runtime-file";
 import { decodeSnapshot } from "./migration";
@@ -18,9 +19,10 @@ export function openTelegramDelivery(profile: unknown, transport: string, curren
     return data.bot_token;
   };
   // Pin the first qualified file for this runtime generation; rotation requires reopening.
-  const adapter = new TelegramTextDelivery({ adapter_id: profile.adapter_id, bot_id: botId, assertCurrent: current,
-    async botToken(context) { context.assertCurrent(); return load(); },
-    assertToken(token) { requireThat(load() === token, "telegram_credentials_changed"); },
-  }, request);
-  return { adapter, close: async () => {} };
+  const credentials = {
+    async botToken(context: DeliveryContext) { context.assertCurrent(); return load(); },
+    assertToken(token: string) { requireThat(load() === token, "telegram_credentials_changed"); },
+  };
+  const adapter = new TelegramTextDelivery({ adapter_id: profile.adapter_id, bot_id: botId, assertCurrent: current, ...credentials }, request);
+  return { adapter, credentials, close: async () => {} };
 }

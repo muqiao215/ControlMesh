@@ -6,6 +6,7 @@ import type { LocalTaskRuntime } from "./local-task-runtime";
 import type { DeliveryOutbox } from "./delivery-outbox";
 import type { TerminalDelivery } from "@controlmesh/protocol";
 import type { SubmissionIdentity } from "./task-ingress";
+import type { TelegramPollingRuntime } from "./telegram-polling";
 import type { FeishuInboundRuntime } from "./feishu-inbound-runtime";
 import type { SpecMeshPort } from "./specmesh-port";
 import type { ReconciliationBinding, TaskSnapshot } from "./kernel";
@@ -20,7 +21,7 @@ export interface LocalRuntimeRecovery {
 /** Private local control protocol. It never accepts caller-supplied principals, source contexts or grants. */
 export class LocalRuntimeControl {
   constructor(private readonly runtime: LocalTaskRuntime, private readonly deliveries?: DeliveryOutbox,
-    private readonly submissionIdentity?: (task: LegacyTask) => SubmissionIdentity, private readonly inbound?: FeishuInboundRuntime,
+    private readonly submissionIdentity?: (task: LegacyTask) => SubmissionIdentity, private readonly inbound?: FeishuInboundRuntime | TelegramPollingRuntime,
     private readonly specmesh?: SpecMeshPort, private readonly recovery?: LocalRuntimeRecovery, private readonly history?: LocalNativeHistoryPort, private readonly scheduler?: TopologyScheduler,
     private readonly describe?: () => LocalRuntimeDescription) {}
 

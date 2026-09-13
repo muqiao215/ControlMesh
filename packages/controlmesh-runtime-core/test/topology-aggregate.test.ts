@@ -216,8 +216,8 @@ test("schema 22 upgrade preserves native completion proof shape before introduci
   const f = fixture("pipeline", "pipeline");
   try {
     await f.runNode("branch"); const before = f.kernel.inspect(actor, "branch"), state = f.topology.inspect(actor, "branch")!;
-    f.db.sql.exec("DROP TABLE episode_deadlines; DROP TABLE process_output_chunks; DROP TABLE host_jobs; DROP TABLE backstage_events; DROP TABLE workspace_seed_files; DROP TABLE workspace_seed_transfers; DROP TABLE topology_artifact_publications; DROP TABLE device_artifact_files; DROP TABLE topology_native_inputs; DROP TABLE topology_device_runs; ALTER TABLE topology_tasks DROP COLUMN execution_source; DROP TABLE topology_schedule_members; DROP TABLE topology_schedules; ALTER TABLE topology_tasks DROP COLUMN kind; DROP TABLE IF EXISTS telegram_conversations; DROP TABLE IF EXISTS telegram_event_aliases; DROP TABLE IF EXISTS telegram_inbox; PRAGMA user_version=22"); await f.restart();
-    expect(f.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 36 });
+    f.db.sql.exec("DROP TABLE episode_deadlines; DROP TABLE process_output_chunks; DROP TABLE host_jobs; DROP TABLE backstage_events; DROP TABLE workspace_seed_files; DROP TABLE workspace_seed_transfers; DROP TABLE topology_artifact_publications; DROP TABLE device_artifact_files; DROP TABLE topology_native_inputs; DROP TABLE topology_device_runs; ALTER TABLE topology_tasks DROP COLUMN execution_source; DROP TABLE topology_schedule_members; DROP TABLE topology_schedules; ALTER TABLE topology_tasks DROP COLUMN kind; DROP TABLE IF EXISTS telegram_conversations; DROP TABLE IF EXISTS telegram_event_aliases; DROP TABLE IF EXISTS telegram_inbox; DROP TABLE IF EXISTS telegram_poll_updates; DROP TABLE IF EXISTS telegram_polling; PRAGMA user_version=22"); await f.restart();
+    expect(f.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 37 });
     expect(f.kernel.inspect(actor, "branch")).toEqual(before);
     expect(f.kernel.reopenTopology(actor, "upgrade-reopen", "branch", before.revision, state.revision, "continue").parent.task.status).toBe("waiting");
   } finally { await f.close(); }

@@ -3,7 +3,7 @@ import { decodeSnapshot } from "./migration";
 import { object, requireThat } from "./value";
 
 export interface TelegramEventConfiguration {
-  bot_id: string; bot_username: string; secret_token: string;
+  bot_id: string; bot_username: string; secret_token?: string;
   allowed_senders: readonly string[]; allowed_chats: readonly string[]; require_group_mention?: boolean;
 }
 export interface TelegramIncomingMessage {
@@ -31,7 +31,7 @@ export class TelegramEventAuthenticator {
   constructor(config: TelegramEventConfiguration, private readonly current: () => void) {
     this.config = structuredClone(config);
     requireThat(id(config.bot_id) && typeof config.bot_username === "string" && /^[A-Za-z0-9_]{5,32}$/.test(config.bot_username)
-      && typeof config.secret_token === "string" && /^[A-Za-z0-9_-]{1,256}$/.test(config.secret_token), "telegram_webhook_credentials_required");
+      && (config.secret_token === undefined || (typeof config.secret_token === "string" && /^[A-Za-z0-9_-]{1,256}$/.test(config.secret_token))), "telegram_webhook_credentials_required");
     requireThat(Array.isArray(config.allowed_senders) && config.allowed_senders.length <= 128 && config.allowed_senders.every(value => id(value))
       && Array.isArray(config.allowed_chats) && config.allowed_chats.length <= 128 && config.allowed_chats.every(value => id(value, true))
       && (config.require_group_mention === undefined || typeof config.require_group_mention === "boolean"), "invalid_telegram_event_policy");
@@ -51,8 +51,13 @@ export class TelegramEventAuthenticator {
   receive(headers: Headers, bytes: Uint8Array): { kind: "ignored"; reason: string } | { kind: "message"; message: TelegramIncomingMessage } {
     this.assertCurrent();
     const supplied = headers.get("x-telegram-bot-api-secret-token"), secret = this.config.secret_token;
-    requireThat(typeof supplied === "string" && Buffer.byteLength(supplied) === Buffer.byteLength(secret)
+    requireThat(typeof secret === "string" && typeof supplied === "string" && Buffer.byteLength(supplied) === Buffer.byteLength(secret)
       && timingSafeEqual(Buffer.from(supplied), Buffer.from(secret)), "telegram_event_auth_failed");
+    return this.receiveAuthenticated(bytes);
+  }
+  /** Trusted polling transport only, after validating the selected HTTPS bot response. */
+  receiveAuthenticated(bytes: Uint8Array): { kind: "ignored"; reason: string } | { kind: "message"; message: TelegramIncomingMessage } {
+    this.assertCurrent();
     requireThat(bytes.byteLength > 0 && bytes.byteLength <= 65536, "telegram_event_size_invalid");
     const update = decodeSnapshot(bytes).source;
     requireThat(object(update) && Number.isSafeInteger(update.update_id) && Number(update.update_id) >= 0, "telegram_update_invalid");

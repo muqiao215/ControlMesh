@@ -47,7 +47,15 @@ export class TelegramInbox {
     return digest([this.actor.id, message.bot_id, message.chat_id, message.thread_id, message.source_scope]);
   }
   receive(headers: Headers, bytes: Uint8Array): { challenge: string } | { accepted: boolean; reason?: string; receipt_id?: string } {
-    this.check("telegram:ingest"); const event = this.auth.receive(headers, bytes);
+    this.check("telegram:ingest"); return this.store(this.auth.receive(headers, bytes));
+  }
+  /** Caller is the registered polling transport; a remote body never selects this path. */
+  receivePolled(bytes: Uint8Array, assertTransport: () => void): { accepted: boolean; reason?: string; receipt_id?: string } {
+    this.check("telegram:ingest"); const result: unknown = assertTransport();
+    if (result !== undefined) { void Promise.resolve(result).catch(() => {}); requireThat(false, "admission_must_be_synchronous"); }
+    return this.store(this.auth.receiveAuthenticated(bytes));
+  }
+  private store(event: ReturnType<TelegramEventAuthenticator["receive"]>): { accepted: boolean; reason?: string; receipt_id?: string } {
     if (event.kind === "ignored") return { accepted: false, reason: event.reason };
     const message = event.message; assertTelegramIncoming(message);
     requireThat(message.bot_id === this.bot_id, "telegram_event_bot_mismatch");

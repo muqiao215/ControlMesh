@@ -2667,3 +2667,45 @@ input regression verifies exact preservation. After that one-line normalization 
 webhook/Feishu/delivery/normal-config tests passed 77/0 with 549 assertions in 4.67s, plus
 typecheck and diff check. The broad run predates this last fix; it is not represented as
 having tested the added Unicode case. Log: /tmp/cm-telegram-inbox-final.log.
+
+
+## Schema 37 Telegram polling
+
+`telegram-polling.ts` uses only selected HTTPS getWebhookInfo/getUpdates endpoints, with
+bounded response size, redirect refusal, selected bot-token identity/currentness and an
+abortable 30s cycle. The server long-poll timeout is 25s; a database lease lasts 60s.
+Offset, raw updates and normalized receipt dispositions commit atomically. Any failed
+batch transaction rolls back all of them; the next request can only acknowledge durable
+input. Unsupported update raw payloads remain in telegram_poll_updates for future handling.
+Normal `telegram_polling_text` config shares bot credentials with delivery and needs bot
+identity/policy configuration but no webhook secret. Loading does not start polling;
+explicit start_inbound starts it. It has no HTTP listener or cron/model probe loop.
+
+The local-store owner/generation checks reject a stale response after lease expiry and
+new-owner takeover. Stop aborts the active fetch and releases only its own generation.
+This is not a distributed lease across independent databases. A nonempty remote webhook
+pauses polling without deleting it. 401/409 pause; retry-after persists and three consecutive
+transient/API failures latch. Requests with a retry-after beyond the bounded policy pause
+for review rather than retry early. An explicit operator start resets the failure latch.
+
+After a day without received updates the query uses offset zero, ahead of Telegram's
+week-long inactivity randomization; local durable duplicates are still deduped, and a new
+lower batch can set the new offset. Conflicting previously retained update IDs fail closed
+rather than overwrite older payloads. Telegram only retains incoming updates for 24 hours;
+this does not recover updates already expired upstream. Docs:
+https://core.telegram.org/bots/api#getupdates and https://core.telegram.org/bots/api#update .
+
+Focused tests cover batch rollback, reopen, fenced delayed response, auth/conflict/webhook
+pauses, retry-after, idle reset, unsupported raw retention, active stop and normal headless
+configuration. Initial fixtures omitted task:reconcile required by LocalTaskRuntime and
+failed scope_denied; the fixture principal was corrected, not the runtime permission check.
+Final focused regression: 56 pass, 0 fail, 451 assertions, 3.71s; typecheck passed.
+
+Schema 37 broad regression: 1038 pass, 34 optional skips, 0 fail, 12,231 assertions,
+393.03s (Docker and standalone SpecMesh); /tmp/cm-runtime-telegram-polling-full.log.
+Final review made 429 a typed telegram_polling_rate_limited outcome and validates an excessive
+retry interval before assigning it to the timestamp calculation. This prevents unsafe server
+numbers from contaminating next_poll_at while preserving a paused, inspectable state. After
+that final change the four-file focused suite passed 57/0 with 461 assertions in 3.72s, plus
+typecheck/diff check. Broad evidence predates that last hardening; no full-head CI claim yet.
+Final log: /tmp/cm-telegram-polling-final.log. No real bot/account/API was contacted by tests.

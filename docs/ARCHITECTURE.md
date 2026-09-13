@@ -1150,4 +1150,7 @@ Authentication/policy precede persistence; HTTP acknowledgement follows successf
 an event creates/resumes and enqueues transactionally with current source/grants. Quota-blocked
 runs retain subsequent input; late or pre-cancellation input cannot rewrite executed context.
 The shared `WebhookInboundRuntime` supplies bounded loopback serving and an event-driven pump;
-its Feishu class alias remains compatible. Polling and non-text update profiles remain open.
+its Feishu class alias remains compatible. The schema 37 polling owner shares normalization and the queue pump, persisting raw batches
+and offsets before confirmation. A local lease/generation fences late replies; stop aborts
+long polling. Remote webhook presence/auth conflicts pause rather than trigger mode takeover.
+Non-text profiles and cross-device ingress rollout remain open.
