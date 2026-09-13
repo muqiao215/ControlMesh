@@ -2619,3 +2619,51 @@ Schema 35 full regression finished: 1010 pass, 34 optional skips, 0 fail, 12,000
 391.72s, exit 0; /tmp/cm-runtime-telegram-multipart-full.log. Docker and standalone SpecMesh
 enabled. Typecheck and diff check passed. This remains controlled transport/fixture evidence,
 not production Telegram sending, native account acceptance or full migration completion.
+
+
+## Schema 36 Telegram text webhook ingress
+
+`telegram-event-auth.ts` validates the official X-Telegram-Bot-Api-Secret-Token header before
+parsing bounded bytes, normalizes human text updates, and enforces explicit sender/chat and
+group mention/reply policy. Telegram Update/message and setWebhook semantics:
+https://core.telegram.org/bots/api#update and https://core.telegram.org/bots/api#setwebhook .
+No inline Bot API method is returned in the webhook response: that path provides no send
+result and cannot back a durable receipt. Edits/media/business/channel/callback updates are
+currently unsupported and identified as ignored by this explicitly named text profile.
+
+`telegram-inbox.ts` owns durable update aliases and chat-local message identity, conversation
+mapping by bot/chat/thread/source scope, and transactional create-or-resume/enqueue. Normalized
+payload and current policy are rechecked before application; body fields cannot issue source
+or grants. Missing admission rolls back task/route creation and preserves a blocked receipt.
+Pending message order uses timestamp/message ID; late older messages are retained for review
+without inserting them into already-executed context or blocking newer messages forever.
+A quota-blocked latest run holds later input until explicit runtime retry succeeds. Input
+received before cancellation cannot resume the canceled task; a fresh later human input is
+separate. The quota lane behavior was found by a failing test (second input created another
+run) and corrected, not accepted by weakening that test.
+
+`WebhookInboundRuntime` shares the existing bounded loopback HTTP/pump lifecycle with Feishu;
+FeishuInboundRuntime remains an alias preserving callers. Telegram uses /telegram/events,
+explicit start and no default background cron. Normal inbound config kind is
+`telegram_webhook_text`; credentials_file names private JSON with bot_id, bot_username and
+secret_token. Outbound bot_token stays in its separately selected delivery credential file.
+Allowed chats/senders, optional require_group_mention/path/port/provider remain trusted
+configuration. Provider selection is explicit when multiple providers are registered.
+The private credential revision is checked for each receive/apply boundary.
+
+Tests cover local HTTP ingress-to-fixture-execution-to-topic-delivery, duplicate/reopen,
+message aliases across chats, wrong auth/sender/bot/chat/mentions, malformed entity offsets,
+failed persistence, admission rollback, quota, ordering and cancellation. Normal startup
+uses an unavailable native CLI to prove the group approval floor prevents task creation,
+provider checks and native state writes; credential rotation invalidates reception. No real
+provider/account execution or external webhook registration is claimed. Polling/offset owner
+and all non-text update profiles remain required migration work.
+
+Schema 36 full regression: 1025 pass, 34 optional skips, 0 fail, 12,078 assertions,
+392.57s (Docker and standalone SpecMesh enabled); /tmp/cm-runtime-telegram-inbox-full.log.
+Final review removed an inappropriate outgoing 4096-unit restriction from incoming text;
+the already-bounded 65,536-byte webhook request and text-byte bound still apply. A 3,000-emoji
+input regression verifies exact preservation. After that one-line normalization change,
+webhook/Feishu/delivery/normal-config tests passed 77/0 with 549 assertions in 4.67s, plus
+typecheck and diff check. The broad run predates this last fix; it is not represented as
+having tested the added Unicode case. Log: /tmp/cm-telegram-inbox-final.log.

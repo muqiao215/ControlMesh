@@ -27,6 +27,8 @@ import { privateFile } from "./private-runtime-file";
 import type { SubmissionIdentity } from "./task-ingress";
 import { decodeExecutionContext } from "./execution-context";
 import type { IssuedReadAdmission } from "./providers/opencode-execution";
+import { TelegramEventAuthenticator } from "./telegram-event-auth";
+import { TelegramInbox } from "./telegram-inbox";
 import { FeishuEventAuthenticator } from "./feishu-event-auth";
 import { FeishuInbox } from "./feishu-inbox";
 import { FeishuInboundRuntime } from "./feishu-inbound-runtime";
@@ -106,7 +108,7 @@ export function openLocalRuntime(path: string, options: { host_worker?: boolean 
     && (schedule.artifact_files === undefined || (Array.isArray(schedule.artifact_files) && schedule.artifact_files.every(file => typeof file === "string")))), "invalid_topology_scheduler_profile");
   const actor: Principal = { id: config.principal_id, device_id: config.device_id, origin: "human_request",
     scopes: ["task:create", "task:read", "task:execute", "task:resume", "task:cancel", "task:reconcile", "task:admin", "message:send", "message:read", "message:ack", "provider:probe",
-      "delivery:read", "delivery:configure", "delivery:project", "delivery:send", "delivery:reconcile", "feishu:ingest", "feishu:read", "feishu:process", "history:read", "history:adopt", ...(schedule ? ["team:write"] : [])] };
+      "delivery:read", "delivery:configure", "delivery:project", "delivery:send", "delivery:reconcile", "feishu:ingest", "feishu:read", "feishu:process", "telegram:ingest", "telegram:read", "telegram:process", "history:read", "history:adopt", ...(schedule ? ["team:write"] : [])] };
   const db = new RuntimeDatabase(join(root, "runtime.sqlite")), kernel = new RuntimeKernel(db), cache = new PreflightCache(db);
   try {
     requireThat(config.specmesh === undefined || object(config.specmesh), "invalid_specmesh_profile");
@@ -261,8 +263,28 @@ export function openLocalRuntime(path: string, options: { host_worker?: boolean 
         runtime.recover(); return result;
       },
     };
-    let inbox: FeishuInbox | undefined;
-    if (config.inbound !== undefined) {
+    let inbox: FeishuInbox | undefined, telegramInbox: TelegramInbox | undefined;
+    if (object(config.inbound) && config.inbound.kind === "telegram_webhook_text") {
+      const incoming = config.inbound;
+      requireThat(config.source.transport === "telegram" && object(config.delivery) && config.delivery.kind === "telegram_text"
+        && typeof config.delivery.bot_id === "string" && typeof incoming.credentials_file === "string"
+        && Object.keys(incoming).every(key => ["kind", "credentials_file", "port", "path", "allowed_chats", "allowed_senders", "require_group_mention", "provider"].includes(key))
+        && (incoming.port === undefined || (Number.isInteger(incoming.port) && Number(incoming.port) >= 0 && Number(incoming.port) <= 65535))
+        && (incoming.path === undefined || typeof incoming.path === "string"), "invalid_telegram_inbound_profile");
+      const loaded = privateFile(incoming.credentials_file), credentials = decodeSnapshot(loaded.bytes).source;
+      requireThat(object(credentials) && credentials.bot_id === config.delivery.bot_id && typeof credentials.secret_token === "string"
+        && typeof credentials.bot_username === "string", "telegram_webhook_credentials_required");
+      const currentTelegram = () => { current(); requireThat(privateFile(incoming.credentials_file as string).revision === loaded.revision, "telegram_event_configuration_changed"); };
+      const auth = new TelegramEventAuthenticator({ bot_id: credentials.bot_id as string, bot_username: credentials.bot_username, secret_token: credentials.secret_token,
+        allowed_chats: incoming.allowed_chats as string[], allowed_senders: incoming.allowed_senders as string[],
+        require_group_mention: incoming.require_group_mention as boolean | undefined }, currentTelegram);
+      const providers = ["opencode", "claude", "codex", "gemini"].filter(provider => object(config[provider]));
+      const provider = incoming.provider ?? (providers.length === 1 ? providers[0] : undefined);
+      requireThat(typeof provider === "string" && providers.includes(provider), "inbound_provider_selection_required");
+      const profile = config[provider] as Record<string, unknown>;
+      telegramInbox = new TelegramInbox(kernel, actor, credentials.bot_id as string, auth,
+        { provider, model: profile.model as string, repo_root: workspace.directory as string }, currentTelegram);
+    } else if (config.inbound !== undefined) {
       const inbound = config.inbound;
       requireThat(object(inbound) && typeof inbound.credentials_file === "string" && config.source.transport === "fs"
         && object(config.delivery) && typeof config.delivery.app_id === "string"
@@ -288,8 +310,10 @@ export function openLocalRuntime(path: string, options: { host_worker?: boolean 
       inbox ? { binding_digest: inbox.binding_digest, resolve: envelope => inbox!.replyTarget(envelope) } : undefined);
     const deliveries = delivery ? new DeliveryOutbox(kernel, actor, [delivery.adapter], current) : undefined;
     const inboundConfig = config.inbound as Record<string, unknown> | undefined;
-    const inbound = inbox ? new FeishuInboundRuntime(inbox, runtime, deliveries!, delivery!.adapter.adapter_id,
-      inboundConfig?.path as string | undefined, inboundConfig?.port as number | undefined) : undefined;
+    const selectedInbox = telegramInbox ?? inbox;
+    const inbound = selectedInbox ? new FeishuInboundRuntime(selectedInbox, runtime, deliveries!, delivery!.adapter.adapter_id,
+      (inboundConfig?.path ?? (telegramInbox ? "/telegram/events" : "/feishu/events")) as string,
+      inboundConfig?.port as number | undefined, telegramInbox ? "telegram" : "feishu") : undefined;
     const submissionIdentity = (task: LegacyTask): SubmissionIdentity => {
       current();
       return delivery ? delivery.adapter.submissionIdentity(task.task_id, String(task.chat_id)) : { chat_id: String(task.chat_id) };

@@ -78,3 +78,7 @@ export { GeminiTaskPreflight } from "./providers/gemini-task-preflight";
 
 export { TelegramTextDelivery, type TelegramDeliveryConfiguration } from "./telegram-delivery";
 export { openTelegramDelivery } from "./telegram-delivery-profile";
+
+export { TelegramEventAuthenticator, type TelegramEventConfiguration, type TelegramIncomingMessage } from "./telegram-event-auth";
+export { TelegramInbox, type TelegramTaskTemplate } from "./telegram-inbox";
+export { WebhookInboundRuntime } from "./feishu-inbound-runtime";

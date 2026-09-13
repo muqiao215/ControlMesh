@@ -28,7 +28,7 @@ export class RuntimeDatabase {
       this.transaction(() => {
         const version = (this.sql.query("PRAGMA user_version").get() as { user_version: number }).user_version;
         const app = (this.sql.query("PRAGMA application_id").get() as { application_id: number }).application_id;
-        requireThat(version >= 0 && version <= 35, "unsupported_database_version");
+        requireThat(version >= 0 && version <= 36, "unsupported_database_version");
         requireThat(app === 0 || app === APPLICATION_ID, "foreign_database");
         if (version === 0) {
           const tables = this.sql.query("SELECT name FROM sqlite_master WHERE type='table'").all();
@@ -537,6 +537,24 @@ export class RuntimeDatabase {
                 .run(part.delivery_id, JSON.stringify(part), digest(part), index, parts.length, group, row.delivery_id);
             }
           }
+        }
+        if (version < 36) {
+          this.sql.exec(`CREATE TABLE telegram_inbox (
+            id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, principal TEXT NOT NULL, event_id TEXT NOT NULL,
+            message_id TEXT NOT NULL, chat_id TEXT NOT NULL, conversation_id TEXT NOT NULL,
+            payload TEXT NOT NULL, payload_digest TEXT NOT NULL,
+            state TEXT NOT NULL CHECK(state IN ('pending','applied','blocked')),
+            task_id TEXT, reason TEXT, received_at INTEGER NOT NULL,
+            UNIQUE(bot_id,event_id), UNIQUE(bot_id,chat_id,message_id)
+          );
+          CREATE INDEX telegram_inbox_pending ON telegram_inbox(principal,bot_id,state,received_at);
+          CREATE TABLE telegram_event_aliases (
+            bot_id TEXT NOT NULL,event_id TEXT NOT NULL,receipt_id TEXT NOT NULL REFERENCES telegram_inbox(id),PRIMARY KEY(bot_id,event_id)
+          );
+          CREATE TABLE telegram_conversations (
+            id TEXT PRIMARY KEY,bot_id TEXT NOT NULL,principal TEXT NOT NULL,
+            task_id TEXT NOT NULL UNIQUE REFERENCES tasks(task_id),first_event TEXT NOT NULL REFERENCES telegram_inbox(id)
+          ); PRAGMA user_version=36;`);
         }
       });
       this.sql.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;");

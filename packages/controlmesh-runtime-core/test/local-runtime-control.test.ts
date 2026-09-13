@@ -167,10 +167,10 @@ test("schema eight upgrades without losing tasks or queued messages and without 
   const sent = first.runtime.tell("note", "a", "Survive upgrade");
   await first.close();
   const previous = new RuntimeDatabase(join(f.state, "runtime.sqlite"));
-  previous.sql.exec("DROP TABLE episode_deadlines; DROP TABLE process_output_chunks; DROP TABLE host_jobs; DROP TABLE backstage_events; DROP TABLE workspace_seed_files; DROP TABLE workspace_seed_transfers; DROP TABLE topology_artifact_publications; DROP TABLE device_artifact_files; DROP TABLE topology_native_inputs; DROP TABLE topology_device_runs; ALTER TABLE topology_tasks DROP COLUMN execution_source; DROP TABLE topology_schedule_members; DROP TABLE topology_schedules; ALTER TABLE topology_tasks DROP COLUMN kind; DROP TABLE topology_runs; ALTER TABLE topology_tasks DROP COLUMN execution_id; DROP TABLE topology_completions; DROP TABLE topology_controls; DROP TABLE topology_task_history; DROP TABLE topology_tasks; DROP TABLE team_topologies; DROP TABLE team_phases; DROP TABLE device_scheduled_work; DROP TABLE device_scheduler_leases; DROP TABLE device_assignment_generations; DROP TABLE device_native_adoptions; DROP TABLE command_reservations; DROP TABLE feishu_conversations; DROP TABLE feishu_event_aliases; DROP TABLE feishu_inbox; DROP TABLE transport_receipts; DROP TABLE delivery_outbox; DROP TABLE delivery_routes; DROP TABLE native_agent_deliveries; DROP TABLE native_agent_calls; DROP TABLE native_mailbox_deliveries; PRAGMA user_version=8"); previous.close();
+  previous.sql.exec("DROP TABLE episode_deadlines; DROP TABLE process_output_chunks; DROP TABLE host_jobs; DROP TABLE backstage_events; DROP TABLE workspace_seed_files; DROP TABLE workspace_seed_transfers; DROP TABLE topology_artifact_publications; DROP TABLE device_artifact_files; DROP TABLE topology_native_inputs; DROP TABLE topology_device_runs; ALTER TABLE topology_tasks DROP COLUMN execution_source; DROP TABLE topology_schedule_members; DROP TABLE topology_schedules; ALTER TABLE topology_tasks DROP COLUMN kind; DROP TABLE topology_runs; ALTER TABLE topology_tasks DROP COLUMN execution_id; DROP TABLE topology_completions; DROP TABLE topology_controls; DROP TABLE topology_task_history; DROP TABLE topology_tasks; DROP TABLE team_topologies; DROP TABLE team_phases; DROP TABLE device_scheduled_work; DROP TABLE device_scheduler_leases; DROP TABLE device_assignment_generations; DROP TABLE device_native_adoptions; DROP TABLE command_reservations; DROP TABLE feishu_conversations; DROP TABLE feishu_event_aliases; DROP TABLE feishu_inbox; DROP TABLE transport_receipts; DROP TABLE delivery_outbox; DROP TABLE delivery_routes; DROP TABLE native_agent_deliveries; DROP TABLE native_agent_calls; DROP TABLE native_mailbox_deliveries; DROP TABLE IF EXISTS telegram_conversations; DROP TABLE IF EXISTS telegram_event_aliases; DROP TABLE IF EXISTS telegram_inbox; PRAGMA user_version=8"); previous.close();
   const restored = openLocalRuntime(f.path);
   try {
-    expect(restored.runtime.kernel.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 35 });
+    expect(restored.runtime.kernel.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 36 });
     expect(restored.runtime.inspectTask("a").task.status).toBe("waiting");
     expect(restored.runtime.inspectMessage("a", sent.message_id).payload).toEqual({ text: "Survive upgrade" });
     expect(restored.runtime.mailboxStatus("a")).toEqual({ pending_count: 1 });
@@ -345,5 +345,27 @@ test("configured controls inspect and approve imported host jobs without dispatc
     await owned.close(); owned = openLocalRuntime(f.path); control = new LocalRuntimeControl(owned.runtime, undefined, owned.submissionIdentity);
     expect(await control.handle(request)).toEqual(approved);
     expect(await control.handle({ ...request, id: "stale-host", expected_revision: 2 })).toMatchObject({ ok: false, error: "host_job_revision_conflict" });
+  } finally { await owned.close(); }
+});
+
+test("configured Telegram webhook keeps group approval authority and rejects rotated webhook credentials", async () => {
+  const f = fixture(), verification = join(f.root, "telegram-webhook.json");
+  writeFileSync(verification, JSON.stringify({ bot_id: "123456", bot_username: "fixture_bot", secret_token: "fixture_secret" }), { mode: 0o600 });
+  writeFileSync(f.path, JSON.stringify({ ...f.config, source: { ...f.config.source, transport: "telegram" },
+    delivery: { kind: "telegram_text", adapter_id: "selected-bot", bot_id: "123456", credentials_file: join(f.root, "unused-bot-token.json") },
+    inbound: { kind: "telegram_webhook_text", credentials_file: verification, allowed_senders: ["777"], allowed_chats: ["-100123"] } }));
+  const owned = openLocalRuntime(f.path), control = new LocalRuntimeControl(owned.runtime, owned.deliveries, owned.submissionIdentity, owned.inbound);
+  try {
+    const bytes = Buffer.from(JSON.stringify({ update_id: 1, message: { message_id: 1, date: Math.floor(Date.now() / 1000),
+      from: { id: 777, is_bot: false }, chat: { id: -100123, type: "supergroup" }, message_thread_id: 10,
+      text: "@fixture_bot work", entities: [{ type: "mention", offset: 0, length: 12 }] } }));
+    const headers = new Headers({ "x-telegram-bot-api-secret-token": "fixture_secret" });
+    expect(owned.inbound!.inbox.receive(headers, bytes)).toMatchObject({ accepted: true });
+    expect(await control.handle({ id: "drain", op: "drain_inbound" })).toMatchObject({ ok: true,
+      result: { blocked: 1, applied: 0, blocked_items: [{ reason: "controller_approval_unavailable" }] } });
+    for (const table of ["tasks", "provider_checks", "local_runs"]) expect(owned.runtime.kernel.db.sql.query(`SELECT COUNT(*) AS n FROM ${table}`).get()).toEqual({ n: 0 });
+    expect(existsSync(f.data)).toBe(false);
+    writeFileSync(verification, JSON.stringify({ bot_id: "123456", bot_username: "fixture_bot", secret_token: "rotated_secret" }));
+    expect(() => owned.inbound!.inbox.receive(headers, bytes)).toThrow("telegram_event_configuration_changed");
   } finally { await owned.close(); }
 });

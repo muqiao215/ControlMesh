@@ -5,8 +5,8 @@
 Full TS migration, multi-device coordination and real Agent continuity remain **in
 progress**. No production writer cutover, complete release or default TS installation
 has been accepted. Last directly checked local `cm --version`: **0.43.0**, Python.
-The last pushed baseline is **62f35d6** (chat-scoped receipts and local acknowledgement recovery).
-Current changes add schema 35 multipart projection, ordered per-part sends and group status;
+The last pushed baseline is **ed3c37c** (ordered multipart delivery). Current changes add
+schema 36 Telegram text webhook ingress, durable conversation/topic routing and queue integration;
 this remains a scoped transport port, not production cutover.
 
 This file is the current handoff, not a chronological commit log. Historical detail
@@ -27,7 +27,7 @@ adapter, that host execution cannot survive management loss, or that public Gemi
 | Native Codex | Registered local resume, preflight, Viewer adoption, workspace/SpecMesh receipts and topology/mailbox integration | Installed CLI with loopback model fixtures covers selected flows; real accounts, physical devices and remaining branches differ |
 | Gemini | Registered local text continuation, native JSONL/stream verification, process supervisor, durable task results/recovery, persistent readiness cache | Configured fixture and installed loader/parser tests pass; actual OAuth account is rejected by server; tools/Viewer/device paths remain |
 | Coordination | Device identity/leases/fences, durable mailbox, explicit topology scheduling and native task context | Scoped real-device and local native-fixture evidence; full cross-device/provider/partition/rollout matrix remains |
-| Telegram delivery | Selected private bot profile, strict receipts, ordered persisted multipart text, retained-ack recovery and group status | Local HTTP/reopen/SIGKILL and upgrade tests; inbound, files, formatting, streaming, rate-limit handling and production delivery remain |
+| Telegram | Selected bot delivery, ordered multipart/ack recovery, secret-authenticated text webhook, durable topic conversations and normal queue | Local HTTP/reopen/SIGKILL/configuration tests; polling, media/callback/edit updates, formatting, streaming, rate limits and production acceptance remain |
 | Integrations | Headless History ports and independent SpecMesh lifecycle are used by qualified provider paths | SpecMesh check does not imply reviewed closeout; supported providers/receipt profiles differ |
 
 ### Gemini actual-account findings
@@ -47,6 +47,15 @@ Temporary login copies were deleted; operator authentication files were not writ
 Private diagnostic evidence: `/tmp/cm-gemini-account-BNTF1Q` (ephemeral, not release assets).
 
 ## Verification
+
+- **Schema 36 full regression:** 1025 pass, 34 optional skips, 0 fail; 12,078 assertions,
+  1,059 tests / 121 files, 392.57s, exit 0. Docker and standalone SpecMesh enabled;
+  `/tmp/cm-runtime-telegram-inbox-full.log`. This precedes the final input-byte-limit fix.
+- **Final webhook/transport/configuration regression after Unicode input fix:** 77 pass,
+  0 fail, 549 assertions across four files, 4.67s; `/tmp/cm-telegram-inbox-final.log`.
+  Typecheck and diff check passed. No live Telegram or provider account was used.
+- GitHub CI for `ed3c37c3cb73aa5294ecea030499ebc68b360de4` succeeded (34741735872).
+  Remote CI for the current ingress change has not yet been verified.
 
 - **Multipart targeted regression:** 60 pass, 0 fail, 509 assertions, 3.24s;
   `/tmp/cm-telegram-multipart-tests.log`.
@@ -122,13 +131,16 @@ Private diagnostic evidence: `/tmp/cm-gemini-account-BNTF1Q` (ephemeral, not rel
 
 ## Next
 
-Telegram text delivery is wired through normal configuration and DeliveryOutbox. Multipart
-text is projected atomically into per-part records, with sequential barriers and group
-completion available through private `delivery_groups`. Schema 35 broad validation passed.
-Next implement Telegram ingress and its message/thread routing, followed by files, rich
-formatting, bounded rate-limit handling and streaming. No real account sends are authorized.
-Original retained acknowledgements recover locally without credentials or another send;
-missing acknowledgements remain unknown and stop the unsent suffix. This proves original
-send acknowledgement, not current remote content or recipient consumption.
+Telegram text webhook ingress is configured with explicit bot identity/secret, chat/sender
+policy and registered provider. It persists before acknowledgement, deduplicates updates
+and chat-local message IDs, isolates topics, and applies input into the normal queue with
+current source/grant checks. Schema 36 broad and final targeted regressions passed.
+Next implement bounded
+Telegram polling with persisted offsets/lease ownership, followed by media/callback/edit,
+rich formatting, rate limits and streaming. Do not run concurrent webhook/polling owners.
+No real Telegram webhook or account sending was configured. Inbox execution uses fixtures;
+normal configuration tests prove native admission refusal before any model call, not live
+provider acceptance. Late or pre-cancellation inputs remain inspectable and cannot silently
+rewrite context or revive canceled work.
 Keep the complete original objective active; mark complete only after every phase and
 acceptance item has matching evidence, release and local alignment.

@@ -69,10 +69,11 @@ No claim that full TS migration or distributed coordination has completed. A sco
 
 ## Next Step
 
-1. Multipart delivery now has schema 35 per-part records, ordered dispatch and group status.
-   Its broad regression passed (1010 pass, 34 optional skips, 0 fail). Next port Telegram ingress and message/thread
-   routing, followed by file/rich/streaming and bounded rate-limit behavior. Optional
-   installed-native and real-account evidence remain separate from broad fixture results.
+1. Schema 36 text webhook ingress is wired into normal configuration and the durable queue.
+   Broad regression passed (1025 pass, 34 optional skips, 0 fail), followed by 77 targeted
+   passes after the final Unicode input fix. Next implement polling with persisted offsets/ownership;
+   continue media/callback/edit, formatting, rate limits and streaming parity. Do not infer
+   real native/account acceptance from controlled webhook/queue fixtures.
 2. Complete the remaining ownership/acceptance matrix below. Prioritize normal execution,
    transport delivery and recovery across supported providers/devices over disconnected
    helper additions. Do not waive an original requirement to obtain a release.

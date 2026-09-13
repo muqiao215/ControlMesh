@@ -4,19 +4,19 @@ import type { LocalTaskRuntime } from "./local-task-runtime";
 import { requireThat, RuntimeConflict } from "./value";
 
 /** Loopback webhook and event-driven work pump. No cron, polling model call, or reclassification as local input. */
-export class FeishuInboundRuntime {
+export class WebhookInboundRuntime {
   private server: ReturnType<typeof Bun.serve> | undefined;
   private pumping: Promise<void> | undefined;
   private dirty = false;
   private stopping = false;
   private activeRequests = 0;
   private failure: string | null = null;
-  constructor(readonly inbox: FeishuInbox, private readonly runtime: LocalTaskRuntime, private readonly deliveries: DeliveryOutbox,
-    private readonly adapterId: string, private readonly path = "/feishu/events", private readonly port = 0) {
-    requireThat(/^\/[A-Za-z0-9/_-]{1,127}$/.test(path), "invalid_feishu_event_path");
+  constructor(readonly inbox: Pick<FeishuInbox, "receive" | "applyPending" | "status" | "listBlocked" | "retry">, private readonly runtime: LocalTaskRuntime, private readonly deliveries: DeliveryOutbox,
+    private readonly adapterId: string, private readonly path = "/feishu/events", private readonly port = 0, private readonly transport: "feishu" | "telegram" = "feishu") {
+    requireThat(/^\/[A-Za-z0-9/_-]{1,127}$/.test(path), `invalid_${transport}_event_path`);
   }
   start(port = this.port): { hostname: string; port: number; path: string } {
-    requireThat(!this.stopping && !this.server && Number.isInteger(port) && port >= 0 && port <= 65535, "invalid_feishu_listener_state");
+    requireThat(!this.stopping && !this.server && Number.isInteger(port) && port >= 0 && port <= 65535, `invalid_${this.transport}_listener_state`);
     this.server = Bun.serve({ hostname: "127.0.0.1", port, maxRequestBodySize: 65_536, idleTimeout: 10, fetch: request => this.handle(request) });
     this.kick();
     return { hostname: "127.0.0.1", port: this.server.port!, path: this.path };
@@ -29,13 +29,13 @@ export class FeishuInboundRuntime {
     this.activeRequests++;
     try {
       const bytes = new Uint8Array(await request.arrayBuffer());
-      requireThat(!this.stopping, "feishu_ingress_stopping");
+      requireThat(!this.stopping, `${this.transport}_ingress_stopping`);
       const result = this.inbox.receive(request.headers, bytes);
       if ("accepted" in result && result.accepted) this.kick();
       return Response.json(result);
     } catch (error) {
       // Never return padding/auth distinctions or provider content to an unauthenticated client.
-      const full = error instanceof RuntimeConflict && error.code === "feishu_inbox_full";
+      const full = error instanceof RuntimeConflict && error.code === `${this.transport}_inbox_full`;
       return Response.json({ error: full ? "ingress_backpressure" : "event_rejected" }, { status: full ? 503 : 400 });
     } finally { this.activeRequests--; }
   }
@@ -57,7 +57,7 @@ export class FeishuInboundRuntime {
       } while (this.dirty && !this.stopping);
       this.failure = null;
     })().catch(error => {
-      this.failure = error instanceof RuntimeConflict ? error.code : "feishu_ingress_processing_failed";
+      this.failure = error instanceof RuntimeConflict ? error.code : `${this.transport}_ingress_processing_failed`;
     }).finally(() => { this.pumping = undefined; if (this.dirty && !this.stopping) this.kick(); });
   }
   async drain(): Promise<void> { this.kick(); while (this.pumping) await this.pumping; }
@@ -71,3 +71,5 @@ export class FeishuInboundRuntime {
     await this.pumping;
   }
 }
+
+export { WebhookInboundRuntime as FeishuInboundRuntime };

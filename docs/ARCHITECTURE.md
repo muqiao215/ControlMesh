@@ -1142,3 +1142,12 @@ The group digest binds part order/content identities, and private `delivery_grou
 completion only after every expected part is sent. Pure text projection needs no credentials
 or network. Rich formatting, inbound/file/streaming and rate-limit parity remain open in
 `plans/runtime-convergence/`. The production Python transport is unchanged.
+
+
+The candidate Telegram text webhook path uses `telegram-event-auth.ts` and `telegram-inbox.ts`.
+Schema 36 owns update aliases, chat-scoped message dedupe and durable topic conversations.
+Authentication/policy precede persistence; HTTP acknowledgement follows successful persistence. Applying
+an event creates/resumes and enqueues transactionally with current source/grants. Quota-blocked
+runs retain subsequent input; late or pre-cancellation input cannot rewrite executed context.
+The shared `WebhookInboundRuntime` supplies bounded loopback serving and an event-driven pump;
+its Feishu class alias remains compatible. Polling and non-text update profiles remain open.
