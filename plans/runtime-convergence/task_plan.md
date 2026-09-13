@@ -239,3 +239,8 @@ Host-job import checkpoint: explicit directory/index snapshot selection, stable 
 digests and create-only import implemented against Python-generated files. Cross-file
 generation proof is absent in the legacy format; imported execution state needs separate
 reconciliation. Operational CLI, approval/process runner and control wiring remain open.
+
+Host-job operational import checkpoint: preview/digest-bound apply CLI is implemented
+and subprocess tested. Pending owners remain runner approval, native process identity,
+interruption reconciliation and configured runtime controls. No real jobs are restarted
+by migration or by reading an imported running status.

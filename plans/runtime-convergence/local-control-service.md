@@ -318,3 +318,14 @@ history, pass `--before NEXT_BEFORE` with the same session. Each page is chronol
 and contains at most 100 events / 2 MiB JSONL; newer writes do not shift older cursors.
 The initial page covers newest events. A null next_before means there are no older
 records in that principal/session at query time.
+
+## Candidate host-job migration
+
+Run `bun packages/controlmesh-runtime-core/scripts/migrate-host-job.ts` with
+`--job-id JOB --database /absolute/candidate.sqlite --principal OWNER` plus exactly one
+of `--job-directory /absolute/jobs/JOB` or `--legacy-index /absolute/host-jobs.json`.
+Without --apply it previews the selected source and leaves the target unopened. Use
+`--apply --digest SOURCE_DIGEST` from that preview to import. Source changes refuse;
+existing live records are not overwritten. Replaying the same import returns the same
+revision. The command reports `execution_authorized: false` even for historical running
+or completed jobs; it never starts a command or attaches to an imported PID.

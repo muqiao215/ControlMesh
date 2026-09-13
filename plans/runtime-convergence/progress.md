@@ -862,3 +862,18 @@ Matching timestamps plus stable reads cannot prove original cross-file atomicity
 Imported running/PID/approval fields remain historical data, not permission to resume;
 process reconciliation/approval remains required before native execution. Operational
 migration CLI and runner/control integration remain open.
+
+## 2026-09-13 — operator host-job migration command
+
+Added scripts/migrate-host-job.ts: explicit job ID, principal, absolute candidate database
+and exactly one directory/index source. Default preview validates source and reports
+only digest/state/step count/bytes. Apply requires the preview digest and imports through
+the create-only owner with stable receipts. Output explicitly sets execution_authorized
+false. This is a local administrative migration command, not a remote permission issuer.
+
+Actual CLI subprocess tests verify no target creation on preview or stale/missing digest,
+exact replay, preserved source/PID data and a command marker that remains absent.
+Migration/import/store tests: 4 passed, 42 assertions, 595ms
+(`/tmp/cm-host-import-cli.log`); typecheck and diff-check passed. No operator history was
+imported. Actual runner approval, process identity/reconciliation and normal controls
+remain open; imported running status is not dispatch permission.

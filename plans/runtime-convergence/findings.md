@@ -2209,3 +2209,9 @@ metadata steps with STEPS.json. TOOL_RESULT.json is derived. TS import makes sou
 explicit and refuses incomplete selected-directory authority. Stable double reads and
 matching updated_at catch detectable partial saves, but legacy second-resolution timestamps
 cannot distinguish every generation; do not claim atomic historical provenance.
+
+Host-job migration CLI reports metadata rather than command/approval contents. Preview
+validates before target open; apply revalidates the source within the import owner.
+The operator explicitly chooses the destination principal for offline migration; no
+network endpoint accepts that override. Digest-bound import cannot update a live record
+or derive execution authority from imported state.
