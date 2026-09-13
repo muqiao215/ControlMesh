@@ -614,7 +614,10 @@ export class RuntimeKernel {
       const accepted = verify(evidence);
       if (accepted && typeof accepted.then === "function") { void Promise.resolve(accepted).catch(() => {}); requireThat(false, "verifier_must_be_synchronous"); }
       requireThat(object(accepted), "invalid_reconciled_result");
-      const outcome = nativeTaskOutcome(accepted), result = canonical(accepted);
+      const hostStep = evidence.manifest.schema_version === "controlmesh.host_step_execution.v1";
+      if (hostStep) requireThat(accepted.task_failure === undefined && Number.isSafeInteger(accepted.exit_code)
+        && Number(accepted.exit_code) >= 0 && Number(accepted.exit_code) <= 255, "host_job_exit_code_unproven");
+      const outcome = hostStep ? (accepted.exit_code === 0 ? "done" : "failed") : nativeTaskOutcome(accepted), result = canonical(accepted);
       requireThat(Buffer.byteLength(result) <= 4 * 1024 * 1024, "reconciled_result_too_large");
       // A trusted verifier may call other state APIs; it cannot override cancellation or replace the reviewed inputs.
       const current = this.inspectReconciliation(actor, taskId, expectedRevision, binding.effect_id);

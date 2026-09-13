@@ -935,3 +935,19 @@ actual outcome. Kernel/approval/store/process: 24 passed, 137 assertions, 1.208s
 (`/tmp/cm-host-process-final.log`); typecheck/diff-check passed. Retained-result recovery,
 configured scheduling, multi-step progression and sandbox/device profiles remain open.
 No old/operator host jobs or commands were run.
+
+## 2026-09-13 — retained host-step reconciliation
+
+Historical approval receipt inspection is separate from current pending-step admission.
+HostJobProcess reconciles an existing retained outcome only after verifying task, approval,
+workspace/shell identity, exact running job revision and definition. Actual exit 0/7 maps
+to done/failed; cancelled or unproven outcomes remain unresolved. Host job, effect, task
+and command receipt changes share the kernel acceptance transaction. No process is launched.
+
+Actual bash plus injected completion-save failure tests reopen a database connection and
+recover without repeating the marker write. A second injected failure after host-state
+update proves complete rollback and same-request retry. This is not a process-crash test.
+Host/kernel/Codex/Claude recovery regression: 54 passed, 333 assertions, 8.86s
+(`/tmp/cm-host-recovery-regression.log`). Typecheck and diff check passed. Normal configured
+host dispatch/recovery controls and multistep progression remain next; full CM-R0–R7
+provider/device/transport and release gates remain open.

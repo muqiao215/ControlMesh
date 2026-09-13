@@ -258,3 +258,9 @@ Host execution checkpoint: an approved single local-foreground step can run thro
 existing kernel lease/effect supervision with actual exit/cancel/no-replay tests. Next:
 retained-result recovery, configured resolver/dispatch, multi-step progression, and
 non-foreground/container/device source profiles. Full host runner parity remains open.
+
+Host recovery checkpoint: retained actual exit results can reconcile atomically without
+re-execution, with historical approval/current running-snapshot validation and rollback
+fault injection. Next action: wire approved host execution and recovery into configured
+local task dispatch, then multi-step progression. Production cutover and full migration
+remain open; no Python writer replacement is claimed.

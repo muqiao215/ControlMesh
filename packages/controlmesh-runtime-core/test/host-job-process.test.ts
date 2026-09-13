@@ -51,7 +51,45 @@ test("host execution withholds restricted grants and retains uncertain process o
     expect(f.store.get(actor, "job")?.job.steps[0]!.state).toBe("running");
     const retained = f.db.sql.query("SELECT payload FROM effect_observations").get() as { payload: string };
     expect(JSON.parse(retained.payload).reason).toBe("cancelled");
+    const recoveryActor: Principal = { ...actor, scopes: [...actor.scopes, "task:reconcile"] };
+    const revision = f.kernel.inspect(recoveryActor, "host-task").revision;
+    const effect = (f.db.sql.query("SELECT effect_id FROM effects").get() as { effect_id: string }).effect_id;
+    const evidence = f.kernel.inspectReconciliation(recoveryActor, "host-task", revision, effect);
+    const recovery = new HostJobProcess(f.kernel, recoveryActor, f.root, realpathSync("/bin/bash"), () => {});
+    expect(() => recovery.reconcile("reject-cancelled", "host-task", revision, { effect_id: effect, episode_id: evidence.episode.episode_id,
+      manifest_digest: evidence.manifest_digest, observation_digest: evidence.observation_digest })).toThrow("host_job_outcome_unproven");
+    expect(f.store.get(actor, "job")?.job.steps[0]!.state).toBe("running");
     await expect(f.runner.execute(f.lease, { assertCurrent() {} })).rejects.toThrow();
     expect(readFileSync(join(f.root, "marker"), "utf8")).toBe("started\n");
   } finally { f.close(); }
+});
+
+for (const code of [0, 7]) test(`retained host exit ${code} recovers after reopening without executing the command again`, async () => {
+  const f = fixture(`printf 'once\\n' >> marker; exit ${code}`);
+  let reopened: RuntimeDatabase | undefined;
+  try {
+    f.db.sql.exec("CREATE TRIGGER fail_host_finish BEFORE UPDATE ON host_jobs WHEN NEW.state IN ('completed','failed') BEGIN SELECT RAISE(ABORT,'injected lost completion'); END;");
+    await expect(f.runner.execute(f.lease, { assertCurrent() {}, remainingMs: () => 5000 })).rejects.toThrow();
+    expect(f.kernel.inspect(actor, "host-task").needs_reconciliation).toBe(true);
+    f.db.sql.exec("DROP TRIGGER fail_host_finish;");
+    reopened = new RuntimeDatabase(join(f.root, "runtime.sqlite"));
+    const recoveryActor: Principal = { ...actor, scopes: [...actor.scopes, "task:reconcile"] };
+    const kernel = new RuntimeKernel(reopened), runner = new HostJobProcess(kernel, recoveryActor, f.root, realpathSync("/bin/bash"), () => {});
+    const revision = kernel.inspect(recoveryActor, "host-task").revision;
+    const effect = (reopened.sql.query("SELECT effect_id FROM effects").get() as { effect_id: string }).effect_id;
+    const evidence = kernel.inspectReconciliation(recoveryActor, "host-task", revision, effect);
+    const binding = { effect_id: effect, episode_id: evidence.episode.episode_id, manifest_digest: evidence.manifest_digest, observation_digest: evidence.observation_digest };
+    reopened.sql.exec("CREATE TRIGGER fail_recovery_finish BEFORE UPDATE ON effects WHEN NEW.state='confirmed' BEGIN SELECT RAISE(ABORT,'injected reconciliation failure'); END;");
+    expect(() => runner.reconcile("recover", "host-task", revision, binding)).toThrow("injected reconciliation failure");
+    expect(new HostJobStore(reopened, () => {}).get(recoveryActor, "job")?.revision).toBe(2);
+    expect(new HostJobStore(reopened, () => {}).get(recoveryActor, "job")?.job.steps[0]!.state).toBe("running");
+    expect(kernel.inspect(recoveryActor, "host-task").needs_reconciliation).toBe(true);
+    reopened.sql.exec("DROP TRIGGER fail_recovery_finish;");
+    const result = runner.reconcile("recover", "host-task", revision, binding);
+    expect(result.task.status).toBe(code === 0 ? "done" : "failed");
+    expect(result.needs_reconciliation).toBe(false);
+    expect(new HostJobStore(reopened, () => {}).get(recoveryActor, "job")?.job.steps[0]!.exit_code).toBe(code);
+    expect(runner.reconcile("recover", "host-task", revision, binding)).toEqual(result);
+    expect(readFileSync(join(f.root, "marker"), "utf8")).toBe("once\n");
+  } finally { reopened?.close(); f.close(); }
 });

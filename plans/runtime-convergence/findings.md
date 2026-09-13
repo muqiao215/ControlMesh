@@ -2233,3 +2233,10 @@ invalidates the previously approved pending version, preventing a second executi
 reusing it. Persisting actual outcomes before authority checks preserves evidence if
 completion cannot commit. Recovery must verify that retained host manifest/outcome and
 current job binding; imported PIDs or exit_code.txt are still not trusted execution proof.
+
+Host recovery cannot reuse pending-step admission: a legitimately dispatched step is
+already running at a newer revision. Inspect the original persisted approval receipt,
+then require the exact dispatched running snapshot and retained outcome. Kernel acceptance
+must classify host nonzero exits separately from native provider result objects; finding
+an observation never implies success. Injected failure after host-state update confirms
+outer reconciliation transaction rolls that update and its receipt back.

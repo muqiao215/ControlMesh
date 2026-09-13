@@ -1,8 +1,9 @@
+import { decodeHostJob } from "./host-job-model";
 import { realpathSync, statSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import { HostJobApprovals } from "./host-job-approval";
 import { HostJobStore } from "./host-job-store";
-import { RuntimeKernel, type Principal, type Lease } from "./kernel";
+import { RuntimeKernel, type Principal, type Lease, type ReconciliationBinding } from "./kernel";
 import { ProcessSupervisor, type ProcessAdmission } from "./process-supervisor";
 import { decodeToolGrant, restrictiveGrant } from "./execution-grants";
 import { enforceLocalReadSource } from "./execution-policy";
@@ -79,4 +80,45 @@ export class HostJobProcess {
       throw error;
     }
   }
+  reconcile(requestId: string, taskId: string, expectedRevision: number, binding: ReconciliationBinding) {
+    const checked: unknown = this.authorize();
+    if (checked !== undefined) { void Promise.resolve(checked).catch(() => {}); requireThat(false, "admission_must_be_synchronous"); }
+    const actor = this.actor;
+    const replay = this.kernel.reconciliationReceipt(actor, requestId, taskId, expectedRevision, binding);
+    if (replay) return replay;
+    return this.kernel.reconcileEffect(actor, requestId, taskId, expectedRevision, binding, evidence => {
+      const manifest = evidence.manifest, outcome = evidence.observation;
+      requireThat(manifest.schema_version === "controlmesh.host_step_execution.v1", "host_job_manifest_unproven");
+      const approval = new HostJobApprovals(this.kernel.db, this.authorize).inspectReceipt(actor, manifest.approval);
+      const task = evidence.task.task;
+      requireThat(task.provider === "host" && object(task.host_job) && task.host_job.job_id === approval.job_id
+        && task.host_job.step_id === approval.step_id && task.host_job.revision === approval.revision
+        && canonical(task.host_job.approval) === canonical(approval), "host_job_task_binding_changed");
+      enforceLocalReadSource(task.execution_context);
+      const grant = decodeToolGrant(task.tool_grant);
+      requireThat(!restrictiveGrant(grant) && grant.confirmation_policy === "provider_runtime", "host_job_grant_unenforceable");
+      requireThat(canonical(directoryIdentity(this.workspace)) === canonical(manifest.workspace), "host_job_execution_configuration_changed");
+      requireThat(isAbsolute(this.shell) && realpathSync(this.shell) === this.shell, "host_job_shell_not_canonical");
+      const stat = statSync(this.shell, { bigint: true });
+      requireThat(stat.isFile() && (stat.mode & 0o111n) !== 0n
+        && digest([stat.dev,stat.ino,stat.size,stat.mtimeNs,stat.ctimeNs].map(String)) === manifest.shell, "host_job_execution_configuration_changed");
+      const running = decodeHostJob(manifest.job), step = running.steps.find(item => item.id === approval.step_id);
+      requireThat(running.job_id === approval.job_id && step?.state === "running" && running.repo === this.workspace
+        && (step.cwd || running.repo) === this.workspace && manifest.running_revision === approval.revision + 1, "host_job_manifest_unproven");
+      requireThat(digest({ repo: running.repo, source_task_id: running.source_task_id, plan_id: running.plan_id,
+        command_digest: step.command_digest, cwd: step.cwd, kind: step.kind, approval_required: step.approval_required, side_effect: step.side_effect }) === approval.definition_digest, "host_job_approval_binding_changed");
+      const store = new HostJobStore(this.kernel.db, this.authorize), current = store.get(actor, approval.job_id);
+      requireThat(current?.revision === manifest.running_revision && canonical(current.job) === canonical(running), "host_job_recovery_binding_changed");
+      requireThat(outcome.reason === "exited" && Number.isSafeInteger(outcome.exit_code) && Number(outcome.exit_code) >= 0 && Number(outcome.exit_code) <= 255
+        && typeof outcome.stdout === "string" && typeof outcome.stderr === "string"
+        && Buffer.byteLength(outcome.stdout) + Buffer.byteLength(outcome.stderr) <= 524288, "host_job_outcome_unproven");
+      const success = outcome.exit_code === 0, finished = new Date(this.kernel.db.now()).toISOString();
+      const steps = running.steps.map(item => item.id === step.id ? { ...item, state: success ? "completed" : "failed", exit_code: outcome.exit_code, finished_at: finished, completed_at: finished } : item);
+      const done = steps.every(item => ["completed", "skipped"].includes(item.state));
+      const saved = store.put(actor, `host-recover-${digest([requestId, binding])}`, current.revision, { ...running, steps,
+        state: !success ? "failed" : done ? "completed" : running.state, updated_at: finished, completed_at: done || !success ? finished : "" });
+      return { host_job_id: approval.job_id, step_id: step.id, host_job_revision: saved.revision, exit_code: outcome.exit_code, observation_digest: evidence.observation_digest };
+    });
+  }
+
 }

@@ -41,16 +41,25 @@ export class HostJobApprovals {
         ...binding, approved_at: new Date(this.db.now()).toISOString() };
     }, value => { this.current(actor, "task:admin"); return value; });
   }
-  assertApproved(actor: Principal, raw: unknown): HostJobApproval {
-    this.current(actor, "task:execute");
+  /** Historical receipt inspection grants no execution permission. */
+  inspectReceipt(actor: Principal, raw: unknown): HostJobApproval {
+    this.current(actor, "task:read");
     requireThat(object(raw) && raw.schema_version === "controlmesh.host_job_approval.v1" && raw.principal === actor.id
       && (raw.device_id === null || typeof raw.device_id === "string"), "invalid_host_job_approval");
     identifier(raw.request_id); identifier(raw.job_id); identifier(raw.step_id);
-    const binding = this.binding(actor, raw.job_id, raw.revision as number, raw.step_id);
-    requireThat(raw.definition_digest === binding.definition_digest, "host_job_approval_binding_changed");
+    requireThat(Number.isSafeInteger(raw.revision) && Number(raw.revision) > 0 && typeof raw.definition_digest === "string"
+      && /^[a-f0-9]{64}$/.test(raw.definition_digest), "invalid_host_job_approval");
+    const binding = { job_id: raw.job_id, revision: raw.revision, step_id: raw.step_id, definition_digest: raw.definition_digest };
     const issuer: Principal = { ...actor, origin: "human_request", ...(raw.device_id === null ? { device_id: undefined } : { device_id: raw.device_id as string }) };
     const stored = commandReceipt<HostJobApproval>(this.db, issuer, raw.request_id, "host_job.approve_step", binding);
     requireThat(stored && canonical(stored.value) === canonical(raw), "host_job_approval_unproven");
     return structuredClone(stored.value);
+  }
+  assertApproved(actor: Principal, raw: unknown): HostJobApproval {
+    this.current(actor, "task:execute");
+    const proof = this.inspectReceipt(actor, raw);
+    const binding = this.binding(actor, proof.job_id, proof.revision, proof.step_id);
+    requireThat(proof.definition_digest === binding.definition_digest, "host_job_approval_binding_changed");
+    return proof;
   }
 }
