@@ -44,6 +44,7 @@ import type { LocalRuntimeRecovery } from "./local-runtime-control";
 import { ClaudeTaskAdapter } from "./providers/claude-task-adapter";
 import { ClaudeTaskReconciler } from "./providers/claude-task-reconciler";
 import type { ClaudeTaskConfiguration } from "./providers/claude-task-profile";
+import { CronScheduler, type CronTickResult } from "./cron-scheduler";
 import { LocalNativeHistory, LocalOpenCodeHistory, RegisteredLocalHistory, type LocalNativeHistoryPort } from "./providers/local-native-history";
 
 /** Explicit isolated candidate configuration. Reading task state does not inspect or probe any provider. */
@@ -54,7 +55,7 @@ export interface LocalRuntimeDescription {
   integrations: { history: boolean; specmesh: boolean };
 }
 export function openLocalRuntime(path: string, options: { host_worker?: boolean } = {}): { runtime: LocalTaskRuntime; deliveries?: DeliveryOutbox; inbound?: FeishuInboundRuntime | TelegramPollingRuntime;
-  scheduler?: TopologyScheduler; keep_alive?: boolean; specmesh?: SpecMeshPort; recovery: LocalRuntimeRecovery; history?: LocalNativeHistoryPort;
+  scheduler?: TopologyScheduler; cron?: { tick(): CronTickResult[] }; keep_alive?: boolean; specmesh?: SpecMeshPort; recovery: LocalRuntimeRecovery; history?: LocalNativeHistoryPort;
   describe: () => LocalRuntimeDescription; submissionIdentity: (task: LegacyTask) => SubmissionIdentity; stop: () => Promise<void>; close: () => Promise<void> } {
   const loaded = privateFile(path), config = decodeSnapshot(loaded.bytes).source;
   requireThat(object(config) && config.schema_version === "controlmesh.local_runtime.v1" && config.mode === "candidate", "unsupported_local_runtime_config");
@@ -107,6 +108,12 @@ export function openLocalRuntime(path: string, options: { host_worker?: boolean 
     requireThat(privateFile(path).revision === loaded.revision && digest(directoryIdentity(root)) === initialRoot, "runtime_configuration_changed");
   };
   const schedule = config.topology_scheduler;
+  const cronConfig = config.cron_scheduler;
+  requireThat(cronConfig === undefined || (object(cronConfig)
+    && Object.keys(cronConfig).every(key => ["generation", "user_timezone", "host_timezone", "max_jobs"].includes(key))
+    && Number.isSafeInteger(cronConfig.generation) && Number(cronConfig.generation) > 0
+    && (cronConfig.user_timezone === undefined || typeof cronConfig.user_timezone === "string")
+    && (cronConfig.host_timezone === undefined || typeof cronConfig.host_timezone === "string")), "invalid_cron_scheduler_profile");
   requireThat(schedule === undefined || (object(schedule) && Object.keys(schedule).every(key => ["auto_start", "keep_alive", "interval_ms", "lease_ms", "max_steps", "artifact_files"].includes(key))
     && typeof schedule.auto_start === "boolean" && typeof schedule.keep_alive === "boolean"
     && (schedule.artifact_files === undefined || (Array.isArray(schedule.artifact_files) && schedule.artifact_files.every(file => typeof file === "string")))), "invalid_topology_scheduler_profile");
@@ -335,6 +342,12 @@ export function openLocalRuntime(path: string, options: { host_worker?: boolean 
       interval_ms: schedule.interval_ms as number | undefined, lease_ms: schedule.lease_ms as number | undefined, max_steps: schedule.max_steps as number | undefined,
     }, Array.isArray(schedule.artifact_files) && schedule.artifact_files.length > 0 ? new TopologyArtifactGate(kernel,
       { workspace: workspace.directory as string, allowed_files: schedule.artifact_files as string[] }, current, specmesh) : undefined);
+    const cronScheduler = !object(cronConfig) || options.host_worker ? undefined : new CronScheduler(kernel,
+      { ...actor, origin: "schedule" }, cronConfig.generation as number, {
+        userTimezone: cronConfig.user_timezone as string | undefined, hostTimezone: cronConfig.host_timezone as string | undefined,
+        maxJobs: cronConfig.max_jobs as number | undefined,
+      }, runtime);
+    const cron = cronScheduler ? { tick() { current(); return cronScheduler.tick(); } } : undefined;
     if (scheduler && schedule!.auto_start && !options.host_worker) scheduler.start();
     let stopping: Promise<void> | undefined, closing: Promise<void> | undefined;
     const stop = () => stopping ??= Promise.all([scheduler?.stop(), runtime.stop(), deliveries?.stop(), delivery?.close(), inbound?.stop(), specmesh?.stop(), history?.stop()]).then(() => {});
@@ -345,6 +358,6 @@ export function openLocalRuntime(path: string, options: { host_worker?: boolean 
         providers: (["opencode", "claude", "codex", "gemini", "host"] as const).filter(name => object(config[name])).map(name => ({ provider: name, model: name === "host" ? "" : (config[name] as Record<string, unknown>).model as string })),
         registered_write_roots: [...roots], integrations: { history: Boolean(history), specmesh: Boolean(specmesh) } };
     };
-    return { runtime, recovery, describe, submissionIdentity, stop, close, ...(scheduler ? { scheduler, keep_alive: schedule!.keep_alive === true } : {}), ...(history ? { history } : {}), ...(deliveries ? { deliveries } : {}), ...(inbound ? { inbound } : {}), ...(specmesh ? { specmesh } : {}) };
+    return { runtime, recovery, describe, submissionIdentity, stop, close, ...(cron ? { cron } : {}), ...(scheduler ? { scheduler, keep_alive: schedule!.keep_alive === true } : {}), ...(history ? { history } : {}), ...(deliveries ? { deliveries } : {}), ...(inbound ? { inbound } : {}), ...(specmesh ? { specmesh } : {}) };
   } catch (error) { db.close(); throw error; }
 }

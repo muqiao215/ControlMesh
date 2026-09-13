@@ -1245,5 +1245,11 @@ resolved timezone. It plans forward on initial activation, retains one pending o
 while a dependency is busy, and limits recovery to one saved slot per job per tick before
 planning from current time. Quiet and overlapping slots are retained as skipped records.
 CronTaskAdmission submits through TaskIngress with schedule/cron provenance and bounded
-persisted FIFO dependency waits; it does not launch a provider. Worker queue/startup,
-native result reconciliation and delivery must be wired before enabling production cron.
+persisted FIFO dependency waits; it does not launch a provider. Optional LocalTaskRuntime
+binding atomically registers new tasks in the execution queue, rolling back on queue-full.
+Candidate local service enables this through `cron_scheduler: { generation: N }` with
+optional `user_timezone`, `host_timezone`, and `max_jobs`. The coordinator must already
+be explicitly registered for the configured principal at generation N; opening a profile
+never bootstraps or rotates authority. Host worker profiles do not start cron. The service
+ticks scheduling even while its execution drain is pending, retaining source/container
+checks. Native result reconciliation and delivery remain required before production cron.

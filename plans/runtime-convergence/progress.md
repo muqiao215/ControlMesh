@@ -700,3 +700,13 @@ with a nonexecuting resolver, not a real provider. Runtime startup wiring and te
 reconciliation remain pending. A suspected equal-generation cross-coordinator issue
 was disproven by singleton registration and generation-incrementing takeover; that
 experimental patch and test were removed rather than claiming a reproduced defect.
+
+Candidate local service now wires optional cron_scheduler configuration to the existing
+queue/provider resolver and ticks it before checking whether execution drain is pending.
+Requires explicit existing coordinator identity/generation; no startup bootstrap/rotation.
+Detached host worker mode suppresses cron. Actual service/socket test proves cursor
+creation and preservation after close/reopen, no model probes/tasks for a future slot,
+rejection of missing/stale authority, and no child scheduler. One test/seven assertions
+passes, plus typecheck; /tmp/cm-cron-service-{tests,typecheck}.log. No production profile
+was changed. Real native execution/terminal synchronization, quota circuits and delivery
+acceptance remain pending; full TS migration and multi-device gates remain open.

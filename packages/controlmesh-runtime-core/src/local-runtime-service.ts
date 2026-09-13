@@ -25,9 +25,11 @@ export async function startLocalRuntimeService(config: string, socket: string) {
       owned.specmesh, owned.recovery, owned.history, owned.scheduler, owned.describe);
     let pumping: Promise<void> | undefined;
     pump = () => {
-      if (closing || pumping) return;
+      if (closing) return;
       try {
         listener.assertCurrent();
+        owned!.cron?.tick();
+        if (pumping) return;
         pumping = owned!.runtime.drain().then(() => closing ? undefined : owned!.deliveries?.drain()).then(() => {})
           .catch(error => { if (!closing) { fail(error); void close().catch(() => {}); } }).finally(() => { pumping = undefined; });
       } catch (error) { fail(error); void close().catch(() => {}); }
