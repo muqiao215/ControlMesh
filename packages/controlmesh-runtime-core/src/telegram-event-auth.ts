@@ -12,6 +12,12 @@ export interface TelegramIncomingMessage {
   chat_id: string; thread_id: string; text: string; created_at: number;
   source_scope: "direct_message" | "group_message"; mentions_local_bot: boolean;
 }
+export interface TelegramIncomingCallback {
+  schema_version: "controlmesh.telegram_callback.v1";
+  bot_id: string; event_id: string; callback_id: string; choice_id: string;
+  message_id: string; sender_id: string; chat_id: string; thread_id: string;
+  source_scope: "direct_message" | "group_message";
+}
 function id(value: unknown, signed = false): value is string {
   return typeof value === "string" && (signed ? /^-?[1-9][0-9]*$/ : /^[1-9][0-9]*$/).test(value) && Number.isSafeInteger(Number(value));
 }
@@ -48,19 +54,51 @@ export class TelegramEventAuthenticator {
     if (message.source_scope === "group_message" && this.config.require_group_mention !== false && !message.mentions_local_bot) return "telegram_mention_required";
     return null;
   }
-  receive(headers: Headers, bytes: Uint8Array): { kind: "ignored"; reason: string } | { kind: "message"; message: TelegramIncomingMessage } {
+  receive(headers: Headers, bytes: Uint8Array): { kind: "ignored"; reason: string } | { kind: "message"; message: TelegramIncomingMessage } | { kind: "callback"; callback: TelegramIncomingCallback } {
     this.assertCurrent();
     const supplied = headers.get("x-telegram-bot-api-secret-token"), secret = this.config.secret_token;
     requireThat(typeof secret === "string" && typeof supplied === "string" && Buffer.byteLength(supplied) === Buffer.byteLength(secret)
       && timingSafeEqual(Buffer.from(supplied), Buffer.from(secret)), "telegram_event_auth_failed");
     return this.receiveAuthenticated(bytes);
   }
-  /** Trusted polling transport only, after validating the selected HTTPS bot response. */
-  receiveAuthenticated(bytes: Uint8Array): { kind: "ignored"; reason: string } | { kind: "message"; message: TelegramIncomingMessage } {
+  /** Normalize an already transport-authenticated callback; never trust its message text as a task prompt. */
+  callbackAuthenticated(bytes: Uint8Array): { kind: "ignored"; reason: string } | { kind: "callback"; callback: TelegramIncomingCallback } {
     this.assertCurrent();
     requireThat(bytes.byteLength > 0 && bytes.byteLength <= 65536, "telegram_event_size_invalid");
     const update = decodeSnapshot(bytes).source;
     requireThat(object(update) && Number.isSafeInteger(update.update_id) && Number(update.update_id) >= 0, "telegram_update_invalid");
+    if (!object(update.callback_query)) return { kind: "ignored", reason: "telegram_update_type_unsupported" };
+    requireThat(Object.keys(update).every(key => key === "update_id" || key === "callback_query"), "telegram_update_ambiguous");
+    const value = update.callback_query, message = value.message;
+    if (!object(value.from) || value.from.is_bot !== false || !object(message) || value.inline_message_id || value.game_short_name
+      || !object(message.from) || message.from.is_bot !== true || String(message.from.id) !== this.config.bot_id
+      || !object(message.chat) || !["private", "group", "supergroup"].includes(String(message.chat.type))
+      || message.sender_chat || message.business_connection_id || message.forward_origin || message.guest_query_id)
+      return { kind: "ignored", reason: "telegram_callback_context_unsupported" };
+    requireThat(typeof value.id === "string" && /^[A-Za-z0-9_-]{1,256}$/.test(value.id)
+      && typeof value.data === "string" && /^cmc:[a-f0-9]{48}$/.test(value.data), "telegram_callback_identity_invalid");
+    requireThat(Number.isSafeInteger(value.from.id) && id(String(value.from.id))
+      && Number.isSafeInteger(message.from.id) && Number.isSafeInteger(message.message_id) && id(String(message.message_id))
+      && Number.isSafeInteger(message.chat.id) && id(String(message.chat.id), true)
+      && Number.isSafeInteger(message.date) && Number(message.date) > 0
+      && (message.message_thread_id === undefined || (Number.isSafeInteger(message.message_thread_id) && id(String(message.message_thread_id)))),
+      "telegram_callback_message_invalid");
+    const callback: TelegramIncomingCallback = { schema_version: "controlmesh.telegram_callback.v1", bot_id: this.config.bot_id,
+      event_id: String(update.update_id), callback_id: value.id, choice_id: value.data,
+      message_id: String(message.message_id), sender_id: String(value.from.id), chat_id: String(message.chat.id),
+      thread_id: message.message_thread_id === undefined ? "" : String(message.message_thread_id),
+      source_scope: message.chat.type === "private" ? "direct_message" : "group_message" };
+    if (!this.config.allowed_senders.includes(callback.sender_id)) return { kind: "ignored", reason: "telegram_sender_denied" };
+    if (!this.config.allowed_chats.includes(callback.chat_id)) return { kind: "ignored", reason: "telegram_chat_denied" };
+    return { kind: "callback", callback };
+  }
+  /** Trusted polling transport only, after validating the selected HTTPS bot response. */
+  receiveAuthenticated(bytes: Uint8Array): { kind: "ignored"; reason: string } | { kind: "message"; message: TelegramIncomingMessage } | { kind: "callback"; callback: TelegramIncomingCallback } {
+    this.assertCurrent();
+    requireThat(bytes.byteLength > 0 && bytes.byteLength <= 65536, "telegram_event_size_invalid");
+    const update = decodeSnapshot(bytes).source;
+    requireThat(object(update) && Number.isSafeInteger(update.update_id) && Number(update.update_id) >= 0, "telegram_update_invalid");
+    if (object(update.callback_query)) return this.callbackAuthenticated(bytes);
     if (!object(update.message)) return { kind: "ignored", reason: "telegram_update_type_unsupported" };
     requireThat(Object.keys(update).every(key => key === "update_id" || key === "message"), "telegram_update_ambiguous");
     const value = update.message;

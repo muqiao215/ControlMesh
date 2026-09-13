@@ -143,7 +143,7 @@ Private diagnostic evidence: `/tmp/cm-gemini-account-BNTF1Q` (ephemeral, not rel
 Telegram text webhook and polling profiles are configured through the normal private entrypoint.
 Polling persists raw updates, normalized dispositions and next offset atomically, with a
 local-store lease, generation fencing, retry-after and failure latch. Schema 37 broad and
-final targeted regressions passed. Next implement Telegram media/callback/edit handling, rich formatting, outbound
+final targeted regressions passed. Schema 38 adds ordinary callback continuation (details below). Next implement Telegram media and management selectors, rich formatting, outbound
 rate-limit and streaming parity. Polling inspects the remote webhook instead of deleting it;
 separate databases/devices still require the full coordinator/operational acceptance matrix.
 The test suite uses local HTTP and unavailable native execution fixtures. No actual Telegram
@@ -152,48 +152,37 @@ multi-device/provider continuity remain in progress under the original phase/acc
 Keep the complete original objective active; mark complete only after every phase and
 acceptance item has matching evidence, release and local alignment.
 
-## CI correction — native exit versus supervisor abort (2026-09-13)
+## Current callback checkpoint (schema 38)
 
-- Remote run 34743304830 at 00a264e failed the Codex one-shot test because its
-  fixed exit-code assertion expected 1 while the supervisor terminated the process
-  with SIGTERM (143) after observing a typed native failure. This is an actual race
-  in the test, not evidence that the failure classification disappeared.
-- Split coverage into deterministic natural-exit classification (exit 1) and real
-  supervised processes held alive after each authentication/rate/model/quota failure.
-  The latter must abort before retry, retain the typed status and finish within 4s.
-  Focused verification: 8 pass, 0 fail, 466 assertions, 2.17s;
-  `/tmp/cm-oneshot-ci-race.log`. Fix b7c62e1 is pushed to main; replacement CI
-  34743808283 completed with failure: Codex cases passed, but the combined four-case
-  device publication test exceeded its default 5s test budget (5.629s). Split its four
-  existing scenarios into independently timed tests, retaining runtime deadlines and
-  assertions; replacement CI still needs checking. Further local regression:
-  one-shot + Telegram inbox/polling 35 pass, 0 fail, 696 assertions (2.85s),
-  `/tmp/cm-ci-and-telegram-regression.log`; actual supervisor suite 11 pass,
-  0 fail, 30 assertions (2.79s), `/tmp/cm-supervisor-ci-regression.log`.
-- Telegram choices are uncommitted work: schema/sender/projection exist, but callback
-  consumption and acknowledgement are not implemented. Do not release those partial
-  changes as usable buttons. Sender tests now verify opaque choice IDs, final-part
-  keyboard placement, foreground literal preservation, and missing/changed keyboard
-  acknowledgement refusal: 37 pass, 0 fail, 283 assertions (1.72s),
-  `/tmp/cm-telegram-choices-delivery.log`. Current worktree typecheck passes.
-  Callback normalization now separately verifies the human clicker, selected bot's
-  accessible parent message, topic, allowlists and opaque choice ID; message text and
-  supplied keyboard are excluded. Auth + existing inbox tests: 29 pass, 0 fail,
-  88 assertions, 790ms (`/tmp/cm-telegram-callback-auth.log`).
-  Outbox resolution now requires a confirmed receipt, current route/authority, complete
-  multipart group, matching target and unchanged terminal task revision. It returns
-  the persisted choice text without executing it. Delivery/binding tests: 38 pass,
-  0 fail, 295 assertions, 1.69s (`/tmp/cm-telegram-choice-binding.log`). Typecheck passes.
-  Schema 38 now persists callbacks separately, with owner/content/identity binding and
-  pending/applied/blocked states exposed through the inbox. Webhook and polling normalize
-  callbacks into this journal. Resume, enqueue and applied marking share one transaction;
-  original native-session continuity, duplicate/reopen behavior, stale clicks and forced
-  final-commit rollback are covered through normal inbox processing. Retry retains the
-  original payload and revalidates authority. Upgrade fixtures now remove the schema 38
-  table before simulating earlier versions.
-  Combined Telegram delivery/inbox/polling + device publication regression: 81 pass,
-  1 optional SpecMesh skip, 0 fail, 673 assertions, 6.91s (`/tmp/cm-callback-and-device.log`).
-  Typecheck/diff check pass. Callback work remains uncommitted; UI acknowledgement,
-  cancellation/policy-change coverage, shared message/callback ordering and the broad
-  schema upgrade regression remain before publication. No actual account was used. Generic choice payloads must never route to management selectors.
-  Full migration/release remains incomplete.
+- CI fixes b7c62e1 and 859323c separate native failure/exit races and independently
+  time the four device publication fault scenarios. Remote CI 34744271753 passed
+  at 859323c; this does not cover the later callback changes.
+- Telegram ordinary Agent choices now bind opaque IDs to final-part delivery evidence.
+  Current bot/chat/topic, receipt, route/grants, complete group and terminal task
+  revision are checked before resolving persisted choice text. Foreground/scheduled
+  outputs do not issue these chat continuation buttons. Code fences/spans are preserved.
+- Schema 38 journals authenticated callbacks separately with original owner/payload,
+  pending/applied/blocked status and independent UI acknowledgement state. Webhook and
+  polling use this path. Resume, enqueue and applied marking are one transaction;
+  duplicate/reopen and forced commit-failure tests preserve original task/native session.
+  Text and callback lanes respect arrival order within each conversation. Changed
+  permission or cancelled/stale tasks reject old clicks. Generic choice strings never
+  dispatch management selectors, even if their text looks like a control command.
+- UI acknowledgement uses the selected bot's answerCallbackQuery with a 5s bound,
+  four concurrent requests, bounded response and pending/sent/unknown journal. Unknown
+  acknowledgement outcomes never replay the acknowledgement or native task. This only
+  clears the click notification; management selectors and message keyboard editing are
+  separate remaining parity owners.
+- Full schema 38 regression: 1067 pass, 34 optional skips, 0 fail, 12365 assertions,
+  1101 tests/123 files, 393.83s, exit 0 (`/tmp/cm-runtime-callback-full.log`). Docker and
+  standalone SpecMesh enabled. Session 62195 is terminal; do not poll or restart it.
+- After the full run, code-fence parsing was corrected and cancellation/policy-revocation
+  coverage added. Final focused regression: 75 pass, 0 fail, 442 assertions, 2.53s
+  (`/tmp/cm-callback-final-focused.log`). Typecheck and diff check pass. The ownership
+  manifest changed only the generated Python protocol model hash.
+- All Telegram transport/Agent tests use local HTTP and execution fixtures; no actual
+  Telegram account was used. Full TS retirement, supported provider/device matrix,
+  reviewed SpecMesh closeout, product terminal, installation and release remain open.
+- Next: check CI for the callback commit, then port remaining transport media/rich output,
+  management selectors, rate limits and streaming behavior within CM-R3. Retain the
+  separate operational acceptance and CM-R7 cutover gates.

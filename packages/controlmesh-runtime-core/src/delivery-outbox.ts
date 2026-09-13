@@ -1,3 +1,5 @@
+import type { TelegramIncomingCallback } from "./telegram-event-auth";
+import { telegramChoices } from "./telegram-choices";
 import { deliveryTextParts } from "./delivery-text-parts";
 import { randomUUID } from "node:crypto";
 import { assertProtocolSchema, type DeliveryReceipt, type DeliveryTarget, type TerminalDelivery } from "@controlmesh/protocol";
@@ -18,6 +20,7 @@ export interface DeliveryAdapter {
   assertCurrent(): void;
   /** Explicit operator retry may clear a credential failure latch; never invoked by drain. */
   retryPreparation?(): void;
+  answerCallback?(queryId: string, accepted: boolean, context: DeliveryContext): Promise<void>;
   prepare(envelope: TerminalDelivery, context: DeliveryContext): Promise<PreparedDelivery>;
   /** Explicit local acknowledgement recovery, never a claim of current remote content.
    * Input comes only from the persisted observation, not an operator-supplied receipt. */
@@ -164,10 +167,12 @@ export class DeliveryOutbox {
           text: summary || (binding.output_policy === "full" ? raw : "") || fallback, output_policy: binding.output_policy, created_at: event.at };
         assertProtocolSchema("terminal-delivery.schema.json", envelope);
         requireThat(Buffer.byteLength(envelope.text) <= 65536, "delivery_text_too_large");
+        const offered = telegramChoices(envelope); envelope.text = offered.text;
         const texts = deliveryTextParts(envelope);
         if (texts.length > remaining) break; // Never persist only a prefix of an event.
         const parts = texts.map((text, index) => ({ ...envelope, text,
-          delivery_id: index === 0 ? envelope.delivery_id : `${envelope.delivery_id}.${index}` }));
+          delivery_id: index === 0 ? envelope.delivery_id : `${envelope.delivery_id}.${index}`,
+          ...(index === texts.length - 1 && offered.choices ? { choices: offered.choices } : {}) }));
         const groupDigest = digest(parts.map(part => ({ delivery_id: part.delivery_id, envelope_digest: digest(part) })));
         for (const [index, part] of parts.entries()) {
           assertProtocolSchema("terminal-delivery.schema.json", part);
@@ -212,6 +217,44 @@ export class DeliveryOutbox {
       return { event_seq, part_count: count, sent_parts: sent,
         complete: parts.length === count && parts.every((part, index) => part.part_index === index && part.part_count === count && part.state === "sent"), parts };
     });
+  }
+  async answerTelegramCallback(adapterId: string, callback: TelegramIncomingCallback, accepted: boolean): Promise<void> {
+    this.current("delivery:send"); const adapter = this.adapters.get(adapterId);
+    requireThat(adapter?.answerCallback && adapter.binding_digest === digest({ adapter: "telegram_text.v1", adapter_id: adapterId,
+      bot_id: callback.bot_id, transport: "telegram" }), "telegram_callback_adapter_mismatch");
+    const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 5000);
+    try { await adapter.answerCallback(callback.callback_id, accepted, { signal: controller.signal,
+      assertCurrent: () => { this.current("delivery:send"); this.adapterCurrent(adapter); requireThat(!controller.signal.aborted, "telegram_callback_timeout"); } }); }
+    finally { clearTimeout(timer); }
+  }
+  /** Read-only resolution. The inbox must consume this result and resume atomically. */
+  resolveTelegramChoice(adapterId: string, callback: TelegramIncomingCallback): { task_id: string; revision: number; delivery_id: string; text: string } {
+    this.current("delivery:read");
+    const adapter = this.adapters.get(adapterId);
+    requireThat(adapter && adapter.transport === "telegram" && adapter.binding_digest === digest({ adapter: "telegram_text.v1",
+      adapter_id: adapterId, bot_id: callback.bot_id, transport: "telegram" }), "telegram_choice_adapter_mismatch");
+    const match = this.kernel.db.sql.query(`SELECT delivery_id FROM transport_receipts
+      WHERE adapter_digest=? AND target_transport='telegram' AND target_chat=? AND remote_message_id=?`)
+      .get(adapter.binding_digest, callback.chat_id, callback.message_id) as { delivery_id: string } | null;
+    requireThat(match, "telegram_choice_receipt_missing");
+    const row = this.row(match.delivery_id), { envelope } = this.evidence(row);
+    requireThat(row.state === "sent" && row.receipt && row.part_index === row.part_count - 1, "telegram_choice_delivery_unconfirmed");
+    const receipt = JSON.parse(row.receipt) as DeliveryReceipt;
+    assertProtocolSchema("delivery-receipt.schema.json", receipt);
+    requireThat(receipt.delivery_id === row.delivery_id && receipt.envelope_digest === digest(envelope)
+      && receipt.adapter_digest === adapter.binding_digest && receipt.target_digest === digest(envelope.target)
+      && receipt.remote_message_id === callback.message_id, "telegram_choice_receipt_mismatch");
+    requireThat(envelope.target.chat_id === callback.chat_id && envelope.target.thread_id === callback.thread_id
+      && envelope.execution_context.source_scope === callback.source_scope
+      && ["direct_message", "group_message"].includes(callback.source_scope), "telegram_choice_target_mismatch");
+    requireThat(!this.kernel.db.sql.query("SELECT 1 FROM delivery_outbox WHERE event_seq=? AND state!='sent' LIMIT 1").get(row.event_seq),
+      "telegram_choice_delivery_unconfirmed");
+    const task = this.kernel.inspect(this.actor, row.task_id);
+    requireThat(task.revision === envelope.task_revision && !task.needs_reconciliation && !task.active_episode
+      && ["done", "failed"].includes(task.task.status), "telegram_choice_stale");
+    const choice = envelope.choices?.find(choice => choice.id === callback.choice_id);
+    requireThat(choice && typeof choice.text === "string", "telegram_choice_not_offered");
+    return { task_id: row.task_id, revision: task.revision, delivery_id: row.delivery_id, text: choice.text };
   }
   private evidence(row: DeliveryRow): { envelope: TerminalDelivery; adapter: DeliveryAdapter } {
     const { row: route, adapter } = this.checkedRoute(row.task_id);

@@ -12,7 +12,7 @@ const cleanup: (() => void)[] = [];
 afterEach(() => cleanup.splice(0).reverse().forEach(close => close()));
 const actor: Principal = { id: "owner", device_id: "controller", origin: "human_request", scopes: ["task:create", "task:read", "task:execute",
   "delivery:read", "delivery:configure", "delivery:project", "delivery:send", "delivery:reconcile"] };
-function setup(options: { lost?: boolean; lostAt?: number; text?: string; mutate?: (message: any) => void; error?: boolean; long?: boolean; profile?: boolean } = {}) {
+function setup(options: { lost?: boolean; lostAt?: number; text?: string; mutate?: (message: any) => void; error?: boolean; long?: boolean; profile?: boolean; chatSource?: boolean } = {}) {
   const root = mkdtempSync(join(tmpdir(), "cm-telegram-")); cleanup.push(() => rmSync(root, { recursive: true, force: true }));
   const path = join(root, "runtime.sqlite"), db = new RuntimeDatabase(path); cleanup.push(() => db.close());
   const kernel = new RuntimeKernel(db); let posts = 0, valid = true;
@@ -22,7 +22,7 @@ function setup(options: { lost?: boolean; lostAt?: number; text?: string; mutate
     posts++; expect(request.method).toBe("POST"); expect(new URL(request.url).pathname).toBe(`/bot${token}/sendMessage`);
     const body = await request.json(); bodies.push(body);
     const message = { message_id: posts, date: Math.floor(Date.now() / 1000), chat: { id: Number(body.chat_id) },
-      from: { id: 123456, is_bot: true }, text: body.text };
+      from: { id: 123456, is_bot: true }, text: body.text, ...(body.reply_markup ? { reply_markup: body.reply_markup } : {}) };
     options.mutate?.(message); await hooks.response?.();
     return Response.json(options.error ? { ok: false, error_code: 429, parameters: { retry_after: 1 } } : { ok: true, result: message });
   } }); cleanup.push(() => server.stop(true));
@@ -41,7 +41,7 @@ function setup(options: { lost?: boolean; lostAt?: number; text?: string; mutate
   const adapter = options.profile ? openTelegramDelivery({ kind: "telegram_text", adapter_id: "telegram-selected", bot_id: "123456", credentials_file: credentials }, "telegram", () => {}, request).adapter
     : new TelegramTextDelivery(config, request);
   const outbox = new DeliveryOutbox(kernel, actor, [adapter], () => {}, 1000);
-  new TaskIngress(kernel, { command_origin: "human_request", origin: "user", source_scope: "local_foreground", transport: "telegram" }, () => {})
+  new TaskIngress(kernel, { command_origin: "human_request", origin: "user", source_scope: options.chatSource ? "direct_message" : "local_foreground", transport: "telegram" }, () => {})
     .submit(actor, "create", { task_id: "task", chat_id: "-1001234567890", status: "waiting", prompt: "private input" }, { chat_id: "-1001234567890" });
   outbox.bindTask("bind", "task", 1, adapter.adapter_id);
   const agent = { ...actor, origin: "agent_message" as const }, lease = kernel.claim(agent, "claim", "task", kernel.inspect(actor, "task").revision, 5000);
@@ -163,9 +163,9 @@ test("schema 33 receipts gain chat namespaces without rewriting delivery evidenc
     adapter_digest TEXT NOT NULL, remote_message_id TEXT NOT NULL,
     delivery_id TEXT NOT NULL UNIQUE REFERENCES delivery_outbox(delivery_id), PRIMARY KEY(adapter_digest,remote_message_id));
     INSERT INTO old_receipts SELECT adapter_digest,remote_message_id,delivery_id FROM transport_receipts;
-    DROP TABLE transport_receipts; ALTER TABLE old_receipts RENAME TO transport_receipts; DROP TABLE IF EXISTS telegram_conversations; DROP TABLE IF EXISTS telegram_event_aliases; DROP TABLE IF EXISTS telegram_inbox; DROP TABLE IF EXISTS telegram_poll_updates; DROP TABLE IF EXISTS telegram_polling; PRAGMA user_version=33;`);
+    DROP TABLE transport_receipts; ALTER TABLE old_receipts RENAME TO transport_receipts; DROP TABLE IF EXISTS telegram_conversations; DROP TABLE IF EXISTS telegram_event_aliases; DROP TABLE IF EXISTS telegram_inbox; DROP TABLE IF EXISTS telegram_callbacks; DROP TABLE IF EXISTS telegram_poll_updates; DROP TABLE IF EXISTS telegram_polling; PRAGMA user_version=33;`);
   const reopened = f.reopen(); expect(reopened.inspect(before.delivery_id)).toEqual(before);
-  expect(f.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 37 });
+  expect(f.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 38 });
   expect(f.db.sql.query("SELECT target_transport,target_chat,remote_message_id FROM transport_receipts").get())
     .toEqual({ target_transport: "telegram", target_chat: "-1001234567890", remote_message_id: "1" });
   await reopened.drain(); expect(f.count()).toBe(1);
@@ -178,7 +178,7 @@ test("schema upgrade refuses corrupted delivery evidence and rolls back its DDL"
     adapter_digest TEXT NOT NULL, remote_message_id TEXT NOT NULL,
     delivery_id TEXT NOT NULL UNIQUE REFERENCES delivery_outbox(delivery_id), PRIMARY KEY(adapter_digest,remote_message_id));
     INSERT INTO old_receipts SELECT adapter_digest,remote_message_id,delivery_id FROM transport_receipts;
-    DROP TABLE transport_receipts; ALTER TABLE old_receipts RENAME TO transport_receipts; DROP TABLE IF EXISTS telegram_conversations; DROP TABLE IF EXISTS telegram_event_aliases; DROP TABLE IF EXISTS telegram_inbox; DROP TABLE IF EXISTS telegram_poll_updates; DROP TABLE IF EXISTS telegram_polling; PRAGMA user_version=33;
+    DROP TABLE transport_receipts; ALTER TABLE old_receipts RENAME TO transport_receipts; DROP TABLE IF EXISTS telegram_conversations; DROP TABLE IF EXISTS telegram_event_aliases; DROP TABLE IF EXISTS telegram_inbox; DROP TABLE IF EXISTS telegram_callbacks; DROP TABLE IF EXISTS telegram_poll_updates; DROP TABLE IF EXISTS telegram_polling; PRAGMA user_version=33;
     UPDATE delivery_outbox SET envelope_digest='corrupted';`);
   expect(() => f.reopen()).toThrow("delivery_migration_evidence_corrupted");
   expect(f.db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 33 });
@@ -254,9 +254,64 @@ for (const attempted of [false, true]) test(`schema 34 only expands never-attemp
   envelope.text = "x".repeat(10000);
   f.db.sql.query("UPDATE delivery_outbox SET envelope=?,envelope_digest=?,state=?,attempt_id=? WHERE delivery_id=?")
     .run(JSON.stringify(envelope), digest(envelope), attempted ? "unknown" : "pending", attempted ? "old-attempt" : null, old.delivery_id);
-  f.db.sql.exec("DROP TABLE IF EXISTS telegram_conversations; DROP TABLE IF EXISTS telegram_event_aliases; DROP TABLE IF EXISTS telegram_inbox; DROP TABLE IF EXISTS telegram_poll_updates; DROP TABLE IF EXISTS telegram_polling; PRAGMA user_version=34");
+  f.db.sql.exec("DROP TABLE IF EXISTS telegram_conversations; DROP TABLE IF EXISTS telegram_event_aliases; DROP TABLE IF EXISTS telegram_inbox; DROP TABLE IF EXISTS telegram_callbacks; DROP TABLE IF EXISTS telegram_poll_updates; DROP TABLE IF EXISTS telegram_polling; PRAGMA user_version=34");
   const reopened = f.reopen(), parts = reopened.list("task");
   expect(parts[0].delivery_id).toBe(old.delivery_id);
   if (attempted) { expect(parts).toHaveLength(1); await reopened.drain(); expect(f.count()).toBe(0); }
   else { expect(parts.length).toBeGreaterThan(1); await reopened.drain(); expect(reopened.groups("task")[0].complete).toBe(true); expect(f.count()).toBe(parts.length); }
+});
+
+
+test("Telegram offers ordinary choices only on the final persisted multipart message", async () => {
+  const f = setup({ chatSource: true, text: "x".repeat(5000) + "\n[button:Continue|tsc:cancelall]" });
+  await f.outbox.drain();
+  const rows = f.outbox.list("task");
+  expect(rows).toHaveLength(2); expect(rows.every(row => row.state === "sent")).toBe(true);
+  expect(f.bodies[0].reply_markup).toBeUndefined();
+  const button = f.bodies[1].reply_markup.inline_keyboard[0][0];
+  expect(button.text).toBe("Continue"); expect(button.callback_data).toMatch(/^cmc:[a-f0-9]{48}$/);
+  expect(button.callback_data).not.toContain("tsc:");
+  expect(f.bodies.map(body => body.text).join(" ")).not.toContain("[button:");
+  await f.reopen().drain(); expect(f.count()).toBe(2);
+});
+
+test("Telegram preserves literal choice markers from a foreground task", async () => {
+  const f = setup({ text: "[button:Continue|yes]" }); await f.outbox.drain();
+  expect(f.bodies[0].text).toContain("[button:Continue|yes]"); expect(f.bodies[0].reply_markup).toBeUndefined();
+});
+
+for (const mode of ["missing", "changed"]) test(`Telegram ${mode} keyboard acknowledgement cannot complete delivery`, async () => {
+  const f = setup({ chatSource: true, text: "[button:Continue|yes]", mutate(message) {
+    if (mode === "missing") delete message.reply_markup;
+    else message.reply_markup.inline_keyboard[0][0].callback_data = "tsc:cancelall";
+  } });
+  await f.outbox.drain(); await f.reopen().drain();
+  expect(f.outbox.list("task")[0]).toMatchObject({ state: "unknown", reason: "telegram_message_keyboard_mismatch" });
+  expect(f.count()).toBe(1);
+});
+
+
+test("Telegram resolves a choice from confirmed delivery evidence, never callback message text", async () => {
+  const f = setup({ chatSource: true, text: "[button:Continue|tsc:cancelall]" }); await f.outbox.drain();
+  const callback = { schema_version: "controlmesh.telegram_callback.v1" as const, bot_id: "123456", event_id: "21", callback_id: "query_21",
+    choice_id: f.bodies[0].reply_markup.inline_keyboard[0][0].callback_data, message_id: "1", sender_id: "777",
+    chat_id: "-1001234567890", thread_id: "", source_scope: "direct_message" as const };
+  const result = f.outbox.resolveTelegramChoice("telegram-selected", callback);
+  expect(result).toMatchObject({ task_id: "task", text: "tsc:cancelall", revision: f.kernel.inspect(actor, "task").revision });
+  expect(f.kernel.inspect(actor, "task").task.status).toBe("done"); // resolution itself executes no command
+  for (const patch of [{ bot_id: "999" }, { chat_id: "888" }, { message_id: "999" }, { thread_id: "5" }, { choice_id: `cmc:${"f".repeat(48)}` }]) {
+    expect(() => f.outbox.resolveTelegramChoice("telegram-selected", { ...callback, ...patch })).toThrow();
+  }
+  f.db.sql.query("UPDATE delivery_outbox SET state='unknown' WHERE delivery_id=?").run(result.delivery_id);
+  expect(() => f.outbox.resolveTelegramChoice("telegram-selected", callback)).toThrow("telegram_choice_delivery_unconfirmed");
+});
+
+
+test("Telegram choice parser preserves unequal fences and multiline backtick code spans", async () => {
+  const text = ["````md", "```", "[button:code1|danger]", "````", "``example `", "[button:code2|danger]``", "[button:Proceed|safe]"].join("\n");
+  const f = setup({ chatSource: true, text }); await f.outbox.drain();
+  expect(f.bodies[0].text).toContain("[button:code1|danger]");
+  expect(f.bodies[0].text).toContain("[button:code2|danger]");
+  expect(f.bodies[0].reply_markup.inline_keyboard).toHaveLength(1);
+  expect(f.bodies[0].reply_markup.inline_keyboard[0][0].text).toBe("Proceed");
 });

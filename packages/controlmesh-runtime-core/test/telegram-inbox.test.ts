@@ -17,18 +17,22 @@ const event = (update = 1, chat = 777, thread?: number) => ({ update_id: update,
   ...(thread ? { message_thread_id: thread } : {}) } });
 const cleanups: (() => void | Promise<void>)[] = [];
 afterEach(async () => { for (const close of cleanups.splice(0).reverse()) await close(); });
-function fixture() {
+function fixture(output = "Fixture result") {
   const root = mkdtempSync(join(tmpdir(), "cm-telegram-inbox-")); cleanups.push(() => rmSync(root, { recursive: true, force: true }));
-  const path = join(root, "runtime.sqlite"), seen: any[] = [], posts: any[] = []; let deny = false, quota = false, valid = true;
+  const path = join(root, "runtime.sqlite"), seen: any[] = [], posts: any[] = [], acks: any[] = []; let ackLost = false, deny = false, quota = false, valid = true;
   const current = () => { if (!valid) throw new RuntimeConflict("fixture_revoked"); };
   const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
-    const body = await request.json(); posts.push(body);
+    const body = await request.json();
+    if (new URL(request.url).pathname.endsWith("/answerCallbackQuery")) {
+      acks.push(body); return Response.json(ackLost ? { ok: false, error_code: 500 } : { ok: true, result: true });
+    }
+    posts.push(body);
     return Response.json({ ok: true, result: { message_id: posts.length, date: Math.floor(Date.now() / 1000), chat: { id: Number(body.chat_id) },
-      from: { id: 123456, is_bot: true }, text: body.text, ...(body.message_thread_id ? { message_thread_id: body.message_thread_id } : {}) } });
+      from: { id: 123456, is_bot: true }, text: body.text, ...(body.reply_markup ? { reply_markup: body.reply_markup } : {}), ...(body.message_thread_id ? { message_thread_id: body.message_thread_id } : {}) } });
   } }); cleanups.push(() => server.stop(true));
-  const open = () => {
+  const open = (selectedPolicy = policy) => {
     const db = new RuntimeDatabase(path), kernel = new RuntimeKernel(db);
-    const inbox = new TelegramInbox(kernel, actor, policy.bot_id, new TelegramEventAuthenticator(policy, current), { provider: "opencode", model: "fixture/model", repo_root: root }, current);
+    const inbox = new TelegramInbox(kernel, actor, policy.bot_id, new TelegramEventAuthenticator(selectedPolicy, current), { provider: "opencode", model: "fixture/model", repo_root: root }, current);
     const adapter = new TelegramTextDelivery({ adapter_id: "selected", bot_id: policy.bot_id, assertCurrent: current, assertToken: current,
       async botToken() { return "123456:fixture_token_only"; } }, (async (url, init) => {
       const target = new URL(String(url)); expect(target.origin).toBe("https://api.telegram.org");
@@ -40,7 +44,7 @@ function fixture() {
       const execution: LocalTaskExecution = { binding_digest: digest("fixture"), assertCurrent: current,
         async ensureReady() { return { decision: quota ? "wait" : "cached", reason: quota ? "quota_exhausted" : "ready", retry_after: quota ? 60000 : null, permit: null, report: null }; },
         async execute(lease, context) { seen.push(structuredClone(snapshot.task)); kernel.start(actor, `start-${lease.episode_id}`, lease); context.assertCurrent();
-          return kernel.finish(actor, `finish-${lease.episode_id}`, lease, "done", { delivery_text: "Fixture result", native_session: { session_id: "ses_fixture", turn: seen.length } }); }
+          return kernel.finish(actor, `finish-${lease.episode_id}`, lease, "done", { delivery_text: output, native_session: { session_id: "ses_fixture", turn: seen.length } }); }
       }; return execution;
     }, current);
     const inbound = new WebhookInboundRuntime(inbox, runtime, deliveries, adapter.adapter_id, "/telegram/events", 0, "telegram");
@@ -49,7 +53,7 @@ function fixture() {
     cleanups.push(close); return { db, kernel, inbox, runtime, deliveries, inbound, close };
   };
   const receive = (inbox: TelegramInbox, body: unknown) => inbox.receive(headers(), Buffer.from(JSON.stringify(body))) as { accepted: boolean; receipt_id: string; reason?: string };
-  return { ...open(), open, receive, seen, posts, deny: () => { deny = true; }, quota: (value = true) => { quota = value; }, revoke: () => { valid = false; } };
+  return { ...open(), open, receive, seen, posts, acks, loseAck: () => { ackLost = true; }, deny: () => { deny = true; }, quota: (value = true) => { quota = value; }, revoke: () => { valid = false; } };
 }
 
 test("Telegram duplicate updates survive reopen; chat-local message IDs never alias another chat", async () => {
@@ -146,4 +150,95 @@ test("bounded incoming Unicode text is not constrained by the outgoing single-me
   expect(f.receive(f.inbox, body).accepted).toBe(true);
   const stored = f.db.sql.query("SELECT payload FROM telegram_inbox").get() as { payload: string };
   expect(JSON.parse(stored.payload).text).toBe(body.message.text);
+});
+
+
+test("confirmed choice resumes the same native task once across duplicate delivery and reopen", async () => {
+  const f = fixture("[button:Continue|continue the task]"); f.receive(f.inbox, event()); await f.inbound.drain();
+  const taskId = f.seen[0].task_id, choice = f.posts[0].reply_markup.inline_keyboard[0][0].callback_data;
+  const body = { update_id: 100, callback_query: { id: "query_100", data: choice, from: { id: 777, is_bot: false },
+    message: { message_id: 1, date: Math.floor(Date.now() / 1000), from: { id: 123456, is_bot: true }, chat: { id: 777, type: "private" } } } };
+  const receipt = f.receive(f.inbox, body); expect(receipt.accepted).toBe(true);
+  expect(f.receive(f.inbox, body)).toEqual(receipt);
+  await f.close(); const reopened = f.open(); await reopened.inbound.drain();
+  expect(f.seen).toHaveLength(2); expect(f.seen[1].task_id).toBe(taskId);
+  expect(f.acks).toEqual([{ callback_query_id: "query_100", text: "Request accepted.", cache_time: 0 }]);
+  expect(reopened.db.sql.query("SELECT ack_state FROM telegram_callbacks").get()).toEqual({ ack_state: "sent" });
+  expect(f.seen[1].native_session.session_id).toBe("ses_fixture");
+  f.receive(reopened.inbox, body); await reopened.inbound.drain(); expect(f.seen).toHaveLength(2);
+  f.receive(reopened.inbox, { ...body, update_id: 101, callback_query: { ...body.callback_query, id: "query_101" } });
+  await reopened.inbound.drain(); expect(f.seen).toHaveLength(2);
+  expect(reopened.inbox.listBlocked()).toContainEqual(expect.objectContaining({ reason: "telegram_choice_stale" }));
+});
+
+
+test("callback application failure rolls back resume and enqueue together", async () => {
+  const f = fixture("[button:Continue|next]"); f.receive(f.inbox, event()); await f.inbound.drain();
+  const taskId = f.seen[0].task_id, before = f.kernel.inspect(actor, taskId);
+  const body = { update_id: 100, callback_query: { id: "query_100", data: f.posts[0].reply_markup.inline_keyboard[0][0].callback_data,
+    from: { id: 777, is_bot: false }, message: { message_id: 1, date: Math.floor(Date.now() / 1000),
+      from: { id: 123456, is_bot: true }, chat: { id: 777, type: "private" } } } };
+  const receipt = f.receive(f.inbox, body);
+  f.db.sql.exec("CREATE TEMP TRIGGER reject_callback_commit BEFORE UPDATE OF state ON telegram_callbacks WHEN NEW.state='applied' BEGIN SELECT RAISE(ABORT,'fixture'); END");
+  await f.inbound.drain(); expect(f.seen).toHaveLength(1);
+  expect(f.kernel.inspect(actor, taskId)).toEqual(before);
+  expect(f.inbox.listBlocked()).toContainEqual(expect.objectContaining({ receipt_id: receipt.receipt_id }));
+  f.db.sql.exec("DROP TRIGGER reject_callback_commit"); f.inbox.retry("callback-retry", receipt.receipt_id);
+  await f.inbound.drain(); expect(f.seen).toHaveLength(2); expect(f.seen[1].task_id).toBe(taskId);
+});
+
+
+for (const first of ["callback", "text"]) test(`same-conversation ${first} input is applied before the other ingress type`, async () => {
+  const f = fixture("[button:Continue|chosen continuation]"); f.receive(f.inbox, event()); await f.inbound.drain();
+  const body = { update_id: first === "callback" ? 100 : 101, callback_query: { id: "query_order", data: f.posts[0].reply_markup.inline_keyboard[0][0].callback_data,
+    from: { id: 777, is_bot: false }, message: { message_id: 1, date: Math.floor(Date.now() / 1000),
+      from: { id: 123456, is_bot: true }, chat: { id: 777, type: "private" } } } };
+  if (first === "callback") { f.receive(f.inbox, body); f.receive(f.inbox, event(101)); }
+  else { f.receive(f.inbox, event(100)); f.receive(f.inbox, body); }
+  await f.inbound.drain();
+  if (first === "callback") {
+    expect(f.seen).toHaveLength(3);
+    expect(f.inbox.status()).toEqual({ pending: 0, applied: 3, blocked: 0 });
+  } else {
+    expect(f.seen).toHaveLength(2);
+    expect(f.inbox.listBlocked()).toContainEqual(expect.objectContaining({ reason: "telegram_choice_stale" }));
+  }
+});
+
+
+test("failed callback acknowledgement never replays either the native turn or the acknowledgement", async () => {
+  const f = fixture("[button:Continue|next]"); f.receive(f.inbox, event()); await f.inbound.drain(); f.loseAck();
+  const body = { update_id: 100, callback_query: { id: "query_lost", data: f.posts[0].reply_markup.inline_keyboard[0][0].callback_data,
+    from: { id: 777, is_bot: false }, message: { message_id: 1, date: Math.floor(Date.now() / 1000),
+      from: { id: 123456, is_bot: true }, chat: { id: 777, type: "private" } } } };
+  f.receive(f.inbox, body); await f.inbound.drain();
+  expect(f.seen).toHaveLength(2); expect(f.acks).toHaveLength(1);
+  expect(f.db.sql.query("SELECT state,ack_state FROM telegram_callbacks").get()).toEqual({ state: "applied", ack_state: "unknown" });
+  await f.close(); const reopened = f.open(); f.receive(reopened.inbox, body); await reopened.inbound.drain();
+  expect(f.seen).toHaveLength(2); expect(f.acks).toHaveLength(1);
+});
+
+
+test("old callback cannot revive a task cancelled after a later input", async () => {
+  const f = fixture("[button:Continue|next]"); f.receive(f.inbox, event()); await f.inbound.drain();
+  const taskId = f.seen[0].task_id;
+  const body = { update_id: 100, callback_query: { id: "query_cancelled", data: f.posts[0].reply_markup.inline_keyboard[0][0].callback_data,
+    from: { id: 777, is_bot: false }, message: { message_id: 1, date: Math.floor(Date.now() / 1000),
+      from: { id: 123456, is_bot: true }, chat: { id: 777, type: "private" } } } };
+  f.quota(); f.receive(f.inbox, event(99)); await f.inbound.drain();
+  f.runtime.cancel("cancel-later-turn", taskId, f.kernel.inspect(actor, taskId).revision);
+  f.receive(f.inbox, body); f.quota(false); await f.inbound.drain();
+  expect(f.seen).toHaveLength(1); expect(f.kernel.inspect(actor, taskId).task.status).toBe("cancelled");
+  expect(f.inbox.listBlocked()).toContainEqual(expect.objectContaining({ reason: "telegram_choice_stale" }));
+});
+
+
+test("callback retained before policy revocation cannot execute after reopen", async () => {
+  const f = fixture("[button:Continue|next]"); f.receive(f.inbox, event()); await f.inbound.drain();
+  const body = { update_id: 100, callback_query: { id: "query_revoked", data: f.posts[0].reply_markup.inline_keyboard[0][0].callback_data,
+    from: { id: 777, is_bot: false }, message: { message_id: 1, date: Math.floor(Date.now() / 1000),
+      from: { id: 123456, is_bot: true }, chat: { id: 777, type: "private" } } } };
+  f.receive(f.inbox, body); await f.close(); const reopened = f.open({ ...policy, allowed_senders: [] }); await reopened.inbound.drain();
+  expect(f.seen).toHaveLength(1);
+  expect(reopened.inbox.listBlocked()).toContainEqual(expect.objectContaining({ reason: "telegram_event_policy_changed" }));
 });

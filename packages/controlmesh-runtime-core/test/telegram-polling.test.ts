@@ -19,7 +19,7 @@ function fixture() {
   const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
     const method = new URL(request.url).pathname.split("/").at(-1)!; const body = await request.json(); calls.push({ method, body });
     if (method === "getWebhookInfo") return Response.json({ ok: true, result: { url: control.webhook } });
-    expect(method).toBe("getUpdates"); expect(body.timeout).toBe(25); expect(body.allowed_updates).toEqual(["message"]);
+    expect(method).toBe("getUpdates"); expect(body.timeout).toBe(25); expect(body.allowed_updates).toEqual(["message", "callback_query"]);
     await control.hook?.();
     return control.error ? Response.json({ ok: false, error_code: control.error, parameters: { retry_after: control.retry } })
       : Response.json({ ok: true, result: control.updates.filter(update => update.update_id >= body.offset) });
@@ -90,7 +90,7 @@ test("retry-after persists across reopen and repeated rejection eventually pause
 });
 
 test("unsupported updates are retained before offset advancement", async () => {
-  const f = fixture(); f.control.updates = [{ update_id: 1, callback_query: { id: "fixture" } }]; await f.polling.pollOnce();
+  const f = fixture(); f.control.updates = [{ update_id: 1, edited_message: { message_id: 1 } }]; await f.polling.pollOnce();
   expect(f.polling.status().next_offset).toBe(2);
   expect(f.db.sql.query("SELECT disposition,reason FROM telegram_poll_updates").get())
     .toEqual({ disposition: "ignored", reason: "telegram_update_type_unsupported" });

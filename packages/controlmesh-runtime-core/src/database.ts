@@ -28,7 +28,7 @@ export class RuntimeDatabase {
       this.transaction(() => {
         const version = (this.sql.query("PRAGMA user_version").get() as { user_version: number }).user_version;
         const app = (this.sql.query("PRAGMA application_id").get() as { application_id: number }).application_id;
-        requireThat(version >= 0 && version <= 37, "unsupported_database_version");
+        requireThat(version >= 0 && version <= 38, "unsupported_database_version");
         requireThat(app === 0 || app === APPLICATION_ID, "foreign_database");
         if (version === 0) {
           const tables = this.sql.query("SELECT name FROM sqlite_master WHERE type='table'").all();
@@ -568,6 +568,16 @@ export class RuntimeDatabase {
             payload TEXT NOT NULL,payload_digest TEXT NOT NULL,disposition TEXT NOT NULL,reason TEXT,received_at INTEGER NOT NULL,
             PRIMARY KEY(bot_id,update_id)
           ); PRAGMA user_version=37;`);
+        }
+        if (version < 38) {
+          this.sql.exec(`CREATE TABLE telegram_callbacks (
+            id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, principal TEXT NOT NULL,
+            event_id TEXT NOT NULL, callback_id TEXT NOT NULL, payload TEXT NOT NULL, payload_digest TEXT NOT NULL,
+            ack_state TEXT NOT NULL DEFAULT 'pending' CHECK(ack_state IN ('pending','sent','unknown')), ack_reason TEXT,
+            state TEXT NOT NULL CHECK(state IN ('pending','applied','blocked')),
+            task_id TEXT, reason TEXT, received_at INTEGER NOT NULL,
+            UNIQUE(bot_id,event_id), UNIQUE(bot_id,callback_id)
+          ); PRAGMA user_version=38;`);
         }
       });
       this.sql.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;");

@@ -69,11 +69,12 @@ No claim that full TS migration or distributed coordination has completed. A sco
 
 ## Next Step
 
-1. Schema 37 polling now persists update batches/offsets with local lease fencing and
-   bounded failure handling. Broad regression passed (1038 pass, 34 optional skips, 0 fail),
-   followed by 57 focused passes after retry-delay hardening. Next implement media,
-   callback/edit updates, rich formatting, outbound rate limits and streaming parity.
-   Preserve the separate real-account and cross-device ingress acceptance requirements.
+1. Schema 38 now includes ordinary Telegram button continuation with durable receipt
+   binding, atomic consumption and independent UI acknowledgement. Full regression:
+   1067 pass, 34 optional skips, 0 fail; final parser/authority checks: 75 pass.
+   Check the new commit's remote CI, then implement media, management selectors, rich
+   formatting, outbound rate limits and streaming parity. Preserve the separate
+   real-account and cross-device ingress acceptance requirements.
 2. Complete the remaining ownership/acceptance matrix below. Prioritize normal execution,
    transport delivery and recovery across supported providers/devices over disconnected
    helper additions. Do not waive an original requirement to obtain a release.

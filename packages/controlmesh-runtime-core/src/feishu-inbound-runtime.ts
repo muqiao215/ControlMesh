@@ -11,7 +11,7 @@ export class WebhookInboundRuntime {
   private stopping = false;
   private activeRequests = 0;
   private failure: string | null = null;
-  constructor(readonly inbox: Pick<FeishuInbox, "receive" | "applyPending" | "status" | "listBlocked" | "retry">, private readonly runtime: LocalTaskRuntime, private readonly deliveries: DeliveryOutbox,
+  constructor(readonly inbox: Pick<FeishuInbox, "receive" | "applyPending" | "status" | "listBlocked" | "retry"> & { confirmCallbacks?(deliveries: DeliveryOutbox, adapterId: string): Promise<boolean> }, private readonly runtime: LocalTaskRuntime, private readonly deliveries: DeliveryOutbox,
     private readonly adapterId: string, private readonly path = "/feishu/events", private readonly port = 0, private readonly transport: "feishu" | "telegram" = "feishu") {
     requireThat(/^\/[A-Za-z0-9/_-]{1,127}$/.test(path), `invalid_${transport}_event_path`);
   }
@@ -46,14 +46,16 @@ export class WebhookInboundRuntime {
     this.pumping = (async () => {
       do {
         this.dirty = false;
+        const blockedBefore = this.inbox.status().blocked;
         const applied = this.inbox.applyPending(this.runtime, this.deliveries, this.adapterId);
+        const moreCallbacks = await this.inbox.confirmCallbacks?.(this.deliveries, this.adapterId);
         const before = this.runtime.queueStatus();
         await this.runtime.drain();
         if (this.stopping) break;
         await this.deliveries.drain();
         const after = this.runtime.queueStatus();
         // Reopened queued work can release a conversation even when this pass applied no new event.
-        if ((applied || after.queued + after.running < before.queued + before.running) && this.inbox.status().pending) this.dirty = true;
+        if (moreCallbacks || (applied || this.inbox.status().blocked > blockedBefore || after.queued + after.running < before.queued + before.running) && this.inbox.status().pending) this.dirty = true;
       } while (this.dirty && !this.stopping);
       this.failure = null;
     })().catch(error => {

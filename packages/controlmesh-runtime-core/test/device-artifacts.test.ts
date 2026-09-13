@@ -68,8 +68,8 @@ test("schema 26 upgrade preserves existing tasks and receipts and creates an emp
   const path = join(root, "runtime.sqlite"); let db = new RuntimeDatabase(path); cleanups.push(() => db.close());
   new RuntimeKernel(db).submit(owner, "create", { task_id: "old", status: "waiting", chat_id: "fixture" });
   const tasks = db.sql.query("SELECT * FROM tasks").all(), receipts = db.sql.query("SELECT * FROM receipts").all();
-  db.sql.exec("DROP TABLE episode_deadlines; DROP TABLE process_output_chunks; DROP TABLE host_jobs; DROP TABLE backstage_events; DROP TABLE workspace_seed_files; DROP TABLE workspace_seed_transfers; DROP TABLE topology_artifact_publications; DROP TABLE device_artifact_files; DROP TABLE IF EXISTS telegram_conversations; DROP TABLE IF EXISTS telegram_event_aliases; DROP TABLE IF EXISTS telegram_inbox; DROP TABLE IF EXISTS telegram_poll_updates; DROP TABLE IF EXISTS telegram_polling; PRAGMA user_version=26"); db.close(); db = new RuntimeDatabase(path);
-  expect(db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 37 });
+  db.sql.exec("DROP TABLE episode_deadlines; DROP TABLE process_output_chunks; DROP TABLE host_jobs; DROP TABLE backstage_events; DROP TABLE workspace_seed_files; DROP TABLE workspace_seed_transfers; DROP TABLE topology_artifact_publications; DROP TABLE device_artifact_files; DROP TABLE IF EXISTS telegram_conversations; DROP TABLE IF EXISTS telegram_event_aliases; DROP TABLE IF EXISTS telegram_inbox; DROP TABLE IF EXISTS telegram_callbacks; DROP TABLE IF EXISTS telegram_poll_updates; DROP TABLE IF EXISTS telegram_polling; PRAGMA user_version=26"); db.close(); db = new RuntimeDatabase(path);
+  expect(db.sql.query("PRAGMA user_version").get()).toEqual({ user_version: 38 });
   expect(db.sql.query("SELECT * FROM tasks").all()).toEqual(tasks); expect(db.sql.query("SELECT * FROM receipts").all()).toEqual(receipts);
   expect(db.sql.query("SELECT COUNT(*) AS n FROM device_artifact_files").get()).toEqual({ n: 0 });
 });

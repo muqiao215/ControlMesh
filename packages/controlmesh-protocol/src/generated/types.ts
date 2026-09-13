@@ -473,6 +473,7 @@ export interface TerminalDelivery {
   "text": string;
   "output_policy": "summarized_only" | "full";
   "created_at": number;
+  "choices"?: Record<string, unknown>[];
 }
 
 export interface Topology {

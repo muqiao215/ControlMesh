@@ -117,7 +117,7 @@ export class TelegramPollingRuntime {
       // Reset the query after a day without received updates, before Telegram's week-long
       // inactivity randomizes update IDs. Retained duplicates still dedupe locally.
       const offset = lease.last_update_at && this.kernel.db.now() - lease.last_update_at >= 86400000 ? 0 : lease.next_offset;
-      const updates = await call("getUpdates", { offset, timeout: 25, limit: 100, allowed_updates: ["message"] });
+      const updates = await call("getUpdates", { offset, timeout: 25, limit: 100, allowed_updates: ["message", "callback_query"] });
       requireThat(Array.isArray(updates) && updates.length <= 100, "telegram_polling_batch_invalid");
       const accepted = this.kernel.db.transaction(() => {
         current(); let next = offset, count = 0, previous = -1;

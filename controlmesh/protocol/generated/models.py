@@ -515,6 +515,7 @@ class TerminalDelivery(BaseModel):
     text: str
     output_policy: Literal["summarized_only", "full"]
     created_at: int
+    choices: list[dict[str, Any]] | None = None
 
 
 class Topology(BaseModel):

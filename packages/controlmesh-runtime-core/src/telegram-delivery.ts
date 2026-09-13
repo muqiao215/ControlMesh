@@ -29,6 +29,34 @@ export class TelegramTextDelivery implements DeliveryAdapter {
     if (result !== undefined) { void Promise.resolve(result).catch(() => {}); requireThat(false, "admission_must_be_synchronous"); }
     requireThat(this.config.bot_id === this.botId && this.config.adapter_id === this.adapter_id, "telegram_registration_changed");
   }
+  async answerCallback(queryId: string, accepted: boolean, context: DeliveryContext): Promise<void> {
+    context.assertCurrent(); this.assertCurrent();
+    requireThat(/^[A-Za-z0-9_-]{1,256}$/.test(queryId), "telegram_callback_identity_invalid");
+    const token = await this.config.botToken(context);
+    const current = () => {
+      context.assertCurrent(); this.assertCurrent();
+      const result: unknown = this.config.assertToken(token);
+      if (result !== undefined) { void Promise.resolve(result).catch(() => {}); requireThat(false, "admission_must_be_synchronous"); }
+      requireThat(typeof token === "string" && /^[1-9][0-9]*:[A-Za-z0-9_-]{16,256}$/.test(token)
+        && token.split(":")[0] === this.botId, "telegram_token_identity_mismatch");
+    };
+    current();
+    let response: Response;
+    try { response = await this.request(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
+      method: "POST", redirect: "error", signal: context.signal, headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ callback_query_id: queryId, text: accepted ? "Request accepted." : "This choice could not be applied.", cache_time: 0 }) }); }
+    catch { requireThat(false, "telegram_callback_ack_unknown"); }
+    requireThat(response.body, "telegram_callback_ack_unknown");
+    const reader = response.body.getReader(); let size = 0; const chunks: Uint8Array[] = [];
+    try {
+      while (true) { const item = await reader.read(); if (item.done) break;
+        size += item.value.length; requireThat(size <= 4096, "telegram_callback_ack_oversized"); chunks.push(item.value); }
+    } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
+    current();
+    let result: unknown; try { result = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks))); }
+    catch { requireThat(false, "telegram_callback_ack_invalid"); }
+    requireThat(response.ok && object(result) && result.ok === true && result.result === true, "telegram_callback_ack_rejected");
+  }
   submissionIdentity(_taskId: string, chatId: string): { chat_id: string } {
     this.assertCurrent(); requireThat(numericId(chatId), "telegram_target_unqualified"); return { chat_id: chatId };
   }
@@ -52,6 +80,7 @@ export class TelegramTextDelivery implements DeliveryAdapter {
       requireThat(text.length > 0 && text.length <= 4096, "telegram_text_requires_multipart");
     };
     target(original);
+    const markup = original.choices?.length ? { inline_keyboard: original.choices.map(choice => [{ text: choice.label, callback_data: choice.id }]) } : undefined;
     const token = await this.config.botToken(context);
     const current = (control: DeliveryContext) => {
       control.assertCurrent(); this.assertCurrent();
@@ -66,7 +95,7 @@ export class TelegramTextDelivery implements DeliveryAdapter {
         let response: Response;
         try { response = await this.request(`https://api.telegram.org/bot${token}/sendMessage`, { method: "POST", redirect: "error", signal: control.signal,
           headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chat_id: envelope.target.chat_id, text,
-            link_preview_options: { is_disabled: true }, ...(envelope.target.thread_id ? { message_thread_id: Number(envelope.target.thread_id) } : {}) }) }); }
+            link_preview_options: { is_disabled: true }, ...(markup ? { reply_markup: markup } : {}), ...(envelope.target.thread_id ? { message_thread_id: Number(envelope.target.thread_id) } : {}) }) }); }
         catch { requireThat(false, "telegram_delivery_outcome_unknown"); }
         requireThat(response.body, "telegram_delivery_response_missing");
         const reader = response.body.getReader(), chunks: Uint8Array[] = []; let size = 0;
@@ -87,6 +116,9 @@ export class TelegramTextDelivery implements DeliveryAdapter {
           && !value.business_connection_id && !value.sender_chat && !value.forward_origin && !value.is_ephemeral && !value.edit_date
           && !value.direct_messages_topic && !value.is_from_offline && !value.is_paid_post, "telegram_message_context_mismatch");
         requireThat(value.text === text, "telegram_message_content_mismatch");
+        requireThat(markup ? digest(value.reply_markup ?? null) === digest(markup) : value.reply_markup === undefined
+          || (object(value.reply_markup) && Array.isArray(value.reply_markup.inline_keyboard) && value.reply_markup.inline_keyboard.length === 0),
+          "telegram_message_keyboard_mismatch");
         requireThat(Number.isSafeInteger(value.date) && Number(value.date) > 0 && typeof control.not_before === "number"
           && Number(value.date) * 1000 >= control.not_before - 5000, "telegram_message_predates_attempt");
         const receipt: DeliveryReceipt = { schema_version: "controlmesh.delivery_receipt.v1", delivery_id: envelope.delivery_id,
