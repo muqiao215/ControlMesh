@@ -293,3 +293,9 @@ Pending host cancellation checkpoint: cancellation of an unclaimed waiting task 
 atomically updates its currently approved pending step and queue; stale/forged references
 cannot affect other execution. Next: claimed-but-unstarted and retained-outcome cancellation
 recovery windows, then remaining host-parity.md owners and full CM-R0–R7 acceptance.
+
+Host cancellation recovery checkpoint: leased-but-unstarted tasks cancel atomically;
+retained cancelled outcomes converge through bounded normal recovery after reopen, with
+corrupt-evidence refusal and idempotency checks. Next: remaining host workunit creation,
+automatic authorized step advancement and durable long-running process/log ownership,
+then continue all original CM-R0–R7 acceptance and release gates.

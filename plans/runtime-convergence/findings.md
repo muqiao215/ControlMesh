@@ -2278,3 +2278,9 @@ A duplicate task can carry an authentic but now-stale approval while another tas
 the running step; canceling that duplicate must not cancel the job. The pending projection
 runs in the kernel cancellation transaction, with only invalid/stale approval conflicts
 skipped. Authorization/configuration failures are not swallowed.
+
+LocalTaskRuntime.drain invokes tick/recover after active promises finish. Therefore a
+persistent injected HostJob write failure must surface from drain as well as the original
+completion path. Recovering reporting from an existing cancelled episode never restores
+its lease; immutable manifest/observation digests and current running snapshot bind the
+projection. Absence of retained output still cannot prove native process termination.

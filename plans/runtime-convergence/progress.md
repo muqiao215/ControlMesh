@@ -1023,3 +1023,23 @@ the running HostJob is unaffected. Local control/queue/configured-host (with act
 regression: 33 pass, 220 assertions, 8.68s (/tmp/cm-pending-host-cancel.log); typecheck and
 diff-check passed. Claimed-but-not-started and post-outcome crash-window convergence remain;
 full host/runtime migration and release gates are not closed.
+
+## 2026-09-13 — claimed and retained-outcome cancellation recovery
+
+Cancellation before dispatch now includes an exact leased episode with no effects, not
+only an unclaimed waiting task. Host cancellation projection recovery scans at most 128
+candidates per call, principal-scoped with an in-memory pagination cursor. It verifies
+cancelled episode/fence, manifest/observation hashes and equality, persisted approval and
+exact running job snapshot. It only updates cancellation reporting; effects stay unknown.
+
+Injected projection failure initially made drain throw because drain also runs recovery;
+that is correct failure reporting. The test now asserts that error, removes the fault,
+closes/reopens the runtime and verifies recovery without execution. Corrupted retained
+observation is refused; restoring the original allows recovery, and repeated recovery
+leaves the host revision unchanged. This is injected persistence failure and runtime
+reopen evidence, not a claim of an actual process-kill crash experiment.
+
+Configured host/local queue/control/process regression with real SpecMesh: 40 passed,
+291 assertions, 9.87s (/tmp/cm-host-cancel-window-regression.log); typecheck/diff-check pass.
+Remaining: no retained outcome cannot prove termination; durable execution/logs, workunit
+creation/automatic advancement and other host-parity.md/full migration owners remain.

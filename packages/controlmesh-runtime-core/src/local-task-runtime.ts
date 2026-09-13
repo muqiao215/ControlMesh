@@ -1,3 +1,4 @@
+import { recoverHostCancellation } from "./host-job-cancellation";
 import { HostJobStore } from "./host-job-store";
 import { HostJobApprovals } from "./host-job-approval";
 import { RuntimeEventStore } from "./runtime-events";
@@ -47,6 +48,7 @@ export class LocalTaskRuntime {
   private readonly active = new Map<string, { controller: AbortController; promise: Promise<void> }>();
   private stopping = false;
   private persistenceFailure: unknown;
+  private hostCancellationCursor = "";
 
   constructor(readonly kernel: RuntimeKernel, actor: Principal, source: IngressSource,
     private readonly resolve: LocalTaskResolver, private readonly authorize: () => void, options: LocalRuntimeOptions = {}) {
@@ -164,8 +166,11 @@ export class LocalTaskRuntime {
     this.current();
     const task = this.kernel.db.transaction(() => {
       const before = this.kernel.inspect(this.actor, taskId);
+      const unstarted = before.active_episode === null ? before.task.status === "waiting" : Boolean(
+        this.kernel.db.sql.query("SELECT 1 FROM episodes WHERE episode_id=? AND task_id=? AND fence=? AND state='leased'")
+          .get(before.active_episode, taskId, before.fence));
       const cancelled = this.kernel.cancel(this.actor, requestId, taskId, expectedRevision);
-      if (before.task.provider === "host" && before.task.status === "waiting" && before.active_episode === null
+      if (before.task.provider === "host" && unstarted
         && !before.needs_reconciliation && object(before.task.host_job)
         && !this.kernel.db.sql.query("SELECT 1 FROM effects WHERE task_id=?").get(taskId)) {
         const binding = before.task.host_job;
@@ -215,6 +220,13 @@ export class LocalTaskRuntime {
   recover(): void {
     this.current();
     this.kernel.recoverExpired({ ...this.actor, origin: "recovery" });
+    const cancelledHosts = this.kernel.db.sql.query(`SELECT t.task_id FROM tasks t JOIN host_jobs j
+      ON j.principal=t.principal AND j.job_id=json_extract(t.raw,'$.host_job.job_id')
+      WHERE t.principal=? AND t.status='cancelled' AND json_extract(t.raw,'$.provider')='host'
+        AND j.state='running' AND t.task_id>? ORDER BY t.task_id LIMIT 128`)
+      .all(this.actor.id, this.hostCancellationCursor) as { task_id: string }[];
+    for (const item of cancelledHosts) recoverHostCancellation(this.kernel, this.actor, item.task_id, () => this.current());
+    this.hostCancellationCursor = cancelledHosts.length === 128 ? cancelledHosts.at(-1)!.task_id : "";
     this.kernel.db.transaction(() => {
       for (const row of [...this.rows("running"), ...this.rows("interrupted")]) {
         const lease = row.lease ? JSON.parse(row.lease) as Lease : null;
