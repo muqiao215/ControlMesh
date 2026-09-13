@@ -225,6 +225,11 @@ describe("Cron persistence, migration & parity", () => {
 
     // 5. Once verified completed (terminal), new attempts are permanently blocked
     const occ2 = store.createOccurrence("dup_suppress", 1773200000000);
+    expect(() => store.createAttempt(occ2.occurrence_id, {
+      coordinatorId: "coord_main", executorDeviceId: "worker_1", fencingGeneration: 1,
+    })).toThrow("active_or_uncertain_attempt_exists");
+    // Simulate the trusted owner reconciling the first execution before the next slot.
+    store.updateAttemptState(attempt1.attempt_id, { coordinatorId: "coord_main", fence: 1 }, { state: "completed" });
     const attempt2 = store.createAttempt(occ2.occurrence_id, {
       coordinatorId: "coord_main",
       executorDeviceId: "worker_1",

@@ -670,3 +670,11 @@ New connection test confirms request order survives connection replacement and c
 be bypassed by older planned timestamps. Typecheck and nine admission tests pass; logs
 /tmp/cm-cron-fifo-admission-{tests,typecheck}.log. Actual process completion/release,
 timer/cursor owner and broader provider/device acceptance remain pending.
+
+Per-job overlap correction: Python CronObserver._executing suppresses overlapping runs
+across schedule slots, but TS createAttempt previously checked only the same occurrence.
+The transactional query now covers every initiated/running/cancelling/uncertain attempt
+of the same job. Updated regression explicitly rejects a later slot while the first is
+unknown, then simulates trusted reconciliation before admitting the next slot. Twenty-seven
+tests pass/199 assertions and typecheck passes; /tmp/cm-cron-job-overlap-{tests,typecheck}.log.
+This closes a persistence admission gap required for the upcoming recurring timer owner.

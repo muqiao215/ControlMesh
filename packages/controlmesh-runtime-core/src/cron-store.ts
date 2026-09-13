@@ -842,10 +842,11 @@ export class CronStore {
       const epoch = this.getCoordinatorEpoch(options.coordinatorId);
       requireThat(options.fencingGeneration === epoch.current_generation, "stale_coordinator_fence");
 
-      // 3. Duplicate suppression must block active AND uncertain attempts!
+      // 3. Python's per-job executing guard spans schedule slots. Persist that
+      // invariant across restarts, including executions whose outcome is unknown.
       const activeOrUncertainAttempts = this.db.sql.query(
-        "SELECT attempt_id FROM cron_execution_attempts WHERE occurrence_id = ? AND state IN ('initiated', 'running', 'cancelling', 'uncertain')"
-      ).all(occurrenceId) as { attempt_id: string }[];
+        "SELECT a.attempt_id FROM cron_execution_attempts a JOIN cron_occurrences o ON o.occurrence_id=a.occurrence_id WHERE o.job_id = ? AND a.state IN ('initiated', 'running', 'cancelling', 'uncertain')"
+      ).all(occurrence.job_id) as { attempt_id: string }[];
       requireThat(activeOrUncertainAttempts.length === 0, "active_or_uncertain_attempt_exists");
 
       const attemptNumberRow = this.db.sql.query(
